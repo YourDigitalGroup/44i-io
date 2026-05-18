@@ -748,8 +748,7 @@ textarea{resize:vertical;min-height:70px}
         <!-- Hero: calendar link -->
         <div id="koc-calendar-link-row" style="display:none;margin-bottom:16px">
           <a id="koc-calendar-link" href="#" target="_blank"
-            style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:var(--accent);color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">
-            📅 Open <span id="koc-am-cal-name">AM</span>'s Calendar to Schedule →
+            style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:var(--accent);color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">📅 Open <span id="koc-am-cal-name" style="display:inline">AM</span>'s Calendar to Schedule →
           </a>
           <p style="font-size:11px;color:var(--muted);margin-top:10px">A confirmation will be sent to you and the client once booked.</p>
         </div>
@@ -1631,11 +1630,21 @@ let currentHostingPageType = null;
 
 // ── SUPABASE ─────────────────────────────────────────────────
 async function sb(path, opts={}) {
+  const method = opts.method || 'GET';
+  const body = opts.body || undefined;
+  const prefer = opts.prefer || 'return=representation';
   const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
-    headers: {apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: opts.prefer || 'return=representation', ...opts.headers},
-    ...opts
+    method,
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: 'Bearer ' + SUPABASE_KEY,
+      'Content-Type': 'application/json',
+      Prefer: prefer,
+    },
+    body
   });
   const t = await res.text();
+  if (!res.ok) throw new Error('Supabase error ' + res.status + ': ' + t.slice(0,200));
   return t ? JSON.parse(t) : null;
 }
 
@@ -2484,6 +2493,7 @@ async function loadGroup() {
 
   try {
     const results = await sb('groups?io_slug=eq.' + encodeURIComponent(slug) + '&select=*');
+    console.log('Supabase result:', JSON.stringify(results));
     if (!results || results.length === 0) { showGroupError(); return; }
     selectedGroup = results[0];
     applyGroupBranding(selectedGroup);
@@ -2491,7 +2501,7 @@ async function loadGroup() {
     document.getElementById('group-display').style.display = 'block';
     document.getElementById('group-name-display').textContent = selectedGroup.name;
   } catch(e) {
-    console.warn('Could not load group:', e.message);
+    console.error('loadGroup error:', e.message, e.stack);
     showGroupError();
   }
 }
@@ -3043,7 +3053,7 @@ function goStep(n) {
     el.className = 'step' + (i+1 === n ? ' active' : (i+1 < n ? ' done' : ''));
   });
   currentStep = n;
-  window.scrollTo({top:0, behavior:'smooth'});
+  window.scrollTo(0, 0);
 }
 
 // ── BUILD REVIEW ──────────────────────────────────────────────
@@ -3274,15 +3284,14 @@ async function submitIO() {
     const clients = await sb('clients', {method:'POST', body: JSON.stringify(clientPayload)});
     const client = Array.isArray(clients) ? clients[0] : clients;
 
-    // 1b. Save order + line items + intake responses via edge function
+    // 1b. Save order directly to Supabase
     const orderPayload = {
-      target: 'submit_order',
-      client_id: client?.id,
+      client_id: client?.id || null,
       group_id: selectedGroup.id,
       ae_name: document.getElementById('ae-name').value,
       io_date: document.getElementById('io-date').value,
-      campaign_start: document.getElementById('campaign-start').value,
-      campaign_end: document.getElementById('campaign-end').value,
+      campaign_start: document.getElementById('campaign-start').value || null,
+      campaign_end: document.getElementById('campaign-end').value || null,
       campaign_length: parseInt(document.getElementById('campaign-length').value) || null,
       campaign_notes: document.getElementById('campaign-notes').value,
       koc_date: kocDate || null,
@@ -3300,17 +3309,22 @@ async function submitIO() {
       special_instructions: document.getElementById('special-instructions')?.value || '',
       needs_am_help: Object.values(intakeData).some(d => d.bypassed),
     };
-    const orderRes = await fetch(PROXY, {
-      method:'POST',
-      headers:{'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization:'Bearer '+SUPABASE_KEY},
-      body: JSON.stringify(orderPayload)
-    });
-    const orderResult = await orderRes.json();
-    const orderId = orderResult?.order_id;
+    const orders = await sb('orders', {method:'POST', body: JSON.stringify(orderPayload)});
+    const orderId = Array.isArray(orders) ? orders[0]?.id : orders?.id;
 
     // 2. Build Trello board
     if (selectedGroup.trello_board_id) {
       try {
+        // Test PROXY connection first
+        const proxyTest = await fetch(PROXY, {
+          method:'POST',
+          headers:{'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization:'Bearer '+SUPABASE_KEY},
+          body: JSON.stringify({target:'ping'})
+        }).catch(() => null);
+        if (!proxyTest || !proxyTest.ok) {
+          console.warn('Trello proxy unavailable — skipping Trello setup');
+          showToast('IO saved! Trello setup pending — proxy not configured', 'error');
+        } else {
         showToast('Setting up Trello…', 'info');
 
         const aeName   = document.getElementById('ae-name').value.trim();
@@ -3549,7 +3563,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         }
 
         showToast(`✅ Trello list ready — ${cardsAdded} new card${cardsAdded !== 1 ? 's' : ''} added`);
-
+        } // end proxy check
       } catch(e) {
         console.warn('Trello setup failed:', e.message);
         showToast('IO submitted but Trello setup failed: ' + e.message, 'error');
