@@ -3056,14 +3056,27 @@ async function submitIO() {
           const formKey = WORKFLOW_TO_INTAKE[wf];
           if (!formKey) return '';
           const data = intakeData[formKey];
-          if (!data) return '';
-          if (data.bypassed) return `⚠️ AM Help Requested${data.bypassNote ? ': ' + data.bypassNote : ''}`;
-          if (!data.fields || !Object.keys(data.fields).length) return '';
-          return Object.entries(data.fields)
-            .filter(([,v]) => v)
-            .map(([k,v]) => `**${k.replace(/_/g,' ')}:** ${v}`)
-            .join('\n');
+          const formDef = INTAKE_FORMS[formKey];
+          if (!formDef) return '';
+          if (!data) return '⚠️ Intake form not started';
+          if (data.bypassed) return `⚠️ AM Help Requested${data.bypassNote ? '\n' + data.bypassNote : ''}\n\nPlease cover the intake questions on the Kick-Off Call.`;
+          let desc = `**${formDef.title}**\n`;
+          formDef.sections.forEach(section => {
+            desc += `\n**${section.title}**\n`;
+            section.fields.forEach(field => {
+              const val = data.fields?.[field.key] || '';
+              if (val) {
+                desc += `✅ **${field.label}:** ${val}\n`;
+              } else {
+                desc += `❌ **${field.label}:**\n`;
+              }
+            });
+          });
+          if (!data.completed) desc += '\n⚠️ Incomplete — AM to collect remaining items on KOC';
+          return desc;
         };
+
+        const calUrl = selectedGroup.am_calendar_url || '';
 
         // ── IO card description ──
         const servicesDesc = lineItems.map(li => {
@@ -3082,7 +3095,7 @@ async function submitIO() {
 **Phone:** ${document.getElementById('contact-phone').value}
 **City:** ${document.getElementById('city').value}
 **AE:** ${aeName}${aeTrello ? ' (' + aeTrello + ')' : ''}
-**KOC:** ${kocDate||'—'}${kocTime ? ' at ' + kocTime : ''}
+**KOC:** ${kocDate||'—'}${kocTime ? ' at ' + kocTime : ''}${calUrl ? '\nKOC Calendar: ' + calUrl : ''}
 **Campaign Start:** ${document.getElementById('campaign-start').value||'—'}
 **Campaign Length:** ${document.getElementById('campaign-length').value||'—'} Months
 **Campaign Notes:** ${document.getElementById('campaign-notes').value||'None'}
@@ -3183,17 +3196,38 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               for (const card of templateCards) {
                 if (card.name.startsWith('🧪')) continue; // skip test cards
                 const cn = card.name.trim();
-                // Skip IO and AE Questions cards from template
-                if (/^io$/i.test(cn) || /^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
+                // Skip IO card from template (we build our own)
+                if (/^io$/i.test(cn)) continue;
                 // Skip if card with this name already exists
                 if (existingCardNames.includes(cn.toLowerCase())) continue;
 
-                await fetch(PROXY, {
+                // AE Questions card — rename, inject intake data, add green label
+                const isAeCard = /^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn);
+                const newName = isAeCard ? `AE Questions - ${bizName}` : cn;
+
+                const copyRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: 'bottom' })
+                  body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: newName, pos: 'bottom' })
                 });
+                const copiedCard = await copyRes.json();
                 cardsAdded++;
+
+                // If AE Questions card — inject intake data and add green label
+                if (isAeCard && copiedCard.id) {
+                  const desc = intakeDesc || 'No intake data provided — AM to collect on KOC';
+                  await fetch(PROXY, {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                    body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: desc.slice(0, 16000) })
+                  });
+                  // Add green label
+                  await fetch(PROXY, {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                    body: JSON.stringify({ target: 'trello_add_label', card_id: copiedCard.id, color: 'green' })
+                  });
+                }
               }
             } else {
               // Template list configured but not found — fall back to plain card
@@ -3219,14 +3253,30 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           }
         }
 
-        // ── Step 6: Create AE Questions card if it doesn't exist ──
-        const hasAeCard = existingCardNames.some(n => /^ae questions$/i.test(n));
+        // ── Step 6: Create AE Questions card with ALL intake data + green label ──
+        const hasAeCard = existingCardNames.some(n => /ae questions/i.test(n));
         if (!hasAeCard) {
-          await fetch(PROXY, {
+          // Build combined intake summary for all workflows
+          let allIntake = '';
+          soldWorkflows.forEach(wf => {
+            const desc = buildIntakeDesc(wf);
+            if (desc) allIntake += (allIntake ? '\n\n---\n\n' : '') + desc;
+          });
+          if (!allIntake) allIntake = 'No intake forms completed — AM to collect on KOC';
+          const aeRes = await fetch(PROXY, {
             method: 'POST',
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: 'AE Questions', desc: '', pos: 'bottom' })
+            body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: 'AE Questions - ' + bizName, desc: allIntake.slice(0, 16000), pos: 'bottom' })
           });
+          const aeCard = await aeRes.json();
+          // Add green label
+          if (aeCard?.id) {
+            await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_add_label', card_id: aeCard.id, color: 'green' })
+            });
+          }
         }
 
         showToast(`✅ Trello list ready — ${cardsAdded} new card${cardsAdded !== 1 ? 's' : ''} added`);
