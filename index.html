@@ -155,6 +155,7 @@ textarea{resize:vertical;min-height:70px}
 .field-missing label{color:#DC2626 !important}
 .field-missing input,.field-missing textarea,.field-missing select{border-color:#DC2626 !important;background:#FFF5F5 !important}
 .field-missing .radio-group label{color:#DC2626 !important}
+.spend-missing{border-color:#DC2626 !important;background:#FFF5F5 !important;box-shadow:0 0 0 2px rgba(220,38,38,.25) !important}
 .help-row{display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:#FFF7ED;border-radius:7px;border:1px solid #FED7AA}
 .help-row input[type=checkbox]{width:14px;height:14px;accent-color:#F97316;flex-shrink:0}
 .help-row label{font-size:12px;color:#92400E;cursor:pointer;flex:1}
@@ -305,10 +306,10 @@ textarea{resize:vertical;min-height:70px}
         <table class="svc-table">
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Recurring</th><th>Notes</th></tr></thead>
           <tbody>
-            <tr data-id="w-bs"><td><input type="checkbox" onchange="toggle(this,'w-bs');if(this.checked)promptHosting('w-bs','1p')"/></td><td>Business Starter* <span style="font-size:10px;color:var(--muted)">(1-page)</span></td><td class="right">$1,250</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-bb"><td><input type="checkbox" onchange="toggle(this,'w-bb');if(this.checked)promptHosting('w-bb','5p')"/></td><td>Business Builder* <span style="font-size:10px;color:var(--muted)">(5-page)</span></td><td class="right">$2,500</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-bp"><td><input type="checkbox" onchange="toggle(this,'w-bp');if(this.checked)promptHosting('w-bp','10p')"/></td><td>Business Pro* <span style="font-size:10px;color:var(--muted)">(10-page)</span></td><td class="right">$3,750</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-custom"><td><input type="checkbox" onchange="toggle(this,'w-custom');if(this.checked)promptHosting('w-custom','ecomm')"/></td><td>Custom Site / E-Commerce</td><td class="right">QUR</td><td class="right">—</td><td><input type="text" placeholder="50% Down / 50% Launch"/></td></tr>
+            <tr data-id="w-bs"><td><input type="checkbox" onchange="toggleSingle(this,'w-bs','web-oto-tier');if(this.checked)promptHosting('w-bs','1p')"/></td><td>Business Starter* <span style="font-size:10px;color:var(--muted)">(1-page)</span></td><td class="right">$1,250</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="w-bb"><td><input type="checkbox" onchange="toggleSingle(this,'w-bb','web-oto-tier');if(this.checked)promptHosting('w-bb','5p')"/></td><td>Business Builder* <span style="font-size:10px;color:var(--muted)">(5-page)</span></td><td class="right">$2,500</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="w-bp"><td><input type="checkbox" onchange="toggleSingle(this,'w-bp','web-oto-tier');if(this.checked)promptHosting('w-bp','10p')"/></td><td>Business Pro* <span style="font-size:10px;color:var(--muted)">(10-page)</span></td><td class="right">$3,750</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="w-custom"><td><input type="checkbox" onchange="toggleSingle(this,'w-custom','web-oto-tier');if(this.checked)promptHosting('w-custom','ecomm')"/></td><td>Custom Site / E-Commerce</td><td class="right">QUR</td><td class="right">—</td><td><input type="text" placeholder="50% Down / 50% Launch"/></td></tr>
             <tr data-id="w-module"><td><input type="checkbox" onchange="toggle(this,'w-module')"/></td><td>Modules (Newsletter, Photo/Video, Testimonial, News/Blog, Calendar)</td><td class="right">$750 ea</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="w-vid-setup"><td><input type="checkbox" onchange="toggle(this,'w-vid-setup')"/></td><td>Visitor IDs Setup Fee</td><td class="right">$199</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="w-vid200"><td><input type="checkbox" onchange="toggleSingle(this,'w-vid200','vid-pkg')"/></td><td>200 Visitor IDs ‡</td><td class="right">$199/mo</td><td class="right">Monthly</td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -339,10 +340,10 @@ textarea{resize:vertical;min-height:70px}
         <table class="svc-table">
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Monthly Fee</th><th>Notes</th></tr></thead>
           <tbody>
-            <tr data-id="wm-1p"><td><input type="checkbox" onchange="toggle(this,'wm-1p')"/></td><td>1-Page ◊</td><td class="right">$199/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-5p"><td><input type="checkbox" onchange="toggle(this,'wm-5p')"/></td><td>5-Page ◊</td><td class="right">$299/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-10p"><td><input type="checkbox" onchange="toggle(this,'wm-10p')"/></td><td>10-Page ◊</td><td class="right">$399/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-ecomm"><td><input type="checkbox" onchange="toggle(this,'wm-ecomm')"/></td><td>E-Commerce §</td><td class="right">$599/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="wm-1p"><td><input type="checkbox" onchange="toggleSingle(this,'wm-1p','web-mrr-tier')"/></td><td>1-Page ◊</td><td class="right">$199/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="wm-5p"><td><input type="checkbox" onchange="toggleSingle(this,'wm-5p','web-mrr-tier')"/></td><td>5-Page ◊</td><td class="right">$299/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="wm-10p"><td><input type="checkbox" onchange="toggleSingle(this,'wm-10p','web-mrr-tier')"/></td><td>10-Page ◊</td><td class="right">$399/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="wm-ecomm"><td><input type="checkbox" onchange="toggleSingle(this,'wm-ecomm','web-mrr-tier')"/></td><td>E-Commerce §</td><td class="right">$599/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="wm-hosting"><td><input type="checkbox" onchange="toggle(this,'wm-hosting')"/></td><td>Hosting Only</td><td class="right">$49/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="wm-host-content"><td><input type="checkbox" onchange="toggle(this,'wm-host-content')"/></td><td>Hosting & Content</td><td class="right">$69/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="wm-host-ai"><td><input type="checkbox" onchange="toggle(this,'wm-host-ai')"/></td><td>Hosting, Content & AI Chatbot or Ecomm**</td><td class="right">$89/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -744,25 +745,27 @@ textarea{resize:vertical;min-height:70px}
       <div style="padding:18px">
         <div id="koc-products-list" style="font-size:12px;color:#92400E;margin-bottom:16px;font-weight:600"></div>
 
-        <!-- Hero: calendar link -->
+        <!-- Step 1: Click calendar to schedule -->
         <div id="koc-calendar-link-row" style="display:none;margin-bottom:16px">
-          <a id="koc-calendar-link" href="#" target="_blank"
-            style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:var(--accent);color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none">📅 Open <span id="koc-am-cal-name" style="display:inline">AM</span>'s Calendar to Schedule →
+          <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Step 1: Open the AM's calendar and book the call</p>
+          <a id="koc-calendar-link" href="#" target="_blank" onclick="onKocCalendarClicked()"
+            style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:var(--accent);color:#fff;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.15)">📅 Open <span id="koc-am-cal-name" style="display:inline">AM</span>'s Calendar →
           </a>
           <p style="font-size:11px;color:var(--muted);margin-top:10px">A confirmation will be sent to you and the client once booked.</p>
         </div>
 
-        <!-- Secondary: enter date/time once booked -->
-        <div style="background:var(--light);border-radius:10px;padding:14px 16px">
-          <p style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px">Once booked — enter the date &amp; time below</p>
+        <!-- Step 2: Enter date/time (locked until calendar is clicked) -->
+        <div id="koc-datetime-section" style="background:#F3F4F6;border-radius:10px;padding:14px 16px;opacity:0.4;pointer-events:none">
+          <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Step 2: Enter the date & time you booked</p>
+          <p id="koc-lock-msg" style="font-size:11px;color:#92400E;margin-bottom:12px">⬆ Open the calendar above first to unlock these fields</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
               <label class="lbl">KOC Date <span style="color:#EF4444">*</span></label>
-              <input type="date" id="koc-date" oninput="onKocDateChange()"/>
+              <input type="date" id="koc-date" disabled/>
             </div>
             <div>
               <label class="lbl">KOC Time <span style="color:#EF4444">*</span></label>
-              <select id="koc-time" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px">
+              <select id="koc-time" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px">
                 <option value="">Select time...</option>
                 <option value="7:00 AM">7:00 AM</option><option value="7:30 AM">7:30 AM</option>
                 <option value="8:00 AM">8:00 AM</option><option value="8:30 AM">8:30 AM</option>
@@ -1743,6 +1746,25 @@ function onKocDateChange() {
   // Just a hook for future use
 }
 
+let kocCalendarOpened = false;
+
+function onKocCalendarClicked() {
+  // Unlock the date/time fields after the AM's calendar is opened
+  kocCalendarOpened = true;
+  const section = document.getElementById('koc-datetime-section');
+  if (section) {
+    section.style.opacity = '';
+    section.style.pointerEvents = '';
+    section.style.background = '#F0FDF4';
+  }
+  const lockMsg = document.getElementById('koc-lock-msg');
+  if (lockMsg) lockMsg.innerHTML = '✓ <span style="color:#166534">Calendar opened — now enter the date and time you booked</span>';
+  const dateEl = document.getElementById('koc-date');
+  const timeEl = document.getElementById('koc-time');
+  if (dateEl) dateEl.disabled = false;
+  if (timeEl) timeEl.disabled = false;
+}
+
 function kocIsRequired() {
   // Returns true if any selected product requires a KOC
   return Object.keys(selected).some(id => {
@@ -1822,6 +1844,23 @@ function updateKocCard() {
     linkRow.style.display = 'block';
   } else {
     linkRow.style.display = 'none';
+  }
+
+  // Restore lock/unlock state of date/time fields
+  const section = document.getElementById('koc-datetime-section');
+  const dateEl = document.getElementById('koc-date');
+  const timeEl = document.getElementById('koc-time');
+  const lockMsg = document.getElementById('koc-lock-msg');
+  if (kocCalendarOpened) {
+    if (section) { section.style.opacity = ''; section.style.pointerEvents = ''; section.style.background = '#F0FDF4'; }
+    if (lockMsg) lockMsg.innerHTML = '✓ <span style="color:#166534">Calendar opened — now enter the date and time you booked</span>';
+    if (dateEl) dateEl.disabled = false;
+    if (timeEl) timeEl.disabled = false;
+  } else {
+    if (section) { section.style.opacity = '0.4'; section.style.pointerEvents = 'none'; section.style.background = '#F3F4F6'; }
+    if (lockMsg) lockMsg.textContent = '⬆ Open the calendar above first to unlock these fields';
+    if (dateEl) dateEl.disabled = true;
+    if (timeEl) timeEl.disabled = true;
   }
 }
 
@@ -2451,6 +2490,8 @@ const SPEND_MINIMUMS = {
 
 function updateSpend(input, id) {
   if (selected[id]) selected[id].spend = parseFloat(input.value) || 0;
+  // Clear the required highlight once a value is entered
+  if (parseFloat(input.value) > 0) input.classList.remove('spend-missing');
   // Show below-minimum warning inline
   const min = SPEND_MINIMUMS[id];
   const val = parseFloat(input.value) || 0;
@@ -2474,6 +2515,9 @@ function updateSpend(input, id) {
 // Behaves like radio buttons but uses checkboxes so the selected
 // item can be deselected by clicking it again.
 const RADIO_GROUPS = {
+  // Website tiers (single-select within OTO and MRR)
+  'web-oto-tier': ['w-bs','w-bb','w-bp','w-custom'],
+  'web-mrr-tier': ['wm-1p','wm-5p','wm-10p','wm-ecomm'],
   // Website Visitor IDs (cross-section exclusive)
   'vid-pkg':    ['w-vid200','w-vid350','w-vid500','w-vid200e','w-vid350e','w-vid500e'],
   'wm-vid-pkg': ['wm-vid200','wm-vid350','wm-vid500','wm-vid200e','wm-vid350e','wm-vid500e'],
@@ -2599,15 +2643,38 @@ function updateBadges() {
       badge.className = 'badge' + (count > 0 ? ' active' : '');
     }
   });
+  // Auto-save draft on every service change
+  autoSaveDraft();
 }
 
 // ── STEP NAVIGATION ───────────────────────────────────────────
 function goStep(n) {
   if (n === 3) {
-    const missingSpend = Object.entries(selected).filter(([id,d]) => (d.cpm || d.cpc) && !d.spend);
+    // Hard block if ad products selected with no spend — highlight the fields
+    const missingSpend = Object.entries(selected).filter(([id,d]) => {
+      const min = SPEND_MINIMUMS[id];
+      return min && min > 0 && !d.spend;
+    });
+    // Clear previous highlights
+    document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
     if (missingSpend.length > 0) {
-      const names = missingSpend.map(([,d]) => d.label.split('—')[1]?.trim() || d.label).join(', ');
-      if (!confirm('No campaign spend entered for: ' + names + '.\n\nContinue anyway?')) return;
+      // Highlight each missing spend input and open its section
+      missingSpend.forEach(([id]) => {
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (!row) return;
+        const input = row.querySelector('input[type=number]');
+        if (input) {
+          input.classList.add('spend-missing');
+          input.placeholder = '$ required';
+        }
+        // Open the section so the user can see the highlighted field
+        const section = row.closest('.card-body');
+        if (section) section.style.display = 'block';
+      });
+      // Scroll to the first one
+      const firstMissing = document.querySelector('.spend-missing');
+      if (firstMissing) firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
+      return; // Block navigation
     }
     buildReview();
     updateKocCard();
@@ -2632,6 +2699,7 @@ function goStep(n) {
   currentStep = n;
   document.body.scrollTop = 0;
   document.documentElement.scrollTop = 0;
+  autoSaveDraft();
 }
 
 // ── BUILD REVIEW ──────────────────────────────────────────────
@@ -2801,13 +2869,20 @@ async function submitIO() {
     const kocDate = document.getElementById('koc-date')?.value || '';
     const kocTime = document.getElementById('koc-time')?.value || '';
 
-    // Hard block if KOC required but not scheduled
-    if (kocIsRequired() && selectedGroup?.has_koc && !kocDate) {
-      showToast('Please schedule a Kick-Off Call date before submitting', 'error');
-      btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
-      // Scroll to KOC card
-      document.getElementById('koc-card')?.scrollIntoView({behavior:'smooth', block:'center'});
-      return;
+    // Hard block if KOC required but not scheduled properly
+    if (kocIsRequired() && selectedGroup?.has_koc) {
+      if (!kocCalendarOpened) {
+        showToast('Please open the AM calendar and schedule the Kick-Off Call before submitting', 'error');
+        btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+        document.getElementById('koc-card')?.scrollIntoView({behavior:'smooth', block:'center'});
+        return;
+      }
+      if (!kocDate) {
+        showToast('Please enter the KOC date you booked', 'error');
+        btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+        document.getElementById('koc-date')?.focus();
+        return;
+      }
     }
 
     // Determine tier from social media selection
@@ -2841,6 +2916,16 @@ async function submitIO() {
     // Prorated hosting additions to one-time total
     let proratedTotal = 0;
     Object.values(hostingChoices).forEach(h => { if (h.choice === 'us' && h.proratedAmt) proratedTotal += h.proratedAmt; });
+
+    // Hard block if any ad product has no spend entered
+    const noSpend = lineItems.filter(li => {
+      const min = SPEND_MINIMUMS[li.service_id];
+      return min && min > 0 && (!li.spend || li.spend <= 0);
+    });
+    if (noSpend.length > 0) {
+      const names = noSpend.map(li => li.label).join(', ');
+      throw new Error('Monthly spend is required for: ' + names + '. Go back to Step 2 and enter spend amounts.');
+    }
 
     const oneTime = Object.values(selected).reduce((a,s) => a + (s.fee||0), 0) + proratedTotal;
     const monthly = Object.values(selected).reduce((a,s) => a + (s.recurring||0) + (s.spend||0), 0);
@@ -3712,7 +3797,9 @@ ${specialInstructions ? `<div style="margin-top:16px;padding:12px 14px;backgroun
 // ── DRAFT SAVE/LOAD ────────────────────────────────────────────
 function saveDraft() {
   const draft = {
+    // Step 1 fields
     ae: document.getElementById('ae-name').value,
+    aeTrello: document.getElementById('ae-trello')?.value || '',
     biz: document.getElementById('biz-name').value,
     contact: document.getElementById('contact-name').value,
     phone: document.getElementById('contact-phone').value,
@@ -3725,11 +3812,64 @@ function saveDraft() {
     campaignLength: document.getElementById('campaign-length').value,
     campaignEnd: document.getElementById('campaign-end').value,
     campaignNotes: document.getElementById('campaign-notes').value,
-    kocDate: document.getElementById('koc-date').value,
-    kocTime: document.getElementById('koc-time').value,
+    specialInstructions: document.getElementById('special-instructions')?.value || '',
+    // Step 2 — full order state
+    selected: selected,
+    intakeData: intakeData,
+    hostingChoices: hostingChoices,
+    // Spend values per service
+    spendValues: {},
+    // Notes per service
+    noteValues: {},
   };
+  // Capture spend/note input values from the DOM
+  Object.keys(selected).forEach(id => {
+    const row = document.querySelector(`tr[data-id="${id}"]`);
+    if (!row) return;
+    const spendInput = row.querySelector('input[type=number]');
+    const noteInput = row.querySelector('input[type=text]');
+    if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
+    if (noteInput && noteInput.value) draft.noteValues[id] = noteInput.value;
+  });
   localStorage.setItem('io_draft', JSON.stringify(draft));
   showToast('Draft saved!');
+}
+
+// Auto-save silently (no toast) on every service change
+function autoSaveDraft() {
+  try {
+    const draft = {
+      ae: document.getElementById('ae-name').value,
+      aeTrello: document.getElementById('ae-trello')?.value || '',
+      biz: document.getElementById('biz-name').value,
+      contact: document.getElementById('contact-name').value,
+      phone: document.getElementById('contact-phone').value,
+      email: document.getElementById('contact-email').value,
+      website: document.getElementById('website-url').value,
+      city: document.getElementById('city').value,
+      bizType: document.getElementById('biz-type').value,
+      ioDate: document.getElementById('io-date').value,
+      campaignStart: document.getElementById('campaign-start').value,
+      campaignLength: document.getElementById('campaign-length').value,
+      campaignEnd: document.getElementById('campaign-end').value,
+      campaignNotes: document.getElementById('campaign-notes').value,
+      specialInstructions: document.getElementById('special-instructions')?.value || '',
+      selected: selected,
+      intakeData: intakeData,
+      hostingChoices: hostingChoices,
+      spendValues: {},
+      noteValues: {},
+    };
+    Object.keys(selected).forEach(id => {
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      if (!row) return;
+      const spendInput = row.querySelector('input[type=number]');
+      const noteInput = row.querySelector('input[type=text]');
+      if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
+      if (noteInput && noteInput.value) draft.noteValues[id] = noteInput.value;
+    });
+    localStorage.setItem('io_draft', JSON.stringify(draft));
+  } catch(e) { /* silent */ }
 }
 
 function loadDraft() {
@@ -3738,7 +3878,9 @@ function loadDraft() {
     if (!raw) return;
     const d = JSON.parse(raw);
     const set = (id, val) => { const el = document.getElementById(id); if(el && val) el.value = val; };
+    // Step 1 fields
     set('ae-name', d.ae);
+    set('ae-trello', d.aeTrello);
     set('biz-name', d.biz);
     set('contact-name', d.contact);
     set('contact-phone', d.phone);
@@ -3751,9 +3893,42 @@ function loadDraft() {
     set('campaign-length', d.campaignLength);
     set('campaign-end', d.campaignEnd);
     set('campaign-notes', d.campaignNotes);
-    set('koc-date', d.kocDate);
-    set('koc-time', d.kocTime);
-  } catch(e) {}
+    set('special-instructions', d.specialInstructions);
+    // Restore selected services
+    if (d.selected && typeof d.selected === 'object') {
+      Object.entries(d.selected).forEach(([id, data]) => {
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        if (!row) return;
+        const cb = row.querySelector('input[type=checkbox]');
+        if (cb && !cb.checked) {
+          cb.checked = true;
+          selected[id] = data;
+          row.classList.add('selected');
+        }
+      });
+      // Restore spend and note values
+      if (d.spendValues) {
+        Object.entries(d.spendValues).forEach(([id, val]) => {
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          if (!row) return;
+          const input = row.querySelector('input[type=number]');
+          if (input) { input.value = val; if (selected[id]) selected[id].spend = parseFloat(val) || 0; }
+        });
+      }
+      if (d.noteValues) {
+        Object.entries(d.noteValues).forEach(([id, val]) => {
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          if (!row) return;
+          const input = row.querySelector('input[type=text]');
+          if (input) input.value = val;
+        });
+      }
+      updateBadges();
+    }
+    // Restore intake data
+    if (d.intakeData) intakeData = d.intakeData;
+    if (d.hostingChoices) hostingChoices = d.hostingChoices;
+  } catch(e) { console.warn('Could not load draft:', e); }
 }
 
 function clearDraft() {
@@ -3767,6 +3942,7 @@ function resetForm() {
   intakeData = {};
   hostingChoices = {};
   globalKocSchedule = null;
+  kocCalendarOpened = false;
   currentIntakeServiceId = null;
   document.querySelectorAll('.koc-row-badge').forEach(el => el.remove());
   setVidGroupDisabled('vid-pkg', false);
