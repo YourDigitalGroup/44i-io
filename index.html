@@ -3292,6 +3292,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
     document.getElementById('success-chips').innerHTML = chips;
     document.getElementById('page-3').style.display = 'none';
     document.getElementById('page-success').style.display = 'block';
+    clearDraft();
     window.scrollTo({top:0,behavior:'smooth'});
 
   } catch(e) {
