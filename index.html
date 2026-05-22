@@ -2845,10 +2845,14 @@ async function submitIO() {
     const oneTime = Object.values(selected).reduce((a,s) => a + (s.fee||0), 0) + proratedTotal;
     const monthly = Object.values(selected).reduce((a,s) => a + (s.recurring||0) + (s.spend||0), 0);
 
+    // Use real UUID group_id, or null for dev mode
+    const isRealUuid = selectedGroup.id && /^[0-9a-f]{8}-/.test(selectedGroup.id);
+    const groupId = isRealUuid ? selectedGroup.id : null;
+
     // 1. Create client in Supabase
     const clientPayload = {
       name: bizName,
-      group_id: selectedGroup.id,
+      group_id: groupId,
       contact_name: document.getElementById('contact-name').value,
       contact_email: document.getElementById('contact-email').value,
       contact_phone: document.getElementById('contact-phone').value,
@@ -2865,7 +2869,7 @@ async function submitIO() {
     // 1b. Save order directly to Supabase
     const orderPayload = {
       client_id: client?.id || null,
-      group_id: selectedGroup.id,
+      group_id: groupId,
       ae_name: document.getElementById('ae-name').value,
       io_date: document.getElementById('io-date').value,
       campaign_start: document.getElementById('campaign-start').value || null,
