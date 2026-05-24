@@ -1138,8 +1138,9 @@ const PRODUCT_CONFIG = {
   // GBP — KOC + intake
   'gbp-setup':  { koc:'required', intake:'gbp',          label:'Google Business Profile Setup' },
   // AI ChatBot — KOC + intake
-  'wm-ai':      { koc:'required', intake:'chatbot',      label:'AI ChatBot' },
-  'wm-host-ai': { koc:'required', intake:'chatbot',      label:'Hosting + Content + AI ChatBot' },
+  'wm-ai':       { koc:'required', intake:'chatbot',     label:'AI ChatBot' },
+  'wm-host-ai':  { koc:'required', intake:'chatbot',     label:'Hosting + Content + AI ChatBot' },
+  'wm-host-all': { koc:'required', intake:'chatbot',     label:'Hosting + Content + AI ChatBot + ADA' },
   // Visitor IDs — intake required, no KOC
   'w-vid-setup':{ koc:'none',     intake:'visitorid',    label:'Visitor IDs Setup' },
   'w-vid200':   { koc:'none',     intake:'visitorid',    label:'200 Visitor IDs' },
@@ -2303,9 +2304,9 @@ const SERVICE_DATA = {
   'wm-ecomm':{'label':'Website E-Commerce §','fee':0,'recurring':599,'section':'web-mo','workflow':'Website'},
   'wm-hosting':{'label':'Website Hosting Only','fee':0,'recurring':49,'section':'web-mo'},
   'wm-host-content':{'label':'Website Hosting & Content','fee':0,'recurring':69,'section':'web-mo'},
-  'wm-host-ai':{'label':'Website Hosting + Content + AI Chatbot**','fee':0,'recurring':89,'section':'web-mo'},
-  'wm-host-all':{'label':'Website Hosting + Content + AI Chatbot + ADA','fee':0,'recurring':109,'section':'web-mo'},
-  'wm-ai':{'label':'AI ChatBot**','fee':0,'recurring':79,'section':'web-mo'},
+  'wm-host-ai':{'label':'Website Hosting + Content + AI Chatbot**','fee':0,'recurring':89,'section':'web-mo','workflow':'AI ChatBot'},
+  'wm-host-all':{'label':'Website Hosting + Content + AI Chatbot + ADA','fee':0,'recurring':109,'section':'web-mo','workflow':'AI ChatBot'},
+  'wm-ai':{'label':'AI ChatBot**','fee':0,'recurring':79,'section':'web-mo','workflow':'AI ChatBot'},
   'wm-email':{'label':'Addl. Email Addresses','fee':0,'recurring':7,'section':'web-mo'},
   'wm-content':{'label':'Website Optional Content Support','fee':175,'recurring':null,'section':'web-mo'},
   // TLP
@@ -3006,6 +3007,7 @@ async function submitIO() {
           'Website (5-page)':           ['website', '5 page'],
           'Website (10-page)':          ['website', '10 page'],
           'SEO/AEO':                    ['seo', 'packages', seoTier],
+          'AI ChatBot':                 ['ai chatbot'],
           'Social Media Management':    null,
           'Targeted Landing Pages':     null,
           'Email Marketing':            null,
@@ -3033,10 +3035,8 @@ async function submitIO() {
 
         // ── Map intake form data to a tactic name ──
         const WORKFLOW_TO_INTAKE = {
-          'Website (1-page)':           'sm',
-          'Website (5-page)':           'sm',
-          'Website (10-page)':          'sm',
           'SEO/AEO':                    'seo',
+          'AI ChatBot':                 'chatbot',
           'Social Media Management':    'sm',
           'Targeted Landing Pages':     'tlp',
           'Email Marketing':            'email',
@@ -3142,13 +3142,22 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           body: JSON.stringify({ target: 'trello_get_list_cards', list_id: clientList.id })
         });
         const existingCards = await existingCardsRes.json();
+
+        // Normalize card names for comparison: lowercase, trim, strip trailing dashes/colons/whitespace
+        // This catches template placeholders like "IO -", "Website Monthly Package: 5-page Custom -"
+        const norm = n => (n || '').toLowerCase().trim().replace(/[\s\-–—:]+$/g, '').trim();
+        const isIoName = n => norm(n) === 'io';
+
         const existingCardNames = Array.isArray(existingCards)
-          ? existingCards.map(c => c.name.toLowerCase())
-          : [];
+          ? new Set(existingCards.map(c => norm(c.name)))
+          : new Set();
+        // Track every card we create/copy during THIS submission so we never duplicate within a run
+        const addedCardNames = new Set();
+        const cardExists = name => existingCardNames.has(norm(name)) || addedCardNames.has(norm(name));
 
         // ── Step 4: Create or update IO card ──
         const existingIoCard = Array.isArray(existingCards)
-          ? existingCards.find(c => /^io$/i.test(c.name.trim()))
+          ? existingCards.find(c => isIoName(c.name))
           : null;
 
         if (existingIoCard) {
@@ -3166,6 +3175,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
             body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: 'IO', desc: ioDesc, pos: 'top' })
           });
+          addedCardNames.add(norm('IO'));
           console.log('Created IO card');
         }
 
@@ -3196,12 +3206,12 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               for (const card of templateCards) {
                 if (card.name.startsWith('🧪')) continue; // skip test cards
                 const cn = card.name.trim();
-                // Skip IO card from template (we build our own)
-                if (/^io$/i.test(cn)) continue;
-                // Skip if card with this name already exists
-                if (existingCardNames.includes(cn.toLowerCase())) continue;
+                // Skip any template placeholder named "IO", "IO -", "IO :", etc.
+                if (isIoName(cn)) continue;
+                // Skip if card with this name already exists OR was just added in this run
+                if (cardExists(cn)) continue;
 
-                // AE Questions card — rename, inject intake data, add green label
+                // AE Questions card — rename, mark for green label
                 const isAeCard = /^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn);
                 const newName = isAeCard ? `AE Questions - ${bizName}` : cn;
 
@@ -3211,17 +3221,24 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: newName, pos: 'bottom' })
                 });
                 const copiedCard = await copyRes.json();
+                addedCardNames.add(norm(newName));
                 cardsAdded++;
 
-                // If AE Questions card — inject intake data and add green label
-                if (isAeCard && copiedCard.id) {
-                  const desc = intakeDesc || 'No intake data provided — AM to collect on KOC';
+                // Inject intake data into EVERY copied tactic card (appending to any template description)
+                if (intakeDesc && copiedCard?.id) {
+                  const templateDesc = copiedCard.desc || '';
+                  const combined = templateDesc
+                    ? templateDesc + '\n\n---\n\n' + intakeDesc
+                    : intakeDesc;
                   await fetch(PROXY, {
                     method: 'POST',
                     headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                    body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: desc.slice(0, 16000) })
+                    body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: combined.slice(0, 16000) })
                   });
-                  // Add green label
+                }
+
+                // AE Questions card — green label
+                if (isAeCard && copiedCard?.id) {
                   await fetch(PROXY, {
                     method: 'POST',
                     headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
@@ -3231,30 +3248,34 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               }
             } else {
               // Template list configured but not found — fall back to plain card
-              if (!existingCardNames.includes(wf.toLowerCase())) {
+              if (!cardExists(wf)) {
                 await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
                   body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: wf, desc: intakeDesc, pos: 'bottom' })
                 });
+                addedCardNames.add(norm(wf));
                 cardsAdded++;
               }
             }
           } else {
             // No template — create plain tactic card if not already there
-            if (!existingCardNames.includes(wf.toLowerCase())) {
+            if (!cardExists(wf)) {
               await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
                 body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: wf, desc: intakeDesc, pos: 'bottom' })
               });
+              addedCardNames.add(norm(wf));
               cardsAdded++;
             }
           }
         }
 
         // ── Step 6: Create AE Questions card with ALL intake data + green label ──
-        const hasAeCard = existingCardNames.some(n => /ae questions/i.test(n));
+        const aeCardName = 'AE Questions - ' + bizName;
+        const hasAeCard = cardExists(aeCardName) ||
+                          [...existingCardNames, ...addedCardNames].some(n => /ae questions/i.test(n));
         if (!hasAeCard) {
           // Build combined intake summary for all workflows
           let allIntake = '';
@@ -3266,9 +3287,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           const aeRes = await fetch(PROXY, {
             method: 'POST',
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: 'AE Questions - ' + bizName, desc: allIntake.slice(0, 16000), pos: 'bottom' })
+            body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: aeCardName, desc: allIntake.slice(0, 16000), pos: 'bottom' })
           });
           const aeCard = await aeRes.json();
+          addedCardNames.add(norm(aeCardName));
           // Add green label
           if (aeCard?.id) {
             await fetch(PROXY, {
