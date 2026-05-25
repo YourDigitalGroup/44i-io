@@ -918,11 +918,21 @@ textarea{resize:vertical;min-height:70px}
 <!-- ADMIN PANEL -->
 <div id="page-admin" style="display:none">
   <div class="card">
-    <div style="display:flex;justify-content:flex-end;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
+      <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <button onclick="showAdmin(false)" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✕ Close</button>
     </div>
+
+    <!-- Top-level section tabs: Groups | Orders -->
+    <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
+      <button id="section-tab-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Groups</button>
+      <button id="section-tab-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
+    </div>
+
     <div style="padding:20px">
 
+      <!-- ── SECTION: Groups ── -->
+      <div id="section-groups">
       <!-- Group list -->
       <div id="admin-group-list" style="margin-bottom:20px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -1012,6 +1022,56 @@ textarea{resize:vertical;min-height:70px}
           </div>
         </div>
       </div>
+      </div><!-- /section-groups -->
+
+      <!-- ── SECTION: Orders ── -->
+      <div id="section-orders" style="display:none">
+        <div style="margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Submitted Orders</p>
+
+          <!-- Filters -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;margin-bottom:14px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+            <div>
+              <label class="lbl">Group</label>
+              <select id="orders-filter-group" onchange="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:inherit;background:#fff">
+                <option value="">All groups</option>
+              </select>
+            </div>
+            <div>
+              <label class="lbl">Search</label>
+              <input type="text" id="orders-filter-search" placeholder="Client, AE, or business name..." oninput="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+            </div>
+            <div>
+              <label class="lbl">Date Range</label>
+              <select id="orders-filter-date" onchange="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:inherit;background:#fff">
+                <option value="all">All time</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:flex-end">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:7px 0">
+                <input type="checkbox" id="orders-filter-help" onchange="renderAdminOrders()" style="width:14px;height:14px;accent-color:var(--accent)"/>
+                Needs AM help
+              </label>
+            </div>
+          </div>
+
+          <div id="admin-orders-table">
+            <p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading orders…</p>
+          </div>
+        </div>
+
+        <!-- Order detail panel (read-only for Phase 1) -->
+        <div id="admin-order-detail" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-top:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+            <p style="font-size:14px;font-weight:700;color:var(--text)" id="admin-order-detail-title">Order Detail</p>
+            <button onclick="closeOrderDetail()" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">✕ Close</button>
+          </div>
+          <div id="admin-order-detail-body"></div>
+        </div>
+      </div><!-- /section-orders -->
 
     </div>
   </div>
@@ -1072,7 +1132,7 @@ textarea{resize:vertical;min-height:70px}
     <div class="modal-footer">
       <div></div>
       <div style="display:flex;gap:10px">
-        <button class="btn btn-secondary" onclick="closeHostingModal()">Cancel</button>
+        <button class="btn btn-secondary" onclick="cancelHostingModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveHostingChoice()">Confirm Hosting</button>
       </div>
     </div>
@@ -1084,7 +1144,15 @@ textarea{resize:vertical;min-height:70px}
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
     <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Admin Access</h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Enter your password to continue</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
+    <select id="admin-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
+      <option value="">— Select your name —</option>
+      <option value="James">James</option>
+      <option value="Jon">Jon</option>
+      <option value="Carol">Carol</option>
+      <option value="Peggy">Peggy</option>
+      <option value="Shania">Shania</option>
+    </select>
     <input type="password" id="admin-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkAdminPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
     <div id="admin-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
     <div style="display:flex;gap:9px">
@@ -1098,6 +1166,13 @@ textarea{resize:vertical;min-height:70px}
 const BASE_URL = "https://io.yourdigitalgroupresources.com";
 const BASE_PORTAL_DOMAIN = "https://review.yourdigitalgroupresources.com";
 const SUPABASE_URL = "https://emydtkhnespbxraiijkx.supabase.co";
+
+// ── HTML escape helper — use anywhere user data gets injected into innerHTML
+// Prevents XSS from typed-in business names, intake answers, notes, etc.
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVteWR0a2huZXNwYnhyYWlpamt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTA3NjUsImV4cCI6MjA5MzQ4Njc2NX0.vh_5f19z2cb4_NU0sEKAcPiiNXhQZp-61bBN7lqEKbI";
 const PROXY = SUPABASE_URL + "/functions/v1/claude-proxy";
 
@@ -1742,6 +1817,26 @@ function closeHostingModal() {
   }
 }
 
+// Cancel button — unchecks the product the user was configuring so they're not stuck
+function cancelHostingModal() {
+  const sid = currentHostingServiceId;
+  if (sid) {
+    const row = document.querySelector(`tr[data-id="${sid}"]`);
+    if (row) {
+      const cb = row.querySelector('input[type=checkbox]');
+      if (cb && cb.checked) {
+        cb.checked = false;
+        // Use the same toggle path the row would have used to clean up state
+        toggle(cb, sid);
+      }
+    }
+    delete hostingChoices[sid];
+  }
+  document.getElementById('hosting-modal').style.display = 'none';
+  currentHostingServiceId = null;
+  currentHostingPageType = null;
+}
+
 
 function onKocDateChange() {
   // Just a hook for future use
@@ -2240,13 +2335,25 @@ function hexToRgba(hex, alpha) {
 function applyCustomPricing(pricing) {
   // pricing is a JSON object mapping service IDs to custom prices
   // e.g. {"sm-bs": 650, "sm-bb": 850}
-  // Updates SERVICE_DATA and visible table cells
+  // Updates SERVICE_DATA AND the visible HTML table cells
   try {
     const p = typeof pricing === 'string' ? JSON.parse(pricing) : pricing;
     Object.entries(p).forEach(([id, price]) => {
-      if (SERVICE_DATA[id]) {
-        if (SERVICE_DATA[id].recurring) SERVICE_DATA[id].recurring = price;
-        else SERVICE_DATA[id].fee = price;
+      if (!SERVICE_DATA[id]) return;
+      // Determine field correctly even when recurring is 0 (not just truthy)
+      const isRecurring = SERVICE_DATA[id].recurring !== null && SERVICE_DATA[id].recurring !== undefined;
+      if (isRecurring) SERVICE_DATA[id].recurring = price;
+      else SERVICE_DATA[id].fee = price;
+
+      // Update the visible price cell in the services table
+      // The price cell is the first .right-aligned td in each row
+      const row = document.querySelector(`tr[data-id="${id}"]`);
+      if (row) {
+        const priceCell = row.querySelector('td.right');
+        if (priceCell) {
+          const formatted = Number(price).toLocaleString('en-US', {maximumFractionDigits:0});
+          priceCell.textContent = isRecurring ? `$${formatted}/mo` : `$${formatted}`;
+        }
       }
     });
   } catch(e) { console.warn('Could not apply custom pricing:', e); }
@@ -2266,11 +2373,16 @@ function calcEndDate() {
   const start = document.getElementById('campaign-start').value;
   const months = parseInt(document.getElementById('campaign-length').value);
   if (!start || !months) return;
-  const d = new Date(start);
+  // Anchor at local noon to dodge UTC timezone drift
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(start) ? new Date(start + 'T12:00:00') : new Date(start);
   d.setMonth(d.getMonth() + months);
-  // Set to last day of that month
+  // Set to last day of previous month (so 6-month campaign starting Jan 1 ends Jun 30, not Jul 1)
   d.setDate(d.getDate() - 1);
-  document.getElementById('campaign-end').value = d.toISOString().slice(0,10);
+  // Compose YYYY-MM-DD from local fields, not toISOString (which would drift again)
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  document.getElementById('campaign-end').value = `${yyyy}-${mm}-${dd}`;
 }
 
 // ── SECTION TOGGLE ────────────────────────────────────────────
@@ -2799,14 +2911,19 @@ function clearCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
+let canvasInited = false;
 function initCanvas() {
   const canvas = document.getElementById('sig-canvas');
   if (!canvas) return;
+  // Reset canvas context settings every time (in case theme changes)
   const ctx = canvas.getContext('2d');
   ctx.strokeStyle = '#111';
   ctx.lineWidth = 2;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  // Only bind event listeners ONCE — guard prevents stacked listeners on repeat Step 2↔3 navigations
+  if (canvasInited) return;
+  canvasInited = true;
 
   function getPos(e) {
     const r = canvas.getBoundingClientRect();
@@ -2935,7 +3052,25 @@ async function submitIO() {
     const isRealUuid = selectedGroup.id && /^[0-9a-f]{8}-/.test(selectedGroup.id);
     const groupId = isRealUuid ? selectedGroup.id : null;
 
-    // 1. Create client in Supabase
+    // ── DEV MODE GUARD ───────────────────────────────────────────────
+    // If the selected group isn't a real Supabase row (dev picker), skip the database
+    // and Trello entirely so we don't pollute production with test data.
+    if (!isRealUuid) {
+      console.log('DEV mode submit — skipping Supabase and Trello.');
+      showToast('🧪 DEV mode — order NOT saved (no Supabase / no Trello). Reset to try again.', 'success');
+      // Still go to the success screen so the AE can see the flow
+      const workflowChips = [...workflows].map(w => `<span class="chip green">${esc(w)}</span>`).join('');
+      document.getElementById('success-chips').innerHTML = workflowChips +
+        '<span class="chip" style="background:#FEF3C7;color:#92400E">DEV MODE — NOT SAVED</span>';
+      document.getElementById('page-3').style.display = 'none';
+      document.getElementById('page-success').style.display = 'block';
+      window.scrollTo({top:0,behavior:'smooth'});
+      // Do NOT clearDraft() in dev — let the user keep playing with the data
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────
+
+    // 1. Find or create client in Supabase (dedupe — don't create a new row for the same business+group)
     const clientPayload = {
       name: bizName,
       group_id: groupId,
@@ -2949,8 +3084,29 @@ async function submitIO() {
       campaign_start: document.getElementById('campaign-start').value,
       has_gmb: !!selected['gbp-setup'],
     };
-    const clients = await sb('clients', {method:'POST', body: JSON.stringify(clientPayload)});
-    const client = Array.isArray(clients) ? clients[0] : clients;
+
+    let client = null;
+    try {
+      // Look for an existing client with the same business name in this group
+      const groupClause = groupId ? '&group_id=eq.' + groupId : '&group_id=is.null';
+      const existing = await sb('clients?name=eq.' + encodeURIComponent(bizName) + groupClause + '&limit=1');
+      if (Array.isArray(existing) && existing.length) {
+        client = existing[0];
+        // Update with the latest contact info in case it changed
+        try {
+          await sb('clients?id=eq.' + client.id, {
+            method: 'PATCH',
+            body: JSON.stringify(clientPayload),
+            prefer: 'return=minimal'
+          });
+        } catch(e) { console.warn('Could not update existing client:', e.message); }
+      }
+    } catch(e) { console.warn('Client lookup failed, will create new:', e.message); }
+
+    if (!client) {
+      const clients = await sb('clients', {method:'POST', body: JSON.stringify(clientPayload)});
+      client = Array.isArray(clients) ? clients[0] : clients;
+    }
 
     // 1b. Save order directly to Supabase
     const orderPayload = {
@@ -3085,7 +3241,7 @@ async function submitIO() {
               if (val) {
                 desc += `✅ **${field.label}:** ${val}\n`;
               } else {
-                desc += `❌ **${field.label}:** _(not provided)_\n`;
+                desc += `❌ **${field.label}:**\n`;
               }
             });
           });
@@ -3303,6 +3459,23 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         }
 
         showToast(`✅ Trello list ready — ${cardsAdded} new card${cardsAdded !== 1 ? 's' : ''} added`);
+
+        // Mark the order as successfully synced to Trello (guards future auto-purge)
+        if (orderId) {
+          try {
+            await sb('orders?id=eq.' + orderId, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                trello_synced: true,
+                trello_synced_at: new Date().toISOString(),
+                trello_client_list_id: clientList?.id || null,
+              }),
+              prefer: 'return=minimal'
+            });
+          } catch(e) {
+            console.warn('Could not mark order as Trello-synced:', e.message);
+          }
+        }
         } // end proxy check
       } catch(e) {
         console.warn('Trello setup failed:', e.message);
@@ -3330,19 +3503,26 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
 
 
 // ── ADMIN AUTH ─────────────────────────────────────────────────
+// ── ADMIN AUTH ─────────────────────────────────────────────────
+// Five logins: 2 super-admins (Jon, James — see all groups) +
+// 3 AM-tier (Carol, Peggy, Shania — see only groups where they're am_name)
 const ADMIN_USERS = {
-  'jon':    { email:'jon@44idigital.com',    pw:'jon44i'     },
-  'james':  { email:'james@44idigital.com',  pw:'james44i'   },
+  'James':  { email:'james@44idigital.com',  pw:'james44i',  role:'super' },
+  'Jon':    { email:'jon@44idigital.com',    pw:'jon44i',    role:'super' },
+  'Carol':  { email:'carol@44idigital.com',  pw:'carol44i',  role:'am'    },
+  'Peggy':  { email:'peggy@44idigital.com',  pw:'peggy44i',  role:'am'    },
+  'Shania': { email:'shania@44idigital.com', pw:'shania44i', role:'am'    },
 };
-// NOTE: Change passwords in Supabase groups table or via admin panel before launch
 const ADMIN_ORG = '44i Digital';
+let currentAdminUser = null; // {name, email, role} when logged in
 
 function promptAdmin() {
   const modal = document.getElementById('admin-login-modal');
   modal.style.display = 'flex';
+  document.getElementById('admin-name-select').value = '';
   document.getElementById('admin-pw-input').value = '';
   document.getElementById('admin-pw-error').style.display = 'none';
-  setTimeout(() => document.getElementById('admin-pw-input').focus(), 100);
+  setTimeout(() => document.getElementById('admin-name-select').focus(), 100);
 }
 
 function closeAdminLogin() {
@@ -3350,12 +3530,20 @@ function closeAdminLogin() {
 }
 
 function checkAdminPw() {
+  const name = document.getElementById('admin-name-select').value;
   const pw = document.getElementById('admin-pw-input').value;
-  const match = Object.values(ADMIN_USERS).find(u => u.pw === pw);
-  if (match) {
+  if (!name) {
+    document.getElementById('admin-pw-error').textContent = 'Please select your name.';
+    document.getElementById('admin-pw-error').style.display = 'block';
+    return;
+  }
+  const user = ADMIN_USERS[name];
+  if (user && user.pw === pw) {
+    currentAdminUser = { name, email: user.email, role: user.role };
     closeAdminLogin();
     showAdmin(true);
   } else {
+    document.getElementById('admin-pw-error').textContent = 'Incorrect password. Please try again.';
     document.getElementById('admin-pw-error').style.display = 'block';
     document.getElementById('admin-pw-input').value = '';
     document.getElementById('admin-pw-input').focus();
@@ -3533,14 +3721,44 @@ function onPriceInput(serviceId, val) {
 
 // ── ADMIN ──────────────────────────────────────────────────────
 let allGroups = [];
+let allOrders = [];
 
 function showAdmin(show) {
   const wrap = document.querySelector('.wrap');
   if (wrap) wrap.style.display = show ? 'none' : 'block';
   document.getElementById('page-admin').style.display = show ? 'block' : 'none';
-  if (show) loadAdminGroups();
-  else {
+  if (show) {
+    // Render the user badge in the admin header
+    const badge = document.getElementById('admin-user-badge');
+    if (badge && currentAdminUser) {
+      const roleLabel = currentAdminUser.role === 'super' ? 'Super Admin' : 'Account Manager';
+      const dotColor = currentAdminUser.role === 'super' ? '#10B981' : '#3B82F6';
+      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${dotColor}"></span><strong style="color:var(--text)">${esc(currentAdminUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
+    }
+    // Default to Groups section
+    adminSection('groups');
+  } else {
     if (wrap) wrap.style.display = 'block';
+  }
+}
+
+// ── ADMIN SECTION SWITCHER ─────────────────────────────────────
+function adminSection(section) {
+  const isGroups = section === 'groups';
+  document.getElementById('section-groups').style.display = isGroups ? 'block' : 'none';
+  document.getElementById('section-orders').style.display = isGroups ? 'none' : 'block';
+  // Tab styling
+  const tabG = document.getElementById('section-tab-groups');
+  const tabO = document.getElementById('section-tab-orders');
+  tabG.style.borderBottomColor = isGroups ? 'var(--accent)' : 'transparent';
+  tabG.style.color = isGroups ? 'var(--accent)' : 'var(--muted)';
+  tabO.style.borderBottomColor = isGroups ? 'transparent' : 'var(--accent)';
+  tabO.style.color = isGroups ? 'var(--muted)' : 'var(--accent)';
+  // Load data
+  if (isGroups) {
+    loadAdminGroups();
+  } else {
+    loadAdminOrders();
   }
 }
 
@@ -3551,6 +3769,270 @@ async function loadAdminGroups() {
   } catch(e) {
     showToast('Error loading groups: ' + e.message, 'error');
   }
+}
+
+// ── ORDERS SECTION ─────────────────────────────────────────────
+async function loadAdminOrders() {
+  const el = document.getElementById('admin-orders-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading orders…</p>';
+  closeOrderDetail();
+  try {
+    // Always load groups too, for the filter dropdown + group name resolution
+    if (!allGroups.length) {
+      allGroups = await sb('groups?order=name&select=*') || [];
+    }
+    // Pull last 90 days of orders, newest first
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
+    allOrders = await sb('orders?order=created_at.desc&created_at=gte.' + ninetyDaysAgo + '&select=*') || [];
+    // Resolve client business names (orders have client_id, we need the name)
+    const clientIds = [...new Set(allOrders.map(o => o.client_id).filter(Boolean))];
+    let clientMap = {};
+    if (clientIds.length) {
+      try {
+        const clients = await sb('clients?id=in.(' + clientIds.join(',') + ')&select=id,name');
+        (clients || []).forEach(c => { clientMap[c.id] = c.name; });
+      } catch(e) { /* tolerable — fall back to '(unknown)' */ }
+    }
+    allOrders.forEach(o => { o._client_name = clientMap[o.client_id] || '(unknown)'; });
+    // Apply role-based scoping
+    if (currentAdminUser?.role === 'am') {
+      const myGroupIds = allGroups
+        .filter(g => g.am_name && g.am_name.toLowerCase() === currentAdminUser.name.toLowerCase())
+        .map(g => g.id);
+      allOrders = allOrders.filter(o => myGroupIds.includes(o.group_id));
+    }
+    // Populate group filter
+    const groupSelect = document.getElementById('orders-filter-group');
+    const visibleGroupIds = [...new Set(allOrders.map(o => o.group_id).filter(Boolean))];
+    const visibleGroups = allGroups.filter(g => visibleGroupIds.includes(g.id));
+    groupSelect.innerHTML = '<option value="">All groups</option>' +
+      visibleGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+    renderAdminOrders();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading orders: ${e.message}</p>`;
+  }
+}
+
+function renderAdminOrders() {
+  const el = document.getElementById('admin-orders-table');
+  const groupFilter = document.getElementById('orders-filter-group').value;
+  const search = (document.getElementById('orders-filter-search').value || '').toLowerCase().trim();
+  const dateFilter = document.getElementById('orders-filter-date').value;
+  const helpOnly = document.getElementById('orders-filter-help').checked;
+
+  let filtered = allOrders.slice();
+  if (groupFilter) filtered = filtered.filter(o => o.group_id === groupFilter);
+  if (helpOnly) filtered = filtered.filter(o => o.needs_am_help);
+  if (dateFilter && dateFilter !== 'all') {
+    const cutoff = Date.now() - parseInt(dateFilter,10) * 86400000;
+    filtered = filtered.filter(o => new Date(o.created_at).getTime() >= cutoff);
+  }
+  if (search) {
+    filtered = filtered.filter(o =>
+      (o._client_name || '').toLowerCase().includes(search) ||
+      (o.ae_name || '').toLowerCase().includes(search) ||
+      (o.signer_name || '').toLowerCase().includes(search)
+    );
+  }
+
+  if (!filtered.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No orders match the current filters.</p>';
+    return;
+  }
+
+  const groupNameById = {};
+  allGroups.forEach(g => { groupNameById[g.id] = g.name; });
+
+  const fmtDate = s => {
+    if (!s) return '—';
+    // YYYY-MM-DD strings get noon-anchored to avoid one-day-off in US timezones
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
+    return d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  };
+  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US',{maximumFractionDigits:0}) : '—';
+
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Submitted</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Client</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">AE</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Total</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">KOC</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead>
+    <tbody>${filtered.map(o => {
+      const oneTime = o.total_onetime || 0;
+      const monthly = o.total_monthly || 0;
+      const total = oneTime + monthly;
+      const synced = o.trello_synced
+        ? '<span title="Synced to Trello" style="color:#10B981;font-size:14px">✓</span>'
+        : '<span title="Not synced — Trello setup may have failed" style="color:#F59E0B;font-size:14px">⚠</span>';
+      const helpBadge = o.needs_am_help
+        ? '<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 6px;border-radius:10px;margin-left:5px">AM HELP</span>'
+        : '';
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:9px 10px;color:var(--muted)">${fmtDate(o.created_at)}</td>
+        <td style="padding:9px 10px"><strong>${esc(groupNameById[o.group_id] || '—')}</strong></td>
+        <td style="padding:9px 10px">${esc(o._client_name || '—')}${helpBadge}</td>
+        <td style="padding:9px 10px;color:var(--muted)">${esc(o.ae_name || '—')}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:600">${fmtMoney(total)}</td>
+        <td style="padding:9px 10px;color:var(--muted);font-size:11px">${fmtDate(o.koc_date)}${o.koc_time ? '<br>'+esc(o.koc_time) : ''}</td>
+        <td style="padding:9px 10px;text-align:center">${synced}</td>
+        <td style="padding:9px 10px;text-align:right">
+          <button onclick="viewOrderDetail('${esc(o.id)}')" style="padding:5px 12px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:11px;font-weight:600;cursor:pointer">View</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>
+  <p style="margin-top:12px;font-size:11px;color:var(--muted);text-align:right">${filtered.length} order${filtered.length!==1?'s':''} shown · ${allOrders.length} total in last 90 days</p>`;
+}
+
+function viewOrderDetail(orderId) {
+  const o = allOrders.find(x => x.id === orderId);
+  if (!o) return;
+  const groupName = (allGroups.find(g => g.id === o.group_id) || {}).name || '—';
+  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US',{maximumFractionDigits:0}) : '—';
+  // Parse YYYY-MM-DD as local noon to dodge UTC timezone drift (one day off in US)
+  const fmtDate = s => {
+    if (!s) return '—';
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
+    return d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  };
+  const fmtDateTime = s => s ? new Date(s).toLocaleString('en-US', {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—';
+
+  const li = Array.isArray(o.line_items) ? o.line_items : [];
+  const intake = o.intake_responses || {};
+  const hosting = o.hosting_choices || {};
+
+  // Line items
+  let liRows = li.map(item => {
+    let amtParts = [];
+    if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
+    if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
+    if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
+    if (item.prorated_hosting_amt) amtParts.push('+ $' + item.prorated_hosting_amt.toFixed(2) + ' prorated hosting');
+    const kocBadge = item.requires_koc ? '<span style="font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:8px;margin-left:4px">KOC</span>' : '';
+    return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(item.label)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td></tr>`;
+  }).join('') || '<tr><td colspan="3" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
+
+  // Intake forms — show human labels, not field keys
+  let intakeHtml = '';
+  Object.keys(intake).forEach(key => {
+    const data = intake[key];
+    const formDef = (typeof INTAKE_FORMS !== 'undefined') ? INTAKE_FORMS[key] : null;
+    const title = formDef?.title || key;
+    // Build a key→label map from the form definition
+    const labelByKey = {};
+    if (formDef) {
+      formDef.sections.forEach(s => s.fields.forEach(f => { labelByKey[f.key] = f.label; }));
+    }
+    let status, statusColor;
+    if (data.bypassed) { status = 'AM Help Requested'; statusColor = '#92400E'; }
+    else if (data.completed) { status = 'Complete'; statusColor = '#166534'; }
+    else if (data.partial) { status = 'Partial'; statusColor = '#92400E'; }
+    else { status = 'Not Started'; statusColor = '#9CA3AF'; }
+    intakeHtml += `<div style="padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <strong style="font-size:12px">${esc(title)}</strong>
+        <span style="font-size:10px;font-weight:700;color:${statusColor}">${esc(status.toUpperCase())}</span>
+      </div>`;
+    if (data.fields && Object.keys(data.fields).length) {
+      intakeHtml += '<div style="font-size:11px;color:var(--muted);line-height:1.6">';
+      Object.entries(data.fields).forEach(([k,v]) => {
+        if (v) intakeHtml += `<div><strong style="color:var(--text)">${esc(labelByKey[k] || k)}:</strong> ${esc(v)}</div>`;
+      });
+      intakeHtml += '</div>';
+    } else if (data.bypassed) {
+      intakeHtml += '<p style="font-size:11px;color:var(--muted);font-style:italic">AM to cover on Kick-Off Call.</p>';
+    }
+    intakeHtml += '</div>';
+  });
+  if (!intakeHtml) intakeHtml = '<p style="font-size:12px;color:var(--muted);font-style:italic">No intake forms collected.</p>';
+
+  // Hosting choices
+  let hostingHtml = '';
+  Object.keys(hosting).forEach(sid => {
+    const h = hosting[sid];
+    if (h.choice === 'us') {
+      hostingHtml += `<div style="font-size:12px;padding:6px 10px;background:#F0FDF4;border-left:3px solid #10B981;margin-bottom:4px"><strong>${esc(sid)}:</strong> We host${h.package ? ' (' + esc(h.package) + ')' : ''}${h.proratedAmt ? ' — prorated $' + h.proratedAmt.toFixed(2) : ''}</div>`;
+    } else if (h.choice === 'self') {
+      hostingHtml += `<div style="font-size:12px;padding:6px 10px;background:#F9FAFB;border-left:3px solid #9CA3AF;margin-bottom:4px"><strong>${esc(sid)}:</strong> Client self-hosts</div>`;
+    }
+  });
+
+  // Signature
+  const sigData = o.signature_data || '';
+  const sigDisplay = sigData.startsWith('typed:')
+    ? `<div style="font-family:'Dancing Script',cursive;font-size:32px;color:#111">${esc(sigData.replace('typed:',''))}</div>`
+    : sigData.startsWith('data:image')
+      ? `<img src="${esc(sigData)}" style="height:60px;max-width:280px;object-fit:contain"/>`
+      : '<span style="color:var(--muted);font-style:italic">No signature on file</span>';
+
+  document.getElementById('admin-order-detail-title').textContent = `Order — ${o._client_name || 'Unknown'} (${groupName})`;
+  document.getElementById('admin-order-detail-body').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px">
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Submission</div>
+        <div style="font-size:12px;line-height:1.7">
+          <div><strong>Submitted:</strong> ${fmtDateTime(o.created_at)}</div>
+          <div><strong>AE:</strong> ${esc(o.ae_name || '—')}</div>
+          <div><strong>Group:</strong> ${esc(groupName)}</div>
+          <div><strong>IO Date:</strong> ${fmtDate(o.io_date)}</div>
+          <div><strong>KOC:</strong> ${fmtDate(o.koc_date)}${o.koc_time ? ' at ' + esc(o.koc_time) : ''}</div>
+          <div><strong>Trello Synced:</strong> ${o.trello_synced ? '✅ ' + fmtDateTime(o.trello_synced_at) : '⚠ No'}</div>
+          ${o.needs_am_help ? '<div style="margin-top:6px;padding:5px 10px;background:#FEF3C7;border-radius:5px;font-size:11px;color:#92400E"><strong>⚠ AM HELP REQUESTED</strong> on one or more intake forms</div>' : ''}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Campaign</div>
+        <div style="font-size:12px;line-height:1.7">
+          <div><strong>Start:</strong> ${fmtDate(o.campaign_start)}</div>
+          <div><strong>End:</strong> ${fmtDate(o.campaign_end)}</div>
+          <div><strong>Length:</strong> ${o.campaign_length ? esc(o.campaign_length) + ' months' : '—'}</div>
+          <div><strong>One-Time:</strong> ${fmtMoney(o.total_onetime)}</div>
+          <div><strong>Monthly:</strong> ${fmtMoney(o.total_monthly)}/mo</div>
+          ${o.campaign_notes ? '<div style="margin-top:6px;font-size:11px;color:var(--muted)"><strong>Notes:</strong> ' + esc(o.campaign_notes) + '</div>' : ''}
+        </div>
+      </div>
+    </div>
+
+    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Services (${li.length})</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-bottom:18px">
+      <thead><tr style="background:var(--light)">
+        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Service</th>
+        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Amount</th>
+        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Notes</th>
+      </tr></thead>
+      <tbody>${liRows}</tbody>
+    </table>
+
+    ${hostingHtml ? `<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Hosting</div>${hostingHtml}<div style="height:14px"></div>` : ''}
+
+    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Intake Forms</div>
+    ${intakeHtml}
+
+    ${o.special_instructions ? `<div style="margin-top:14px;padding:10px 12px;background:#FFF7ED;border-left:3px solid #F59E0B;border-radius:5px"><div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Special Instructions</div><div style="font-size:12px;color:#78350F">${esc(o.special_instructions)}</div></div>` : ''}
+
+    <div style="margin-top:18px;padding:14px;background:#fff;border:1px solid var(--border);border-radius:6px">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Client Authorization</div>
+      ${sigDisplay}
+      <div style="margin-top:6px;font-size:12px"><strong>${esc(o.signer_name || '—')}</strong>${o.signer_title ? ' — ' + esc(o.signer_title) : ''}</div>
+      <div style="font-size:11px;color:var(--muted)">Signed: ${fmtDateTime(o.signed_at)}</div>
+    </div>
+
+    <div style="margin-top:18px;padding:11px 14px;background:#EFF6FF;border-radius:6px;border:1px solid #BFDBFE;font-size:11px;color:#1E40AF">
+      <strong>Phase 1 — Read Only</strong>  ·  Edit capability coming in the next release. To make changes today, contact the AE or modify the Trello cards directly.
+    </div>
+  `;
+  document.getElementById('admin-order-detail').style.display = 'block';
+  document.getElementById('admin-order-detail').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function closeOrderDetail() {
+  const el = document.getElementById('admin-order-detail');
+  if (el) el.style.display = 'none';
 }
 
 function renderAdminGroups() {
@@ -3576,17 +4058,17 @@ function renderAdminGroups() {
       return `<tr style="border-bottom:1px solid var(--border)">
         <td style="padding:10px 12px">
           <div style="display:flex;align-items:center;gap:8px">
-            <div style="width:10px;height:10px;border-radius:50%;background:${g.brand_color||'#1C9BD7'};flex-shrink:0"></div>
-            <strong>${g.name}</strong>
+            <div style="width:10px;height:10px;border-radius:50%;background:${esc(g.brand_color||'#1C9BD7')};flex-shrink:0"></div>
+            <strong>${esc(g.name)}</strong>
           </div>
         </td>
-        <td style="padding:10px 12px;color:var(--muted);font-family:monospace">${g.io_slug||'—'}</td>
-        <td style="padding:10px 12px;color:var(--muted)">${g.am_name||'—'}<br><span style="font-size:11px">${g.am_email||''}</span></td>
+        <td style="padding:10px 12px;color:var(--muted);font-family:monospace">${esc(g.io_slug||'—')}</td>
+        <td style="padding:10px 12px;color:var(--muted)">${esc(g.am_name||'—')}<br><span style="font-size:11px">${esc(g.am_email||'')}</span></td>
         <td style="padding:10px 12px">${pricingBadge}</td>
-        <td style="padding:10px 12px;color:var(--muted);font-size:11px;font-family:monospace">${g.trello_board_id ? g.trello_board_id.slice(0,8)+'...' : '—'}</td>
+        <td style="padding:10px 12px;color:var(--muted);font-size:11px;font-family:monospace">${g.trello_board_id ? esc(g.trello_board_id.slice(0,8))+'...' : '—'}</td>
         <td style="padding:10px 12px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
-          <button onclick="adminEditGroup('${g.id}')" style="padding:5px 12px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12px;cursor:pointer;font-weight:600">Edit</button>
-          <button onclick="adminEditGroup('${g.id}');setTimeout(()=>adminTab('pricing'),200)" style="padding:5px 12px;border-radius:6px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1d4ed8;font-size:12px;cursor:pointer;font-weight:600">Pricing</button>
+          <button onclick="adminEditGroup('${esc(g.id)}')" style="padding:5px 12px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12px;cursor:pointer;font-weight:600">Edit</button>
+          <button onclick="adminEditGroup('${esc(g.id)}');setTimeout(()=>adminTab('pricing'),200)" style="padding:5px 12px;border-radius:6px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1d4ed8;font-size:12px;cursor:pointer;font-weight:600">Pricing</button>
         </td>
       </tr>`;
     }).join('')}
@@ -3710,12 +4192,18 @@ function printIO() {
   const group = selectedGroup || {};
   const logo = group.logo_url || '';
   const groupName = group.name || 'Your Digital Group';
+  const fromName = group.from_name || groupName;
+  const fromEmail = group.from_email || '';
+  const amName = group.am_name || '';
+  const amEmail = group.am_email || '';
   const color = group.brand_color || '#1C9BD7';
   const bizName = document.getElementById('biz-name').value || '—';
   const contact = document.getElementById('contact-name').value || '—';
   const email = document.getElementById('contact-email').value || '—';
   const phone = document.getElementById('contact-phone').value || '—';
+  const website = document.getElementById('website-url').value || '';
   const city = document.getElementById('city').value || '—';
+  const bizType = document.getElementById('biz-type').value || '';
   const ae = document.getElementById('ae-name').value || '—';
   const kocDate = document.getElementById('koc-date')?.value || '';
   const kocTime = document.getElementById('koc-time')?.value || '';
@@ -3726,141 +4214,325 @@ function printIO() {
   const campNotes = document.getElementById('campaign-notes').value || '';
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
   const ioDate = document.getElementById('io-date').value || today;
+  const ioDateDisplay = ioDate ? new Date(ioDate + 'T12:00:00').toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : today;
   const specialInstructions = document.getElementById('special-instructions')?.value || '';
+  // IO number: YYYYMMDD-BIZ — short, sortable, recognizable
+  const ioNumber = (ioDate || new Date().toISOString().slice(0,10)).replace(/-/g,'') + '-' +
+    (bizName.replace(/[^A-Za-z0-9]/g,'').slice(0,6).toUpperCase() || 'CLIENT');
+
+  // ── Group services by section for subtotals ──
+  const SECTION_LABELS = {
+    'web-ot':'Website (One-Time)', 'web-mo':'Website (Monthly)',
+    'tlp':'Targeted Landing Pages', 'sm':'Social Media Management',
+    'em':'Email Marketing', 'seo':'SEO / AEO', 'rep':'Reputation Management',
+    'llo':'Local Listing Optimization', 'gbp':'Google Business Profile',
+    'td':'Targeted Display', 'sem':'Search Engine Marketing',
+    'sma':'Social Media Ads', 'lt':'Location Targeting',
+    'vid':'Video Advertising', 'ctv':'Streaming TV / OTT / CTV',
+    'audio':'Audio / Mobile / Display', 'alc':'À La Carte',
+  };
+  const grouped = {};
+  Object.entries(selected).forEach(([id, data]) => {
+    const sec = data.section || 'other';
+    if (!grouped[sec]) grouped[sec] = [];
+    grouped[sec].push([id, data]);
+  });
 
   let oneTime = 0, monthly = 0;
-  let lineItems = '';
-  Object.entries(selected).forEach(([id, data]) => {
-    if (data.fee > 0) oneTime += data.fee;
-    if (data.recurring > 0) monthly += data.recurring;
-    if (data.spend > 0) monthly += data.spend;
+  let lineItemsHtml = '';
 
-    let amtCol = '';
-    if (data.fee > 0 && (data.recurring > 0 || data.spend > 0)) {
-      amtCol = fmt(data.fee) + ' setup + ' + fmt(data.recurring > 0 ? data.recurring : data.spend) + '/mo';
-    } else if (data.fee > 0) {
-      amtCol = fmt(data.fee) + ' one-time';
-    } else if (data.recurring > 0 && data.spend > 0) {
-      amtCol = fmt(data.recurring) + '/mo + ' + fmt(data.spend) + '/mo campaign';
-    } else if (data.recurring > 0) {
-      amtCol = fmt(data.recurring) + '/mo';
-    } else if (data.spend > 0) {
-      amtCol = fmt(data.spend) + '/mo campaign';
-    } else {
-      amtCol = 'TBD';
-    }
+  Object.keys(SECTION_LABELS).forEach(sec => {
+    if (!grouped[sec]) return;
+    const items = grouped[sec];
+    let sectionOneTime = 0, sectionMonthly = 0;
+    let sectionRows = '';
 
-    const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
-    const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' — ');
-    lineItems += `<tr><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px">${data.label}</td><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;text-align:right;font-weight:600;white-space:nowrap">${amtCol}</td><td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#6B7280">${notesDisplay}</td></tr>`;
+    items.forEach(([id, data]) => {
+      if (data.fee > 0) { oneTime += data.fee; sectionOneTime += data.fee; }
+      if (data.recurring > 0) { monthly += data.recurring; sectionMonthly += data.recurring; }
+      if (data.spend > 0) { monthly += data.spend; sectionMonthly += data.spend; }
 
-    // Prorated hosting sub-row
-    const h = hostingChoices[id];
-    if (h?.choice === 'us' && h.proratedAmt) {
-      oneTime += h.proratedAmt;
-      lineItems += `<tr style="background:#F0FDF4"><td style="padding:6px 12px 6px 28px;font-size:11px;color:#166534;border-bottom:1px solid #e5e7eb">↳ Prorated hosting — starts ${h.startDate}</td><td style="padding:6px 12px;text-align:right;font-size:11px;color:#166534;font-weight:600;border-bottom:1px solid #e5e7eb">$${h.proratedAmt.toFixed(2)}</td><td style="padding:6px 12px;font-size:11px;color:#166534;border-bottom:1px solid #e5e7eb">${h.days}-day build period from IO date</td></tr>`;
+      let amtCol = '';
+      if (data.fee > 0 && (data.recurring > 0 || data.spend > 0)) {
+        amtCol = fmt(data.fee) + ' setup + ' + fmt(data.recurring > 0 ? data.recurring : data.spend) + '/mo';
+      } else if (data.fee > 0) {
+        amtCol = fmt(data.fee) + ' one-time';
+      } else if (data.recurring > 0 && data.spend > 0) {
+        amtCol = fmt(data.recurring) + '/mo + ' + fmt(data.spend) + '/mo campaign';
+      } else if (data.recurring > 0) {
+        amtCol = fmt(data.recurring) + '/mo';
+      } else if (data.spend > 0) {
+        amtCol = fmt(data.spend) + '/mo campaign';
+      } else {
+        amtCol = 'TBD';
+      }
+
+      const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
+      const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' — ');
+      sectionRows += `<tr><td class="svc-name">${data.label}</td><td class="svc-amt">${amtCol}</td><td class="svc-notes">${notesDisplay || '—'}</td></tr>`;
+
+      const h = hostingChoices[id];
+      if (h?.choice === 'us' && h.proratedAmt) {
+        oneTime += h.proratedAmt;
+        sectionOneTime += h.proratedAmt;
+        sectionRows += `<tr class="prorate-row"><td class="svc-name">↳ Prorated hosting — starts ${h.startDate}</td><td class="svc-amt">$${h.proratedAmt.toFixed(2)}</td><td class="svc-notes">${h.days}-day build period from IO date</td></tr>`;
+      }
+    });
+
+    // Section header + rows + subtotal
+    lineItemsHtml += `<tr class="section-row"><td colspan="3">${SECTION_LABELS[sec]}</td></tr>` + sectionRows;
+    if (sectionOneTime > 0 || sectionMonthly > 0) {
+      const parts = [];
+      if (sectionOneTime > 0) parts.push(fmt(sectionOneTime) + ' one-time');
+      if (sectionMonthly > 0) parts.push(fmt(sectionMonthly) + '/mo');
+      lineItemsHtml += `<tr class="subtotal-row"><td>Subtotal</td><td class="svc-amt">${parts.join(' + ')}</td><td></td></tr>`;
     }
   });
 
-  // Signature data
+  // Signature data — client only
   const sigData = getSignatureData();
   const sigHtml = sigData.startsWith('typed:')
-    ? `<div style="font-family:'Dancing Script',cursive;font-size:32px;color:#111;padding:8px 0">${sigData.replace('typed:','')}</div>`
-    : `<img src="${sigData}" style="height:60px;max-width:300px;object-fit:contain"/>`;
+    ? `<div class="sig-typed">${sigData.replace('typed:','')}</div>`
+    : `<img src="${sigData}" class="sig-drawn"/>`;
   const signerName = document.getElementById('auth-name').value || '';
   const signerTitle = document.getElementById('auth-title').value || '';
+  const signedDate = document.getElementById('auth-date').value || ioDate;
+  const signedDateDisplay = signedDate ? new Date(signedDate + 'T12:00:00').toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ioDateDisplay;
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
-<title>Insertion Order — ${bizName}</title>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
+<title>Insertion Order — ${bizName} — ${ioNumber}</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Montserrat',sans-serif;color:#111827;background:#fff;font-size:13px}
-  @page{margin:0.6in 0.7in}
-  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
-  .header{display:flex;justify-content:space-between;align-items:center;padding-bottom:18px;border-bottom:3px solid ${color};margin-bottom:24px}
-  .header img{height:48px;object-fit:contain;max-width:200px}
-  .header-right{text-align:right}
-  .io-title{font-size:22px;font-weight:800;color:${color}}
-  .io-meta{font-size:11px;color:#6B7280;margin-top:3px}
-  .section-title{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:8px;margin-top:20px}
-  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px}
-  .info-row{display:flex;gap:8px;font-size:12px;padding:3px 0}
-  .info-label{font-weight:700;color:#374151;min-width:120px;flex-shrink:0}
-  .info-value{color:#111827}
-  table{width:100%;border-collapse:collapse;margin-top:8px}
-  thead tr{background:${color};color:#fff}
-  thead th{padding:9px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-  .totals-row td{padding:10px 12px;font-weight:700;font-size:13px;background:#F9FAFB;border-top:2px solid ${color}}
-  .legal{font-size:10px;color:#6B7280;line-height:1.6;margin-top:16px;padding-top:14px;border-top:1px solid #e5e7eb}
-  .legal strong{color:#374151}
-  .sig-section{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:40px}
-  .sig-line{border-top:1px solid #374151;padding-top:6px;font-size:11px;color:#6B7280}
-  .footer{text-align:center;font-size:10px;color:#9CA3AF;margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb}
+  html,body{font-family:'Montserrat',sans-serif;color:#111827;background:#fff}
+  body{font-size:10.5pt;line-height:1.4}
+
+  /* 8.5 x 11 page setup with safe margins */
+  @page{size:letter portrait;margin:0.5in}
+  @media print{
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .page-break{page-break-before:always}
+    thead{display:table-header-group}
+    tfoot{display:table-footer-group}
+    tr,.no-break{page-break-inside:avoid}
+    .section-row td{page-break-after:avoid}
+    .subtotal-row,.totals-row{page-break-inside:avoid}
+    .sig-section{page-break-inside:avoid}
+    .legal{page-break-inside:auto}
+    /* Repeating header on every page */
+    .running-header{position:fixed;top:0;left:0;right:0;font-size:8pt;color:#9CA3AF;padding-bottom:6px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between}
+    /* Repeating footer with page numbers */
+    .running-footer{position:fixed;bottom:0;left:0;right:0;font-size:8pt;color:#9CA3AF;padding-top:6px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between}
+    .running-footer .page-num::after{content:"Page " counter(page) " of " counter(pages)}
+  }
+  @media screen{
+    body{max-width:8.5in;margin:0 auto;padding:0.5in;box-shadow:0 4px 24px rgba(0,0,0,.1);background:#fff;min-height:11in}
+    .running-header,.running-footer{display:none}
+  }
+
+  /* Letterhead */
+  .letterhead{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:3px solid ${color};margin-bottom:18px}
+  .letterhead-left{display:flex;flex-direction:column;gap:6px}
+  .letterhead-left img{height:44px;max-width:240px;object-fit:contain;object-position:left center}
+  .group-name-text{font-size:18pt;font-weight:800;color:${color};letter-spacing:-0.01em}
+  .group-contact{font-size:8.5pt;color:#6B7280;margin-top:4px;line-height:1.5}
+  .letterhead-right{text-align:right}
+  .io-title{font-size:20pt;font-weight:800;color:${color};letter-spacing:-0.02em;line-height:1}
+  .io-meta{font-size:8.5pt;color:#6B7280;margin-top:8px;line-height:1.5}
+  .io-meta strong{color:#374151;font-weight:600}
+
+  /* Bill-to / From blocks */
+  .blocks{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+  .block{border:1px solid #e5e7eb;border-radius:5px;padding:12px 14px;background:#FAFBFC}
+  .block-label{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${color};margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e5e7eb}
+  .block-line{font-size:10pt;color:#111827;line-height:1.5}
+  .block-line strong{font-weight:600}
+  .block-line.muted{color:#6B7280;font-size:9pt}
+
+  /* Section title */
+  .section-title{font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:${color};margin-bottom:8px;margin-top:20px;padding-bottom:5px;border-bottom:1.5px solid ${color}}
+
+  /* Campaign window */
+  .campaign-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;font-size:9.5pt;padding:10px 0}
+  .campaign-row > div{padding:0 4px;border-left:2px solid #e5e7eb}
+  .campaign-row > div:first-child{border-left:none}
+  .campaign-row .cr-label{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:3px}
+  .campaign-row .cr-value{font-weight:600;color:#111827}
+  .campaign-notes-line{margin-top:8px;font-size:9.5pt;color:#374151;padding:8px 12px;background:#F9FAFB;border-left:3px solid ${color};border-radius:3px}
+  .campaign-notes-line strong{font-weight:600;color:#111827}
+
+  /* Services table */
+  table.services{width:100%;border-collapse:collapse;font-size:9.5pt}
+  table.services thead tr{background:${color};color:#fff}
+  table.services thead th{padding:7px 10px;text-align:left;font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  table.services thead th.amt{text-align:right;width:25%}
+  table.services thead th.notes{width:32%}
+  table.services tbody td{padding:6px 10px;border-bottom:1px solid #F1F3F5;vertical-align:top}
+  table.services .svc-name{font-size:9.5pt;color:#111827}
+  table.services .svc-amt{text-align:right;font-weight:600;font-size:9.5pt;color:#111827;white-space:nowrap}
+  table.services .svc-notes{font-size:8.5pt;color:#6B7280;line-height:1.4}
+  table.services .section-row td{background:#F3F4F6;font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};padding:6px 10px;border-top:1px solid #e5e7eb}
+  table.services .subtotal-row td{background:#FAFBFC;font-size:9pt;font-weight:600;color:#374151;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;padding:5px 10px}
+  table.services .prorate-row td{background:#F0FDF4;font-size:8.5pt;color:#166534}
+  table.services .prorate-row .svc-name{padding-left:24px}
+
+  /* Totals box */
+  .totals-box{margin-top:18px;display:flex;justify-content:flex-end}
+  .totals-table{border-collapse:collapse;min-width:55%}
+  .totals-table td{padding:7px 14px;font-size:10pt}
+  .totals-table .label{color:#6B7280;font-weight:500;text-align:right}
+  .totals-table .value{font-weight:700;color:#111827;text-align:right;min-width:120px}
+  .totals-table .grand{border-top:2.5px solid ${color};font-size:11pt}
+  .totals-table .grand .label{color:${color};font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:9pt}
+  .totals-table .grand .value{color:${color};font-size:13pt;font-weight:800}
+  .first-month-note{margin-top:6px;font-size:8.5pt;color:#6B7280;text-align:right;font-style:italic}
+
+  /* Special instructions */
+  .special-box{margin-top:18px;padding:11px 14px;background:#FFF7ED;border-left:3px solid #F59E0B;border-radius:3px;font-size:9.5pt;color:#92400E;line-height:1.5}
+  .special-box strong{display:block;font-weight:700;margin-bottom:3px;color:#78350F;text-transform:uppercase;font-size:8pt;letter-spacing:.05em}
+
+  /* Legal block */
+  .legal{font-size:8pt;color:#6B7280;line-height:1.55;margin-top:22px;padding-top:14px;border-top:1px solid #e5e7eb}
+  .legal-title{font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#374151;margin-bottom:8px}
+  .legal p{margin-bottom:7px}
+  .legal strong{color:#374151;font-weight:600}
+
+  /* Signature — client only */
+  .sig-section{margin-top:26px;padding-top:18px;border-top:1px solid #e5e7eb}
+  .sig-grid{display:grid;grid-template-columns:70%;gap:24px;align-items:flex-end}
+  .sig-label{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6B7280;margin-bottom:8px}
+  .sig-typed{font-family:'Dancing Script',cursive;font-size:26pt;color:#111;line-height:1;padding:4px 0}
+  .sig-drawn{height:54px;max-width:280px;object-fit:contain;object-position:left center;display:block}
+  .sig-line-box{border-bottom:1.5px solid #374151;padding-bottom:4px;min-height:54px;display:flex;align-items:flex-end}
+  .sig-info{margin-top:6px;font-size:9pt;color:#111827;font-weight:600}
+  .sig-info-title{color:#6B7280;font-weight:400;font-size:8.5pt}
+  .sig-date{font-size:8.5pt;color:#6B7280;margin-top:3px}
+
+  /* Running header/footer for print */
+  .running-header span{padding:0 0.5in}
+  .running-footer span{padding:0 0.5in}
 </style></head><body>
 
-<div class="header">
-  ${logo ? `<img src="${logo}" alt="${groupName}"/>` : `<div style="font-size:20px;font-weight:800;color:${color}">${groupName}</div>`}
-  <div class="header-right">
+<!-- Running header & footer (print only) -->
+<div class="running-header">
+  <span>${groupName} — Insertion Order</span>
+  <span>${bizName} · ${ioNumber}</span>
+</div>
+<div class="running-footer">
+  <span>${groupName}${fromEmail ? ' · ' + fromEmail : ''}</span>
+  <span class="page-num"></span>
+</div>
+
+<!-- Letterhead -->
+<div class="letterhead">
+  <div class="letterhead-left">
+    ${logo ? `<img src="${logo}" alt="${groupName}"/>` : `<div class="group-name-text">${groupName}</div>`}
+    <div class="group-contact">
+      ${logo ? `<strong>${groupName}</strong>` : ''}${amName ? `${logo ? '<br>' : ''}Account Manager: ${amName}` : ''}
+    </div>
+  </div>
+  <div class="letterhead-right">
     <div class="io-title">INSERTION ORDER</div>
-    <div class="io-meta">IO Date: ${ioDate} &nbsp;|&nbsp; ${groupName}</div>
+    <div class="io-meta">
+      <strong>IO #:</strong> ${ioNumber}<br>
+      <strong>Date:</strong> ${ioDateDisplay}
+    </div>
   </div>
 </div>
 
-<div class="section-title">Client Information</div>
-<div class="info-grid">
-  <div class="info-row"><span class="info-label">Business:</span><span class="info-value">${bizName}</span></div>
-  <div class="info-row"><span class="info-label">Contact:</span><span class="info-value">${contact}</span></div>
-  <div class="info-row"><span class="info-label">Email:</span><span class="info-value">${email}</span></div>
-  <div class="info-row"><span class="info-label">Phone:</span><span class="info-value">${phone}</span></div>
-  <div class="info-row"><span class="info-label">City / Service Area:</span><span class="info-value">${city}</span></div>
-  <div class="info-row"><span class="info-label">Account Executive:</span><span class="info-value">${ae}</span></div>
-  <div class="info-row"><span class="info-label">Campaign Start:</span><span class="info-value">${campStart}</span></div>
-  <div class="info-row"><span class="info-label">Campaign End:</span><span class="info-value">${campEnd}</span></div>
-  <div class="info-row"><span class="info-label">Campaign Length:</span><span class="info-value">${campLength}</span></div>
-  ${kocDate ? `<div class="info-row"><span class="info-label">Kick-off Call:</span><span class="info-value">${kocDisplay}</span></div>` : ''}
-  ${campNotes ? `<div class="info-row" style="grid-column:1/-1"><span class="info-label">Campaign Notes:</span><span class="info-value">${campNotes}</span></div>` : ''}
+<!-- Bill To / Sold By -->
+<div class="blocks">
+  <div class="block">
+    <div class="block-label">Bill To</div>
+    <div class="block-line"><strong>${bizName}</strong></div>
+    ${bizType ? `<div class="block-line muted">${bizType}</div>` : ''}
+    <div class="block-line" style="margin-top:6px">${contact !== '—' ? contact : ''}</div>
+    <div class="block-line muted">${email !== '—' ? email : ''}</div>
+    <div class="block-line muted">${phone !== '—' ? phone : ''}</div>
+    ${city !== '—' ? `<div class="block-line muted">${city}</div>` : ''}
+    ${website ? `<div class="block-line muted">${website}</div>` : ''}
+  </div>
+  <div class="block">
+    <div class="block-label">Sold By</div>
+    <div class="block-line"><strong>${groupName}</strong></div>
+    <div class="block-line" style="margin-top:6px"><span class="block-line muted">Account Executive:</span> ${ae}</div>
+    ${amName ? `<div class="block-line"><span class="block-line muted">Account Manager:</span> ${amName}</div>` : ''}
+  </div>
 </div>
 
-<div class="section-title" style="margin-top:24px">Services &amp; Pricing</div>
-<table>
-  <thead><tr><th>Service</th><th style="text-align:right">Amount</th><th>Notes</th></tr></thead>
-  <tbody>
-    ${lineItems}
-    <tr class="totals-row">
-      <td>TOTAL</td>
-      <td style="text-align:right">${oneTime > 0 ? fmt(oneTime) + ' one-time + ' : ''}${fmt(monthly)}/mo</td>
-      <td></td>
+<!-- Campaign window -->
+<div class="section-title">Campaign Details</div>
+<div class="campaign-row">
+  <div>
+    <div class="cr-label">Start Date</div>
+    <div class="cr-value">${campStart}</div>
+  </div>
+  <div>
+    <div class="cr-label">End Date</div>
+    <div class="cr-value">${campEnd}</div>
+  </div>
+  <div>
+    <div class="cr-label">Term</div>
+    <div class="cr-value">${campLength}</div>
+  </div>
+  <div>
+    <div class="cr-label">Kick-Off Call</div>
+    <div class="cr-value">${kocDisplay}</div>
+  </div>
+</div>
+${campNotes ? `<div class="campaign-notes-line"><strong>Campaign Notes:</strong> ${campNotes}</div>` : ''}
+
+<!-- Services -->
+<div class="section-title">Services &amp; Pricing</div>
+<table class="services">
+  <thead>
+    <tr>
+      <th>Service</th>
+      <th class="amt">Amount</th>
+      <th class="notes">Notes</th>
     </tr>
+  </thead>
+  <tbody>
+    ${lineItemsHtml || '<tr><td colspan="3" style="text-align:center;padding:24px;color:#9CA3AF">No services selected</td></tr>'}
   </tbody>
 </table>
 
-${specialInstructions ? `<div style="margin-top:16px;padding:12px 14px;background:#F9FAFB;border-radius:6px;font-size:12px;border:1px solid #e5e7eb"><strong>Special Instructions:</strong> ${specialInstructions}</div>` : ''}
+<!-- Totals -->
+<div class="totals-box">
+  <table class="totals-table">
+    ${oneTime > 0 ? `<tr><td class="label">One-Time Charges</td><td class="value">${fmt(oneTime)}</td></tr>` : ''}
+    ${monthly > 0 ? `<tr><td class="label">Monthly Recurring</td><td class="value">${fmt(monthly)}/mo</td></tr>` : ''}
+    <tr class="grand">
+      <td class="label">First Month Total</td>
+      <td class="value">${fmt(oneTime + monthly)}</td>
+    </tr>
+  </table>
+</div>
+${monthly > 0 ? `<div class="first-month-note">Subsequent months: ${fmt(monthly)}/mo for the duration of the campaign term.</div>` : ''}
 
+${specialInstructions ? `<div class="special-box"><strong>Special Instructions</strong>${specialInstructions}</div>` : ''}
+
+<!-- Legal -->
 <div class="legal">
-  <strong>Non-Cancellation:</strong> This agreement is non-cancellable and non-refundable for the duration of the campaign term. Final pricing may vary by applicable sales tax.<br><br>
-  <strong>Intellectual Property:</strong> The Client represents and warrants that it has the right to use all materials supplied including imagery, content, and software code, and holds ${groupName} and its partners harmless from any claims arising therefrom.<br><br>
-  <strong>Digital Advertising:</strong> Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, and Audio campaigns are billed based on actual campaign spend. Monthly spend amounts represent the agreed campaign budget and are subject to market conditions.<br><br>
-  <strong>Service-Specific Terms:</strong> * Annual hosting fee required each year on IO anniversary date. ** 12-month minimum commitment. *** E-commerce hosting fee required annually. ‡ 6-month non-cancellable agreement. ◊ 12-month non-cancellable agreement. ADA Web Accessibility hosting collected upfront and renews annually.
+  <div class="legal-title">Terms &amp; Conditions</div>
+  <p><strong>Non-Cancellation.</strong> This agreement is non-cancellable and non-refundable for the duration of the campaign term. Final pricing may vary by applicable sales tax.</p>
+  <p><strong>Intellectual Property.</strong> The Client represents and warrants that it has the right, including patents, trademarks, and copyrights, whether published or unpublished, to use any and all materials supplied including imagery, content, and software code, and holds ${groupName} and its partners harmless from any claims arising therefrom.</p>
+  <p><strong>Digital Advertising.</strong> Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, and Audio campaigns are billed based on the agreed campaign budget. Advertising budgets are non-refundable once campaigns have launched.</p>
+  <p><strong>Service-Specific Terms.</strong> * Annual hosting fee required each year on IO anniversary date. ** 12-month minimum commitment. *** E-commerce hosting fee required annually. ‡ 6-month non-cancellable agreement. ◊ 12-month non-cancellable agreement. § 18-month non-cancellable agreement. ADA Web Accessibility hosting collected upfront and renews annually.</p>
 </div>
 
+<!-- Signature — client only -->
 <div class="sig-section">
-  <div>
-    <div style="margin-bottom:16px;font-size:11px;color:#6B7280">Client Signature</div>
-    ${sigHtml}
-    <div class="sig-line" style="margin-top:8px">${signerName}${signerTitle ? ' — ' + signerTitle : ''}</div>
-    <div style="margin-top:10px;font-size:11px;color:#6B7280">Date: ${ioDate}</div>
-  </div>
-  <div>
-    <div style="margin-bottom:16px;font-size:11px;color:#6B7280">Account Executive — ${groupName}</div>
-    <div style="height:60px;border-bottom:1px dashed #9CA3AF;margin-bottom:6px"></div>
-    <div class="sig-line">${ae}</div>
-    <div style="margin-top:10px;font-size:11px;color:#6B7280">Date: ___________________________</div>
+  <div class="sig-grid">
+    <div>
+      <div class="sig-label">Client Authorization</div>
+      <div class="sig-line-box">${sigHtml}</div>
+      <div class="sig-info">${signerName}${signerTitle ? `<span class="sig-info-title"> — ${signerTitle}</span>` : ''}</div>
+      <div class="sig-date">Date: ${signedDateDisplay}</div>
+    </div>
   </div>
 </div>
-
-<div class="footer">${groupName} &nbsp;·&nbsp; Insertion Order &nbsp;·&nbsp; ${bizName} &nbsp;·&nbsp; ${ioDate}</div>
 
 </body></html>`;
 
