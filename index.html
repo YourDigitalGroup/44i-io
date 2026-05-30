@@ -1173,6 +1173,72 @@ function esc(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+
+// ── DRAFT STORAGE MODULE ───────────────────────────────────────
+// Behavior:
+//   - device_id: random ID per browser, identifies the AE's machine. Stored in localStorage.
+//   - Drafts are keyed by device_id + group_slug — so different AEs on different machines
+//     don't collide, and one AE working on multiple groups has separate drafts per group.
+//   - NEW TAB = blank form. Detected via sessionStorage.io_tab_active flag.
+//   - REFRESH same tab = restore the device+group draft (so a misclick doesn't lose work).
+//   - Drafts older than 7 days are ignored and cleaned up.
+//   - On submit, the device+group draft is deleted — fresh form everywhere after.
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DRAFT_KEY_PREFIX = 'io_draft_v2:';
+
+function getOrCreateDeviceId() {
+  try {
+    let id = localStorage.getItem('io_device_id');
+    if (!id) {
+      // Random ID — not cryptographic, just unique per browser
+      id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem('io_device_id', id);
+    }
+    return id;
+  } catch(e) {
+    // localStorage disabled (private browsing in some browsers) — fall back to session-only
+    return 'dev-nostore';
+  }
+}
+
+function getDraftKey() {
+  const slug = getSlug() || 'nogroup';
+  const device = getOrCreateDeviceId();
+  return DRAFT_KEY_PREFIX + device + ':' + slug;
+}
+
+function isNewTab() {
+  // sessionStorage is per-tab. If our marker isn't set, this is a fresh tab.
+  try {
+    return !sessionStorage.getItem('io_tab_active');
+  } catch(e) {
+    return true; // Treat any storage failure as "new tab" (safer default — blank form)
+  }
+}
+
+function markTabActive() {
+  try { sessionStorage.setItem('io_tab_active', '1'); } catch(e) {}
+}
+
+// Clean up old drafts (any device_id+slug) older than TTL
+function purgeExpiredDrafts() {
+  try {
+    const cutoff = Date.now() - DRAFT_TTL_MS;
+    const toDelete = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(DRAFT_KEY_PREFIX)) continue;
+      try {
+        const v = JSON.parse(localStorage.getItem(k) || '{}');
+        if (!v.savedAt || v.savedAt < cutoff) toDelete.push(k);
+      } catch(e) {
+        toDelete.push(k); // Corrupted entry — delete
+      }
+    }
+    toDelete.forEach(k => localStorage.removeItem(k));
+  } catch(e) { /* silent */ }
+}
+
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVteWR0a2huZXNwYnhyYWlpamt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTA3NjUsImV4cCI6MjA5MzQ4Njc2NX0.vh_5f19z2cb4_NU0sEKAcPiiNXhQZp-61bBN7lqEKbI";
 const PROXY = SUPABASE_URL + "/functions/v1/claude-proxy";
 
@@ -3489,8 +3555,6 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
     document.getElementById('page-3').style.display = 'none';
     document.getElementById('page-success').style.display = 'block';
     clearDraft();
-    // Mark this submission so a browser refresh doesn't repopulate the form from the draft
-    try { localStorage.setItem('io_submitted_at', Date.now().toString()); } catch(e) {}
     window.scrollTo({top:0,behavior:'smooth'});
 
   } catch(e) {
@@ -4543,9 +4607,11 @@ ${specialInstructions ? `<div class="special-box"><strong>Special Instructions</
 }
 
 // ── DRAFT SAVE/LOAD ────────────────────────────────────────────
-function saveDraft() {
+// ── DRAFT BUILD / SAVE / LOAD / CLEAR ───────────────────────────
+// One source of truth for the draft shape — used by both manual save and auto-save.
+function buildDraft() {
   const draft = {
-    // Step 1 fields
+    savedAt: Date.now(),                    // timestamp for 7-day expiry check
     ae: document.getElementById('ae-name').value,
     aeTrello: document.getElementById('ae-trello')?.value || '',
     biz: document.getElementById('biz-name').value,
@@ -4561,16 +4627,12 @@ function saveDraft() {
     campaignEnd: document.getElementById('campaign-end').value,
     campaignNotes: document.getElementById('campaign-notes').value,
     specialInstructions: document.getElementById('special-instructions')?.value || '',
-    // Step 2 — full order state
     selected: selected,
     intakeData: intakeData,
     hostingChoices: hostingChoices,
-    // Spend values per service
     spendValues: {},
-    // Notes per service
     noteValues: {},
   };
-  // Capture spend/note input values from the DOM
   Object.keys(selected).forEach(id => {
     const row = document.querySelector(`tr[data-id="${id}"]`);
     if (!row) return;
@@ -4579,62 +4641,46 @@ function saveDraft() {
     if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
     if (noteInput && noteInput.value) draft.noteValues[id] = noteInput.value;
   });
-  localStorage.setItem('io_draft', JSON.stringify(draft));
+  return draft;
+}
+
+function writeDraft(draft) {
+  try {
+    localStorage.setItem(getDraftKey(), JSON.stringify(draft));
+  } catch(e) { console.warn('Could not save draft:', e); }
+}
+
+function saveDraft() {
+  writeDraft(buildDraft());
   showToast('Draft saved!');
 }
 
-// Auto-save silently (no toast) on every service change
+// Auto-save silently (no toast) on every service or field change
 function autoSaveDraft() {
-  try {
-    const draft = {
-      ae: document.getElementById('ae-name').value,
-      aeTrello: document.getElementById('ae-trello')?.value || '',
-      biz: document.getElementById('biz-name').value,
-      contact: document.getElementById('contact-name').value,
-      phone: document.getElementById('contact-phone').value,
-      email: document.getElementById('contact-email').value,
-      website: document.getElementById('website-url').value,
-      city: document.getElementById('city').value,
-      bizType: document.getElementById('biz-type').value,
-      ioDate: document.getElementById('io-date').value,
-      campaignStart: document.getElementById('campaign-start').value,
-      campaignLength: document.getElementById('campaign-length').value,
-      campaignEnd: document.getElementById('campaign-end').value,
-      campaignNotes: document.getElementById('campaign-notes').value,
-      specialInstructions: document.getElementById('special-instructions')?.value || '',
-      selected: selected,
-      intakeData: intakeData,
-      hostingChoices: hostingChoices,
-      spendValues: {},
-      noteValues: {},
-    };
-    Object.keys(selected).forEach(id => {
-      const row = document.querySelector(`tr[data-id="${id}"]`);
-      if (!row) return;
-      const spendInput = row.querySelector('input[type=number]');
-      const noteInput = row.querySelector('input[type=text]');
-      if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
-      if (noteInput && noteInput.value) draft.noteValues[id] = noteInput.value;
-    });
-    localStorage.setItem('io_draft', JSON.stringify(draft));
-  } catch(e) { /* silent */ }
+  try { writeDraft(buildDraft()); } catch(e) { /* silent */ }
 }
 
 function loadDraft() {
   try {
-    // If the form was successfully submitted within the last hour, skip draft restore
-    // (handles browser refresh after submit returning to a fresh form)
-    const submittedAt = parseInt(localStorage.getItem('io_submitted_at') || '0', 10);
-    if (submittedAt && (Date.now() - submittedAt) < 60 * 60 * 1000) {
-      localStorage.removeItem('io_submitted_at');
-      localStorage.removeItem('io_draft');
+    // NEW TAB = blank form. Don't auto-restore. Mark this tab as active so a
+    // subsequent refresh of THIS tab will recover the draft.
+    if (isNewTab()) {
+      markTabActive();
       return;
     }
-    const raw = localStorage.getItem('io_draft');
+    markTabActive(); // ensure subsequent refreshes also recover
+
+    const raw = localStorage.getItem(getDraftKey());
     if (!raw) return;
     const d = JSON.parse(raw);
+
+    // 7-day expiry — older drafts are ignored and removed
+    if (d.savedAt && (Date.now() - d.savedAt) > DRAFT_TTL_MS) {
+      localStorage.removeItem(getDraftKey());
+      return;
+    }
+
     const set = (id, val) => { const el = document.getElementById(id); if(el && val) el.value = val; };
-    // Step 1 fields
     set('ae-name', d.ae);
     set('ae-trello', d.aeTrello);
     set('biz-name', d.biz);
@@ -4650,7 +4696,6 @@ function loadDraft() {
     set('campaign-end', d.campaignEnd);
     set('campaign-notes', d.campaignNotes);
     set('special-instructions', d.specialInstructions);
-    // Restore selected services
     if (d.selected && typeof d.selected === 'object') {
       Object.entries(d.selected).forEach(([id, data]) => {
         const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -4662,7 +4707,6 @@ function loadDraft() {
           row.classList.add('selected');
         }
       });
-      // Restore spend and note values
       if (d.spendValues) {
         Object.entries(d.spendValues).forEach(([id, val]) => {
           const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -4681,14 +4725,19 @@ function loadDraft() {
       }
       updateBadges();
     }
-    // Restore intake data
     if (d.intakeData) intakeData = d.intakeData;
     if (d.hostingChoices) hostingChoices = d.hostingChoices;
   } catch(e) { console.warn('Could not load draft:', e); }
 }
 
 function clearDraft() {
-  localStorage.removeItem('io_draft');
+  try {
+    // Remove the draft for THIS device + slug.
+    localStorage.removeItem(getDraftKey());
+    // Also clean up legacy keys from prior versions
+    localStorage.removeItem('io_draft');
+    localStorage.removeItem('io_submitted_at');
+  } catch(e) { /* silent */ }
 }
 
 function resetForm() {
@@ -4728,6 +4777,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('auth-date').value = new Date().toISOString().slice(0,10);
   initCanvas();
+  // Clean up old drafts (7+ days) across all device+slug keys, then attempt to restore this tab's draft
+  purgeExpiredDrafts();
   setTimeout(loadDraft, 600);
 });
 </script>
