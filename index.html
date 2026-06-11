@@ -322,7 +322,7 @@ textarea{resize:vertical;min-height:70px}
             <tr data-id="w-dns"><td><input type="checkbox" onchange="toggle(this,'w-dns')"/></td><td>DNS Transfer (Hourly)</td><td class="right">$175/hr</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="w-logo"><td><input type="checkbox" onchange="toggle(this,'w-logo')"/></td><td>Convert Logo to Vector</td><td class="right">$175</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="w-hosting"><td><input type="checkbox" onchange="toggle(this,'w-hosting')"/></td><td>Hosting Fee* <span style="font-size:10px;color:var(--muted)">(standalone — use hosting prompt on site purchase)</span></td><td class="right">$450</td><td class="right">Yearly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-ecomm-hosting"><td><input type="checkbox" onchange="toggle(this,'w-ecomm-hosting')"/></td><td>E-Commerce Hosting Fee***</td><td class="right">$700</td><td class="right">Yearly</td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="w-ecomm-hosting"><td><input type="checkbox" onchange="toggle(this,'w-ecomm-hosting')"/></td><td>E-Commerce Hosting Fee***</td><td class="right">$750</td><td class="right">Yearly</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="w-ada-hosting"><td><input type="checkbox" onchange="toggle(this,'w-ada-hosting')"/></td><td>Web Accessibility (ADA) Hosting Fee <span style="font-size:10px;color:var(--muted)">— due upfront, renews annually from IO date</span></td><td class="right">$1,000</td><td class="right">Annual</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="w-content"><td><input type="checkbox" onchange="toggle(this,'w-content')"/></td><td>Optional Content Support</td><td class="right">$175/hr</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
@@ -1105,7 +1105,7 @@ textarea{resize:vertical;min-height:70px}
   <div class="modal-box" style="max-width:480px">
     <div class="modal-header">
       <div><h3>Hosting Setup</h3><div class="modal-product" id="hosting-modal-product"></div></div>
-      <button onclick="closeHostingModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">✕</button>
+      <button onclick="cancelHostingModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);line-height:1">✕</button>
     </div>
     <div class="modal-body">
       <div class="modal-section">
@@ -1176,13 +1176,15 @@ function esc(s) {
 
 // ── DRAFT STORAGE MODULE ───────────────────────────────────────
 // Behavior:
-//   - device_id: random ID per browser, identifies the AE's machine. Stored in localStorage.
-//   - Drafts are keyed by device_id + group_slug — so different AEs on different machines
-//     don't collide, and one AE working on multiple groups has separate drafts per group.
-//   - NEW TAB = blank form. Detected via sessionStorage.io_tab_active flag.
-//   - REFRESH same tab = restore the device+group draft (so a misclick doesn't lose work).
-//   - Drafts older than 7 days are ignored and cleaned up.
-//   - On submit, the device+group draft is deleted — fresh form everywhere after.
+//   - device_id: random ID per browser, stored in localStorage.
+//   - tab_id: random ID per TAB, stored in sessionStorage. Survives refresh,
+//     does NOT carry into a new tab. This is what makes:
+//       NEW TAB  → new tab_id → no draft under that key → blank form
+//       REFRESH  → same tab_id → draft found → work restored
+//     ...and two simultaneous tabs each write to their OWN key, so they can
+//     never overwrite each other's work.
+//   - Drafts older than 7 days are purged on page load.
+//   - On submit, this tab's draft is deleted.
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DRAFT_KEY_PREFIX = 'io_draft_v2:';
 
@@ -1190,37 +1192,34 @@ function getOrCreateDeviceId() {
   try {
     let id = localStorage.getItem('io_device_id');
     if (!id) {
-      // Random ID — not cryptographic, just unique per browser
       id = 'dev-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
       localStorage.setItem('io_device_id', id);
     }
     return id;
   } catch(e) {
-    // localStorage disabled (private browsing in some browsers) — fall back to session-only
     return 'dev-nostore';
+  }
+}
+
+function getTabId() {
+  try {
+    let id = sessionStorage.getItem('io_tab_id');
+    if (!id) {
+      id = 'tab-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+      sessionStorage.setItem('io_tab_id', id);
+    }
+    return id;
+  } catch(e) {
+    return 'tab-nostore';
   }
 }
 
 function getDraftKey() {
   const slug = getSlug() || 'nogroup';
-  const device = getOrCreateDeviceId();
-  return DRAFT_KEY_PREFIX + device + ':' + slug;
+  return DRAFT_KEY_PREFIX + getOrCreateDeviceId() + ':' + getTabId() + ':' + slug;
 }
 
-function isNewTab() {
-  // sessionStorage is per-tab. If our marker isn't set, this is a fresh tab.
-  try {
-    return !sessionStorage.getItem('io_tab_active');
-  } catch(e) {
-    return true; // Treat any storage failure as "new tab" (safer default — blank form)
-  }
-}
-
-function markTabActive() {
-  try { sessionStorage.setItem('io_tab_active', '1'); } catch(e) {}
-}
-
-// Clean up old drafts (any device_id+slug) older than TTL
+// Clean up old drafts (any device/tab/slug) older than TTL
 function purgeExpiredDrafts() {
   try {
     const cutoff = Date.now() - DRAFT_TTL_MS;
@@ -1805,7 +1804,7 @@ const HOSTING_CFG = {
   '1p':    { days:10,  fee:450, label:'$450 — 1-page' },
   '5p':    { days:30,  fee:450, label:'$450 — 5-page' },
   '10p':   { days:60,  fee:450, label:'$450 — 10-page' },
-  'ecomm': { days:60,  fee:700, label:'$700 — E-Commerce' },
+  'ecomm': { days:60,  fee:750, label:'$750 — E-Commerce' },
 };
 
 function calcProration(pageType, ioDateStr) {
@@ -1834,7 +1833,7 @@ function promptHosting(serviceId, pageType) {
   document.getElementById('hosting-prorate-preview').style.display = 'none';
   const pkgEl = document.getElementById('hosting-package-options');
   pkgEl.innerHTML = pageType === 'ecomm'
-    ? `<label><input type="radio" name="hosting-pkg" value="ecomm" onchange="onHostingPkgChange('ecomm')"/> $700 E-Commerce Hosting (60-day start)</label>`
+    ? `<label><input type="radio" name="hosting-pkg" value="ecomm" onchange="onHostingPkgChange('ecomm')"/> $750 E-Commerce Hosting (60-day start)</label>`
     : `<label><input type="radio" name="hosting-pkg" value="${pageType}" onchange="onHostingPkgChange('${pageType}')"/> $450 Standard Hosting (${HOSTING_CFG[pageType]?.days}-day start)</label>`;
   document.getElementById('hosting-modal').style.display = 'flex';
 }
@@ -2826,8 +2825,60 @@ function updateBadges() {
   autoSaveDraft();
 }
 
+// ── SYNC ROW INPUTS → selected{} ──────────────────────────────
+// The per-row Notes (text) and Spend (number) inputs live only in the DOM.
+// This pulls their current values into selected[id] so the review summary,
+// Supabase order, Trello card, and printed IO all include them.
+function syncRowInputs() {
+  Object.keys(selected).forEach(id => {
+    const row = document.querySelector(`tr[data-id="${id}"]`);
+    if (!row) return;
+    const noteInput = row.querySelector('input[type=text]');
+    if (noteInput) selected[id].notes = noteInput.value.trim();
+    const spendInput = row.querySelector('input[type=number]');
+    if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
+  });
+}
+
+// ── STEP 1 VALIDATION ─────────────────────────────────────────
+// Required before leaving Step 1: AE name, business name, contact email.
+function validateStep1() {
+  const required = [
+    ['ae-name', 'Digital Account Executive name'],
+    ['biz-name', 'Business name'],
+    ['contact-email', 'Contact email'],
+  ];
+  let firstMissing = null;
+  let missingLabels = [];
+  required.forEach(([id, label]) => {
+    const el = document.getElementById(id);
+    const val = (el?.value || '').trim();
+    const bad = !val || (id === 'contact-email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val));
+    el?.classList.toggle('spend-missing', bad);
+    if (bad) {
+      missingLabels.push(label);
+      if (!firstMissing) firstMissing = el;
+    }
+  });
+  if (firstMissing) {
+    showToast('Required: ' + missingLabels.join(', '), 'error');
+    // Make sure Step 1 is visible so the highlighted fields can be seen
+    if (currentStep !== 1) {
+      document.getElementById('page-1').style.display = 'block';
+      document.getElementById('page-2').style.display = 'none';
+      document.getElementById('page-3').style.display = 'none';
+      currentStep = 1;
+    }
+    firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
+    firstMissing.focus();
+    return false;
+  }
+  return true;
+}
+
 // ── STEP NAVIGATION ───────────────────────────────────────────
 function goStep(n) {
+  if (n >= 2 && !validateStep1()) return;
   if (n === 3) {
     // Hard block if ad products selected with no spend — highlight the fields
     const missingSpend = Object.entries(selected).filter(([id,d]) => {
@@ -2855,6 +2906,7 @@ function goStep(n) {
       if (firstMissing) firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
       return; // Block navigation
     }
+    syncRowInputs(); // pull Notes + Spend inputs into selected{} for the summary
     buildReview();
     updateKocCard();
     updateIntakeStatusCard();
@@ -3053,6 +3105,9 @@ async function submitIO() {
     const kocDate = document.getElementById('koc-date')?.value || '';
     const kocTime = document.getElementById('koc-time')?.value || '';
 
+    // Pull the latest Notes + Spend values from the service rows into selected{}
+    syncRowInputs();
+
     // Hard block if KOC required but not scheduled properly
     if (kocIsRequired() && selectedGroup?.has_koc) {
       if (!kocCalendarOpened) {
@@ -3152,22 +3207,32 @@ async function submitIO() {
     };
 
     let client = null;
+    // Preferred: server-side find_or_create_client RPC (available after the v34
+    // security SQL is run — does lookup + insert/update inside the database so the
+    // clients table doesn't need public read access)
     try {
-      // Look for an existing client with the same business name in this group
-      const groupClause = groupId ? '&group_id=eq.' + groupId : '&group_id=is.null';
-      const existing = await sb('clients?name=eq.' + encodeURIComponent(bizName) + groupClause + '&limit=1');
-      if (Array.isArray(existing) && existing.length) {
-        client = existing[0];
-        // Update with the latest contact info in case it changed
-        try {
-          await sb('clients?id=eq.' + client.id, {
-            method: 'PATCH',
-            body: JSON.stringify(clientPayload),
-            prefer: 'return=minimal'
-          });
-        } catch(e) { console.warn('Could not update existing client:', e.message); }
-      }
-    } catch(e) { console.warn('Client lookup failed, will create new:', e.message); }
+      const cid = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify({ p_payload: clientPayload }) });
+      if (cid && typeof cid === 'string') client = { id: cid };
+    } catch(e) { /* RPC not deployed yet — fall through to direct path */ }
+
+    if (!client) {
+      try {
+        // Look for an existing client with the same business name in this group
+        const groupClause = groupId ? '&group_id=eq.' + groupId : '&group_id=is.null';
+        const existing = await sb('clients?name=eq.' + encodeURIComponent(bizName) + groupClause + '&limit=1');
+        if (Array.isArray(existing) && existing.length) {
+          client = existing[0];
+          // Update with the latest contact info in case it changed
+          try {
+            await sb('clients?id=eq.' + client.id, {
+              method: 'PATCH',
+              body: JSON.stringify(clientPayload),
+              prefer: 'return=minimal'
+            });
+          } catch(e) { console.warn('Could not update existing client:', e.message); }
+        }
+      } catch(e) { console.warn('Client lookup failed, will create new:', e.message); }
+    }
 
     if (!client) {
       const clients = await sb('clients', {method:'POST', body: JSON.stringify(clientPayload)});
@@ -3567,18 +3632,26 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
 
 
 // ── ADMIN AUTH ─────────────────────────────────────────────────
-// ── ADMIN AUTH ─────────────────────────────────────────────────
 // Five logins: 2 super-admins (Jon, James — see all groups) +
-// 3 AM-tier (Carol, Peggy, Shania — see only groups where they're am_name)
+// 3 AM-tier (Carol, Peggy, Shania — see only groups where they're am_name).
+// Passwords are NOT stored here — only SHA-256 hashes. The plaintext password
+// list lives with James. When the v34 security SQL has been run in Supabase,
+// login validates server-side via the admin_login RPC; these hashes are the
+// fallback so the panel keeps working before that migration.
 const ADMIN_USERS = {
-  'James':  { email:'james@44idigital.com',  pw:'james44i',  role:'super' },
-  'Jon':    { email:'jon@44idigital.com',    pw:'jon44i',    role:'super' },
-  'Carol':  { email:'carol@44idigital.com',  pw:'carol44i',  role:'am'    },
-  'Peggy':  { email:'peggy@44idigital.com',  pw:'peggy44i',  role:'am'    },
-  'Shania': { email:'shania@44idigital.com', pw:'shania44i', role:'am'    },
+  'James':  { email:'james@44idigital.com',  hash:'097ecd877fe6b1dd8641d1cfc70dd7d2f55ee77da229a36eef30cea34217352a', role:'super' },
+  'Jon':    { email:'jon@44idigital.com',    hash:'68d37391bf5a1cc78963f4eb8386ea1ac75183154d1accd21ba3d286da2be7f1', role:'super' },
+  'Carol':  { email:'carol@44idigital.com',  hash:'8a4de92249bd3889d8353ac76a341ff4604442dc6b753867bc195f95676a5018', role:'am'    },
+  'Peggy':  { email:'peggy@44idigital.com',  hash:'a7575546b2ba75534584c4519106c9dbaf505308ae9951a0053f65fa178fb3d3', role:'am'    },
+  'Shania': { email:'shania@44idigital.com', hash:'449871a7e8fd1266af043a6dfa9c1ccfa2887038eb4fec69cdf5d6c07fb96327', role:'am'    },
 };
 const ADMIN_ORG = '44i Digital';
-let currentAdminUser = null; // {name, email, role} when logged in
+let currentAdminUser = null; // {name, email, role, pw} when logged in (pw kept in memory for server RPC calls)
+
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+}
 
 function promptAdmin() {
   const modal = document.getElementById('admin-login-modal');
@@ -3593,22 +3666,42 @@ function closeAdminLogin() {
   document.getElementById('admin-login-modal').style.display = 'none';
 }
 
-function checkAdminPw() {
+async function checkAdminPw() {
   const name = document.getElementById('admin-name-select').value;
   const pw = document.getElementById('admin-pw-input').value;
+  const errEl = document.getElementById('admin-pw-error');
   if (!name) {
-    document.getElementById('admin-pw-error').textContent = 'Please select your name.';
-    document.getElementById('admin-pw-error').style.display = 'block';
+    errEl.textContent = 'Please select your name.';
+    errEl.style.display = 'block';
     return;
   }
   const user = ADMIN_USERS[name];
-  if (user && user.pw === pw) {
-    currentAdminUser = { name, email: user.email, role: user.role };
+  let ok = false;
+  let role = user?.role || null;
+
+  // 1) Try server-side validation (admin_login RPC — available once the
+  //    v34 security SQL has been run). Server is authoritative when present.
+  try {
+    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
+    if (Array.isArray(res) && res.length && res[0].role) { ok = true; role = res[0].role; }
+    else if (res === null || (Array.isArray(res) && !res.length)) { ok = false; }
+  } catch(e) {
+    // 2) RPC not deployed yet — fall back to local hash comparison
+    if (user) {
+      try {
+        const h = await sha256Hex(pw);
+        ok = (h === user.hash);
+      } catch(e2) { ok = false; }
+    }
+  }
+
+  if (ok && user) {
+    currentAdminUser = { name, email: user.email, role, pw };
     closeAdminLogin();
     showAdmin(true);
   } else {
-    document.getElementById('admin-pw-error').textContent = 'Incorrect password. Please try again.';
-    document.getElementById('admin-pw-error').style.display = 'block';
+    errEl.textContent = 'Incorrect password. Please try again.';
+    errEl.style.display = 'block';
     document.getElementById('admin-pw-input').value = '';
     document.getElementById('admin-pw-input').focus();
   }
@@ -3674,7 +3767,7 @@ const PRICEABLE_SERVICES = [
   ]},
   { section:'Hosting Fees', items:[
     { id:'w-hosting',     label:'Standard Hosting (annual)',    field:'fee',default:450  },
-    { id:'w-ecomm-hosting',label:'E-Commerce Hosting (annual)', field:'fee',default:700  },
+    { id:'w-ecomm-hosting',label:'E-Commerce Hosting (annual)', field:'fee',default:750  },
     { id:'w-ada-hosting', label:'ADA Hosting (annual)',         field:'fee',default:1000 },
   ]},
   { section:'Visitor IDs', items:[
@@ -3732,6 +3825,11 @@ const PRICEABLE_SERVICES = [
 
 // ── ADMIN TAB SWITCHER ────────────────────────────────────────
 function adminTab(tab) {
+  // AM-tier users cannot view or adjust custom pricing
+  if (tab === 'pricing' && currentAdminUser?.role === 'am') {
+    showToast('Custom pricing can only be changed by a super admin', 'error');
+    return;
+  }
   document.getElementById('tab-info').style.display     = tab==='info'    ? 'block' : 'none';
   document.getElementById('tab-pricing').style.display  = tab==='pricing' ? 'block' : 'none';
   document.getElementById('tab-btn-info').style.borderBottomColor    = tab==='info'    ? 'var(--accent)' : 'transparent';
@@ -3845,26 +3943,42 @@ async function loadAdminOrders() {
     if (!allGroups.length) {
       allGroups = await sb('groups?order=name&select=*') || [];
     }
-    // Pull last 90 days of orders, newest first
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
-    allOrders = await sb('orders?order=created_at.desc&created_at=gte.' + ninetyDaysAgo + '&select=*') || [];
-    // Resolve client business names (orders have client_id, we need the name)
-    const clientIds = [...new Set(allOrders.map(o => o.client_id).filter(Boolean))];
-    let clientMap = {};
-    if (clientIds.length) {
-      try {
-        const clients = await sb('clients?id=in.(' + clientIds.join(',') + ')&select=id,name');
-        (clients || []).forEach(c => { clientMap[c.id] = c.name; });
-      } catch(e) { /* tolerable — fall back to '(unknown)' */ }
+
+    let loaded = null;
+    // 1) Preferred: server-side RPC (works after the v34 security SQL is run;
+    //    validates the admin password and applies AM scoping in the database)
+    try {
+      loaded = await sb('rpc/admin_get_orders', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_days: 90 })
+      });
+      if (Array.isArray(loaded)) {
+        loaded.forEach(o => { o._client_name = o._client_name || '(unknown)'; });
+      } else { loaded = null; }
+    } catch(e) { loaded = null; }
+
+    // 2) Fallback: direct REST reads (current behavior — works until RLS is enabled)
+    if (!loaded) {
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
+      loaded = await sb('orders?order=created_at.desc&created_at=gte.' + ninetyDaysAgo + '&select=*') || [];
+      const clientIds = [...new Set(loaded.map(o => o.client_id).filter(Boolean))];
+      let clientMap = {};
+      if (clientIds.length) {
+        try {
+          const clients = await sb('clients?id=in.(' + clientIds.join(',') + ')&select=id,name');
+          (clients || []).forEach(c => { clientMap[c.id] = c.name; });
+        } catch(e) { /* tolerable — fall back to '(unknown)' */ }
+      }
+      loaded.forEach(o => { o._client_name = clientMap[o.client_id] || '(unknown)'; });
+      // Apply role-based scoping client-side (server does this itself in the RPC path)
+      if (currentAdminUser?.role === 'am') {
+        const myGroupIds = allGroups
+          .filter(g => g.am_name && g.am_name.toLowerCase() === currentAdminUser.name.toLowerCase())
+          .map(g => g.id);
+        loaded = loaded.filter(o => myGroupIds.includes(o.group_id));
+      }
     }
-    allOrders.forEach(o => { o._client_name = clientMap[o.client_id] || '(unknown)'; });
-    // Apply role-based scoping
-    if (currentAdminUser?.role === 'am') {
-      const myGroupIds = allGroups
-        .filter(g => g.am_name && g.am_name.toLowerCase() === currentAdminUser.name.toLowerCase())
-        .map(g => g.id);
-      allOrders = allOrders.filter(o => myGroupIds.includes(o.group_id));
-    }
+    allOrders = loaded;
     // Populate group filter
     const groupSelect = document.getElementById('orders-filter-group');
     const visibleGroupIds = [...new Set(allOrders.map(o => o.group_id).filter(Boolean))];
@@ -3921,7 +4035,8 @@ function renderAdminOrders() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Client</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">AE</th>
-      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Total</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">One-Time</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Monthly</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">KOC</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello</th>
       <th style="padding:9px 10px"></th>
@@ -3929,7 +4044,6 @@ function renderAdminOrders() {
     <tbody>${filtered.map(o => {
       const oneTime = o.total_onetime || 0;
       const monthly = o.total_monthly || 0;
-      const total = oneTime + monthly;
       const synced = o.trello_synced
         ? '<span title="Synced to Trello" style="color:#10B981;font-size:14px">✓</span>'
         : '<span title="Not synced — Trello setup may have failed" style="color:#F59E0B;font-size:14px">⚠</span>';
@@ -3941,7 +4055,8 @@ function renderAdminOrders() {
         <td style="padding:9px 10px"><strong>${esc(groupNameById[o.group_id] || '—')}</strong></td>
         <td style="padding:9px 10px">${esc(o._client_name || '—')}${helpBadge}</td>
         <td style="padding:9px 10px;color:var(--muted)">${esc(o.ae_name || '—')}</td>
-        <td style="padding:9px 10px;text-align:right;font-weight:600">${fmtMoney(total)}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:600">${fmtMoney(oneTime)}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:600">${monthly ? fmtMoney(monthly) + '/mo' : '—'}</td>
         <td style="padding:9px 10px;color:var(--muted);font-size:11px">${fmtDate(o.koc_date)}${o.koc_time ? '<br>'+esc(o.koc_time) : ''}</td>
         <td style="padding:9px 10px;text-align:center">${synced}</td>
         <td style="padding:9px 10px;text-align:right">
@@ -4132,7 +4247,7 @@ function renderAdminGroups() {
         <td style="padding:10px 12px;color:var(--muted);font-size:11px;font-family:monospace">${g.trello_board_id ? esc(g.trello_board_id.slice(0,8))+'...' : '—'}</td>
         <td style="padding:10px 12px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
           <button onclick="adminEditGroup('${esc(g.id)}')" style="padding:5px 12px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12px;cursor:pointer;font-weight:600">Edit</button>
-          <button onclick="adminEditGroup('${esc(g.id)}');setTimeout(()=>adminTab('pricing'),200)" style="padding:5px 12px;border-radius:6px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1d4ed8;font-size:12px;cursor:pointer;font-weight:600">Pricing</button>
+          ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}');setTimeout(()=>adminTab('pricing'),200)" style="padding:5px 12px;border-radius:6px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1d4ed8;font-size:12px;cursor:pointer;font-weight:600">Pricing</button>`}
         </td>
       </tr>`;
     }).join('')}
@@ -4156,6 +4271,8 @@ function adminNewGroup() {
   const sf = document.getElementById('admin-slug'); if(sf) { sf.dataset.manuallyEdited=''; }
   const sp = document.getElementById('slug-preview'); if(sp) sp.textContent = '...';
   currentPricingOverrides = {};
+  const pricingTabBtn = document.getElementById('tab-btn-pricing');
+  if (pricingTabBtn) pricingTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
   adminTab('info');
   document.getElementById('admin-group-form').style.display = 'block';
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
@@ -4193,6 +4310,8 @@ function adminEditGroup(id) {
       Object.assign(currentPricingOverrides, p);
     } catch(e) {}
   }
+  const pricingTabBtn2 = document.getElementById('tab-btn-pricing');
+  if (pricingTabBtn2) pricingTabBtn2.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
   adminTab('info');
   document.getElementById('admin-group-form').style.display = 'block';
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
@@ -4229,19 +4348,41 @@ async function adminSaveGroup() {
     from_email: fromEmail,
     io_recipient: document.getElementById('admin-io-recipient').value.trim() || null,
     has_koc: document.getElementById('admin-has-koc').value === 'true',
-    io_pricing: Object.keys(currentPricingOverrides).length > 0 ? currentPricingOverrides : null,
   };
+  // Only super admins may set pricing. For AM-tier users, omit io_pricing entirely
+  // so a PATCH never overwrites the group's existing overrides.
+  if (currentAdminUser?.role !== 'am') {
+    payload.io_pricing = Object.keys(currentPricingOverrides).length > 0 ? currentPricingOverrides : null;
+  }
 
   try {
-    if (id) {
-      await sb('groups?id=eq.' + id, {method:'PATCH', body:JSON.stringify(payload), prefer:'return=representation'});
-      // Apply pricing immediately if this is the active group
-      if (selectedGroup?.id === id && payload.io_pricing) applyCustomPricing(payload.io_pricing);
-      showToast('Group updated!');
-    } else {
-      await sb('groups', {method:'POST', body:JSON.stringify(payload)});
-      showToast('Group created!');
+    // Preferred: server-side admin_save_group RPC (after the v34 security SQL).
+    // Validates the admin password in the database and enforces the AM
+    // pricing restriction server-side (an AM can't write io_pricing even with curl).
+    let savedViaRpc = false;
+    try {
+      await sb('rpc/admin_save_group', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '',
+          p_pw: currentAdminUser?.pw || '',
+          p_group_id: id || null,
+          p_data: payload
+        })
+      });
+      savedViaRpc = true;
+    } catch(e) { /* RPC not deployed yet — fall through */ }
+
+    if (!savedViaRpc) {
+      if (id) {
+        await sb('groups?id=eq.' + id, {method:'PATCH', body:JSON.stringify(payload), prefer:'return=representation'});
+      } else {
+        await sb('groups', {method:'POST', body:JSON.stringify(payload)});
+      }
     }
+    // Apply pricing immediately if this is the active group
+    if (id && selectedGroup?.id === id && payload.io_pricing) applyCustomPricing(payload.io_pricing);
+    showToast(id ? 'Group updated!' : 'Group created!');
     document.getElementById('admin-group-form').style.display = 'none';
     loadAdminGroups();
   } catch(e) {
@@ -4253,6 +4394,7 @@ async function adminSaveGroup() {
 
 // ── PRINT IO ───────────────────────────────────────────────────
 function printIO() {
+  syncRowInputs(); // pull Notes + Spend inputs into selected{} for the printed IO
   const group = selectedGroup || {};
   const logo = group.logo_url || '';
   const groupName = group.name || 'Your Digital Group';
@@ -4627,6 +4769,10 @@ function buildDraft() {
     campaignEnd: document.getElementById('campaign-end').value,
     campaignNotes: document.getElementById('campaign-notes').value,
     specialInstructions: document.getElementById('special-instructions')?.value || '',
+    // KOC booking state (Step 3) — so a refresh doesn't lose the scheduled call
+    kocDate: document.getElementById('koc-date')?.value || '',
+    kocTime: document.getElementById('koc-time')?.value || '',
+    kocCalOpened: kocCalendarOpened,
     selected: selected,
     intakeData: intakeData,
     hostingChoices: hostingChoices,
@@ -4657,19 +4803,19 @@ function saveDraft() {
 
 // Auto-save silently (no toast) on every service or field change
 function autoSaveDraft() {
-  try { writeDraft(buildDraft()); } catch(e) { /* silent */ }
+  try {
+    const d = buildDraft();
+    // If the form is effectively empty, remove the draft instead of storing a blank one
+    const hasContent = d.ae || d.biz || d.contact || d.email || Object.keys(d.selected).length > 0;
+    if (hasContent) writeDraft(d);
+    else localStorage.removeItem(getDraftKey());
+  } catch(e) { /* silent */ }
 }
 
 function loadDraft() {
   try {
-    // NEW TAB = blank form. Don't auto-restore. Mark this tab as active so a
-    // subsequent refresh of THIS tab will recover the draft.
-    if (isNewTab()) {
-      markTabActive();
-      return;
-    }
-    markTabActive(); // ensure subsequent refreshes also recover
-
+    // Per-tab draft keys: a NEW tab has a fresh tab_id → no draft found → blank
+    // form automatically. A REFRESH keeps the same tab_id → draft restores.
     const raw = localStorage.getItem(getDraftKey());
     if (!raw) return;
     const d = JSON.parse(raw);
@@ -4727,6 +4873,28 @@ function loadDraft() {
     }
     if (d.intakeData) intakeData = d.intakeData;
     if (d.hostingChoices) hostingChoices = d.hostingChoices;
+
+    // Restore KOC booking state (Step 3)
+    if (d.kocCalOpened) {
+      kocCalendarOpened = true;
+      const kd = document.getElementById('koc-date');
+      const kt = document.getElementById('koc-time');
+      if (kd) { kd.disabled = false; if (d.kocDate) kd.value = d.kocDate; }
+      if (kt) { kt.disabled = false; if (d.kocTime) kt.value = d.kocTime; }
+    }
+
+    // Re-apply mutual-exclusivity locks that toggle() would normally enforce.
+    // Restoring checkboxes directly skips those side effects, so without this
+    // an AE could select both a one-time site AND a monthly site after refresh.
+    if (WEB_OTO.some(x => selected[x])) {
+      setWebSectionDisabled('web-mo', true);
+      setVidGroupDisabled('wm-vid-pkg', true);
+    } else if (WEB_MRR.some(x => selected[x])) {
+      setWebSectionDisabled('web-ot', true);
+      setVidGroupDisabled('vid-pkg', true);
+    }
+    if (RADIO_GROUPS['vid-pkg'].some(x => selected[x])) setVidGroupDisabled('wm-vid-pkg', true);
+    if (RADIO_GROUPS['wm-vid-pkg'].some(x => selected[x])) setVidGroupDisabled('vid-pkg', true);
   } catch(e) { console.warn('Could not load draft:', e); }
 }
 
@@ -4743,7 +4911,8 @@ function clearDraft() {
 function resetForm() {
   clearDraft();
   selected = {};
-  selectedGroup = null;
+  // NOTE: do NOT null selectedGroup — the page is still on the same group URL.
+  // Nulling it broke "Submit Another IO" (next submit threw "Please select a group").
   intakeData = {};
   hostingChoices = {};
   globalKocSchedule = null;
@@ -4754,9 +4923,23 @@ function resetForm() {
   setVidGroupDisabled('wm-vid-pkg', false);
   setWebSectionDisabled('web-ot', false);
   setWebSectionDisabled('web-mo', false);
-  document.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = false);
-  document.querySelectorAll('tr.selected').forEach(tr => tr.classList.remove('selected'));
-  document.querySelectorAll('input[type=text], input[type=email], input[type=tel], input[type=date], input[type=time], input[type=number], textarea').forEach(i => i.value = '');
+  // Scope the wipe to the IO form pages — not the admin panel
+  const formPages = '#page-1, #page-2, #page-3';
+  document.querySelectorAll(`${formPages} input[type=checkbox]`).forEach(cb => cb.checked = false);
+  document.querySelectorAll(`${formPages} tr.selected`).forEach(tr => tr.classList.remove('selected'));
+  document.querySelectorAll(`${formPages} input[type=text], ${formPages} input[type=email], ${formPages} input[type=tel], ${formPages} input[type=date], ${formPages} input[type=time], ${formPages} input[type=number], ${formPages} textarea`).forEach(i => i.value = '');
+  document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
+  // Re-default today's dates (wiped above)
+  document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
+  document.getElementById('auth-date').value = new Date().toISOString().slice(0,10);
+  // Re-lock KOC fields
+  const kd = document.getElementById('koc-date'); if (kd) kd.disabled = true;
+  const kt = document.getElementById('koc-time'); if (kt) kt.disabled = true;
+  // Re-arm the submit button (left disabled with spinner text after a successful submit)
+  const sbtn = document.getElementById('submit-btn');
+  if (sbtn) { sbtn.innerHTML = '✓ Submit Insertion Order'; sbtn.disabled = false; }
+  clearCanvas();
+  updateTypedSig('');
   document.getElementById('koc-card').style.display = 'none';
   document.getElementById('intake-status-card').style.display = 'none';
   updateBadges();
