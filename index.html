@@ -2001,7 +2001,7 @@ function updateKocCard() {
   const linkRow = document.getElementById('koc-calendar-link-row');
   if (calUrl) {
     document.getElementById('koc-calendar-link').href = calUrl;
-    document.getElementById('koc-am-cal-name').textContent = amName;
+    document.getElementById('koc-am-cal-name').textContent = (amName || '').trim();
     linkRow.style.display = 'block';
   } else {
     linkRow.style.display = 'none';
@@ -2273,6 +2273,11 @@ async function loadGroup() {
     console.log('Supabase result:', JSON.stringify(results));
     if (!results || results.length === 0) { showGroupError(); return; }
     selectedGroup = results[0];
+    // Normalize stray whitespace from DB values (a trailing space in am_name
+    // rendered as "Jim 's Calendar" on the KOC button)
+    ['am_name','name','from_name','am_email','from_email'].forEach(k => {
+      if (typeof selectedGroup[k] === 'string') selectedGroup[k] = selectedGroup[k].trim();
+    });
     applyGroupBranding(selectedGroup);
     if (selectedGroup.io_pricing) applyCustomPricing(selectedGroup.io_pricing);
     document.getElementById('group-display').style.display = 'block';
@@ -3372,7 +3377,7 @@ async function submitIO() {
               if (val) {
                 desc += `✅ **${field.label}:** ${val}\n`;
               } else {
-                desc += `❌ **${field.label}:**\n`;
+                desc += `**${field.label}:**\n`;
               }
             });
           });
@@ -3511,7 +3516,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const cn = card.name.trim();
                 // Skip any template placeholder named "IO", "IO -", "IO :", etc.
                 if (isIoName(cn)) continue;
-                // Skip AE Questions cards from any template — Step 6 builds the single consolidated one at the bottom
+                // Skip AE Questions cards from any template — redundant; the intake
+                // answers are written into each tactic card's description instead
                 if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
                 // Skip if card with this name already exists OR was just added in this run
                 if (cardExists(cn)) continue;
@@ -3560,34 +3566,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           }
         }
 
-        // ── Step 6: Create AE Questions card with ALL intake data + green label ──
-        const aeCardName = 'AE Questions - ' + bizName;
-        const hasAeCard = cardExists(aeCardName) ||
-                          [...existingCardNames, ...addedCardNames].some(n => /ae questions/i.test(n));
-        if (!hasAeCard) {
-          // Build combined intake summary for all workflows
-          let allIntake = '';
-          soldWorkflows.forEach(wf => {
-            const desc = buildIntakeDesc(wf);
-            if (desc) allIntake += (allIntake ? '\n\n---\n\n' : '') + desc;
-          });
-          if (!allIntake) allIntake = 'No intake forms completed — AM to collect on KOC';
-          const aeRes = await fetch(PROXY, {
-            method: 'POST',
-            headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: aeCardName, desc: allIntake.slice(0, 16000), pos: 'bottom' })
-          });
-          const aeCard = await aeRes.json();
-          addedCardNames.add(norm(aeCardName));
-          // Add green label
-          if (aeCard?.id) {
-            await fetch(PROXY, {
-              method: 'POST',
-              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-              body: JSON.stringify({ target: 'trello_add_label', card_id: aeCard.id, color: 'green' })
-            });
-          }
-        }
+        // NOTE: No consolidated "AE Questions" card is created — the intake answers
+        // are already written into each tactic card's description, so a separate
+        // card would be redundant. Template "AE" cards are also skipped above.
 
         showToast(`✅ Trello list ready — ${cardsAdded} new card${cardsAdded !== 1 ? 's' : ''} added`);
 
@@ -4955,7 +4936,124 @@ function showToast(msg, type='success') {
 }
 
 // ── INIT ──────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════
+// ── STAGE 1: CATALOG LOADER + VERIFICATION (behavior-neutral) ────
+// Loads services / intake_forms from Supabase, rebuilds the catalog
+// objects, and logs a diff against the hardcoded ones. Does NOT change
+// what the form uses yet — this only PROVES the table data reproduces
+// the hardcoded objects before we trust it in Stage 2.
+// ════════════════════════════════════════════════════════════════
+
+// Build a SERVICE_DATA-shaped entry from one services-table row, applying
+// the reverse translations of the migration (default_price+billing_type
+// → fee/recurring; modifier/cpm re-quirking so existing reader code that
+// checks `data.cpm` keeps behaving identically).
+function rowToServiceData(r) {
+  const out = { label: r.label, section: r.section };
+  // fee / recurring split
+  if (r.billing_type === 'one_time') {
+    out.fee = r.default_price != null ? Number(r.default_price) : 0;
+    out.recurring = null;
+  } else { // monthly
+    out.fee = 0;
+    out.recurring = r.default_price != null ? Number(r.default_price) : 0;
+  }
+  // workflow only when present (hardcoded object omits it otherwise)
+  if (r.workflow) out.workflow = r.workflow;
+  // cpm / cpc re-quirking to match the old object's shape:
+  //  - genuine spend products carried a numeric cpm (= retail_cpm)
+  //  - SEM carried cpc:'$4-$12' (string)
+  //  - modifier items (offline tracking, yttv-addl) carried cpm:<modifier_amount>
+  if (r.pricing_mode === 'modifier' && r.modifier_amount != null) {
+    out.cpm = Number(r.modifier_amount);
+  } else if (r.retail_cpm != null) {
+    out.cpm = Number(r.retail_cpm);
+  } else if (r.id === 'sem-bp') {
+    out.cpc = '$4-$12';
+  }
+  return out;
+}
+
+// Build a PRODUCT_CONFIG-shaped entry from one services-table row.
+// Old object only had entries for services with a koc requirement OR an
+// intake form; plain services had NO entry at all. We mirror that so the
+// comparison matches: only emit when koc!=='none' OR intake present.
+function rowToProductConfig(r) {
+  const koc = r.koc_requirement || 'none';
+  const intake = r.intake_form_id || null;
+  if (koc === 'none' && !intake) return null; // no entry in old object
+  return { koc, intake, label: r.label };
+}
+
+// Deep-ish equality good enough for these flat-ish objects
+function catalogValuesEqual(a, b) {
+  if (a === b) return true;
+  if (a == null || b == null) return a === b;
+  if (typeof a !== 'object') return a === b;
+  const ak = Object.keys(a), bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  return ak.every(k => catalogValuesEqual(a[k], b[k]));
+}
+
+async function loadCatalogAndCompare() {
+  console.log('%c[Catalog Stage 1] Loading tables for comparison…', 'color:#1C9BD7;font-weight:bold');
+  let services, forms;
+  try {
+    services = await sb('services?active=eq.true&select=*');
+    forms    = await sb('intake_forms?active=eq.true&select=*');
+  } catch (e) {
+    console.error('[Catalog Stage 1] Table load FAILED — cannot compare:', e.message);
+    return;
+  }
+  console.log(`[Catalog Stage 1] Loaded ${services?.length||0} active services, ${forms?.length||0} active intake forms.`);
+
+  // ── Rebuild objects from tables ──
+  const SD_db = {}, PC_db = {}, IF_db = {};
+  (services || []).forEach(r => {
+    SD_db[r.id] = rowToServiceData(r);
+    const pc = rowToProductConfig(r);
+    if (pc) PC_db[r.id] = pc;
+  });
+  (forms || []).forEach(f => {
+    const def = (typeof f.definition === 'string') ? JSON.parse(f.definition) : f.definition;
+    IF_db[f.id] = Object.assign({ title: f.title }, def);
+  });
+
+  // ── Compare helper ──
+  function diff(name, hardcoded, fromDb) {
+    const hk = Object.keys(hardcoded), dk = Object.keys(fromDb);
+    const onlyHard = hk.filter(k => !(k in fromDb));
+    const onlyDb   = dk.filter(k => !(k in hardcoded));
+    const valDiffs = hk.filter(k => (k in fromDb) && !catalogValuesEqual(hardcoded[k], fromDb[k]));
+    const ok = !onlyHard.length && !onlyDb.length && !valDiffs.length;
+    console.log(
+      `%c[${name}] ${ok ? '✓ IDENTICAL' : '✗ DIFFERENCES'} — hardcoded:${hk.length} db:${dk.length}`,
+      'color:' + (ok ? '#10B981' : '#EF4444') + ';font-weight:bold'
+    );
+    if (onlyHard.length) console.warn(`  [${name}] In hardcoded but NOT in DB (missing!):`, onlyHard);
+    if (onlyDb.length)   console.warn(`  [${name}] In DB but NOT in hardcoded (extra):`, onlyDb);
+    if (valDiffs.length) {
+      console.warn(`  [${name}] Value differences on ${valDiffs.length} key(s):`);
+      valDiffs.forEach(k => console.log(`    ${k}:`, {hardcoded: hardcoded[k], db: fromDb[k]}));
+    }
+    return ok;
+  }
+
+  console.log('%c──── Catalog comparison ────', 'color:#1C9BD7;font-weight:bold');
+  const a = diff('SERVICE_DATA', SERVICE_DATA, SD_db);
+  const b = diff('PRODUCT_CONFIG', PRODUCT_CONFIG, PC_db);
+  const c = diff('INTAKE_FORMS', INTAKE_FORMS, IF_db);
+  console.log(
+    `%c──── Result: ${a&&b&&c ? 'ALL MATCH ✓ — safe to proceed to Stage 2' : 'DIFFERENCES FOUND — review above before Stage 2'} ────`,
+    'color:' + (a&&b&&c ? '#10B981' : '#EF4444') + ';font-weight:bold;font-size:13px'
+  );
+  // Expose for manual inspection in console
+  window.__catalogDb = { SERVICE_DATA: SD_db, PRODUCT_CONFIG: PC_db, INTAKE_FORMS: IF_db };
+  console.log('[Catalog Stage 1] Rebuilt objects available as window.__catalogDb for manual inspection.');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  loadCatalogAndCompare(); // Stage 1: verify only, changes no behavior
   loadGroup();
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('auth-date').value = new Date().toISOString().slice(0,10);
