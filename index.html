@@ -1246,518 +1246,12 @@ const PROXY = SUPABASE_URL + "/functions/v1/claude-proxy";
 // koc_only = KOC scheduled, no required intake form (AM does form on call)
 // intake_only = intake required, no KOC
 // none = no intake, no KOC
-const PRODUCT_CONFIG = {
-  // Website one-time — KOC required (no AE intake form, AM handles on call)
-  'w-bs':       { koc:'required', intake:null,           label:'Website — Business Starter' },
-  'w-bb':       { koc:'required', intake:null,           label:'Website — Business Builder' },
-  'w-bp':       { koc:'required', intake:null,           label:'Website — Business Pro' },
-  'w-custom':   { koc:'required', intake:null,           label:'Website — Custom/E-Commerce' },
-  // Website monthly — KOC required
-  'wm-1p':      { koc:'required', intake:null,           label:'Website 1-Page Monthly' },
-  'wm-5p':      { koc:'required', intake:null,           label:'Website 5-Page Monthly' },
-  'wm-10p':     { koc:'required', intake:null,           label:'Website 10-Page Monthly' },
-  'wm-ecomm':   { koc:'required', intake:null,           label:'Website E-Commerce Monthly' },
-  // TLP — KOC + AE intake required
-  'tlp-bs':     { koc:'required', intake:'tlp',          label:'Targeted Landing Pages — Starter' },
-  'tlp-bb':     { koc:'required', intake:'tlp',          label:'Targeted Landing Pages — Builder' },
-  'tlp-bp':     { koc:'required', intake:'tlp',          label:'Targeted Landing Pages — Pro' },
-  // Social Media — KOC required, no AE intake
-  'sm-bs':      { koc:'required', intake:'sm',           label:'Social Media — Starter' },
-  'sm-bb':      { koc:'required', intake:'sm',           label:'Social Media — Builder' },
-  'sm-bp':      { koc:'required', intake:'sm',           label:'Social Media — Pro' },
-  // Email Marketing — KOC required + AE intake
-  'em-bb-2500': { koc:'required', intake:'email',        label:'Email Marketing — Builder <2,500' },
-  'em-bb-5000': { koc:'required', intake:'email',        label:'Email Marketing — Builder <5,000' },
-  'em-bp-30k':  { koc:'required', intake:'email',        label:'Email Marketing — Pro <30,000' },
-  'em-bp-30kp': { koc:'required', intake:'email',        label:'Email Marketing — Pro >30,000' },
-  // SEO Starter — intake required, no KOC
-  'seo-bs':     { koc:'none',     intake:'seo',          label:'SEO/AEO — Starter' },
-  // SEO Builder/Pro — KOC + intake
-  'seo-bb':     { koc:'required', intake:'seo',          label:'SEO/AEO — Builder' },
-  'seo-bp':     { koc:'required', intake:'seo',          label:'SEO/AEO — Pro' },
-  // GBP — KOC + intake
-  'gbp-setup':  { koc:'required', intake:'gbp',          label:'Google Business Profile Setup' },
-  // AI ChatBot — KOC + intake
-  'wm-ai':       { koc:'required', intake:'chatbot',     label:'AI ChatBot' },
-  'wm-host-ai':  { koc:'required', intake:'chatbot',     label:'Hosting + Content + AI ChatBot' },
-  'wm-host-all': { koc:'required', intake:'chatbot',     label:'Hosting + Content + AI ChatBot + ADA' },
-  // Visitor IDs — intake required, no KOC
-  'w-vid-setup':{ koc:'none',     intake:'visitorid',    label:'Visitor IDs Setup' },
-  'w-vid200':   { koc:'none',     intake:'visitorid',    label:'200 Visitor IDs' },
-  'w-vid350':   { koc:'none',     intake:'visitorid',    label:'350 Visitor IDs' },
-  'w-vid500':   { koc:'none',     intake:'visitorid',    label:'500 Visitor IDs' },
-  // Reputation Management — intake required, no KOC
-  'rep-bp':     { koc:'none',     intake:'reputation',   label:'Reputation Management' },
-  // LLO — intake required, no KOC
-  'llo-bp':     { koc:'none',     intake:'llo',          label:'Local Listing Optimization' },
-  // Display/SEM/Social Ads — intake required, no KOC
-  'td-geo':     { koc:'none',     intake:'display',      label:'Targeted Display — Geotargeting' },
-  'td-site':    { koc:'none',     intake:'display',      label:'Targeted Display — Site Retargeting' },
-  'td-dynamic': { koc:'none',     intake:'display',      label:'Targeted Display — Dynamic' },
-  'td-custom':  { koc:'none',     intake:'display',      label:'Targeted Display — Custom' },
-  'sem-bp':     { koc:'none',     intake:'sem',          label:'SEM' },
-  'sma-fb':     { koc:'none',     intake:'fbig',         label:'Facebook/Instagram Ads' },
-  'sma-tt':     { koc:'none',     intake:'fbig',         label:'TikTok Ads' },
-  'sma-sc':     { koc:'none',     intake:'fbig',         label:'Snapchat Ads' },
-  'sma-li':     { koc:'none',     intake:'fbig',         label:'LinkedIn Ads' },
-  'lt-geo':     { koc:'none',     intake:'geofence',     label:'Location Targeting — Geofence' },
-  'lt-crm':     { koc:'none',     intake:'geofence',     label:'Location Targeting — CRM' },
-  'lt-event':   { koc:'none',     intake:'event',        label:'Location Targeting — Event' },
-  'yt-out':     { koc:'none',     intake:'youtube',      label:'YouTube Ads — Outstream' },
-  'yt-15':      { koc:'none',     intake:'youtube',      label:'YouTube Ads — :15' },
-  'yt-06':      { koc:'none',     intake:'youtube',      label:'YouTube Ads — :06 Bumper' },
-  'yt-skip':    { koc:'none',     intake:'youtube',      label:'YouTube Ads — Skippable' },
-  'yttv-bp':    { koc:'none',     intake:'youtubetv',    label:'YouTube TV Ads' },
-  'stv-loc':    { koc:'none',     intake:'streamingtv',  label:'Streaming TV — Location' },
-  'stv-aud':    { koc:'none',     intake:'streamingtv',  label:'Streaming TV — Audience' },
-  'stv-sports': { koc:'none',     intake:'streamingtv',  label:'Streaming TV — Sports' },
-  'ottctv-bp':  { koc:'none',     intake:'socialott',    label:'Social OTT/CTV' },
-  'pa-geo':     { koc:'none',     intake:'audio',        label:'Programmatic Audio' },
-  'nd-geo':     { koc:'none',     intake:'display',      label:'Native Display' },
-  'sda-bp':     { koc:'none',     intake:'socialdisplay',label:'Social Display Ads' },
-  'mob-bp':     { koc:'none',     intake:'mobile',       label:'Mobile Audience Targeting' },
-  'nv-geo':     { koc:'none',     intake:'progvideo',    label:'Native Video' },
-  'pv-geo':     { koc:'none',     intake:'progvideo',    label:'Programmatic Video' },
-  'alc-radio':  { koc:'none',     intake:'radiotovideo', label:'Radio to Video' },
-  // Visitor IDs standalone (MRR website section)
-  'wm-vid200':  { koc:'none', intake:'visitorid', label:'200 Visitor IDs (standalone)' },
-  'wm-vid350':  { koc:'none', intake:'visitorid', label:'350 Visitor IDs (standalone)' },
-  'wm-vid500':  { koc:'none', intake:'visitorid', label:'500 Visitor IDs (standalone)' },
-  'wm-vid200e': { koc:'none', intake:'visitorid', label:'200 Visitor IDs + Email (standalone)' },
-  'wm-vid350e': { koc:'none', intake:'visitorid', label:'350 Visitor IDs + Email (standalone)' },
-  'wm-vid500e': { koc:'none', intake:'visitorid', label:'500 Visitor IDs + Email (standalone)' },
-};
+// PRODUCT_CONFIG — populated at startup from the services table (see loadCatalog). Was a hardcoded object; now table-driven.
+let PRODUCT_CONFIG = {};
 
 // ── INTAKE FORM DEFINITIONS ───────────────────────────────────
-const INTAKE_FORMS = {
-  tlp: {
-    title: 'Targeted Landing Pages Intake',
-    sections: [
-      { title: 'Action Items', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'website_username', label:'Website Login — Username', type:'text' },
-        { key:'website_password', label:'Website Login — Password', type:'text' },
-        { key:'landing_page_phone', label:'Landing Page Phone', type:'text', required:true },
-        { key:'landing_page_email', label:'Landing Page Email', type:'email', required:true },
-        { key:'images', label:'Images', type:'radio', options:['Client Provided','Use Stock'], required:true },
-      ]},
-      { title: 'Project Details', fields: [
-        { key:'goal', label:'What is your goal with this campaign?', type:'textarea', required:true },
-        { key:'unique_value', label:'What is unique about your business?', type:'textarea', required:true },
-        { key:'why_choose', label:'Why should customers choose you?', type:'textarea', required:true },
-        { key:'pages_config', label:'Single service / multiple locations or multiple service / single location?', type:'textarea', required:true },
-        { key:'location_targets', label:'Location targets (city/county + service — up to 15)', type:'textarea', required:true },
-      ]},
-    ]
-  },
-  email: {
-    title: 'Email Marketing Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'list_size', label:'Approximate email list size', type:'text', required:true },
-        { key:'has_brand_standards', label:'Brand standards to follow?', type:'radio', options:['Yes','No'], required:true },
-        { key:'brand_colors', label:'Brand colors', type:'text' },
-        { key:'business_description', label:'Describe your business', type:'textarea', required:true },
-        { key:'desired_action', label:'What action do you want recipients to take?', type:'textarea', required:true },
-        { key:'content_focus', label:'Specific content to focus on?', type:'textarea' },
-      ]},
-    ]
-  },
-  sm: {
-    title: 'Social Media Management Intake',
-    kocForm: true,
-    sections: [
-      { title: 'Pre-Call Information', fields: [
-        { key:'website_url',        label:'Website URL',              type:'text' },
-        { key:'primary_channel',    label:'Primary Channel',          type:'radio', options:['Facebook','Instagram','LinkedIn','X','TikTok','Pinterest'] },
-        { key:'secondary_channel',  label:'Secondary Channel (if any)',type:'text' },
-        { key:'has_gbp',            label:'Google Business Profile',  type:'radio', options:['Already set up','Need set up'] },
-      ]},
-      { title: 'Suggested Post Types', fields: [
-        { key:'post_types', label:'Select post types to focus on', type:'textarea' },
-      ]},
-      { title: 'During Call / Goals', fields: [
-        { key:'social_goals',       label:'Current social media goals',           type:'textarea' },
-        { key:'target_audience',    label:'Target audience',                      type:'textarea' },
-        { key:'has_content',        label:'Do you have content (photos/video)?',  type:'radio', options:['Yes — will provide','No'] },
-        { key:'content_to_avoid',   label:'Post types or imagery to avoid',       type:'textarea' },
-        { key:'keywords_hashtags',  label:'Keywords / hashtags / taglines',       type:'textarea' },
-        { key:'cta',                label:'Preferred call-to-action',             type:'text' },
-        { key:'additional_notes',   label:'Additional notes / comments',          type:'textarea' },
-      ]},
-      { title: 'SMM Pro — Social Ads (if applicable)', fields: [
-        { key:'ad_format',          label:'Carousel or video ad?',                type:'radio', options:['Carousel','Video'] },
-        { key:'ad_content',         label:'Content available for ads?',           type:'textarea' },
-        { key:'ad_unique_topics',   label:'Unique topics for carousel',           type:'textarea' },
-        { key:'ad_target',          label:'Target location and audience',         type:'textarea' },
-        { key:'ad_messaging',       label:'Ad messaging / call to action',        type:'textarea' },
-      ]},
-    ]
-  },
-  seo: {
-    title: 'SEO/AEO Intake',
-    sections: [
-      { title: 'Website & Google Access', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'website_login', label:'Website Login (if needed)', type:'text' },
-        { key:'has_gbp', label:'Existing Google Business Profile?', type:'radio', options:['Yes','No'], required:true },
-        { key:'has_ga', label:'Existing Google Analytics?', type:'radio', options:['Yes','No'], required:true },
-        { key:'has_gsc', label:'Existing Google Search Console?', type:'radio', options:['Yes','No'], required:true },
-      ]},
-      { title: 'Business Overview', fields: [
-        { key:'contact_info', label:'Contact person & info', type:'text', required:true },
-        { key:'business_overview', label:'Business overview', type:'textarea', required:true },
-        { key:'main_services', label:'Main products/services to focus on', type:'textarea', required:true },
-        { key:'service_areas', label:'Service area(s)', type:'text', required:true },
-      ]},
-      { title: 'Blog Writing', fields: [
-        { key:'has_blog', label:'Blog section on website?', type:'radio', options:['Yes','No'], required:true },
-        { key:'blog_poster', label:'Who should post blogs?', type:'radio', options:['Our Team','Your Team','Joint'] },
-        { key:'blog_tone', label:'Preferred tone/style', type:'text' },
-        { key:'topics_to_avoid', label:'Any topics to avoid?', type:'text' },
-      ]},
-    ]
-  },
-  gbp: {
-    title: 'Google Business Profile Intake',
-    sections: [
-      { title: 'Business Details', fields: [
-        { key:'business_name_exact', label:'Business name (exactly as it should appear on Google)', type:'text', required:true },
-        { key:'address', label:'Business/building address', type:'text', required:true },
-        { key:'phone', label:'Business phone number', type:'text', required:true },
-        { key:'email', label:'Business email', type:'email' },
-        { key:'website', label:'Website', type:'text', required:true },
-        { key:'gmail', label:'Gmail account (required for GBP)', type:'email', required:true },
-      ]},
-      { title: 'Access & Assets', fields: [
-        { key:'has_gbp_access', label:'Google My Business access?', type:'radio', options:['Yes','No — build from scratch'], required:true },
-        { key:'has_vector_logo', label:'Vector file of logo (.eps, .ai, .pdf)?', type:'radio', options:['Yes','No'], required:true },
-        { key:'has_photos', label:'Interior, exterior & other photos?', type:'radio', options:['Yes','No'], required:true },
-      ]},
-      { title: 'Business Info', fields: [
-        { key:'products_services', label:'Products/services', type:'textarea', required:true },
-        { key:'keywords', label:'Important keywords for your business', type:'textarea', required:true },
-        { key:'regular_hours', label:'Regular hours', type:'textarea', required:true },
-        { key:'holiday_hours', label:'Holiday hours', type:'textarea' },
-        { key:'payment_options', label:'Payment options (cash, credit, invoice, etc.)', type:'text' },
-        { key:'year_founded', label:'Year founded (optional)', type:'text' },
-        { key:'service_area', label:'Service area', type:'text' },
-        { key:'social_channels', label:'Social media channels (Facebook, Instagram, etc.)', type:'text' },
-      ]},
-    ]
-  },
-  chatbot: {
-    title: 'AI ChatBot Intake',
-    sections: [
-      { title: 'General Information', fields: [
-        { key:'business_name', label:'Business name', type:'text', required:true },
-        { key:'website_url', label:'Business website URL', type:'text', required:true },
-        { key:'industry', label:'Business industry', type:'text', required:true },
-        { key:'operating_hours', label:'Business operating hours', type:'text', required:true },
-        { key:'point_of_contact', label:'Point of contact name & email', type:'text', required:true },
-      ]},
-      { title: 'Chatbot Functionality', fields: [
-        { key:'main_purpose', label:'Main purpose of the chatbot', type:'textarea', required:true },
-        { key:'key_interactions', label:'Key customer interactions / common questions', type:'textarea', required:true },
-        { key:'contact_phone', label:'Primary phone number for chatbot to reference', type:'text', required:true },
-        { key:'contact_email', label:'Email address for inquiries', type:'email', required:true },
-        { key:'schedule_appointments', label:'Schedule appointments?', type:'radio', options:['Yes','No'], required:true },
-        { key:'scheduling_platform', label:'Scheduling platform (if yes)', type:'text' },
-      ]},
-      { title: 'FAQs & Behavior', fields: [
-        { key:'faqs', label:'Top 5 FAQs', type:'textarea', required:true },
-        { key:'bot_name', label:'Chatbot name/persona (optional)', type:'text' },
-        { key:'greeting', label:'Greeting message', type:'textarea' },
-        { key:'tone', label:'Tone of voice (formal, conversational, friendly, etc.)', type:'text', required:true },
-        { key:'words_to_avoid', label:'Words/phrases to avoid', type:'text' },
-      ]},
-    ]
-  },
-  visitorid: {
-    title: 'Visitor ID Intake',
-    sections: [
-      { title: 'Setup Details', fields: [
-        { key:'website_type', label:'What kind of website? (WordPress, Wix, etc.)', type:'text', required:true },
-        { key:'has_site_access', label:'Site access to install scripts?', type:'radio', options:['Yes','No'], required:true },
-        { key:'site_url', label:'Website URL', type:'text', required:true },
-        { key:'site_username', label:'Website username (if access granted)', type:'text' },
-        { key:'additional_states', label:'Additional states to track (default: business location)', type:'text' },
-        { key:'google_sheet_email', label:'Email to share Google sheet with', type:'email', required:true },
-        { key:'has_email_suppression', label:'Email suppression list (Excel/CSV)?', type:'radio', options:['Yes','No'] },
-        { key:'has_ip_suppression', label:'IP suppression list (Excel/CSV)?', type:'radio', options:['Yes','No'] },
-      ]},
-    ]
-  },
-  reputation: {
-    title: 'Reputation Management Intake',
-    sections: [
-      { title: 'Setup', fields: [
-        { key:'dns_login', label:'DNS login or contact for CNAME record', type:'text', required:true },
-        { key:'directories_focus', label:'Specific directories to focus on for improved rating', type:'textarea' },
-        { key:'has_customer_list', label:'Can you supply email list of recent customers?', type:'radio', options:['Yes','No'], required:true },
-        { key:'can_collect_monthly', label:'Can you collect new contacts monthly?', type:'radio', options:['Yes','No'], required:true },
-        { key:'wants_qr_codes', label:'QR codes & printed review cards ($additional)?', type:'radio', options:['Yes','No'] },
-      ]},
-    ]
-  },
-  llo: {
-    title: 'Local Listing Optimization Intake',
-    sections: [
-      { title: 'Business Details', fields: [
-        { key:'business_name_exact', label:'Business name (exactly as on Google)', type:'text', required:true },
-        { key:'address', label:'Business/building address', type:'text', required:true },
-        { key:'phone', label:'Business phone number', type:'text', required:true },
-        { key:'email', label:'Business email', type:'email' },
-        { key:'regular_hours', label:'Regular hours', type:'textarea', required:true },
-        { key:'holiday_hours', label:'Holiday hours', type:'textarea' },
-        { key:'payment_options', label:'Payment options', type:'text' },
-        { key:'products_services', label:'Products/services', type:'textarea', required:true },
-        { key:'keywords', label:'Important keywords', type:'textarea', required:true },
-        { key:'social_channels', label:'Social media channels', type:'text' },
-      ]},
-    ]
-  },
-  display: {
-    title: 'Targeted Display Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'conversion_script_contact', label:'Website access or contact for conversion script', type:'text', required:true },
-        { key:'ad_creation', label:'Ad creation', type:'radio', options:['Client Provided','44i ($175/set)'], required:true },
-        { key:'images', label:'Images', type:'radio', options:['Client Provided','Use Stock'], required:true },
-        { key:'has_vector_logo', label:'Vector file of logo (.eps, .ai, .pdf)?', type:'radio', options:['Yes','No'] },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'unique_value', label:'What is unique about your business?', type:'textarea', required:true },
-        { key:'audience', label:'Who is your audience?', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target (zip, city, region, DMA)', type:'textarea', required:true },
-        { key:'keywords', label:'Top keywords (for contextual)', type:'textarea' },
-        { key:'ad_messaging', label:'Ad messaging', type:'textarea', required:true },
-        { key:'cta', label:'Call to action (e.g. Learn More, Shop Now)', type:'text', required:true },
-      ]},
-    ]
-  },
-  sem: {
-    title: 'Search Engine Marketing Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'conversion_script_contact', label:'Website access or contact for conversion script', type:'text', required:true },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'keywords', label:'Top keywords to target', type:'textarea', required:true },
-        { key:'unique_value', label:'What is unique about your business?', type:'textarea', required:true },
-        { key:'audience', label:'Target audience (demographics, age, household income)', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-        { key:'competitors', label:'Competitors', type:'textarea' },
-      ]},
-    ]
-  },
-  fbig: {
-    title: 'Facebook/Instagram Ads Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'facebook_url', label:'Facebook page URL', type:'text', required:true },
-        { key:'ad_type', label:'Ad type', type:'radio', options:['Single Ad','Carousel'], required:true },
-        { key:'social_access', label:'Social login — add https://facebook.com/44ialan as admin?', type:'radio', options:['Yes','Send directions'], required:true },
-        { key:'conversion_contact', label:'Website access or contact for pixel/conversion script', type:'text', required:true },
-        { key:'ad_creation', label:'Ad creation', type:'radio', options:['Client Provided','44i ($175/set)'], required:true },
-        { key:'images', label:'Images', type:'radio', options:['Client Provided','Use Stock'], required:true },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'unique_value', label:'What is unique about your business?', type:'textarea', required:true },
-        { key:'audience', label:'Target audience', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-        { key:'ad_messaging', label:'Ad messaging', type:'textarea', required:true },
-        { key:'cta', label:'Call to action', type:'text', required:true },
-      ]},
-    ]
-  },
-  geofence: {
-    title: 'Geofence Targeting Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'conversion_contact', label:'Website access or contact for conversion script', type:'text', required:true },
-        { key:'ad_creation', label:'Ad creation', type:'radio', options:['Client Provided','44i ($175/set)'], required:true },
-        { key:'images', label:'Images', type:'radio', options:['Client Provided','Use Stock'], required:true },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'unique_value', label:'What is unique about your business?', type:'textarea', required:true },
-        { key:'targeted_locations', label:'Targeted locations (building addresses)', type:'textarea', required:true },
-        { key:'conversion_zone', label:'Conversion zone address (where to track physical visits)', type:'text', required:true },
-        { key:'ad_messaging', label:'Ad messaging', type:'textarea', required:true },
-        { key:'cta', label:'Call to action', type:'text', required:true },
-      ]},
-    ]
-  },
-  event: {
-    title: 'Event Targeting Intake',
-    sections: [
-      { title: 'Event Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'conversion_contact', label:'Website access or contact for conversion script', type:'text', required:true },
-        { key:'ad_creation', label:'Ad creation', type:'radio', options:['Client Provided','44i ($175/set)'], required:true },
-        { key:'images', label:'Images', type:'radio', options:['Client Provided','Use Stock'], required:true },
-        { key:'event_dates', label:'Event date(s)', type:'text', required:true },
-        { key:'event_locations', label:'Event location(s)', type:'textarea', required:true },
-        { key:'conversion_zone', label:'Conversion zone address', type:'text', required:true },
-        { key:'ad_messaging', label:'Ad messaging', type:'textarea', required:true },
-        { key:'cta', label:'Call to action', type:'text', required:true },
-      ]},
-    ]
-  },
-  youtube: {
-    title: 'YouTube Ads Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'youtube_profile', label:'YouTube profile URL', type:'text', required:true },
-        { key:'conversion_contact', label:'Website access or contact for conversion script', type:'text', required:true },
-        { key:'ad_creation', label:'Ad creation', type:'radio', options:['Client Provided','44i (additional charge)'], required:true },
-        { key:'video_on_youtube', label:'If client provided — is video hosted on YouTube? (required)', type:'radio', options:['Yes','No'] },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'audience', label:'Target audience', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-      ]},
-    ]
-  },
-  youtubetv: {
-    title: 'YouTube TV Ads Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'video_url', label:'YouTube video URL (15s or 30s ad only)', type:'text', required:true },
-        { key:'conversion_contact', label:'Website access or contact for conversion script', type:'text' },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'audience', label:'Target audience (demographics)', type:'textarea', required:true },
-        { key:'locations', label:'Top locations (DMA or region/state — large population required)', type:'textarea', required:true },
-        { key:'additional_comments', label:'Additional comments', type:'textarea' },
-      ]},
-    ]
-  },
-  streamingtv: {
-    title: 'Streaming TV Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'ad_creation', label:'Ad creation', type:'radio', options:['Client Provided','44i (additional charge)'], required:true },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'audience', label:'Target audience (age, gender, household income)', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-        { key:'additional_comments', label:'Additional comments', type:'textarea' },
-      ]},
-    ]
-  },
-  socialott: {
-    title: 'Social OTT/CTV Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'social_platform', label:'Social platform of existing post', type:'radio', options:['Facebook','Instagram','X','LinkedIn','Pinterest','TikTok','Snapchat','YouTube'], required:true },
-        { key:'social_post_url', label:'Social post URL', type:'text', required:true },
-        { key:'optional_video_creation', label:'Optional $250 video creation?', type:'radio', options:['Yes','No'] },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'audience', label:'Target audience (demographics)', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-        { key:'conversion_zone', label:'Track on-site conversion zone visits? (+$2 CPM)', type:'radio', options:['Yes','No'], required:true },
-        { key:'conversion_zone_address', label:'Conversion zone address (if yes)', type:'text' },
-      ]},
-    ]
-  },
-  audio: {
-    title: 'Programmatic Audio Ads Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'ad_provided', label:'Client-provided audio confirmed?', type:'radio', options:['Yes — client will provide','No — additional charge'], required:true },
-        { key:'conversion_contact', label:'Website access or contact for conversion script', type:'text' },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'audience', label:'Target audience', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-      ]},
-    ]
-  },
-  socialdisplay: {
-    title: 'Social Display Ads Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'creative_type', label:'Creative', type:'radio', options:['$175 Creative (convert existing social post)','$175 Static Ad Creation'], required:true },
-        { key:'social_platform', label:'Social platform of existing post', type:'radio', options:['Facebook','Instagram','X','LinkedIn','Pinterest','TikTok','Snapchat'] },
-        { key:'social_post_url', label:'Social post URL', type:'text' },
-        { key:'conversion_contact', label:'Website access or contact for conversion script', type:'text', required:true },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'audience', label:'Target audience (demographics)', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-        { key:'conversion_zone', label:'Track on-site conversion zone visits? (+$2 CPM)', type:'radio', options:['Yes','No'], required:true },
-        { key:'conversion_zone_address', label:'Conversion zone address (if yes)', type:'text' },
-      ]},
-    ]
-  },
-  mobile: {
-    title: 'Mobile Audience Targeting Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'ad_creation', label:'Ad creation', type:'radio', options:['Client Provided','$175 Static Ad Creation'], required:true },
-        { key:'conversion_contact', label:'Website access or contact for conversion script', type:'text', required:true },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'audience', label:'Target audience (demographics)', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-        { key:'geofences', label:'Geofences to target (CSV of addresses is fine)', type:'textarea', required:true },
-        { key:'retarget_visitors', label:'Retarget people who physically visited your business?', type:'radio', options:['Yes','No'] },
-        { key:'conversion_zone', label:'Track on-site conversion zone visits? (+$2 CPM)', type:'radio', options:['Yes','No'], required:true },
-        { key:'conversion_zone_address', label:'Conversion zone address (if yes)', type:'text' },
-      ]},
-    ]
-  },
-  progvideo: {
-    title: 'Programmatic/Native Video Intake',
-    sections: [
-      { title: 'Campaign Details', fields: [
-        { key:'website_url', label:'Website URL', type:'text', required:true },
-        { key:'landing_page_url', label:'Landing page URL', type:'text', required:true },
-        { key:'ad_creation', label:'Ad creation', type:'radio', options:['Client Provided','44i (additional charge)'], required:true },
-        { key:'has_vector_logo', label:'Vector file of logo (if client not doing creative)?', type:'radio', options:['Yes','No'] },
-        { key:'conversion_contact', label:'Website access or contact for conversion script', type:'text', required:true },
-        { key:'goal', label:'Campaign goal', type:'textarea', required:true },
-        { key:'audience', label:'Target audience', type:'textarea', required:true },
-        { key:'locations', label:'Top locations to target', type:'textarea', required:true },
-      ]},
-    ]
-  },
-  radiotovideo: {
-    title: 'Radio to Video Intake',
-    sections: [
-      { title: 'Required Assets', fields: [
-        { key:'images_confirmed', label:'10+ high-quality images/videos confirmed (1920x1080+ resolution)?', type:'radio', options:['Yes','No — 44i will choose stock'], required:true },
-        { key:'audio_file', label:':30 radio or voice-over audio file confirmed (.mp3 or .wav)?', type:'radio', options:['Yes','No'], required:true },
-        { key:'music_track', label:'Music track (.mp3 or .wav)?', type:'radio', options:['Client will provide','44i will provide'], required:true },
-        { key:'video_format', label:'Video format', type:'radio', options:['Horizontal','Vertical'], required:true },
-        { key:'logo_file', label:'High-resolution logo (.png, .psd, .ai)?', type:'radio', options:['Yes','No'], required:true },
-        { key:'brand_guidelines', label:'Brand guidelines (colors and fonts)?', type:'radio', options:['Yes','No'], required:true },
-        { key:'asset_delivery', label:'Asset delivery method', type:'radio', options:['Dropbox','Google Drive'], required:true },
-      ]},
-      { title: 'Video Text', fields: [
-        { key:'company_url', label:'Company URL', type:'text', required:true },
-        { key:'company_phone', label:'Company phone number', type:'text', required:true },
-        { key:'company_address', label:'Company address', type:'text' },
-        { key:'text_1', label:'Text line 1', type:'text' },
-        { key:'text_2', label:'Text line 2', type:'text' },
-        { key:'text_3', label:'Text line 3', type:'text' },
-      ]},
-    ]
-  },
-};
+// INTAKE_FORMS — populated at startup from the intake_forms table (see loadCatalog). Was a hardcoded object; now table-driven.
+let INTAKE_FORMS = {};
 
 // State
 let groups = [];
@@ -2464,132 +1958,8 @@ function toggleSection(id) {
 }
 
 // ── SERVICE TOGGLE ────────────────────────────────────────────
-const SERVICE_DATA = {
-  // Website one-time
-  'w-bs':{'label':'Website — Business Starter*','fee':1250,'recurring':null,'section':'web-ot','workflow':'Website'},
-  'w-bb':{'label':'Website — Business Builder*','fee':2500,'recurring':null,'section':'web-ot','workflow':'Website'},
-  'w-bp':{'label':'Website — Business Pro*','fee':3750,'recurring':null,'section':'web-ot','workflow':'Website'},
-  'w-custom':{'label':'Website — Custom Site/E-Commerce','fee':0,'recurring':null,'section':'web-ot','workflow':'Website'},
-  'w-module':{'label':'Website Module','fee':750,'recurring':null,'section':'web-ot'},
-  'w-vid-setup':{'label':'Visitor IDs Setup Fee','fee':199,'recurring':null,'section':'web-ot'},
-  'w-domain':{'label':'Domain Transfer','fee':175,'recurring':null,'section':'web-ot'},
-  'w-dns':{'label':'DNS Transfer','fee':175,'recurring':null,'section':'web-ot'},
-  'w-logo':{'label':'Convert Logo to Vector','fee':175,'recurring':null,'section':'web-ot'},
-  'w-hosting':{'label':'Hosting Fee*','fee':450,'recurring':null,'section':'web-ot'},
-  'w-ecomm-hosting':{'label':'E-Commerce Hosting Fee***','fee':750,'recurring':null,'section':'web-ot'},
-  'w-ada-hosting':{'label':'Web Accessibility Hosting Fee','fee':1000,'recurring':null,'section':'web-ot'},
-  'w-content':{'label':'Optional Content Support','fee':175,'recurring':null,'section':'web-ot'},
-  // Website monthly
-  'wm-1p':{'label':'Website 1-Page ◊','fee':0,'recurring':199,'section':'web-mo','workflow':'Website'},
-  'wm-5p':{'label':'Website 5-Page ◊','fee':0,'recurring':299,'section':'web-mo','workflow':'Website'},
-  'wm-10p':{'label':'Website 10-Page ◊','fee':0,'recurring':399,'section':'web-mo','workflow':'Website'},
-  'wm-ecomm':{'label':'Website E-Commerce §','fee':0,'recurring':599,'section':'web-mo','workflow':'Website'},
-  'wm-hosting':{'label':'Website Hosting Only','fee':0,'recurring':49,'section':'web-mo'},
-  'wm-host-content':{'label':'Website Hosting & Content','fee':0,'recurring':69,'section':'web-mo'},
-  'wm-host-ai':{'label':'Website Hosting + Content + AI Chatbot**','fee':0,'recurring':89,'section':'web-mo','workflow':'AI ChatBot'},
-  'wm-host-all':{'label':'Website Hosting + Content + AI Chatbot + ADA','fee':0,'recurring':109,'section':'web-mo','workflow':'AI ChatBot'},
-  'wm-ai':{'label':'AI ChatBot**','fee':0,'recurring':79,'section':'web-mo','workflow':'AI ChatBot'},
-  'wm-email':{'label':'Addl. Email Addresses','fee':0,'recurring':7,'section':'web-mo'},
-  'wm-content':{'label':'Website Optional Content Support','fee':175,'recurring':null,'section':'web-mo'},
-  // TLP
-  'tlp-bs':{'label':'Targeted Landing Pages — Business Starter','fee':0,'recurring':299,'section':'tlp','workflow':'Targeted Landing Pages'},
-  'tlp-bb':{'label':'Targeted Landing Pages — Business Builder','fee':0,'recurring':399,'section':'tlp','workflow':'Targeted Landing Pages'},
-  'tlp-bp':{'label':'Targeted Landing Pages — Business Pro','fee':0,'recurring':499,'section':'tlp','workflow':'Targeted Landing Pages'},
-  'tlp-custom':{'label':'Targeted Landing Pages — Custom','fee':0,'recurring':0,'section':'tlp','workflow':'Targeted Landing Pages'},
-  'tlp-design':{'label':'TLP Design Change','fee':99,'recurring':null,'section':'tlp'},
-  // Social Media
-  'sm-bs':{'label':'Social Media — Business Starter','fee':0,'recurring':575,'section':'sm','workflow':'Social Media Management'},
-  'sm-bb':{'label':'Social Media — Business Builder','fee':0,'recurring':775,'section':'sm','workflow':'Social Media Management'},
-  'sm-bp':{'label':'Social Media — Business Pro','fee':0,'recurring':1275,'section':'sm','workflow':'Social Media Management'},
-  'sm-addl':{'label':'Social Media — Addl. Channel','fee':0,'recurring':175,'section':'sm','workflow':'Social Media Management'},
-  // Email Marketing
-  'em-bb-2500':{'label':'Email Marketing — Business Builder <2,500','fee':0,'recurring':450,'section':'em','workflow':'Email Marketing'},
-  'em-bb-5000':{'label':'Email Marketing — Business Builder <5,000','fee':0,'recurring':575,'section':'em','workflow':'Email Marketing'},
-  'em-bp-30k':{'label':'Email Marketing — Business Pro <30,000','fee':0,'recurring':1000,'section':'em','workflow':'Email Marketing'},
-  'em-bp-30kp':{'label':'Email Marketing — Business Pro >30,000','fee':0,'recurring':0,'section':'em','workflow':'Email Marketing'},
-  'em-addl':{'label':'Email Marketing — Addl. Monthly Email','fee':0,'recurring':175,'section':'em','workflow':'Email Marketing'},
-  'em-template':{'label':'Email Marketing — Template Change','fee':175,'recurring':null,'section':'em'},
-  // SEO
-  'seo-bs':{'label':'SEO/AEO — Business Starter','fee':0,'recurring':199,'section':'seo','workflow':'SEO/AEO'},
-  'seo-bb':{'label':'SEO/AEO — Business Builder','fee':0,'recurring':599,'section':'seo','workflow':'SEO/AEO'},
-  'seo-bp':{'label':'SEO/AEO — Business Pro','fee':0,'recurring':799,'section':'seo','workflow':'SEO/AEO'},
-  // Reputation
-  'rep-bp':{'label':'Reputation Management — Business Pro','fee':0,'recurring':425,'section':'rep','workflow':'Reputation Management'},
-  // Local Listing
-  'llo-bp':{'label':'Local Listing Optimization — Business Pro','fee':0,'recurring':250,'section':'llo','workflow':'Local Listing Optimization'},
-  // GBP
-  'gbp-setup':{'label':'Google Business Profile — Setup & Verification','fee':300,'recurring':null,'section':'gbp','workflow':'Google Business Profile'},
-  // Targeted Display
-  'td-geo':{'label':'Targeted Display — Geotargeting & Audience','fee':0,'recurring':0,'cpm':10,'section':'td','workflow':'Digital Advertising'},
-  'td-site':{'label':'Targeted Display — Site Retargeting','fee':0,'recurring':0,'cpm':12,'section':'td','workflow':'Digital Advertising'},
-  'td-dynamic':{'label':'Targeted Display — Dynamic Display','fee':0,'recurring':0,'cpm':15,'section':'td','workflow':'Digital Advertising'},
-  'td-custom':{'label':'Targeted Display — Custom Site Targeting','fee':0,'recurring':0,'cpm':18,'section':'td','workflow':'Digital Advertising'},
-  'td-offline':{'label':'Targeted Display — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'td'},
-  // SEM
-  'sem-bp':{'label':'SEM — Business Pro','fee':0,'recurring':0,'cpc':'$4-$12','section':'sem','workflow':'Search Engine Marketing'},
-  // Social Ads
-  'sma-fb':{'label':'Social Ads — Facebook & Instagram','fee':0,'recurring':0,'cpm':15,'section':'sma','workflow':'Social Media Ads'},
-  'sma-tt':{'label':'Social Ads — TikTok','fee':0,'recurring':0,'cpm':27,'section':'sma','workflow':'Social Media Ads'},
-  'sma-sc':{'label':'Social Ads — Snapchat','fee':0,'recurring':0,'cpm':20,'section':'sma','workflow':'Social Media Ads'},
-  'sma-li':{'label':'Social Ads — LinkedIn','fee':0,'recurring':0,'cpm':60,'section':'sma','workflow':'Social Media Ads'},
-  // Location
-  'lt-geo':{'label':'Location Targeting — Geofencing','fee':0,'recurring':0,'cpm':15,'section':'lt','workflow':'Location Targeting'},
-  'lt-crm':{'label':'Location Targeting — CRM Addressable','fee':0,'recurring':0,'cpm':20,'section':'lt','workflow':'Location Targeting'},
-  'lt-event':{'label':'Location Targeting — Event/Lookback','fee':0,'recurring':0,'cpm':20,'section':'lt','workflow':'Location Targeting'},
-  'lt-offline':{'label':'Location Targeting — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'lt'},
-  // Video
-  'yt-out':{'label':'YouTube — Outstream','fee':0,'recurring':0,'cpm':25,'section':'vid','workflow':'Video Advertising'},
-  'yt-15':{'label':'YouTube — Non-skippable :15','fee':0,'recurring':0,'cpm':27.5,'section':'vid','workflow':'Video Advertising'},
-  'yt-06':{'label':'YouTube — Bumper :06','fee':0,'recurring':0,'cpm':25,'section':'vid','workflow':'Video Advertising'},
-  'yt-skip':{'label':'YouTube — TrueView Skippable','fee':0,'recurring':0,'cpm':25,'section':'vid','workflow':'Video Advertising'},
-  'nv-geo':{'label':'Native Video — Geotargeting','fee':0,'recurring':0,'cpm':30,'section':'vid','workflow':'Video Advertising'},
-  'nv-offline':{'label':'Native Video — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'vid'},
-  'pv-geo':{'label':'Programmatic Video — Geotargeting','fee':0,'recurring':0,'cpm':35,'section':'vid','workflow':'Video Advertising'},
-  'pv-offline':{'label':'Programmatic Video — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'vid'},
-  'yttv-bp':{'label':'YouTube TV — Business Pro','fee':0,'recurring':0,'cpm':90,'section':'vid','workflow':'Video Advertising'},
-  'yttv-addl':{'label':'YouTube TV — Addl. Targeting','fee':0,'recurring':0,'cpm':10,'section':'vid'},
-  // CTV/OTT
-  'stv-loc':{'label':'Streaming TV — Location','fee':0,'recurring':0,'cpm':40,'section':'ctv','workflow':'Streaming TV/OTT/CTV'},
-  'stv-aud':{'label':'Streaming TV — Audience/Demo','fee':0,'recurring':0,'cpm':46.5,'section':'ctv','workflow':'Streaming TV/OTT/CTV'},
-  'stv-sports':{'label':'Streaming TV — Sports','fee':0,'recurring':0,'cpm':60,'section':'ctv','workflow':'Streaming TV/OTT/CTV'},
-  'stv-offline':{'label':'Streaming TV — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'ctv'},
-  'ottctv-bp':{'label':'Social OTT/CTV — Business Pro','fee':0,'recurring':0,'cpm':62,'section':'ctv','workflow':'Streaming TV/OTT/CTV'},
-  'ottctv-offline':{'label':'Social OTT/CTV — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'ctv'},
-  'hulu-bp':{'label':'Hulu Ads — Business Pro','fee':0,'recurring':0,'cpm':75,'section':'ctv','workflow':'Streaming TV/OTT/CTV'},
-  'amz-bp':{'label':'Amazon Prime Ads — Business Pro','fee':0,'recurring':0,'cpm':90,'section':'ctv','workflow':'Streaming TV/OTT/CTV'},
-  // Audio/Mobile/Display
-  'pa-geo':{'label':'Programmatic Audio — Geotargeting','fee':0,'recurring':0,'cpm':45,'section':'audio','workflow':'Audio/Mobile/Display'},
-  'pa-offline':{'label':'Programmatic Audio — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'audio'},
-  'nd-geo':{'label':'Native Display — Geotargeting','fee':0,'recurring':0,'cpm':14,'section':'audio','workflow':'Audio/Mobile/Display'},
-  'nd-offline':{'label':'Native Display — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'audio'},
-  'sda-bp':{'label':'Social Display Ads — Business Pro','fee':0,'recurring':0,'cpm':17,'section':'audio','workflow':'Audio/Mobile/Display'},
-  'sda-offline':{'label':'Social Display Ads — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'audio'},
-  'mob-bp':{'label':'Mobile Audience Targeting — Business Pro','fee':0,'recurring':0,'cpm':17,'section':'audio','workflow':'Audio/Mobile/Display'},
-  'mob-offline':{'label':'Mobile Audience Targeting — Offline Visits Tracking','fee':0,'recurring':0,'cpm':2,'section':'audio'},
-  // A La Carte
-  'alc-media':{'label':'Traditional Media Buying & Consultation','fee':0,'recurring':null,'section':'alc'},
-  'alc-brand':{'label':'New Brand / Logo','fee':850,'recurring':null,'section':'alc'},
-  'alc-photo':{'label':'Stock Photography','fee':25,'recurring':null,'section':'alc'},
-  'alc-design':{'label':'Graphic Design (Hourly)','fee':175,'recurring':null,'section':'alc'},
-  'alc-social-graphics':{'label':'Social Profile & Cover Graphics','fee':100,'recurring':null,'section':'alc'},
-  'alc-radio':{'label':'Radio to Video / YouTube Pre-Roll Creation','fee':250,'recurring':null,'section':'alc'},
-  'alc-banner':{'label':'Banner or Social Media Ad Set','fee':175,'recurring':null,'section':'alc'},
-  // Visitor IDs Monthly
-  // Visitor IDs — in Website One-Time section
-  'w-vid200':{'label':'200 Visitor IDs ‡','fee':0,'recurring':199,'section':'web-ot'},
-  'w-vid350':{'label':'350 Visitor IDs ‡','fee':0,'recurring':349,'section':'web-ot'},
-  'w-vid500':{'label':'500 Visitor IDs ‡','fee':0,'recurring':499,'section':'web-ot'},
-  'w-vid200e':{'label':'200 Visitor IDs + Monthly Email ‡','fee':0,'recurring':499,'section':'web-ot'},
-  'w-vid350e':{'label':'350 Visitor IDs + Monthly Email ‡','fee':0,'recurring':649,'section':'web-ot'},
-  'w-vid500e':{'label':'500 Visitor IDs + Monthly Email ‡','fee':0,'recurring':799,'section':'web-ot'},
-  // Visitor IDs — in Website Monthly section (standalone)
-  'wm-vid200':{'label':'200 Visitor IDs ‡ (standalone)','fee':0,'recurring':99,'section':'web-mo'},
-  'wm-vid350':{'label':'350 Visitor IDs ‡ (standalone)','fee':0,'recurring':249,'section':'web-mo'},
-  'wm-vid500':{'label':'500 Visitor IDs ‡ (standalone)','fee':0,'recurring':399,'section':'web-mo'},
-  'wm-vid200e':{'label':'200 Visitor IDs + Monthly Email ‡ (standalone)','fee':0,'recurring':399,'section':'web-mo'},
-  'wm-vid350e':{'label':'350 Visitor IDs + Monthly Email ‡ (standalone)','fee':0,'recurring':549,'section':'web-mo'},
-  'wm-vid500e':{'label':'500 Visitor IDs + Monthly Email ‡ (standalone)','fee':0,'recurring':699,'section':'web-mo'},
-};
+// SERVICE_DATA — populated at startup from the services table (see loadCatalog). Was a hardcoded object; now table-driven.
+let SERVICE_DATA = {};
 
 function toggle(cb, id) {
   const row = cb.closest('tr');
@@ -4937,33 +4307,29 @@ function showToast(msg, type='success') {
 
 // ── INIT ──────────────────────────────────────────────────────
 // ════════════════════════════════════════════════════════════════
-// ── STAGE 1: CATALOG LOADER + VERIFICATION (behavior-neutral) ────
-// Loads services / intake_forms from Supabase, rebuilds the catalog
-// objects, and logs a diff against the hardcoded ones. Does NOT change
-// what the form uses yet — this only PROVES the table data reproduces
-// the hardcoded objects before we trust it in Stage 2.
+// ── CATALOG LOADER — populates SERVICE_DATA / PRODUCT_CONFIG /
+//    INTAKE_FORMS from Supabase at startup. The form's single source
+//    of truth for the service catalog. If this fails, the form refuses
+//    to load (no hardcoded fallback by design).
 // ════════════════════════════════════════════════════════════════
 
-// Build a SERVICE_DATA-shaped entry from one services-table row, applying
-// the reverse translations of the migration (default_price+billing_type
-// → fee/recurring; modifier/cpm re-quirking so existing reader code that
-// checks `data.cpm` keeps behaving identically).
+// One services-table row → a SERVICE_DATA entry. Reverses the migration
+// translations (default_price+billing_type → fee/recurring; modifier/cpm
+// shape preserved so existing reader code behaves identically).
 function rowToServiceData(r) {
   const out = { label: r.label, section: r.section };
-  // fee / recurring split
   if (r.billing_type === 'one_time') {
     out.fee = r.default_price != null ? Number(r.default_price) : 0;
     out.recurring = null;
-  } else { // monthly
+  } else {
     out.fee = 0;
     out.recurring = r.default_price != null ? Number(r.default_price) : 0;
   }
-  // workflow only when present (hardcoded object omits it otherwise)
   if (r.workflow) out.workflow = r.workflow;
-  // cpm / cpc re-quirking to match the old object's shape:
-  //  - genuine spend products carried a numeric cpm (= retail_cpm)
-  //  - SEM carried cpc:'$4-$12' (string)
-  //  - modifier items (offline tracking, yttv-addl) carried cpm:<modifier_amount>
+  // cpm/cpc shape: spend products carry numeric cpm (=retail_cpm); SEM carries
+  // cpc string; modifier items (offline tracking etc.) carry cpm=modifier_amount.
+  // NOTE: the modifier "re-quirk" preserves OLD behavior intentionally; the real
+  // modifier-pricing fix belongs to the later form-edit pass, not the switchover.
   if (r.pricing_mode === 'modifier' && r.modifier_amount != null) {
     out.cpm = Number(r.modifier_amount);
   } else if (r.retail_cpm != null) {
@@ -4974,121 +4340,70 @@ function rowToServiceData(r) {
   return out;
 }
 
-// Build a PRODUCT_CONFIG-shaped entry from one services-table row.
-// Old object only had entries for services with a koc requirement OR an
-// intake form; plain services had NO entry at all. We mirror that so the
-// comparison matches: only emit when koc!=='none' OR intake present.
+// One services-table row → a PRODUCT_CONFIG entry, or null if the service
+// has neither a KOC requirement nor an intake form (old object omitted those).
 function rowToProductConfig(r) {
   const koc = r.koc_requirement || 'none';
   const intake = r.intake_form_id || null;
-  if (koc === 'none' && !intake) return null; // no entry in old object
+  if (koc === 'none' && !intake) return null;
   return { koc, intake, label: r.label };
 }
 
-// Deep-ish equality good enough for these flat-ish objects
-function catalogValuesEqual(a, b) {
-  if (a === b) return true;
-  if (a == null || b == null) return a === b;
-  if (typeof a !== 'object') return a === b;
-  const ak = Object.keys(a), bk = Object.keys(b);
-  if (ak.length !== bk.length) return false;
-  return ak.every(k => catalogValuesEqual(a[k], b[k]));
-}
+async function loadCatalog() {
+  const services = await sb('services?active=eq.true&select=*');
+  const forms    = await sb('intake_forms?active=eq.true&select=*');
+  if (!Array.isArray(services) || !services.length) throw new Error('No active services returned from catalog');
+  if (!Array.isArray(forms) || !forms.length) throw new Error('No active intake forms returned from catalog');
 
-async function loadCatalogAndCompare() {
-  console.log('%c[Catalog Stage 1] Loading tables for comparison…', 'color:#1C9BD7;font-weight:bold');
-  let services, forms;
-  try {
-    services = await sb('services?active=eq.true&select=*');
-    forms    = await sb('intake_forms?active=eq.true&select=*');
-  } catch (e) {
-    console.error('[Catalog Stage 1] Table load FAILED — cannot compare:', e.message);
-    return;
-  }
-  console.log(`[Catalog Stage 1] Loaded ${services?.length||0} active services, ${forms?.length||0} active intake forms.`);
-
-  // ── Rebuild objects from tables ──
-  const SD_db = {}, PC_db = {}, IF_db = {};
-  (services || []).forEach(r => {
-    SD_db[r.id] = rowToServiceData(r);
-    const pc = rowToProductConfig(r);
-    if (pc) PC_db[r.id] = pc;
+  // Populate the module-level objects in place
+  const sd = {}, pc = {}, iff = {};
+  services.forEach(r => {
+    sd[r.id] = rowToServiceData(r);
+    const cfg = rowToProductConfig(r);
+    if (cfg) pc[r.id] = cfg;
   });
-  (forms || []).forEach(f => {
+  forms.forEach(f => {
     const def = (typeof f.definition === 'string') ? JSON.parse(f.definition) : f.definition;
-    IF_db[f.id] = Object.assign({ title: f.title }, def);
+    iff[f.id] = Object.assign({ title: f.title }, def);
   });
-
-  // ── Compare helper ──
-  function diff(name, hardcoded, fromDb) {
-    const hk = Object.keys(hardcoded), dk = Object.keys(fromDb);
-    const onlyHard = hk.filter(k => !(k in fromDb));
-    const onlyDb   = dk.filter(k => !(k in hardcoded));
-    const valDiffs = hk.filter(k => (k in fromDb) && !catalogValuesEqual(hardcoded[k], fromDb[k]));
-
-    // ── Classify each difference as ACCEPTED (known/intended) or UNEXPECTED ──
-    // Accepted, documented on 2026-06-25:
-    //  1. Label-only differences — table labels are canonical (cleaner/more
-    //     complete than the inconsistent old code). 5 services.
-    //  2. visitor-ID email-bundle items gaining the visitorid intake form
-    //     (old code omitted it — an oversight; table fixes it). Pending AM confirm.
-    const ACCEPTED_LABEL_DIFF_IDS = new Set(['w-domain','w-dns','w-ada-hosting','alc-radio','alc-banner']);
-    const ACCEPTED_EXTRA_IDS      = new Set(['w-vid200e','w-vid350e','w-vid500e']);
-
-    // A value-diff is "label-only" if every differing field is just `label`
-    const isLabelOnlyDiff = (h, d) => {
-      const keys = new Set([...Object.keys(h||{}), ...Object.keys(d||{})]);
-      for (const k of keys) {
-        if (k === 'label') continue;
-        if (!catalogValuesEqual(h?.[k], d?.[k])) return false;
-      }
-      return (h?.label !== d?.label);
-    };
-
-    const unexpectedMissing = onlyHard; // anything missing from DB is always unexpected
-    const unexpectedExtra   = onlyDb.filter(k => !ACCEPTED_EXTRA_IDS.has(k));
-    const acceptedExtra     = onlyDb.filter(k =>  ACCEPTED_EXTRA_IDS.has(k));
-    const acceptedLabel     = valDiffs.filter(k => ACCEPTED_LABEL_DIFF_IDS.has(k) && isLabelOnlyDiff(hardcoded[k], fromDb[k]));
-    const unexpectedVal     = valDiffs.filter(k => !acceptedLabel.includes(k));
-
-    const clean = !unexpectedMissing.length && !unexpectedExtra.length && !unexpectedVal.length;
-    console.log(
-      `%c[${name}] ${clean ? '✓ CLEAN (behavioral match)' : '✗ UNEXPECTED DIFFERENCES'} — hardcoded:${hk.length} db:${dk.length}`,
-      'color:' + (clean ? '#10B981' : '#EF4444') + ';font-weight:bold'
-    );
-    // Accepted differences — informational only
-    if (acceptedLabel.length) console.log(`  [${name}] ✓ accepted label improvements (${acceptedLabel.length}):`, acceptedLabel);
-    if (acceptedExtra.length) console.log(`  [${name}] ✓ accepted new intake routing (${acceptedExtra.length}):`, acceptedExtra);
-    // Unexpected differences — must be empty to pass
-    if (unexpectedMissing.length) console.error(`  [${name}] ✗ MISSING from DB:`, unexpectedMissing);
-    if (unexpectedExtra.length)   console.error(`  [${name}] ✗ UNEXPECTED extra in DB:`, unexpectedExtra);
-    if (unexpectedVal.length) {
-      console.error(`  [${name}] ✗ UNEXPECTED value differences on ${unexpectedVal.length} key(s):`);
-      unexpectedVal.forEach(k => console.log(`    ${k}:`, {hardcoded: hardcoded[k], db: fromDb[k]}));
-    }
-    return clean;
-  }
-
-  console.log('%c──── Catalog comparison (behavioral fields must match; labels + known fixes accepted) ────', 'color:#1C9BD7;font-weight:bold');
-  const a = diff('SERVICE_DATA', SERVICE_DATA, SD_db);
-  const b = diff('PRODUCT_CONFIG', PRODUCT_CONFIG, PC_db);
-  const c = diff('INTAKE_FORMS', INTAKE_FORMS, IF_db);
-  console.log(
-    `%c──── Result: ${a&&b&&c ? 'CLEAN ✓ — all behavioral fields match; only accepted differences remain. Safe for Stage 2.' : 'UNEXPECTED DIFFERENCES FOUND — review ✗ items above before Stage 2'} ────`,
-    'color:' + (a&&b&&c ? '#10B981' : '#EF4444') + ';font-weight:bold;font-size:13px'
-  );
-  // Expose for manual inspection in console
-  window.__catalogDb = { SERVICE_DATA: SD_db, PRODUCT_CONFIG: PC_db, INTAKE_FORMS: IF_db };
-  console.log('[Catalog Stage 1] Rebuilt objects available as window.__catalogDb for manual inspection.');
+  SERVICE_DATA = sd;
+  PRODUCT_CONFIG = pc;
+  INTAKE_FORMS = iff;
+  console.log(`[Catalog] Loaded ${Object.keys(SERVICE_DATA).length} services, ${Object.keys(INTAKE_FORMS).length} intake forms from Supabase.`);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  loadCatalogAndCompare(); // Stage 1: verify only, changes no behavior
-  loadGroup();
+function showCatalogError(msg) {
+  const wrap = document.querySelector('.wrap');
+  if (wrap) {
+    wrap.innerHTML = `
+      <div style="max-width:520px;margin:80px auto;text-align:center;padding:40px 32px;background:#fff;border-radius:14px;border:1px solid var(--border);box-shadow:0 4px 24px rgba(0,0,0,.08)">
+        <div style="font-size:44px;margin-bottom:16px">⚠️</div>
+        <h2 style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:10px">Couldn't load the service catalog</h2>
+        <p style="font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:20px">
+          The form needs to load its service list before it can be used, and that didn't work just now.
+          This is usually a temporary connection issue. Please reload the page to try again.
+        </p>
+        <p style="font-size:11px;color:var(--muted);font-family:monospace;background:var(--light);padding:8px 12px;border-radius:6px;word-break:break-word">${esc(msg||'Unknown error')}</p>
+        <button onclick="window.location.reload()" style="margin-top:20px;padding:11px 28px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer">Reload &amp; try again</button>
+      </div>`;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('auth-date').value = new Date().toISOString().slice(0,10);
   initCanvas();
-  // Clean up old drafts (7+ days) across all device+slug keys, then attempt to restore this tab's draft
+  // Catalog must load BEFORE the form can be used. No hardcoded fallback by design —
+  // if this fails we show an error rather than run on stale/empty data.
+  try {
+    await loadCatalog();
+  } catch (e) {
+    console.error('[Catalog] Load failed — form will not start:', e.message);
+    showCatalogError(e.message);
+    return; // stop init — do not proceed into a catalog-less form
+  }
+  // Catalog is ready — proceed with normal startup.
+  loadGroup();
   purgeExpiredDrafts();
   setTimeout(loadDraft, 600);
 });
