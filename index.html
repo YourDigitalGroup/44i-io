@@ -1619,6 +1619,160 @@ function removeBypass(formKey) {
   setTimeout(() => openIntakeForService(sid, true), 100);
 }
 
+// ════════════════════════════════════════════════════════════════
+// ── TLP STRUCTURED GRID ──────────────────────────────────────────
+// Enforces the TLP campaign rule: an order is EITHER one service across
+// multiple locations, OR multiple services in one location — never both
+// multiplied. One axis is locked to a single entry; the other expands up
+// to the tier's page cap. Custom (15+) is intentionally excluded (pending
+// AM decision and it loads no intake today).
+// ════════════════════════════════════════════════════════════════
+
+const TLP_CAPS = { 'tlp-bs': 5, 'tlp-bb': 10, 'tlp-bp': 15 };
+const TLP_TIER_NAMES = { 'tlp-bs': 'Business Starter', 'tlp-bb': 'Business Builder', 'tlp-bp': 'Business Pro' };
+// Soft-minimum thresholds: under this many pages, gently suggest a smaller tier may fit.
+// Starter has no smaller tier, so no reminder. Builder < 6 → Starter; Pro < 11 → Builder.
+const TLP_SOFT_MIN = { 'tlp-bb': 6, 'tlp-bp': 11 };
+
+// In-memory working state for the grid while the modal is open
+let tlpGridState = null; // { serviceId, cap, mode, single, many: [] }
+
+function renderTlpGrid(serviceId, existing) {
+  const cap = TLP_CAPS[serviceId];
+  const tierName = TLP_TIER_NAMES[serviceId];
+
+  // Restore from saved fields if present, else fresh
+  const f = existing.fields || {};
+  let mode = f.tlp_mode === 'multi-service' ? 'multi-service'
+           : f.tlp_mode === 'single-service' ? 'single-service'
+           : '';
+  let single = f.tlp_single_value || '';
+  let many = [];
+  if (f.tlp_many_values) {
+    // stored as a numbered multi-line string; parse back to entries
+    many = String(f.tlp_many_values).split('\n').map(l => l.replace(/^\s*\d+\.\s*/, '').trim()).filter(Boolean);
+  }
+  tlpGridState = { serviceId, cap, mode, single, many: many.length ? many : [''] };
+
+  return `
+    <div class="modal-section" id="tlp-grid-section">
+      <div class="modal-section-title">Locations &amp; Services — ${tierName} (up to ${cap} pages)</div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px">
+        A TLP campaign is either <strong>one service across multiple locations</strong>, or
+        <strong>multiple services in one location</strong>. Pick which, then add up to ${cap} entries.
+      </p>
+      <div class="modal-field" style="margin-bottom:14px">
+        <label>Campaign type</label>
+        <div class="radio-group" style="margin-top:6px">
+          <label><input type="radio" name="tlp-mode" value="single-service" ${mode==='single-service'?'checked':''} onchange="onTlpModeChange('single-service')"/> One service → multiple locations</label>
+          <label><input type="radio" name="tlp-mode" value="multi-service" ${mode==='multi-service'?'checked':''} onchange="onTlpModeChange('multi-service')"/> Multiple services → one location</label>
+        </div>
+      </div>
+      <div id="tlp-grid-body" style="${mode ? '' : 'display:none'}"></div>
+    </div>`;
+}
+
+function onTlpModeChange(mode) {
+  if (!tlpGridState) return;
+  // Switching mode clears entries (they don't carry between modes)
+  if (tlpGridState.mode && tlpGridState.mode !== mode) {
+    tlpGridState.single = '';
+    tlpGridState.many = [''];
+  }
+  tlpGridState.mode = mode;
+  document.getElementById('tlp-grid-body').style.display = '';
+  renderTlpGridBody();
+}
+
+function renderTlpGridBody() {
+  const s = tlpGridState;
+  if (!s || !s.mode) return;
+  const body = document.getElementById('tlp-grid-body');
+  const singleLabel = s.mode === 'single-service' ? 'Service' : 'Location (City, State / County)';
+  const manyLabel   = s.mode === 'single-service' ? 'Locations to target (City, State / County)' : 'Services';
+  const manySingularPlaceholder = s.mode === 'single-service' ? 'e.g. Dallas, TX' : 'e.g. Roof Repair';
+
+  let manyRows = s.many.map((val, i) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="font-size:11px;color:var(--muted);width:18px;text-align:right">${i+1}.</span>
+      <input type="text" value="${(val||'').replace(/"/g,'&quot;')}" placeholder="${manySingularPlaceholder}"
+        oninput="onTlpManyInput(${i}, this.value)"
+        style="flex:1;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
+      ${s.many.length > 1 ? `<button type="button" onclick="removeTlpRow(${i})" title="Remove" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:0 4px">×</button>` : '<span style="width:20px"></span>'}
+    </div>`).join('');
+
+  const atCap = s.many.length >= s.cap;
+  const addBtn = atCap
+    ? `<p style="font-size:11px;color:#92400E;background:#FEF3C7;border-radius:6px;padding:6px 10px;display:inline-block;margin-top:4px">${TLP_TIER_NAMES[s.serviceId]} includes up to ${s.cap} pages — remove an entry to add a different one.</p>`
+    : `<button type="button" onclick="addTlpRow()" style="margin-top:4px;padding:7px 14px;border-radius:6px;border:1px dashed var(--accent);background:var(--light);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">+ Add ${s.mode === 'single-service' ? 'location' : 'service'}</button>`;
+
+  // Soft-minimum reminder
+  const filled = s.many.filter(v => (v||'').trim()).length;
+  const softMin = TLP_SOFT_MIN[s.serviceId];
+  let softNote = '';
+  if (softMin && filled > 0 && filled < softMin) {
+    const smaller = s.serviceId === 'tlp-bp' ? 'Business Builder' : 'Business Starter';
+    softNote = `<p style="font-size:11px;color:#92400E;background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;padding:8px 11px;margin-top:10px">
+      💡 You've added ${filled} ${filled===1?'entry':'entries'}. ${TLP_TIER_NAMES[s.serviceId]} covers up to ${s.cap} pages — if you only need a few, <strong>${smaller}</strong> may be a better fit. (Just a heads-up — you can still proceed.)</p>`;
+  }
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr;gap:14px">
+      <div class="modal-field">
+        <label>${singleLabel} <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the single ${s.mode==='single-service'?'service':'location'} for this campaign</span></label>
+        <input type="text" value="${(s.single||'').replace(/"/g,'&quot;')}" placeholder="${s.mode==='single-service'?'e.g. Roof Repair':'e.g. Dallas, TX'}"
+          oninput="onTlpSingleInput(this.value)"
+          style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+      </div>
+      <div>
+        <label class="lbl" style="display:block;margin-bottom:8px">${manyLabel} <span style="color:var(--muted);font-weight:400">(${s.many.length}/${s.cap})</span></label>
+        ${manyRows}
+        ${addBtn}
+        ${softNote}
+      </div>
+    </div>`;
+}
+
+function onTlpSingleInput(val) { if (tlpGridState) tlpGridState.single = val; }
+function onTlpManyInput(i, val) {
+  if (tlpGridState && tlpGridState.many[i] !== undefined) {
+    tlpGridState.many[i] = val;
+    // re-render only to refresh the soft-min note if it would change
+    const filled = tlpGridState.many.filter(v => (v||'').trim()).length;
+    const softMin = TLP_SOFT_MIN[tlpGridState.serviceId];
+    if (softMin && (filled === softMin - 1 || filled === softMin)) renderTlpGridBody();
+  }
+}
+function addTlpRow() {
+  if (!tlpGridState) return;
+  if (tlpGridState.many.length >= tlpGridState.cap) return;
+  tlpGridState.many.push('');
+  renderTlpGridBody();
+}
+function removeTlpRow(i) {
+  if (!tlpGridState) return;
+  tlpGridState.many.splice(i, 1);
+  if (!tlpGridState.many.length) tlpGridState.many = [''];
+  renderTlpGridBody();
+}
+
+// Serialize the grid into readable string fields (flows through all existing
+// consumers — Trello, admin detail, review — as ordinary string answers).
+function serializeTlpGrid(fields) {
+  const s = tlpGridState;
+  if (!s || !s.mode) return;
+  fields.tlp_mode = s.mode; // 'single-service' | 'multi-service' (raw key for restore)
+  fields.tlp_mode_label = s.mode === 'single-service'
+    ? 'One service → multiple locations'
+    : 'Multiple services → one location';
+  fields.tlp_single_label = s.mode === 'single-service' ? 'Service' : 'Location';
+  fields.tlp_single_value = (s.single || '').trim();
+  const many = s.many.map(v => (v||'').trim()).filter(Boolean);
+  fields.tlp_many_label = s.mode === 'single-service' ? 'Locations' : 'Services';
+  fields.tlp_many_values = many.map((v, i) => `${i+1}. ${v}`).join('\n');
+  fields.tlp_page_count = String(many.length);
+}
+
 function showFullIntakeForm(serviceId, cfg, formDef, existing) {
   const isKoc = cfg.koc === 'required';
   let html = '';
@@ -1651,6 +1805,17 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
     html += '</div></div>';
   });
 
+  // ── TLP STRUCTURED GRID ───────────────────────────────────────
+  // Appended AFTER the existing TLP questions, for the three capped tiers
+  // only (Starter/Builder/Pro). tlp-custom is intentionally untouched
+  // (it loads no intake form today; pending AM decision). The grid enforces
+  // the either/or rule: one service → many locations, OR many services →
+  // one location — never a matrix. Tier sets the hard max; minimum is a
+  // soft reminder. Serializes to readable string fields on save.
+  if (cfg.intake === 'tlp' && TLP_CAPS[serviceId]) {
+    html += renderTlpGrid(serviceId, existing);
+  }
+
   document.getElementById('intake-modal-body').innerHTML = html;
   document.getElementById('intake-modal-footer-left').innerHTML = '';
   document.getElementById('intake-help-btn').style.display = '';
@@ -1680,10 +1845,17 @@ function saveIntakeForm() {
     });
   });
 
+  // Capture TLP grid (if present) into the same flat fields map
+  let tlpGridFilled = false;
+  if (formKey === 'tlp' && tlpGridState && tlpGridState.mode) {
+    serializeTlpGrid(fields);
+    tlpGridFilled = !!(fields.tlp_single_value && (fields.tlp_page_count && fields.tlp_page_count !== '0'));
+  }
+
   // Check if fully completed (all fields have values) or partial
   const allFields = formDef.sections.flatMap(s => s.fields);
   const filledCount = allFields.filter(f => fields[f.key]).length;
-  const isComplete = filledCount === allFields.length;
+  const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !TLP_CAPS[sid] || tlpGridFilled);
 
   intakeData[formKey] = {
     fields,
@@ -1700,6 +1872,7 @@ function saveIntakeForm() {
 function closeIntakeModal() {
   document.getElementById('intake-modal').style.display = 'none';
   currentIntakeServiceId = null;
+  tlpGridState = null; // clear grid working state so it can't leak into the next form
 }
 
 // // Adds a small "📋 Edit Intake" link directly on each service table row
@@ -2786,6 +2959,13 @@ async function submitIO() {
               }
             });
           });
+          // TLP structured grid — not part of the section field list, append explicitly
+          if (formKey === 'tlp' && fields.tlp_mode_label) {
+            desc += `\n**Campaign Layout**\n`;
+            desc += `✅ **Type:** ${fields.tlp_mode_label}\n`;
+            desc += `✅ **${fields.tlp_single_label || 'Single'}:** ${fields.tlp_single_value || '—'}\n`;
+            desc += `✅ **${fields.tlp_many_label || 'Entries'} (${fields.tlp_page_count || 0} pages):**\n${fields.tlp_many_values || '—'}\n`;
+          }
           return desc;
         };
 
@@ -3411,7 +3591,7 @@ function renderSuggestedMap() {
       const billing = s.billing_type === 'monthly'
         ? '<span style="font-size:10px;color:#0F6E56;font-weight:600">Monthly</span>'
         : s.billing_type === 'one_time'
-          ? '<span style="font-size:10px;color:var(--muted)">One-Time</span>'
+          ? '<span style="font-size:10px;color:#1580B5;font-weight:600">One-Time</span>'
           : '<span style="color:var(--muted)">—</span>';
       const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
       html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
@@ -3603,6 +3783,15 @@ function viewOrderDetail(orderId) {
     if (formDef) {
       formDef.sections.forEach(s => s.fields.forEach(f => { labelByKey[f.key] = f.label; }));
     }
+    // Friendly labels for the TLP structured-grid keys (not in the form definition)
+    Object.assign(labelByKey, {
+      tlp_mode_label: 'Campaign Type',
+      tlp_single_value: (data.fields?.tlp_single_label || 'Single'),
+      tlp_many_values: (data.fields?.tlp_many_label || 'Entries'),
+      tlp_page_count: 'Page Count',
+    });
+    // Internal keys we don't want to show as their own rows (they back other display rows)
+    const HIDE_KEYS = new Set(['tlp_mode','tlp_single_label','tlp_many_label']);
     let status, statusColor;
     if (data.bypassed) { status = 'AM Help Requested'; statusColor = '#92400E'; }
     else if (data.completed) { status = 'Complete'; statusColor = '#166534'; }
@@ -3616,7 +3805,7 @@ function viewOrderDetail(orderId) {
     if (data.fields && Object.keys(data.fields).length) {
       intakeHtml += '<div style="font-size:11px;color:var(--muted);line-height:1.6">';
       Object.entries(data.fields).forEach(([k,v]) => {
-        if (v) intakeHtml += `<div><strong style="color:var(--text)">${esc(labelByKey[k] || k)}:</strong> ${esc(v)}</div>`;
+        if (v && !HIDE_KEYS.has(k)) intakeHtml += `<div><strong style="color:var(--text)">${esc(labelByKey[k] || k)}:</strong> ${esc(v)}</div>`;
       });
       intakeHtml += '</div>';
     } else if (data.bypassed) {
