@@ -112,15 +112,21 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td { border-bottom: none; padding: 3px 0; text-align: left; }
   .svc-table td.right { text-align: left; color: var(--text); }
 
-  /* Checkbox cell → sits top-right as a big tap target */
+  /* Checkbox cell → sits inline to the LEFT of the service name (matches desktop) */
   .svc-table td:first-child {
-    position: absolute; top: 10px; right: 10px; width: auto; padding: 0;
+    display: inline-block;
+    width: auto;
+    padding: 0 10px 0 0;
+    vertical-align: middle;
   }
-  .svc-table td:first-child input[type=checkbox] { width: 22px; height: 22px; }
+  .svc-table td:first-child input[type=checkbox] { width: 22px; height: 22px; vertical-align: middle; }
 
-  /* Service-name cell (2nd) → the card title; leave room for the checkbox */
+  /* Service-name cell (2nd) → the card title, sits inline next to the checkbox */
   .svc-table td:nth-child(2) {
-    font-weight: 600; font-size: 13.5px; padding-right: 34px; margin-bottom: 2px;
+    display: inline-block;
+    width: auto;
+    font-weight: 600; font-size: 13.5px; margin-bottom: 2px;
+    vertical-align: middle;
   }
 
   /* Labelled value rows — label comes from ::before. Now that every row has the
@@ -4747,8 +4753,11 @@ function rowToProductConfig(r) {
 function priceAndFrequency(r) {
   if (!r) return { fee: '—', freq: '' };
   if (r.pricing_mode === 'spend') {
-    if (r.id === 'sem-bp') return { fee: '$4–$12', freq: 'CPC' };
-    return { fee: r.retail_cpm != null ? `$${r.retail_cpm}` : '—', freq: 'CPM' };
+    // Option A: the rate (CPM/CPC) describes the price, not the cadence — so it
+    // rides in the Fee column next to the dollar figure, and Frequency reads the
+    // true cadence ("Monthly", matching the Monthly Spend column beside it).
+    if (r.id === 'sem-bp') return { fee: '$4–$12 CPC', freq: 'Monthly' };
+    return { fee: r.retail_cpm != null ? `$${r.retail_cpm} CPM` : '—', freq: 'Monthly' };
   }
   if (r.pricing_mode === 'modifier') {
     return { fee: r.modifier_amount != null ? `+$${r.modifier_amount}` : '—', freq: 'Add-on' };
