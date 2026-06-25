@@ -140,7 +140,7 @@ textarea{resize:vertical;min-height:70px}
     text-transform: uppercase; letter-spacing: .05em; margin-top: 6px; margin-bottom: 1px;
   }
 
-  .svc-table td.svc-fee::before  { content: 'Fee / Rate'; }
+  .svc-table td.svc-fee::before  { content: 'Fee'; }
   .svc-table td.svc-freq::before { content: 'Frequency'; }
   .svc-table td:last-child::before { content: 'Notes'; }
   .svc-table td:last-child input[type=text] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; }
@@ -572,7 +572,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-td" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee / CPM / CPC</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="td-geo"><td><input type="checkbox" onchange="toggleSingle(this,'td-geo','td-tier')"/></td><td>Geotargeting & Audience</td><td class="right">$10</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'td-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="td-site"><td><input type="checkbox" onchange="toggleSingle(this,'td-site','td-tier')"/></td><td>Site Retargeting, Keyword, Contextual, or Category</td><td class="right">$12</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'td-site')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -592,7 +592,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-sem" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee / CPM / CPC</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="sem-bp"><td><input type="checkbox" onchange="toggle(this,'sem-bp')"/></td><td>Business Pro* <span class="minimum-note">($200 min setup fee for campaigns &lt;$1,000)</span></td><td class="right">$4–$12</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sem-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
@@ -608,7 +608,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-sma" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee / CPM / CPC</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="sma-fb"><td><input type="checkbox" onchange="toggleSingle(this,'sma-fb','sma-tier')"/></td><td>Facebook & Instagram</td><td class="right">$15</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sma-fb')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="sma-tt"><td><input type="checkbox" onchange="toggleSingle(this,'sma-tt','sma-tier')"/></td><td>TikTok</td><td class="right">$27</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sma-tt')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -627,7 +627,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-lt" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee / CPM / CPC</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="lt-geo"><td><input type="checkbox" onchange="toggleSingle(this,'lt-geo','lt-tier')"/></td><td>Geofencing or 1st Party Addressable</td><td class="right">$15</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="lt-crm"><td><input type="checkbox" onchange="toggleSingle(this,'lt-crm','lt-tier')"/></td><td>CRM — 1st Party or Curated Addressable</td><td class="right">$20</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-crm')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -647,7 +647,7 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-vid" class="card-body" style="display:none">
         <div class="section-head">YouTube Video — Min $1,000/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee / CPM / CPC</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="yt-out"><td><input type="checkbox" onchange="toggleSingle(this,'yt-out','yt-tier')"/></td><td>Outstream on Google Network</td><td class="right">$25</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yt-out')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="yt-15"><td><input type="checkbox" onchange="toggleSingle(this,'yt-15','yt-tier')"/></td><td>Non-skippable :15</td><td class="right">$27.50</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yt-15')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -688,7 +688,7 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-ctv" class="card-body" style="display:none">
         <div class="section-head">Streaming TV Advertising — Min $1,500/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee / CPM / CPC</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="stv-loc"><td><input type="checkbox" onchange="toggleSingle(this,'stv-loc','stv-tier')"/></td><td>Business Pro — Location</td><td class="right">$40</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-loc')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="stv-aud"><td><input type="checkbox" onchange="toggleSingle(this,'stv-aud','stv-tier')"/></td><td>Business Pro — Audience/Demo</td><td class="right">$46.50</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-aud')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -727,7 +727,7 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-audio" class="card-body" style="display:none">
         <div class="section-head">Programmatic Audio — Min $1,000/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee / CPM / CPC</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="pa-geo"><td><input type="checkbox" onchange="toggle(this,'pa-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$45</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'pa-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="pa-offline"><td><input type="checkbox" onchange="toggle(this,'pa-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'pa-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
