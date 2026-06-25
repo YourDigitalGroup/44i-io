@@ -3379,7 +3379,7 @@ function renderSuggestedMap() {
     if (s.default_price == null) return 'QUR';
     const n = Number(s.default_price).toLocaleString('en-US', {maximumFractionDigits:0});
     const suffix = s.billing_type === 'monthly' ? '/mo' : '';
-    const unit = s.unit_label ? ` per ${esc(s.unit_label)}` : '';
+    const unit = s.unit_label ? (s.unit_label === 'each' ? ' each' : ` per ${esc(s.unit_label)}`) : '';
     return `$${n}${suffix}${unit}`;
   };
 
