@@ -1636,6 +1636,7 @@ const TLP_SOFT_MIN = { 'tlp-bb': 6, 'tlp-bp': 11 };
 
 // In-memory working state for the grid while the modal is open
 let tlpGridState = null; // { serviceId, cap, mode, single, many: [] }
+let tlpSoftReminderAcknowledged = false; // once true, don't re-nag on re-save in the same session
 
 function renderTlpGrid(serviceId, existing) {
   const cap = TLP_CAPS[serviceId];
@@ -1653,6 +1654,7 @@ function renderTlpGrid(serviceId, existing) {
     many = String(f.tlp_many_values).split('\n').map(l => l.replace(/^\s*\d+\.\s*/, '').trim()).filter(Boolean);
   }
   tlpGridState = { serviceId, cap, mode, single, many: many.length ? many : [''] };
+  tlpSoftReminderAcknowledged = false; // fresh each time the form opens
 
   return `
     <div class="modal-section" id="tlp-grid-section">
@@ -1692,29 +1694,19 @@ function renderTlpGridBody() {
   const manyLabel   = s.mode === 'single-service' ? 'Locations to target (City, State / County)' : 'Services';
   const manySingularPlaceholder = s.mode === 'single-service' ? 'e.g. Dallas, TX' : 'e.g. Roof Repair';
 
-  let manyRows = s.many.map((val, i) => `
+  // Ensure the working array has exactly `cap` slots so all lines show up front.
+  while (s.many.length < s.cap) s.many.push('');
+  if (s.many.length > s.cap) s.many.length = s.cap;
+
+  const manyRows = s.many.map((val, i) => `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <span style="font-size:11px;color:var(--muted);width:18px;text-align:right">${i+1}.</span>
+      <span style="font-size:11px;color:var(--muted);width:20px;text-align:right;flex-shrink:0">${i+1}.</span>
       <input type="text" value="${(val||'').replace(/"/g,'&quot;')}" placeholder="${manySingularPlaceholder}"
         oninput="onTlpManyInput(${i}, this.value)"
-        style="flex:1;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
-      ${s.many.length > 1 ? `<button type="button" onclick="removeTlpRow(${i})" title="Remove" style="border:none;background:none;color:var(--muted);cursor:pointer;font-size:16px;line-height:1;padding:0 4px">×</button>` : '<span style="width:20px"></span>'}
+        style="flex:1;min-width:0;padding:8px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
     </div>`).join('');
 
-  const atCap = s.many.length >= s.cap;
-  const addBtn = atCap
-    ? `<p style="font-size:11px;color:#92400E;background:#FEF3C7;border-radius:6px;padding:6px 10px;display:inline-block;margin-top:4px">${TLP_TIER_NAMES[s.serviceId]} includes up to ${s.cap} pages — remove an entry to add a different one.</p>`
-    : `<button type="button" onclick="addTlpRow()" style="margin-top:4px;padding:7px 14px;border-radius:6px;border:1px dashed var(--accent);background:var(--light);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">+ Add ${s.mode === 'single-service' ? 'location' : 'service'}</button>`;
-
-  // Soft-minimum reminder
   const filled = s.many.filter(v => (v||'').trim()).length;
-  const softMin = TLP_SOFT_MIN[s.serviceId];
-  let softNote = '';
-  if (softMin && filled > 0 && filled < softMin) {
-    const smaller = s.serviceId === 'tlp-bp' ? 'Business Builder' : 'Business Starter';
-    softNote = `<p style="font-size:11px;color:#92400E;background:#FFF7ED;border:1px solid #FED7AA;border-radius:6px;padding:8px 11px;margin-top:10px">
-      💡 You've added ${filled} ${filled===1?'entry':'entries'}. ${TLP_TIER_NAMES[s.serviceId]} covers up to ${s.cap} pages — if you only need a few, <strong>${smaller}</strong> may be a better fit. (Just a heads-up — you can still proceed.)</p>`;
-  }
 
   body.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr;gap:14px">
@@ -1725,35 +1717,15 @@ function renderTlpGridBody() {
           style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
       </div>
       <div>
-        <label class="lbl" style="display:block;margin-bottom:8px">${manyLabel} <span style="color:var(--muted);font-weight:400">(${s.many.length}/${s.cap})</span></label>
+        <label class="lbl" style="display:block;margin-bottom:8px">${manyLabel} <span style="color:var(--muted);font-weight:400">— fill in as many as you need, up to ${s.cap} (${filled} entered)</span></label>
         ${manyRows}
-        ${addBtn}
-        ${softNote}
       </div>
     </div>`;
 }
 
 function onTlpSingleInput(val) { if (tlpGridState) tlpGridState.single = val; }
 function onTlpManyInput(i, val) {
-  if (tlpGridState && tlpGridState.many[i] !== undefined) {
-    tlpGridState.many[i] = val;
-    // re-render only to refresh the soft-min note if it would change
-    const filled = tlpGridState.many.filter(v => (v||'').trim()).length;
-    const softMin = TLP_SOFT_MIN[tlpGridState.serviceId];
-    if (softMin && (filled === softMin - 1 || filled === softMin)) renderTlpGridBody();
-  }
-}
-function addTlpRow() {
-  if (!tlpGridState) return;
-  if (tlpGridState.many.length >= tlpGridState.cap) return;
-  tlpGridState.many.push('');
-  renderTlpGridBody();
-}
-function removeTlpRow(i) {
-  if (!tlpGridState) return;
-  tlpGridState.many.splice(i, 1);
-  if (!tlpGridState.many.length) tlpGridState.many = [''];
-  renderTlpGridBody();
+  if (tlpGridState && tlpGridState.many[i] !== undefined) tlpGridState.many[i] = val;
 }
 
 // Serialize the grid into readable string fields (flows through all existing
@@ -1848,6 +1820,21 @@ function saveIntakeForm() {
   // Capture TLP grid (if present) into the same flat fields map
   let tlpGridFilled = false;
   if (formKey === 'tlp' && tlpGridState && tlpGridState.mode) {
+    // Save-time soft reminder: if meaningfully under the tier's range, suggest a
+    // smaller tier — but never block. One confirm; "Save anyway" proceeds.
+    const filledEntries = tlpGridState.many.filter(v => (v||'').trim()).length;
+    const softMin = TLP_SOFT_MIN[tlpGridState.serviceId];
+    if (!tlpSoftReminderAcknowledged && softMin && filledEntries > 0 && filledEntries < softMin) {
+      const smaller = tlpGridState.serviceId === 'tlp-bp' ? 'Business Builder' : 'Business Starter';
+      const proceed = window.confirm(
+        `You've entered ${filledEntries} ${filledEntries===1?'page':'pages'} for ${TLP_TIER_NAMES[tlpGridState.serviceId]} ` +
+        `(which covers up to ${tlpGridState.cap}).\n\n` +
+        `If you only need ${filledEntries}, ${smaller} may be a better fit so the client only pays for what they need.\n\n` +
+        `Click OK to save anyway, or Cancel to go back and adjust.`
+      );
+      if (!proceed) { return; } // go back to editing; nothing saved
+      tlpSoftReminderAcknowledged = true; // don't nag again on a re-save of the same form
+    }
     serializeTlpGrid(fields);
     tlpGridFilled = !!(fields.tlp_single_value && (fields.tlp_page_count && fields.tlp_page_count !== '0'));
   }
