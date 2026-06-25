@@ -927,6 +927,7 @@ textarea{resize:vertical;min-height:70px}
     <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
       <button id="section-tab-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Groups</button>
       <button id="section-tab-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
+      <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Suggested Map</button>
     </div>
 
     <div style="padding:20px">
@@ -1072,6 +1073,40 @@ textarea{resize:vertical;min-height:70px}
           <div id="admin-order-detail-body"></div>
         </div>
       </div><!-- /section-orders -->
+
+      <!-- ── SECTION: Suggested Map (standard catalog, read-only) ── -->
+      <div id="section-map" style="display:none">
+        <div style="margin-bottom:14px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Suggested Map — Standard Services &amp; Pricing</p>
+          <p style="font-size:12px;color:var(--muted);line-height:1.5">
+            These are the standard services and default prices that apply to all groups. Per-group price
+            overrides are set on each group's <strong>Custom Pricing</strong> tab (under Groups) and are not shown here.
+            This view is read-only.
+          </p>
+        </div>
+        <!-- Filters -->
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:14px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+          <div>
+            <label class="lbl">Section</label>
+            <select id="map-filter-section" onchange="renderSuggestedMap()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:inherit;background:#fff">
+              <option value="">All sections</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Search</label>
+            <input type="text" id="map-filter-search" placeholder="Service name or ID…" oninput="renderSuggestedMap()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:7px 0">
+              <input type="checkbox" id="map-filter-inactive" onchange="renderSuggestedMap()" style="width:14px;height:14px;accent-color:var(--accent)"/>
+              Show inactive
+            </label>
+          </div>
+        </div>
+        <div id="admin-map-table">
+          <p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading catalog…</p>
+        </div>
+      </div><!-- /section-map -->
 
     </div>
   </div>
@@ -3257,22 +3292,21 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  const isGroups = section === 'groups';
-  document.getElementById('section-groups').style.display = isGroups ? 'block' : 'none';
-  document.getElementById('section-orders').style.display = isGroups ? 'none' : 'block';
-  // Tab styling
-  const tabG = document.getElementById('section-tab-groups');
-  const tabO = document.getElementById('section-tab-orders');
-  tabG.style.borderBottomColor = isGroups ? 'var(--accent)' : 'transparent';
-  tabG.style.color = isGroups ? 'var(--accent)' : 'var(--muted)';
-  tabO.style.borderBottomColor = isGroups ? 'transparent' : 'var(--accent)';
-  tabO.style.color = isGroups ? 'var(--muted)' : 'var(--accent)';
-  // Load data
-  if (isGroups) {
-    loadAdminGroups();
-  } else {
-    loadAdminOrders();
-  }
+  // Three sections: groups | orders | map
+  const sections = ['groups','orders','map'];
+  sections.forEach(s => {
+    const panel = document.getElementById('section-' + s);
+    if (panel) panel.style.display = (s === section) ? 'block' : 'none';
+    const tab = document.getElementById('section-tab-' + s);
+    if (tab) {
+      tab.style.borderBottomColor = (s === section) ? 'var(--accent)' : 'transparent';
+      tab.style.color = (s === section) ? 'var(--accent)' : 'var(--muted)';
+    }
+  });
+  // Load data for the active section
+  if (section === 'groups') loadAdminGroups();
+  else if (section === 'orders') loadAdminOrders();
+  else if (section === 'map') loadSuggestedMap();
 }
 
 async function loadAdminGroups() {
@@ -3282,6 +3316,117 @@ async function loadAdminGroups() {
   } catch(e) {
     showToast('Error loading groups: ' + e.message, 'error');
   }
+}
+
+// ── SUGGESTED MAP (standard catalog, read-only) ────────────────
+let allServicesMap = [];
+
+// Friendly section labels (matches the form's section grouping)
+const MAP_SECTION_LABELS = {
+  'web-ot':'Website (One-Time)', 'web-mo':'Website (Monthly)',
+  'tlp':'Targeted Landing Pages', 'sm':'Social Media Management',
+  'em':'Email Marketing', 'seo':'SEO / AEO', 'rep':'Reputation Management',
+  'llo':'Local Listing Optimization', 'gbp':'Google Business Profile',
+  'td':'Targeted Display', 'sem':'Search Engine Marketing',
+  'sma':'Social Media Ads', 'lt':'Location Targeting',
+  'vid':'Video Advertising', 'ctv':'Streaming TV / OTT / CTV',
+  'audio':'Audio / Mobile / Display', 'alc':'À La Carte',
+};
+
+async function loadSuggestedMap() {
+  const el = document.getElementById('admin-map-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading catalog…</p>';
+  try {
+    // ALL services (active + inactive) so parked rows are visible
+    allServicesMap = await sb('services?order=section,sort_order&select=*') || [];
+    // Populate section filter
+    const sel = document.getElementById('map-filter-section');
+    const sections = [...new Set(allServicesMap.map(s => s.section))];
+    sel.innerHTML = '<option value="">All sections</option>' +
+      sections.map(s => `<option value="${esc(s)}">${esc(MAP_SECTION_LABELS[s] || s)}</option>`).join('');
+    renderSuggestedMap();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading catalog: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderSuggestedMap() {
+  const el = document.getElementById('admin-map-table');
+  const sectionFilter = document.getElementById('map-filter-section').value;
+  const search = (document.getElementById('map-filter-search').value || '').toLowerCase().trim();
+  const showInactive = document.getElementById('map-filter-inactive').checked;
+
+  let rows = allServicesMap.slice();
+  if (!showInactive) rows = rows.filter(s => s.active);
+  if (sectionFilter) rows = rows.filter(s => s.section === sectionFilter);
+  if (search) rows = rows.filter(s =>
+    (s.label || '').toLowerCase().includes(search) || (s.id || '').toLowerCase().includes(search)
+  );
+
+  if (!rows.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No services match the current filters.</p>';
+    return;
+  }
+
+  // Price display: respect billing type, pricing mode, and the special shapes
+  const fmtPrice = s => {
+    if (s.pricing_mode === 'spend') {
+      return s.retail_cpm != null ? `$${s.retail_cpm} CPM` : (s.id === 'sem-bp' ? '$4–$12 CPC' : 'spend-based');
+    }
+    if (s.pricing_mode === 'modifier') {
+      return s.modifier_amount != null ? `+$${s.modifier_amount}` : '—';
+    }
+    if (s.default_price == null) return 'QUR';
+    const n = Number(s.default_price).toLocaleString('en-US', {maximumFractionDigits:0});
+    const suffix = s.billing_type === 'monthly' ? '/mo' : '';
+    const unit = s.unit_label ? ` per ${esc(s.unit_label)}` : '';
+    return `$${n}${suffix}${unit}`;
+  };
+
+  // Group rows by section with a header band
+  const bySection = {};
+  rows.forEach(s => { (bySection[s.section] = bySection[s.section] || []).push(s); });
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">ID</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Standard Price</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Billing</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Intake Form</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">KOC</th>
+    </tr></thead><tbody>`;
+
+  Object.keys(bySection).forEach(sec => {
+    html += `<tr><td colspan="6" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(MAP_SECTION_LABELS[sec] || sec)}</td></tr>`;
+    bySection[sec].forEach(s => {
+      const inactive = !s.active;
+      const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+      const koc = s.koc_requirement === 'required'
+        ? '<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">Required</span>'
+        : '<span style="color:var(--muted);font-size:11px">—</span>';
+      const intake = s.intake_form_id
+        ? `<span style="font-size:11px;font-family:monospace;color:var(--text)">${esc(s.intake_form_id)}</span>`
+        : '<span style="color:var(--muted);font-size:11px">—</span>';
+      const billing = s.billing_type === 'monthly'
+        ? '<span style="font-size:10px;color:#0F6E56;font-weight:600">Monthly</span>'
+        : s.billing_type === 'one_time'
+          ? '<span style="font-size:10px;color:var(--muted)">One-Time</span>'
+          : '<span style="color:var(--muted)">—</span>';
+      const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+      html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+        <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(s.id)}</td>
+        <td style="padding:8px 10px">${esc(s.label)}${inactiveBadge}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:600">${fmtPrice(s)}</td>
+        <td style="padding:8px 10px;text-align:center">${billing}</td>
+        <td style="padding:8px 10px;text-align:center">${intake}</td>
+        <td style="padding:8px 10px;text-align:center">${koc}</td>
+      </tr>`;
+    });
+  });
+  html += `</tbody></table>
+    <p style="margin-top:12px;font-size:11px;color:var(--muted);text-align:right">${rows.length} service${rows.length!==1?'s':''} shown${showInactive ? '' : ' (active only)'}</p>`;
+  el.innerHTML = html;
 }
 
 // ── ORDERS SECTION ─────────────────────────────────────────────
