@@ -1285,6 +1285,24 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// ── IO NUMBER ──────────────────────────────────────────────────
+// Human-readable, stored, system-assigned IO identifier: YYYYMMDD-BIZ6-XXX
+//   YYYYMMDD = IO date · BIZ6 = first 6 alphanumerics of business name (uppercased)
+//   XXX = random base-36 suffix so multiple IOs for the same client on the same day
+//         don't collide (Claire confirmed this happens).
+// This is the stable, readable join key (IO → campaigns → billing). The order row's
+// own UUID `id` remains the unchanging internal key; this number is the reference
+// shown on the form/PDF/Trello. Build it ONCE at submit and reuse for the PDF so the
+// stored value and the printed value always match.
+// `suffix` is optional so the PDF can reproduce an already-assigned number exactly.
+function makeIoNumber(ioDateStr, bizNameRaw, suffix) {
+  const datePart = (ioDateStr || new Date().toISOString().slice(0,10)).replace(/-/g, '');
+  const bizPart = (bizNameRaw || '').replace(/[^A-Za-z0-9]/g, '').slice(0,6).toUpperCase() || 'CLIENT';
+  const suf = suffix || Math.random().toString(36).slice(2,5).toUpperCase();
+  return `${datePart}-${bizPart}-${suf}`;
+}
+
+
 // ── DRAFT STORAGE MODULE ───────────────────────────────────────
 // Behavior:
 //   - device_id: random ID per browser, stored in localStorage.
@@ -2881,9 +2899,14 @@ async function submitIO() {
     }
 
     // 1b. Save order directly to Supabase
+    // System-assigned IO number — generated once here, stored on the order, and reused
+    // by the PDF so printed and stored values match. Stable join key for future phases.
+    const ioNumber = makeIoNumber(document.getElementById('io-date').value, bizName);
+    window.__lastIoNumber = ioNumber; // so a PDF printed after submit shows the stored number
     const orderPayload = {
       client_id: client?.id || null,
       group_id: groupId,
+      io_number: ioNumber,
       ae_name: document.getElementById('ae-name').value,
       io_date: document.getElementById('io-date').value,
       campaign_start: document.getElementById('campaign-start').value || null,
@@ -3258,24 +3281,29 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
 // ── ADMIN AUTH ─────────────────────────────────────────────────
 // Five logins: 2 super-admins (Jon, James — see all groups) +
 // 3 AM-tier (Carol, Peggy, Shania — see only groups where they're am_name).
-// Passwords are NOT stored here — only SHA-256 hashes. The plaintext password
-// list lives with James. When the v34 security SQL has been run in Supabase,
-// login validates server-side via the admin_login RPC; these hashes are the
-// fallback so the panel keeps working before that migration.
+//
+// Authentication is server-side ONLY: the admin_login RPC validates the password
+// against the admin_users table in Supabase and returns the role. No password
+// hashes live in this file anymore (they were a pre-RPC fallback and were a security
+// exposure in page source). If Supabase is unreachable, admin login is unavailable
+// until it's back — the public IO form is unaffected.
+//
+// This map is NON-SENSITIVE: just names → expected role. The names are already visible
+// in the login dropdown (the user picks from them), so this exposes nothing extra. Email
+// is NOT stored here anymore — it comes back from the admin_login RPC after a successful
+// login (the admin_users table holds it). Role is seeded here and confirmed by the RPC.
+// Adding/removing an admin or changing a password/email is done in the Supabase
+// admin_users table (no front-end management UI yet — see tracking doc).
 const ADMIN_USERS = {
-  'James':  { email:'james@44idigital.com',  hash:'097ecd877fe6b1dd8641d1cfc70dd7d2f55ee77da229a36eef30cea34217352a', role:'super' },
-  'Jon':    { email:'jon@44idigital.com',    hash:'68d37391bf5a1cc78963f4eb8386ea1ac75183154d1accd21ba3d286da2be7f1', role:'super' },
-  'Carol':  { email:'carol@44idigital.com',  hash:'8a4de92249bd3889d8353ac76a341ff4604442dc6b753867bc195f95676a5018', role:'am'    },
-  'Peggy':  { email:'peggy@44idigital.com',  hash:'a7575546b2ba75534584c4519106c9dbaf505308ae9951a0053f65fa178fb3d3', role:'am'    },
-  'Shania': { email:'shania@44idigital.com', hash:'449871a7e8fd1266af043a6dfa9c1ccfa2887038eb4fec69cdf5d6c07fb96327', role:'am'    },
+  'James':  { role:'super' },
+  'Jon':    { role:'super' },
+  'Carol':  { role:'am' },
+  'Peggy':  { role:'am' },
+  'Shania': { role:'am' },
 };
 const ADMIN_ORG = '44i Digital';
 let currentAdminUser = null; // {name, email, role, pw} when logged in (pw kept in memory for server RPC calls)
 
-async function sha256Hex(str) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
-}
 
 function promptAdmin() {
   const modal = document.getElementById('admin-login-modal');
@@ -3302,25 +3330,38 @@ async function checkAdminPw() {
   const user = ADMIN_USERS[name];
   let ok = false;
   let role = user?.role || null;
+  let emailFromRpc = '';
 
-  // 1) Try server-side validation (admin_login RPC — available once the
-  //    v34 security SQL has been run). Server is authoritative when present.
+  // Server-side validation ONLY — the admin_login RPC validates the password against
+  // the admin_users table in Supabase and returns the role (and email). There is no
+  // local fallback: if the RPC is unreachable, login is unavailable (the public IO form
+  // is unaffected).
   try {
     const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
-    if (Array.isArray(res) && res.length && res[0].role) { ok = true; role = res[0].role; }
-    else if (res === null || (Array.isArray(res) && !res.length)) { ok = false; }
-  } catch(e) {
-    // 2) RPC not deployed yet — fall back to local hash comparison
-    if (user) {
-      try {
-        const h = await sha256Hex(pw);
-        ok = (h === user.hash);
-      } catch(e2) { ok = false; }
+    const row = Array.isArray(res) ? res[0] : res; // tolerate array or object return
+    if (row && row.role) {
+      ok = true;
+      role = row.role;
+      emailFromRpc = row.email || '';
+    } else {
+      ok = false;
     }
+  } catch(e) {
+    // Could not reach the login service — distinct message so it's not mistaken for a
+    // wrong password.
+    console.warn('admin_login unreachable:', e.message);
+    errEl.textContent = 'Could not reach the login service. Check your connection and try again.';
+    errEl.style.display = 'block';
+    document.getElementById('admin-pw-input').value = '';
+    document.getElementById('admin-pw-input').focus();
+    return;
   }
 
   if (ok && user) {
-    currentAdminUser = { name, email: user.email, role, pw };
+    // Email comes from the RPC (admin_users table). Empty string is a safe fallback if a
+    // not-yet-updated RPC doesn't return it — only the admin badge shows email, nothing
+    // functional depends on it.
+    currentAdminUser = { name, email: emailFromRpc, role, pw };
     closeAdminLogin();
     showAdmin(true);
   } else {
@@ -4168,9 +4209,11 @@ function printIO() {
   const ioDate = document.getElementById('io-date').value || today;
   const ioDateDisplay = ioDate ? new Date(ioDate + 'T12:00:00').toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : today;
   const specialInstructions = esc(document.getElementById('special-instructions')?.value || '');
-  // IO number: YYYYMMDD-BIZ — short, sortable, recognizable
-  const ioNumber = (ioDate || new Date().toISOString().slice(0,10)).replace(/-/g,'') + '-' +
-    (bizNameRaw.replace(/[^A-Za-z0-9]/g,'').slice(0,6).toUpperCase() || 'CLIENT');
+  // IO number: YYYYMMDD-BIZ6-XXX via shared helper. If the order was already submitted,
+  // reuse the stored number so the printed copy matches the saved record; otherwise
+  // generate one for this preview (a fresh suffix each preview until submit assigns the
+  // permanent one).
+  const ioNumber = window.__lastIoNumber || makeIoNumber(ioDate, bizNameRaw);
 
   // ── Group services by section for subtotals ──
   const SECTION_LABELS = {
@@ -4661,6 +4704,7 @@ function resetForm() {
   // Nulling it broke "Submit Another IO" (next submit threw "Please select a group").
   intakeData = {};
   hostingChoices = {};
+  window.__lastIoNumber = null; // clear so the next IO generates its own number
   kocCalendarOpened = false;
   currentIntakeServiceId = null;
   document.querySelectorAll('.koc-row-badge').forEach(el => el.remove());
