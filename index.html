@@ -1251,7 +1251,7 @@ textarea{resize:vertical;min-height:70px}
 </div>
 
 <!-- ADMIN LOGIN MODAL -->
-<div id="admin-login-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+<div id="admin-login-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
     <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Admin Access</h3>
@@ -1371,7 +1371,6 @@ let selected = {}; // id -> {label, fee, recurring, notes, spend}
 let currentStep = 1;
 let intakeData = {}; // formKey -> { fields, bypassed, bypassNote }
 let hostingChoices = {}; // serviceId -> { choice, package, proratedAmt, proratedNote }
-let globalKocSchedule = null; // { date, time } — set when AE books KOC via calendar
 let currentIntakeServiceId = null;
 let currentHostingServiceId = null;
 let currentHostingPageType = null;
@@ -1507,10 +1506,6 @@ function cancelHostingModal() {
   currentHostingPageType = null;
 }
 
-
-function onKocDateChange() {
-  // Just a hook for future use
-}
 
 let kocCalendarOpened = false;
 
@@ -2609,7 +2604,7 @@ function buildReview() {
     // Hosting proration note
     const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
     const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' | ') || '—';
-    rows.push(`<tr><td>${data.label}</td><td>${data.fee > 0 ? fmt(data.fee) : '—'}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${notesDisplay}</td></tr>`);
+    rows.push(`<tr><td>${esc(data.label)}</td><td>${data.fee > 0 ? fmt(data.fee) : '—'}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Add prorated hosting line if applicable
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
       const h = hostingChoices[id];
@@ -2644,7 +2639,7 @@ function buildReview() {
     ['Campaign End', document.getElementById('campaign-end').value || '—'],
   ];
   document.getElementById('client-recap').innerHTML = recap.map(([k,v]) =>
-    `<div><span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${k}</span><p style="font-size:13px;margin-top:3px">${v}</p></div>`
+    `<div><span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${k}</span><p style="font-size:13px;margin-top:3px">${esc(v)}</p></div>`
   ).join('');
 }
 
@@ -4151,28 +4146,31 @@ function printIO() {
   const amName = group.am_name || '';
   const amEmail = group.am_email || '';
   const color = group.brand_color || '#1C9BD7';
-  const bizName = document.getElementById('biz-name').value || '—';
-  const contact = document.getElementById('contact-name').value || '—';
-  const email = document.getElementById('contact-email').value || '—';
-  const phone = document.getElementById('contact-phone').value || '—';
-  const website = document.getElementById('website-url').value || '';
-  const city = document.getElementById('city').value || '—';
-  const bizType = document.getElementById('biz-type').value || '';
-  const ae = document.getElementById('ae-name').value || '—';
+  // Raw business name kept for the IO-number calc (stripped to alphanumerics below);
+  // bizNameRaw is never injected into HTML directly — bizName (escaped) is used for display.
+  const bizNameRaw = document.getElementById('biz-name').value || '—';
+  const bizName = esc(bizNameRaw);
+  const contact = esc(document.getElementById('contact-name').value || '—');
+  const email = esc(document.getElementById('contact-email').value || '—');
+  const phone = esc(document.getElementById('contact-phone').value || '—');
+  const website = esc(document.getElementById('website-url').value || '');
+  const city = esc(document.getElementById('city').value || '—');
+  const bizType = esc(document.getElementById('biz-type').value || '');
+  const ae = esc(document.getElementById('ae-name').value || '—');
   const kocDate = document.getElementById('koc-date')?.value || '';
   const kocTime = document.getElementById('koc-time')?.value || '';
   const kocDisplay = (kocDate && kocTime) ? `${kocDate} at ${kocTime}` : (kocDate || '—');
   const campStart = document.getElementById('campaign-start').value || '—';
   const campEnd = document.getElementById('campaign-end').value || '—';
   const campLength = document.getElementById('campaign-length').value ? document.getElementById('campaign-length').value + ' Months' : '—';
-  const campNotes = document.getElementById('campaign-notes').value || '';
+  const campNotes = esc(document.getElementById('campaign-notes').value || '');
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
   const ioDate = document.getElementById('io-date').value || today;
   const ioDateDisplay = ioDate ? new Date(ioDate + 'T12:00:00').toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : today;
-  const specialInstructions = document.getElementById('special-instructions')?.value || '';
+  const specialInstructions = esc(document.getElementById('special-instructions')?.value || '');
   // IO number: YYYYMMDD-BIZ — short, sortable, recognizable
   const ioNumber = (ioDate || new Date().toISOString().slice(0,10)).replace(/-/g,'') + '-' +
-    (bizName.replace(/[^A-Za-z0-9]/g,'').slice(0,6).toUpperCase() || 'CLIENT');
+    (bizNameRaw.replace(/[^A-Za-z0-9]/g,'').slice(0,6).toUpperCase() || 'CLIENT');
 
   // ── Group services by section for subtotals ──
   const SECTION_LABELS = {
@@ -4223,7 +4221,7 @@ function printIO() {
 
       const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
       const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' — ');
-      sectionRows += `<tr><td class="svc-name">${data.label}</td><td class="svc-amt">${amtCol}</td><td class="svc-notes">${notesDisplay || '—'}</td></tr>`;
+      sectionRows += `<tr><td class="svc-name">${esc(data.label)}</td><td class="svc-amt">${amtCol}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
 
       const h = hostingChoices[id];
       if (h?.choice === 'us' && h.proratedAmt) {
@@ -4246,10 +4244,10 @@ function printIO() {
   // Signature data — client only
   const sigData = getSignatureData();
   const sigHtml = sigData.startsWith('typed:')
-    ? `<div class="sig-typed">${sigData.replace('typed:','')}</div>`
+    ? `<div class="sig-typed">${esc(sigData.replace('typed:',''))}</div>`
     : `<img src="${sigData}" class="sig-drawn"/>`;
-  const signerName = document.getElementById('auth-name').value || '';
-  const signerTitle = document.getElementById('auth-title').value || '';
+  const signerName = esc(document.getElementById('auth-name').value || '');
+  const signerTitle = esc(document.getElementById('auth-title').value || '');
   const signedDate = document.getElementById('auth-date').value || ioDate;
   const signedDateDisplay = signedDate ? new Date(signedDate + 'T12:00:00').toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ioDateDisplay;
 
@@ -4663,7 +4661,6 @@ function resetForm() {
   // Nulling it broke "Submit Another IO" (next submit threw "Please select a group").
   intakeData = {};
   hostingChoices = {};
-  globalKocSchedule = null;
   kocCalendarOpened = false;
   currentIntakeServiceId = null;
   document.querySelectorAll('.koc-row-badge').forEach(el => el.remove());
