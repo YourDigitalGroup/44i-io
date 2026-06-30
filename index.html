@@ -149,10 +149,14 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td.c-spend-cell::before { content: 'Monthly Spend'; }
   .svc-table td input[type=number] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left; }
 
-  /* Date Signed/Title/Name signer row (Step 3) — confirmed working at 2-up: Name/Title
-     are flexible text fields with room to spare even narrower. */
+  /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
+     At 2-up, "Authorized By (Full Legal Name)" wraps to 2 lines while "Title / Role"
+     stays on 1 line — since the label sits above its input in normal flow, the taller
+     label pushes ITS input down, so the two boxes start at different heights (visibly
+     "don't line up"). Full-width gives every label room to stay on one line, so all
+     three boxes start level. */
   #page-3 div[style*="grid-template-columns:1fr 1fr 1fr;"] {
-    grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
+    grid-template-columns: minmax(0,1fr) !important;
   }
 
   /* Campaign Dates row (Step 1: IO Date / Start Date / Length) — stacks to a SINGLE
@@ -162,6 +166,21 @@ textarea{resize:vertical;min-height:70px}
      for fields that are actually comfortable to use on a phone. */
   .field-group.cols3 {
     grid-template-columns: minmax(0,1fr) !important;
+  }
+
+  /* Hard width cap for date/select fields on phone. Even at single-column, native
+     <input type=date> can still render wider than its own container on iOS Safari —
+     the control's intrinsic sizing doesn't fully defer to width:100% in a grid item the
+     way a text input does. max-width:100% is an absolute ceiling the browser can't
+     violate (unlike width:100%, which native controls can sometimes still poke past),
+     so this is what actually stops the date boxes from extending past the card edge.
+     min-width:0 clears any default intrinsic minimum that would fight the cap. */
+  .field-group input[type=date],
+  .field-group select,
+  #page-3 div[style*="grid-template-columns:1fr 1fr 1fr;"] input[type=date] {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
   }
 }
 
