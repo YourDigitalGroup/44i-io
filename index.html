@@ -187,6 +187,11 @@ textarea{resize:vertical;min-height:70px}
     max-width: 100% !important;
     min-width: 0 !important;
     box-sizing: border-box !important;
+    /* Without a value, a date input has almost no content to size around and collapses
+       thin — this held it steady at the same height a filled box naturally takes (matches
+       the standard 13px font + 9px padding used everywhere else), so empty and filled
+       look identical instead of the box visibly resizing once a date is picked. */
+    min-height: 40px !important;
   }
 }
 
