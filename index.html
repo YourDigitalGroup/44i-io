@@ -149,14 +149,19 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td.c-spend-cell::before { content: 'Monthly Spend'; }
   .svc-table td input[type=number] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left; }
 
-  /* Clipped 3-column field rows on phone (Campaign Dates' Length select, and the
-     Date Signed/Title/Name signer row) — drop from 3-equal-columns to 2-up so each
-     field has enough width to show its own value without clipping. Scoped to the
-     public form only (the admin Orders filter's 3-col row is unaffected — desktop-only
-     usage there, not part of the AE-on-a-phone use case). */
-  .field-group.cols3,
+  /* Date Signed/Title/Name signer row (Step 3) — confirmed working at 2-up: Name/Title
+     are flexible text fields with room to spare even narrower. */
   #page-3 div[style*="grid-template-columns:1fr 1fr 1fr;"] {
-    grid-template-columns: 1fr 1fr !important;
+    grid-template-columns: minmax(0,1fr) minmax(0,1fr) !important;
+  }
+
+  /* Campaign Dates row (Step 1: IO Date / Start Date / Length) — stacks to a SINGLE
+     column on phone, not 2-up. Two native <input type=date> pickers side-by-side are
+     inherently tight (each needs real width to show a full date) — even with the
+     gap, 2-up reads as squished. Full-width stacking trades a bit of vertical space
+     for fields that are actually comfortable to use on a phone. */
+  .field-group.cols3 {
+    grid-template-columns: minmax(0,1fr) !important;
   }
 }
 
