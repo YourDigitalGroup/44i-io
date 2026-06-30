@@ -168,16 +168,22 @@ textarea{resize:vertical;min-height:70px}
     grid-template-columns: minmax(0,1fr) !important;
   }
 
-  /* Hard width cap for date/select fields on phone. Even at single-column, native
-     <input type=date> can still render wider than its own container on iOS Safari —
-     the control's intrinsic sizing doesn't fully defer to width:100% in a grid item the
-     way a text input does. max-width:100% is an absolute ceiling the browser can't
-     violate (unlike width:100%, which native controls can sometimes still poke past),
-     so this is what actually stops the date boxes from extending past the card edge.
-     min-width:0 clears any default intrinsic minimum that would fight the cap. */
+  /* Date inputs STILL overflow on phone even with the max-width cap above — confirmed by
+     testing (IO Date/Start Date and the signer page's Date Signed all overflowed the same
+     way). Root cause: iOS Safari's NATIVE date-control chrome sizes itself somewhat
+     independently of normal CSS box rules, strong enough to ignore even
+     max-width:100%!important in this layout. The standard fix is to turn OFF native
+     appearance so our own width rules become the only authority on its size — this is a
+     deeper fix than a width cap, because it removes the thing competing with the cap
+     rather than trying to out-rank it. Visual note: this swaps Safari's native gray-pill
+     date chrome for a plain box matching our own border/background (already applied via
+     the global input style) — the date PICKER still opens on tap; only the resting look
+     of the box changes, and it now matches the rest of the form's fields more closely. */
   .field-group input[type=date],
   .field-group select,
   #page-3 div[style*="grid-template-columns:1fr 1fr 1fr;"] input[type=date] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
     max-width: 100% !important;
     min-width: 0 !important;
     box-sizing: border-box !important;
