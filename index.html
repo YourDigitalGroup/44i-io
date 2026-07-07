@@ -1202,16 +1202,114 @@ textarea{resize:vertical;min-height:70px}
         </div>
       </div><!-- /section-orders -->
 
-      <!-- ── SECTION: Suggested Map (standard catalog, read-only) ── -->
+      <!-- ── SECTION: Suggested Map (standard catalog — now editable) ── -->
       <div id="section-map" style="display:none">
-        <div style="margin-bottom:14px">
-          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Suggested Map — Standard Services &amp; Pricing</p>
-          <p style="font-size:12px;color:var(--muted);line-height:1.5">
-            These are the standard services and default prices that apply to all groups. Per-group price
-            overrides are set on each group's <strong>Custom Pricing</strong> tab (under Groups) and are not shown here.
-            This view is read-only.
-          </p>
+        <div style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+          <div>
+            <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Suggested Map — Standard Services &amp; Pricing</p>
+            <p style="font-size:12px;color:var(--muted);line-height:1.5">
+              These are the standard services and default prices that apply to all groups. Per-group price
+              overrides are set on each group's <strong>Custom Pricing</strong> tab (under Groups) and are not shown here.
+              Adding/editing a service updates Supabase directly — Supabase remains the source of truth; this is a
+              convenience layer on top of it, restricted to Super Admins.
+            </p>
+          </div>
+          <button onclick="adminNewService()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Service</button>
         </div>
+
+        <!-- Service create/edit form — hidden until New/Edit is clicked -->
+        <div id="admin-service-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px" id="admin-service-form-title">New Service</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:16px" id="admin-service-form-subtitle"></p>
+          <input type="hidden" id="admin-svc-original-id"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— lowercase, hyphens only, e.g. "alc-newthing". Cannot be changed after creation.</span></label>
+              <input type="text" id="admin-svc-id" placeholder="section-shortname" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
+            </div>
+            <div>
+              <label class="lbl">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown to AEs on the form</span></label>
+              <input type="text" id="admin-svc-label" placeholder="e.g. Business Pro" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Section</label>
+              <select id="admin-svc-section" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <p id="admin-svc-section-note" style="font-size:10px;color:var(--muted);margin-top:4px"></p>
+            </div>
+            <div>
+              <label class="lbl">Sort Order <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— controls row order within the section</span></label>
+              <input type="number" id="admin-svc-sort" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Pricing Mode</label>
+              <select id="admin-svc-pricing-mode" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="flat">Flat fee</option>
+                <option value="per_unit">Per-unit (needs a quantity)</option>
+                <option value="modifier">Modifier (add-on to a parent total)</option>
+                <option value="spend">Spend-based (ad products)</option>
+              </select>
+            </div>
+            <div>
+              <label class="lbl">Default Price <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— blank = QUR (quote required)</span></label>
+              <input type="number" step="0.01" id="admin-svc-price" placeholder="e.g. 175" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Billing Type</label>
+              <select id="admin-svc-billing" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="one_time">One-Time</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+                <option value="annual">Annual</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Unit <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only used if Pricing Mode is Per-unit</span></label>
+              <select id="admin-svc-unit" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="">—</option>
+                <option value="hour">hour</option>
+                <option value="each">each</option>
+              </select>
+            </div>
+            <div>
+              <label class="lbl">Modifier Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Modifier</span></label>
+              <input type="number" step="0.01" id="admin-svc-modifier" placeholder="e.g. 2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Spend</span></label>
+              <input type="number" step="0.01" id="admin-svc-cpm" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">KOC Requirement</label>
+              <select id="admin-svc-koc" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="none">None</option>
+                <option value="required">Required</option>
+              </select>
+            </div>
+            <div>
+              <label class="lbl">Intake Form</label>
+              <select id="admin-svc-intake" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="">None</option>
+              </select>
+            </div>
+            <div>
+              <label class="lbl">Workflow <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional, drives the Trello workflow chip</span></label>
+              <input type="text" id="admin-svc-workflow" placeholder="e.g. Website" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+            <button onclick="adminCancelServiceEdit()" style="padding:9px 18px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Cancel</button>
+            <button onclick="adminSaveService()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Service</button>
+          </div>
+        </div>
+
         <!-- Filters -->
         <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:14px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
           <div>
@@ -3743,6 +3841,16 @@ async function loadAdminGroups() {
 // ── SUGGESTED MAP (standard catalog, read-only) ────────────────
 let allServicesMap = [];
 
+// Sections already converted to catalog-driven dynamic rows (renderCatalogSection()) —
+// the ONLY sections where creating a new service or deactivating an existing one is
+// fully safe. For every other section, a new row wouldn't have a checkbox on the public
+// form (still hand-typed HTML), and deactivating one would recreate the ghost-checkbox
+// risk the dynamic-row conversion was built to eliminate. EDITING an existing service
+// (price, label, etc.) is safe everywhere regardless — that's been catalog-driven since
+// the original migration. Keep this list in sync with the renderCatalogSection() calls
+// in the startup sequence as more sections get converted.
+const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp'];
+
 // Friendly section labels (matches the form's section grouping)
 const MAP_SECTION_LABELS = {
   'web-ot':'Website (One-Time)', 'web-mo':'Website (Monthly)',
@@ -3817,10 +3925,11 @@ function renderSuggestedMap() {
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Billing</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Intake Form</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">KOC</th>
+      <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
 
   Object.keys(bySection).forEach(sec => {
-    html += `<tr><td colspan="6" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(MAP_SECTION_LABELS[sec] || sec)}</td></tr>`;
+    html += `<tr><td colspan="7" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(MAP_SECTION_LABELS[sec] || sec)}</td></tr>`;
     bySection[sec].forEach(s => {
       const inactive = !s.active;
       const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
@@ -3836,6 +3945,10 @@ function renderSuggestedMap() {
           ? '<span style="font-size:10px;color:#1580B5;font-weight:600">One-Time</span>'
           : '<span style="color:var(--muted)">—</span>';
       const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+      const isSafeSection = SAFE_DYNAMIC_SECTIONS.includes(s.section);
+      const deactivateBtn = isSafeSection
+        ? `<button onclick="adminToggleServiceActive('${esc(s.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`
+        : `<span title="Only available for sections already converted to dynamic rows (À La Carte, Reputation Management, Local Listing, Google Business Profile) — creating/deactivating elsewhere wouldn't show correctly on the public form yet." style="font-size:10px;color:#D1D5DB;cursor:help">Deactivate ⓘ</span>`;
       html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
         <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(s.id)}</td>
         <td style="padding:8px 10px">${esc(s.label)}${inactiveBadge}</td>
@@ -3843,12 +3956,181 @@ function renderSuggestedMap() {
         <td style="padding:8px 10px;text-align:center">${billing}</td>
         <td style="padding:8px 10px;text-align:center">${intake}</td>
         <td style="padding:8px 10px;text-align:center">${koc}</td>
+        <td style="padding:8px 10px;text-align:right;white-space:nowrap">
+          <button onclick="adminEditService('${esc(s.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>
+          ${deactivateBtn}
+        </td>
       </tr>`;
     });
   });
   html += `</tbody></table>
     <p style="margin-top:12px;font-size:11px;color:var(--muted);text-align:right">${rows.length} service${rows.length!==1?'s':''} shown${showInactive ? '' : ' (active only)'}</p>`;
   el.innerHTML = html;
+}
+
+// ── SERVICE CREATE / EDIT / DEACTIVATE ─────────────────────────
+// Populates the Section dropdown for the create/edit form. `restrictToSafe=true` for
+// NEW services (only the 4 dynamic-row sections are valid choices, since anywhere else
+// a new service wouldn't have a checkbox to select it with); for EDITING an existing
+// service, all its current section stays selected but the field is disabled — moving a
+// service between sections has enough side effects (dynamic vs static rendering,
+// RADIO_GROUPS/SPEND_MINIMUMS membership) that it deserves a deliberate code change, not
+// a dropdown pick.
+function populateServiceSectionDropdown(restrictToSafe, currentSection) {
+  const sel = document.getElementById('admin-svc-section');
+  const note = document.getElementById('admin-svc-section-note');
+  const sections = restrictToSafe
+    ? SAFE_DYNAMIC_SECTIONS
+    : Object.keys(MAP_SECTION_LABELS);
+  sel.innerHTML = sections.map(s => `<option value="${esc(s)}">${esc(MAP_SECTION_LABELS[s] || s)}</option>`).join('');
+  if (currentSection) sel.value = currentSection;
+  sel.disabled = !restrictToSafe; // disabled when editing (section fixed after creation)
+  note.textContent = restrictToSafe
+    ? 'New services can only be added to sections already converted to dynamic rows.'
+    : 'Section can\'t be changed after creation — it affects how the row renders on the form.';
+}
+
+// Populates the Intake Form dropdown from the already-loaded INTAKE_FORMS (no extra
+// fetch needed — it's populated by loadCatalog() at startup).
+function populateServiceIntakeDropdown(current) {
+  const sel = document.getElementById('admin-svc-intake');
+  const ids = Object.keys(INTAKE_FORMS || {});
+  sel.innerHTML = '<option value="">None</option>' +
+    ids.map(id => `<option value="${esc(id)}">${esc(INTAKE_FORMS[id]?.title || id)}</option>`).join('');
+  sel.value = current || '';
+}
+
+function adminNewService() {
+  document.getElementById('admin-service-form-title').textContent = 'New Service';
+  document.getElementById('admin-service-form-subtitle').textContent =
+    'Restricted to sections already converted to dynamic rows — see note below.';
+  document.getElementById('admin-svc-original-id').value = '';
+  ['admin-svc-id','admin-svc-label','admin-svc-sort','admin-svc-price',
+   'admin-svc-modifier','admin-svc-cpm','admin-svc-workflow'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('admin-svc-id').disabled = false;
+  document.getElementById('admin-svc-pricing-mode').value = 'flat';
+  document.getElementById('admin-svc-billing').value = 'one_time';
+  document.getElementById('admin-svc-unit').value = '';
+  document.getElementById('admin-svc-koc').value = 'none';
+  populateServiceSectionDropdown(true, null);
+  populateServiceIntakeDropdown(null);
+  document.getElementById('admin-service-form').style.display = 'block';
+  document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminEditService(id) {
+  const s = allServicesMap.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('admin-service-form-title').textContent = 'Edit Service — ' + s.label;
+  document.getElementById('admin-service-form-subtitle').textContent =
+    'ID and Section are fixed after creation. Editing works regardless of section.';
+  document.getElementById('admin-svc-original-id').value = s.id;
+  document.getElementById('admin-svc-id').value = s.id;
+  document.getElementById('admin-svc-id').disabled = true; // id is the key everything else references — immutable after creation
+  document.getElementById('admin-svc-label').value = s.label || '';
+  document.getElementById('admin-svc-sort').value = s.sort_order ?? '';
+  document.getElementById('admin-svc-pricing-mode').value = s.pricing_mode || 'flat';
+  document.getElementById('admin-svc-price').value = s.default_price ?? '';
+  document.getElementById('admin-svc-billing').value = s.billing_type || 'one_time';
+  document.getElementById('admin-svc-unit').value = s.unit_label || '';
+  document.getElementById('admin-svc-modifier').value = s.modifier_amount ?? '';
+  document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
+  document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
+  document.getElementById('admin-svc-workflow').value = s.workflow || '';
+  populateServiceSectionDropdown(false, s.section);
+  populateServiceIntakeDropdown(s.intake_form_id);
+  document.getElementById('admin-service-form').style.display = 'block';
+  document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelServiceEdit() {
+  document.getElementById('admin-service-form').style.display = 'none';
+}
+
+async function adminSaveService() {
+  const isNew = !document.getElementById('admin-svc-original-id').value;
+  const id = document.getElementById('admin-svc-id').value.trim();
+  const label = document.getElementById('admin-svc-label').value.trim();
+  if (!id) { showToast('Service ID is required', 'error'); return; }
+  if (!label) { showToast('Label is required', 'error'); return; }
+  if (isNew && !SAFE_DYNAMIC_SECTIONS.includes(document.getElementById('admin-svc-section').value)) {
+    showToast('New services can only be added to a section already converted to dynamic rows', 'error');
+    return;
+  }
+
+  const priceVal = document.getElementById('admin-svc-price').value;
+  const modifierVal = document.getElementById('admin-svc-modifier').value;
+  const cpmVal = document.getElementById('admin-svc-cpm').value;
+  const sortVal = document.getElementById('admin-svc-sort').value;
+
+  const payload = {
+    label: label,
+    section: document.getElementById('admin-svc-section').value,
+    pricing_mode: document.getElementById('admin-svc-pricing-mode').value,
+    default_price: priceVal === '' ? null : parseFloat(priceVal),
+    billing_type: document.getElementById('admin-svc-billing').value,
+    unit_label: document.getElementById('admin-svc-unit').value || null,
+    modifier_amount: modifierVal === '' ? null : parseFloat(modifierVal),
+    retail_cpm: cpmVal === '' ? null : parseFloat(cpmVal),
+    koc_requirement: document.getElementById('admin-svc-koc').value,
+    intake_form_id: document.getElementById('admin-svc-intake').value || null,
+    workflow: document.getElementById('admin-svc-workflow').value.trim() || null,
+    sort_order: sortVal === '' ? null : parseInt(sortVal, 10),
+  };
+  if (isNew) {
+    payload.id = id; // id only sent on create — never changed on an existing row
+    payload.active = true; // explicit rather than assuming a database default exists
+  }
+
+  try {
+    // Mirrors the admin_save_group RPC pattern exactly: server-side, password-validated,
+    // super-admin-only. Unlike admin_save_group there's no non-RPC fallback path here —
+    // this is a NEW capability, not a migration of one that already had a working direct
+    // path to fall back to, so a clear error is better than a silent partial write.
+    await sb('rpc/admin_save_service', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_service_id: isNew ? null : id,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'Service created!' : 'Service updated!');
+    adminCancelServiceEdit();
+    loadSuggestedMap();
+  } catch(e) {
+    showToast('Error saving service: ' + e.message, 'error');
+  }
+}
+
+// Quick deactivate/reactivate directly from the list, without opening the full edit
+// form. Only offered for SAFE_DYNAMIC_SECTIONS in the UI (renderSuggestedMap shows an
+// info icon instead of a button for other sections) — this function itself doesn't
+// re-check that, since the button that calls it already wouldn't exist otherwise, but
+// the RPC's own permission/validation is the real safety boundary, not the UI.
+async function adminToggleServiceActive(id, makeActive) {
+  const s = allServicesMap.find(x => x.id === id);
+  if (!s) return;
+  const verb = makeActive ? 'reactivate' : 'deactivate';
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} "${s.label}"? ${makeActive ? 'It will become selectable on the form again.' : 'It will no longer appear as a checkbox on the form (existing orders that already include it are unaffected).'}`)) return;
+  try {
+    await sb('rpc/admin_save_service', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_service_id: id,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`Service ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadSuggestedMap();
+  } catch(e) {
+    showToast(`Error trying to ${verb}: ` + e.message, 'error');
+  }
 }
 
 // ── ORDERS SECTION ─────────────────────────────────────────────
