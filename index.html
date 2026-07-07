@@ -4918,6 +4918,15 @@ function renderPriceCells() {
     const notesTd   = tds[tds.length - 1];
     const spendTd   = tds.find(td => td.querySelector('input[type=number]'));
 
+    // Closes "label drift": refreshes the service name from the catalog's `label` field
+    // for EVERY row, not just sections already converted to dynamic generation (alc/rep/
+    // llo/gbp). Previously a Supabase label edit only showed up on the form for those 4
+    // sections; static sections kept their hand-typed HTML text forever. Runs ONCE at
+    // page load (before any intake-link button could have been appended into this cell —
+    // confirmed: renderPriceCells has exactly one call site, at startup), so .textContent
+    // is safe here — nothing else has written into this cell yet.
+    serviceTd.textContent = r.label;
+
     const { fee, freq } = priceAndFrequency(r);
 
     tds.slice(2, tds.length - 1).forEach(td => { if (td !== spendTd) td.remove(); });
