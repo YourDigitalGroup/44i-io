@@ -3964,6 +3964,18 @@ function renderSuggestedMap() {
   const fmtPrice = s => priceAndFrequency(s).fee;
   const fmtFrequency = s => priceAndFrequency(s).freq;
 
+  // Counts how many ACTIVE services share each exclusivity_group value, computed
+  // against the FULL catalog (not just the currently-filtered `rows`) so the count
+  // stays stable regardless of the section/search/show-inactive filters — toggling a
+  // filter shouldn't make a group look "orphaned" just because its other member is
+  // filtered out of view right now. A group with exactly 1 member does nothing (there's
+  // nothing to be mutually exclusive WITH), which usually means a typo when picking an
+  // existing group, or a leftover from a service that used to have company in that tier.
+  const groupCounts = {};
+  allServicesMap.filter(s => s.active && s.exclusivity_group).forEach(s => {
+    groupCounts[s.exclusivity_group] = (groupCounts[s.exclusivity_group] || 0) + 1;
+  });
+
   // Group rows by section with a header band
   const bySection = {};
   rows.forEach(s => { (bySection[s.section] = bySection[s.section] || []).push(s); });
@@ -3974,13 +3986,14 @@ function renderSuggestedMap() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
       <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Standard Price</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Frequency</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Tier Group</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Intake Form</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">KOC</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
 
   Object.keys(bySection).forEach(sec => {
-    html += `<tr><td colspan="7" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(MAP_SECTION_LABELS[sec] || sec)}</td></tr>`;
+    html += `<tr><td colspan="8" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(MAP_SECTION_LABELS[sec] || sec)}</td></tr>`;
     bySection[sec].forEach(s => {
       const inactive = !s.active;
       const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
@@ -3989,6 +4002,14 @@ function renderSuggestedMap() {
         : '<span style="color:var(--muted);font-size:11px">—</span>';
       const intake = s.intake_form_id
         ? `<span style="font-size:11px;font-family:monospace;color:var(--text)">${esc(s.intake_form_id)}</span>`
+        : '<span style="color:var(--muted);font-size:11px">—</span>';
+      // Orphaned-group flag: a group with only 1 active member does nothing (nothing to
+      // exclude), which usually signals a typo when picking an existing group, or a
+      // leftover from when a sibling service was deactivated/removed from the tier.
+      const tierGroup = s.exclusivity_group
+        ? (groupCounts[s.exclusivity_group] === 1
+            ? `<span style="font-size:11px;font-family:monospace;color:#B91C1C" title="Only 1 active service is in this group — it isn't excluding anything. Possibly a typo, or a leftover from a removed sibling.">${esc(s.exclusivity_group)} ⚠</span>`
+            : `<span style="font-size:11px;font-family:monospace;color:var(--text)">${esc(s.exclusivity_group)}</span>`)
         : '<span style="color:var(--muted);font-size:11px">—</span>';
       const freqText = fmtFrequency(s);
       const billing = freqText === 'Monthly'
@@ -4015,6 +4036,7 @@ function renderSuggestedMap() {
         <td style="padding:8px 10px">${esc(s.label)}${inactiveBadge}</td>
         <td style="padding:8px 10px;text-align:right;font-weight:600">${fmtPrice(s)}</td>
         <td style="padding:8px 10px;text-align:center">${billing}</td>
+        <td style="padding:8px 10px;text-align:center">${tierGroup}</td>
         <td style="padding:8px 10px;text-align:center">${intake}</td>
         <td style="padding:8px 10px;text-align:center">${koc}</td>
         <td style="padding:8px 10px;text-align:right;white-space:nowrap">
