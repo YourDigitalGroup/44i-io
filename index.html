@@ -205,7 +205,7 @@ textarea{resize:vertical;min-height:70px}
   }
 }
 
-.section-head{background:var(--light);padding:8px 12px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border)}
+.section-head{background:var(--light);padding:8px 12px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border);margin-top:10px}
 .minimum-note{font-size:10px;color:var(--muted);font-style:italic}
 
 /* Totals */
@@ -1139,7 +1139,7 @@ textarea{resize:vertical;min-height:70px}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl">Section</label>
-              <select id="admin-svc-section" onchange="autoServiceId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <select id="admin-svc-section" onchange="onServiceSectionChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
               <p id="admin-svc-section-note" style="font-size:10px;color:var(--muted);margin-top:4px"></p>
             </div>
             <div>
@@ -1199,6 +1199,14 @@ textarea{resize:vertical;min-height:70px}
             <div>
               <label class="lbl">Spend Minimum <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Spend-based services; shows a soft reminder if entered spend is below this</span></label>
               <input type="number" step="1" id="admin-svc-spend-min" placeholder="e.g. 1000" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Subsection <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Video/Streaming TV/Audio, which each have several mini-tables under one section (e.g. "YouTube Video", "Native Video"). Leave "None" for every other section.</span></label>
+              <select id="admin-svc-subsection" onchange="onSubsectionChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <input type="text" id="admin-svc-subsection-new" placeholder="e.g. New Sub-Table Name" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a new, disconnected mini-table instead of joining the intended one. Options are scoped to the currently-selected Section.</p>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
@@ -4040,6 +4048,51 @@ function onExclusivityGroupChange() {
   }
 }
 
+// Populates the Subsection dropdown, SCOPED to whichever section is currently selected
+// (unlike Exclusivity Group, which is global — "YouTube Video" only makes sense inside
+// "vid", so showing subsections from other sections would be actively confusing/wrong).
+// Same pick-list-not-free-text reasoning as Exclusivity Group: a typo here would
+// silently create a new, disconnected mini-table instead of joining the intended one.
+function populateServiceSubsectionDropdown(section, current) {
+  const sel = document.getElementById('admin-svc-subsection');
+  const labels = [...new Set(
+    allServicesMap.filter(s => s.section === section && s.subsection_label).map(s => s.subsection_label)
+  )].sort();
+  sel.innerHTML = '<option value="">None (this section has one plain table)</option>' +
+    labels.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('') +
+    '<option value="__new__">+ Create a new subsection...</option>';
+  const newInput = document.getElementById('admin-svc-subsection-new');
+  if (current && labels.includes(current)) {
+    sel.value = current;
+    newInput.style.display = 'none';
+    newInput.value = '';
+  } else if (current) {
+    sel.value = '__new__';
+    newInput.style.display = 'block';
+    newInput.value = current;
+  } else {
+    sel.value = '';
+    newInput.style.display = 'none';
+    newInput.value = '';
+  }
+}
+
+function onSubsectionChange() {
+  const sel = document.getElementById('admin-svc-subsection');
+  const newInput = document.getElementById('admin-svc-subsection-new');
+  newInput.style.display = sel.value === '__new__' ? 'block' : 'none';
+  if (sel.value !== '__new__') newInput.value = '';
+}
+
+// Re-scopes the Subsection dropdown whenever Section changes — its valid options are
+// entirely different per section (matches the existing pattern: Section's onchange
+// already re-triggers autoServiceId(); this just adds the second thing that depends on it).
+function onServiceSectionChange() {
+  autoServiceId();
+  const section = document.getElementById('admin-svc-section').value;
+  populateServiceSubsectionDropdown(section, null);
+}
+
 // ── SERVICE ID AUTO-GENERATION ─────────────────────────────────
 // Builds "section-label-slug" (e.g. "alc-stock-video-clips") from the currently
 // selected Section + typed Label — matches the existing id convention (alc-design,
@@ -4116,6 +4169,9 @@ function adminNewService() {
   populateServiceSectionDropdown(true, null);
   populateServiceIntakeDropdown(null);
   populateServiceExclusivityDropdown(null);
+  // Section dropdown defaults to its first option once populated above — scope the
+  // subsection list to whatever that ends up being, not blindly to null.
+  populateServiceSubsectionDropdown(document.getElementById('admin-svc-section').value, null);
   document.getElementById('admin-service-form').style.display = 'block';
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
 }
@@ -4154,6 +4210,7 @@ function adminEditService(id) {
   populateServiceSectionDropdown(false, s.section);
   populateServiceIntakeDropdown(s.intake_form_id);
   populateServiceExclusivityDropdown(s.exclusivity_group);
+  populateServiceSubsectionDropdown(s.section, s.subsection_label);
   document.getElementById('admin-service-form').style.display = 'block';
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
 }
@@ -4216,6 +4273,16 @@ async function adminSaveService() {
   }
   const exclusivityGroupVal = exclusivitySel === '__new__' ? exclusivityNewVal : (exclusivitySel || null);
 
+  // Subsection: same pick-list-or-create-new pattern as Exclusivity Group above, but
+  // scoped per-section (see populateServiceSubsectionDropdown()).
+  const subsectionSel = document.getElementById('admin-svc-subsection').value;
+  const subsectionNewVal = document.getElementById('admin-svc-subsection-new').value.trim();
+  if (subsectionSel === '__new__' && !subsectionNewVal) {
+    showToast('Enter a name for the new subsection, or pick an existing one / None', 'error');
+    return;
+  }
+  const subsectionLabelVal = subsectionSel === '__new__' ? subsectionNewVal : (subsectionSel || null);
+
   const payload = {
     label: label,
     section: document.getElementById('admin-svc-section').value,
@@ -4235,6 +4302,7 @@ async function adminSaveService() {
     fee_note: document.getElementById('admin-svc-fee-note').value.trim() || null,
     exclusivity_group: exclusivityGroupVal,
     spend_minimum: spendMinVal === '' ? null : parseFloat(spendMinVal),
+    subsection_label: subsectionLabelVal,
   };
   if (isNew) {
     payload.id = id; // id only sent on create — never changed on an existing row
@@ -5608,12 +5676,15 @@ function renderMultiTableSection(sectionId) {
       ? ` — Min $${Math.min(...minSpends).toLocaleString()}/mo`
       : '';
     const headerHtml = label ? `<div class="section-head">${esc(label)}${minNote}</div>` : '';
-    // Only the FIRST table in the section gets a visible <thead> (matches the original
-    // static markup exactly — subsequent sub-tables share the same column meaning
-    // without repeating the header row).
-    const theadHtml = i === 0
-      ? '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>'
-      : '';
+    // REVERSED (2026-07-07, same session): originally only the first table in a section
+    // got a visible <thead>, faithfully matching the original static markup — but that
+    // meant "Social OTT/CTV", "Hulu Ads", and "Amazon Prime Ads" (any table after the
+    // first) showed rows with no column labels anywhere nearby at all, since scrolling
+    // back to the very first sub-table was the only way to know what "$75 CPM / Monthly"
+    // even meant. Caught live via screenshot showing the whole section at once — every
+    // sub-table now gets its own headers, making each one self-contained and readable
+    // on its own rather than depending on a DIFFERENT table further up the page.
+    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>';
     const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
     return headerHtml + tableHtml;
   }).join('');
