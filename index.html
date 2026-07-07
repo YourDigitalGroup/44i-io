@@ -503,12 +503,9 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-tlp" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="tlp-bs"><td><input type="checkbox" onchange="toggleSingle(this,'tlp-bs','tlp-tier')"/></td><td>Business Starter (1–5 Pages)</td><td class="right">$299/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="tlp-bb"><td><input type="checkbox" onchange="toggleSingle(this,'tlp-bb','tlp-tier')"/></td><td>Business Builder (6–10 Pages)</td><td class="right">$399/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="tlp-bp"><td><input type="checkbox" onchange="toggleSingle(this,'tlp-bp','tlp-tier')"/></td><td>Business Pro (11–15 Pages)</td><td class="right">$499/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="tlp-custom"><td><input type="checkbox" onchange="toggleSingle(this,'tlp-custom','tlp-tier')"/></td><td>Custom (15+ Pages)</td><td class="right">QUR</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="tlp-design"><td><input type="checkbox" onchange="toggle(this,'tlp-design')"/></td><td>Design Change (Per Occurrence)</td><td class="right">$99 one time</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-tlp">
+            <!-- Rows generated at runtime via renderCatalogSection('tlp') -->
+          </tbody>
           </tbody>
         </table>
       </div>
@@ -523,11 +520,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-sm" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="sm-bs"><td><input type="checkbox" onchange="toggleSingle(this,'sm-bs','sm-tier')"/></td><td>Business Starter</td><td class="right">$575/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="sm-bb"><td><input type="checkbox" onchange="toggleSingle(this,'sm-bb','sm-tier')"/></td><td>Business Builder</td><td class="right">$775/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="sm-bp"><td><input type="checkbox" onchange="toggleSingle(this,'sm-bp','sm-tier')"/></td><td>Business Pro</td><td class="right">$1,275/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="sm-addl"><td><input type="checkbox" onchange="toggle(this,'sm-addl')"/></td><td>Fee Per Additional Channel</td><td class="right">$175/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-sm">
+            <!-- Rows generated at runtime via renderCatalogSection('sm') -->
           </tbody>
         </table>
       </div>
@@ -542,13 +536,9 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-em" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="em-bb-2500"><td><input type="checkbox" onchange="toggleSingle(this,'em-bb-2500','em-tier')"/></td><td>Business Builder &lt;2,500</td><td class="right">$450/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="em-bb-5000"><td><input type="checkbox" onchange="toggleSingle(this,'em-bb-5000','em-tier')"/></td><td>Business Builder &lt;5,000</td><td class="right">$575/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="em-bp-30k"><td><input type="checkbox" onchange="toggleSingle(this,'em-bp-30k','em-tier')"/></td><td>Business Pro &lt;30,000</td><td class="right">$1,000/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="em-bp-30kp"><td><input type="checkbox" onchange="toggleSingle(this,'em-bp-30kp','em-tier')"/></td><td>Business Pro &gt;30,000</td><td class="right">QUR</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="em-addl"><td><input type="checkbox" onchange="toggle(this,'em-addl')"/></td><td>Additional Monthly Email</td><td class="right">$175/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="em-template"><td><input type="checkbox" onchange="toggle(this,'em-template')"/></td><td>Template Change</td><td class="right">$175 one time</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-em">
+            <!-- Rows generated at runtime via renderCatalogSection('em') -->
+          </tbody>
           </tbody>
         </table>
       </div>
@@ -3899,7 +3889,7 @@ let allServicesMap = [];
 // (price, label, etc.) is safe everywhere regardless — that's been catalog-driven since
 // the original migration. Keep this list in sync with the renderCatalogSection() calls
 // in the startup sequence as more sections get converted.
-const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem'];
+const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp'];
 
 // Friendly section labels (matches the form's section grouping)
 const MAP_SECTION_LABELS = {
@@ -5685,6 +5675,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // seo tests tier-based exclusivity, sem tests the ad-spend input.
   renderCatalogSection('seo');
   renderCatalogSection('sem');
+  // Batch #3 (2026-07-07): three tier-only sections, same pattern as seo — each also
+  // mixes tiered items with 1-2 untiered "extra" items (sm-addl, em-addl/em-template,
+  // tlp-design) in the same table. Verified this combination works correctly via
+  // simulation before converting, since seo alone was purely tiered with no extras.
+  renderCatalogSection('sm');
+  renderCatalogSection('em');
+  renderCatalogSection('tlp');
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
