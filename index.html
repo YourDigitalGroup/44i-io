@@ -2333,6 +2333,22 @@ function toggle(cb, id) {
     row.classList.remove('selected');
     delete hostingChoices[id];
 
+    // Reset the visible spend/quantity inputs so a later re-check starts fresh, rather
+    // than silently picking the stale leftover number back up at the next
+    // syncRowInputs() call (Step 2→3 transition, submit, print). selected[id] is already
+    // deleted above, but the DOM input itself doesn't clear on its own — these are
+    // separate elements with no automatic link, so the stale value stays visible/live
+    // until acted on explicitly.
+    const spendInput = row.querySelector('input[type=number]:not(.qty-field)');
+    if (spendInput) {
+      spendInput.value = '';
+      spendInput.classList.remove('spend-missing');
+      const warn = row.querySelector('.spend-min-warn');
+      if (warn) warn.remove();
+    }
+    const qtyInput = row.querySelector('input[type=number].qty-field');
+    if (qtyInput) qtyInput.value = '1';
+
     // Clear intake data when unchecked so reselect re-prompts
     const cfg = PRODUCT_CONFIG[id];
     if (cfg?.intake) {
