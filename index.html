@@ -451,28 +451,10 @@ textarea{resize:vertical;min-height:70px}
         <span id="chevron-web-ot">▶</span>
       </div>
       <div id="sec-web-ot" class="card-body" style="display:none">
-        <table class="svc-table svc-table--money"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
+        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="w-bs"><td><input type="checkbox" onchange="toggleSingle(this,'w-bs','web-oto-tier');if(this.checked)promptHosting('w-bs','1p')"/></td><td>Business Starter* <span style="font-size:10px;color:var(--muted)">(1-page)</span></td><td class="right">$1,250</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-bb"><td><input type="checkbox" onchange="toggleSingle(this,'w-bb','web-oto-tier');if(this.checked)promptHosting('w-bb','5p')"/></td><td>Business Builder* <span style="font-size:10px;color:var(--muted)">(5-page)</span></td><td class="right">$2,500</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-bp"><td><input type="checkbox" onchange="toggleSingle(this,'w-bp','web-oto-tier');if(this.checked)promptHosting('w-bp','10p')"/></td><td>Business Pro* <span style="font-size:10px;color:var(--muted)">(10-page)</span></td><td class="right">$3,750</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-custom"><td><input type="checkbox" onchange="toggleSingle(this,'w-custom','web-oto-tier');if(this.checked)promptHosting('w-custom','ecomm')"/></td><td>Custom Site / E-Commerce</td><td class="right">QUR</td><td class="right">—</td><td><input type="text" placeholder="50% Down / 50% Launch"/></td></tr>
-            <tr data-id="w-module"><td><input type="checkbox" onchange="toggle(this,'w-module')"/></td><td>Modules (Newsletter, Photo/Video, Testimonial, News/Blog, Calendar)</td><td class="right">$750 ea</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-vid-setup"><td><input type="checkbox" onchange="toggle(this,'w-vid-setup')"/></td><td>Visitor IDs Setup Fee</td><td class="right">$199</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-vid200"><td><input type="checkbox" onchange="toggleSingle(this,'w-vid200','vid-pkg')"/></td><td>200 Visitor IDs ‡</td><td class="right">$199/mo</td><td class="right">Monthly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-vid350"><td><input type="checkbox" onchange="toggleSingle(this,'w-vid350','vid-pkg')"/></td><td>350 Visitor IDs ‡</td><td class="right">$349/mo</td><td class="right">Monthly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-vid500"><td><input type="checkbox" onchange="toggleSingle(this,'w-vid500','vid-pkg')"/></td><td>500 Visitor IDs ‡</td><td class="right">$499/mo</td><td class="right">Monthly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-vid200e"><td><input type="checkbox" onchange="toggleSingle(this,'w-vid200e','vid-pkg')"/></td><td>200 Visitor IDs + Monthly Email ‡</td><td class="right">$499/mo</td><td class="right">Monthly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-vid350e"><td><input type="checkbox" onchange="toggleSingle(this,'w-vid350e','vid-pkg')"/></td><td>350 Visitor IDs + Monthly Email ‡</td><td class="right">$649/mo</td><td class="right">Monthly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-vid500e"><td><input type="checkbox" onchange="toggleSingle(this,'w-vid500e','vid-pkg')"/></td><td>500 Visitor IDs + Monthly Email ‡</td><td class="right">$799/mo</td><td class="right">Monthly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-domain"><td><input type="checkbox" onchange="toggle(this,'w-domain')"/></td><td>Domain Transfer (Hourly)</td><td class="right">$175/hr</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-dns"><td><input type="checkbox" onchange="toggle(this,'w-dns')"/></td><td>DNS Transfer (Hourly)</td><td class="right">$175/hr</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-logo"><td><input type="checkbox" onchange="toggle(this,'w-logo')"/></td><td>Convert Logo to Vector</td><td class="right">$175</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-hosting"><td><input type="checkbox" onchange="toggle(this,'w-hosting')"/></td><td>Hosting Fee* <span style="font-size:10px;color:var(--muted)">(standalone — use hosting prompt on site purchase)</span></td><td class="right">$450</td><td class="right">Yearly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-ecomm-hosting"><td><input type="checkbox" onchange="toggle(this,'w-ecomm-hosting')"/></td><td>E-Commerce Hosting Fee***</td><td class="right">$750</td><td class="right">Yearly</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-ada-hosting"><td><input type="checkbox" onchange="toggle(this,'w-ada-hosting')"/></td><td>Web Accessibility (ADA) Hosting Fee <span style="font-size:10px;color:var(--muted)">— due upfront, renews annually from IO date</span></td><td class="right">$1,000</td><td class="right">Annual</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="w-content"><td><input type="checkbox" onchange="toggle(this,'w-content')"/></td><td>Optional Content Support</td><td class="right">$175/hr</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-web-ot">
+            <!-- Rows generated at runtime via renderCatalogSection('web-ot') -->
           </tbody>
         </table>
       </div>
@@ -487,24 +469,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-web-mo" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="wm-1p"><td><input type="checkbox" onchange="toggleSingle(this,'wm-1p','web-mrr-tier')"/></td><td>1-Page ◊</td><td class="right">$199/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-5p"><td><input type="checkbox" onchange="toggleSingle(this,'wm-5p','web-mrr-tier')"/></td><td>5-Page ◊</td><td class="right">$299/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-10p"><td><input type="checkbox" onchange="toggleSingle(this,'wm-10p','web-mrr-tier')"/></td><td>10-Page ◊</td><td class="right">$399/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-ecomm"><td><input type="checkbox" onchange="toggleSingle(this,'wm-ecomm','web-mrr-tier')"/></td><td>E-Commerce §</td><td class="right">$599/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-hosting"><td><input type="checkbox" onchange="toggle(this,'wm-hosting')"/></td><td>Hosting Only</td><td class="right">$49/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-host-content"><td><input type="checkbox" onchange="toggle(this,'wm-host-content')"/></td><td>Hosting & Content</td><td class="right">$69/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-host-ai"><td><input type="checkbox" onchange="toggle(this,'wm-host-ai')"/></td><td>Hosting, Content & AI Chatbot or Ecomm**</td><td class="right">$89/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-host-all"><td><input type="checkbox" onchange="toggle(this,'wm-host-all')"/></td><td>Hosting/E-commerce, Content, AI Chatbot & ADA</td><td class="right">$109/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-ai"><td><input type="checkbox" onchange="toggle(this,'wm-ai')"/></td><td>AI ChatBot**</td><td class="right">$79/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-email"><td><input type="checkbox" onchange="toggle(this,'wm-email')"/></td><td>Addl. Email Addresses</td><td class="right">$7 ea/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-content"><td><input type="checkbox" onchange="toggle(this,'wm-content')"/></td><td>Optional Content Support</td><td class="right">$175/hr</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-vid200"><td><input type="checkbox" onchange="toggleSingle(this,'wm-vid200','wm-vid-pkg')"/></td><td>200 Visitor IDs ‡ (standalone)</td><td class="right">$99/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-vid350"><td><input type="checkbox" onchange="toggleSingle(this,'wm-vid350','wm-vid-pkg')"/></td><td>350 Visitor IDs ‡ (standalone)</td><td class="right">$249/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-vid500"><td><input type="checkbox" onchange="toggleSingle(this,'wm-vid500','wm-vid-pkg')"/></td><td>500 Visitor IDs ‡ (standalone)</td><td class="right">$399/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-vid200e"><td><input type="checkbox" onchange="toggleSingle(this,'wm-vid200e','wm-vid-pkg')"/></td><td>200 Visitor IDs + Monthly Email ‡ (standalone)</td><td class="right">$399/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-vid350e"><td><input type="checkbox" onchange="toggleSingle(this,'wm-vid350e','wm-vid-pkg')"/></td><td>350 Visitor IDs + Monthly Email ‡ (standalone)</td><td class="right">$549/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="wm-vid500e"><td><input type="checkbox" onchange="toggleSingle(this,'wm-vid500e','wm-vid-pkg')"/></td><td>500 Visitor IDs + Monthly Email ‡ (standalone)</td><td class="right">$699/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-web-mo">
+            <!-- Rows generated at runtime via renderCatalogSection('web-mo') -->
           </tbody>
         </table>
       </div>
@@ -1223,6 +1189,19 @@ textarea{resize:vertical;min-height:70px}
               <select id="admin-svc-subsection" onchange="onSubsectionChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
               <input type="text" id="admin-svc-subsection-new" placeholder="e.g. New Sub-Table Name" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a new, disconnected mini-table instead of joining the intended one. Options are scoped to the currently-selected Section.</p>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Hosting Prompt <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only the 4 Website site-tier services use this; it pops the hosting-setup modal when checked. Leave "None" for everything else.</span></label>
+              <select id="admin-svc-hosting-prompt" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="">None</option>
+                <option value="1p">1-page (Business Starter)</option>
+                <option value="5p">5-page (Business Builder)</option>
+                <option value="10p">10-page (Business Pro)</option>
+                <option value="ecomm">E-Commerce / Custom</option>
+              </select>
+              <p style="font-size:10px;color:var(--muted);margin-top:4px">A fixed dropdown, not a pick-list — these 4 values are hardcoded to matching hosting packages/proration rules elsewhere in the form, so there's nothing new to create here.</p>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
@@ -3835,7 +3814,7 @@ let allServicesMap = [];
 // (price, label, etc.) is safe everywhere regardless — that's been catalog-driven since
 // the original migration. Keep this list in sync with the renderCatalogSection() calls
 // in the startup sequence as more sections get converted.
-const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp', 'td', 'sma', 'lt', 'vid', 'ctv', 'audio'];
+const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp', 'td', 'sma', 'lt', 'vid', 'ctv', 'audio', 'web-ot', 'web-mo'];
 
 // Friendly section labels (matches the form's section grouping)
 const MAP_SECTION_LABELS = {
@@ -4182,6 +4161,7 @@ function adminNewService() {
   document.getElementById('admin-svc-billing').value = 'one_time';
   document.getElementById('admin-svc-unit').value = '';
   document.getElementById('admin-svc-koc').value = 'none';
+  document.getElementById('admin-svc-hosting-prompt').value = '';
   populateServiceSectionDropdown(true, null);
   populateServiceIntakeDropdown(null);
   populateServiceExclusivityDropdown(null);
@@ -4223,6 +4203,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-setup-threshold').value = s.setup_fee_threshold ?? '';
   document.getElementById('admin-svc-fee-note').value = s.fee_note || '';
   document.getElementById('admin-svc-spend-min').value = s.spend_minimum ?? '';
+  document.getElementById('admin-svc-hosting-prompt').value = s.hosting_prompt_type || '';
   populateServiceSectionDropdown(false, s.section);
   populateServiceIntakeDropdown(s.intake_form_id);
   populateServiceExclusivityDropdown(s.exclusivity_group);
@@ -4319,6 +4300,7 @@ async function adminSaveService() {
     exclusivity_group: exclusivityGroupVal,
     spend_minimum: spendMinVal === '' ? null : parseFloat(spendMinVal),
     subsection_label: subsectionLabelVal,
+    hosting_prompt_type: document.getElementById('admin-svc-hosting-prompt').value || null,
   };
   if (isNew) {
     payload.id = id; // id only sent on create — never changed on an existing row
@@ -5625,9 +5607,16 @@ function priceAndFrequency(r) {
 // Audio) — the actual checkbox/spend-cell logic lives in exactly ONE place so the two
 // generators can never drift into showing different behavior for the same kind of row.
 function generateCatalogRowHtml(r) {
-  const onchange = r.exclusivity_group
+  let onchange = r.exclusivity_group
     ? `toggleSingle(this,'${esc(r.id)}','${esc(r.exclusivity_group)}')`
     : `toggle(this,'${esc(r.id)}')`;
+  // Website's 4 site-tier items also pop the hosting-setup modal when checked — a
+  // third kind of special per-row behavior (2026-07-07), same pattern as
+  // exclusivity_group: driven by a Supabase column, not a hardcoded id list, so the
+  // generator stays generic and this doesn't need a special case anywhere else.
+  if (r.hosting_prompt_type) {
+    onchange += `;if(this.checked)promptHosting('${esc(r.id)}','${esc(r.hosting_prompt_type)}')`;
+  }
   const spendCell = r.pricing_mode === 'spend'
     ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
     : '';
@@ -5865,6 +5854,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderMultiTableSection('vid');
   renderMultiTableSection('ctv');
   renderMultiTableSection('audio');
+  // Website — the last section, closed out 2026-07-07. Scope deliberately limited to
+  // tier logic Claire confirmed ready (see website_catalog_migration.sql header) —
+  // Modules/Content Support, hosting double-charge, and AI Chatbot exclusivity are
+  // intentionally parked for the AM review, not represented here.
+  renderCatalogSection('web-ot');
+  renderCatalogSection('web-mo');
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
