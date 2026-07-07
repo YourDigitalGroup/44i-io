@@ -667,11 +667,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-lt" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="lt-geo"><td><input type="checkbox" onchange="toggleSingle(this,'lt-geo','lt-tier')"/></td><td>Geofencing or 1st Party Addressable</td><td class="right">$15</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="lt-crm"><td><input type="checkbox" onchange="toggleSingle(this,'lt-crm','lt-tier')"/></td><td>CRM — 1st Party or Curated Addressable</td><td class="right">$20</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-crm')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="lt-event"><td><input type="checkbox" onchange="toggleSingle(this,'lt-event','lt-tier')"/></td><td>Event or Lookback</td><td class="right">$20</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-event')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="lt-offline"><td><input type="checkbox" onchange="toggle(this,'lt-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-lt">
+            <!-- Rows generated at runtime via renderCatalogSection('lt') -->
           </tbody>
         </table>
       </div>
@@ -3894,7 +3891,7 @@ let allServicesMap = [];
 // (price, label, etc.) is safe everywhere regardless — that's been catalog-driven since
 // the original migration. Keep this list in sync with the renderCatalogSection() calls
 // in the startup sequence as more sections get converted.
-const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp', 'td', 'sma'];
+const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp', 'td', 'sma', 'lt'];
 
 // Friendly section labels (matches the form's section grouping)
 const MAP_SECTION_LABELS = {
@@ -5789,6 +5786,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // modifier+spend scope boundary (td-offline is untiered but still needs a spend cell).
   renderCatalogSection('td');
   renderCatalogSection('sma');
+  // Batch #5 (2026-07-07): lt is structurally identical to td (tier+spend+one already-
+  // fixed untiered modifier) — straightforward. vid/ctv/audio all turned out to share a
+  // DIFFERENT structural complexity (4 separate sub-tables per section) not yet
+  // supported — queued together as their own extension, not converted here.
+  renderCatalogSection('lt');
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
