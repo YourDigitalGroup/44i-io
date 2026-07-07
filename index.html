@@ -5472,12 +5472,19 @@ function rowToServiceData(r) {
     out.recurring = r.default_price != null ? Number(r.default_price) : 0;
   }
   if (r.workflow) out.workflow = r.workflow;
-  // cpm/cpc shape: spend products carry numeric cpm (=retail_cpm); SEM carries
-  // cpc string; modifier items (offline tracking etc.) carry cpm=modifier_amount.
-  // NOTE: the modifier "re-quirk" preserves OLD behavior intentionally; the real
-  // modifier-pricing fix belongs to the later form-edit pass, not the switchover.
+  // FIXED (2026-07-07, per Claire): modifier items (offline tracking, etc.) are a
+  // straight MONTHLY add-on to the total — NOT a CPM-rate adjustment, and NOT something
+  // requiring its own separate spend entry. Previously "re-quirked" to preserve old
+  // behavior by stashing modifier_amount in a display-only `.cpm` field that the real
+  // total calculation never read — buildReview()/submitIO()/printIO() all already sum
+  // `.recurring` generically for any selected item, so setting it directly here is the
+  // entire fix; no changes needed to any of the three calculation functions themselves.
   if (r.pricing_mode === 'modifier' && r.modifier_amount != null) {
-    out.cpm = Number(r.modifier_amount);
+    // All current modifier items (offline tracking, etc.) are monthly, riding alongside
+    // an ongoing ad campaign — but respect billing_type rather than hardcode that
+    // assumption, so this stays correct if a one-time modifier is ever created later.
+    if (r.billing_type === 'one_time') { out.fee = Number(r.modifier_amount); out.recurring = null; }
+    else { out.recurring = Number(r.modifier_amount); }
   } else if (r.retail_cpm != null) {
     out.cpm = Number(r.retail_cpm);
   } else if (r.id === 'sem-bp') {
@@ -5603,15 +5610,15 @@ function priceAndFrequency(r) {
 // in Supabase is simply never in CATALOG_ROWS — so it can't be generated as a row at
 // all. This closes the "ghost checkbox" danger for this section entirely.
 //
-// SCOPE BOUNDARY CLOSED (2026-07-07, was open through Batch #3): a row can be BOTH
-// spend-tracked AND a modifier (the "-offline" add-ons — pricing_mode='modifier' but
-// still carry a spend input in their static markup). Converting Targeted Display
-// surfaced this directly (td-offline needs a spend cell despite not being
-// pricing_mode='spend'). Fixed by also checking `spend_minimum != null` — required a
-// small data correction alongside it (see services_spend_minimum_correction.sql):
-// these items were set to NULL earlier today, which is now ambiguous with "no spend
-// field at all"; changed to 0, which still behaves identically for the soft
-// spend-minimum warning (falsy either way) while giving this check an unambiguous signal.
+// REVERSED (2026-07-07, same day): the fix above was based on a wrong premise. Claire
+// clarified td-offline (and its siblings) are a straight MONTHLY ADD-ON — not something
+// requiring its own separate spend entry at all, and not a CPM-rate adjustment either.
+// The real fix belongs in rowToServiceData() (modifier_amount now flows into `.recurring`
+// directly, so it's automatically included in every total with no separate spend needed)
+// — NOT in giving modifier rows a spend input. Reverted to the simple, correct check:
+// only genuine pricing_mode='spend' items get a spend cell. The spend_minimum=0 data
+// correction from the reversed fix is harmless leftover (unused by modifier items now
+// that they have no spend cell at all) — not worth another migration to undo.
 function renderCatalogSection(sectionId) {
   const tbody = document.getElementById('tbody-' + sectionId);
   if (!tbody) return; // section not yet converted to dynamic rows — leave its static HTML alone
@@ -5621,7 +5628,7 @@ function renderCatalogSection(sectionId) {
     const onchange = r.exclusivity_group
       ? `toggleSingle(this,'${esc(r.id)}','${esc(r.exclusivity_group)}')`
       : `toggle(this,'${esc(r.id)}')`;
-    const spendCell = (r.pricing_mode === 'spend' || r.spend_minimum != null)
+    const spendCell = r.pricing_mode === 'spend'
       ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
       : '';
     return `
