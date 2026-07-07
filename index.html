@@ -156,7 +156,7 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td:last-child input[type=text] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; }
 
   /* Spend cell (ad tables) — labelled + full-width input */
-  .svc-table td.c-spend-cell::before { content: 'Monthly Spend'; }
+  .svc-table td.c-spend-cell::before { content: 'Spend'; }
   .svc-table td input[type=number] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left; }
 
   /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
@@ -616,7 +616,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-td" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
           <tbody id="tbody-td">
             <!-- Rows generated at runtime via renderCatalogSection('td') -->
           </tbody>
@@ -632,7 +632,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-sem" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
           <tbody id="tbody-sem">
             <!-- Rows generated at runtime via renderCatalogSection('sem'). The old
                  hardcoded "$200 min setup fee..." note is now Supabase's fee_note
@@ -650,7 +650,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-sma" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
           <tbody id="tbody-sma">
             <!-- Rows generated at runtime via renderCatalogSection('sma') -->
           </tbody>
@@ -666,7 +666,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-lt" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
           <tbody id="tbody-lt">
             <!-- Rows generated at runtime via renderCatalogSection('lt') -->
           </tbody>
@@ -5529,7 +5529,7 @@ function priceAndFrequency(r) {
   if (r.pricing_mode === 'spend') {
     // Option A: the rate (CPM/CPC) describes the price, not the cadence — so it
     // rides in the Fee column next to the dollar figure, and Frequency reads the
-    // true cadence ("Monthly", matching the Monthly Spend column beside it).
+    // true cadence ("Monthly", matching the Spend column beside it).
     if (r.id === 'sem-bp') return { fee: '$4–$12 CPC', freq: 'Monthly' };
     return { fee: r.retail_cpm != null ? `$${r.retail_cpm} CPM` : '—', freq: 'Monthly' };
   }
@@ -5684,7 +5684,7 @@ function renderMultiTableSection(sectionId) {
     // even meant. Caught live via screenshot showing the whole section at once — every
     // sub-table now gets its own headers, making each one self-contained and readable
     // on its own rather than depending on a DIFFERENT table further up the page.
-    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>';
+    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>';
     const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
     return headerHtml + tableHtml;
   }).join('');
