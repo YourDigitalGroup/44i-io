@@ -671,7 +671,7 @@ textarea{resize:vertical;min-height:70px}
             <tr data-id="lt-geo"><td><input type="checkbox" onchange="toggleSingle(this,'lt-geo','lt-tier')"/></td><td>Geofencing or 1st Party Addressable</td><td class="right">$15</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="lt-crm"><td><input type="checkbox" onchange="toggleSingle(this,'lt-crm','lt-tier')"/></td><td>CRM — 1st Party or Curated Addressable</td><td class="right">$20</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-crm')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="lt-event"><td><input type="checkbox" onchange="toggleSingle(this,'lt-event','lt-tier')"/></td><td>Event or Lookback</td><td class="right">$20</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-event')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="lt-offline"><td><input type="checkbox" onchange="toggle(this,'lt-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'lt-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="lt-offline"><td><input type="checkbox" onchange="toggle(this,'lt-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
       </div>
@@ -698,21 +698,21 @@ textarea{resize:vertical;min-height:70px}
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <tbody>
             <tr data-id="nv-geo"><td><input type="checkbox" onchange="toggle(this,'nv-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$30</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'nv-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="nv-offline"><td><input type="checkbox" onchange="toggle(this,'nv-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'nv-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="nv-offline"><td><input type="checkbox" onchange="toggle(this,'nv-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
         <div class="section-head">Programmatic Video — Min $1,000/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <tbody>
             <tr data-id="pv-geo"><td><input type="checkbox" onchange="toggle(this,'pv-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$35</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'pv-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="pv-offline"><td><input type="checkbox" onchange="toggle(this,'pv-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'pv-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="pv-offline"><td><input type="checkbox" onchange="toggle(this,'pv-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
         <div class="section-head">YouTube TV Ads — Min $2,500/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <tbody>
             <tr data-id="yttv-bp"><td><input type="checkbox" onchange="toggle(this,'yttv-bp')"/></td><td>Business Pro</td><td class="right">$90</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yttv-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="yttv-addl"><td><input type="checkbox" onchange="toggle(this,'yttv-addl')"/></td><td>Additional Targeting (Demo, HHI, Behavioral, etc.)</td><td class="right">+$10</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yttv-addl')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="yttv-addl"><td><input type="checkbox" onchange="toggle(this,'yttv-addl')"/></td><td>Additional Targeting (Demo, HHI, Behavioral, etc.)</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
       </div>
@@ -732,14 +732,14 @@ textarea{resize:vertical;min-height:70px}
             <tr data-id="stv-loc"><td><input type="checkbox" onchange="toggleSingle(this,'stv-loc','stv-tier')"/></td><td>Business Pro — Location</td><td class="right">$40</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-loc')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="stv-aud"><td><input type="checkbox" onchange="toggleSingle(this,'stv-aud','stv-tier')"/></td><td>Business Pro — Audience/Demo</td><td class="right">$46.50</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-aud')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="stv-sports"><td><input type="checkbox" onchange="toggleSingle(this,'stv-sports','stv-tier')"/></td><td>Business Pro — Sports</td><td class="right">$60</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-sports')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="stv-offline"><td><input type="checkbox" onchange="toggle(this,'stv-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="stv-offline"><td><input type="checkbox" onchange="toggle(this,'stv-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
         <div class="section-head">Social OTT/CTV — Min $1,500/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <tbody>
             <tr data-id="ottctv-bp"><td><input type="checkbox" onchange="toggle(this,'ottctv-bp')"/></td><td>Business Pro</td><td class="right">$62</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'ottctv-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="ottctv-offline"><td><input type="checkbox" onchange="toggle(this,'ottctv-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'ottctv-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="ottctv-offline"><td><input type="checkbox" onchange="toggle(this,'ottctv-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
         <div class="section-head">Hulu Ads — Min $2,500/mo</div>
@@ -769,28 +769,28 @@ textarea{resize:vertical;min-height:70px}
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="pa-geo"><td><input type="checkbox" onchange="toggle(this,'pa-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$45</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'pa-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="pa-offline"><td><input type="checkbox" onchange="toggle(this,'pa-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'pa-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="pa-offline"><td><input type="checkbox" onchange="toggle(this,'pa-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
         <div class="section-head">Native Display — Min $1,000/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <tbody>
             <tr data-id="nd-geo"><td><input type="checkbox" onchange="toggle(this,'nd-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$14</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'nd-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="nd-offline"><td><input type="checkbox" onchange="toggle(this,'nd-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'nd-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="nd-offline"><td><input type="checkbox" onchange="toggle(this,'nd-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
         <div class="section-head">Social Display Ads — Min $1,500/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <tbody>
             <tr data-id="sda-bp"><td><input type="checkbox" onchange="toggle(this,'sda-bp')"/></td><td>Business Pro</td><td class="right">$17</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sda-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="sda-offline"><td><input type="checkbox" onchange="toggle(this,'sda-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sda-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="sda-offline"><td><input type="checkbox" onchange="toggle(this,'sda-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
         <div class="section-head">Mobile Audience Targeting — Min $2,500/mo</div>
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <tbody>
             <tr data-id="mob-bp"><td><input type="checkbox" onchange="toggle(this,'mob-bp')"/></td><td>Business Pro</td><td class="right">$17</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'mob-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="mob-offline"><td><input type="checkbox" onchange="toggle(this,'mob-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'mob-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+            <tr data-id="mob-offline"><td><input type="checkbox" onchange="toggle(this,'mob-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
           </tbody>
         </table>
       </div>
