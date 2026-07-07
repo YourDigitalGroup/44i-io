@@ -1586,6 +1586,9 @@ function saveHostingChoice() {
 
 function closeHostingModal() {
   document.getElementById('hosting-modal').style.display = 'none';
+  // Re-evaluate the standalone hosting lock — covers BOTH branches of
+  // saveHostingChoice() ('us' and 'self'), since both funnel through here.
+  updateStandaloneHostingLocks();
   // After hosting confirmed, open intake form if the product has one
   const sid = currentHostingServiceId;
   if (sid) {
@@ -2372,6 +2375,11 @@ function toggle(cb, id) {
     delete selected[id];
     row.classList.remove('selected');
     delete hostingChoices[id];
+    // Re-evaluate the standalone hosting lock — cheap and idempotent, so calling it
+    // unconditionally on every uncheck (not just the 4 tier ids) is simpler and safer
+    // than checking relevance first. Also covers cancelHostingModal(), which calls
+    // this same toggle() path internally.
+    updateStandaloneHostingLocks();
 
     // Reset the visible spend/quantity inputs so a later re-check starts fresh, rather
     // than silently picking the stale leftover number back up at the next
@@ -2557,6 +2565,54 @@ function toggleSingle(cb, id, groupName) {
 }
 
 // Disable/enable an entire website section (OTO or MRR)
+// ── STANDALONE HOSTING DOUBLE-CHARGE PREVENTION (2026-07-07) ───────────────
+// If the AE has already chosen "we host" via the modal for one of the 4 site tiers,
+// the matching STANDALONE hosting fee item is locked (grayed + auto-unchecked if
+// already selected) — charging it separately would double-bill for the same hosting.
+// Deliberately scoped to exactly these 4 pairs, not a general mechanism — this is a
+// one-off relationship specific to these items, same as the existing WEB_OTO/WEB_MRR
+// cross-section lockout, not a pattern expected to repeat elsewhere in the catalog.
+// ADA hosting is deliberately excluded — none of the 4 tiers' modals ever offer it, so
+// there's no double-charge risk for that item (Claire's call).
+const HOSTING_LOCK_MAP = {
+  'w-bs':     'w-hosting',
+  'w-bb':     'w-hosting',
+  'w-bp':     'w-hosting',
+  'w-custom': 'w-ecomm-hosting',
+};
+
+function updateStandaloneHostingLocks() {
+  const shouldLock = new Set();
+  Object.entries(HOSTING_LOCK_MAP).forEach(([tierId, standaloneId]) => {
+    if (hostingChoices[tierId]?.choice === 'us') shouldLock.add(standaloneId);
+  });
+
+  [...new Set(Object.values(HOSTING_LOCK_MAP))].forEach(standaloneId => {
+    const row = document.querySelector(`tr[data-id="${standaloneId}"]`);
+    if (!row) return;
+    const cb = row.querySelector('input[type=checkbox]');
+    if (shouldLock.has(standaloneId)) {
+      // Auto-uncheck if already selected — closes a double-charge already in
+      // progress, not just future selections.
+      if (selected[standaloneId]) {
+        delete selected[standaloneId];
+        row.classList.remove('selected');
+        if (cb) cb.checked = false;
+        updateBadges();
+      }
+      row.style.opacity = '0.4';
+      row.style.pointerEvents = 'none';
+      row.title = 'Already included via the hosting setup on the selected site package';
+      if (cb) cb.disabled = true;
+    } else {
+      row.style.opacity = '';
+      row.style.pointerEvents = '';
+      row.title = '';
+      if (cb) cb.disabled = false;
+    }
+  });
+}
+
 function setWebSectionDisabled(section, disabled) {
   // section = 'web-ot' or 'web-mo'
   const sectionIds = section === 'web-ot' ? WEB_OTO : WEB_MRR;
@@ -2580,6 +2636,9 @@ function setWebSectionDisabled(section, disabled) {
       }
     });
     updateBadges();
+    // A one-time tier's hosting choice may have just been cleared above — re-evaluate
+    // the standalone lock so it releases correctly, not left stuck disabled.
+    updateStandaloneHostingLocks();
   }
 }
 
@@ -5353,6 +5412,9 @@ function loadDraft() {
     }
     if (d.intakeData) intakeData = d.intakeData;
     if (d.hostingChoices) hostingChoices = d.hostingChoices;
+    // Re-apply the standalone hosting lock so a restored draft doesn't show a
+    // standalone hosting fee as selectable when it shouldn't be (or vice versa).
+    updateStandaloneHostingLocks();
 
     // Restore KOC booking state (Step 3)
     if (d.kocCalOpened) {
