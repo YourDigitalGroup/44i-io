@@ -5368,7 +5368,19 @@ function priceAndFrequency(r) {
     return { fee: r.retail_cpm != null ? `$${r.retail_cpm} CPM` : '—', freq: 'Monthly' };
   }
   if (r.pricing_mode === 'modifier') {
-    return { fee: r.modifier_amount != null ? `+$${r.modifier_amount}` : '—', freq: 'Add-on' };
+    // Claire's understanding (2026-07-07): these add-ons recur alongside their parent
+    // campaign (e.g. +$2/mo offline tracking), not a one-time addition — so they get the
+    // same cadence composition as everything else, rather than a bare unqualified
+    // "Add-on". If any modifier item turns out to actually be one-time, the upcoming AM
+    // catalog review will catch the mismatch (its billing_type would need correcting in
+    // Supabase, not this display logic).
+    const modFee = r.modifier_amount != null ? `+$${r.modifier_amount}` : '—';
+    let modFreq = 'Add-on';
+    if (r.billing_type === 'monthly')      modFreq = 'Add-on, Monthly';
+    else if (r.billing_type === 'yearly')  modFreq = 'Add-on, Yearly';
+    else if (r.billing_type === 'annual')  modFreq = 'Add-on, Annual';
+    else if (r.billing_type === 'one_time') modFreq = 'Add-on, One Time';
+    return { fee: modFee, freq: modFreq };
   }
   if (r.default_price == null) return { fee: 'QUR', freq: '—' };
 
@@ -5383,10 +5395,16 @@ function priceAndFrequency(r) {
   else if (unit === 'each') parts.push('Per Unit');
   else if (unit)            parts.push('Per ' + unit.charAt(0).toUpperCase() + unit.slice(1));
 
+  // FIXED (2026-07-07, caught live): "One Time" previously only got appended when
+  // there was NO unit label (`&& parts.length === 0`), while Monthly/Yearly/Annual never
+  // had that restriction — so a per-unit MONTHLY item correctly showed "Per Unit,
+  // Monthly" but a per-unit ONE-TIME item showed just "Per Hour" with the cadence
+  // silently dropped. Removed the asymmetric condition so one-time composes the exact
+  // same way every other cadence already does.
   if (r.billing_type === 'monthly')      parts.push('Monthly');
   else if (r.billing_type === 'yearly')  parts.push('Yearly');
   else if (r.billing_type === 'annual')  parts.push('Annual');
-  else if (r.billing_type === 'one_time' && parts.length === 0) parts.push('One Time');
+  else if (r.billing_type === 'one_time') parts.push('One Time');
 
   return { fee, freq: parts.join(', ') || 'One Time' };
 }
