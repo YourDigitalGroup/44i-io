@@ -812,14 +812,10 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-alc" class="card-body" style="display:none">
         <table class="svc-table svc-table--fee"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="alc-media"><td><input type="checkbox" onchange="toggle(this,'alc-media')"/></td><td>Traditional Media Buying & Consultation</td><td class="right">15%</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="alc-brand"><td><input type="checkbox" onchange="toggle(this,'alc-brand')"/></td><td>New Brand / Logo</td><td class="right">$850</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="alc-photo"><td><input type="checkbox" onchange="toggle(this,'alc-photo')"/></td><td>Stock Photography</td><td class="right">$25</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="alc-design"><td><input type="checkbox" onchange="toggle(this,'alc-design')"/></td><td>Graphic Design (Hourly)</td><td class="right">$175/hr</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="alc-social-graphics"><td><input type="checkbox" onchange="toggle(this,'alc-social-graphics')"/></td><td>Social Profile & Cover Graphics</td><td class="right">$100</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="alc-radio"><td><input type="checkbox" onchange="toggle(this,'alc-radio')"/></td><td>Radio to Video or YouTube Pre-Roll Ad Creation</td><td class="right">$250</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="alc-banner"><td><input type="checkbox" onchange="toggle(this,'alc-banner')"/></td><td>Banner or Social Media Ad Set</td><td class="right">$175</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-alc">
+            <!-- Rows generated at runtime from the services table (renderCatalogSection('alc'))
+                 — adding/deactivating an alc-section service in Supabase changes what appears
+                 here with no code edit. See renderCatalogSection() for details. -->
           </tbody>
         </table>
       </div>
@@ -4872,6 +4868,40 @@ function priceAndFrequency(r) {
   return { fee, freq: parts.join(', ') || 'One Time' };
 }
 
+// ── DYNAMIC SECTION ROWS (catalog-driven) ─────────────────────────
+// Builds the checkbox/service/notes SKELETON for a section directly from
+// CATALOG_ROWS, so adding/removing a service in Supabase changes what appears
+// on the form with NO code edit. This is step one of moving Step 2 off hand-typed
+// HTML rows — prototyped on À La Carte first (simplest section: no tiers, no spend
+// minimums, no KOC/intake complexity) before extending to other sections.
+//
+// Deliberately generates ONLY the skeleton (checkbox + label + notes) — it does NOT
+// duplicate any pricing logic. renderPriceCells(), which already runs right after this
+// and is section-agnostic, fills in the Fee/Frequency cells exactly the same way it
+// does for any hand-typed row. A generated row and a hand-typed row converge to an
+// IDENTICAL final DOM shape once both functions have run.
+//
+// Because loadCatalog() only fetches active=true rows, a service that's deactivated in
+// Supabase is simply never in CATALOG_ROWS — so it can't be generated as a row at all.
+// This closes the "ghost checkbox" danger for this section entirely (not just hides it).
+//
+// LIMITATION (by design, for now): only handles simple sections — a checkbox, a label,
+// and a notes field. Sections with single-select tiers (RADIO_GROUPS), spend-minimum ad
+// products, or cross-section exclusivity (Visitor IDs) need those behaviors added before
+// this can safely replace THEIR static HTML — do not extend to those sections yet.
+function renderCatalogSection(sectionId) {
+  const tbody = document.getElementById('tbody-' + sectionId);
+  if (!tbody) return; // section not yet converted to dynamic rows — leave its static HTML alone
+
+  const rows = Object.values(CATALOG_ROWS).filter(r => r.section === sectionId);
+  tbody.innerHTML = rows.map(r => `
+    <tr data-id="${esc(r.id)}">
+      <td><input type="checkbox" onchange="toggle(this,'${esc(r.id)}')"/></td>
+      <td>${esc(r.label)}</td>
+      <td><input type="text" placeholder="Notes..."/></td>
+    </tr>`).join('');
+}
+
 // Rewrites every service row's price area into a uniform shape:
 //   [checkbox] [service] [Fee] [Frequency] [Spend — ad rows only] [Notes]
 // Runs once after the catalog loads. The Spend <input> (with its onchange and
@@ -4907,7 +4937,7 @@ function renderPriceCells() {
 }
 
 async function loadCatalog() {
-  const services = await sb('services?active=eq.true&select=*');
+  const services = await sb('services?active=eq.true&order=section,sort_order&select=*');
   const forms    = await sb('intake_forms?active=eq.true&select=*');
   if (!Array.isArray(services) || !services.length) throw new Error('No active services returned from catalog');
   if (!Array.isArray(forms) || !forms.length) throw new Error('No active intake forms returned from catalog');
@@ -4961,7 +4991,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     showCatalogError(e.message);
     return; // stop init — do not proceed into a catalog-less form
   }
-  // Catalog is ready — rewrite the price/frequency cells from table data, then proceed.
+  // Catalog is ready — generate any dynamic sections' rows first (currently: À La
+  // Carte, prototyping the catalog-driven approach), THEN rewrite price/frequency
+  // cells from table data for ALL rows (static and generated alike).
+  renderCatalogSection('alc');
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
