@@ -617,12 +617,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-td" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="td-geo"><td><input type="checkbox" onchange="toggleSingle(this,'td-geo','td-tier')"/></td><td>Geotargeting & Audience</td><td class="right">$10</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'td-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="td-site"><td><input type="checkbox" onchange="toggleSingle(this,'td-site','td-tier')"/></td><td>Site Retargeting, Keyword, Contextual, or Category</td><td class="right">$12</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'td-site')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="td-dynamic"><td><input type="checkbox" onchange="toggleSingle(this,'td-dynamic','td-tier')"/></td><td>Dynamic Display</td><td class="right">$15</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'td-dynamic')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="td-custom"><td><input type="checkbox" onchange="toggleSingle(this,'td-custom','td-tier')"/></td><td>Custom Site Targeting & Ad Retargeting</td><td class="right">$18</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'td-custom')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="td-offline"><td><input type="checkbox" onchange="toggle(this,'td-offline')"/></td><td>Offline Visits Tracking</td><td class="right">+$2</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'td-offline')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-td">
+            <!-- Rows generated at runtime via renderCatalogSection('td') -->
           </tbody>
         </table>
       </div>
@@ -655,11 +651,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-sma" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="sma-fb"><td><input type="checkbox" onchange="toggleSingle(this,'sma-fb','sma-tier')"/></td><td>Facebook & Instagram</td><td class="right">$15</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sma-fb')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="sma-tt"><td><input type="checkbox" onchange="toggleSingle(this,'sma-tt','sma-tier')"/></td><td>TikTok</td><td class="right">$27</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sma-tt')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="sma-sc"><td><input type="checkbox" onchange="toggleSingle(this,'sma-sc','sma-tier')"/></td><td>Snapchat</td><td class="right">$20</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sma-sc')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="sma-li"><td><input type="checkbox" onchange="toggleSingle(this,'sma-li','sma-tier')"/></td><td>LinkedIn</td><td class="right">$60</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sma-li')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-sma">
+            <!-- Rows generated at runtime via renderCatalogSection('sma') -->
           </tbody>
         </table>
       </div>
@@ -3901,7 +3894,7 @@ let allServicesMap = [];
 // (price, label, etc.) is safe everywhere regardless — that's been catalog-driven since
 // the original migration. Keep this list in sync with the renderCatalogSection() calls
 // in the startup sequence as more sections get converted.
-const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp'];
+const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp', 'td', 'sma'];
 
 // Friendly section labels (matches the form's section grouping)
 const MAP_SECTION_LABELS = {
@@ -5610,12 +5603,15 @@ function priceAndFrequency(r) {
 // in Supabase is simply never in CATALOG_ROWS — so it can't be generated as a row at
 // all. This closes the "ghost checkbox" danger for this section entirely.
 //
-// STILL NOT HANDLED (scope boundary, honest about what's NOT solved yet): a row that
-// is BOTH a spend-tracked item AND a modifier (like the "-offline" add-ons, which are
-// pricing_mode='modifier' but still carry a spend input in their static markup) —
-// today's check is a simple `pricing_mode === 'spend'`, which correctly covers SEM's
-// single row but does NOT yet cover that combined case. Needed before converting
-// Targeted Display/Location Targeting/Video/etc., not before SEO or SEM.
+// SCOPE BOUNDARY CLOSED (2026-07-07, was open through Batch #3): a row can be BOTH
+// spend-tracked AND a modifier (the "-offline" add-ons — pricing_mode='modifier' but
+// still carry a spend input in their static markup). Converting Targeted Display
+// surfaced this directly (td-offline needs a spend cell despite not being
+// pricing_mode='spend'). Fixed by also checking `spend_minimum != null` — required a
+// small data correction alongside it (see services_spend_minimum_correction.sql):
+// these items were set to NULL earlier today, which is now ambiguous with "no spend
+// field at all"; changed to 0, which still behaves identically for the soft
+// spend-minimum warning (falsy either way) while giving this check an unambiguous signal.
 function renderCatalogSection(sectionId) {
   const tbody = document.getElementById('tbody-' + sectionId);
   if (!tbody) return; // section not yet converted to dynamic rows — leave its static HTML alone
@@ -5625,7 +5621,7 @@ function renderCatalogSection(sectionId) {
     const onchange = r.exclusivity_group
       ? `toggleSingle(this,'${esc(r.id)}','${esc(r.exclusivity_group)}')`
       : `toggle(this,'${esc(r.id)}')`;
-    const spendCell = r.pricing_mode === 'spend'
+    const spendCell = (r.pricing_mode === 'spend' || r.spend_minimum != null)
       ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
       : '';
     return `
@@ -5781,6 +5777,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderCatalogSection('sm');
   renderCatalogSection('em');
   renderCatalogSection('tlp');
+  // Batch #4 (2026-07-07): first COMBINED tier+spend sections. sma is the clean case
+  // (all 4 items tiered, all spend); td additionally exercises the just-closed
+  // modifier+spend scope boundary (td-offline is untiered but still needs a spend cell).
+  renderCatalogSection('td');
+  renderCatalogSection('sma');
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
