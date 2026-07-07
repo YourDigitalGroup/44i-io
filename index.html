@@ -94,7 +94,17 @@ textarea{resize:vertical;min-height:70px}
 .svc-table tr:hover{background:var(--light)}
 .svc-table td.right{text-align:right;color:var(--muted)}
 .svc-table td input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
-.svc-table td input[type=number]{width:100%;box-sizing:border-box;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:right}
+.svc-table td input[type=number]{width:100%;box-sizing:border-box;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:right;-moz-appearance:textfield}
+/* Native number-input spinner arrows reserve space at the right edge, so even with
+   text-align:right already set, the actual text sits LEFT of that reserved space —
+   while a plain header/cell (no input, no spinner) sits flush at the true right edge.
+   That's what made "Spend" (header) and "$ spend" (input) look subtly misaligned even
+   though both were already right-aligned by CSS. Removing the spinners fixes this AND
+   is a reasonable choice on its own for a monetary field, where incrementing a dollar
+   value one unit at a time via tiny arrows isn't a useful interaction. Also affects the
+   quantity field (shares this same selector) — a harmless, consistent side benefit. */
+.svc-table td input[type=number]::-webkit-outer-spin-button,
+.svc-table td input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .svc-table td input[type=text]{padding:4px 8px;font-size:12px}
 
 /* ── MOBILE: render service tables as stacked cards (≤600px) ──────────
