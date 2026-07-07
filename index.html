@@ -571,8 +571,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-rep" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="rep-bp"><td><input type="checkbox" onchange="toggle(this,'rep-bp')"/></td><td>Business Pro</td><td class="right">$425/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-rep">
+            <!-- Rows generated at runtime via renderCatalogSection('rep') -->
           </tbody>
         </table>
       </div>
@@ -587,8 +587,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-llo" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="llo-bp"><td><input type="checkbox" onchange="toggle(this,'llo-bp')"/></td><td>Business Pro</td><td class="right">$250/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-llo">
+            <!-- Rows generated at runtime via renderCatalogSection('llo') -->
           </tbody>
         </table>
       </div>
@@ -603,8 +603,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-gbp" class="card-body" style="display:none">
         <table class="svc-table svc-table--fee"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="gbp-setup"><td><input type="checkbox" onchange="toggle(this,'gbp-setup')"/></td><td>Setup & Verification</td><td class="right">$300 one time</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-gbp">
+            <!-- Rows generated at runtime via renderCatalogSection('gbp') -->
           </tbody>
         </table>
       </div>
@@ -4991,10 +4991,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     showCatalogError(e.message);
     return; // stop init — do not proceed into a catalog-less form
   }
-  // Catalog is ready — generate any dynamic sections' rows first (currently: À La
-  // Carte, prototyping the catalog-driven approach), THEN rewrite price/frequency
-  // cells from table data for ALL rows (static and generated alike).
+  // Catalog is ready — generate any dynamic sections' rows first (À La Carte, Reputation
+  // Management, Local Listing Optimization, Google Business Profile — all confirmed
+  // structurally simple: single item or no tier groups/spend minimums), THEN rewrite
+  // price/frequency cells from table data for ALL rows (static and generated alike).
   renderCatalogSection('alc');
+  renderCatalogSection('rep');
+  renderCatalogSection('llo');
+  renderCatalogSection('gbp');
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
