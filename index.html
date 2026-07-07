@@ -681,37 +681,9 @@ textarea{resize:vertical;min-height:70px}
         <span id="chevron-vid">▶</span>
       </div>
       <div id="sec-vid" class="card-body" style="display:none">
-        <div class="section-head">YouTube Video — Min $1,000/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="yt-out"><td><input type="checkbox" onchange="toggleSingle(this,'yt-out','yt-tier')"/></td><td>Outstream on Google Network</td><td class="right">$25</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yt-out')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="yt-15"><td><input type="checkbox" onchange="toggleSingle(this,'yt-15','yt-tier')"/></td><td>Non-skippable :15</td><td class="right">$27.50</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yt-15')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="yt-06"><td><input type="checkbox" onchange="toggleSingle(this,'yt-06','yt-tier')"/></td><td>Non-skippable :06 (Bumper)</td><td class="right">$25</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yt-06')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="yt-skip"><td><input type="checkbox" onchange="toggleSingle(this,'yt-skip','yt-tier')"/></td><td>TrueView Skippable :05</td><td class="right">$25</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yt-skip')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">Native Video — Min $1,000/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="nv-geo"><td><input type="checkbox" onchange="toggle(this,'nv-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$30</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'nv-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="nv-offline"><td><input type="checkbox" onchange="toggle(this,'nv-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">Programmatic Video — Min $1,000/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="pv-geo"><td><input type="checkbox" onchange="toggle(this,'pv-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$35</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'pv-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="pv-offline"><td><input type="checkbox" onchange="toggle(this,'pv-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">YouTube TV Ads — Min $2,500/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="yttv-bp"><td><input type="checkbox" onchange="toggle(this,'yttv-bp')"/></td><td>Business Pro</td><td class="right">$90</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'yttv-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="yttv-addl"><td><input type="checkbox" onchange="toggle(this,'yttv-addl')"/></td><td>Additional Targeting (Demo, HHI, Behavioral, etc.)</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
+        <div id="dynamic-vid">
+          <!-- All sub-tables generated at runtime via renderMultiTableSection('vid') -->
+        </div>
       </div>
     </div>
 
@@ -722,35 +694,9 @@ textarea{resize:vertical;min-height:70px}
         <span id="chevron-ctv">▶</span>
       </div>
       <div id="sec-ctv" class="card-body" style="display:none">
-        <div class="section-head">Streaming TV Advertising — Min $1,500/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="stv-loc"><td><input type="checkbox" onchange="toggleSingle(this,'stv-loc','stv-tier')"/></td><td>Business Pro — Location</td><td class="right">$40</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-loc')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="stv-aud"><td><input type="checkbox" onchange="toggleSingle(this,'stv-aud','stv-tier')"/></td><td>Business Pro — Audience/Demo</td><td class="right">$46.50</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-aud')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="stv-sports"><td><input type="checkbox" onchange="toggleSingle(this,'stv-sports','stv-tier')"/></td><td>Business Pro — Sports</td><td class="right">$60</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'stv-sports')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="stv-offline"><td><input type="checkbox" onchange="toggle(this,'stv-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">Social OTT/CTV — Min $1,500/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="ottctv-bp"><td><input type="checkbox" onchange="toggle(this,'ottctv-bp')"/></td><td>Business Pro</td><td class="right">$62</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'ottctv-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="ottctv-offline"><td><input type="checkbox" onchange="toggle(this,'ottctv-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">Hulu Ads — Min $2,500/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="hulu-bp"><td><input type="checkbox" onchange="toggle(this,'hulu-bp')"/></td><td>Business Pro</td><td class="right">$75</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'hulu-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">Amazon Prime Ads — Min $2,500/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="amz-bp"><td><input type="checkbox" onchange="toggle(this,'amz-bp')"/></td><td>Business Pro</td><td class="right">$90</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'amz-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
+        <div id="dynamic-ctv">
+          <!-- All sub-tables generated at runtime via renderMultiTableSection('ctv') -->
+        </div>
       </div>
     </div>
 
@@ -761,35 +707,9 @@ textarea{resize:vertical;min-height:70px}
         <span id="chevron-audio">▶</span>
       </div>
       <div id="sec-audio" class="card-body" style="display:none">
-        <div class="section-head">Programmatic Audio — Min $1,000/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="pa-geo"><td><input type="checkbox" onchange="toggle(this,'pa-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$45</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'pa-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="pa-offline"><td><input type="checkbox" onchange="toggle(this,'pa-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">Native Display — Min $1,000/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="nd-geo"><td><input type="checkbox" onchange="toggle(this,'nd-geo')"/></td><td>Geotargeting, Keyword, Contextual, Category & Retargeting</td><td class="right">$14</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'nd-geo')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="nd-offline"><td><input type="checkbox" onchange="toggle(this,'nd-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">Social Display Ads — Min $1,500/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="sda-bp"><td><input type="checkbox" onchange="toggle(this,'sda-bp')"/></td><td>Business Pro</td><td class="right">$17</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sda-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="sda-offline"><td><input type="checkbox" onchange="toggle(this,'sda-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
-        <div class="section-head">Mobile Audience Targeting — Min $2,500/mo</div>
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <tbody>
-            <tr data-id="mob-bp"><td><input type="checkbox" onchange="toggle(this,'mob-bp')"/></td><td>Business Pro</td><td class="right">$17</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'mob-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="mob-offline"><td><input type="checkbox" onchange="toggle(this,'mob-offline')"/></td><td>Offline Visits Tracking</td><td><input type="text" placeholder="Notes..."/></td></tr>
-          </tbody>
-        </table>
+        <div id="dynamic-audio">
+          <!-- All sub-tables generated at runtime via renderMultiTableSection('audio') -->
+        </div>
       </div>
     </div>
 
@@ -3891,7 +3811,7 @@ let allServicesMap = [];
 // (price, label, etc.) is safe everywhere regardless — that's been catalog-driven since
 // the original migration. Keep this list in sync with the renderCatalogSection() calls
 // in the startup sequence as more sections get converted.
-const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp', 'td', 'sma', 'lt'];
+const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp', 'td', 'sma', 'lt', 'vid', 'ctv', 'audio'];
 
 // Friendly section labels (matches the form's section grouping)
 const MAP_SECTION_LABELS = {
@@ -5616,25 +5536,86 @@ function priceAndFrequency(r) {
 // only genuine pricing_mode='spend' items get a spend cell. The spend_minimum=0 data
 // correction from the reversed fix is harmless leftover (unused by modifier items now
 // that they have no spend cell at all) — not worth another migration to undo.
-function renderCatalogSection(sectionId) {
-  const tbody = document.getElementById('tbody-' + sectionId);
-  if (!tbody) return; // section not yet converted to dynamic rows — leave its static HTML alone
-
-  const rows = Object.values(CATALOG_ROWS).filter(r => r.section === sectionId);
-  tbody.innerHTML = rows.map(r => {
-    const onchange = r.exclusivity_group
-      ? `toggleSingle(this,'${esc(r.id)}','${esc(r.exclusivity_group)}')`
-      : `toggle(this,'${esc(r.id)}')`;
-    const spendCell = r.pricing_mode === 'spend'
-      ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
-      : '';
-    return `
+// Shared by renderCatalogSection() (one table per section) and
+// renderMultiTableSection() (several sub-tables per section, e.g. Video/Streaming TV/
+// Audio) — the actual checkbox/spend-cell logic lives in exactly ONE place so the two
+// generators can never drift into showing different behavior for the same kind of row.
+function generateCatalogRowHtml(r) {
+  const onchange = r.exclusivity_group
+    ? `toggleSingle(this,'${esc(r.id)}','${esc(r.exclusivity_group)}')`
+    : `toggle(this,'${esc(r.id)}')`;
+  const spendCell = r.pricing_mode === 'spend'
+    ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
+    : '';
+  return `
     <tr data-id="${esc(r.id)}">
       <td><input type="checkbox" onchange="${onchange}"/></td>
       <td>${esc(r.label)}</td>
       ${spendCell}
       <td><input type="text" placeholder="Notes..."/></td>
     </tr>`;
+}
+
+function renderCatalogSection(sectionId) {
+  const tbody = document.getElementById('tbody-' + sectionId);
+  if (!tbody) return; // section not yet converted to dynamic rows — leave its static HTML alone
+
+  const rows = Object.values(CATALOG_ROWS).filter(r => r.section === sectionId);
+  tbody.innerHTML = rows.map(generateCatalogRowHtml).join('');
+}
+
+// ── MULTI-TABLE SECTIONS (Video, Streaming TV, Audio) ──────────────────────
+// These sections have SEVERAL separate sub-tables under one section (e.g. Video has
+// "YouTube Video" / "Native Video" / "Programmatic Video" / "YouTube TV Ads" as four
+// distinct mini-tables, each with its own header and its own colgroup) — a genuinely
+// different shape than every other section converted today, which is one table per
+// section. Grouped by `subsection_label` (new column, 2026-07-07) — rows with the same
+// label render together under one sub-header; rows with subsection_label = NULL (every
+// already-converted simple section) fall through to a single ungrouped table, so this
+// function is a strict superset of renderCatalogSection()'s behavior, not a replacement.
+//
+// The "Min $X/mo" note next to each sub-header is COMPUTED from spend_minimum (already
+// stored per-row, uniform within a sub-group) rather than a separately-typed string —
+// one source of truth for that number, matching today's whole approach.
+//
+// Targets a CONTAINER div (not a single tbody, since there are multiple tables) —
+// replaces the entire hand-typed multi-table block for the section at once.
+function renderMultiTableSection(sectionId) {
+  const container = document.getElementById('dynamic-' + sectionId);
+  if (!container) return; // section not yet converted — leave its static HTML alone
+
+  const rows = Object.values(CATALOG_ROWS)
+    .filter(r => r.section === sectionId)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+  // Group by subsection_label, preserving first-appearance order (matches sort_order,
+  // which already reflects the intended visual grouping).
+  const order = [];
+  const groups = {};
+  rows.forEach(r => {
+    const key = r.subsection_label || '';
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push(r);
+  });
+
+  container.innerHTML = order.map((label, i) => {
+    const groupRows = groups[label];
+    // Only genuine spend-mode items count toward the group's minimum — a modifier
+    // riding alongside them (e.g. Offline Visits Tracking, spend_minimum=0 by design)
+    // would otherwise drag Math.min() down to 0 and show a wrong "Min $0/mo" note.
+    const minSpends = groupRows.filter(r => r.pricing_mode === 'spend').map(r => r.spend_minimum).filter(v => v != null);
+    const minNote = label && minSpends.length
+      ? ` — Min $${Math.min(...minSpends).toLocaleString()}/mo`
+      : '';
+    const headerHtml = label ? `<div class="section-head">${esc(label)}${minNote}</div>` : '';
+    // Only the FIRST table in the section gets a visible <thead> (matches the original
+    // static markup exactly — subsequent sub-tables share the same column meaning
+    // without repeating the header row).
+    const theadHtml = i === 0
+      ? '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>'
+      : '';
+    const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
+    return headerHtml + tableHtml;
   }).join('');
 }
 
@@ -5791,6 +5772,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // DIFFERENT structural complexity (4 separate sub-tables per section) not yet
   // supported — queued together as their own extension, not converted here.
   renderCatalogSection('lt');
+  // Batch #6 (2026-07-07): the multi-table extension — vid/ctv/audio each have 4
+  // separate sub-tables per section, using renderMultiTableSection() instead of
+  // renderCatalogSection(). Last three sections before Website.
+  renderMultiTableSection('vid');
+  renderMultiTableSection('ctv');
+  renderMultiTableSection('audio');
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
