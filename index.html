@@ -79,12 +79,22 @@ textarea{resize:vertical;min-height:70px}
 .svc-table th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;text-align:left;background:var(--light);border-bottom:1px solid var(--border)}
 .svc-table th.right{text-align:right}
 .svc-table td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:middle}
+/* Last column (Notes) sits directly against the card's own boundary — .card-body has
+   ZERO padding (by design, so header color bands stay flush edge-to-edge), so the ONLY
+   buffer before the card's outer edge (which clips via overflow:hidden) is this cell's
+   own padding. A focused input's outline extends a few px beyond its border; the base
+   12px was tight enough that it looked like it touched/clipped against the card edge —
+   same class of "focus ring needs more breathing room" issue as the spend-input fix
+   above, but a different mechanism (this input's own sizing was already correct; the
+   card boundary itself was just close). A few extra px of right padding here only
+   affects the very last column, not overall table/column alignment. */
+.svc-table td:last-child{padding-right:16px}
 .svc-table tr:last-child td{border-bottom:none}
 .svc-table tr.selected{background:#F0F7FF}
 .svc-table tr:hover{background:var(--light)}
 .svc-table td.right{text-align:right;color:var(--muted)}
 .svc-table td input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
-.svc-table td input[type=number]{width:120px;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:right}
+.svc-table td input[type=number]{width:100%;box-sizing:border-box;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:right}
 .svc-table td input[type=text]{padding:4px 8px;font-size:12px}
 
 /* ── MOBILE: render service tables as stacked cards (≤600px) ──────────
