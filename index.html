@@ -4654,13 +4654,19 @@ function buildDraft() {
     hostingChoices: hostingChoices,
     spendValues: {},
     noteValues: {},
+    qtyValues: {},
   };
   Object.keys(selected).forEach(id => {
     const row = document.querySelector(`tr[data-id="${id}"]`);
     if (!row) return;
-    const spendInput = row.querySelector('input[type=number]');
-    const noteInput = row.querySelector('input[type=text]');
+    // .qty-field must be excluded here — same fix as syncRowInputs(). Missed this
+    // function originally; caught live when a typed quantity ("3") got saved into the
+    // draft as spend and, on restore, corrupted selected[id].spend to $3/mo.
+    const spendInput = row.querySelector('input[type=number]:not(.qty-field)');
+    const qtyInput   = row.querySelector('input[type=number].qty-field');
+    const noteInput  = row.querySelector('input[type=text]');
     if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
+    if (qtyInput && qtyInput.value) draft.qtyValues[id] = qtyInput.value;
     if (noteInput && noteInput.value) draft.noteValues[id] = noteInput.value;
   });
   return draft;
@@ -4733,8 +4739,20 @@ function loadDraft() {
         Object.entries(d.spendValues).forEach(([id, val]) => {
           const row = document.querySelector(`tr[data-id="${id}"]`);
           if (!row) return;
-          const input = row.querySelector('input[type=number]');
+          // .qty-field excluded — same fix as buildDraft()/syncRowInputs(). Without this,
+          // a per-unit item's saved quantity was restored INTO selected[id].spend instead
+          // of selected[id].qty, corrupting the monthly total with a bogus "$3/mo" style
+          // charge (caught live, matched exactly to the quantity that had been typed).
+          const input = row.querySelector('input[type=number]:not(.qty-field)');
           if (input) { input.value = val; if (selected[id]) selected[id].spend = parseFloat(val) || 0; }
+        });
+      }
+      if (d.qtyValues) {
+        Object.entries(d.qtyValues).forEach(([id, val]) => {
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          if (!row) return;
+          const input = row.querySelector('input[type=number].qty-field');
+          if (input) { input.value = val; if (selected[id]) selected[id].qty = parseInt(val, 10) || 1; }
         });
       }
       if (d.noteValues) {
