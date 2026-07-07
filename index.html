@@ -3963,9 +3963,12 @@ function renderSuggestedMap() {
       const deactivateBtn = !isSuperAdmin ? '' : (isSafeSection
         ? `<button onclick="adminToggleServiceActive('${esc(s.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`
         : `<span title="Only available for sections already converted to dynamic rows (À La Carte, Reputation Management, Local Listing, Google Business Profile) — creating/deactivating elsewhere wouldn't show correctly on the public form yet." style="font-size:10px;color:#D1D5DB;cursor:help">Deactivate ⓘ</span>`);
+      // Matches the EXACT pattern used for the Groups Pricing button: AM sees nothing at
+      // all here, not a placeholder dash (an earlier version showed "—", which read like
+      // a mystery unlabeled column since the header itself has no title — caught live).
       const editBtn = isSuperAdmin
         ? `<button onclick="adminEditService('${esc(s.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
-        : '<span style="font-size:10px;color:var(--muted)">—</span>';
+        : '';
       html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
         <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(s.id)}</td>
         <td style="padding:8px 10px">${esc(s.label)}${inactiveBadge}</td>
