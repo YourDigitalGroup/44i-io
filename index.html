@@ -2293,6 +2293,12 @@ function toggle(cb, id) {
   if (!data) return;
   if (cb.checked) {
     selected[id] = {...data, notes: '', spend: 0};
+    // Per-unit items (Website Module, hourly services, etc.) need a quantity so the
+    // total is fee × qty, not always just fee. Default to 1 (checking the box implies
+    // "at least one"). Every other pricing mode leaves qty undefined, and every total
+    // calc treats (data.qty || 1) as a safe no-op multiplier — existing behavior for
+    // non-per-unit items is unchanged.
+    if (CATALOG_ROWS[id]?.pricing_mode === 'per_unit') selected[id].qty = 1;
     row.classList.add('selected');
 
     // Website OTO ↔ MRR mutual exclusivity
@@ -2536,7 +2542,12 @@ function syncRowInputs() {
     if (!row) return;
     const noteInput = row.querySelector('input[type=text]');
     if (noteInput) selected[id].notes = noteInput.value.trim();
-    const spendInput = row.querySelector('input[type=number]');
+    // Quantity has its own class so it's never mistaken for the ad-spend input below —
+    // in practice a row is never both per-unit AND spend-priced (pricing_mode is a single
+    // value per service), but kept explicit rather than relying on that never happening.
+    const qtyInput = row.querySelector('input[type=number].qty-field');
+    if (qtyInput) selected[id].qty = parseInt(qtyInput.value, 10) || 1;
+    const spendInput = row.querySelector('input[type=number]:not(.qty-field)');
     if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
   });
 }
@@ -2644,20 +2655,28 @@ function buildReview() {
 
   Object.entries(selected).forEach(([id, data]) => {
     count++;
-    if (data.fee > 0) oneTime += data.fee;
-    if (data.recurring > 0) monthly += data.recurring;
+    // (data.qty || 1) is a safe no-op multiplier for every non-per-unit item — qty is
+    // only ever set on per-unit services (see toggle()), so this preserves existing
+    // totals exactly for everything else while correctly scaling per-unit line items.
+    const qty = data.qty || 1;
+    const feeTotal = (data.fee || 0) * qty;
+    const recurringTotal = (data.recurring || 0) * qty;
+    if (feeTotal > 0) oneTime += feeTotal;
+    if (recurringTotal > 0) monthly += recurringTotal;
     if (data.spend > 0) monthly += data.spend;
     if (data.workflow) workflows.add(data.workflow);
     // Build recurring/spend display — never show CPM/CPC rate
     let amtDisplay;
-    if (data.recurring > 0 && data.spend > 0) {
-      amtDisplay = fmt(data.recurring) + '/mo + ' + fmt(data.spend) + '/mo spend';
-    } else if (data.recurring > 0) {
-      amtDisplay = fmt(data.recurring) + '/mo';
+    if (recurringTotal > 0 && data.spend > 0) {
+      amtDisplay = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo spend';
+    } else if (recurringTotal > 0) {
+      amtDisplay = fmt(recurringTotal) + '/mo';
     } else if (data.spend > 0) {
       amtDisplay = fmt(data.spend) + '/mo campaign';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
+    } else if (qty > 1) {
+      amtDisplay = `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}`;
     } else {
       amtDisplay = '—';
     }
@@ -2837,13 +2856,22 @@ async function submitIO() {
     const lineItems = Object.entries(selected).map(([id, data]) => {
       const cfg = PRODUCT_CONFIG[id] || {};
       const hosting = hostingChoices[id];
+      const qty = data.qty || 1;
+      // fee/recurring stored here are the ACTUAL dollar contribution (unit × qty), not the
+      // unit price — every downstream consumer (Trello card description, admin order
+      // viewer) already just reads li.fee/li.recurring directly, so storing the multiplied
+      // total means both inherit correct math with zero changes to either. unit_fee/qty
+      // are kept alongside purely for transparency/audit (so "$175 × 3" is reconstructable
+      // later, e.g. for Phase 3 billing).
       return {
         service_id: id,
         label: data.label,
         section: data.section,
-        fee: data.fee || 0,
-        recurring: data.recurring || 0,
+        fee: (data.fee || 0) * qty,
+        recurring: (data.recurring || 0) * qty,
         spend: data.spend || 0,
+        qty: qty,
+        unit_fee: data.fee || 0,
         notes: [data.notes, hosting?.note].filter(Boolean).join(' | '),
         workflow: data.workflow || null,
         requires_koc: cfg.koc === 'required',
@@ -2867,8 +2895,10 @@ async function submitIO() {
       throw new Error('Monthly spend is required for: ' + names + '. Go back to Step 2 and enter spend amounts.');
     }
 
-    const oneTime = Object.values(selected).reduce((a,s) => a + (s.fee||0), 0) + proratedTotal;
-    const monthly = Object.values(selected).reduce((a,s) => a + (s.recurring||0) + (s.spend||0), 0);
+    // lineItems.fee/recurring are already qty-multiplied (see above), so summing them
+    // directly here gives the correct order totals with no further math needed.
+    const oneTime = lineItems.reduce((a,li) => a + (li.fee||0), 0) + proratedTotal;
+    const monthly = lineItems.reduce((a,li) => a + (li.recurring||0) + (li.spend||0), 0);
 
     // Use real UUID group_id, or null for dev mode
     const isRealUuid = selectedGroup.id && /^[0-9a-f]{8}-/.test(selectedGroup.id);
@@ -4287,19 +4317,26 @@ function printIO() {
     let sectionRows = '';
 
     items.forEach(([id, data]) => {
-      if (data.fee > 0) { oneTime += data.fee; sectionOneTime += data.fee; }
-      if (data.recurring > 0) { monthly += data.recurring; sectionMonthly += data.recurring; }
+      // Same (data.qty || 1) safe no-op multiplier as buildReview() — only per-unit items
+      // ever have qty set, so this preserves the printed total exactly for everything else.
+      const qty = data.qty || 1;
+      const feeTotal = (data.fee || 0) * qty;
+      const recurringTotal = (data.recurring || 0) * qty;
+      if (feeTotal > 0) { oneTime += feeTotal; sectionOneTime += feeTotal; }
+      if (recurringTotal > 0) { monthly += recurringTotal; sectionMonthly += recurringTotal; }
       if (data.spend > 0) { monthly += data.spend; sectionMonthly += data.spend; }
 
       let amtCol = '';
-      if (data.fee > 0 && (data.recurring > 0 || data.spend > 0)) {
-        amtCol = fmt(data.fee) + ' setup + ' + fmt(data.recurring > 0 ? data.recurring : data.spend) + '/mo';
-      } else if (data.fee > 0) {
-        amtCol = fmt(data.fee) + ' one-time';
-      } else if (data.recurring > 0 && data.spend > 0) {
-        amtCol = fmt(data.recurring) + '/mo + ' + fmt(data.spend) + '/mo campaign';
-      } else if (data.recurring > 0) {
-        amtCol = fmt(data.recurring) + '/mo';
+      if (qty > 1) {
+        amtCol = fmt(data.fee) + ' × ' + qty + ' = ' + fmt(feeTotal) + (recurringTotal > 0 || data.spend > 0 ? ' one-time' : '');
+      } else if (feeTotal > 0 && (recurringTotal > 0 || data.spend > 0)) {
+        amtCol = fmt(feeTotal) + ' setup + ' + fmt(recurringTotal > 0 ? recurringTotal : data.spend) + '/mo';
+      } else if (feeTotal > 0) {
+        amtCol = fmt(feeTotal) + ' one-time';
+      } else if (recurringTotal > 0 && data.spend > 0) {
+        amtCol = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo campaign';
+      } else if (recurringTotal > 0) {
+        amtCol = fmt(recurringTotal) + '/mo';
       } else if (data.spend > 0) {
         amtCol = fmt(data.spend) + '/mo campaign';
       } else {
@@ -4933,7 +4970,18 @@ function renderPriceCells() {
 
     const feeTd = document.createElement('td');
     feeTd.className = 'right svc-fee';
-    feeTd.textContent = fee;
+    if (r.pricing_mode === 'per_unit') {
+      // Per-unit items (Website Module $750/ea, hourly services, etc.) get a small
+      // quantity box right next to the unit price. No onchange handler needed — follows
+      // the SAME pattern as the Notes field: syncRowInputs() reads its value at the
+      // Step 2→3 transition, submit, and print (its only 3 call sites), so a live handler
+      // would be redundant. `.qty-field` class lets syncRowInputs()/renderPriceCells
+      // distinguish this from a genuine ad-spend input (never both on the same row in
+      // practice — pricing_mode is one value per service — but kept explicit for safety).
+      feeTd.innerHTML = `${esc(fee)} × <input type="number" class="qty-field" min="1" value="1" style="width:44px;padding:3px 5px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center;margin-left:2px" title="Quantity"/>`;
+    } else {
+      feeTd.textContent = fee;
+    }
 
     const freqTd = document.createElement('td');
     freqTd.className = 'svc-freq';
