@@ -73,7 +73,7 @@ textarea{resize:vertical;min-height:70px}
 .svc-table col.c-spend{width:120px}
 .svc-table col.c-notes{width:auto}
 .svc-table td:nth-child(2){white-space:normal;word-break:normal;overflow-wrap:anywhere}
-.svc-table td.svc-freq{color:var(--muted);font-size:11.5px}
+.svc-table td.svc-freq{color:var(--muted);font-size:11.5px;text-align:right}
 .svc-table td.right{overflow:hidden;text-overflow:ellipsis}
 .svc-table td:last-child input[type=text]{width:100%;box-sizing:border-box}
 .svc-table th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;text-align:left;background:var(--light);border-bottom:1px solid var(--border)}
@@ -131,6 +131,12 @@ textarea{resize:vertical;min-height:70px}
   .svc-table tr.selected:hover { background: #F0F7FF; }
   .svc-table td { border-bottom: none; padding: 3px 0; text-align: left; }
   .svc-table td.right { text-align: left; color: var(--text); }
+  /* Matches the .right override above — the new desktop-only text-align:right on
+     .svc-freq (added to fix the Fee/Frequency/Spend zigzag) would otherwise leak into
+     mobile's stacked-card layout, where each field is a full-width block with its label
+     above it — right-aligning the value there would look odd/inconsistent with every
+     other field's left-aligned value in that same vertical stack. */
+  .svc-table td.svc-freq { text-align: left; }
 
   /* Checkbox cell → sits inline to the LEFT of the service name (matches desktop) */
   .svc-table td:first-child {
@@ -446,7 +452,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-web-ot" class="card-body" style="display:none">
         <table class="svc-table svc-table--money"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="w-bs"><td><input type="checkbox" onchange="toggleSingle(this,'w-bs','web-oto-tier');if(this.checked)promptHosting('w-bs','1p')"/></td><td>Business Starter* <span style="font-size:10px;color:var(--muted)">(1-page)</span></td><td class="right">$1,250</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="w-bb"><td><input type="checkbox" onchange="toggleSingle(this,'w-bb','web-oto-tier');if(this.checked)promptHosting('w-bb','5p')"/></td><td>Business Builder* <span style="font-size:10px;color:var(--muted)">(5-page)</span></td><td class="right">$2,500</td><td class="right">One Time</td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -480,7 +486,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-web-mo" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody>
             <tr data-id="wm-1p"><td><input type="checkbox" onchange="toggleSingle(this,'wm-1p','web-mrr-tier')"/></td><td>1-Page ◊</td><td class="right">$199/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
             <tr data-id="wm-5p"><td><input type="checkbox" onchange="toggleSingle(this,'wm-5p','web-mrr-tier')"/></td><td>5-Page ◊</td><td class="right">$299/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
@@ -512,7 +518,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-tlp" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody id="tbody-tlp">
             <!-- Rows generated at runtime via renderCatalogSection('tlp') -->
           </tbody>
@@ -529,7 +535,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-sm" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody id="tbody-sm">
             <!-- Rows generated at runtime via renderCatalogSection('sm') -->
           </tbody>
@@ -545,7 +551,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-em" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody id="tbody-em">
             <!-- Rows generated at runtime via renderCatalogSection('em') -->
           </tbody>
@@ -562,7 +568,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-seo" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody id="tbody-seo">
             <!-- Rows generated at runtime via renderCatalogSection('seo') -->
           </tbody>
@@ -578,7 +584,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-rep" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody id="tbody-rep">
             <!-- Rows generated at runtime via renderCatalogSection('rep') -->
           </tbody>
@@ -594,7 +600,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-llo" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody id="tbody-llo">
             <!-- Rows generated at runtime via renderCatalogSection('llo') -->
           </tbody>
@@ -610,7 +616,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-gbp" class="card-body" style="display:none">
         <table class="svc-table svc-table--fee"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody id="tbody-gbp">
             <!-- Rows generated at runtime via renderCatalogSection('gbp') -->
           </tbody>
@@ -626,7 +632,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-td" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
           <tbody id="tbody-td">
             <!-- Rows generated at runtime via renderCatalogSection('td') -->
           </tbody>
@@ -642,7 +648,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-sem" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
           <tbody id="tbody-sem">
             <!-- Rows generated at runtime via renderCatalogSection('sem'). The old
                  hardcoded "$200 min setup fee..." note is now Supabase's fee_note
@@ -660,7 +666,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-sma" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
           <tbody id="tbody-sma">
             <!-- Rows generated at runtime via renderCatalogSection('sma') -->
           </tbody>
@@ -676,7 +682,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-lt" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
           <tbody id="tbody-lt">
             <!-- Rows generated at runtime via renderCatalogSection('lt') -->
           </tbody>
@@ -731,7 +737,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div id="sec-alc" class="card-body" style="display:none">
         <table class="svc-table svc-table--fee"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
+          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
           <tbody id="tbody-alc">
             <!-- Rows generated at runtime from the services table (renderCatalogSection('alc'))
                  — adding/deactivating an alc-section service in Supabase changes what appears
@@ -5694,7 +5700,7 @@ function renderMultiTableSection(sectionId) {
     // even meant. Caught live via screenshot showing the whole section at once — every
     // sub-table now gets its own headers, making each one self-contained and readable
     // on its own rather than depending on a DIFFERENT table further up the page.
-    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>';
+    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>';
     const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
     return headerHtml + tableHtml;
   }).join('');
