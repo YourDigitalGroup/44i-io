@@ -2665,25 +2665,31 @@ function buildReview() {
     if (recurringTotal > 0) monthly += recurringTotal;
     if (data.spend > 0) monthly += data.spend;
     if (data.workflow) workflows.add(data.workflow);
-    // Build recurring/spend display — never show CPM/CPC rate
+    // Fee column: for a one-time per-unit item, shows "$175 × 3 = $525" (the multiplied
+    // total lives HERE, not in the Recurring column — showing a one-time total under a
+    // header literally labeled "Recurring" was genuinely misleading, caught live on a
+    // real test). Falls back to the plain unit fee for every non-per-unit item, unchanged.
+    const feeDisplay = (qty > 1 && data.fee > 0) ? `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}` : (data.fee > 0 ? fmt(data.fee) : '—');
+    // Recurring column: ONLY genuinely recurring/spend content — a one-time item's total
+    // (however computed) never belongs here. If a per-unit item is ever ALSO monthly
+    // (none exist today, but the math supports it), the multiplication shows here instead,
+    // where "recurring" is actually true.
     let amtDisplay;
     if (recurringTotal > 0 && data.spend > 0) {
-      amtDisplay = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo spend';
+      amtDisplay = (qty > 1 ? `${fmt(data.recurring)} × ${qty} = ${fmt(recurringTotal)}/mo` : fmt(recurringTotal) + '/mo') + ' + ' + fmt(data.spend) + '/mo spend';
     } else if (recurringTotal > 0) {
-      amtDisplay = fmt(recurringTotal) + '/mo';
+      amtDisplay = qty > 1 ? `${fmt(data.recurring)} × ${qty} = ${fmt(recurringTotal)}/mo` : fmt(recurringTotal) + '/mo';
     } else if (data.spend > 0) {
       amtDisplay = fmt(data.spend) + '/mo campaign';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
-    } else if (qty > 1) {
-      amtDisplay = `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}`;
     } else {
       amtDisplay = '—';
     }
     // Hosting proration note
     const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
     const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' | ') || '—';
-    rows.push(`<tr><td>${esc(data.label)}</td><td>${data.fee > 0 ? fmt(data.fee) : '—'}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
+    rows.push(`<tr><td>${esc(data.label)}</td><td>${feeDisplay}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Add prorated hosting line if applicable
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
       const h = hostingChoices[id];
@@ -4970,15 +4976,19 @@ function renderPriceCells() {
 
     const feeTd = document.createElement('td');
     feeTd.className = 'right svc-fee';
+    // Per-unit items (Website Module $750/ea, hourly services, etc.) get a small
+    // quantity box next to the unit price. No onchange handler needed — follows the SAME
+    // pattern as the Notes field: syncRowInputs() reads its value at the Step 2→3
+    // transition, submit, and print (its only 3 call sites), so a live handler would be
+    // redundant. `.qty-field` class lets syncRowInputs()/renderPriceCells distinguish this
+    // from a genuine ad-spend input (never both on the same row in practice — pricing_mode
+    // is one value per service — but kept explicit for safety).
     if (r.pricing_mode === 'per_unit') {
-      // Per-unit items (Website Module $750/ea, hourly services, etc.) get a small
-      // quantity box right next to the unit price. No onchange handler needed — follows
-      // the SAME pattern as the Notes field: syncRowInputs() reads its value at the
-      // Step 2→3 transition, submit, and print (its only 3 call sites), so a live handler
-      // would be redundant. `.qty-field` class lets syncRowInputs()/renderPriceCells
-      // distinguish this from a genuine ad-spend input (never both on the same row in
-      // practice — pricing_mode is one value per service — but kept explicit for safety).
-      feeTd.innerHTML = `${esc(fee)} × <input type="number" class="qty-field" min="1" value="1" style="width:44px;padding:3px 5px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center;margin-left:2px" title="Quantity"/>`;
+      // 96px fixed column width (.c-fee, shared by every table) can't fit "$175 ×
+      // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
+      // Deliberate 2-line stack instead: fee on top, compact "× [box]" beneath,
+      // both right-aligned (inherits feeTd's .right class) — reads as intentional.
+      feeTd.innerHTML = `<div>${esc(fee)}</div><div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> <input type="number" class="qty-field" min="1" value="1" style="width:36px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity"/></div>`;
     } else {
       feeTd.textContent = fee;
     }
