@@ -1224,18 +1224,22 @@ textarea{resize:vertical;min-height:70px}
           <input type="hidden" id="admin-svc-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— lowercase, hyphens only, e.g. "alc-newthing". Cannot be changed after creation.</span></label>
-              <input type="text" id="admin-svc-id" placeholder="section-shortname" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
+              <label class="lbl">Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Section + Label, override if needed. Cannot be changed after creation.</span></label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="text" id="admin-svc-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkServiceIdCollision()"/>
+                <button type="button" onclick="regenerateServiceId()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
+              </div>
+              <p id="admin-svc-id-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ A service with this ID already exists — please choose a different one.</p>
             </div>
             <div>
               <label class="lbl">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown to AEs on the form</span></label>
-              <input type="text" id="admin-svc-label" placeholder="e.g. Business Pro" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <input type="text" id="admin-svc-label" placeholder="e.g. Business Pro" oninput="autoServiceId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl">Section</label>
-              <select id="admin-svc-section" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <select id="admin-svc-section" onchange="autoServiceId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
               <p id="admin-svc-section-note" style="font-size:10px;color:var(--muted);margin-top:4px"></p>
             </div>
             <div>
@@ -4000,6 +4004,52 @@ function populateServiceIntakeDropdown(current) {
   sel.value = current || '';
 }
 
+// ── SERVICE ID AUTO-GENERATION ─────────────────────────────────
+// Builds "section-label-slug" (e.g. "alc-stock-video-clips") from the currently
+// selected Section + typed Label — matches the existing id convention (alc-design,
+// rep-bp, etc. all follow section-prefix + short-name), reducing both typing and the
+// chance of an inconsistent or accidentally-duplicated id.
+function generateServiceId(section, label) {
+  const slug = (label || '').trim().toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')  // strip anything not alphanumeric/space/hyphen
+    .replace(/\s+/g, '-')          // spaces → hyphens
+    .replace(/-+/g, '-')           // collapse doubled hyphens
+    .replace(/^-|-$/g, '');        // trim leading/trailing hyphens
+  if (!section) return slug;
+  return slug ? `${section}-${slug}` : `${section}-`;
+}
+
+// Re-generates the ID field live as Section/Label change — UNLESS the admin has typed
+// directly into the ID field themselves (dataset.manuallyEdited), in which case their
+// choice is left alone. Same "auto unless overridden" pattern as the Group editor's
+// slug field.
+function autoServiceId() {
+  const idField = document.getElementById('admin-svc-id');
+  if (idField.dataset.manuallyEdited) return;
+  const section = document.getElementById('admin-svc-section').value;
+  const label = document.getElementById('admin-svc-label').value;
+  idField.value = generateServiceId(section, label);
+  checkServiceIdCollision();
+}
+
+function regenerateServiceId() {
+  const idField = document.getElementById('admin-svc-id');
+  idField.dataset.manuallyEdited = '';
+  autoServiceId();
+}
+
+// Live warning if the current ID (auto-generated or manually typed) already belongs to
+// an existing service — only relevant for NEW services (an existing service's id field
+// is locked, so it can't collide with itself). Doesn't block typing, just warns —
+// adminSaveService() does the actual hard block before calling the RPC.
+function checkServiceIdCollision() {
+  const idField = document.getElementById('admin-svc-id');
+  const warn = document.getElementById('admin-svc-id-warn');
+  const isNew = !document.getElementById('admin-svc-original-id').value;
+  const exists = isNew && idField.value && allServicesMap.some(s => s.id === idField.value);
+  if (warn) warn.style.display = exists ? 'block' : 'none';
+}
+
 function adminNewService() {
   document.getElementById('admin-service-form-title').textContent = 'New Service';
   document.getElementById('admin-service-form-subtitle').textContent =
@@ -4010,6 +4060,8 @@ function adminNewService() {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('admin-svc-id').disabled = false;
+  document.getElementById('admin-svc-id').dataset.manuallyEdited = ''; // fresh form → auto-generate again
+  document.getElementById('admin-svc-id-warn').style.display = 'none';
   document.getElementById('admin-svc-pricing-mode').value = 'flat';
   document.getElementById('admin-svc-billing').value = 'one_time';
   document.getElementById('admin-svc-unit').value = '';
@@ -4057,6 +4109,10 @@ async function adminSaveService() {
   if (!label) { showToast('Label is required', 'error'); return; }
   if (isNew && !SAFE_DYNAMIC_SECTIONS.includes(document.getElementById('admin-svc-section').value)) {
     showToast('New services can only be added to a section already converted to dynamic rows', 'error');
+    return;
+  }
+  if (isNew && allServicesMap.some(s => s.id === id)) {
+    showToast('A service with this ID already exists — please choose a different one', 'error');
     return;
   }
 
