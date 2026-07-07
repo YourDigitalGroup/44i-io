@@ -2373,7 +2373,25 @@ const SPEND_MINIMUMS = {
   'mob-bp':2500,'mob-offline':0,
 };
 
+// Shared by updateSpend()/updateQty(): if someone types a value into a row whose
+// checkbox isn't checked yet, auto-check it and run the SAME selection logic as a real
+// click (mutual exclusivity, opening an intake form if the product needs one, etc.) —
+// reuses toggle() rather than duplicating its initialization logic, so behavior is
+// identical regardless of whether the row was selected by click or by typing a value.
+// Closes a real gap: previously, typing a spend or quantity into an unchecked row was
+// silently lost (selected[id] didn't exist yet, so the assignment was a no-op).
+function autoCheckIfNeeded(id) {
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  if (!row) return;
+  const cb = row.querySelector('input[type=checkbox]');
+  if (cb && !cb.checked) {
+    cb.checked = true;
+    toggle(cb, id);
+  }
+}
+
 function updateSpend(input, id) {
+  autoCheckIfNeeded(id);
   if (selected[id]) selected[id].spend = parseFloat(input.value) || 0;
   // Clear the required highlight once a value is entered
   if (parseFloat(input.value) > 0) input.classList.remove('spend-missing');
@@ -2394,6 +2412,16 @@ function updateSpend(input, id) {
   } else if (warn) {
     warn.remove();
   }
+}
+
+// Quantity now gets a live onchange handler (previously relied purely on syncRowInputs()
+// at the Step 2→3 transition, same pattern as Notes) — needed so auto-check can happen
+// IMMEDIATELY when a value is typed, giving instant visual feedback. syncRowInputs()
+// still runs at transition/submit/print as a safety net, so nothing regresses if this
+// handler is ever skipped for any reason.
+function updateQty(input, id) {
+  autoCheckIfNeeded(id);
+  if (selected[id]) selected[id].qty = parseInt(input.value, 10) || 1;
 }
 
 // ── SINGLE-SELECT CHECKBOX GROUPS ────────────────────────────
@@ -2668,8 +2696,17 @@ function buildReview() {
     // Fee column: for a one-time per-unit item, shows "$175 × 3 = $525" (the multiplied
     // total lives HERE, not in the Recurring column — showing a one-time total under a
     // header literally labeled "Recurring" was genuinely misleading, caught live on a
-    // real test). Falls back to the plain unit fee for every non-per-unit item, unchanged.
-    const feeDisplay = (qty > 1 && data.fee > 0) ? `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}` : (data.fee > 0 ? fmt(data.fee) : '—');
+    // real test). Shows the "× qty" breakdown EVEN AT qty=1 (not just qty>1) — at qty=1
+    // a per-unit item previously looked visually IDENTICAL to a flat-fee item on this
+    // review screen, so there was no way for an AE to notice "did I mean to leave this
+    // at 1?" before submitting. `data.qty != null` (not `qty > 1`) is the right test:
+    // qty is only ever set on per-unit services in the first place (see toggle()), so
+    // its mere presence — regardless of value — means "this is reviewable quantity."
+    // ALSO applied to printIO() (same test, same reasoning) — Claire's call: the printed
+    // IO is the actual contract, so it should show the same math as this internal review,
+    // not a simplified version. Keeping them consistent avoids exactly the kind of
+    // discrepancy ("the document says X, the record says Y") that could become a dispute.
+    const feeDisplay = (data.qty != null && data.fee > 0) ? `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}` : (data.fee > 0 ? fmt(data.fee) : '—');
     // Recurring column: ONLY genuinely recurring/spend content — a one-time item's total
     // (however computed) never belongs here. If a per-unit item is ever ALSO monthly
     // (none exist today, but the math supports it), the multiplication shows here instead,
@@ -4333,7 +4370,15 @@ function printIO() {
       if (data.spend > 0) { monthly += data.spend; sectionMonthly += data.spend; }
 
       let amtCol = '';
-      if (qty > 1) {
+      // Shows the "× qty" breakdown at ANY per-unit quantity, including 1 — not just
+      // when qty > 1. Reversed from an earlier version that hid it at qty=1 to keep the
+      // print "clean"; Claire's call: the printed IO functions as the actual contract, so
+      // it should show the SAME math as the internal Step 3 review rather than a
+      // simplified version — a printed "$175 one-time" next to an internal record showing
+      // "$175 × 3 = $525" is exactly the kind of inconsistency that could become a real
+      // dispute later. `data.qty != null` (not `qty > 1`) matches the buildReview() test:
+      // qty's mere presence, not its value, is what marks a service as per-unit.
+      if (data.qty != null) {
         amtCol = fmt(data.fee) + ' × ' + qty + ' = ' + fmt(feeTotal) + (recurringTotal > 0 || data.spend > 0 ? ' one-time' : '');
       } else if (feeTotal > 0 && (recurringTotal > 0 || data.spend > 0)) {
         amtCol = fmt(feeTotal) + ' setup + ' + fmt(recurringTotal > 0 ? recurringTotal : data.spend) + '/mo';
@@ -4995,18 +5040,19 @@ function renderPriceCells() {
     const feeTd = document.createElement('td');
     feeTd.className = 'right svc-fee';
     // Per-unit items (Website Module $750/ea, hourly services, etc.) get a small
-    // quantity box next to the unit price. No onchange handler needed — follows the SAME
-    // pattern as the Notes field: syncRowInputs() reads its value at the Step 2→3
-    // transition, submit, and print (its only 3 call sites), so a live handler would be
-    // redundant. `.qty-field` class lets syncRowInputs()/renderPriceCells distinguish this
-    // from a genuine ad-spend input (never both on the same row in practice — pricing_mode
-    // is one value per service — but kept explicit for safety).
+    // quantity box next to the unit price, wired to updateQty() (which also
+    // auto-checks the row if it isn't checked yet — typing a quantity should count,
+    // not silently vanish). syncRowInputs() still reads it as a safety net at the
+    // Step 2→3 transition, submit, and print. `.qty-field` class lets
+    // syncRowInputs()/renderPriceCells distinguish this from a genuine ad-spend input
+    // (never both on the same row in practice — pricing_mode is one value per service —
+    // but kept explicit for safety).
     if (r.pricing_mode === 'per_unit') {
       // 96px fixed column width (.c-fee, shared by every table) can't fit "$175 ×
       // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
       // Deliberate 2-line stack instead: fee on top, compact "× [box]" beneath,
       // both right-aligned (inherits feeTd's .right class) — reads as intentional.
-      feeTd.innerHTML = `<div>${esc(fee)}</div><div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> <input type="number" class="qty-field" min="1" value="1" style="width:36px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity"/></div>`;
+      feeTd.innerHTML = `<div>${esc(fee)}</div><div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> <input type="number" class="qty-field" min="1" value="1" onchange="updateQty(this,'${esc(id)}')" style="width:36px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity"/></div>`;
     } else {
       feeTd.textContent = fee;
     }
