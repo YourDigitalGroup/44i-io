@@ -1279,6 +1279,18 @@ textarea{resize:vertical;min-height:70px}
               <input type="number" step="0.01" id="admin-svc-cpm" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Exclusivity Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— services in the same group become single-select (checking one unchecks the others), like the Business Starter/Builder/Pro tiers</span></label>
+              <select id="admin-svc-exclusivity" onchange="onExclusivityGroupChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <input type="text" id="admin-svc-exclusivity-new" placeholder="e.g. new-service-tier" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
+              <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a broken duplicate tier.</p>
+            </div>
+            <div>
+              <label class="lbl">Spend Minimum <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Spend-based services; shows a soft reminder if entered spend is below this</span></label>
+              <input type="number" step="1" id="admin-svc-spend-min" placeholder="e.g. 1000" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl">KOC Requirement</label>
@@ -4049,6 +4061,43 @@ function populateServiceIntakeDropdown(current) {
   sel.value = current || '';
 }
 
+// Populates the Exclusivity Group dropdown from groups that ALREADY EXIST in the real
+// data (allServicesMap) — deliberately a pick-list, not a free-typed field, so an admin
+// joining an existing tier can't typo the group name and silently create a broken
+// duplicate tier that doesn't actually exclude anything. "+ Create a new group..."
+// reveals a text input for the genuinely-new-tier case.
+function populateServiceExclusivityDropdown(current) {
+  const sel = document.getElementById('admin-svc-exclusivity');
+  const groups = [...new Set(allServicesMap.map(s => s.exclusivity_group).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">None (not part of a tier)</option>' +
+    groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('') +
+    '<option value="__new__">+ Create a new group...</option>';
+  const newInput = document.getElementById('admin-svc-exclusivity-new');
+  if (current && groups.includes(current)) {
+    sel.value = current;
+    newInput.style.display = 'none';
+    newInput.value = '';
+  } else if (current) {
+    // Existing value doesn't match any group currently in use (shouldn't normally
+    // happen) — fall back to showing it in the "new group" box rather than silently
+    // dropping it.
+    sel.value = '__new__';
+    newInput.style.display = 'block';
+    newInput.value = current;
+  } else {
+    sel.value = '';
+    newInput.style.display = 'none';
+    newInput.value = '';
+  }
+}
+
+function onExclusivityGroupChange() {
+  const sel = document.getElementById('admin-svc-exclusivity');
+  const newInput = document.getElementById('admin-svc-exclusivity-new');
+  newInput.style.display = sel.value === '__new__' ? 'block' : 'none';
+  if (sel.value !== '__new__') newInput.value = '';
+}
+
 // ── SERVICE ID AUTO-GENERATION ─────────────────────────────────
 // Builds "section-label-slug" (e.g. "alc-stock-video-clips") from the currently
 // selected Section + typed Label — matches the existing id convention (alc-design,
@@ -4110,7 +4159,8 @@ function adminNewService() {
   document.getElementById('admin-svc-original-id').value = '';
   ['admin-svc-id','admin-svc-label','admin-svc-sort','admin-svc-price',
    'admin-svc-modifier','admin-svc-cpm','admin-svc-workflow',
-   'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note'].forEach(id => {
+   'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
+   'admin-svc-spend-min'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
@@ -4123,6 +4173,7 @@ function adminNewService() {
   document.getElementById('admin-svc-koc').value = 'none';
   populateServiceSectionDropdown(true, null);
   populateServiceIntakeDropdown(null);
+  populateServiceExclusivityDropdown(null);
   document.getElementById('admin-service-form').style.display = 'block';
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
 }
@@ -4157,8 +4208,10 @@ function adminEditService(id) {
   document.getElementById('admin-svc-setup-fee').value = s.setup_fee ?? '';
   document.getElementById('admin-svc-setup-threshold').value = s.setup_fee_threshold ?? '';
   document.getElementById('admin-svc-fee-note').value = s.fee_note || '';
+  document.getElementById('admin-svc-spend-min').value = s.spend_minimum ?? '';
   populateServiceSectionDropdown(false, s.section);
   populateServiceIntakeDropdown(s.intake_form_id);
+  populateServiceExclusivityDropdown(s.exclusivity_group);
   document.getElementById('admin-service-form').style.display = 'block';
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
 }
@@ -4208,6 +4261,18 @@ async function adminSaveService() {
   const modifierVal = document.getElementById('admin-svc-modifier').value;
   const cpmVal = document.getElementById('admin-svc-cpm').value;
   const sortVal = document.getElementById('admin-svc-sort').value;
+  const spendMinVal = document.getElementById('admin-svc-spend-min').value;
+
+  // Exclusivity group: either the picked existing group, or the typed new-group name if
+  // "+ Create a new group..." was selected — see populateServiceExclusivityDropdown()
+  // for why this is a pick-list rather than a free-typed field.
+  const exclusivitySel = document.getElementById('admin-svc-exclusivity').value;
+  const exclusivityNewVal = document.getElementById('admin-svc-exclusivity-new').value.trim();
+  if (exclusivitySel === '__new__' && !exclusivityNewVal) {
+    showToast('Enter a name for the new exclusivity group, or pick an existing one / None', 'error');
+    return;
+  }
+  const exclusivityGroupVal = exclusivitySel === '__new__' ? exclusivityNewVal : (exclusivitySel || null);
 
   const payload = {
     label: label,
@@ -4226,6 +4291,8 @@ async function adminSaveService() {
     setup_fee: setupFeeVal === '' ? null : parseFloat(setupFeeVal),
     setup_fee_threshold: setupThresholdVal === '' ? null : parseFloat(setupThresholdVal),
     fee_note: document.getElementById('admin-svc-fee-note').value.trim() || null,
+    exclusivity_group: exclusivityGroupVal,
+    spend_minimum: spendMinVal === '' ? null : parseFloat(spendMinVal),
   };
   if (isNew) {
     payload.id = id; // id only sent on create — never changed on an existing row
