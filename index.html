@@ -1284,7 +1284,7 @@ textarea{resize:vertical;min-height:70px}
               <label class="lbl">Exclusivity Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— services in the same group become single-select (checking one unchecks the others), like the Business Starter/Builder/Pro tiers</span></label>
               <select id="admin-svc-exclusivity" onchange="onExclusivityGroupChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
               <input type="text" id="admin-svc-exclusivity-new" placeholder="e.g. new-service-tier" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
-              <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a broken duplicate tier.</p>
+              <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a broken duplicate tier. New group names auto-suggest as "<em>section</em>-tier" (e.g. seo-tier, sm-tier, em-tier) — the established convention.</p>
             </div>
             <div>
               <label class="lbl">Spend Minimum <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Spend-based services; shows a soft reminder if entered spend is below this</span></label>
@@ -4117,7 +4117,17 @@ function onExclusivityGroupChange() {
   const sel = document.getElementById('admin-svc-exclusivity');
   const newInput = document.getElementById('admin-svc-exclusivity-new');
   newInput.style.display = sel.value === '__new__' ? 'block' : 'none';
-  if (sel.value !== '__new__') newInput.value = '';
+  if (sel.value !== '__new__') {
+    newInput.value = '';
+  } else if (!newInput.value) {
+    // Pre-fill with the established naming convention ({section}-tier) so the path of
+    // least resistance is following it, not guessing — Claire's concern: someone
+    // creating a genuinely new tier might not know the convention exists at all and
+    // invent something inconsistent. Only pre-fills an EMPTY box, so it never clobbers
+    // something already typed.
+    const section = document.getElementById('admin-svc-section').value;
+    if (section) newInput.value = `${section}-tier`;
+  }
 }
 
 // ── SERVICE ID AUTO-GENERATION ─────────────────────────────────
