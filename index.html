@@ -3911,20 +3911,19 @@ function renderSuggestedMap() {
     return;
   }
 
-  // Price display: respect billing type, pricing mode, and the special shapes
-  const fmtPrice = s => {
-    if (s.pricing_mode === 'spend') {
-      return s.retail_cpm != null ? `$${s.retail_cpm} CPM` : (s.id === 'sem-bp' ? '$4–$12 CPC' : 'spend-based');
-    }
-    if (s.pricing_mode === 'modifier') {
-      return s.modifier_amount != null ? `+$${s.modifier_amount}` : '—';
-    }
-    if (s.default_price == null) return 'QUR';
-    const n = Number(s.default_price).toLocaleString('en-US', {maximumFractionDigits:0});
-    const suffix = s.billing_type === 'monthly' ? '/mo' : '';
-    const unit = s.unit_label ? (s.unit_label === 'each' ? ' each' : ` per ${esc(s.unit_label)}`) : '';
-    return `$${n}${suffix}${unit}`;
-  };
+  // Price + Billing/Frequency display: reuses priceAndFrequency() — the EXACT same
+  // function that generates the live form's Fee/Frequency columns (built earlier today
+  // for the v43 column-standardization work). Previously this screen had its own
+  // separate formatting logic (fmtPrice + a hand-rolled billing-badge check), which had
+  // drifted into several real inconsistencies Claire caught live: yearly/annual billing
+  // types were never handled at all (silently showing a bare price with no indication of
+  // recurrence, or "—" in the Billing column as if the type were unknown), and unit
+  // phrasing was inconsistent ("each" vs "per hour" vs "per channel", with "/mo" ordered
+  // differently depending on combination). Reusing the live form's own function instead
+  // of maintaining a second, separately-drifting one means this admin view and the real
+  // form can never say two different things about the same catalog row again.
+  const fmtPrice = s => priceAndFrequency(s).fee;
+  const fmtFrequency = s => priceAndFrequency(s).freq;
 
   // Group rows by section with a header band
   const bySection = {};
@@ -3935,7 +3934,7 @@ function renderSuggestedMap() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">ID</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
       <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Standard Price</th>
-      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Billing</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Frequency</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Intake Form</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">KOC</th>
       <th style="padding:9px 10px"></th>
@@ -3952,11 +3951,14 @@ function renderSuggestedMap() {
       const intake = s.intake_form_id
         ? `<span style="font-size:11px;font-family:monospace;color:var(--text)">${esc(s.intake_form_id)}</span>`
         : '<span style="color:var(--muted);font-size:11px">—</span>';
-      const billing = s.billing_type === 'monthly'
+      const freqText = fmtFrequency(s);
+      const billing = freqText === 'Monthly'
         ? '<span style="font-size:10px;color:#0F6E56;font-weight:600">Monthly</span>'
-        : s.billing_type === 'one_time'
+        : freqText === 'One Time'
           ? '<span style="font-size:10px;color:#1580B5;font-weight:600">One-Time</span>'
-          : '<span style="color:var(--muted)">—</span>';
+          : freqText === '—'
+            ? '<span style="color:var(--muted)">—</span>'
+            : `<span style="font-size:10px;color:var(--text);font-weight:600">${esc(freqText)}</span>`;
       const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
       const isSafeSection = SAFE_DYNAMIC_SECTIONS.includes(s.section);
       const isSuperAdmin = currentAdminUser?.role !== 'am';
@@ -4145,6 +4147,22 @@ async function adminSaveService() {
   if (isNew && allServicesMap.some(s => s.id === id)) {
     showToast('A service with this ID already exists — please choose a different one', 'error');
     return;
+  }
+
+  // Soft warning (not a block) — a Modifier or Spend item with no rate entered shows as
+  // "—" rather than "QUR" (QUR is reserved for flat/per-unit items where blank-price is
+  // an intentional, common "quote on request" state — several existing services rely on
+  // that). A blank Modifier/Spend rate is more likely a forgotten entry than a deliberate
+  // choice, so nudge rather than silently save it. Confirmable, not required — Cancel
+  // returns to the form without saving; OK proceeds exactly as before.
+  const pricingModeVal = document.getElementById('admin-svc-pricing-mode').value;
+  const modifierValCheck = document.getElementById('admin-svc-modifier').value;
+  const cpmValCheck = document.getElementById('admin-svc-cpm').value;
+  if (pricingModeVal === 'modifier' && modifierValCheck === '') {
+    if (!confirm('No amount entered for this Modifier service — it will display as "—" rather than a set rate. Save anyway? (Click Cancel to go back and enter an amount.)')) return;
+  }
+  if (pricingModeVal === 'spend' && cpmValCheck === '') {
+    if (!confirm('No Retail CPM entered for this Spend-based service — it will display as "—" rather than a rate. Save anyway? (Click Cancel to go back and enter one, or ignore if this product is intentionally spend-only with no fixed CPM, like SEM.)')) return;
   }
 
   const priceVal = document.getElementById('admin-svc-price').value;
