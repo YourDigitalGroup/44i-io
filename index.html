@@ -563,10 +563,8 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-seo" class="card-body" style="display:none">
         <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="seo-bs"><td><input type="checkbox" onchange="toggleSingle(this,'seo-bs','seo-tier')"/></td><td>Business Starter</td><td class="right">$199/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="seo-bb"><td><input type="checkbox" onchange="toggleSingle(this,'seo-bb','seo-tier')"/></td><td>Business Builder</td><td class="right">$599/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
-            <tr data-id="seo-bp"><td><input type="checkbox" onchange="toggleSingle(this,'seo-bp','seo-tier')"/></td><td>Business Pro</td><td class="right">$799/mo</td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-seo">
+            <!-- Rows generated at runtime via renderCatalogSection('seo') -->
           </tbody>
         </table>
       </div>
@@ -649,8 +647,10 @@ textarea{resize:vertical;min-height:70px}
       <div id="sec-sem" class="card-body" style="display:none">
         <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
           <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th>Frequency</th><th class="right">Monthly Spend</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr data-id="sem-bp"><td><input type="checkbox" onchange="toggle(this,'sem-bp')"/></td><td>Business Pro* <span class="minimum-note">($200 min setup fee for campaigns &lt;$1,000)</span></td><td class="right">$4–$12</td><td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'sem-bp')"/></td><td><input type="text" placeholder="Notes..."/></td></tr>
+          <tbody id="tbody-sem">
+            <!-- Rows generated at runtime via renderCatalogSection('sem'). The old
+                 hardcoded "$200 min setup fee..." note is now Supabase's fee_note
+                 column on sem-bp, rendered by renderPriceCells(). -->
           </tbody>
         </table>
       </div>
@@ -2861,6 +2861,12 @@ function buildReview() {
       oneTime += h.proratedAmt;
       rows.push(`<tr style="background:#F0FDF4"><td style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td>—</td><td style="font-size:11px;color:#166534">${h.note}</td></tr>`);
     }
+    // Add auto setup-fee line if this service's spend is under its configured threshold
+    const setupFeeInfo = getSetupFeeInfo(id, data.spend || 0);
+    if (setupFeeInfo) {
+      oneTime += setupFeeInfo.amount;
+      rows.push(`<tr style="background:#F0FDF4"><td style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td>—</td><td style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
+    }
   });
 
   document.getElementById('total-onetime').textContent = fmt(oneTime);
@@ -3043,6 +3049,7 @@ async function submitIO() {
         spend: data.spend || 0,
         qty: qty,
         unit_fee: data.fee || 0,
+        setup_fee_amt: (getSetupFeeInfo(id, data.spend || 0) || {}).amount || null,
         notes: [data.notes, hosting?.note].filter(Boolean).join(' | '),
         workflow: data.workflow || null,
         requires_koc: cfg.koc === 'required',
@@ -3056,6 +3063,13 @@ async function submitIO() {
     let proratedTotal = 0;
     Object.values(hostingChoices).forEach(h => { if (h.choice === 'us' && h.proratedAmt) proratedTotal += h.proratedAmt; });
 
+    // Auto-applied setup fee additions to one-time total (see getSetupFeeInfo — SEM's
+    // sub-$1,000 campaigns, etc.). Summed the same way proratedTotal is, from the
+    // per-lineItem value stashed above, so it can't drift from what buildReview()/
+    // printIO() show using the identical shared helper.
+    let setupFeeTotal = 0;
+    lineItems.forEach(li => { if (li.setup_fee_amt) setupFeeTotal += li.setup_fee_amt; });
+
     // Hard block if any ad product has no spend entered
     const noSpend = lineItems.filter(li => {
       const min = SPEND_MINIMUMS[li.service_id];
@@ -3068,7 +3082,7 @@ async function submitIO() {
 
     // lineItems.fee/recurring are already qty-multiplied (see above), so summing them
     // directly here gives the correct order totals with no further math needed.
-    const oneTime = lineItems.reduce((a,li) => a + (li.fee||0), 0) + proratedTotal;
+    const oneTime = lineItems.reduce((a,li) => a + (li.fee||0), 0) + proratedTotal + setupFeeTotal;
     const monthly = lineItems.reduce((a,li) => a + (li.recurring||0) + (li.spend||0), 0);
 
     // Use real UUID group_id, or null for dev mode
@@ -3862,7 +3876,7 @@ let allServicesMap = [];
 // (price, label, etc.) is safe everywhere regardless — that's been catalog-driven since
 // the original migration. Keep this list in sync with the renderCatalogSection() calls
 // in the startup sequence as more sections get converted.
-const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp'];
+const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem'];
 
 // Friendly section labels (matches the form's section grouping)
 const MAP_SECTION_LABELS = {
@@ -4821,6 +4835,12 @@ function printIO() {
         sectionOneTime += h.proratedAmt;
         sectionRows += `<tr class="prorate-row"><td class="svc-name">↳ Prorated hosting — starts ${h.startDate}</td><td class="svc-amt">$${h.proratedAmt.toFixed(2)}</td><td class="svc-notes">${h.days}-day build period from IO date</td></tr>`;
       }
+      const setupFeeInfo = getSetupFeeInfo(id, data.spend || 0);
+      if (setupFeeInfo) {
+        oneTime += setupFeeInfo.amount;
+        sectionOneTime += setupFeeInfo.amount;
+        sectionRows += `<tr class="prorate-row"><td class="svc-name">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="svc-amt">${fmt(setupFeeInfo.amount)}</td><td class="svc-notes">Auto-applied — campaign spend is below the minimum</td></tr>`;
+      }
     });
 
     // Section header + rows + subtotal
@@ -5358,6 +5378,39 @@ function rowToProductConfig(r) {
 // Computes the Fee text and the Frequency word for a service row from the
 // structured catalog fields, so the two are never conflated in one string
 // (fixes "$199/mo" + a separate "Monthly" column saying monthly twice).
+// ── SETUP FEE (auto-add) ──────────────────────────────────────────
+// Some spend-based services (so far: SEM) carry a small one-time setup fee that
+// applies automatically when entered campaign spend is below a threshold — e.g.
+// SEM's $200 fee for campaigns under $1,000/mo. Sourced entirely from the catalog
+// (`auto_add_setup_fee` / `setup_fee` / `setup_fee_threshold` on `services`), so
+// it's configured ONCE in Supabase rather than something that can be "missed" on
+// a per-order basis — Claire's explicit design goal. `auto_add_setup_fee` is the
+// deliberate on/off switch (not just "the two numbers happen to be filled in"),
+// since someone may want to record the numbers for reference without enforcing
+// them yet. Shared by buildReview(), submitIO(), and printIO() so the three
+// views can never disagree about whether or how much a fee applies.
+function getSetupFeeInfo(id, spend) {
+  const r = CATALOG_ROWS[id];
+  if (!r || !r.auto_add_setup_fee || r.setup_fee == null || r.setup_fee_threshold == null) return null;
+  const threshold = Number(r.setup_fee_threshold);
+  if (!(spend > 0 && spend < threshold)) return null;
+  return { amount: Number(r.setup_fee), threshold };
+}
+
+// Generates the reminder sentence FROM the real setup_fee/setup_fee_threshold numbers,
+// rather than a hand-typed string — so the wording can never drift out of sync with the
+// actual calculation above (if the threshold or fee amount ever changes in Supabase, the
+// sentence updates automatically too). Falls back to the generic manual `fee_note` field
+// for any service that has a caveat unrelated to this specific mechanism.
+function getFeeNoteText(r) {
+  if (r.auto_add_setup_fee && r.setup_fee != null && r.setup_fee_threshold != null) {
+    const fee = Number(r.setup_fee).toLocaleString('en-US', {maximumFractionDigits:0});
+    const threshold = Number(r.setup_fee_threshold).toLocaleString('en-US', {maximumFractionDigits:0});
+    return `($${fee} min setup fee for campaigns <$${threshold})`;
+  }
+  return r.fee_note || null;
+}
+
 function priceAndFrequency(r) {
   if (!r) return { fee: '—', freq: '' };
   if (r.pricing_mode === 'spend') {
@@ -5412,35 +5465,49 @@ function priceAndFrequency(r) {
 // ── DYNAMIC SECTION ROWS (catalog-driven) ─────────────────────────
 // Builds the checkbox/service/notes SKELETON for a section directly from
 // CATALOG_ROWS, so adding/removing a service in Supabase changes what appears
-// on the form with NO code edit. This is step one of moving Step 2 off hand-typed
-// HTML rows — prototyped on À La Carte first (simplest section: no tiers, no spend
-// minimums, no KOC/intake complexity) before extending to other sections.
+// on the form with NO code edit. Prototyped on À La Carte/Reputation/Local
+// Listing/GBP first (simple sections), then extended (2026-07-07) to also handle:
+//   - Tier-based single-select exclusivity (via the `exclusivity_group` column —
+//     wires the SAME toggleSingle()/RADIO_GROUPS mechanism the static tier sections
+//     already use, just sourced from Supabase instead of a hardcoded id list).
+//   - Ad-spend inputs (via `pricing_mode === 'spend'` — generates the same bare
+//     spend <input> the static ad-spend rows have; renderPriceCells() finds and
+//     repositions it exactly the same way for generated and hand-typed rows alike).
 //
-// Deliberately generates ONLY the skeleton (checkbox + label + notes) — it does NOT
-// duplicate any pricing logic. renderPriceCells(), which already runs right after this
-// and is section-agnostic, fills in the Fee/Frequency cells exactly the same way it
-// does for any hand-typed row. A generated row and a hand-typed row converge to an
-// IDENTICAL final DOM shape once both functions have run.
+// Deliberately generates ONLY the skeleton — no pricing logic duplicated.
+// renderPriceCells(), which runs right after this, fills in Fee/Frequency (and now
+// the fee_note span) exactly the same way for every row regardless of origin.
 //
-// Because loadCatalog() only fetches active=true rows, a service that's deactivated in
-// Supabase is simply never in CATALOG_ROWS — so it can't be generated as a row at all.
-// This closes the "ghost checkbox" danger for this section entirely (not just hides it).
+// Because loadCatalog() only fetches active=true rows, a service that's deactivated
+// in Supabase is simply never in CATALOG_ROWS — so it can't be generated as a row at
+// all. This closes the "ghost checkbox" danger for this section entirely.
 //
-// LIMITATION (by design, for now): only handles simple sections — a checkbox, a label,
-// and a notes field. Sections with single-select tiers (RADIO_GROUPS), spend-minimum ad
-// products, or cross-section exclusivity (Visitor IDs) need those behaviors added before
-// this can safely replace THEIR static HTML — do not extend to those sections yet.
+// STILL NOT HANDLED (scope boundary, honest about what's NOT solved yet): a row that
+// is BOTH a spend-tracked item AND a modifier (like the "-offline" add-ons, which are
+// pricing_mode='modifier' but still carry a spend input in their static markup) —
+// today's check is a simple `pricing_mode === 'spend'`, which correctly covers SEM's
+// single row but does NOT yet cover that combined case. Needed before converting
+// Targeted Display/Location Targeting/Video/etc., not before SEO or SEM.
 function renderCatalogSection(sectionId) {
   const tbody = document.getElementById('tbody-' + sectionId);
   if (!tbody) return; // section not yet converted to dynamic rows — leave its static HTML alone
 
   const rows = Object.values(CATALOG_ROWS).filter(r => r.section === sectionId);
-  tbody.innerHTML = rows.map(r => `
+  tbody.innerHTML = rows.map(r => {
+    const onchange = r.exclusivity_group
+      ? `toggleSingle(this,'${esc(r.id)}','${esc(r.exclusivity_group)}')`
+      : `toggle(this,'${esc(r.id)}')`;
+    const spendCell = r.pricing_mode === 'spend'
+      ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
+      : '';
+    return `
     <tr data-id="${esc(r.id)}">
-      <td><input type="checkbox" onchange="toggle(this,'${esc(r.id)}')"/></td>
+      <td><input type="checkbox" onchange="${onchange}"/></td>
       <td>${esc(r.label)}</td>
+      ${spendCell}
       <td><input type="text" placeholder="Notes..."/></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 // Rewrites every service row's price area into a uniform shape:
@@ -5464,9 +5531,19 @@ function renderPriceCells() {
     // llo/gbp). Previously a Supabase label edit only showed up on the form for those 4
     // sections; static sections kept their hand-typed HTML text forever. Runs ONCE at
     // page load (before any intake-link button could have been appended into this cell —
-    // confirmed: renderPriceCells has exactly one call site, at startup), so .textContent
-    // is safe here — nothing else has written into this cell yet.
-    serviceTd.textContent = r.label;
+    // confirmed: renderPriceCells has exactly one call site, at startup), so rewriting
+    // this cell's content here is safe — nothing else has written into it yet.
+    // Uses innerHTML (not textContent) so a note can be appended as its own styled span
+    // (e.g. SEM's "$200 min setup fee..." caveat) — both label and note are escaped, so
+    // this is exactly as safe as textContent was, just able to add one fixed,
+    // non-user-derived wrapper tag alongside the escaped text. getFeeNoteText() GENERATES
+    // the setup-fee sentence from the real numbers when auto_add_setup_fee is configured
+    // (so wording can't drift from the actual calculation), falling back to the manual
+    // fee_note field for any other kind of caveat.
+    const noteText = getFeeNoteText(r);
+    serviceTd.innerHTML = noteText
+      ? `${esc(r.label)} <span class="minimum-note">${esc(noteText)}</span>`
+      : esc(r.label);
 
     const { fee, freq } = priceAndFrequency(r);
 
@@ -5565,6 +5642,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderCatalogSection('rep');
   renderCatalogSection('llo');
   renderCatalogSection('gbp');
+  // Prototype #2 (2026-07-07): first sections using the EXTENDED generator —
+  // seo tests tier-based exclusivity, sem tests the ad-spend input.
+  renderCatalogSection('seo');
+  renderCatalogSection('sem');
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
