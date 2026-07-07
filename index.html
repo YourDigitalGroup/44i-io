@@ -1214,7 +1214,7 @@ textarea{resize:vertical;min-height:70px}
               convenience layer on top of it, restricted to Super Admins.
             </p>
           </div>
-          <button onclick="adminNewService()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Service</button>
+          <button id="admin-new-service-btn" onclick="adminNewService()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Service</button>
         </div>
 
         <!-- Service create/edit form — hidden until New/Edit is clicked -->
@@ -3830,7 +3830,16 @@ function adminSection(section) {
   // Load data for the active section
   if (section === 'groups') loadAdminGroups();
   else if (section === 'orders') loadAdminOrders();
-  else if (section === 'map') loadSuggestedMap();
+  else if (section === 'map') {
+    // Service catalog management is super-admin only (same restriction level as Group
+    // Custom Pricing) — hide the entry point for AM-tier logins. Also guarded inside
+    // adminNewService()/adminEditService() themselves (defense in depth, matching the
+    // existing pricing-tab pattern) and the RPC itself already hard-rejects the save
+    // server-side regardless of what the UI shows.
+    const newBtn = document.getElementById('admin-new-service-btn');
+    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    loadSuggestedMap();
+  }
 }
 
 async function loadAdminGroups() {
@@ -3950,9 +3959,13 @@ function renderSuggestedMap() {
           : '<span style="color:var(--muted)">—</span>';
       const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
       const isSafeSection = SAFE_DYNAMIC_SECTIONS.includes(s.section);
-      const deactivateBtn = isSafeSection
+      const isSuperAdmin = currentAdminUser?.role !== 'am';
+      const deactivateBtn = !isSuperAdmin ? '' : (isSafeSection
         ? `<button onclick="adminToggleServiceActive('${esc(s.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`
-        : `<span title="Only available for sections already converted to dynamic rows (À La Carte, Reputation Management, Local Listing, Google Business Profile) — creating/deactivating elsewhere wouldn't show correctly on the public form yet." style="font-size:10px;color:#D1D5DB;cursor:help">Deactivate ⓘ</span>`;
+        : `<span title="Only available for sections already converted to dynamic rows (À La Carte, Reputation Management, Local Listing, Google Business Profile) — creating/deactivating elsewhere wouldn't show correctly on the public form yet." style="font-size:10px;color:#D1D5DB;cursor:help">Deactivate ⓘ</span>`);
+      const editBtn = isSuperAdmin
+        ? `<button onclick="adminEditService('${esc(s.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
+        : '<span style="font-size:10px;color:var(--muted)">—</span>';
       html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
         <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(s.id)}</td>
         <td style="padding:8px 10px">${esc(s.label)}${inactiveBadge}</td>
@@ -3961,7 +3974,7 @@ function renderSuggestedMap() {
         <td style="padding:8px 10px;text-align:center">${intake}</td>
         <td style="padding:8px 10px;text-align:center">${koc}</td>
         <td style="padding:8px 10px;text-align:right;white-space:nowrap">
-          <button onclick="adminEditService('${esc(s.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>
+          ${editBtn}
           ${deactivateBtn}
         </td>
       </tr>`;
@@ -4051,6 +4064,14 @@ function checkServiceIdCollision() {
 }
 
 function adminNewService() {
+  // Defense in depth: the button that calls this is already hidden for AM-tier (see
+  // adminSection), and the RPC itself hard-rejects the save regardless — but guard the
+  // function directly too, same as adminTab() does for the pricing tab, so there's no
+  // path that opens this form for an AM login.
+  if (currentAdminUser?.role === 'am') {
+    showToast('Service catalog management is restricted to super admins', 'error');
+    return;
+  }
   document.getElementById('admin-service-form-title').textContent = 'New Service';
   document.getElementById('admin-service-form-subtitle').textContent =
     'Restricted to sections already converted to dynamic rows — see note below.';
@@ -4073,6 +4094,13 @@ function adminNewService() {
 }
 
 function adminEditService(id) {
+  // Same restriction as adminNewService() — this closes the exact gap found live: an
+  // AM login could open this form and type into it (the save was already correctly
+  // blocked server-side, but the form itself shouldn't have been reachable at all).
+  if (currentAdminUser?.role === 'am') {
+    showToast('Service catalog management is restricted to super admins', 'error');
+    return;
+  }
   const s = allServicesMap.find(x => x.id === id);
   if (!s) return;
   document.getElementById('admin-service-form-title').textContent = 'Edit Service — ' + s.label;
@@ -4168,6 +4196,10 @@ async function adminSaveService() {
 // re-check that, since the button that calls it already wouldn't exist otherwise, but
 // the RPC's own permission/validation is the real safety boundary, not the UI.
 async function adminToggleServiceActive(id, makeActive) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Service catalog management is restricted to super admins', 'error');
+    return;
+  }
   const s = allServicesMap.find(x => x.id === id);
   if (!s) return;
   const verb = makeActive ? 'reactivate' : 'deactivate';
