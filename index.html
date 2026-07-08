@@ -2240,10 +2240,23 @@ function devSkipToStep2() {
 }
 
 function showGroupError() {
-  document.getElementById('group-error').style.display = 'block';
-  document.getElementById('group-display').style.display = 'none';
-  // Disable the next button
-  document.querySelectorAll('.btn-primary').forEach(b => b.disabled = true);
+  // REWRITTEN (2026-07-08): previously only toggled a small div inside the "Group &
+  // Account Info" card, leaving the rest of the page — the default CF Digital-branded
+  // header, every other card, the step nav — fully visible underneath. Someone hitting an
+  // invalid/missing link saw a confusing, seemingly-normal-but-broken page with a small
+  // error buried partway down, branded as a group that isn't even theirs. Now replaces
+  // the ENTIRE page content with just the message, same proven full-page-takeover pattern
+  // showCatalogError() already uses — nothing else renders, no stray branding, no
+  // partially-usable form underneath.
+  const wrap = document.querySelector('.wrap');
+  if (wrap) {
+    wrap.innerHTML = `
+      <div style="max-width:520px;margin:80px auto;text-align:center;padding:40px 32px;background:#fff;border-radius:14px;border:1px solid var(--border);box-shadow:0 4px 24px rgba(0,0,0,.08)">
+        <div style="font-size:44px;margin-bottom:16px">🔒</div>
+        <h2 style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:10px">Invalid Link</h2>
+        <p style="font-size:14px;color:var(--muted);line-height:1.6">This form link is not valid. Please contact your account manager for the correct link.</p>
+      </div>`;
+  }
 }
 
 function applyGroupBranding(group) {
