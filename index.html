@@ -5058,17 +5058,24 @@ function printIO() {
   html,body{font-family:'Montserrat',sans-serif;color:#111827;background:#fff}
   body{font-size:10.5pt;line-height:1.4}
 
-  /* 8.5 x 11 page setup with safe margins. Top/bottom margin increased from a uniform
-     0.5in (2026-07-08) — the running header/footer below use position:fixed, which is a
-     notoriously inconsistent area of print CSS across browsers; the original 0.5in wasn't
-     explicitly sized to ALSO fit the running elements' own height (font+padding+border)
-     on top of where normal content already starts flowing, so depending on the browser,
-     they could spill into the letterhead/signature content instead of sitting cleanly in
-     the reserved margin space. Left/right kept at 0.5in — only vertical space was the
-     problem, since the running elements only add height, not width. */
-  @page{size:letter portrait;margin:0.9in 0.5in;}
+  /* 8.5 x 11 page setup with safe margins.
+     REVISED (2026-07-08) — the first attempt (just increasing @page margin) didn't
+     actually work, confirmed by Claire's screenshot still showing the overlap. Corrected
+     understanding: position:fixed running elements in Chrome's print engine appear to
+     be positioned relative to the CONTENT BOX itself (i.e., measured from wherever @page
+     margin already ends), not the true physical page edge some other engines use. That
+     means the running header/footer and the normal document content were both anchored
+     to the exact same starting point — increasing @page margin only pushed BOTH of them
+     down together by the same amount, never actually separating them from each other.
+     REAL fix: @page margin back to something reasonable (0.6in, a modest bump from the
+     original 0.5in for general safety) PLUS dedicated body padding-top/padding-bottom,
+     applied only in the print media query below — that padding sits INSIDE the content
+     box the running elements also render into, carving out dedicated room for them so
+     the actual document content starts further down/ends further up, clearing them
+     instead of competing with them for the same space. */
+  @page{size:letter portrait;margin:0.6in 0.5in;}
   @media print{
-    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{padding-top:0.35in;padding-bottom:0.35in;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .page-break{page-break-before:always}
     thead{display:table-header-group}
     tfoot{display:table-footer-group}
@@ -5084,7 +5091,7 @@ function printIO() {
     .running-footer .page-num::after{content:"Page " counter(page) " of " counter(pages)}
   }
   @media screen{
-    body{max-width:8.5in;margin:0 auto;padding:0.9in 0.5in;box-shadow:0 4px 24px rgba(0,0,0,.1);background:#fff;min-height:11in}
+    body{max-width:8.5in;margin:0 auto;padding:0.95in 0.5in;box-shadow:0 4px 24px rgba(0,0,0,.1);background:#fff;min-height:11in}
     .running-header,.running-footer{display:none}
   }
 
