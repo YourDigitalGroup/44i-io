@@ -764,6 +764,7 @@ form-edit pass or pre-launch audit.
   HONEST CAVEAT UNCHANGED: still reasoning-based, not verified by rendering — needs
   Claire's live confirmation in an actual print dialog again before considering this
   closed, especially since the FIRST attempt already turned out not to work.
+  **CONFIRMED WORKING by Claire in an actual print dialog — CLOSED (2026-07-08).**
 - **Write-side editor: Exclusivity Group + Spend Minimum fields — BUILT + VERIFIED
   (2026-07-07).** Claire asked, correctly, how the admin screen would let someone set up
   a NEW tier — it couldn't; neither field existed in the form at all (same class of gap
