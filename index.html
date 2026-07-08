@@ -29,7 +29,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 /* Header */
 .header{background:#1C9BD7;padding:28px 36px;border-radius:14px;margin-bottom:32px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 32px rgba(28,155,215,.3);position:relative;overflow:hidden}
 
-.header-logo{height:40px;object-fit:contain;filter:brightness(0) invert(1)}
+.header-logo{height:40px;object-fit:contain;display:block}
+.logo-chip{background:rgba(255,255,255,.95);border-radius:10px;padding:8px 16px;display:inline-flex;align-items:center;flex-shrink:0}
 .header-title{color:#fff;text-align:right}
 .header-title h1{font-family:'Montserrat',sans-serif;font-size:26px;font-weight:800;letter-spacing:-.5px}
 .header-title p{font-size:12px;color:rgba(255,255,255,.65);margin-top:3px}
@@ -315,7 +316,9 @@ textarea{resize:vertical;min-height:70px}
 
 <div class="wrap">
   <div class="header" id="header" style="background:#36C3F2">
-    <img id="group-logo" class="header-logo" src="https://cfdigitalgroup.com/wp-content/uploads/CFDigital_logo.svg" alt="CF Digital" style="height:38px;filter:none" onerror="this.style.display='none'"/>
+    <div class="logo-chip" id="logo-chip">
+      <img id="group-logo" class="header-logo" src="https://cfdigitalgroup.com/wp-content/uploads/CFDigital_logo.svg" alt="CF Digital" style="height:32px" onerror="document.getElementById('logo-chip').style.display='none'"/>
+    </div>
     <div class="header-title">
       <h1>Insertion Order</h1>
       <p id="header-version">CF Digital · Insertion Order</p>
@@ -2228,19 +2231,26 @@ function showGroupError() {
 
 function applyGroupBranding(group) {
   const logo = document.getElementById('group-logo');
+  const chip = document.getElementById('logo-chip');
   const header = document.getElementById('header');
   const titleEl = document.getElementById('header-version');
 
-  // Apply logo
+  // Apply logo — sits on a fixed, neutral (near-white) chip rather than directly on the
+  // brand-colored header (2026-07-08). REPLACES the old luminance-based invert-to-white
+  // logic entirely: that approach only ever checked the header's overall BRIGHTNESS, with
+  // no idea what colors were actually inside the logo — so it broke in two different,
+  // unfixable-by-threshold ways Claire caught by checking real groups: CF Digital's logo
+  // is a single color that happens to MATCH its header, so it vanished into the
+  // background regardless of the header being "light enough" to skip inversion; STMM's
+  // multi-color logo lost specifically the one color that happened to match its header,
+  // while the rest stayed visible. A binary invert-or-don't filter can't selectively fix
+  // just the clashing color — the header and logo now sit on genuinely different,
+  // non-competing backgrounds instead, which works correctly regardless of either color.
   if (group.logo_url) {
     logo.src = group.logo_url;
-    logo.style.display = 'block';
-    // Invert logo to white for dark headers; keep natural for light headers
-    const color = group.brand_color || '#1C9BD7';
-    const luminance = hexLuminance(color);
-    logo.style.filter = luminance < 0.4 ? 'brightness(0) invert(1)' : 'none';
+    if (chip) chip.style.display = 'inline-flex';
   } else {
-    logo.style.display = 'none';
+    if (chip) chip.style.display = 'none';
   }
 
   // Apply brand color to header and CSS variables
@@ -2257,15 +2267,9 @@ function applyGroupBranding(group) {
   }
 }
 
-// Returns relative luminance of a hex color (0=dark, 1=light)
-function hexLuminance(hex) {
-  const c = hex.replace('#','');
-  const r = parseInt(c.substr(0,2),16)/255;
-  const g = parseInt(c.substr(2,2),16)/255;
-  const b = parseInt(c.substr(4,2),16)/255;
-  const toL = x => x <= 0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055, 2.4);
-  return 0.2126*toL(r) + 0.7152*toL(g) + 0.0722*toL(b);
-}
+// hexLuminance() removed (2026-07-08) — was ONLY used by the invert-to-white logic this
+// fix replaced; the chip approach doesn't need to know a color's brightness at all,
+// since the logo never sits directly on the brand color anymore.
 
 function hexToRgba(hex, alpha) {
   const c = hex.replace('#','');
