@@ -76,7 +76,7 @@ textarea{resize:vertical;min-height:70px}
 .svc-table col.c-notes{width:auto}
 .svc-table td:nth-child(2){white-space:normal;word-break:normal;overflow-wrap:anywhere}
 .svc-table td.svc-freq{color:var(--muted);font-size:11.5px;text-align:right}
-.svc-table td.right{overflow:hidden;text-overflow:ellipsis}
+.svc-table td.right{overflow:hidden;text-overflow:ellipsis;text-align:right;color:var(--muted)}
 .svc-table td:last-child input[type=text]{width:100%;box-sizing:border-box}
 .svc-table th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;text-align:left;background:var(--light);border-bottom:1px solid var(--border)}
 .svc-table th.right{text-align:right}
@@ -94,7 +94,6 @@ textarea{resize:vertical;min-height:70px}
 .svc-table tr:last-child td{border-bottom:none}
 .svc-table tr.selected{background:#F0F7FF}
 .svc-table tr:hover{background:var(--light)}
-.svc-table td.right{text-align:right;color:var(--muted)}
 .svc-table td input[type=checkbox]{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
 .svc-table td input[type=number]{width:100%;box-sizing:border-box;padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:right;-moz-appearance:textfield}
 /* Native number-input spinner arrows reserve space at the right edge, so even with
@@ -2444,30 +2443,12 @@ function toggle(cb, id) {
 }
 
 // ── SPEND MINIMUMS per service ID ────────────────────────────
-const SPEND_MINIMUMS = {
-  // Targeted Display
-  'td-geo':1000,'td-site':1000,'td-dynamic':1000,'td-custom':1000,'td-offline':0,
-  // SEM
-  'sem-bp':1000,
-  // Social Ads
-  'sma-fb':1000,'sma-tt':1000,'sma-sc':1000,'sma-li':1000,
-  // Location Targeting
-  'lt-geo':1000,'lt-crm':1000,'lt-event':1000,'lt-offline':0,
-  // YouTube / Video
-  'yt-out':1000,'yt-15':1000,'yt-06':1000,'yt-skip':1000,
-  'nv-geo':1000,'nv-offline':0,
-  'pv-geo':1000,'pv-offline':0,
-  'yttv-bp':2500,'yttv-addl':0,
-  // Streaming TV / OTT / CTV
-  'stv-loc':1500,'stv-aud':1500,'stv-sports':1500,'stv-offline':0,
-  'ottctv-bp':1500,'ottctv-offline':0,
-  'hulu-bp':2500,'amz-bp':2500,
-  // Audio / Mobile / Display
-  'pa-geo':1000,'pa-offline':0,
-  'nd-geo':1000,'nd-offline':0,
-  'sda-bp':1500,'sda-offline':0,
-  'mob-bp':2500,'mob-offline':0,
-};
+// Was a hardcoded, frozen snapshot — replaced 2026-07-08. Now populated by
+// loadCatalog() from each service's own spend_minimum column, same pattern as
+// SERVICE_DATA/PRODUCT_CONFIG. The old hardcoded version silently stopped applying
+// the minimum-spend warning to any NEW spend-based service added after it was written —
+// this fixes that for good, since it's derived fresh every time the catalog loads.
+let SPEND_MINIMUMS = {};
 
 // Shared by updateSpend()/updateQty(): if someone types a value into a row whose
 // checkbox isn't checked yet, auto-check it and run the SAME selection logic as a real
@@ -2523,32 +2504,14 @@ function updateQty(input, id) {
 // ── SINGLE-SELECT CHECKBOX GROUPS ────────────────────────────
 // Behaves like radio buttons but uses checkboxes so the selected
 // item can be deselected by clicking it again.
-const RADIO_GROUPS = {
-  // Website tiers (single-select within OTO and MRR)
-  'web-oto-tier': ['w-bs','w-bb','w-bp','w-custom'],
-  'web-mrr-tier': ['wm-1p','wm-5p','wm-10p','wm-ecomm'],
-  // Website Visitor IDs (cross-section exclusive)
-  'vid-pkg':    ['w-vid200','w-vid350','w-vid500','w-vid200e','w-vid350e','w-vid500e'],
-  'wm-vid-pkg': ['wm-vid200','wm-vid350','wm-vid500','wm-vid200e','wm-vid350e','wm-vid500e'],
-  // Targeted Landing Pages
-  'tlp-tier':   ['tlp-bs','tlp-bb','tlp-bp','tlp-custom'],
-  // Social Media Management
-  'sm-tier':    ['sm-bs','sm-bb','sm-bp'],
-  // Email Marketing
-  'em-tier':    ['em-bb-2500','em-bb-5000','em-bp-30k','em-bp-30kp'],
-  // SEO/AEO
-  'seo-tier':   ['seo-bs','seo-bb','seo-bp'],
-  // Targeted Display
-  'td-tier':    ['td-geo','td-site','td-dynamic','td-custom'],
-  // Social Media Ads
-  'sma-tier':   ['sma-fb','sma-tt','sma-sc','sma-li'],
-  // Location Targeting
-  'lt-tier':    ['lt-geo','lt-crm','lt-event'],
-  // YouTube Video
-  'yt-tier':    ['yt-out','yt-15','yt-06','yt-skip'],
-  // Streaming TV
-  'stv-tier':   ['stv-loc','stv-aud','stv-sports'],
-};
+// Was a hardcoded, frozen snapshot of every group's membership — replaced 2026-07-08.
+// Now populated by loadCatalog() from each service's own exclusivity_group column,
+// same pattern as SERVICE_DATA/PRODUCT_CONFIG. The old hardcoded version silently
+// stopped working the moment a NEW item was added to an EXISTING group via the admin
+// editor built earlier this project — toggleSingle() would render the new item
+// correctly but never actually recognize it as part of the group it belonged to. This
+// fixes that for good, since the group membership is derived fresh every catalog load.
+let RADIO_GROUPS = {};
 
 // Website OTO tiers and MRR tiers — mutually exclusive
 const WEB_OTO = ['w-bs','w-bb','w-bp','w-custom'];
@@ -3688,6 +3651,16 @@ function regenerateSlug() {
 }
 
 // ── PRICEABLE SERVICES (non-programmatic, non-SEM) ────────────
+// UPDATED 2026-07-08: this list still defines WHICH services are priceable and how
+// they're grouped for the admin's pricing screen — that grouping is a deliberate,
+// admin-specific organization (e.g. "Visitor IDs" bundles items that live in DIFFERENT
+// catalog sections, web-ot AND web-mo) that doesn't map cleanly to the catalog's own
+// section field, so it stays hand-maintained here. But each item's `default` value is
+// NO LONGER the source of truth for the price shown to the admin — renderPricingFields()
+// now looks up the LIVE price from CATALOG_ROWS at render time instead, so the
+// placeholder never drifts from whatever the write-side Services editor actually has set.
+// `default` here is kept only as a fallback for the rare case a service is removed from
+// the catalog but not yet from this list.
 const PRICEABLE_SERVICES = [
   { section:'Website — One-Time', items:[
     { id:'w-bs',   label:'Website Business Starter',    field:'fee',      default:1250 },
@@ -3797,6 +3770,13 @@ function renderPricingFields() {
     section.items.forEach(item => {
       const override = currentPricingOverrides[item.id];
       const displayVal = override !== undefined ? override : '';
+      // Live catalog price (2026-07-08), not the hardcoded item.default — that value was
+      // baked in when this list was first written and would silently drift from reality
+      // the moment anyone changed a price through the write-side Services editor built
+      // this project, showing an admin a placeholder hint that no longer matched the
+      // service's real current price. item.default is now used ONLY as a fallback for
+      // the rare case a service was removed from the catalog but not yet from this list.
+      const liveDefault = CATALOG_ROWS[item.id]?.default_price ?? item.default;
       const fieldType = item.field === 'recurring' ? '/mo' : item.field === 'fee' && item.default === 0 ? '' : '';
       html += `<div style="display:flex;align-items:center;gap:8px">
         <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4">${item.label}</label>
@@ -3805,7 +3785,7 @@ function renderPricingFields() {
           <input type="number" min="0" step="0.01"
             id="price-${item.id}"
             value="${displayVal}"
-            placeholder="${item.default}"
+            placeholder="${liveDefault}"
             style="width:80px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px;text-align:right"
             oninput="onPriceInput('${item.id}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:24px">${fieldType}</span>
@@ -5893,6 +5873,24 @@ async function loadCatalog() {
   INTAKE_FORMS = iff;
   CATALOG_ROWS = {};
   services.forEach(r => { CATALOG_ROWS[r.id] = r; });
+
+  // Derive RADIO_GROUPS and SPEND_MINIMUMS from the live catalog (2026-07-08) — replaces
+  // the old hardcoded frozen snapshots, which silently broke for any new item added to an
+  // existing exclusivity group or given a spend minimum via the admin editor after they
+  // were written. Rebuilt fresh every time the catalog loads, exactly like SERVICE_DATA/
+  // PRODUCT_CONFIG already are — the whole point of the admin editor ("add or change a
+  // service without touching code") now actually holds for these two behaviors too.
+  const rg = {}, sm = {};
+  services.forEach(r => {
+    if (r.exclusivity_group) {
+      if (!rg[r.exclusivity_group]) rg[r.exclusivity_group] = [];
+      rg[r.exclusivity_group].push(r.id);
+    }
+    if (r.spend_minimum != null) sm[r.id] = Number(r.spend_minimum);
+  });
+  RADIO_GROUPS = rg;
+  SPEND_MINIMUMS = sm;
+
   console.log(`[Catalog] Loaded ${Object.keys(SERVICE_DATA).length} services, ${Object.keys(INTAKE_FORMS).length} intake forms from Supabase.`);
 }
 
