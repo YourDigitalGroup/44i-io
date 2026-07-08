@@ -1,0 +1,51 @@
+/* ════════════════════════════════════════════════════════════════
+   shared.css — base reset, CSS variables, and the small set of
+   classes used by BOTH the public IO form (index.html) and the
+   standalone admin portal (admin.html).
+
+   Extracted 2026-07-08 alongside shared.js (see that file's header
+   comment for the full extraction context). index.html was NOT
+   modified in this pass — it still has its own inline copy of all of
+   this inside its <style> block. Only admin.html loads this file for
+   now.
+
+   Scope discipline: the admin panel's own markup is almost entirely
+   inline-styled (verified by scanning admin.html's markup for class=
+   attributes — only "card", "lbl", and "toast" are used as classes
+   anywhere in it). So this file intentionally does NOT include the
+   large public-form-only stylesheet: .svc-table, modal/step/summary
+   styles, the mobile stacked-card responsive rules, etc. Those stay
+   index.html's exclusive territory.
+   ════════════════════════════════════════════════════════════════ */
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --accent:#1C9BD7;
+  --accent-rgb:28,155,215;
+  --accent-dark:#1580B5;
+  --accent2:#0F6E56;
+  --warn:#F59E0B;
+  --bg:#F4F8FB;
+  --card:#fff;
+  --border:#DDE8F0;
+  --text:#1A2332;
+  --muted:#5A6A7A;
+  --light:#EBF4FB;
+}
+
+body{font-family:'Montserrat',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+input,select,textarea,button{font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+
+/* Cards — the admin panel wraps its entire content in a single .card */
+.card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+
+/* Field labels */
+label.lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
+
+/* Toast (used by showToast() in shared.js) */
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none;text-align:center;white-space:nowrap}
+.toast.show{display:block}
+.toast.success{background:#10B981;color:#fff}
+.toast.error{background:#EF4444;color:#fff}

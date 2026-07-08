@@ -764,6 +764,7 @@ form-edit pass or pre-launch audit.
   HONEST CAVEAT UNCHANGED: still reasoning-based, not verified by rendering — needs
   Claire's live confirmation in an actual print dialog again before considering this
   closed, especially since the FIRST attempt already turned out not to work.
+  **CONFIRMED WORKING by Claire in an actual print dialog — CLOSED (2026-07-08).**
 - **Write-side editor: Exclusivity Group + Spend Minimum fields — BUILT + VERIFIED
   (2026-07-07).** Claire asked, correctly, how the admin screen would let someone set up
   a NEW tier — it couldn't; neither field existed in the form at all (same class of gap
@@ -1469,10 +1470,57 @@ which is why they slipped off this doc — but several gate a real client-facing
   values beyond today's super/AM. Division of labor confirmed: Claude extracts the admin
   portal into its own file (code work); Claire's web developer handles the actual
   subdomain/DNS/deploy-workflow setup (infrastructure Claude has no visibility into).
-  Claire is talking to her developer next about the subdomain setup. NOT YET STARTED:
-  the actual file extraction — waiting on Claire to confirm timing once the subdomain
-  conversation happens, so the two pieces land together rather than the code being ready
-  with nowhere to deploy it yet.
+  Claire is talking to her developer next about the subdomain setup.
+  **STEP 1 (extraction) BUILT, awaiting live/browser confirmation — new files added to the
+  repo, `index.html` left completely untouched (2026-07-08).** Claire chose the safe
+  staged rollout: build the standalone admin file now, leave the public form's existing
+  gear-icon admin panel exactly as-is and fully working until the new file is confirmed
+  live on its real subdomain — only THEN does a separate, later step remove the admin
+  code from `index.html`. Also chose the cleaner long-term structure for shared code
+  (factor it into a shared file both pages load, rather than duplicate it into both) —
+  matches this project's existing "single source of truth" pattern (the catalog table,
+  `priceAndFrequency()` consolidation, etc.); the one tradeoff is her developer needs to
+  know the admin subdomain must also serve `shared.js`/`shared.css` alongside
+  `admin.html`, not just upload one file.
+  New files, repo root: `admin.html` (the standalone admin panel — login, Groups, Orders,
+  Suggested Map, Services editor), `shared.js` (Supabase config + `sb()` call wrapper,
+  `esc()` XSS-escaping helper, catalog loading — `CATALOG_ROWS`/`loadCatalog()`/
+  `rowToServiceData`/`rowToProductConfig`/`priceAndFrequency`, `showToast()` — everything
+  confirmed used by BOTH the public form and the admin panel), `shared.css` (CSS reset,
+  `:root` color/spacing variables, and the 3 classes admin.html's markup actually uses —
+  `.card`/`.lbl`/`.toast`; the public form's own large stylesheet — service tables,
+  modals, mobile responsive rules — stays exclusively in `index.html` since admin.html's
+  markup never uses any of it, confirmed by scanning every `class=` in the admin markup).
+  Extracted from `index.html` lines 931–1284 (admin panel markup), 1348–1369 (login
+  modal), and 3570–4924 (all admin JS, one contiguous block) — `index.html` verified
+  byte-identical to before the extraction.
+  ONE REAL ADAPTATION NEEDED, caught and fixed during verification: the admin panel's
+  "Save Group" flow originally had a line that live-updates on-screen pricing if the
+  group being saved is also the one an AE currently has open in the SAME page — only
+  possible when admin and public form share one page. Standalone, there's no public form
+  for it to update, so that line is correctly omitted (not left in as dead/dangerous code
+  that would throw if ever reached). Second, smaller adaptation: the "✕ Close" button
+  used to reveal the public form underneath the admin panel; standalone, it now returns to
+  the login screen instead (`adminLogout()`) — a reasonable stand-in, but a genuine small
+  behavior change from the original Close button, not something Claire explicitly asked
+  for, so it needs her eyes before relying on it.
+  VERIFIED (mechanically, not yet in a browser): `node --check` passes on both new JS
+  files with no syntax errors; every `getElementById()` call in `admin.html` resolves to
+  a real element in the same file (checked programmatically, zero dangling references);
+  every `onclick`/`onchange` handler resolves to a real function; the four RPC calls
+  (`admin_login`, `admin_save_group`, `admin_save_service`, `admin_get_orders`) are
+  present and byte-identical to the originals; `index.html` confirmed completely
+  unmodified via diff.
+  NOT YET VERIFIED — genuinely needs a real browser, can't be confirmed by reading code:
+  visual/layout rendering (the admin panel is almost entirely inline-styled so risk is
+  low, but the shared CSS variables and toast styling should be eye-checked once); actual
+  live Supabase round-trips (login, saving a group, saving a service) against the real
+  backend, not just traced statically; and the `adminLogout()` behavior-change question
+  above. NEXT: Claire opens `admin.html` locally (needs to be served over HTTP, not
+  double-clicked as a `file://` path, since the browser may block the `shared.js`/
+  `shared.css` includes that way) and runs through login + one real save of each kind
+  before this goes anywhere near the actual subdomain. Once confirmed, the follow-up step
+  (removing admin code from `index.html`) can be scheduled.
 - **Spend minimums — wording vs. enforcement** — text says "recommended," disclaimers imply
   required, but only $0 is actually blocked. Decide hard requirement vs. guidance, then make
   wording, warnings, and submit-blocking all agree.
