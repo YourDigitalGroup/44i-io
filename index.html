@@ -2137,10 +2137,27 @@ function updateIntakeStatusCard() {
 async function loadGroup() {
   const slug = getSlug();
   const isProd = window.location.hostname.includes('yourdigitalgroupresources.com');
+  // Deliberate dev-mode override (2026-07-08) — see the two checks just below for why
+  // this exists. A conscious action (typing this exact parameter), not an accident.
+  const forceDevMode = new URLSearchParams(window.location.search).get('dev') === '1';
 
-  // Local file or no slug → dev picker; production with slug → Supabase
-  if (!slug || !isProd) {
+  // Not on production (local file, localhost, etc.) → dev picker always, unchanged
+  // from before — this is the builders' own testing path and doesn't touch anything a
+  // client or AE could stumble into on the real site.
+  if (!isProd || forceDevMode) {
     showDevModePicker();
+    return;
+  }
+
+  // FIXED (2026-07-08): production with NO slug used to ALSO fall into the dev picker
+  // (the old check was `!slug || !isProd`, an either/or) — meaning simply visiting the
+  // bare live domain, or a truncated/mistyped link, showed internal test group names and
+  // the admin gear to anyone who landed there, accidentally or otherwise. Now shows the
+  // same clean "Invalid Link" screen a client already sees for a WRONG slug, extended to
+  // cover a MISSING one too. Deliberate dev access on the live domain still works via
+  // ?dev=1 above — this only closes the accidental path, not intentional testing.
+  if (!slug) {
+    showGroupError();
     return;
   }
 
