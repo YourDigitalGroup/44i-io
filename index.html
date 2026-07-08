@@ -2831,7 +2831,9 @@ function buildReview() {
     // IO is the actual contract, so it should show the same math as this internal review,
     // not a simplified version. Keeping them consistent avoids exactly the kind of
     // discrepancy ("the document says X, the record says Y") that could become a dispute.
-    const feeDisplay = (data.qty != null && data.fee > 0) ? `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}` : (data.fee > 0 ? fmt(data.fee) : '—');
+    const feeDisplay = data.is_qur
+      ? '<span style="color:#B45309;font-weight:600">Quote Upon Request</span>'
+      : (data.qty != null && data.fee > 0) ? `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}` : (data.fee > 0 ? fmt(data.fee) : '—');
     // Recurring column: ONLY genuinely recurring/spend content — a one-time item's total
     // (however computed) never belongs here. If a per-unit item is ever ALSO monthly
     // (none exist today, but the math supports it), the multiplication shows here instead,
@@ -4964,15 +4966,14 @@ function printIO() {
       if (data.spend > 0) { monthly += data.spend; sectionMonthly += data.spend; }
 
       let amtCol = '';
-      // Shows the "× qty" breakdown at ANY per-unit quantity, including 1 — not just
-      // when qty > 1. Reversed from an earlier version that hid it at qty=1 to keep the
-      // print "clean"; Claire's call: the printed IO functions as the actual contract, so
-      // it should show the SAME math as the internal Step 3 review rather than a
-      // simplified version — a printed "$175 one-time" next to an internal record showing
-      // "$175 × 3 = $525" is exactly the kind of inconsistency that could become a real
-      // dispute later. `data.qty != null` (not `qty > 1`) matches the buildReview() test:
-      // qty's mere presence, not its value, is what marks a service as per-unit.
-      if (data.qty != null) {
+      // QUR items (2026-07-07): checked FIRST, ahead of every other case, so this takes
+      // priority over the vaguer 'TBD' fallback below — matches the "Quote Upon Request"
+      // wording buildReview() now shows, keeping the printed contract consistent with the
+      // internal Step 3 review exactly, per Claire's established principle for this
+      // function (same reasoning as the qty-display consistency above).
+      if (data.is_qur) {
+        amtCol = 'Quote Upon Request';
+      } else if (data.qty != null) {
         amtCol = fmt(data.fee) + ' × ' + qty + ' = ' + fmt(feeTotal) + (recurringTotal > 0 || data.spend > 0 ? ' one-time' : '');
       } else if (feeTotal > 0 && (recurringTotal > 0 || data.spend > 0)) {
         amtCol = fmt(feeTotal) + ' setup + ' + fmt(recurringTotal > 0 ? recurringTotal : data.spend) + '/mo';
@@ -5516,6 +5517,14 @@ function rowToServiceData(r) {
     out.fee = 0;
     out.recurring = r.default_price != null ? Number(r.default_price) : 0;
   }
+  // QUR flag (2026-07-07): default_price:null becomes a plain 0 above, needed since
+  // fee/recurring get summed into running totals elsewhere — but that loses the
+  // distinction between "genuinely free" and "quote required, not yet priced". This
+  // survives alongside the (necessarily numeric) fee/recurring so Review/Print can show
+  // a clear "Quote Upon Request" note instead of a bare, confusing $0/blank for w-custom,
+  // em-bp-30kp, tlp-custom. Doesn't touch the totals math at all — a QUR item still
+  // correctly contributes $0 to the running total until it's actually priced.
+  out.is_qur = r.default_price == null;
   if (r.workflow) out.workflow = r.workflow;
   // FIXED (2026-07-07, per Claire): modifier items (offline tracking, etc.) are a
   // straight MONTHLY add-on to the total — NOT a CPM-rate adjustment, and NOT something
