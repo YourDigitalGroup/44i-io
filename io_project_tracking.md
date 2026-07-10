@@ -784,6 +784,54 @@ form-edit pass or pre-launch audit.
   the rate itself? a flat add-on instead?) and new logic in `buildReview()`/`submitIO()`/
   `printIO()`, the money-total calculators — deliberately not something to guess at or
   rush.
+- **Full catalog reconciliation against the updated PDF (Version 7.9.26) — DONE
+  (2026-07-10), ahead of Claire's leadership presentation.** Claire provided the current
+  IO PDF plus a full `services` table export; checked every section line-by-line rather
+  than spot-check. Confirmed MATCHING with no changes needed: Audio (Programmatic Audio/
+  Native Display/Social Display Ads/Mobile Audience Targeting), CTV's Streaming TV/Social
+  OTT/Hulu/Amazon, Email Marketing, GBP/Local Listing/Reputation, SEM, SEO, Social Media
+  Management, Social Media Ads, Targeted Display, Targeted Landing Pages, all of Video.
+  Real discrepancies found and fixed, each confirmed with Claire before writing SQL (not
+  guessed):
+  - `lt-event` (Location Targeting — Event/Lookback) had `spend_minimum` at the general
+    $1,000 rate; PDF calls out a separate $1,500 minimum for this one item specifically.
+    Fixed.
+  - `w-hosting` was missed by the earlier `pricing_group` migration (2026-07-10, same
+    day) — its siblings `w-ecomm-hosting`/`w-ada-hosting` were correctly tagged
+    'Hosting Fees', this one wasn't. Fixed.
+  - `w-hosting` and `w-ada-hosting` labels had internal working-notes baked directly into
+    the CLIENT-FACING label field (e.g. "...(standalone — use hosting prompt on site
+    purchase)", "...(due upfront, renews annually from IO date)") — labels show on the
+    live form, Suggested Map, and printed IO, so these were visible to real clients, not
+    just admins. Reverted to plain PDF wording.
+  - `alc-testdelete` ("TEST — Delete Me") was sitting ACTIVE in the live catalog — a
+    leftover test row that would have shown as a real, selectable checkbox on the public
+    form. Deactivated.
+  - **Website Monthly Hosting restructured** — the 4-tier Content/Chatbot/ADA bundling
+    ladder (`wm-hosting` $49 / `wm-host-content` $69 / `wm-host-ai` $89 / `wm-host-all`
+    $109) is replaced by 2 flat tiers per the updated PDF: `wm-hosting` ("Hosting Only")
+    repriced 49→69; new service `wm-ecomm-hosting` ("E-commerceHosting") added at $99/mo;
+    `wm-host-content`/`wm-host-ai`/`wm-host-all` deactivated (not deleted — any past order
+    referencing them stays intact). Confirmed explicitly with Claire before deactivating,
+    since this removes real, currently-sellable options, not just a price change.
+    `wm-ai`(AI ChatBot)/`wm-email`(Addl. Email) deliberately left untouched — prices
+    already matched, and their exact relationship to site tiers is part of the ALREADY-
+    PARKED Website business-logic questions awaiting AM review, not something to resolve
+    here.
+  - **New service: Netflix Ads** (`netflix-bp`) added — same shape as Hulu/Amazon Prime,
+    a subsection inside the existing `ctv` section (`subsection_label:'Netflix Ads'`),
+    matching how Hulu/Amazon/Social OTT are each their own header block on the PDF while
+    sharing one section/card on the live form. $90 CPM, $3,000/mo minimum, `pricing_mode:
+    'spend'`. Confirmed this interpretation with Claire rather than assume a brand-new
+    top-level section (which would have needed code changes, not just a data insert).
+  Explicitly confirmed as staying SPLIT, not merged, per Claire (already discussed with
+  the AM separately): the PDF prints "Radio to Video **or** YouTube Pre-Roll" and "Banner
+  **or** Social Media Ad Set" as single combined lines, but the catalog's 4 separate
+  active services (`alc-radio`/`alc-preroll`/`alc-banner`/`alc-social-ad-set`) are the
+  correct, intended structure — the PDF's wording is what's behind, not the database.
+  VERIFIED: Claire ran the full script and pasted back the result of the verify query —
+  all 10 changed/added rows confirmed matching the intended values (prices, active flags,
+  pricing_group tags all correct).
 - **Dev picker reachable on the LIVE production domain by accident — FIXED, real safety
   gap closed (2026-07-08).** Came up while mapping the admin-portal/URL split (see below):
   Claire asked what happens if someone's group link loses its slug — could they land on
