@@ -1198,6 +1198,14 @@ textarea{resize:vertical;min-height:70px}
           </div>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
             <div>
+              <label class="lbl">Pricing Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— controls how this service is grouped/labeled on the Custom Pricing screen. Leave "None" to use its Section's own name (the normal case). Only set this to bundle services across DIFFERENT sections under one heading (like "Visitor IDs") or carve out a subset of a section under its own heading (like "Hosting Fees").</span></label>
+              <select id="admin-svc-pricing-group" onchange="onPricingGroupChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <input type="text" id="admin-svc-pricing-group-new" placeholder="e.g. Visitor IDs" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a second, near-duplicate heading instead of joining the intended one.</p>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
+            <div>
               <label class="lbl">Hosting Prompt <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only the 4 Website site-tier services use this; it pops the hosting-setup modal when checked. Leave "None" for everything else.</span></label>
               <select id="admin-svc-hosting-prompt" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
                 <option value="">None</option>
@@ -3683,95 +3691,21 @@ function regenerateSlug() {
 }
 
 // ── PRICEABLE SERVICES (non-programmatic, non-SEM) ────────────
-// UPDATED 2026-07-08: this list still defines WHICH services are priceable and how
-// they're grouped for the admin's pricing screen — that grouping is a deliberate,
-// admin-specific organization (e.g. "Visitor IDs" bundles items that live in DIFFERENT
-// catalog sections, web-ot AND web-mo) that doesn't map cleanly to the catalog's own
-// section field, so it stays hand-maintained here. But each item's `default` value is
-// NO LONGER the source of truth for the price shown to the admin — renderPricingFields()
-// now looks up the LIVE price from CATALOG_ROWS at render time instead, so the
-// placeholder never drifts from whatever the write-side Services editor actually has set.
-// `default` here is kept only as a fallback for the rare case a service is removed from
-// the catalog but not yet from this list.
-const PRICEABLE_SERVICES = [
-  { section:'Website — One-Time', items:[
-    { id:'w-bs',   label:'Website Business Starter',    field:'fee',      default:1250 },
-    { id:'w-bb',   label:'Website Business Builder',    field:'fee',      default:2500 },
-    { id:'w-bp',   label:'Website Business Pro',        field:'fee',      default:3750 },
-    { id:'w-module',label:'Website Module (per module)',field:'fee',      default:750  },
-    { id:'w-logo', label:'Convert Logo to Vector',      field:'fee',      default:175  },
-    { id:'w-content',label:'Content Support (hourly)',  field:'fee',      default:175  },
-  ]},
-  { section:'Website — Monthly', items:[
-    { id:'wm-1p',  label:'1-Page Monthly',              field:'recurring',default:199  },
-    { id:'wm-5p',  label:'5-Page Monthly',              field:'recurring',default:299  },
-    { id:'wm-10p', label:'10-Page Monthly',             field:'recurring',default:399  },
-    { id:'wm-ecomm',label:'E-Commerce Monthly',         field:'recurring',default:599  },
-    { id:'wm-hosting',label:'Hosting Only',             field:'recurring',default:49   },
-    { id:'wm-host-content',label:'Hosting & Content',   field:'recurring',default:69   },
-    { id:'wm-host-ai',label:'Hosting + Content + ChatBot',field:'recurring',default:89},
-    { id:'wm-host-all',label:'Hosting + Content + ChatBot + ADA',field:'recurring',default:109},
-    { id:'wm-ai',  label:'AI ChatBot',                  field:'recurring',default:79   },
-    { id:'wm-email',label:'Additional Email Address',   field:'recurring',default:7    },
-    { id:'wm-content',label:'Content Support (hourly)', field:'recurring',default:175  },
-  ]},
-  { section:'Hosting Fees', items:[
-    { id:'w-hosting',     label:'Standard Hosting (annual)',    field:'fee',default:450  },
-    { id:'w-ecomm-hosting',label:'E-Commerce Hosting (annual)', field:'fee',default:750  },
-    { id:'w-ada-hosting', label:'ADA Hosting (annual)',         field:'fee',default:1000 },
-  ]},
-  { section:'Visitor IDs', items:[
-    { id:'w-vid-setup',label:'Visitor IDs Setup Fee',       field:'fee',      default:199 },
-    { id:'w-vid200',   label:'200 Visitor IDs (monthly)',   field:'recurring',default:199 },
-    { id:'w-vid350',   label:'350 Visitor IDs (monthly)',   field:'recurring',default:349 },
-    { id:'w-vid500',   label:'500 Visitor IDs (monthly)',   field:'recurring',default:499 },
-    { id:'wm-vid200',  label:'200 Visitor IDs standalone',  field:'recurring',default:99  },
-    { id:'wm-vid350',  label:'350 Visitor IDs standalone',  field:'recurring',default:249 },
-    { id:'wm-vid500',  label:'500 Visitor IDs standalone',  field:'recurring',default:399 },
-  ]},
-  { section:'Targeted Landing Pages', items:[
-    { id:'tlp-bs', label:'TLP Business Starter',   field:'recurring',default:299 },
-    { id:'tlp-bb', label:'TLP Business Builder',   field:'recurring',default:399 },
-    { id:'tlp-bp', label:'TLP Business Pro',       field:'recurring',default:499 },
-    { id:'tlp-design',label:'TLP Design Change',   field:'fee',      default:99  },
-  ]},
-  { section:'Social Media Management', items:[
-    { id:'sm-bs',  label:'Social Media Starter',  field:'recurring',default:575  },
-    { id:'sm-bb',  label:'Social Media Builder',  field:'recurring',default:775  },
-    { id:'sm-bp',  label:'Social Media Pro',      field:'recurring',default:1275 },
-    { id:'sm-addl',label:'Additional Channel',    field:'recurring',default:175  },
-  ]},
-  { section:'Email Marketing', items:[
-    { id:'em-bb-2500',label:'Email Builder <2,500',  field:'recurring',default:450  },
-    { id:'em-bb-5000',label:'Email Builder <5,000',  field:'recurring',default:575  },
-    { id:'em-bp-30k', label:'Email Pro <30,000',     field:'recurring',default:1000 },
-    { id:'em-addl',   label:'Additional Monthly Email',field:'recurring',default:175},
-    { id:'em-template',label:'Email Template Change', field:'fee',      default:175 },
-  ]},
-  { section:'SEO / AEO', items:[
-    { id:'seo-bs', label:'SEO Starter',  field:'recurring',default:199 },
-    { id:'seo-bb', label:'SEO Builder',  field:'recurring',default:599 },
-    { id:'seo-bp', label:'SEO Pro',      field:'recurring',default:799 },
-  ]},
-  { section:'Reputation Management', items:[
-    { id:'rep-bp', label:'Reputation Management', field:'recurring',default:425 },
-  ]},
-  { section:'Local Listing Optimization', items:[
-    { id:'llo-bp', label:'Local Listing Optimization', field:'recurring',default:250 },
-  ]},
-  { section:'Google Business Profile', items:[
-    { id:'gbp-setup',label:'GBP Setup & Verification', field:'fee',default:300 },
-  ]},
-  { section:'À la Carte', items:[
-    { id:'alc-brand',label:'New Brand / Logo',                 field:'fee',default:850 },
-    { id:'alc-photo',label:'Stock Photography',                field:'fee',default:25  },
-    { id:'alc-design',label:'Graphic Design (hourly)',         field:'fee',default:175 },
-    { id:'alc-social-graphics',label:'Social Profile/Cover Graphics',field:'fee',default:100},
-    { id:'alc-radio',label:'Radio to Video / Pre-Roll Creation',field:'fee',default:250},
-    { id:'alc-banner',label:'Banner or Social Media Ad Set',   field:'fee',default:175 },
-    { id:'alc-media',label:'Traditional Media Buying & Consultation',field:'fee',default:0},
-  ]},
-];
+// UPDATED 2026-07-10: was a hardcoded, frozen snapshot — same staleness bug already
+// fixed for RADIO_GROUPS/SPEND_MINIMUMS. A brand-new flat/per-unit service never showed
+// up here for per-group price overrides until someone manually added it to this array.
+// Now populated by loadCatalog() from the live catalog every time it loads, same pattern.
+// Grouping: a service's `pricing_group` column (if set) is the literal display heading
+// it's grouped under here — this is how the two genuinely cross-cutting groups ("Visitor
+// IDs" spans catalog sections web-ot AND web-mo; "Hosting Fees" is a hand-picked subset
+// of web-ot) are preserved as DATA instead of code. Any service with no pricing_group set
+// just defaults to its own catalog section's label (MAP_SECTION_LABELS) — so a normal new
+// service needs zero admin action to appear here. Deliberately excludes ad-spend
+// (pricing_mode='spend') and modifier add-on (pricing_mode='modifier') services, and any
+// item with no default_price set (QUR) — none of those have a single flat price to
+// override the way this screen assumes; extending Custom Pricing to cover them is a
+// separate, deliberately out-of-scope follow-up (see io_project_tracking.md).
+let PRICEABLE_SERVICES = [];
 
 // ── ADMIN TAB SWITCHER ────────────────────────────────────────
 function adminTab(tab) {
@@ -3802,14 +3736,10 @@ function renderPricingFields() {
     section.items.forEach(item => {
       const override = currentPricingOverrides[item.id];
       const displayVal = override !== undefined ? override : '';
-      // Live catalog price (2026-07-08), not the hardcoded item.default — that value was
-      // baked in when this list was first written and would silently drift from reality
-      // the moment anyone changed a price through the write-side Services editor built
-      // this project, showing an admin a placeholder hint that no longer matched the
-      // service's real current price. item.default is now used ONLY as a fallback for
-      // the rare case a service was removed from the catalog but not yet from this list.
-      const liveDefault = CATALOG_ROWS[item.id]?.default_price ?? item.default;
-      const fieldType = item.field === 'recurring' ? '/mo' : item.field === 'fee' && item.default === 0 ? '' : '';
+      // item is always a live catalog row now (PRICEABLE_SERVICES is derived fresh from
+      // CATALOG_ROWS on every load) — no removed-service fallback needed anymore.
+      const liveDefault = CATALOG_ROWS[item.id]?.default_price;
+      const fieldType = item.field === 'recurring' ? '/mo' : '';
       html += `<div style="display:flex;align-items:center;gap:8px">
         <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4">${item.label}</label>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
@@ -4174,6 +4104,41 @@ function onSubsectionChange() {
   if (sel.value !== '__new__') newInput.value = '';
 }
 
+// Populates the Pricing Group dropdown from groups that ALREADY EXIST in the real data
+// (allServicesMap) — same pick-list-not-free-text reasoning as Exclusivity Group: a typo
+// would silently create a second, near-duplicate heading on the Custom Pricing screen
+// instead of joining the intended one. Deliberately global (not section-scoped) like
+// Exclusivity Group, since its whole purpose is bundling services ACROSS sections
+// (e.g. "Visitor IDs" spans web-ot and web-mo).
+function populateServicePricingGroupDropdown(current) {
+  const sel = document.getElementById('admin-svc-pricing-group');
+  const groups = [...new Set(allServicesMap.map(s => s.pricing_group).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">None (use this service\'s Section name)</option>' +
+    groups.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('') +
+    '<option value="__new__">+ Create a new group...</option>';
+  const newInput = document.getElementById('admin-svc-pricing-group-new');
+  if (current && groups.includes(current)) {
+    sel.value = current;
+    newInput.style.display = 'none';
+    newInput.value = '';
+  } else if (current) {
+    sel.value = '__new__';
+    newInput.style.display = 'block';
+    newInput.value = current;
+  } else {
+    sel.value = '';
+    newInput.style.display = 'none';
+    newInput.value = '';
+  }
+}
+
+function onPricingGroupChange() {
+  const sel = document.getElementById('admin-svc-pricing-group');
+  const newInput = document.getElementById('admin-svc-pricing-group-new');
+  newInput.style.display = sel.value === '__new__' ? 'block' : 'none';
+  if (sel.value !== '__new__') newInput.value = '';
+}
+
 // Re-scopes the Subsection dropdown whenever Section changes — its valid options are
 // entirely different per section (matches the existing pattern: Section's onchange
 // already re-triggers autoServiceId(); this just adds the second thing that depends on it).
@@ -4260,6 +4225,7 @@ function adminNewService() {
   populateServiceSectionDropdown(true, null);
   populateServiceIntakeDropdown(null);
   populateServiceExclusivityDropdown(null);
+  populateServicePricingGroupDropdown(null);
   // Section dropdown defaults to its first option once populated above — scope the
   // subsection list to whatever that ends up being, not blindly to null.
   populateServiceSubsectionDropdown(document.getElementById('admin-svc-section').value, null);
@@ -4302,6 +4268,7 @@ function adminEditService(id) {
   populateServiceSectionDropdown(false, s.section);
   populateServiceIntakeDropdown(s.intake_form_id);
   populateServiceExclusivityDropdown(s.exclusivity_group);
+  populateServicePricingGroupDropdown(s.pricing_group);
   populateServiceSubsectionDropdown(s.section, s.subsection_label);
   document.getElementById('admin-service-form').style.display = 'block';
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
@@ -4375,6 +4342,17 @@ async function adminSaveService() {
   }
   const subsectionLabelVal = subsectionSel === '__new__' ? subsectionNewVal : (subsectionSel || null);
 
+  // Pricing Group: same pick-list-or-create-new pattern as Exclusivity Group above, but
+  // global like Exclusivity Group (not section-scoped like Subsection) — see
+  // populateServicePricingGroupDropdown() for why.
+  const pricingGroupSel = document.getElementById('admin-svc-pricing-group').value;
+  const pricingGroupNewVal = document.getElementById('admin-svc-pricing-group-new').value.trim();
+  if (pricingGroupSel === '__new__' && !pricingGroupNewVal) {
+    showToast('Enter a name for the new pricing group, or pick an existing one / None', 'error');
+    return;
+  }
+  const pricingGroupVal = pricingGroupSel === '__new__' ? pricingGroupNewVal : (pricingGroupSel || null);
+
   const payload = {
     label: label,
     section: document.getElementById('admin-svc-section').value,
@@ -4396,6 +4374,7 @@ async function adminSaveService() {
     spend_minimum: spendMinVal === '' ? null : parseFloat(spendMinVal),
     subsection_label: subsectionLabelVal,
     hosting_prompt_type: document.getElementById('admin-svc-hosting-prompt').value || null,
+    pricing_group: pricingGroupVal,
   };
   if (isNew) {
     payload.id = id; // id only sent on create — never changed on an existing row
@@ -5922,6 +5901,30 @@ async function loadCatalog() {
   });
   RADIO_GROUPS = rg;
   SPEND_MINIMUMS = sm;
+
+  // Derive PRICEABLE_SERVICES from the live catalog (2026-07-10) — see the comment on
+  // its declaration above for why. Only flat/per-unit services with an actual set price
+  // are included, grouped by pricing_group (if set) or else the section's own label.
+  const groupOrder = [], groupMap = {};
+  services.forEach(r => {
+    const mode = r.pricing_mode || 'flat';
+    if (mode !== 'flat' && mode !== 'per_unit') return;
+    if (r.default_price == null) return;
+    const groupLabel = r.pricing_group || MAP_SECTION_LABELS[r.section] || r.section;
+    if (!groupMap[groupLabel]) { groupMap[groupLabel] = []; groupOrder.push(groupLabel); }
+    groupMap[groupLabel].push({
+      id: r.id,
+      label: r.label,
+      // Only controls the "/mo" suffix shown next to the override input here — NOT which
+      // field actually gets overridden (applyCustomPricing() decides that independently,
+      // from whichever of SERVICE_DATA[id].fee/.recurring is non-null). Must be strictly
+      // billing_type === 'monthly', not just "not one_time" — a YEARLY item (the 3
+      // Hosting Fees rows) is stored in .recurring same as a monthly one, but showing
+      // "/mo" next to an annual price would be actively misleading.
+      field: r.billing_type === 'monthly' ? 'recurring' : 'fee',
+    });
+  });
+  PRICEABLE_SERVICES = groupOrder.map(section => ({ section, items: groupMap[section] }));
 
   console.log(`[Catalog] Loaded ${Object.keys(SERVICE_DATA).length} services, ${Object.keys(INTAKE_FORMS).length} intake forms from Supabase.`);
 }

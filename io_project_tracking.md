@@ -606,6 +606,93 @@ form-edit pass or pre-launch audit.
   (confirmed separately, see the "service catalog vs. price overrides" answer given
   2026-07-10) — this gap is scoped ONLY to whether a group-specific override can be set
   for that new service without a code change.
+  **FIXED 2026-07-10, ahead of Claire's Monday leadership meeting.** Scope decision made
+  with Claire first (via direct question, not assumed): fix covers the same 10
+  flat-fee/per-unit sections `PRICEABLE_SERVICES` already covered (Website, TLP, SEO,
+  Social Media Management, Email, Reputation/Listings/GBP, À La Carte). Extending this to
+  the ad-spend/CPM-rate sections (Targeted Display, SEM, Social Ads, Location Targeting,
+  Video, Streaming TV, Audio) was explicitly asked about and deliberately DEFERRED — those
+  services don't have a flat price to override, they have a RATE multiplied by AE-typed
+  spend, and the actual override-application mechanism (`applyCustomPricing()`) has no
+  concept of overriding a rate today. Extending there means new logic in the same
+  functions that calculate every dollar total on the live form
+  (`buildReview()`/`submitIO()`/`printIO()`) — correctly treated as a separate, carefully
+  designed follow-up rather than rushed in under a deadline. Logged as a new, explicit
+  open item below ("Custom Pricing for ad-spend/CPM services — deferred").
+  ROOT DESIGN: new nullable `pricing_group` column on `services`. When set, it's the
+  literal display-heading text Custom Pricing groups the service under (same
+  "store-the-literal-label" precedent as `subsection_label`, not a slug needing a lookup
+  table). When null (the default for a normal new service), the group falls back to that
+  service's own catalog section label (`MAP_SECTION_LABELS`) — meaning **any new
+  flat/per-unit service now auto-appears in Custom Pricing with zero admin action**, which
+  was the entire point. The two genuinely cross-cutting cases — "Visitor IDs" (spans
+  `web-ot` + `web-mo`) and "Hosting Fees" (a hand-picked subset of `web-ot`) — get
+  `pricing_group` set explicitly via a one-time SQL migration
+  (`add_pricing_group_column.sql`, given to Claire to run — no direct Supabase access from
+  here), preserving today's exact grouping. Any FUTURE special bundle is now a data edit
+  through the write-side Services editor, not a code change — same principle as
+  `exclusivity_group`.
+  BUILT: `PRICEABLE_SERVICES` changed from a hardcoded `const` (12 hand-typed sections,
+  ~80 lines) to a `let`, rebuilt inside `loadCatalog()` alongside `RADIO_GROUPS`/
+  `SPEND_MINIMUMS` — filtered to `pricing_mode` flat/per_unit with a non-null
+  `default_price` (reproduces today's exact 10-section inclusion set; naturally excludes
+  ad-spend, modifier add-ons, and QUR items with no code needed to encode those
+  exclusions separately). `item.field` (only controls the "/mo" suffix shown next to the
+  override box — confirmed NOT used to decide which field `applyCustomPricing()` actually
+  overwrites, that's independent) is now derived from `billing_type`. Also removed the
+  now-fully-obsolete `.default` fallback value and its explanatory comment (every entry is
+  now always a live catalog row by construction — no more "removed from catalog but not
+  from this list" case to guard against).
+  **REAL BUG CAUGHT DURING TESTING, before this ever reached Claire:** my first version
+  derived the "/mo" suffix as `billing_type === 'one_time' ? 'fee' : 'recurring'` — this
+  is the SAME rule `rowToServiceData()` already uses for the real fee/recurring total
+  calculation, so I assumed it was also right for the display suffix. It isn't: a
+  YEARLY-billed item (the 3 Hosting Fees rows) is correctly stored in `.recurring` for
+  totals purposes, but showing "/mo" next to an annual price would be actively misleading.
+  Caught by simulating a yearly item and checking the output, not by inspection alone —
+  fixed to `billing_type === 'monthly' ? 'recurring' : 'fee'`, which only affects the
+  cosmetic suffix, matching every one of the original hardcoded entries exactly.
+  Write-side editor: new "Pricing Group" field on the admin Service form, mirroring the
+  `exclusivity_group` pick-list-plus-create-new pattern exactly (global across sections,
+  same as Exclusivity Group, not section-scoped like Subsection) — a typo picking from a
+  list can't silently create a duplicate near-identical heading. No auto-suggest (unlike
+  Exclusivity Group's "{section}-tier" convention) since there's no equivalent naming
+  convention for a display heading. Wired into `adminNewService()`/`adminEditService()`/
+  `adminSaveService()`.
+  **STILL NEEDED, blocking full completion:** the `admin_save_service` RPC itself needs a
+  new version reading/writing `pricing_group` (case-when-present pattern, matching how
+  `exclusivity_group` is handled server-side) — but its live SQL definition isn't checked
+  into this repo (confirmed: none of the earlier `admin_save_service_*` versions ever
+  were), so writing an exact, safe `CREATE OR REPLACE` needs Claire to pull the current
+  definition from Supabase first. Until that RPC is updated, saving a service with a
+  Pricing Group set will save everything else correctly but silently NOT persist the
+  Pricing Group value server-side (the front-end sends it; the RPC just won't read it yet).
+  VERIFIED via simulation (not live Supabase — flagged honestly): the corrected
+  derivation logic against synthetic data covering a normal flat item, a per-unit item,
+  Visitor-ID-tagged items from BOTH `web-ot` and `web-mo` (confirms cross-section
+  bundling), a Hosting-Fees-tagged item (confirms subset carve-out), a plain `web-ot` item
+  with no `pricing_group` (confirms it lands under its own section, not pulled into
+  Hosting Fees), a QUR item / spend-mode item / modifier item (all confirmed still
+  excluded), a yearly-billed item (confirms correct "no /mo suffix" fix), and — the actual
+  bug scenario — a brand-new mock service with no `pricing_group` set, confirming it
+  appears automatically with zero code change; separately simulated the write-side
+  editor's dropdown dedup/current-value/orphaned-value handling and the save-validation
+  logic (blocks on blank create-new, correctly saves null for "None"). `node --check`
+  passes on the modified script block.
+  ONE DATA ITEM TO VERIFY, flagged rather than guessed: `alc-media` ("Traditional Media
+  Buying & Consultation") had `default:0` in the old hardcoded list — its real
+  `default_price` in Supabase needs to actually be `0` (not `null`) for it to keep
+  appearing here, since the new filter excludes null prices. Worth a quick check in the
+  Suggested Map when Claire runs the migration.
+  NEXT: Claire runs `add_pricing_group_column.sql`; shares the current `admin_save_service`
+  definition so the RPC update can be written safely; then does one real save-with-a-
+  Pricing-Group test in the admin UI.
+- **Custom Pricing for ad-spend/CPM services — deferred, scoped as its own follow-up
+  (2026-07-10).** Explicitly out of scope for the fix above (see that entry for why).
+  Needs its own design pass on what "custom price" even means for a CPM/CPC rate (override
+  the rate itself? a flat add-on instead?) and new logic in `buildReview()`/`submitIO()`/
+  `printIO()`, the money-total calculators — deliberately not something to guess at or
+  rush.
 - **Dev picker reachable on the LIVE production domain by accident — FIXED, real safety
   gap closed (2026-07-08).** Came up while mapping the admin-portal/URL split (see below):
   Claire asked what happens if someone's group link loses its slug — could they land on
