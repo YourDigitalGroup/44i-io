@@ -687,6 +687,51 @@ form-edit pass or pre-launch audit.
   NEXT: Claire runs `add_pricing_group_column.sql`; shares the current `admin_save_service`
   definition so the RPC update can be written safely; then does one real save-with-a-
   Pricing-Group test in the admin UI.
+  `admin_save_service` RPC UPDATE WRITTEN (2026-07-10), given to Claire as an exact
+  `CREATE OR REPLACE` diffed against the live definition she pasted — confirmed via `diff`
+  to change ONLY 3 lines (the INSERT column list/values and one new UPDATE case-when-
+  present line for `pricing_group`), everything else byte-identical to the version
+  actually running in Supabase. Not yet run by Claire as of this entry.
+  **REAL MISTAKE FOUND AND FIXED, same session (2026-07-10): today's fix only landed in
+  `index.html`, not the standalone `admin/index.html` Claire has actually been testing
+  through.** Caught because Claire reported "I don't see Pricing Group" and "my test
+  service from an earlier session isn't showing" — both symptoms of the SAME root cause.
+  Root cause: when the admin portal was split into its own file, only the genuinely-
+  shared logic (catalog loading, `CATALOG_ROWS`/`RADIO_GROUPS`/`SPEND_MINIMUMS`/
+  `SERVICE_DATA`) was moved into `shared.js`. `PRICEABLE_SERVICES`, `MAP_SECTION_LABELS`,
+  `renderPricingFields()`, and the entire Services-editor form (including
+  `adminSaveService()` etc.) were left as `admin/index.html`'s OWN separate inline copy —
+  a byte-for-byte snapshot taken BEFORE any of today's fix existed. All of today's edits
+  were made to `index.html` (the file being actively read/grepped/edited this session)
+  with no awareness that a second, independent copy of this exact code existed and would
+  silently NOT receive the same fix. This is exactly the maintenance cost the staged
+  admin-portal-split rollout knowingly accepted (duplicate code, not shared) — now
+  visibly real, not just theoretical.
+  FIXED: ported the identical set of changes into `admin/index.html` — the HTML field, the
+  `populateServicePricingGroupDropdown()`/`onPricingGroupChange()` pair, the
+  `adminNewService()`/`adminEditService()`/`adminSaveService()` wiring, and the
+  `PRICEABLE_SERVICES` derivation. One structural difference from `index.html`'s version,
+  by design: `index.html` builds `PRICEABLE_SERVICES` INSIDE its own inline `loadCatalog()`
+  (its private copy of that function); `admin/index.html` uses `shared.js`'s `loadCatalog()`
+  instead, which is genuinely shared and shouldn't be made to depend on
+  `PRICEABLE_SERVICES`/`MAP_SECTION_LABELS` (admin-only globals a future page like
+  `/strategist` wouldn't have). So `admin/index.html` got its own small
+  `rebuildPriceableServices()` function, called once right after `await loadCatalog()`
+  succeeds in this page's init sequence — keeps the derivation logic co-located with the
+  globals it depends on, consistent with those globals already being deliberately NOT
+  shared. VERIFIED: `node --check` passes on the modified inline script; zero dangling
+  `getElementById`/`onclick`/`onchange` references (checked programmatically, same method
+  used for the original extraction); re-ran the exact same simulation test suite used to
+  verify `index.html`'s version (QUR/spend exclusion, Visitor IDs cross-section bundling,
+  yearly-item suffix fix, brand-new mock service auto-appearing) against
+  `admin/index.html`'s `rebuildPriceableServices()` — identical results.
+  STANDING RISK, not resolved by this fix, flagged honestly: `index.html` and
+  `admin/index.html` still carry two independent copies of this code. Any FUTURE change to
+  Custom Pricing / the Services editor needs to be made in BOTH files again, and nothing
+  technical stops that from being missed a second time. Worth accelerating the "remove
+  admin code from `index.html`" cleanup (already planned, parked on Claire's timing with
+  her developer) specifically to eliminate this duplication risk for good, rather than
+  purely for the subdomain-vs-path reason it was originally framed around.
 - **Custom Pricing for ad-spend/CPM services — deferred, scoped as its own follow-up
   (2026-07-10).** Explicitly out of scope for the fix above (see that entry for why).
   Needs its own design pass on what "custom price" even means for a CPM/CPC rate (override
