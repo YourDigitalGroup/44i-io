@@ -1794,7 +1794,35 @@ Moderate:
     share one `exclusivity_group`, since the tier fix depends on that and it couldn't be
     verified without live DB access), and ships an updated `admin_save_service` RPC with
     both new columns wired in (case-when-present, same pattern as every other nullable
-    field added this session).
+    field added this session). **CONFIRMED WORKING by Claire** (both verification
+    queries + live checks all matched expected values) — CLOSED.
+- **Three follow-up polish items after the hardcoding audit (2026-07-10).**
+  1. **Renamed "Suggested Map" tab to "Services"** in `/admin` — cosmetic only, no
+     behavior/id changes. Claire felt the old name no longer matched what the tab
+     actually does now that it's a full CRUD editor, not just a read-only reference.
+  2. **Hosting proration is now admin-editable.** Directly reopened the "should `days`/
+     labels also be data-driven" question from the hardcoding audit — Claire said yes.
+     New `hosting_proration_settings` table (`page_type` PK: `1p`/`5p`/`10p`/`ecomm`,
+     `label`, `days`), a new "⚙ Hosting Proration" panel in the Services tab (a simple
+     4-row edit list — no add/remove, since `hosting_prompt_type` is a fixed closed set
+     by design), and a new `admin_save_hosting_setting` RPC. The dollar FEE is still NOT
+     set here — it continues to read the real standalone hosting service's own Default
+     Price (per the 2026-07-10 hardcoding fix above), so there's exactly one place to
+     change a hosting price and one place to change its timing, never two.
+  3. **Service editor decluttered** — grouped the now ~25-field form into three
+     collapsible `<details>` sections (Basics / Pricing Details / Behavior & Workflow)
+     instead of one long unbroken list. Basics and Pricing Details start open (most
+     services touch these); Behavior & Workflow starts collapsed (rarer/advanced fields:
+     Subsection, Hosting Prompt, Standalone Hosting ID, KOC, Intake Form, Workflow,
+     Auto-Add Setup Fee, Fee Note). Purely a layout change — every field id, oninput
+     handler, and save-payload key is untouched; verified via a jsdom DOM check that all
+     fields still resolve correctly and the Save button is still present after the
+     restructure.
+  - **SQL delivered:** `hosting_proration_settings_2026-07-10.sql` — creates the table
+    (seeded with today's existing values, zero behavior change until an admin edits a
+    row), enables RLS with a public SELECT policy (the live form reads this table with
+    the anon key, same as `services`/`intake_forms`/`sections`), and adds the
+    `admin_save_hosting_setting` RPC.
 
 Minor / cosmetic:
 - **`onKocDateChange()` / `globalKocSchedule` / doubled `display:none` — DONE (v44,
