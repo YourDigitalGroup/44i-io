@@ -3079,6 +3079,7 @@ function printIO() {
      one-time page-1 header. */
   @page{size:letter portrait;margin:0.5in;}
   @media print{
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .page-break{page-break-before:always}
     thead{display:table-header-group}
     tfoot{display:table-footer-group}
