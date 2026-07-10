@@ -214,7 +214,10 @@
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Hosting Proration Settings</p>
           <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Controls the "starts in N days" timing and wording shown when an AE chooses standalone hosting for a Website site-tier package. The dollar fee itself comes from that hosting service's own Default Price, above — nothing to set here for pricing.</p>
           <div id="admin-hosting-settings-rows"></div>
-          <button onclick="adminSaveHostingSettings()" style="margin-top:10px;padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Hosting Settings</button>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button onclick="adminSaveHostingSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Hosting Settings</button>
+            <button onclick="toggleHostingSettings()" style="padding:9px 18px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Close</button>
+          </div>
         </div>
 
         <!-- Service create/edit form — hidden until New/Edit is clicked -->
@@ -972,6 +975,7 @@ async function adminSaveHostingSettings() {
     }
     showToast('Hosting settings updated!');
     await loadHostingSettings();
+    document.getElementById('admin-hosting-settings').style.display = 'none';
   } catch(e) {
     showToast('Error saving hosting settings: ' + e.message, 'error');
   }
