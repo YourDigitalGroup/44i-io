@@ -1619,7 +1619,16 @@ function renderAdminGroups() {
       <th style="padding:9px 12px"></th>
     </tr></thead>
     <tbody>${allGroups.map(g => {
-      const overrideCount = g.io_pricing ? Object.keys(typeof g.io_pricing === 'string' ? JSON.parse(g.io_pricing) : g.io_pricing).length : 0;
+      // Found live by Claire (2026-07-10): deactivating a service doesn't clear its
+      // override key out of io_pricing, so the raw key count kept showing e.g. "1
+      // override" for a service that's now deactivated and no longer even visible on
+      // the Custom Pricing screen (PRICEABLE_SERVICES excludes inactive services) - a
+      // phantom count with no way to see or manage it. Filtering to services present in
+      // CATALOG_ROWS (active-only) fixes the count without touching the stored data
+      // itself - if the service is ever reactivated, its old override value is still
+      // there and becomes visible/editable again on Custom Pricing, same as before.
+      const rawPricing = g.io_pricing ? (typeof g.io_pricing === 'string' ? JSON.parse(g.io_pricing) : g.io_pricing) : {};
+      const overrideCount = Object.keys(rawPricing).filter(id => CATALOG_ROWS[id]).length;
       const pricingBadge = overrideCount > 0
         ? `<span style="font-size:10px;font-weight:600;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:12px">${overrideCount} override${overrideCount>1?'s':''}</span>`
         : `<span style="font-size:10px;color:var(--muted)">Standard</span>`;
