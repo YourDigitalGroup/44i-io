@@ -2147,15 +2147,52 @@ sections on the live form (collapsed/expanded, checkbox behavior, mobile view) �
 the one thing that genuinely cannot be confirmed without a real browser. Stage B (the
 admin Sections tab) does not start until this is confirmed.
 
-**Sections admin tab — NOT YET STARTED, blocked on the foundation above being confirmed
-first.** New "Sections" tab in `admin/index.html`: same drag-to-reorder pattern as
-services, an edit form (label/icon/header note/render type), and "+ New Section" (creates
-a new, initially-empty section — services get added to it afterward through the existing
-Services editor). Needs a new `admin_save_section` RPC (written fresh, no prior version to
-diff against this time) and converting `MAP_SECTION_LABELS`/`SAFE_DYNAMIC_SECTIONS`
-(currently their own hardcoded lists in `admin/index.html`) to derive from the new
-`sections` table instead — same "stop hardcoding, derive from data" pattern as everything
-else in this project.
+**Sections admin tab — BUILT + VERIFIED (2026-07-10), full section-management feature now
+complete.** Built once Claire confirmed the Stage A foundation looked correct in a real
+browser (all 17 sections, including the 3 multi-table ones, rendered identically). New
+"Sections" tab in `admin/index.html`, same visual/permission pattern as the existing Groups
+Custom Pricing / Suggested Map screens (super-admin only, same hidden-not-dashed pattern
+for AM-tier):
+- **List + drag-to-reorder** — same pattern as the Suggested Map's service reorder built
+  earlier today, simplified since sections are one flat list (no per-section "band"
+  constraint needed). Recomputes `sort_order` sequentially by 10s on drop, saves only
+  changed rows via the RPC below.
+- **Edit form** — label, icon, header note. Deliberately NO render-type or table-shape
+  field — both stayed auto-derived from the services themselves (decided back in the
+  Stage A foundation work), so there's nothing here that could be set inconsistently with
+  the actual catalog.
+- **"+ New Section"** — creates a new, initially-empty section (placed after the current
+  highest `sort_order`); services get added to it afterward through the existing Services
+  editor, which now lists ALL active sections as valid choices (see cleanup below).
+- **Deactivate/Reactivate** — same "hide, don't delete" principle as services. Added a
+  clear warning when deactivating a section that still has active services in it, since
+  the public form only loads `active=true` sections — deactivating would make that
+  section's whole card, and every service in it, disappear from the live form at once,
+  not just get hidden from a list.
+New RPC `admin_save_section` (written fresh — no prior version existed to diff against,
+unlike every other RPC update this project has made) mirrors `admin_save_service`'s exact
+shape: password-validated, super-admin-only, case-when-present for nullable fields on
+update.
+**REAL CLEANUP UNLOCKED, not just added:** `SAFE_DYNAMIC_SECTIONS` and
+`MAP_SECTION_LABELS` (both hardcoded lists in `admin/index.html`, dating from when only
+SOME sections had been converted to dynamic rows) are now fully REMOVED, not merely
+converted to read from data — the underlying restriction they existed for (a new service
+in certain sections wouldn't have a checkbox to select it with) no longer exists anywhere,
+now that Stage A made every section dynamic by construction. This removes an entire hard
+block that used to stop a new service being created in most sections at all, and the
+"Deactivate ⓘ" disabled-placeholder that used to show instead of a real button for those
+same sections. Replaced by `SECTIONS` (loaded fresh at page init, same as the public form)
++ a small `sectionLabel(id)` helper.
+VERIFIED via simulation, same rigor as every prior step today: reorder logic (drag-to-
+front correctly bumps siblings; inactive sections never touched; self-drop is a no-op);
+new-section id-collision validation (blocked before the RPC is ever called); new-section
+default sort_order placement (after the current highest). ALSO verified end-to-end in a
+real driven simulation of the actual admin page (not just isolated logic) — loaded the
+page, opened the Sections tab, confirmed the list rendered with the correct label and a
+working drag handle, opened "+ New Section", filled the form, and called the real
+`adminSaveSection()` — completed cleanly with no thrown errors, form closed correctly
+afterward. `node --check` passes; zero dangling DOM/handler references anywhere in the
+file (same completeness check used for every admin-editor addition this project).
 
 ---
 
