@@ -1760,9 +1760,22 @@ which is why they slipped off this doc — but several gate a real client-facing
   cleaner bare `/admin/` URL — worth raising with Claire's developer when the
   Strategist/Accounting paths get built (same fix would apply to `/strategist`/
   `/accounting` too), not urgent on its own.
-- **Spend minimums — wording vs. enforcement** — text says "recommended," disclaimers imply
-  required, but only $0 is actually blocked. Decide hard requirement vs. guidance, then make
-  wording, warnings, and submit-blocking all agree.
+- **Spend minimums — wording vs. enforcement — RESOLVED (2026-07-10).** Claire's decision:
+  recommended, not enforced — confirmed as the CORRECT existing behavior, not a bug to
+  change. Checked the actual code before touching anything: the inline warning shown while
+  typing a spend amount already said "Recommended minimum is $X/mo" (not "required"); the
+  only hard block at submission is that a spend-tracked service needs SOME real spend
+  entered (can't submit $0/blank) — the specific minimum number itself was never enforced.
+  The one inconsistent piece was the legal disclaimer text, which said campaigns "require a
+  minimum monthly spend as noted" — overclaiming a hard requirement that isn't real. FIXED:
+  reworded to "have a recommended minimum monthly spend as noted, for the campaign to have
+  a meaningful chance at results" — now consistent with the inline warning and the actual
+  submit-blocking behavior. No JS logic changed, wording only.
+- **Campaign Length required? — RESOLVED, confirmed as intentional (2026-07-10).** Claire's
+  decision: stays optional, a quick-select helper — confirmed this already matches current
+  behavior (the dropdown has always been optional; End Date is a normal, unlocked date
+  field an AE can freely override regardless of what's picked). No change needed — this was
+  already correct, just hadn't been explicitly confirmed as a deliberate choice before.
 - **Auto-check a service when a spend is typed** — entering spend in an unchecked row
   currently doesn't count it. Auto-check on input so spend can't silently fail to register.
   (Tier-A correctness item from the rollout plan.)
