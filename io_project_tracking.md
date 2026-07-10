@@ -2023,6 +2023,105 @@ the actual code before writing this down:
 Both parked for whenever there's time/priority — worth revisiting once the `index.html`
 cleanup and Trello work are further along, per Claire's own prioritization.
 
+**Drag-and-drop reorder — BUILT + VERIFIED (2026-07-10), same day, once the `index.html`
+cleanup and pricing pass wrapped up.** Claire confirmed she wants the full
+section-management feature too (not just reordering) — logic: same reasoning as the rest
+of this project, get things out of code and into Supabase/admin screens. Given the size of
+full section management (comparable to the original services-table migration), sequenced
+into stages: this reorder feature first (small, self-contained, reuses existing
+`sort_order` + `admin_save_service` — no schema or RPC changes), then the sections-table
+foundation, verified on its own before any admin UI is built on top of it (see the two
+entries below for that work).
+BUILT: `admin/index.html`'s `renderSuggestedMap()` — a drag-handle (⠿) on each row,
+`draggable="true"`, wired to `mapRowDragStart()`/`mapRowDragOver()`/`mapRowDrop()`. Drop is
+constrained to WITHIN the same section band — cross-section drops are rejected outright,
+matching the existing principle that changing which section a service belongs to needs a
+deliberate action (the Edit form), not something drag should do silently. Drag handles are
+hidden whenever a search filter is active (search hides sibling rows, which would break
+the true adjacency the reorder math depends on) and for inactive rows (they don't
+participate in the live form's ordering at all) — same super-admin-only gating as the
+existing Edit button. On drop: recomputes `sort_order` sequentially by 10s for that
+section's active rows in their new order, saves only the rows whose value actually
+changed (minimizes RPC calls) via the EXISTING `admin_save_service` RPC — zero schema or
+backend changes needed for this feature.
+VERIFIED via simulation, 7 cases: dragging the last item to the front correctly bumps
+every sibling's order; a deactivated service in the same section is correctly excluded
+from the reorder entirely (never touched); a cross-section drop attempt is correctly
+rejected; dropping a row on itself is a correct no-op; only genuinely-changed rows are
+included in the update batch. `node --check` passes; zero dangling DOM/handler references
+(same completeness check used for every prior admin-editor addition).
+
+**Sections table + dynamic public-form rendering — BUILT, awaiting Claire's live/browser
+confirmation before Stage B starts (2026-07-10).** The foundation for full section
+management. Explicitly the highest-risk piece of this whole feature — it touches how the
+ENTIRE public form assembles itself — so treated with the same rigor as every other
+change to this specific file, plus an extra layer: simulating the generated HTML and
+diffing it against the exact original static markup, not just checking it parses.
+SCHEMA DECISION, simpler than first planned: the new `sections` table only stores what's
+genuinely a content/business decision — `id`, `label`, `icon`, `header_note`, `sort_order`,
+`active`. Dropped `render_type` and a "has spend column" flag from the original plan —
+both are fully DERIVABLE from the services themselves (a section is multi-table if any of
+its active services has a `subsection_label`; it needs a Spend column if any is
+`pricing_mode='spend'`), so storing them separately would just be a second place that
+could drift out of sync with the real catalog data — same reasoning behind everything
+else this project has moved out of hardcoded/duplicated state.
+Migration SQL (`create_sections_table.sql`, given to Claire) snapshots all 17 existing
+sections' exact current label/icon/header-note/order — verified this is a complete,
+faithful snapshot by re-deriving each section's expected shape from the ACTUAL catalog
+data already established this session (e.g. confirming `td`/`sem`/`sma`/`lt` are the only
+4 single-table sections with a spend item; `vid`/`ctv`/`audio` are the only 3 with
+`subsection_label` set anywhere), not from assumption.
+`index.html`: replaced the 17 hand-typed `<div class="card">` blocks with one empty
+`<div id="dynamic-sections">`, filled at startup by a new `renderSectionCards()` (builds
+every card's header/badge/table-or-container skeleton from `SECTIONS` + auto-detected
+shape) and `renderAllSectionRows()` (replaces the old fixed, explicit
+`renderCatalogSection('id')`/`renderMultiTableSection('id')` call list — now loops over
+whatever's actually in `SECTIONS`, so a section added later gets its rows generated with
+zero code change, which was the entire point).
+**TWO REAL BUGS CAUGHT DURING THIS WORK, both about the SAME underlying risk — a section
+added later being silently invisible to code that assumed the original fixed 17:**
+1. `updateBadges()` had its OWN separate hardcoded 17-id array — a new section's "X
+   selected" badge would never have updated. Now derived from `SECTIONS`.
+2. `printIO()` grouped line items by a hardcoded `SECTION_LABELS` map — a service from a
+   section NOT in that map would have been COMPLETELY OMITTED from the printed IO, not
+   just mislabeled — its dollar amount excluded from the printed one-time/monthly totals
+   too. This is the more serious of the two: a real money-accuracy risk on the actual
+   contract document, not a cosmetic one. Fixed the same way — iterates `SECTIONS`
+   directly now (which also fixed print ordering to correctly follow `sort_order`,
+   matching the live form, rather than whatever arbitrary order the old hardcoded map
+   happened to be typed in).
+Searched the whole file afterward for any OTHER hardcoded list of section ids before
+calling this done — found none; those two were the only ones.
+VERIFIED via simulation: generated card HTML compared structurally against the exact
+original markup for representative cases (a plain flat section, a spend section, a
+multi-table section, a no-header-note section) — colgroup/thead/table-class/container-id
+all matched exactly; cross-checked the auto-detection logic (multi-table vs single,
+spend-column vs not) against all 17 real sections' actual service shapes from this
+session's own catalog data, confirmed every one classifies correctly; simulated the fixed
+`printIO()` grouping against a hypothetical brand-new section, confirming it's now
+correctly included in both the printed line items AND the printed totals. `node --check`
+passes; zero dangling DOM/handler references anywhere in the file; braces/parens balanced.
+ONE MINOR, HONESTLY-FLAGGED COSMETIC DELTA: `web-ot`/`web-mo`'s header used to show
+"— One-Time"/"— Monthly Recurring" in a distinctly lighter/smaller style than the rest of
+the title; the generic template renders the full label uniformly instead (matching every
+other section's plain title style). A deliberate simplification to avoid special-casing
+2 of 17 sections — flagged directly rather than silently changed, since "zero visual
+change" was the explicit goal for everything else.
+NEXT: Claire runs `create_sections_table.sql`, then does a full visual pass across all 17
+sections on the live form (collapsed/expanded, checkbox behavior, mobile view) — this is
+the one thing that genuinely cannot be confirmed without a real browser. Stage B (the
+admin Sections tab) does not start until this is confirmed.
+
+**Sections admin tab — NOT YET STARTED, blocked on the foundation above being confirmed
+first.** New "Sections" tab in `admin/index.html`: same drag-to-reorder pattern as
+services, an edit form (label/icon/header note/render type), and "+ New Section" (creates
+a new, initially-empty section — services get added to it afterward through the existing
+Services editor). Needs a new `admin_save_section` RPC (written fresh, no prior version to
+diff against this time) and converting `MAP_SECTION_LABELS`/`SAFE_DYNAMIC_SECTIONS`
+(currently their own hardcoded lists in `admin/index.html`) to derive from the new
+`sections` table instead — same "stop hardcoding, derive from data" pattern as everything
+else in this project.
+
 ---
 
 ## LATER PHASES (not now)

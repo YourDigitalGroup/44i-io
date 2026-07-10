@@ -448,274 +448,10 @@ textarea{resize:vertical;min-height:70px}
   <!-- STEP 2: Services -->
   <div id="page-2" style="display:none">
 
-    <!-- WEBSITE ONE-TIME -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('web-ot')">
-        <h3>🌐 Website <span style="font-weight:400;color:var(--muted)">— One-Time</span> <span class="badge" id="badge-web-ot">0 selected</span></h3>
-        <span id="chevron-web-ot">▶</span>
-      </div>
-      <div id="sec-web-ot" class="card-body" style="display:none">
-        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-web-ot">
-            <!-- Rows generated at runtime via renderCatalogSection('web-ot') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- WEBSITE MONTHLY -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('web-mo')">
-        <h3>🌐 Website <span style="font-weight:400;color:var(--muted)">— Monthly Recurring</span> <span class="badge" id="badge-web-mo">0 selected</span></h3>
-        <span id="chevron-web-mo">▶</span>
-      </div>
-      <div id="sec-web-mo" class="card-body" style="display:none">
-        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-web-mo">
-            <!-- Rows generated at runtime via renderCatalogSection('web-mo') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- TARGETED LANDING PAGES -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('tlp')">
-        <h3>📄 Targeted Landing Pages <span style="font-size:11px;color:var(--muted);font-weight:400">6 Month Min</span> <span class="badge" id="badge-tlp">0 selected</span></h3>
-        <span id="chevron-tlp">▶</span>
-      </div>
-      <div id="sec-tlp" class="card-body" style="display:none">
-        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-tlp">
-            <!-- Rows generated at runtime via renderCatalogSection('tlp') -->
-          </tbody>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- SOCIAL MEDIA -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('sm')">
-        <h3>📱 Social Media Management <span style="font-size:11px;color:var(--muted);font-weight:400">6 Month Min</span> <span class="badge" id="badge-sm">0 selected</span></h3>
-        <span id="chevron-sm">▶</span>
-      </div>
-      <div id="sec-sm" class="card-body" style="display:none">
-        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-sm">
-            <!-- Rows generated at runtime via renderCatalogSection('sm') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- EMAIL MARKETING -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('em')">
-        <h3>✉️ Email Marketing <span style="font-size:11px;color:var(--muted);font-weight:400">6 Month Min</span> <span class="badge" id="badge-em">0 selected</span></h3>
-        <span id="chevron-em">▶</span>
-      </div>
-      <div id="sec-em" class="card-body" style="display:none">
-        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-em">
-            <!-- Rows generated at runtime via renderCatalogSection('em') -->
-          </tbody>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- SEO -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('seo')">
-        <h3>🔍 Website SEO/AEO <span style="font-size:11px;color:var(--muted);font-weight:400">6 Month Min</span> <span class="badge" id="badge-seo">0 selected</span></h3>
-        <span id="chevron-seo">▶</span>
-      </div>
-      <div id="sec-seo" class="card-body" style="display:none">
-        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-seo">
-            <!-- Rows generated at runtime via renderCatalogSection('seo') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- REPUTATION MANAGEMENT -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('rep')">
-        <h3>⭐ Reputation Management <span style="font-size:11px;color:var(--muted);font-weight:400">6 Month Min</span> <span class="badge" id="badge-rep">0 selected</span></h3>
-        <span id="chevron-rep">▶</span>
-      </div>
-      <div id="sec-rep" class="card-body" style="display:none">
-        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-rep">
-            <!-- Rows generated at runtime via renderCatalogSection('rep') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- LOCAL LISTING -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('llo')">
-        <h3>📍 Local Listing Optimization <span style="font-size:11px;color:var(--muted);font-weight:400">6 Month Min</span> <span class="badge" id="badge-llo">0 selected</span></h3>
-        <span id="chevron-llo">▶</span>
-      </div>
-      <div id="sec-llo" class="card-body" style="display:none">
-        <table class="svc-table svc-table--monthly"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-llo">
-            <!-- Rows generated at runtime via renderCatalogSection('llo') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- GBP -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('gbp')">
-        <h3>🗺️ Google Business Profile <span class="badge" id="badge-gbp">0 selected</span></h3>
-        <span id="chevron-gbp">▶</span>
-      </div>
-      <div id="sec-gbp" class="card-body" style="display:none">
-        <table class="svc-table svc-table--fee"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-gbp">
-            <!-- Rows generated at runtime via renderCatalogSection('gbp') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- TARGETED DISPLAY -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('td')">
-        <h3>🎯 Targeted Display <span style="font-size:11px;color:var(--muted);font-weight:400">Min $1,000/mo · 6 Month Min</span> <span class="badge" id="badge-td">0 selected</span></h3>
-        <span id="chevron-td">▶</span>
-      </div>
-      <div id="sec-td" class="card-body" style="display:none">
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-td">
-            <!-- Rows generated at runtime via renderCatalogSection('td') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- SEM -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('sem')">
-        <h3>🔎 Search Engine Marketing <span style="font-size:11px;color:var(--muted);font-weight:400">6 Month Min</span> <span class="badge" id="badge-sem">0 selected</span></h3>
-        <span id="chevron-sem">▶</span>
-      </div>
-      <div id="sec-sem" class="card-body" style="display:none">
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-sem">
-            <!-- Rows generated at runtime via renderCatalogSection('sem'). The old
-                 hardcoded "$200 min setup fee..." note is now Supabase's fee_note
-                 column on sem-bp, rendered by renderPriceCells(). -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- SOCIAL MEDIA ADS -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('sma')">
-        <h3>📣 Social Media Ads <span style="font-size:11px;color:var(--muted);font-weight:400">Min $1,000/mo · 6 Month Min</span> <span class="badge" id="badge-sma">0 selected</span></h3>
-        <span id="chevron-sma">▶</span>
-      </div>
-      <div id="sec-sma" class="card-body" style="display:none">
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-sma">
-            <!-- Rows generated at runtime via renderCatalogSection('sma') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- LOCATION TARGETING -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('lt')">
-        <h3>📡 Location Targeting <span style="font-size:11px;color:var(--muted);font-weight:400">Min $1,000/mo · 6 Month Min</span> <span class="badge" id="badge-lt">0 selected</span></h3>
-        <span id="chevron-lt">▶</span>
-      </div>
-      <div id="sec-lt" class="card-body" style="display:none">
-        <table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-lt">
-            <!-- Rows generated at runtime via renderCatalogSection('lt') -->
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- VIDEO SERVICES -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('vid')">
-        <h3>🎬 Video Advertising <span style="font-size:11px;color:var(--muted);font-weight:400">Min $1,000–$2,500/mo · 6 Month Min</span> <span class="badge" id="badge-vid">0 selected</span></h3>
-        <span id="chevron-vid">▶</span>
-      </div>
-      <div id="sec-vid" class="card-body" style="display:none">
-        <div id="dynamic-vid">
-          <!-- All sub-tables generated at runtime via renderMultiTableSection('vid') -->
-        </div>
-      </div>
-    </div>
-
-    <!-- STREAMING / OTT / CTV -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('ctv')">
-        <h3>📺 Streaming TV / OTT / CTV <span style="font-size:11px;color:var(--muted);font-weight:400">Min $1,500/mo · 6 Month Min</span> <span class="badge" id="badge-ctv">0 selected</span></h3>
-        <span id="chevron-ctv">▶</span>
-      </div>
-      <div id="sec-ctv" class="card-body" style="display:none">
-        <div id="dynamic-ctv">
-          <!-- All sub-tables generated at runtime via renderMultiTableSection('ctv') -->
-        </div>
-      </div>
-    </div>
-
-    <!-- AUDIO / MOBILE -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('audio')">
-        <h3>🎵 Audio / Mobile / Display <span style="font-size:11px;color:var(--muted);font-weight:400">Min $1,000–$2,500/mo · 6 Month Min</span> <span class="badge" id="badge-audio">0 selected</span></h3>
-        <span id="chevron-audio">▶</span>
-      </div>
-      <div id="sec-audio" class="card-body" style="display:none">
-        <div id="dynamic-audio">
-          <!-- All sub-tables generated at runtime via renderMultiTableSection('audio') -->
-        </div>
-      </div>
-    </div>
-
-    <!-- A LA CARTE -->
-    <div class="card">
-      <div class="card-head" onclick="toggleSection('alc')">
-        <h3>🎨 À La Carte <span class="badge" id="badge-alc">0 selected</span></h3>
-        <span id="chevron-alc">▶</span>
-      </div>
-      <div id="sec-alc" class="card-body" style="display:none">
-        <table class="svc-table svc-table--fee"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/></colgroup>
-          <thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th></tr></thead>
-          <tbody id="tbody-alc">
-            <!-- Rows generated at runtime from the services table (renderCatalogSection('alc'))
-                 — adding/deactivating an alc-section service in Supabase changes what appears
-                 here with no code edit. See renderCatalogSection() for details. -->
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <!-- All 17 service-section cards generated at runtime from the `sections` table
+         (renderSectionCards()) — a brand-new section added there appears here with no
+         code change, same principle as every service inside it. -->
+    <div id="dynamic-sections"></div>
 
     <!-- Special Instructions -->
     <div class="card">
@@ -2309,8 +2045,10 @@ function setVidGroupDisabled(groupName, disabled) {
 function toggleRadio(el, id, groupName) { toggleSingle(el, id, groupName); }
 
 function updateBadges() {
-  const sections = ['web-ot','web-mo','tlp','sm','em','seo','rep','llo','gbp','td','sem','sma','lt','vid','ctv','audio','alc'];
-  sections.forEach(sec => {
+  // Derived from SECTIONS (2026-07-10) — was a hardcoded 17-id array, which would have
+  // silently never updated a badge for any section added after this was written. Same
+  // "add data, not code" principle as the rest of the catalog.
+  SECTIONS.map(s => s.id).forEach(sec => {
     const count = Object.values(selected).filter(s => s.section === sec).length;
     const badge = document.getElementById('badge-' + sec);
     if (badge) {
@@ -3212,16 +2950,11 @@ function printIO() {
   const ioNumber = window.__lastIoNumber || makeIoNumber(ioDate, bizNameRaw);
 
   // ── Group services by section for subtotals ──
-  const SECTION_LABELS = {
-    'web-ot':'Website (One-Time)', 'web-mo':'Website (Monthly)',
-    'tlp':'Targeted Landing Pages', 'sm':'Social Media Management',
-    'em':'Email Marketing', 'seo':'SEO / AEO', 'rep':'Reputation Management',
-    'llo':'Local Listing Optimization', 'gbp':'Google Business Profile',
-    'td':'Targeted Display', 'sem':'Search Engine Marketing',
-    'sma':'Social Media Ads', 'lt':'Location Targeting',
-    'vid':'Video Advertising', 'ctv':'Streaming TV / OTT / CTV',
-    'audio':'Audio / Mobile / Display', 'alc':'À La Carte',
-  };
+  // Derived from SECTIONS (2026-07-10) — was a hardcoded 17-entry map. A service whose
+  // section wasn't a key in that map would have been COMPLETELY OMITTED from the printed
+  // IO, dollar amounts and all, not just mislabeled — a real risk the moment a section
+  // is ever added without a matching code change. Iterating SECTIONS also gives the
+  // printed order for free, matching the live form's own section order (sort_order).
   const grouped = {};
   Object.entries(selected).forEach(([id, data]) => {
     const sec = data.section || 'other';
@@ -3232,7 +2965,8 @@ function printIO() {
   let oneTime = 0, monthly = 0;
   let lineItemsHtml = '';
 
-  Object.keys(SECTION_LABELS).forEach(sec => {
+  SECTIONS.forEach(secDef => {
+    const sec = secDef.id;
     if (!grouped[sec]) return;
     const items = grouped[sec];
     let sectionOneTime = 0, sectionMonthly = 0;
@@ -3291,7 +3025,7 @@ function printIO() {
     });
 
     // Section header + rows + subtotal
-    lineItemsHtml += `<tr class="section-row"><td colspan="3">${SECTION_LABELS[sec]}</td></tr>` + sectionRows;
+    lineItemsHtml += `<tr class="section-row"><td colspan="3">${esc(secDef.label)}</td></tr>` + sectionRows;
     if (sectionOneTime > 0 || sectionMonthly > 0) {
       const parts = [];
       if (sectionOneTime > 0) parts.push(fmt(sectionOneTime) + ' one-time');
@@ -4183,6 +3917,81 @@ async function loadCatalog() {
   console.log(`[Catalog] Loaded ${Object.keys(SERVICE_DATA).length} services, ${Object.keys(INTAKE_FORMS).length} intake forms from Supabase.`);
 }
 
+// ── DYNAMIC SECTION CARDS (2026-07-10) ──────────────────────────
+// Builds every Step 2 service-section card (icon, header, badge, and empty
+// table/container skeleton) from the `sections` table instead of 17 hand-typed
+// <div class="card"> blocks. A brand-new section added via the admin Sections screen
+// appears here with zero code change — the same "add data, not code" principle already
+// proven for individual services. Whether a section needs a Spend column, and whether
+// it renders as one table or several sub-tables, is auto-detected from the services
+// themselves (not stored on the section) so it can never drift out of sync with what's
+// actually in the catalog.
+let SECTIONS = [];
+
+async function loadSections() {
+  const rows = await sb('sections?active=eq.true&order=sort_order&select=*');
+  if (!Array.isArray(rows) || !rows.length) throw new Error('No active sections returned from catalog');
+  SECTIONS = rows;
+}
+
+function sectionIsMultiTable(sectionId) {
+  return Object.values(CATALOG_ROWS).some(r => r.section === sectionId && r.subsection_label);
+}
+
+function sectionHasSpend(sectionId) {
+  return Object.values(CATALOG_ROWS).some(r => r.section === sectionId && r.pricing_mode === 'spend');
+}
+
+function renderSectionCards() {
+  const container = document.getElementById('dynamic-sections');
+  if (!container) return;
+
+  container.innerHTML = SECTIONS.map(sec => {
+    const headerNote = sec.header_note
+      ? `<span style="font-size:11px;color:var(--muted);font-weight:400">${esc(sec.header_note)}</span> `
+      : '';
+    let body;
+    if (sectionIsMultiTable(sec.id)) {
+      body = `<div id="dynamic-${esc(sec.id)}">
+          <!-- Sub-tables generated at runtime via renderMultiTableSection('${esc(sec.id)}') -->
+        </div>`;
+    } else {
+      const hasSpend = sectionHasSpend(sec.id);
+      const shapeClass = hasSpend ? 'svc-table--spend' : 'svc-table--fee';
+      const colgroup = hasSpend
+        ? `<col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/>`
+        : `<col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/>`;
+      const thead = hasSpend
+        ? `<th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th>`
+        : `<th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th>`;
+      body = `<table class="svc-table ${shapeClass}"><colgroup>${colgroup}</colgroup>
+          <thead><tr>${thead}</tr></thead>
+          <tbody id="tbody-${esc(sec.id)}">
+            <!-- Rows generated at runtime via renderCatalogSection('${esc(sec.id)}') -->
+          </tbody>
+        </table>`;
+    }
+    return `<div class="card">
+      <div class="card-head" onclick="toggleSection('${esc(sec.id)}')">
+        <h3>${sec.icon ? esc(sec.icon) + ' ' : ''}${esc(sec.label)} ${headerNote}<span class="badge" id="badge-${esc(sec.id)}">0 selected</span></h3>
+        <span id="chevron-${esc(sec.id)}">▶</span>
+      </div>
+      <div id="sec-${esc(sec.id)}" class="card-body" style="display:none">
+        ${body}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Replaces the old fixed, explicit per-id call sequence — loops over whatever sections
+// actually exist so a newly-created one gets its rows generated automatically too.
+function renderAllSectionRows() {
+  SECTIONS.forEach(sec => {
+    if (sectionIsMultiTable(sec.id)) renderMultiTableSection(sec.id);
+    else renderCatalogSection(sec.id);
+  });
+}
+
 function showCatalogError(msg) {
   const wrap = document.querySelector('.wrap');
   if (wrap) {
@@ -4208,52 +4017,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // if this fails we show an error rather than run on stale/empty data.
   try {
     await loadCatalog();
+    await loadSections();
   } catch (e) {
     console.error('[Catalog] Load failed — form will not start:', e.message);
     showCatalogError(e.message);
     return; // stop init — do not proceed into a catalog-less form
   }
-  // Catalog is ready — generate any dynamic sections' rows first (À La Carte, Reputation
-  // Management, Local Listing Optimization, Google Business Profile — all confirmed
-  // structurally simple: single item or no tier groups/spend minimums), THEN rewrite
-  // price/frequency cells from table data for ALL rows (static and generated alike).
-  renderCatalogSection('alc');
-  renderCatalogSection('rep');
-  renderCatalogSection('llo');
-  renderCatalogSection('gbp');
-  // Prototype #2 (2026-07-07): first sections using the EXTENDED generator —
-  // seo tests tier-based exclusivity, sem tests the ad-spend input.
-  renderCatalogSection('seo');
-  renderCatalogSection('sem');
-  // Batch #3 (2026-07-07): three tier-only sections, same pattern as seo — each also
-  // mixes tiered items with 1-2 untiered "extra" items (sm-addl, em-addl/em-template,
-  // tlp-design) in the same table. Verified this combination works correctly via
-  // simulation before converting, since seo alone was purely tiered with no extras.
-  renderCatalogSection('sm');
-  renderCatalogSection('em');
-  renderCatalogSection('tlp');
-  // Batch #4 (2026-07-07): first COMBINED tier+spend sections. sma is the clean case
-  // (all 4 items tiered, all spend); td additionally exercises the just-closed
-  // modifier+spend scope boundary (td-offline is untiered but still needs a spend cell).
-  renderCatalogSection('td');
-  renderCatalogSection('sma');
-  // Batch #5 (2026-07-07): lt is structurally identical to td (tier+spend+one already-
-  // fixed untiered modifier) — straightforward. vid/ctv/audio all turned out to share a
-  // DIFFERENT structural complexity (4 separate sub-tables per section) not yet
-  // supported — queued together as their own extension, not converted here.
-  renderCatalogSection('lt');
-  // Batch #6 (2026-07-07): the multi-table extension — vid/ctv/audio each have 4
-  // separate sub-tables per section, using renderMultiTableSection() instead of
-  // renderCatalogSection(). Last three sections before Website.
-  renderMultiTableSection('vid');
-  renderMultiTableSection('ctv');
-  renderMultiTableSection('audio');
-  // Website — the last section, closed out 2026-07-07. Scope deliberately limited to
-  // tier logic Claire confirmed ready (see website_catalog_migration.sql header) —
-  // Modules/Content Support, hosting double-charge, and AI Chatbot exclusivity are
-  // intentionally parked for the AM review, not represented here.
-  renderCatalogSection('web-ot');
-  renderCatalogSection('web-mo');
+  // Build every section card from the `sections` table (2026-07-10 — replaces 17
+  // hand-typed <div class="card"> blocks and the explicit per-id render call list that
+  // used to follow), THEN generate each section's rows, THEN rewrite price/frequency
+  // cells from table data for all rows.
+  renderSectionCards();
+  renderAllSectionRows();
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
