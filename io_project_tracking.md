@@ -1561,6 +1561,25 @@ which is why they slipped off this doc — but several gate a real client-facing
   in a browser since the move (the pre-move version WAS confirmed working, per above) —
   worth Claire's usual local-serve smoke test again before this goes to the real domain,
   purely to rule out a path-resolution mistake, not because any logic changed.
+  **CONFIRMED LIVE, one real hosting wrinkle found (2026-07-10).** Claire merged both
+  extraction PRs to `main` herself to test directly on the live site (her established
+  testing method — nothing has been shared with clients/AEs yet, so this carries no real
+  risk). Deploy confirmed successful (`Deploy to io subdomain` GitHub Action, commit
+  `63055d2`, ran clean). Visiting `https://io.yourdigitalgroupresources.com/admin/`
+  (folder shorthand, no filename) incorrectly showed the PUBLIC FORM's own "Invalid Link"
+  error screen — NOT a bug in the extraction; the file is there and correct. ROOT CAUSE:
+  the live host apparently doesn't have "directory index" serving turned on for this path
+  (i.e., automatically serving `index.html` when a bare folder URL like `/admin/` is
+  requested) — that's a web-server SETTING, unrelated to the subdomain-vs-path decision;
+  it does NOT reintroduce any of the subdomain work (no new DNS/SSL/deploy-target needed).
+  CONFIRMED WORKING once Claire used the exact filename:
+  `https://io.yourdigitalgroupresources.com/admin/index.html`.
+  TWO WAYS TO HANDLE, not mutually exclusive: (1) always link to `/admin/index.html`
+  explicitly wherever the admin URL is shared/bookmarked — works today, zero server
+  changes; (2) ask whoever manages hosting to turn on directory-index serving for a
+  cleaner bare `/admin/` URL — worth raising with Claire's developer when the
+  Strategist/Accounting paths get built (same fix would apply to `/strategist`/
+  `/accounting` too), not urgent on its own.
 - **Spend minimums — wording vs. enforcement** — text says "recommended," disclaimers imply
   required, but only $0 is actually blocked. Decide hard requirement vs. guidance, then make
   wording, warnings, and submit-blocking all agree.
