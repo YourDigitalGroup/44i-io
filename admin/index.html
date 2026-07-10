@@ -926,12 +926,12 @@ function renderSuggestedMap() {
       // with dragging since they don't change each row's real relative order.
       const canDrag = isSuperAdmin && s.active && !search;
       const dragHandle = canDrag
-        ? `<span draggable="true" ondragstart="mapRowDragStart(event,'${esc(s.id)}','${esc(s.section)}')" style="cursor:grab;color:var(--muted);font-size:14px;user-select:none" title="Drag to reorder within this section">⠿</span>`
+        ? `<span draggable="true" ondragstart="mapRowDragStart(event,'${esc(s.id)}','${esc(s.section)}')" ondragend="mapRowDragEnd(event)" style="cursor:grab;color:var(--muted);font-size:14px;user-select:none" title="Drag to reorder within this section">⠿</span>`
         : '';
       const dragAttrs = canDrag
-        ? `ondragover="mapRowDragOver(event,'${esc(s.section)}')" ondrop="mapRowDrop(event,'${esc(s.id)}','${esc(s.section)}')"`
+        ? `ondragover="mapRowDragOver(event,'${esc(s.section)}')" ondragleave="mapRowDragLeave(event)" ondrop="mapRowDrop(event,'${esc(s.id)}','${esc(s.section)}')"`
         : '';
-      html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}" ${dragAttrs}>
+      html += `<tr data-row-id="${esc(s.id)}" style="border-bottom:1px solid var(--border);${rowStyle}" ${dragAttrs}>
         <td style="padding:8px 10px;text-align:center">${dragHandle}</td>
         <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(s.id)}</td>
         <td style="padding:8px 10px">${esc(s.label)}${inactiveBadge}</td>
@@ -961,11 +961,30 @@ function renderSuggestedMap() {
 // moving a service between sections is a deliberate action with its own path (the Edit
 // form), same reasoning as why Section can't be changed via a simple dropdown there.
 let dragSourceId = null;
+let dragOverRowEl = null;
+
+// Visual feedback while dragging: dim the row being dragged, and drop a highlight bar
+// above/below whichever row the cursor is currently over — without this, Claire noted
+// the drag looked like nothing was happening at all until you let go. Purely cosmetic;
+// none of this touches the reorder math below.
+function clearDragOverHighlight() {
+  if (dragOverRowEl) { dragOverRowEl.style.borderTop = ''; dragOverRowEl.style.borderBottom = ''; }
+  dragOverRowEl = null;
+}
 
 function mapRowDragStart(e, id) {
   dragSourceId = id;
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', id);
+  const tr = e.target.closest('tr');
+  if (tr) tr.style.opacity = '0.4';
+}
+
+function mapRowDragEnd(e) {
+  const tr = e.target.closest('tr');
+  if (tr) tr.style.opacity = '';
+  clearDragOverHighlight();
+  dragSourceId = null;
 }
 
 function mapRowDragOver(e, section) {
@@ -973,10 +992,19 @@ function mapRowDragOver(e, section) {
   if (!source || source.section !== section) return; // reject cross-section drops
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
+  const tr = e.currentTarget;
+  if (dragOverRowEl && dragOverRowEl !== tr) clearDragOverHighlight();
+  tr.style.borderTop = '2px solid var(--accent)';
+  dragOverRowEl = tr;
+}
+
+function mapRowDragLeave(e) {
+  if (e.currentTarget === dragOverRowEl) clearDragOverHighlight();
 }
 
 async function mapRowDrop(e, targetId, section) {
   e.preventDefault();
+  clearDragOverHighlight();
   const source = allServicesMap.find(s => s.id === dragSourceId);
   if (!source || source.section !== section || dragSourceId === targetId) return;
 
@@ -1000,6 +1028,13 @@ async function mapRowDrop(e, targetId, section) {
   });
   if (!updates.length) return;
 
+  // loadSuggestedMap() briefly swaps the table for a "Loading…" placeholder, which
+  // shrinks the page and makes the browser scroll to keep the (now-gone) content in
+  // view — reads as "it just jumped to the top" after every drop. Restore the scroll
+  // position once the real table is back in the DOM.
+  const scrollY = window.scrollY;
+  const restoreScroll = () => window.scrollTo(0, scrollY);
+
   try {
     for (const u of updates) {
       await sb('rpc/admin_save_service', {
@@ -1014,10 +1049,12 @@ async function mapRowDrop(e, targetId, section) {
     }
     showToast('Order updated!');
     await loadCatalog();
-    loadSuggestedMap();
+    await loadSuggestedMap();
+    restoreScroll();
   } catch (err) {
     showToast('Error saving new order: ' + err.message, 'error');
-    loadSuggestedMap();
+    await loadSuggestedMap();
+    restoreScroll();
   }
 }
 
