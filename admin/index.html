@@ -273,6 +273,17 @@
           </div>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
             <div>
+              <label class="lbl">Tier Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only for services that are one option within a tiered package group (Exclusivity Group above). Used to classify which package tier a client selected (e.g. "starter"/"builder"/"pro"). Leave blank for anything not part of a tier group.</span></label>
+              <select id="admin-svc-tier" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="">None</option>
+                <option value="starter">Starter</option>
+                <option value="builder">Builder</option>
+                <option value="pro">Pro</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
+            <div>
               <label class="lbl">Subsection <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Video/Streaming TV/Audio, which each have several mini-tables under one section (e.g. "YouTube Video", "Native Video"). Leave "None" for every other section.</span></label>
               <select id="admin-svc-subsection" onchange="onSubsectionChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
               <input type="text" id="admin-svc-subsection-new" placeholder="e.g. New Sub-Table Name" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
@@ -298,6 +309,10 @@
                 <option value="ecomm">E-Commerce / Custom</option>
               </select>
               <p style="font-size:10px;color:var(--muted);margin-top:4px">A fixed dropdown, not a pick-list — these 4 values are hardcoded to matching hosting packages/proration rules elsewhere in the form, so there's nothing new to create here.</p>
+            </div>
+            <div style="margin-top:12px">
+              <label class="lbl">Standalone Hosting Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only for site-tier packages with a Hosting Prompt above. The standalone hosting line item this package's "we host it" choice would otherwise double-charge for (e.g. w-hosting, w-ecomm-hosting). Leave blank for everything else.</span></label>
+              <input type="text" id="admin-svc-standalone-hosting" placeholder="e.g. w-hosting" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
@@ -2007,6 +2022,8 @@ function adminNewService() {
   document.getElementById('admin-svc-unit').value = '';
   document.getElementById('admin-svc-koc').value = 'none';
   document.getElementById('admin-svc-hosting-prompt').value = '';
+  document.getElementById('admin-svc-standalone-hosting').value = '';
+  document.getElementById('admin-svc-tier').value = '';
   populateServiceSectionDropdown(true, null);
   populateServiceIntakeDropdown(null);
   populateServiceExclusivityDropdown(null);
@@ -2051,6 +2068,8 @@ function adminEditService(id) {
   document.getElementById('admin-svc-fee-note').value = s.fee_note || '';
   document.getElementById('admin-svc-spend-min').value = s.spend_minimum ?? '';
   document.getElementById('admin-svc-hosting-prompt').value = s.hosting_prompt_type || '';
+  document.getElementById('admin-svc-standalone-hosting').value = s.standalone_hosting_service_id || '';
+  document.getElementById('admin-svc-tier').value = s.tier || '';
   populateServiceSectionDropdown(false, s.section);
   populateServiceIntakeDropdown(s.intake_form_id);
   populateServiceExclusivityDropdown(s.exclusivity_group);
@@ -2170,6 +2189,8 @@ async function adminSaveService() {
     spend_minimum: spendMinimumFinal,
     subsection_label: subsectionLabelVal,
     hosting_prompt_type: document.getElementById('admin-svc-hosting-prompt').value || null,
+    standalone_hosting_service_id: document.getElementById('admin-svc-standalone-hosting').value.trim() || null,
+    tier: document.getElementById('admin-svc-tier').value || null,
     pricing_group: pricingGroupVal,
   };
   if (isNew) {

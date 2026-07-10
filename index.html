@@ -875,41 +875,52 @@ function getSlug() {
 }
 
 // ── HOSTING PRORATION ─────────────────────────────────────────
-const HOSTING_CFG = {
-  '1p':    { days:10,  fee:450, label:'$450 — 1-page' },
-  '5p':    { days:30,  fee:450, label:'$450 — 5-page' },
-  '10p':   { days:60,  fee:450, label:'$450 — 10-page' },
-  'ecomm': { days:60,  fee:750, label:'$750 — E-Commerce' },
-};
+// Proration DAYS-from-IO-date and the page-type's display wording are tied to
+// hosting_prompt_type, which is itself a small closed set by explicit design (see the
+// "fixed dropdown, not a pick-list" note in the admin editor) — not per-service catalog
+// data, so these two stay as plain config rather than new DB columns. The FEE, however,
+// used to be a separate hardcoded dollar figure that could silently drift from the real
+// price if the standalone hosting service's price ever changed in the Services editor —
+// that part now reads the live price via HOSTING_LOCK_MAP + CATALOG_ROWS (2026-07-10).
+const HOSTING_PRORATION_DAYS = { '1p':10, '5p':30, '10p':60, 'ecomm':60 };
+const HOSTING_PAGE_TYPE_LABELS = { '1p':'1-page', '5p':'5-page', '10p':'10-page', 'ecomm':'E-Commerce' };
 
-function calcProration(pageType, ioDateStr) {
-  const cfg = HOSTING_CFG[pageType];
-  if (!cfg) return null;
+function standaloneHostingFee(serviceId) {
+  const standaloneId = HOSTING_LOCK_MAP[serviceId];
+  return standaloneId ? Number(CATALOG_ROWS[standaloneId]?.default_price ?? 0) : 0;
+}
+
+function calcProration(pageType, ioDateStr, serviceId) {
+  const days = HOSTING_PRORATION_DAYS[pageType];
+  if (days == null) return null;
+  const fee = standaloneHostingFee(serviceId || currentHostingServiceId);
   const ioDate = ioDateStr ? new Date(ioDateStr + 'T12:00:00') : new Date();
   const startDate = new Date(ioDate);
-  startDate.setDate(startDate.getDate() + cfg.days);
+  startDate.setDate(startDate.getDate() + days);
   const yearEnd = new Date(startDate.getFullYear(), 11, 31);
   const daysRemaining = Math.ceil((yearEnd - startDate) / 86400000) + 1;
-  const proratedAmt = Math.round((cfg.fee * daysRemaining / 365) * 100) / 100;
+  const proratedAmt = Math.round((fee * daysRemaining / 365) * 100) / 100;
   const fmtDate = startDate.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
   return {
-    fee: cfg.fee, days: cfg.days, proratedAmt, daysRemaining, startDate: fmtDate,
-    note: `Hosting starts ${fmtDate} (${cfg.days} days from IO). Prorated: $${proratedAmt.toFixed(2)} (${daysRemaining} days remaining in year)`
+    fee, days, proratedAmt, daysRemaining, startDate: fmtDate,
+    note: `Hosting starts ${fmtDate} (${days} days from IO). Prorated: $${proratedAmt.toFixed(2)} (${daysRemaining} days remaining in year)`
   };
 }
 
 function promptHosting(serviceId, pageType) {
   currentHostingServiceId = serviceId;
   currentHostingPageType = pageType;
-  const cfg = HOSTING_CFG[pageType];
-  document.getElementById('hosting-modal-product').textContent = cfg ? cfg.label : serviceId;
+  const fee = standaloneHostingFee(serviceId);
+  const days = HOSTING_PRORATION_DAYS[pageType];
+  const typeLabel = HOSTING_PAGE_TYPE_LABELS[pageType] || serviceId;
+  document.getElementById('hosting-modal-product').textContent = `${fmt(fee)} — ${typeLabel}`;
   document.querySelectorAll('input[name="hosting-choice"]').forEach(r => r.checked = false);
   document.getElementById('hosting-package-section').style.display = 'none';
   document.getElementById('hosting-prorate-preview').style.display = 'none';
   const pkgEl = document.getElementById('hosting-package-options');
   pkgEl.innerHTML = pageType === 'ecomm'
-    ? `<label><input type="radio" name="hosting-pkg" value="ecomm" onchange="onHostingPkgChange('ecomm')"/> $750 E-Commerce Hosting (60-day start)</label>`
-    : `<label><input type="radio" name="hosting-pkg" value="${pageType}" onchange="onHostingPkgChange('${pageType}')"/> $450 Standard Hosting (${HOSTING_CFG[pageType]?.days}-day start)</label>`;
+    ? `<label><input type="radio" name="hosting-pkg" value="ecomm" onchange="onHostingPkgChange('ecomm')"/> ${fmt(fee)} E-Commerce Hosting (${days}-day start)</label>`
+    : `<label><input type="radio" name="hosting-pkg" value="${pageType}" onchange="onHostingPkgChange('${pageType}')"/> ${fmt(fee)} Standard Hosting (${days}-day start)</label>`;
   document.getElementById('hosting-modal').style.display = 'flex';
 }
 
@@ -920,7 +931,7 @@ function onHostingChoiceChange(val) {
 
 function onHostingPkgChange(pkgType) {
   const ioDate = document.getElementById('io-date').value;
-  const result = calcProration(pkgType, ioDate);
+  const result = calcProration(pkgType, ioDate, currentHostingServiceId);
   const el = document.getElementById('hosting-prorate-preview');
   if (result) {
     el.innerHTML = `<strong>Prorated Hosting: $${result.proratedAmt.toFixed(2)}</strong> ${result.note}`;
@@ -934,7 +945,7 @@ function saveHostingChoice() {
   if (choiceEl.value === 'us') {
     const pkgEl = document.querySelector('input[name="hosting-pkg"]:checked');
     if (!pkgEl) { showToast('Please select a hosting package', 'error'); return; }
-    const result = calcProration(pkgEl.value, document.getElementById('io-date').value);
+    const result = calcProration(pkgEl.value, document.getElementById('io-date').value, currentHostingServiceId);
     hostingChoices[currentHostingServiceId] = { choice:'us', package:pkgEl.value, ...result };
     if (selected[currentHostingServiceId]) selected[currentHostingServiceId].hosting_note = result.note;
     showToast(`Hosting added — prorated $${result.proratedAmt.toFixed(2)}`);
@@ -1901,9 +1912,27 @@ function updateQty(input, id) {
 // fixes that for good, since the group membership is derived fresh every catalog load.
 let RADIO_GROUPS = {};
 
-// Website OTO tiers and MRR tiers — mutually exclusive
-const WEB_OTO = ['w-bs','w-bb','w-bp','w-custom'];
-const WEB_MRR = ['wm-1p','wm-5p','wm-10p','wm-ecomm'];
+// Website OTO tiers and MRR tiers — mutually exclusive. Populated by loadCatalog()
+// from the live exclusivity_group each tier already carries (the same mechanism that
+// drives their own single-select radio behavior within their section) — was a frozen
+// hardcoded id list before 2026-07-10, which meant a newly-added 5th tier would render
+// correctly but never actually trigger the cross-section lock against the opposite
+// section, the same class of bug RADIO_GROUPS itself was built to fix.
+let WEB_OTO = [];
+let WEB_MRR = [];
+
+// Returns the `tier` value (e.g. 'starter'/'builder'/'pro') of whichever service is
+// currently selected within anchorId's own exclusivity group, or 'starter' if none is
+// selected — a data-driven replacement for hardcoded per-id tier checks like
+// `if (selected['sm-bp']) tier = 'pro'`. New tiers added to the same group later (or a
+// renamed id) are picked up automatically since nothing here names a specific id except
+// the anchor used purely to find the right group.
+function tierOfSelected(anchorId) {
+  const groupName = CATALOG_ROWS[anchorId]?.exclusivity_group;
+  const memberIds = groupName ? (RADIO_GROUPS[groupName] || []) : [anchorId];
+  const selectedId = memberIds.find(id => selected[id]);
+  return selectedId ? (CATALOG_ROWS[selectedId]?.tier || 'starter') : 'starter';
+}
 
 function toggleSingle(cb, id, groupName) {
   const groupIds = RADIO_GROUPS[groupName] || [];
@@ -1939,20 +1968,15 @@ function toggleSingle(cb, id, groupName) {
 
 // Disable/enable an entire website section (OTO or MRR)
 // ── STANDALONE HOSTING DOUBLE-CHARGE PREVENTION (2026-07-07) ───────────────
-// If the AE has already chosen "we host" via the modal for one of the 4 site tiers,
-// the matching STANDALONE hosting fee item is locked (grayed + auto-unchecked if
-// already selected) — charging it separately would double-bill for the same hosting.
-// Deliberately scoped to exactly these 4 pairs, not a general mechanism — this is a
-// one-off relationship specific to these items, same as the existing WEB_OTO/WEB_MRR
-// cross-section lockout, not a pattern expected to repeat elsewhere in the catalog.
-// ADA hosting is deliberately excluded — none of the 4 tiers' modals ever offer it, so
-// there's no double-charge risk for that item (Claire's call).
-const HOSTING_LOCK_MAP = {
-  'w-bs':     'w-hosting',
-  'w-bb':     'w-hosting',
-  'w-bp':     'w-hosting',
-  'w-custom': 'w-ecomm-hosting',
-};
+// If the AE has already chosen "we host" via the modal for one of the site tiers, the
+// matching STANDALONE hosting fee item is locked (grayed + auto-unchecked if already
+// selected) — charging it separately would double-bill for the same hosting. Populated
+// by loadCatalog() from each tier's own `standalone_hosting_service_id` column (2026-07-10)
+// — was a hardcoded 4-pair map before, meaning a 5th tier (or a hosting-id rename) would
+// need a code change to participate in this lock at all. ADA hosting is deliberately
+// excluded — none of the tiers' modals ever offer it, so there's no double-charge risk
+// for that item (Claire's call).
+let HOSTING_LOCK_MAP = {};
 
 function updateStandaloneHostingLocks() {
   const shouldLock = new Set();
@@ -2402,10 +2426,9 @@ async function submitIO() {
       }
     }
 
-    // Determine tier from social media selection
-    let tier = 'starter';
-    if (selected['sm-bp']) tier = 'pro';
-    else if (selected['sm-bb']) tier = 'builder';
+    // Determine tier from social media selection — data-driven off each tier
+    // service's own `tier` column now, not a hardcoded id check (see tierOfSelected()).
+    let tier = tierOfSelected('sm-bp');
 
     // Determine workflows triggered
     const workflows = new Set(Object.values(selected).filter(s=>s.workflow).map(s=>s.workflow));
@@ -3911,6 +3934,25 @@ async function loadCatalog() {
   });
   RADIO_GROUPS = rg;
   SPEND_MINIMUMS = sm;
+
+  // WEB_OTO/WEB_MRR: whichever exclusivity group the known anchor tier currently
+  // belongs to — NOT a hardcoded id list. If a tier is ever added to (or removed from)
+  // that same group via the admin editor, it's automatically included here with no
+  // code change, same fix RADIO_GROUPS itself already got. Falls back to an empty
+  // array (cross-section lock simply never triggers) if either anchor is ever
+  // deactivated/renamed, rather than throwing.
+  const otoGroup = CATALOG_ROWS['w-bs']?.exclusivity_group;
+  const mrrGroup = CATALOG_ROWS['wm-1p']?.exclusivity_group;
+  WEB_OTO = otoGroup ? (RADIO_GROUPS[otoGroup] || []) : [];
+  WEB_MRR = mrrGroup ? (RADIO_GROUPS[mrrGroup] || []) : [];
+
+  // HOSTING_LOCK_MAP: any service carrying a standalone_hosting_service_id — see the
+  // comment above its declaration for why this replaced a hardcoded 4-pair map.
+  const hlm = {};
+  services.forEach(r => {
+    if (r.standalone_hosting_service_id) hlm[r.id] = r.standalone_hosting_service_id;
+  });
+  HOSTING_LOCK_MAP = hlm;
 
   console.log(`[Catalog] Loaded ${Object.keys(SERVICE_DATA).length} services, ${Object.keys(INTAKE_FORMS).length} intake forms from Supabase.`);
 }
