@@ -786,6 +786,7 @@ function renderSuggestedMap() {
 
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;width:24px"></th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">ID</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
       <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Standard Price</th>
@@ -797,7 +798,7 @@ function renderSuggestedMap() {
     </tr></thead><tbody>`;
 
   Object.keys(bySection).forEach(sec => {
-    html += `<tr><td colspan="8" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(MAP_SECTION_LABELS[sec] || sec)}</td></tr>`;
+    html += `<tr><td colspan="9" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(MAP_SECTION_LABELS[sec] || sec)}</td></tr>`;
     bySection[sec].forEach(s => {
       const inactive = !s.active;
       const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
@@ -835,7 +836,21 @@ function renderSuggestedMap() {
       const editBtn = isSuperAdmin
         ? `<button onclick="adminEditService('${esc(s.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
         : '';
-      html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      // Drag-and-drop reorder: only offered when it would actually mean something — super
+      // admin only (matches Edit's own gating), active rows only (inactive rows don't
+      // participate in the live form's ordering at all), and never while a search filter
+      // is active (search hides sibling rows, breaking the true section-band adjacency
+      // the reorder math depends on). Section/show-inactive filters are fine to combine
+      // with dragging since they don't change each row's real relative order.
+      const canDrag = isSuperAdmin && s.active && !search;
+      const dragHandle = canDrag
+        ? `<span draggable="true" ondragstart="mapRowDragStart(event,'${esc(s.id)}','${esc(s.section)}')" style="cursor:grab;color:var(--muted);font-size:14px;user-select:none" title="Drag to reorder within this section">⠿</span>`
+        : '';
+      const dragAttrs = canDrag
+        ? `ondragover="mapRowDragOver(event,'${esc(s.section)}')" ondrop="mapRowDrop(event,'${esc(s.id)}','${esc(s.section)}')"`
+        : '';
+      html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}" ${dragAttrs}>
+        <td style="padding:8px 10px;text-align:center">${dragHandle}</td>
         <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(s.id)}</td>
         <td style="padding:8px 10px">${esc(s.label)}${inactiveBadge}</td>
         <td style="padding:8px 10px;text-align:right;font-weight:600">${fmtPrice(s)}</td>
@@ -853,6 +868,75 @@ function renderSuggestedMap() {
   html += `</tbody></table>
     <p style="margin-top:12px;font-size:11px;color:var(--muted);text-align:right">${rows.length} service${rows.length!==1?'s':''} shown${showInactive ? '' : ' (active only)'}</p>`;
   el.innerHTML = html;
+}
+
+// ── SUGGESTED MAP: DRAG-AND-DROP REORDER ────────────────────────
+// Lets a super-admin reorder services within a section without typing sort_order numbers.
+// Reuses the EXISTING sort_order column and admin_save_service RPC — this is purely a
+// nicer UI for a field that was already editable one number at a time, not a new
+// capability. Deliberately constrained to within the same section band: dragging a
+// service into a DIFFERENT section isn't offered at all (see canDrag/dragAttrs above) —
+// moving a service between sections is a deliberate action with its own path (the Edit
+// form), same reasoning as why Section can't be changed via a simple dropdown there.
+let dragSourceId = null;
+
+function mapRowDragStart(e, id) {
+  dragSourceId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', id);
+}
+
+function mapRowDragOver(e, section) {
+  const source = allServicesMap.find(s => s.id === dragSourceId);
+  if (!source || source.section !== section) return; // reject cross-section drops
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+async function mapRowDrop(e, targetId, section) {
+  e.preventDefault();
+  const source = allServicesMap.find(s => s.id === dragSourceId);
+  if (!source || source.section !== section || dragSourceId === targetId) return;
+
+  // Reorder within this section's current active rows, in their existing sort_order.
+  const sectionRows = allServicesMap
+    .filter(s => s.section === section && s.active)
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const fromIdx = sectionRows.findIndex(s => s.id === dragSourceId);
+  const toIdx = sectionRows.findIndex(s => s.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = sectionRows.splice(fromIdx, 1);
+  sectionRows.splice(toIdx, 0, moved);
+
+  // Recompute sort_order sequentially by 10s (leaves room for a manual in-between value
+  // later); only save rows whose value actually changed, to keep this to the minimum
+  // number of RPC calls.
+  const updates = [];
+  sectionRows.forEach((s, i) => {
+    const newOrder = (i + 1) * 10;
+    if (s.sort_order !== newOrder) updates.push({ id: s.id, sort_order: newOrder });
+  });
+  if (!updates.length) return;
+
+  try {
+    for (const u of updates) {
+      await sb('rpc/admin_save_service', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '',
+          p_pw: currentAdminUser?.pw || '',
+          p_service_id: u.id,
+          p_data: { sort_order: u.sort_order }
+        })
+      });
+    }
+    showToast('Order updated!');
+    await loadCatalog();
+    loadSuggestedMap();
+  } catch (err) {
+    showToast('Error saving new order: ' + err.message, 'error');
+    loadSuggestedMap();
+  }
 }
 
 // ── SERVICE CREATE / EDIT / DEACTIVATE ─────────────────────────

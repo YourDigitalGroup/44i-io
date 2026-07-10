@@ -2023,6 +2023,54 @@ the actual code before writing this down:
 Both parked for whenever there's time/priority — worth revisiting once the `index.html`
 cleanup and Trello work are further along, per Claire's own prioritization.
 
+**Drag-and-drop reorder — BUILT + VERIFIED (2026-07-10), same day, once the `index.html`
+cleanup and pricing pass wrapped up.** Claire confirmed she wants the full
+section-management feature too (not just reordering) — logic: same reasoning as the rest
+of this project, get things out of code and into Supabase/admin screens. Given the size of
+full section management (comparable to the original services-table migration), sequenced
+into stages: this reorder feature first (small, self-contained, reuses existing
+`sort_order` + `admin_save_service` — no schema or RPC changes), then the sections-table
+foundation, verified on its own before any admin UI is built on top of it (see the two
+entries below for that work).
+BUILT: `admin/index.html`'s `renderSuggestedMap()` — a drag-handle (⠿) on each row,
+`draggable="true"`, wired to `mapRowDragStart()`/`mapRowDragOver()`/`mapRowDrop()`. Drop is
+constrained to WITHIN the same section band — cross-section drops are rejected outright,
+matching the existing principle that changing which section a service belongs to needs a
+deliberate action (the Edit form), not something drag should do silently. Drag handles are
+hidden whenever a search filter is active (search hides sibling rows, which would break
+the true adjacency the reorder math depends on) and for inactive rows (they don't
+participate in the live form's ordering at all) — same super-admin-only gating as the
+existing Edit button. On drop: recomputes `sort_order` sequentially by 10s for that
+section's active rows in their new order, saves only the rows whose value actually
+changed (minimizes RPC calls) via the EXISTING `admin_save_service` RPC — zero schema or
+backend changes needed for this feature.
+VERIFIED via simulation, 7 cases: dragging the last item to the front correctly bumps
+every sibling's order; a deactivated service in the same section is correctly excluded
+from the reorder entirely (never touched); a cross-section drop attempt is correctly
+rejected; dropping a row on itself is a correct no-op; only genuinely-changed rows are
+included in the update batch. `node --check` passes; zero dangling DOM/handler references
+(same completeness check used for every prior admin-editor addition).
+
+**Sections table + dynamic public-form rendering — NOT YET STARTED, next up.** The
+foundation for full section management: a new `sections` table (id, label, icon,
+sort_order, render_type, header_note, active), a one-time data migration snapshotting
+today's 17 hardcoded sections exactly as they are (zero visual change on day one), and
+replacing `index.html`'s 17 hand-typed `<div class="card">` blocks with one generic
+template stamped out from that table at startup. Explicitly the highest-risk piece of this
+whole feature — it touches how the ENTIRE public form assembles itself. Gets its own full
+visual verification pass (Claire confirming every section renders identically in a real
+browser) BEFORE the admin UI (below) is built on top of it — not bundled into one change.
+
+**Sections admin tab — NOT YET STARTED, blocked on the foundation above being confirmed
+first.** New "Sections" tab in `admin/index.html`: same drag-to-reorder pattern as
+services, an edit form (label/icon/header note/render type), and "+ New Section" (creates
+a new, initially-empty section — services get added to it afterward through the existing
+Services editor). Needs a new `admin_save_section` RPC (written fresh, no prior version to
+diff against this time) and converting `MAP_SECTION_LABELS`/`SAFE_DYNAMIC_SECTIONS`
+(currently their own hardcoded lists in `admin/index.html`) to derive from the new
+`sections` table instead — same "stop hardcoding, derive from data" pattern as everything
+else in this project.
+
 ---
 
 ## LATER PHASES (not now)
