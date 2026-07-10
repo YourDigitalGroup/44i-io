@@ -3821,7 +3821,15 @@ function rowToServiceData(r) {
   // a clear "Quote Upon Request" note instead of a bare, confusing $0/blank for w-custom,
   // em-bp-30kp, tlp-custom. Doesn't touch the totals math at all — a QUR item still
   // correctly contributes $0 to the running total until it's actually priced.
-  out.is_qur = r.default_price == null;
+  // FIXED (2026-07-10, found live by Claire): only flat/per_unit services actually use
+  // default_price as their real price field — spend items (rate lives in retail_cpm) and
+  // modifier items (rate lives in modifier_amount) ALWAYS have a null default_price BY
+  // DESIGN, so the unconditional check above was flagging every spend/modifier service
+  // as QUR, replacing their real computed dollar amount with "Quote Upon Request" on the
+  // Review page and — more seriously — on the printed IO itself (caught testing Location
+  // Targeting — Geofencing, a $15 CPM item, showing QUR instead of its rate).
+  const priceableMode = (r.pricing_mode || 'flat') === 'flat' || (r.pricing_mode || 'flat') === 'per_unit';
+  out.is_qur = priceableMode && r.default_price == null;
   if (r.workflow) out.workflow = r.workflow;
   // FIXED (2026-07-07, per Claire): modifier items (offline tracking, etc.) are a
   // straight MONTHLY add-on to the total — NOT a CPM-rate adjustment, and NOT something
