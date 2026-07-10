@@ -857,6 +857,8 @@ function adminSection(section) {
     // server-side regardless of what the UI shows.
     const newBtn = document.getElementById('admin-new-service-btn');
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    const hostingBtn = document.getElementById('admin-hosting-settings-btn');
+    if (hostingBtn) hostingBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadSuggestedMap();
   } else if (section === 'sections') {
     // Same restriction level as Suggested Map — section layout is a super-admin-only
@@ -913,6 +915,14 @@ function sectionLabel(id) {
 let HOSTING_SETTINGS_ROWS = [];
 
 async function toggleHostingSettings() {
+  // Defense in depth: the button that calls this is already hidden for AM-tier (see
+  // adminSection), and adminSaveHostingSettings() hard-blocks the save regardless — but
+  // guard the function directly too, same as adminNewService() does, so there's no path
+  // that opens this panel for an AM login even if triggered some other way.
+  if (currentAdminUser?.role === 'am') {
+    showToast('Hosting settings are restricted to super admins', 'error');
+    return;
+  }
   const panel = document.getElementById('admin-hosting-settings');
   const opening = panel.style.display === 'none';
   panel.style.display = opening ? 'block' : 'none';
