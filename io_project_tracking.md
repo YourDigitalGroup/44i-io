@@ -583,6 +583,116 @@ form-edit pass or pre-launch audit.
   into one declaration carrying both sets of properties; re-ran the full duplicate-
   selector scan across the entire stylesheet afterward and confirmed zero remain anywhere
   in the file, not just this one instance.
+- **NEW GAP FOUND, same shape as above but NOT yet fixed: `PRICEABLE_SERVICES` doesn't
+  auto-include new services in Custom Pricing at all (2026-07-10).** Claire asked
+  directly: if a new service is added via the Suggested Map/Services admin screen, does
+  it automatically become available to price-override per group in Custom Pricing? NO —
+  checked the actual code (not assumed): `PRICEABLE_SERVICES` is its own separate
+  hardcoded list (distinct from the price-drift fix above, which only fixed the
+  PLACEHOLDER VALUES shown for services already on the list — it never made the LIST
+  ITSELF dynamic). A brand-new service needs someone to manually add it to this array in
+  the code before an AM/super-admin can set a custom price for it per group. Same
+  underlying shape as the already-fixed `RADIO_GROUPS`/`SPEND_MINIMUMS` staleness bug, but
+  NOT automatically covered by that fix since this is a completely separate list.
+  GENUINE DESIGN QUESTION before this can be fixed the same way: `PRICEABLE_SERVICES`'
+  whole reason for existing is a deliberately hand-curated admin-friendly grouping that
+  doesn't match the catalog's own `section` field (e.g. "Visitor IDs" bundles items from
+  BOTH `web-ot` and `web-mo`) — making it auto-populate from the catalog needs a decision
+  on where a brand-new service lands by default (most likely its own catalog section) vs.
+  preserving the ability to hand-place items into a cross-section bundle like Visitor IDs.
+  Flagged to Claire directly; NOT fixed yet, awaiting her call on which of those two she
+  wants before writing it. IMPORTANT: this does NOT affect what price a CLIENT sees — the
+  base/standard price still renders correctly for any new service with zero admin action
+  (confirmed separately, see the "service catalog vs. price overrides" answer given
+  2026-07-10) — this gap is scoped ONLY to whether a group-specific override can be set
+  for that new service without a code change.
+  **FIXED 2026-07-10, ahead of Claire's Monday leadership meeting.** Scope decision made
+  with Claire first (via direct question, not assumed): fix covers the same 10
+  flat-fee/per-unit sections `PRICEABLE_SERVICES` already covered (Website, TLP, SEO,
+  Social Media Management, Email, Reputation/Listings/GBP, À La Carte). Extending this to
+  the ad-spend/CPM-rate sections (Targeted Display, SEM, Social Ads, Location Targeting,
+  Video, Streaming TV, Audio) was explicitly asked about and deliberately DEFERRED — those
+  services don't have a flat price to override, they have a RATE multiplied by AE-typed
+  spend, and the actual override-application mechanism (`applyCustomPricing()`) has no
+  concept of overriding a rate today. Extending there means new logic in the same
+  functions that calculate every dollar total on the live form
+  (`buildReview()`/`submitIO()`/`printIO()`) — correctly treated as a separate, carefully
+  designed follow-up rather than rushed in under a deadline. Logged as a new, explicit
+  open item below ("Custom Pricing for ad-spend/CPM services — deferred").
+  ROOT DESIGN: new nullable `pricing_group` column on `services`. When set, it's the
+  literal display-heading text Custom Pricing groups the service under (same
+  "store-the-literal-label" precedent as `subsection_label`, not a slug needing a lookup
+  table). When null (the default for a normal new service), the group falls back to that
+  service's own catalog section label (`MAP_SECTION_LABELS`) — meaning **any new
+  flat/per-unit service now auto-appears in Custom Pricing with zero admin action**, which
+  was the entire point. The two genuinely cross-cutting cases — "Visitor IDs" (spans
+  `web-ot` + `web-mo`) and "Hosting Fees" (a hand-picked subset of `web-ot`) — get
+  `pricing_group` set explicitly via a one-time SQL migration
+  (`add_pricing_group_column.sql`, given to Claire to run — no direct Supabase access from
+  here), preserving today's exact grouping. Any FUTURE special bundle is now a data edit
+  through the write-side Services editor, not a code change — same principle as
+  `exclusivity_group`.
+  BUILT: `PRICEABLE_SERVICES` changed from a hardcoded `const` (12 hand-typed sections,
+  ~80 lines) to a `let`, rebuilt inside `loadCatalog()` alongside `RADIO_GROUPS`/
+  `SPEND_MINIMUMS` — filtered to `pricing_mode` flat/per_unit with a non-null
+  `default_price` (reproduces today's exact 10-section inclusion set; naturally excludes
+  ad-spend, modifier add-ons, and QUR items with no code needed to encode those
+  exclusions separately). `item.field` (only controls the "/mo" suffix shown next to the
+  override box — confirmed NOT used to decide which field `applyCustomPricing()` actually
+  overwrites, that's independent) is now derived from `billing_type`. Also removed the
+  now-fully-obsolete `.default` fallback value and its explanatory comment (every entry is
+  now always a live catalog row by construction — no more "removed from catalog but not
+  from this list" case to guard against).
+  **REAL BUG CAUGHT DURING TESTING, before this ever reached Claire:** my first version
+  derived the "/mo" suffix as `billing_type === 'one_time' ? 'fee' : 'recurring'` — this
+  is the SAME rule `rowToServiceData()` already uses for the real fee/recurring total
+  calculation, so I assumed it was also right for the display suffix. It isn't: a
+  YEARLY-billed item (the 3 Hosting Fees rows) is correctly stored in `.recurring` for
+  totals purposes, but showing "/mo" next to an annual price would be actively misleading.
+  Caught by simulating a yearly item and checking the output, not by inspection alone —
+  fixed to `billing_type === 'monthly' ? 'recurring' : 'fee'`, which only affects the
+  cosmetic suffix, matching every one of the original hardcoded entries exactly.
+  Write-side editor: new "Pricing Group" field on the admin Service form, mirroring the
+  `exclusivity_group` pick-list-plus-create-new pattern exactly (global across sections,
+  same as Exclusivity Group, not section-scoped like Subsection) — a typo picking from a
+  list can't silently create a duplicate near-identical heading. No auto-suggest (unlike
+  Exclusivity Group's "{section}-tier" convention) since there's no equivalent naming
+  convention for a display heading. Wired into `adminNewService()`/`adminEditService()`/
+  `adminSaveService()`.
+  **STILL NEEDED, blocking full completion:** the `admin_save_service` RPC itself needs a
+  new version reading/writing `pricing_group` (case-when-present pattern, matching how
+  `exclusivity_group` is handled server-side) — but its live SQL definition isn't checked
+  into this repo (confirmed: none of the earlier `admin_save_service_*` versions ever
+  were), so writing an exact, safe `CREATE OR REPLACE` needs Claire to pull the current
+  definition from Supabase first. Until that RPC is updated, saving a service with a
+  Pricing Group set will save everything else correctly but silently NOT persist the
+  Pricing Group value server-side (the front-end sends it; the RPC just won't read it yet).
+  VERIFIED via simulation (not live Supabase — flagged honestly): the corrected
+  derivation logic against synthetic data covering a normal flat item, a per-unit item,
+  Visitor-ID-tagged items from BOTH `web-ot` and `web-mo` (confirms cross-section
+  bundling), a Hosting-Fees-tagged item (confirms subset carve-out), a plain `web-ot` item
+  with no `pricing_group` (confirms it lands under its own section, not pulled into
+  Hosting Fees), a QUR item / spend-mode item / modifier item (all confirmed still
+  excluded), a yearly-billed item (confirms correct "no /mo suffix" fix), and — the actual
+  bug scenario — a brand-new mock service with no `pricing_group` set, confirming it
+  appears automatically with zero code change; separately simulated the write-side
+  editor's dropdown dedup/current-value/orphaned-value handling and the save-validation
+  logic (blocks on blank create-new, correctly saves null for "None"). `node --check`
+  passes on the modified script block.
+  ONE DATA ITEM TO VERIFY, flagged rather than guessed: `alc-media` ("Traditional Media
+  Buying & Consultation") had `default:0` in the old hardcoded list — its real
+  `default_price` in Supabase needs to actually be `0` (not `null`) for it to keep
+  appearing here, since the new filter excludes null prices. Worth a quick check in the
+  Suggested Map when Claire runs the migration.
+  NEXT: Claire runs `add_pricing_group_column.sql`; shares the current `admin_save_service`
+  definition so the RPC update can be written safely; then does one real save-with-a-
+  Pricing-Group test in the admin UI.
+- **Custom Pricing for ad-spend/CPM services — deferred, scoped as its own follow-up
+  (2026-07-10).** Explicitly out of scope for the fix above (see that entry for why).
+  Needs its own design pass on what "custom price" even means for a CPM/CPC rate (override
+  the rate itself? a flat add-on instead?) and new logic in `buildReview()`/`submitIO()`/
+  `printIO()`, the money-total calculators — deliberately not something to guess at or
+  rush.
 - **Dev picker reachable on the LIVE production domain by accident — FIXED, real safety
   gap closed (2026-07-08).** Came up while mapping the admin-portal/URL split (see below):
   Claire asked what happens if someone's group link loses its slug — could they land on
@@ -1561,13 +1671,40 @@ which is why they slipped off this doc — but several gate a real client-facing
   in a browser since the move (the pre-move version WAS confirmed working, per above) —
   worth Claire's usual local-serve smoke test again before this goes to the real domain,
   purely to rule out a path-resolution mistake, not because any logic changed.
+  **CONFIRMED LIVE, one real hosting wrinkle found (2026-07-10).** Claire merged both
+  extraction PRs to `main` herself to test directly on the live site (her established
+  testing method — nothing has been shared with clients/AEs yet, so this carries no real
+  risk). Deploy confirmed successful (`Deploy to io subdomain` GitHub Action, commit
+  `63055d2`, ran clean). Visiting `https://io.yourdigitalgroupresources.com/admin/`
+  (folder shorthand, no filename) incorrectly showed the PUBLIC FORM's own "Invalid Link"
+  error screen — NOT a bug in the extraction; the file is there and correct. ROOT CAUSE:
+  the live host apparently doesn't have "directory index" serving turned on for this path
+  (i.e., automatically serving `index.html` when a bare folder URL like `/admin/` is
+  requested) — that's a web-server SETTING, unrelated to the subdomain-vs-path decision;
+  it does NOT reintroduce any of the subdomain work (no new DNS/SSL/deploy-target needed).
+  CONFIRMED WORKING once Claire used the exact filename:
+  `https://io.yourdigitalgroupresources.com/admin/index.html`.
+  TWO WAYS TO HANDLE, not mutually exclusive: (1) always link to `/admin/index.html`
+  explicitly wherever the admin URL is shared/bookmarked — works today, zero server
+  changes; (2) ask whoever manages hosting to turn on directory-index serving for a
+  cleaner bare `/admin/` URL — worth raising with Claire's developer when the
+  Strategist/Accounting paths get built (same fix would apply to `/strategist`/
+  `/accounting` too), not urgent on its own.
 - **Spend minimums — wording vs. enforcement** — text says "recommended," disclaimers imply
   required, but only $0 is actually blocked. Decide hard requirement vs. guidance, then make
   wording, warnings, and submit-blocking all agree.
 - **Auto-check a service when a spend is typed** — entering spend in an unchecked row
   currently doesn't count it. Auto-check on input so spend can't silently fail to register.
   (Tier-A correctness item from the rollout plan.)
-- **Campaign length required?** — selector offers 3/6/12 only; not currently required.
+- **Campaign length required?** — not currently required (still open).
+  **Dropdown options updated 2026-07-10** (Claire's request, ahead of her Monday
+  leadership meeting): options changed from 3/6/12 to **1/2/3/6/12 months**, for faster
+  quick-select on shorter campaigns. Confirmed via code inspection (not just this edit)
+  that the End Date field is a normal, unlocked `<input type="date">` — `calcEndDate()`
+  only auto-fills it when Start Date or the Length dropdown changes, so an AE can freely
+  type/pick a custom end date afterward and it holds. Purely an HTML options-list edit;
+  no JS touched. Verified: `node --check` on the main script block still passes; the five
+  new option values render correctly in the file.
 - **Per-service start/end dates** — one date set today covers the whole order; per-service
   is a structural change. Confirm it's actually needed.
 - **Multi-select in ad categories** — Targeted Display and Social Ads are single-select;
