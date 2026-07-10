@@ -787,6 +787,41 @@ form-edit pass or pre-launch audit.
   the rate itself? a flat add-on instead?) and new logic in `buildReview()`/`submitIO()`/
   `printIO()`, the money-total calculators — deliberately not something to guess at or
   rush.
+- **REAL BUG FOUND LIVE by Claire, FIXED (2026-07-10): "Next: Review & Submit" became
+  permanently stuck — no error, no visible reaction, just silently unresponsive — the
+  moment a specific leftover test service was selected.** Genuinely hard to track down:
+  no console errors, no red field highlights, nothing visibly wrong to point at. Reported
+  right after the sections-table rewrite landed, so initially investigated as a possible
+  regression from that change — spent real effort ruling that out first (traced
+  `goStep()`/`syncRowInputs()`/`buildReview()`/`updateKocCard()`/`updateIntakeStatusCard()`
+  for any hardcoded-section-list-style gap, confirmed none; eventually reproduced the
+  actual failure in a real, driven simulation of the live page — not by reading code
+  alone — using `jsdom` with mocked Supabase responses, checking a service, filling
+  fields, and calling `goStep(3)` exactly as a real click would).
+  ROOT CAUSE, once Claire's own observation (removing her test service fixed it) pointed
+  the way: `alc-testdelete` ("TEST — Delete Me") has `pricing_mode: 'flat'` but also a
+  stray `spend_minimum: 1000` — an inconsistent combination left over from early testing
+  (a spend minimum only means something for a `pricing_mode: 'spend'` service). Since
+  `SPEND_MINIMUMS` is derived from ANY row with `spend_minimum` set, with no check on
+  `pricing_mode`, `goStep()`'s "missing spend" block treated this flat item as requiring
+  a spend value — but a flat item never gets a spend `<input>` rendered at all, so there
+  was NO field to fill in and NO field to highlight, leaving the block permanent and
+  invisible. Confirmed via jsdom simulation this reproduces EXACTLY as reported:
+  `currentStep` never advances across repeated clicks, and zero elements ever get the
+  `.spend-missing` highlight class (nothing visibly reacts).
+  FIXED: `goStep()`'s missing-spend check now also requires
+  `CATALOG_ROWS[id]?.pricing_mode === 'spend'` before treating a `spend_minimum` as
+  blocking — a data inconsistency on one service can no longer trap navigation with
+  nothing to fix. VERIFIED via the same jsdom-driven simulation: the exact trap scenario
+  (only the flat test service selected) now advances to Step 3 on the first click;
+  a REGRESSION check confirms a genuinely spend-based service with blank spend still
+  correctly blocks and highlights (only the real field, not the flat test service); after
+  filling the real spend, navigation succeeds even with the flat test service still
+  selected. `node --check` passes.
+  This service is very likely active again simply because Claire reactivated it earlier
+  today to test the reactivate flow itself, then didn't toggle it back off — no longer
+  harmful now that the validation gap is fixed, but worth deactivating again to keep it
+  out of AEs' way (`UPDATE services SET active = false WHERE id = 'alc-testdelete';`).
 - **REAL BUG FOUND LIVE by Claire, FIXED (2026-07-10): every ad-spend/CPM service showed
   "Quote Upon Request" instead of its real rate/amount — a pre-existing regression from
   the 2026-07-07 QUR-flagging feature, not introduced by anything built today.** Caught
