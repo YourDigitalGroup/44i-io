@@ -2120,10 +2120,17 @@ function validateStep1() {
 function goStep(n) {
   if (n >= 2 && !validateStep1()) return;
   if (n === 3) {
-    // Hard block if ad products selected with no spend — highlight the fields
+    // Hard block if ad products selected with no spend — highlight the fields.
+    // FIXED (2026-07-10, found live by Claire): also requires pricing_mode==='spend' —
+    // SPEND_MINIMUMS is derived from ANY row with a spend_minimum set, regardless of
+    // pricing_mode, so a flat/per_unit/modifier service with a stray spend_minimum value
+    // (data inconsistency, not a real business rule) would be flagged as "missing spend"
+    // with NO spend input to ever fill in, permanently blocking navigation with nothing
+    // visible to fix — reproduced exactly against a real leftover test service
+    // (flat pricing_mode, spend_minimum=1000 left over from earlier testing).
     const missingSpend = Object.entries(selected).filter(([id,d]) => {
       const min = SPEND_MINIMUMS[id];
-      return min && min > 0 && !d.spend;
+      return min && min > 0 && CATALOG_ROWS[id]?.pricing_mode === 'spend' && !d.spend;
     });
     // Clear previous highlights
     document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));

@@ -24,6 +24,7 @@
       <button id="section-tab-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Groups</button>
       <button id="section-tab-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
       <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Suggested Map</button>
+      <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
     </div>
 
     <div style="padding:20px">
@@ -370,6 +371,51 @@
         </div>
       </div><!-- /section-map -->
 
+      <!-- ── SECTION: Sections (which cards appear on the public form, and in what order) ── -->
+      <div id="section-sections" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Sections — Public Form Layout</p>
+            <p style="font-size:11px;color:var(--muted)">Drag ⠿ to reorder. A section's table shape (Spend column or not, single vs. multi-table) is figured out automatically from the services inside it — nothing to set here.</p>
+          </div>
+          <button id="admin-new-section-btn" onclick="adminNewSection()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Section</button>
+        </div>
+
+        <div id="admin-section-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px" id="admin-section-form-title">New Section</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:16px">A brand-new section starts empty — add services to it afterward through the Services editor above.</p>
+          <input type="hidden" id="admin-sec-original-id"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Section ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— must match exactly what's used as each service's Section value</span></label>
+              <input type="text" id="admin-sec-id" placeholder="e.g. podcast-ads" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
+            </div>
+            <div>
+              <label class="lbl">Icon <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— a single emoji, shown in the card header</span></label>
+              <input type="text" id="admin-sec-icon" placeholder="e.g. 🎙️" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the card's title text</span></label>
+              <input type="text" id="admin-sec-label" placeholder="e.g. Podcast Advertising" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
+            <div>
+              <label class="lbl">Header Note <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional small text next to the title, e.g. term/minimum-spend info. Leave blank for none.</span></label>
+              <input type="text" id="admin-sec-header-note" placeholder="e.g. Min $1,000/mo · 6 Month Min" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onclick="adminSaveSection()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Section</button>
+            <button onclick="adminCancelSectionEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-sections-table"></div>
+      </div><!-- /section-sections -->
+
     </div>
   </div>
 </div>
@@ -537,13 +583,13 @@ function regenerateSlug() {
 // added it to this array. Now rebuilt by rebuildPriceableServices() every time the
 // catalog loads (called right after loadCatalog() in this page's init sequence below —
 // kept as its OWN function here, rather than folded into shared.js's loadCatalog(),
-// because PRICEABLE_SERVICES/MAP_SECTION_LABELS are this admin page's own globals, not
-// genuinely shared with the public form).
+// because PRICEABLE_SERVICES/SECTIONS are this admin page's own globals, not genuinely
+// shared with the public form).
 // Grouping: a service's `pricing_group` column (if set) is the literal display heading
 // it's grouped under here — this is how the two genuinely cross-cutting groups ("Visitor
 // IDs" spans catalog sections web-ot AND web-mo; "Hosting Fees" is a hand-picked subset
 // of web-ot) are preserved as DATA instead of code. Any service with no pricing_group set
-// just defaults to its own catalog section's label (MAP_SECTION_LABELS) — so a normal new
+// just defaults to its own catalog section's label (sectionLabel()) — so a normal new
 // service needs zero admin action to appear here. Deliberately excludes ad-spend
 // (pricing_mode='spend') and modifier add-on (pricing_mode='modifier') services, and any
 // item with no default_price set (QUR) — none of those have a single flat price to
@@ -557,7 +603,7 @@ function rebuildPriceableServices() {
     const mode = r.pricing_mode || 'flat';
     if (mode !== 'flat' && mode !== 'per_unit') return;
     if (r.default_price == null) return;
-    const groupLabel = r.pricing_group || MAP_SECTION_LABELS[r.section] || r.section;
+    const groupLabel = r.pricing_group || sectionLabel(r.section);
     if (!groupMap[groupLabel]) { groupMap[groupLabel] = []; groupOrder.push(groupLabel); }
     groupMap[groupLabel].push({
       id: r.id,
@@ -659,8 +705,8 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Three sections: groups | orders | map
-  const sections = ['groups','orders','map'];
+  // Four sections: groups | orders | map | sections
+  const sections = ['groups','orders','map','sections'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     if (panel) panel.style.display = (s === section) ? 'block' : 'none';
@@ -682,6 +728,12 @@ function adminSection(section) {
     const newBtn = document.getElementById('admin-new-service-btn');
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadSuggestedMap();
+  } else if (section === 'sections') {
+    // Same restriction level as Suggested Map — section layout is a super-admin-only
+    // capability, same reasoning (it changes what every AE/client sees on the live form).
+    const newBtn = document.getElementById('admin-new-section-btn');
+    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    loadAdminSections();
   }
 }
 
@@ -697,27 +749,24 @@ async function loadAdminGroups() {
 // ── SUGGESTED MAP (standard catalog, read-only) ────────────────
 let allServicesMap = [];
 
-// Sections already converted to catalog-driven dynamic rows (renderCatalogSection()) —
-// the ONLY sections where creating a new service or deactivating an existing one is
-// fully safe. For every other section, a new row wouldn't have a checkbox on the public
-// form (still hand-typed HTML), and deactivating one would recreate the ghost-checkbox
-// risk the dynamic-row conversion was built to eliminate. EDITING an existing service
-// (price, label, etc.) is safe everywhere regardless — that's been catalog-driven since
-// the original migration. Keep this list in sync with the renderCatalogSection() calls
-// in the startup sequence as more sections get converted.
-const SAFE_DYNAMIC_SECTIONS = ['alc', 'rep', 'llo', 'gbp', 'seo', 'sem', 'sm', 'em', 'tlp', 'td', 'sma', 'lt', 'vid', 'ctv', 'audio', 'web-ot', 'web-mo'];
+// SAFE_DYNAMIC_SECTIONS / MAP_SECTION_LABELS — REMOVED (2026-07-10). These were hardcoded
+// because, mid-migration, only SOME sections had been converted to catalog-driven dynamic
+// rows; creating/deactivating a service anywhere else would have been genuinely unsafe
+// (no checkbox to select it with, or the old ghost-checkbox risk). Now that the public
+// form generates EVERY section's cards and rows from data (see index.html's
+// renderSectionCards()/renderAllSectionRows(), 2026-07-10), that distinction no longer
+// exists — every section, present or future, is equally safe. Replaced by `SECTIONS`
+// (loaded fresh from the new `sections` table) + `sectionLabel()` below — the same
+// "add data, not code" principle as everything else in this project.
+let SECTIONS = [];
 
-// Friendly section labels (matches the form's section grouping)
-const MAP_SECTION_LABELS = {
-  'web-ot':'Website (One-Time)', 'web-mo':'Website (Monthly)',
-  'tlp':'Targeted Landing Pages', 'sm':'Social Media Management',
-  'em':'Email Marketing', 'seo':'SEO / AEO', 'rep':'Reputation Management',
-  'llo':'Local Listing Optimization', 'gbp':'Google Business Profile',
-  'td':'Targeted Display', 'sem':'Search Engine Marketing',
-  'sma':'Social Media Ads', 'lt':'Location Targeting',
-  'vid':'Video Advertising', 'ctv':'Streaming TV / OTT / CTV',
-  'audio':'Audio / Mobile / Display', 'alc':'À La Carte',
-};
+async function loadSections() {
+  SECTIONS = await sb('sections?order=sort_order&select=*') || [];
+}
+
+function sectionLabel(id) {
+  return SECTIONS.find(s => s.id === id)?.label || id;
+}
 
 async function loadSuggestedMap() {
   const el = document.getElementById('admin-map-table');
@@ -729,7 +778,7 @@ async function loadSuggestedMap() {
     const sel = document.getElementById('map-filter-section');
     const sections = [...new Set(allServicesMap.map(s => s.section))];
     sel.innerHTML = '<option value="">All sections</option>' +
-      sections.map(s => `<option value="${esc(s)}">${esc(MAP_SECTION_LABELS[s] || s)}</option>`).join('');
+      sections.map(s => `<option value="${esc(s)}">${esc(sectionLabel(s))}</option>`).join('');
     renderSuggestedMap();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading catalog: ${esc(e.message)}</p>`;
@@ -798,7 +847,7 @@ function renderSuggestedMap() {
     </tr></thead><tbody>`;
 
   Object.keys(bySection).forEach(sec => {
-    html += `<tr><td colspan="9" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(MAP_SECTION_LABELS[sec] || sec)}</td></tr>`;
+    html += `<tr><td colspan="9" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
     bySection[sec].forEach(s => {
       const inactive = !s.active;
       const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
@@ -825,11 +874,13 @@ function renderSuggestedMap() {
             ? '<span style="color:var(--muted)">—</span>'
             : `<span style="font-size:10px;color:var(--text);font-weight:600">${esc(freqText)}</span>`;
       const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
-      const isSafeSection = SAFE_DYNAMIC_SECTIONS.includes(s.section);
       const isSuperAdmin = currentAdminUser?.role !== 'am';
-      const deactivateBtn = !isSuperAdmin ? '' : (isSafeSection
-        ? `<button onclick="adminToggleServiceActive('${esc(s.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`
-        : `<span title="Only available for sections already converted to dynamic rows (À La Carte, Reputation Management, Local Listing, Google Business Profile) — creating/deactivating elsewhere wouldn't show correctly on the public form yet." style="font-size:10px;color:#D1D5DB;cursor:help">Deactivate ⓘ</span>`);
+      // Deactivate is now offered everywhere (2026-07-10) — every section is equally
+      // "dynamic-row safe" now that the public form generates all of them from data, so
+      // the old per-section restriction (and its disabled "ⓘ" placeholder) no longer
+      // applies anywhere.
+      const deactivateBtn = !isSuperAdmin ? '' :
+        `<button onclick="adminToggleServiceActive('${esc(s.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
       // Matches the EXACT pattern used for the Groups Pricing button: AM sees nothing at
       // all here, not a placeholder dash (an earlier version showed "—", which read like
       // a mystery unlabeled column since the header itself has no title — caught live).
@@ -939,25 +990,244 @@ async function mapRowDrop(e, targetId, section) {
   }
 }
 
+// ── SECTIONS: LIST + REORDER + CREATE/EDIT/DEACTIVATE ───────────
+// Manages the `sections` table — which cards appear on the public form, in what order,
+// and their icon/label/header-note. A brand-new section created here just needs services
+// added to it afterward (via the Services editor above) to actually show anything.
+async function loadAdminSections() {
+  const el = document.getElementById('admin-sections-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    // ALL sections (active + inactive), same "show parked rows too" pattern as Suggested Map.
+    SECTIONS = await sb('sections?order=sort_order&select=*') || [];
+    renderAdminSectionsList();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading sections: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderAdminSectionsList() {
+  const el = document.getElementById('admin-sections-table');
+  const isSuperAdmin = currentAdminUser?.role !== 'am';
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;width:24px"></th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">ID</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Icon</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Label</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Header Note</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+
+  SECTIONS.forEach(sec => {
+    const inactive = !sec.active;
+    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const canDrag = isSuperAdmin && sec.active;
+    const dragHandle = canDrag
+      ? `<span draggable="true" ondragstart="sectionDragStart(event,'${esc(sec.id)}')" style="cursor:grab;color:var(--muted);font-size:14px;user-select:none" title="Drag to reorder">⠿</span>`
+      : '';
+    const dragAttrs = canDrag
+      ? `ondragover="sectionDragOver(event)" ondrop="sectionDrop(event,'${esc(sec.id)}')"`
+      : '';
+    const editBtn = isSuperAdmin
+      ? `<button onclick="adminEditSection('${esc(sec.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
+      : '';
+    const deactivateBtn = !isSuperAdmin ? '' :
+      `<button onclick="adminToggleSectionActive('${esc(sec.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}" ${dragAttrs}>
+      <td style="padding:8px 10px;text-align:center">${dragHandle}</td>
+      <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(sec.id)}</td>
+      <td style="padding:8px 10px;font-size:16px">${sec.icon ? esc(sec.icon) : '<span style="color:var(--muted);font-size:11px">—</span>'}</td>
+      <td style="padding:8px 10px">${esc(sec.label)}${inactiveBadge}</td>
+      <td style="padding:8px 10px;color:var(--muted);font-size:11px">${sec.header_note ? esc(sec.header_note) : '—'}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+// Drag-and-drop reorder — same pattern as the Suggested Map's service reorder, but
+// simpler: sections are one flat list, not grouped into bands, so there's no
+// cross-group rejection to handle.
+let sectionDragSourceId = null;
+
+function sectionDragStart(e, id) {
+  sectionDragSourceId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', id);
+}
+
+function sectionDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+async function sectionDrop(e, targetId) {
+  e.preventDefault();
+  if (!sectionDragSourceId || sectionDragSourceId === targetId) return;
+
+  const ordered = SECTIONS.filter(s => s.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const fromIdx = ordered.findIndex(s => s.id === sectionDragSourceId);
+  const toIdx = ordered.findIndex(s => s.id === targetId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = ordered.splice(fromIdx, 1);
+  ordered.splice(toIdx, 0, moved);
+
+  const updates = [];
+  ordered.forEach((s, i) => {
+    const newOrder = (i + 1) * 10;
+    if (s.sort_order !== newOrder) updates.push({ id: s.id, sort_order: newOrder });
+  });
+  if (!updates.length) return;
+
+  try {
+    for (const u of updates) {
+      await sb('rpc/admin_save_section', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '',
+          p_pw: currentAdminUser?.pw || '',
+          p_section_id: u.id,
+          p_data: { sort_order: u.sort_order }
+        })
+      });
+    }
+    showToast('Order updated!');
+    loadAdminSections();
+  } catch (err) {
+    showToast('Error saving new order: ' + err.message, 'error');
+    loadAdminSections();
+  }
+}
+
+function adminNewSection() {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Section management is restricted to super admins', 'error');
+    return;
+  }
+  document.getElementById('admin-section-form-title').textContent = 'New Section';
+  document.getElementById('admin-sec-original-id').value = '';
+  ['admin-sec-id','admin-sec-icon','admin-sec-label','admin-sec-header-note'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('admin-sec-id').disabled = false;
+  document.getElementById('admin-section-form').style.display = 'block';
+  document.getElementById('admin-section-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminEditSection(id) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Section management is restricted to super admins', 'error');
+    return;
+  }
+  const sec = SECTIONS.find(s => s.id === id);
+  if (!sec) return;
+  document.getElementById('admin-section-form-title').textContent = 'Edit Section — ' + sec.label;
+  document.getElementById('admin-sec-original-id').value = sec.id;
+  document.getElementById('admin-sec-id').value = sec.id;
+  document.getElementById('admin-sec-id').disabled = true; // id is the key services reference by section — immutable after creation
+  document.getElementById('admin-sec-icon').value = sec.icon || '';
+  document.getElementById('admin-sec-label').value = sec.label || '';
+  document.getElementById('admin-sec-header-note').value = sec.header_note || '';
+  document.getElementById('admin-section-form').style.display = 'block';
+  document.getElementById('admin-section-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelSectionEdit() {
+  document.getElementById('admin-section-form').style.display = 'none';
+}
+
+async function adminSaveSection() {
+  const isNew = !document.getElementById('admin-sec-original-id').value;
+  const id = document.getElementById('admin-sec-id').value.trim();
+  const label = document.getElementById('admin-sec-label').value.trim();
+  if (!id) { showToast('Section ID is required', 'error'); return; }
+  if (!label) { showToast('Label is required', 'error'); return; }
+  if (isNew && SECTIONS.some(s => s.id === id)) {
+    showToast('A section with this ID already exists — please choose a different one', 'error');
+    return;
+  }
+
+  const payload = {
+    label: label,
+    icon: document.getElementById('admin-sec-icon').value.trim() || null,
+    header_note: document.getElementById('admin-sec-header-note').value.trim() || null,
+  };
+  if (isNew) {
+    payload.id = id;
+    payload.sort_order = (Math.max(0, ...SECTIONS.map(s => s.sort_order || 0)) + 10);
+    payload.active = true;
+  }
+
+  try {
+    await sb('rpc/admin_save_section', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_section_id: isNew ? null : id,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'Section created!' : 'Section updated!');
+    adminCancelSectionEdit();
+    loadAdminSections();
+  } catch(e) {
+    showToast('Error saving section: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleSectionActive(id, makeActive) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Section management is restricted to super admins', 'error');
+    return;
+  }
+  const sec = SECTIONS.find(s => s.id === id);
+  if (!sec) return;
+  // Deactivating a section that still has active services would make them disappear
+  // from the public form entirely (the public form only loads active=true sections) —
+  // worth a clear warning, not a silent surprise.
+  const servicesInSection = allServicesMap.filter(s => s.section === id && s.active).length;
+  const warnText = (!makeActive && servicesInSection > 0)
+    ? ` This section still has ${servicesInSection} active service${servicesInSection>1?'s':''} in it — deactivating hides the whole card, and those services, from the public form.`
+    : '';
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} "${sec.label}"?${warnText}`)) return;
+  try {
+    await sb('rpc/admin_save_section', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_section_id: id,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`Section ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadAdminSections();
+  } catch(e) {
+    showToast('Error updating section: ' + e.message, 'error');
+  }
+}
+
 // ── SERVICE CREATE / EDIT / DEACTIVATE ─────────────────────────
-// Populates the Section dropdown for the create/edit form. `restrictToSafe=true` for
-// NEW services (only the 4 dynamic-row sections are valid choices, since anywhere else
-// a new service wouldn't have a checkbox to select it with); for EDITING an existing
-// service, all its current section stays selected but the field is disabled — moving a
-// service between sections has enough side effects (dynamic vs static rendering,
-// RADIO_GROUPS/SPEND_MINIMUMS membership) that it deserves a deliberate code change, not
-// a dropdown pick.
-function populateServiceSectionDropdown(restrictToSafe, currentSection) {
+// Populates the Section dropdown for the create/edit form. Every ACTIVE section is now a
+// valid choice for a new service (2026-07-10) — the old "only 4 dynamic-row sections are
+// safe" restriction no longer applies now that every section is data-driven. `isNew`
+// still disables the field when EDITING an existing service, for a different, still-real
+// reason: moving a service between sections has enough side effects (dynamic vs static
+// rendering, RADIO_GROUPS/SPEND_MINIMUMS membership) that it deserves a deliberate code
+// change, not a dropdown pick.
+function populateServiceSectionDropdown(isNew, currentSection) {
   const sel = document.getElementById('admin-svc-section');
   const note = document.getElementById('admin-svc-section-note');
-  const sections = restrictToSafe
-    ? SAFE_DYNAMIC_SECTIONS
-    : Object.keys(MAP_SECTION_LABELS);
-  sel.innerHTML = sections.map(s => `<option value="${esc(s)}">${esc(MAP_SECTION_LABELS[s] || s)}</option>`).join('');
+  const sections = SECTIONS.filter(s => s.active).map(s => s.id);
+  sel.innerHTML = sections.map(s => `<option value="${esc(s)}">${esc(sectionLabel(s))}</option>`).join('');
   if (currentSection) sel.value = currentSection;
-  sel.disabled = !restrictToSafe; // disabled when editing (section fixed after creation)
-  note.textContent = restrictToSafe
-    ? 'New services can only be added to sections already converted to dynamic rows.'
+  sel.disabled = !isNew; // disabled when editing (section fixed after creation)
+  note.textContent = isNew
+    ? 'Pick which section this new service belongs to.'
     : 'Section can\'t be changed after creation — it affects how the row renders on the form.';
 }
 
@@ -1234,10 +1504,8 @@ async function adminSaveService() {
   const label = document.getElementById('admin-svc-label').value.trim();
   if (!id) { showToast('Service ID is required', 'error'); return; }
   if (!label) { showToast('Label is required', 'error'); return; }
-  if (isNew && !SAFE_DYNAMIC_SECTIONS.includes(document.getElementById('admin-svc-section').value)) {
-    showToast('New services can only be added to a section already converted to dynamic rows', 'error');
-    return;
-  }
+  // The "only 4 dynamic-row sections are safe" hard block was removed here (2026-07-10) —
+  // every section is now equally safe to add a new service to.
   if (isNew && allServicesMap.some(s => s.id === id)) {
     showToast('A service with this ID already exists — please choose a different one', 'error');
     return;
@@ -1362,10 +1630,9 @@ async function adminSaveService() {
 }
 
 // Quick deactivate/reactivate directly from the list, without opening the full edit
-// form. Only offered for SAFE_DYNAMIC_SECTIONS in the UI (renderSuggestedMap shows an
-// info icon instead of a button for other sections) — this function itself doesn't
-// re-check that, since the button that calls it already wouldn't exist otherwise, but
-// the RPC's own permission/validation is the real safety boundary, not the UI.
+// form. Offered for every section now (2026-07-10 — see the removal note near
+// SECTIONS/sectionLabel() above). The RPC's own permission/validation is the real
+// safety boundary either way, not the UI.
 async function adminToggleServiceActive(id, makeActive) {
   if (currentAdminUser?.role === 'am') {
     showToast('Service catalog management is restricted to super admins', 'error');
@@ -1898,6 +2165,7 @@ function adminLogout() {
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await loadCatalog();
+    await loadSections();
     rebuildPriceableServices();
   } catch (e) {
     console.error('[Catalog] Load failed:', e.message);

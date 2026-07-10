@@ -787,6 +787,41 @@ form-edit pass or pre-launch audit.
   the rate itself? a flat add-on instead?) and new logic in `buildReview()`/`submitIO()`/
   `printIO()`, the money-total calculators — deliberately not something to guess at or
   rush.
+- **REAL BUG FOUND LIVE by Claire, FIXED (2026-07-10): "Next: Review & Submit" became
+  permanently stuck — no error, no visible reaction, just silently unresponsive — the
+  moment a specific leftover test service was selected.** Genuinely hard to track down:
+  no console errors, no red field highlights, nothing visibly wrong to point at. Reported
+  right after the sections-table rewrite landed, so initially investigated as a possible
+  regression from that change — spent real effort ruling that out first (traced
+  `goStep()`/`syncRowInputs()`/`buildReview()`/`updateKocCard()`/`updateIntakeStatusCard()`
+  for any hardcoded-section-list-style gap, confirmed none; eventually reproduced the
+  actual failure in a real, driven simulation of the live page — not by reading code
+  alone — using `jsdom` with mocked Supabase responses, checking a service, filling
+  fields, and calling `goStep(3)` exactly as a real click would).
+  ROOT CAUSE, once Claire's own observation (removing her test service fixed it) pointed
+  the way: `alc-testdelete` ("TEST — Delete Me") has `pricing_mode: 'flat'` but also a
+  stray `spend_minimum: 1000` — an inconsistent combination left over from early testing
+  (a spend minimum only means something for a `pricing_mode: 'spend'` service). Since
+  `SPEND_MINIMUMS` is derived from ANY row with `spend_minimum` set, with no check on
+  `pricing_mode`, `goStep()`'s "missing spend" block treated this flat item as requiring
+  a spend value — but a flat item never gets a spend `<input>` rendered at all, so there
+  was NO field to fill in and NO field to highlight, leaving the block permanent and
+  invisible. Confirmed via jsdom simulation this reproduces EXACTLY as reported:
+  `currentStep` never advances across repeated clicks, and zero elements ever get the
+  `.spend-missing` highlight class (nothing visibly reacts).
+  FIXED: `goStep()`'s missing-spend check now also requires
+  `CATALOG_ROWS[id]?.pricing_mode === 'spend'` before treating a `spend_minimum` as
+  blocking — a data inconsistency on one service can no longer trap navigation with
+  nothing to fix. VERIFIED via the same jsdom-driven simulation: the exact trap scenario
+  (only the flat test service selected) now advances to Step 3 on the first click;
+  a REGRESSION check confirms a genuinely spend-based service with blank spend still
+  correctly blocks and highlights (only the real field, not the flat test service); after
+  filling the real spend, navigation succeeds even with the flat test service still
+  selected. `node --check` passes.
+  This service is very likely active again simply because Claire reactivated it earlier
+  today to test the reactivate flow itself, then didn't toggle it back off — no longer
+  harmful now that the validation gap is fixed, but worth deactivating again to keep it
+  out of AEs' way (`UPDATE services SET active = false WHERE id = 'alc-testdelete';`).
 - **REAL BUG FOUND LIVE by Claire, FIXED (2026-07-10): every ad-spend/CPM service showed
   "Quote Upon Request" instead of its real rate/amount — a pre-existing regression from
   the 2026-07-07 QUR-flagging feature, not introduced by anything built today.** Caught
@@ -2112,15 +2147,52 @@ sections on the live form (collapsed/expanded, checkbox behavior, mobile view) �
 the one thing that genuinely cannot be confirmed without a real browser. Stage B (the
 admin Sections tab) does not start until this is confirmed.
 
-**Sections admin tab — NOT YET STARTED, blocked on the foundation above being confirmed
-first.** New "Sections" tab in `admin/index.html`: same drag-to-reorder pattern as
-services, an edit form (label/icon/header note/render type), and "+ New Section" (creates
-a new, initially-empty section — services get added to it afterward through the existing
-Services editor). Needs a new `admin_save_section` RPC (written fresh, no prior version to
-diff against this time) and converting `MAP_SECTION_LABELS`/`SAFE_DYNAMIC_SECTIONS`
-(currently their own hardcoded lists in `admin/index.html`) to derive from the new
-`sections` table instead — same "stop hardcoding, derive from data" pattern as everything
-else in this project.
+**Sections admin tab — BUILT + VERIFIED (2026-07-10), full section-management feature now
+complete.** Built once Claire confirmed the Stage A foundation looked correct in a real
+browser (all 17 sections, including the 3 multi-table ones, rendered identically). New
+"Sections" tab in `admin/index.html`, same visual/permission pattern as the existing Groups
+Custom Pricing / Suggested Map screens (super-admin only, same hidden-not-dashed pattern
+for AM-tier):
+- **List + drag-to-reorder** — same pattern as the Suggested Map's service reorder built
+  earlier today, simplified since sections are one flat list (no per-section "band"
+  constraint needed). Recomputes `sort_order` sequentially by 10s on drop, saves only
+  changed rows via the RPC below.
+- **Edit form** — label, icon, header note. Deliberately NO render-type or table-shape
+  field — both stayed auto-derived from the services themselves (decided back in the
+  Stage A foundation work), so there's nothing here that could be set inconsistently with
+  the actual catalog.
+- **"+ New Section"** — creates a new, initially-empty section (placed after the current
+  highest `sort_order`); services get added to it afterward through the existing Services
+  editor, which now lists ALL active sections as valid choices (see cleanup below).
+- **Deactivate/Reactivate** — same "hide, don't delete" principle as services. Added a
+  clear warning when deactivating a section that still has active services in it, since
+  the public form only loads `active=true` sections — deactivating would make that
+  section's whole card, and every service in it, disappear from the live form at once,
+  not just get hidden from a list.
+New RPC `admin_save_section` (written fresh — no prior version existed to diff against,
+unlike every other RPC update this project has made) mirrors `admin_save_service`'s exact
+shape: password-validated, super-admin-only, case-when-present for nullable fields on
+update.
+**REAL CLEANUP UNLOCKED, not just added:** `SAFE_DYNAMIC_SECTIONS` and
+`MAP_SECTION_LABELS` (both hardcoded lists in `admin/index.html`, dating from when only
+SOME sections had been converted to dynamic rows) are now fully REMOVED, not merely
+converted to read from data — the underlying restriction they existed for (a new service
+in certain sections wouldn't have a checkbox to select it with) no longer exists anywhere,
+now that Stage A made every section dynamic by construction. This removes an entire hard
+block that used to stop a new service being created in most sections at all, and the
+"Deactivate ⓘ" disabled-placeholder that used to show instead of a real button for those
+same sections. Replaced by `SECTIONS` (loaded fresh at page init, same as the public form)
++ a small `sectionLabel(id)` helper.
+VERIFIED via simulation, same rigor as every prior step today: reorder logic (drag-to-
+front correctly bumps siblings; inactive sections never touched; self-drop is a no-op);
+new-section id-collision validation (blocked before the RPC is ever called); new-section
+default sort_order placement (after the current highest). ALSO verified end-to-end in a
+real driven simulation of the actual admin page (not just isolated logic) — loaded the
+page, opened the Sections tab, confirmed the list rendered with the correct label and a
+working drag handle, opened "+ New Section", filled the form, and called the real
+`adminSaveSection()` — completed cleanly with no thrown errors, form closed correctly
+afterward. `node --check` passes; zero dangling DOM/handler references anywhere in the
+file (same completeness check used for every admin-editor addition this project).
 
 ---
 
