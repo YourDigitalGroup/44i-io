@@ -787,6 +787,42 @@ form-edit pass or pre-launch audit.
   the rate itself? a flat add-on instead?) and new logic in `buildReview()`/`submitIO()`/
   `printIO()`, the money-total calculators — deliberately not something to guess at or
   rush.
+- **REAL BUG FOUND LIVE by Claire, FIXED (2026-07-10): every ad-spend/CPM service showed
+  "Quote Upon Request" instead of its real rate/amount — a pre-existing regression from
+  the 2026-07-07 QUR-flagging feature, not introduced by anything built today.** Caught
+  testing Location Targeting — Geofencing (a real, $15-CPM-priced service) on the Review
+  page. ROOT CAUSE: `rowToServiceData()`'s `is_qur` flag was set unconditionally from
+  `r.default_price == null` — but `default_price` is ONLY the real price field for
+  flat/per_unit services; spend items (`td-geo`, `sma-fb`, `lt-geo`, every CPM-rate
+  service) store their real rate in `retail_cpm`, and modifier items (`td-offline`,
+  `yttv-addl`) store theirs in `modifier_amount` — both ALWAYS have a null
+  `default_price` BY DESIGN, meaning literally every spend/modifier service in the
+  catalog was being incorrectly flagged as QUR since the day that feature shipped.
+  IMPACT, more serious than a cosmetic label: on `buildReview()` (Step 3), this only
+  clobbered the separate "Fee" column (which should show "—" for a spend item anyway,
+  since they have no one-time fee) — the actual dollar totals were unaffected, since
+  `is_qur` never touched the totals math, only display text. But on `printIO()`, the Fee
+  and Recurring/spend amount share ONE combined column — so the printed IO was replacing
+  the real computed dollar amount with the text "Quote Upon Request" on the actual
+  contract document, for every spend-based service, this whole time.
+  FIXED: `is_qur` now also checks `pricing_mode` — only true when the service is
+  `flat`/`per_unit` (the two modes where `default_price` is genuinely the expected price
+  field) AND `default_price` is null. Restores the original 3 genuine QUR items
+  (`w-custom`, `em-bp-30kp`, `tlp-custom`) exactly as before; spend/modifier items no
+  longer trigger it at all.
+  VERIFIED via simulation, 11 cases: the 3 genuine QUR items still correctly flagged;
+  every spend-mode example (`lt-geo`, `td-geo`, `sma-fb`) and the modifier example
+  (`td-offline`) confirmed NO LONGER flagged, with `lt-geo` confirmed to still carry its
+  real `$15` CPM rate afterward; normal already-priced flat/per_unit items confirmed
+  unaffected either way; a hypothetical FUTURE unpriced per_unit item confirmed still
+  correctly flagged QUR (the fix narrows exactly to the right scope, not further).
+  Traced the full downstream display path in both `buildReview()` and `printIO()` to
+  confirm the fix actually restores the correct fallback text (`printIO()` now correctly
+  falls through to its `data.spend > 0` branch, showing `"$X/mo campaign"`, matching every
+  other spend item's existing, always-correct behavior). `node --check` passes.
+  Given the severity (a real display bug affecting every spend/CPM service on the actual
+  printed contract, present since 2026-07-07), this is exactly the kind of catch live
+  testing exists for — good thing it surfaced now, before any real client submission.
 - **Full catalog reconciliation against the updated PDF (Version 7.9.26) — DONE
   (2026-07-10), ahead of Claire's leadership presentation.** Claire provided the current
   IO PDF plus a full `services` table export; checked every section line-by-line rather
