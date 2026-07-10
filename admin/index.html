@@ -25,6 +25,7 @@
       <button id="section-tab-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
       <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Suggested Map</button>
       <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
+      <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
     </div>
 
     <div style="padding:20px">
@@ -447,6 +448,47 @@
         <div id="admin-sections-table"></div>
       </div><!-- /section-sections -->
 
+      <!-- ── SECTION: Intake Forms ── -->
+      <div id="section-intake" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Intake Forms</p>
+            <p style="font-size:11px;color:var(--muted)">The follow-up questions an AE fills in after selecting a service that needs one (Website SEO, TLP, etc). Assign a form to a service from the Services editor's "Intake Form" dropdown.</p>
+          </div>
+          <button id="admin-new-intake-btn" onclick="adminNewIntakeForm()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Intake Form</button>
+        </div>
+
+        <div id="admin-intake-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px" id="admin-intake-form-title">New Intake Form</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:16px">A brand-new form starts empty — add sections and questions below, then assign it to a service from the Services editor.</p>
+          <input type="hidden" id="admin-intake-original-id"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+            <div>
+              <label class="lbl">Title <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown as the modal's heading on the live form</span></label>
+              <input type="text" id="admin-intake-title" placeholder="e.g. Podcast Advertising Intake" oninput="autoIntakeFormId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Form ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Title, override if needed. Cannot be changed after creation.</span></label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="text" id="admin-intake-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkIntakeFormIdCollision()"/>
+                <button type="button" onclick="regenerateIntakeFormId()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
+              </div>
+              <p id="admin-intake-id-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ A form with this ID already exists — please choose a different one.</p>
+            </div>
+          </div>
+
+          <div id="admin-intake-sections-editor"></div>
+          <button type="button" onclick="intakeAddSection()" style="margin-top:4px;padding:7px 14px;border-radius:7px;border:1px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--accent)">+ Add Section</button>
+
+          <div style="display:flex;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <button onclick="adminSaveIntakeForm()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Intake Form</button>
+            <button onclick="adminCancelIntakeFormEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-intake-table"></div>
+      </div><!-- /section-intake -->
+
     </div>
   </div>
 </div>
@@ -736,8 +778,8 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Four sections: groups | orders | map | sections
-  const sections = ['groups','orders','map','sections'];
+  // Five sections: groups | orders | map | sections | intake
+  const sections = ['groups','orders','map','sections','intake'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     if (panel) panel.style.display = (s === section) ? 'block' : 'none';
@@ -765,6 +807,12 @@ function adminSection(section) {
     const newBtn = document.getElementById('admin-new-section-btn');
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadAdminSections();
+  } else if (section === 'intake') {
+    // Same restriction level as Suggested Map/Sections — editing intake questions
+    // changes what every AE/client sees on the live form.
+    const newBtn = document.getElementById('admin-new-intake-btn');
+    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    loadAdminIntakeForms();
   }
 }
 
@@ -1346,6 +1394,355 @@ async function adminToggleSectionActive(id, makeActive) {
     loadAdminSections();
   } catch(e) {
     showToast('Error updating section: ' + e.message, 'error');
+  }
+}
+
+// ── INTAKE FORMS (form-builder) ─────────────────────────────────
+// Lets a super-admin build/edit the follow-up question sets an AE fills in after
+// selecting a service that needs one (Website SEO, TLP, etc) — previously the only way
+// to add or change one of these was a dev editing the `intake_forms.definition` JSON
+// column directly in Supabase. Mirrors the same list+edit-form pattern as Sections.
+//
+// While a form is open for editing, its sections/fields live in this in-memory draft
+// object (not the DOM) — every add/remove/edit re-renders the whole editor from this
+// object, same "re-render from state" approach the TLP grid on the live form already
+// uses. Only converted to/from the real `definition` JSON shape on open/save.
+let ALL_INTAKE_FORMS = [];
+let intakeFormDraft = null; // { sections: [{ title, fields: [{key,label,type,options}] }] }
+
+const INTAKE_FIELD_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'textarea', label: 'Text Area' },
+  { value: 'radio', label: 'Radio (Choice)' },
+  { value: 'email', label: 'Email' },
+  { value: 'tel', label: 'Phone' },
+  { value: 'date', label: 'Date' },
+  { value: 'number', label: 'Number' },
+];
+
+async function loadAdminIntakeForms() {
+  const el = document.getElementById('admin-intake-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    ALL_INTAKE_FORMS = await sb('intake_forms?order=title&select=*') || [];
+    renderAdminIntakeList();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading intake forms: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderAdminIntakeList() {
+  const el = document.getElementById('admin-intake-table');
+  const isSuperAdmin = currentAdminUser?.role !== 'am';
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">ID</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Title</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Sections</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Questions</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Used By</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+
+  if (!ALL_INTAKE_FORMS.length) {
+    html += `<tr><td colspan="6" style="text-align:center;padding:24px;color:#9CA3AF">No intake forms yet.</td></tr>`;
+  }
+
+  ALL_INTAKE_FORMS.forEach(f => {
+    const def = (typeof f.definition === 'string') ? JSON.parse(f.definition || '{}') : (f.definition || {});
+    const sections = def.sections || [];
+    const fieldCount = sections.reduce((n, s) => n + (s.fields || []).length, 0);
+    // CATALOG_ROWS (not allServicesMap) — populated unconditionally at page load, so
+    // this count is correct even if the admin opens Intake Forms without ever visiting
+    // Suggested Map first (allServicesMap only populates when that tab loads).
+    const usedBy = Object.values(CATALOG_ROWS).filter(s => s.intake_form_id === f.id).length;
+    const inactive = f.active === false;
+    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const editBtn = isSuperAdmin
+      ? `<button onclick="adminEditIntakeForm('${esc(f.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
+      : '';
+    const deactivateBtn = !isSuperAdmin ? '' :
+      `<button onclick="adminToggleIntakeFormActive('${esc(f.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(f.id)}</td>
+      <td style="padding:8px 10px">${esc(f.title || '')}${inactiveBadge}</td>
+      <td style="padding:8px 10px;text-align:center">${sections.length}</td>
+      <td style="padding:8px 10px;text-align:center">${fieldCount}</td>
+      <td style="padding:8px 10px;text-align:center">${usedBy || '<span style="color:var(--muted)">—</span>'}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function generateIntakeFormId(title) {
+  return (title || '').trim().toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+function autoIntakeFormId() {
+  const idField = document.getElementById('admin-intake-id');
+  if (idField.dataset.manuallyEdited) return;
+  idField.value = generateIntakeFormId(document.getElementById('admin-intake-title').value);
+  checkIntakeFormIdCollision();
+}
+function regenerateIntakeFormId() {
+  const idField = document.getElementById('admin-intake-id');
+  idField.dataset.manuallyEdited = '';
+  autoIntakeFormId();
+}
+function checkIntakeFormIdCollision() {
+  const idField = document.getElementById('admin-intake-id');
+  const warn = document.getElementById('admin-intake-id-warn');
+  const isNew = !document.getElementById('admin-intake-original-id').value;
+  const exists = isNew && idField.value && ALL_INTAKE_FORMS.some(f => f.id === idField.value);
+  if (warn) warn.style.display = exists ? 'block' : 'none';
+}
+
+// Builds a field key from its label the same way service/section ids are slugged —
+// unique only WITHIN its own section (validated at save time), not globally.
+function generateFieldKey(label) {
+  return (label || '').trim().toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
+function intakeAddSection() {
+  intakeFormDraft.sections.push({ title: '', fields: [] });
+  renderIntakeFormEditor();
+}
+function intakeRemoveSection(sIdx) {
+  if (!confirm('Remove this section and all its questions?')) return;
+  intakeFormDraft.sections.splice(sIdx, 1);
+  renderIntakeFormEditor();
+}
+function intakeSectionTitleChange(sIdx, val) {
+  intakeFormDraft.sections[sIdx].title = val;
+}
+function intakeAddField(sIdx) {
+  intakeFormDraft.sections[sIdx].fields.push({ key: '', label: '', type: 'text', options: [] });
+  renderIntakeFormEditor();
+}
+function intakeRemoveField(sIdx, fIdx) {
+  intakeFormDraft.sections[sIdx].fields.splice(fIdx, 1);
+  renderIntakeFormEditor();
+}
+function intakeFieldLabelChange(sIdx, fIdx, val) {
+  const field = intakeFormDraft.sections[sIdx].fields[fIdx];
+  field.label = val;
+  if (!field.keyManuallyEdited) field.key = generateFieldKey(val);
+  // Keep the key input in sync live without a full re-render (re-rendering on every
+  // keystroke would steal focus from the label input being typed into).
+  const keyInput = document.querySelector(`[data-field-key-input="${sIdx}-${fIdx}"]`);
+  if (keyInput && !field.keyManuallyEdited) keyInput.value = field.key;
+}
+function intakeFieldKeyChange(sIdx, fIdx, val) {
+  const field = intakeFormDraft.sections[sIdx].fields[fIdx];
+  field.keyManuallyEdited = true;
+  field.key = val.toLowerCase().replace(/[^a-z0-9_]/g, '');
+}
+function intakeFieldTypeChange(sIdx, fIdx, val) {
+  intakeFormDraft.sections[sIdx].fields[fIdx].type = val;
+  renderIntakeFormEditor(); // options textarea only shows for 'radio'
+}
+function intakeFieldOptionsChange(sIdx, fIdx, val) {
+  intakeFormDraft.sections[sIdx].fields[fIdx].options = val.split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+function renderIntakeFormEditor() {
+  const el = document.getElementById('admin-intake-sections-editor');
+  if (!intakeFormDraft.sections.length) {
+    el.innerHTML = '<p style="font-size:12px;color:var(--muted);font-style:italic;padding:12px 0">No sections yet — click "+ Add Section" to start building this form.</p>';
+    return;
+  }
+  el.innerHTML = intakeFormDraft.sections.map((section, sIdx) => `
+    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+        <input type="text" placeholder="Section title, e.g. Project Details" value="${esc(section.title || '')}"
+          oninput="intakeSectionTitleChange(${sIdx}, this.value)"
+          style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px;font-weight:600"/>
+        <button type="button" onclick="intakeRemoveSection(${sIdx})" style="padding:6px 10px;border-radius:6px;border:1px solid #FECACA;background:#FEF2F2;color:#B91C1C;font-size:11px;font-weight:600;cursor:pointer">Remove Section</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${section.fields.map((field, fIdx) => `
+          <div style="display:grid;grid-template-columns:1fr 1fr 140px 32px;gap:8px;align-items:start;padding:8px;background:#F8FAFC;border-radius:6px">
+            <div>
+              <input type="text" placeholder="Question label" value="${esc(field.label || '')}"
+                oninput="intakeFieldLabelChange(${sIdx}, ${fIdx}, this.value)"
+                style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px"/>
+            </div>
+            <div>
+              <input type="text" data-field-key-input="${sIdx}-${fIdx}" placeholder="key" value="${esc(field.key || '')}"
+                oninput="intakeFieldKeyChange(${sIdx}, ${fIdx}, this.value)"
+                style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:11px;font-family:monospace;color:var(--muted)"/>
+              ${field.type === 'radio' ? `<textarea placeholder="One option per line" rows="2"
+                oninput="intakeFieldOptionsChange(${sIdx}, ${fIdx}, this.value)"
+                style="width:100%;margin-top:6px;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:11px">${esc((field.options||[]).join('\n'))}</textarea>` : ''}
+            </div>
+            <div>
+              <select onchange="intakeFieldTypeChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px;background:#fff">
+                ${INTAKE_FIELD_TYPES.map(t => `<option value="${t.value}" ${field.type===t.value?'selected':''}>${t.label}</option>`).join('')}
+              </select>
+            </div>
+            <button type="button" onclick="intakeRemoveField(${sIdx}, ${fIdx})" title="Remove question" style="padding:6px;border-radius:5px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:14px;cursor:pointer;line-height:1">✕</button>
+          </div>
+        `).join('') || '<p style="font-size:11px;color:var(--muted);font-style:italic">No questions in this section yet.</p>'}
+      </div>
+      <button type="button" onclick="intakeAddField(${sIdx})" style="margin-top:10px;padding:6px 12px;border-radius:6px;border:1px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--accent)">+ Add Question</button>
+    </div>
+  `).join('');
+}
+
+function adminNewIntakeForm() {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Intake form management is restricted to super admins', 'error');
+    return;
+  }
+  document.getElementById('admin-intake-form-title').textContent = 'New Intake Form';
+  document.getElementById('admin-intake-original-id').value = '';
+  document.getElementById('admin-intake-title').value = '';
+  document.getElementById('admin-intake-id').value = '';
+  document.getElementById('admin-intake-id').disabled = false;
+  document.getElementById('admin-intake-id').dataset.manuallyEdited = '';
+  document.getElementById('admin-intake-id-warn').style.display = 'none';
+  intakeFormDraft = { sections: [] };
+  renderIntakeFormEditor();
+  document.getElementById('admin-intake-form').style.display = 'block';
+  document.getElementById('admin-intake-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminEditIntakeForm(id) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Intake form management is restricted to super admins', 'error');
+    return;
+  }
+  const f = ALL_INTAKE_FORMS.find(x => x.id === id);
+  if (!f) return;
+  const def = (typeof f.definition === 'string') ? JSON.parse(f.definition || '{}') : (f.definition || {});
+  document.getElementById('admin-intake-form-title').textContent = 'Edit Intake Form — ' + (f.title || f.id);
+  document.getElementById('admin-intake-original-id').value = f.id;
+  document.getElementById('admin-intake-title').value = f.title || '';
+  document.getElementById('admin-intake-id').value = f.id;
+  document.getElementById('admin-intake-id').disabled = true; // id is the key services reference by intake_form_id — immutable after creation
+  document.getElementById('admin-intake-id').dataset.manuallyEdited = '1';
+  document.getElementById('admin-intake-id-warn').style.display = 'none';
+  // Deep-clone so cancelling mid-edit can't leave stray mutations on the loaded list.
+  intakeFormDraft = JSON.parse(JSON.stringify({ sections: def.sections || [] }));
+  intakeFormDraft.sections.forEach(s => (s.fields || []).forEach(fld => { fld.keyManuallyEdited = true; }));
+  renderIntakeFormEditor();
+  document.getElementById('admin-intake-form').style.display = 'block';
+  document.getElementById('admin-intake-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelIntakeFormEdit() {
+  document.getElementById('admin-intake-form').style.display = 'none';
+  intakeFormDraft = null;
+}
+
+async function adminSaveIntakeForm() {
+  const isNew = !document.getElementById('admin-intake-original-id').value;
+  const id = document.getElementById('admin-intake-id').value.trim();
+  const title = document.getElementById('admin-intake-title').value.trim();
+  if (!id) { showToast('Form ID is required', 'error'); return; }
+  if (!title) { showToast('Title is required', 'error'); return; }
+  if (isNew && ALL_INTAKE_FORMS.some(f => f.id === id)) {
+    showToast('An intake form with this ID already exists — please choose a different one', 'error');
+    return;
+  }
+
+  // Validate: every field needs a label + key, radio fields need at least one option,
+  // and keys must be unique WITHIN their own section (duplicate keys in the same
+  // section would silently overwrite each other's saved answers).
+  for (const section of intakeFormDraft.sections) {
+    const seenKeys = new Set();
+    for (const field of section.fields) {
+      if (!field.label || !field.key) {
+        showToast('Every question needs both a label and a key — check "' + (section.title || 'Untitled section') + '"', 'error');
+        return;
+      }
+      if (seenKeys.has(field.key)) {
+        showToast(`Duplicate question key "${field.key}" in "${section.title || 'Untitled section'}" — keys must be unique within a section`, 'error');
+        return;
+      }
+      seenKeys.add(field.key);
+      if (field.type === 'radio' && !(field.options || []).length) {
+        showToast(`"${field.label}" is a Radio question but has no options — add at least one, one per line`, 'error');
+        return;
+      }
+    }
+  }
+
+  // Strip the UI-only `keyManuallyEdited` bookkeeping flag before saving — it has no
+  // meaning outside this editor session and shouldn't pollute the stored definition.
+  const definition = {
+    sections: intakeFormDraft.sections.map(s => ({
+      title: s.title || '',
+      fields: s.fields.map(f => {
+        const clean = { key: f.key, label: f.label, type: f.type };
+        if (f.type === 'radio') clean.options = f.options || [];
+        return clean;
+      }),
+    })),
+  };
+
+  const payload = { title, definition };
+  if (isNew) {
+    payload.id = id;
+    payload.active = true;
+  }
+
+  try {
+    await sb('rpc/admin_save_intake_form', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_form_id: isNew ? null : id,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'Intake form created!' : 'Intake form updated!');
+    document.getElementById('admin-intake-form').style.display = 'none';
+    intakeFormDraft = null;
+    await loadCatalog(); // refresh INTAKE_FORMS used elsewhere in the admin UI (e.g. the Services editor's dropdown)
+    loadAdminIntakeForms();
+  } catch(e) {
+    showToast('Error saving intake form: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleIntakeFormActive(id, makeActive) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Intake form management is restricted to super admins', 'error');
+    return;
+  }
+  const f = ALL_INTAKE_FORMS.find(x => x.id === id);
+  if (!f) return;
+  const usedBy = Object.values(CATALOG_ROWS).filter(s => s.intake_form_id === id).length;
+  const warnText = (!makeActive && usedBy > 0)
+    ? ` ${usedBy} active service${usedBy>1?'s still use':' still uses'} this form — deactivating means whoever selects ${usedBy>1?'them':'it'} on the live form won't be prompted for an intake at all.`
+    : '';
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} "${f.title || f.id}"?${warnText}`)) return;
+  try {
+    await sb('rpc/admin_save_intake_form', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_form_id: id,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`Intake form ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadAdminIntakeForms();
+  } catch(e) {
+    showToast('Error updating intake form: ' + e.message, 'error');
   }
 }
 
