@@ -3061,23 +3061,24 @@ function printIO() {
   body{font-size:10.5pt;line-height:1.4}
 
   /* 8.5 x 11 page setup with safe margins.
-     REVISED (2026-07-08) — the first attempt (just increasing @page margin) didn't
-     actually work, confirmed by Claire's screenshot still showing the overlap. Corrected
-     understanding: position:fixed running elements in Chrome's print engine appear to
-     be positioned relative to the CONTENT BOX itself (i.e., measured from wherever @page
-     margin already ends), not the true physical page edge some other engines use. That
-     means the running header/footer and the normal document content were both anchored
-     to the exact same starting point — increasing @page margin only pushed BOTH of them
-     down together by the same amount, never actually separating them from each other.
-     REAL fix: @page margin back to something reasonable (0.6in, a modest bump from the
-     original 0.5in for general safety) PLUS dedicated body padding-top/padding-bottom,
-     applied only in the print media query below — that padding sits INSIDE the content
-     box the running elements also render into, carving out dedicated room for them so
-     the actual document content starts further down/ends further up, clearing them
-     instead of competing with them for the same space. */
-  @page{size:letter portrait;margin:0.6in 0.5in;}
+     REMOVED (2026-07-10): the previous fix used position:fixed running header/footer
+     elements repeated on every printed page, reserving room for them with one-time
+     body padding-top/padding-bottom. That padding is only ever inserted once — at the
+     very start/end of the WHOLE document's content flow — while position:fixed elements
+     in Chrome's print engine repeat on EVERY physical page at the exact same anchor
+     point as the flowing content. That mismatch meant page 1 (and the last page) looked
+     correct, but any page in between had the header/footer landing directly on top of
+     real content with no reserved gap at all — confirmed by rendering an actual multi-
+     page test print to PDF and inspecting it. A table thead/tfoot-based repeating
+     header (the technique that already works for the services table itself, further
+     down) was tried as the "correct" fix, but Chrome doesn't paginate a single giant
+     table row cleanly — the footer misrendered at the top of the page instead of the
+     bottom. Given the deadline, traded the repeating-per-page header/footer for a
+     guaranteed-correct one: a normal (non-fixed) footer that appears once, at the true
+     end of the document, after the signature. The letterhead already serves as the
+     one-time page-1 header. */
+  @page{size:letter portrait;margin:0.5in;}
   @media print{
-    body{padding-top:0.35in;padding-bottom:0.35in;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .page-break{page-break-before:always}
     thead{display:table-header-group}
     tfoot{display:table-footer-group}
@@ -3086,15 +3087,11 @@ function printIO() {
     .subtotal-row,.totals-row{page-break-inside:avoid}
     .sig-section{page-break-inside:avoid}
     .legal{page-break-inside:auto}
-    /* Repeating header on every page */
-    .running-header{position:fixed;top:0;left:0;right:0;font-size:8pt;color:#9CA3AF;padding-bottom:6px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between}
-    /* Repeating footer with page numbers */
-    .running-footer{position:fixed;bottom:0;left:0;right:0;font-size:8pt;color:#9CA3AF;padding-top:6px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between}
-    .running-footer .page-num::after{content:"Page " counter(page) " of " counter(pages)}
+    .doc-footer{page-break-inside:avoid}
   }
+  .doc-footer{margin-top:14px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:8pt;color:#9CA3AF;text-align:center}
   @media screen{
-    body{max-width:8.5in;margin:0 auto;padding:0.95in 0.5in;box-shadow:0 4px 24px rgba(0,0,0,.1);background:#fff;min-height:11in}
-    .running-header,.running-footer{display:none}
+    body{max-width:8.5in;margin:0 auto;padding:0.5in;box-shadow:0 4px 24px rgba(0,0,0,.1);background:#fff;min-height:11in}
   }
 
   /* Letterhead */
@@ -3174,21 +3171,7 @@ function printIO() {
   .sig-info{margin-top:6px;font-size:9pt;color:#111827;font-weight:600}
   .sig-info-title{color:#6B7280;font-weight:400;font-size:8.5pt}
   .sig-date{font-size:8.5pt;color:#6B7280;margin-top:3px}
-
-  /* Running header/footer for print */
-  .running-header span{padding:0 0.5in}
-  .running-footer span{padding:0 0.5in}
 </style></head><body>
-
-<!-- Running header & footer (print only) -->
-<div class="running-header">
-  <span>${groupName} — Insertion Order</span>
-  <span>${bizName} · ${ioNumber}</span>
-</div>
-<div class="running-footer">
-  <span>${groupName}${fromEmail ? ' · ' + fromEmail : ''}</span>
-  <span class="page-num"></span>
-</div>
 
 <!-- Letterhead -->
 <div class="letterhead">
@@ -3298,6 +3281,13 @@ ${specialInstructions ? `<div class="special-box"><strong>Special Instructions</
       <div class="sig-date">Date: ${signedDateDisplay}</div>
     </div>
   </div>
+</div>
+
+<!-- Document footer — appears once at the true end of the document, not repeated per
+     printed page. See the @page comment near the top of the <style> block for why a
+     repeating per-page version was removed. -->
+<div class="doc-footer">
+  <span>${groupName}${fromEmail ? ' · ' + fromEmail : ''} · ${ioNumber}</span>
 </div>
 
 </body></html>`;
