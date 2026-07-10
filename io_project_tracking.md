@@ -823,6 +823,28 @@ form-edit pass or pre-launch audit.
   Given the severity (a real display bug affecting every spend/CPM service on the actual
   printed contract, present since 2026-07-07), this is exactly the kind of catch live
   testing exists for — good thing it surfaced now, before any real client submission.
+- **Groups list "X overrides" badge counted stale overrides for deactivated services —
+  FIXED, found live by Claire (2026-07-10).** Caught by her own thorough test-service
+  cycle (reactivate → change price → deactivate again): after deactivating the test
+  service, the Groups list still showed "1 override" for the group she'd set a custom
+  price on — but that service no longer even appears on the Custom Pricing screen (a
+  deactivated service is excluded from `PRICEABLE_SERVICES`), so there was no way to see
+  or clear the phantom count through the UI. ROOT CAUSE: the badge (`admin/index.html`,
+  `renderAdminGroups()`) counted every raw key in the group's stored `io_pricing` JSON,
+  with no check for whether the underlying service is still active — deactivating a
+  service never clears its override key out of that JSON. FIXED: count now filters to
+  keys present in `CATALOG_ROWS` (populated from active-only services), so a stale
+  override on a deactivated service no longer inflates the count. Deliberately does NOT
+  touch the stored override value itself — if that same service is ever reactivated, its
+  old price is still there and becomes visible/editable again on Custom Pricing, same as
+  before; this only fixes what the count on the Groups list actually reflects.
+  VERIFIED via simulation, 5 cases: the exact reported scenario (a stale override on a
+  deactivated service) now correctly counts 0; a normal override on a still-active
+  service still counts correctly; a mixed stale+real case counts only the real one; no
+  overrides shows 0; string-encoded `io_pricing` (as it can come back from Supabase)
+  still parses and counts correctly. `node --check` passes. Only needed fixing in
+  `admin/index.html` — `index.html`'s copy of this code no longer exists after today's
+  cleanup, so there's no second copy to keep in sync this time.
 - **Full catalog reconciliation against the updated PDF (Version 7.9.26) — DONE
   (2026-07-10), ahead of Claire's leadership presentation.** Claire provided the current
   IO PDF plus a full `services` table export; checked every section line-by-line rather
