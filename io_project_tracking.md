@@ -1521,6 +1521,46 @@ which is why they slipped off this doc — but several gate a real client-facing
   `shared.css` includes that way) and runs through login + one real save of each kind
   before this goes anywhere near the actual subdomain. Once confirmed, the follow-up step
   (removing admin code from `index.html`) can be scheduled.
+  **CONFIRMED WORKING by Claire (2026-07-10) — login and saves all functioned correctly
+  in a real browser.**
+- **Admin portal: subdomain vs. path decision — RESOLVED, path chosen (2026-07-10).** A
+  coworker asked whether a subdomain (the original plan) was actually necessary versus
+  putting the admin portal at a path on the existing `io` domain. Checked the actual
+  deploy config (`.github/workflows/deploy.yml`) rather than assume: it FTP-uploads the
+  ENTIRE repo root to `io.yourdigitalgroupresources.com` on every push to `main` — meaning
+  a path-based admin portal needs ZERO new infrastructure (no new DNS record, no new FTP
+  credentials/target, no new deploy step) versus a subdomain, which would need all of
+  that coordinated with whoever manages hosting/DNS. Confirmed this doesn't compromise the
+  Strategist/Accounting plan — role-based-views-inside-one-app works identically under a
+  path or a subdomain, so the choice was purely about deploy simplicity, not architecture.
+  **DECIDED: path-based (`io.yourdigitalgroupresources.com/admin`), and — a related,
+  slightly bigger decision — Strategist and Accounting will be SEPARATE paths/files
+  (`/strategist`, `/accounting`) rather than tabs inside one shared admin app**, since
+  Claire expects they'll need different layouts, not just different visibility into the
+  same screens. All three will still share `shared.js`/`shared.css` for the common
+  Supabase/pricing logic — same "single source of truth" principle as everything else on
+  this project. FLAGGED FOR LATER (not needed now, Phase 2/3 work): a single login gate at
+  `/admin` should redirect Strategist/Accounting logins out to their own path; Super Admin
+  needs to be able to reach all three (most likely via nav links between them, since
+  they're separate apps, not one merged view); and if each path checks login
+  independently, a Super Admin visiting all three would be prompted for a password three
+  times unless a session is persisted across paths — worth deciding when that work
+  actually starts, not blocking today.
+  **BUILT (2026-07-10): `admin.html` moved to `admin/index.html`** so it's reachable at
+  the clean `/admin` path rather than `/admin.html`. `shared.js`/`shared.css` deliberately
+  LEFT AT THE REPO ROOT (not moved into `admin/`) specifically so the future `/strategist`
+  and `/accounting` folders can reference the same two files via a relative `../` path
+  without duplicating them — the folder structure was chosen with those two future
+  additions already in mind, not just today's one file. Updated the two references inside
+  `admin/index.html` (`<link href="shared.css">` → `../shared.css`; `<script src="shared.js">`
+  → `../shared.js`). No deploy workflow changes needed — `deploy.yml`'s FTP upload already
+  copies the whole repo tree recursively with no folder exclusions, so `admin/` deploys
+  automatically. VERIFIED: `node --check` still passes on the relocated inline script;
+  both updated paths confirmed correct via grep; `index.html` untouched (this was a pure
+  file move + two path edits, no logic changes). NOT YET VERIFIED: hasn't been re-tested
+  in a browser since the move (the pre-move version WAS confirmed working, per above) —
+  worth Claire's usual local-serve smoke test again before this goes to the real domain,
+  purely to rule out a path-resolution mistake, not because any logic changed.
 - **Spend minimums — wording vs. enforcement** — text says "recommended," disclaimers imply
   required, but only $0 is actually blocked. Decide hard requirement vs. guidance, then make
   wording, warnings, and submit-blocking all agree.
