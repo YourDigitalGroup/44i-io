@@ -1895,6 +1895,31 @@ Building a table ≠ building its editing screen. Status per table:
 Role-gating to preserve: Custom Pricing is super-admin only (AM-tier can't see/change
 pricing), enforced in UI AND server-side. Carry this pattern to new editing screens.
 
+**Two feature requests logged, not built (2026-07-10).** Claire wants these as visible
+progress to show her bosses, but correctly deprioritized both behind the `index.html`
+cleanup and Monday prep — genuinely two different-sized pieces of work, checked against
+the actual code before writing this down:
+- **Drag-and-drop reordering of services within a section** — moderate-sized UI upgrade.
+  `sort_order` already exists as a per-service field, editable today only by typing a
+  number into the Services editor (no visual feedback on where it'll land relative to
+  siblings). A drag-and-drop reorder would replace the number-guessing with something
+  that shows the real order directly; self-contained to the Services editor, doesn't
+  touch section-level structure at all.
+- **Section-level management (reorder whole sections, add a new section without code)**
+  — a bigger structural gap, confirmed by reading the actual startup code rather than
+  assumed: a section's ON-SCREEN POSITION today is purely the physical order its HTML
+  block is typed into `index.html` (`renderCatalogSection('id')`/`renderMultiTableSection
+  ('id')` calls at startup only fill ROWS into a card that already exists at a fixed
+  position — they don't control where that card sits). There is no database table for
+  sections at all; unlike individual services, a section has no row, no order field, no
+  admin screen. Adding a genuinely NEW top-level section, or reordering existing ones,
+  needs a code change either way today. Closer in scope to the original services-table
+  migration than a quick add — a real `sections` table (label, icon, order, whatever else
+  a card needs) plus a generic per-section render loop instead of one hardcoded call per
+  section.
+Both parked for whenever there's time/priority — worth revisiting once the `index.html`
+cleanup and Trello work are further along, per Claire's own prioritization.
+
 ---
 
 ## LATER PHASES (not now)
