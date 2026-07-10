@@ -158,6 +158,27 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   should skip intake for a reason.
 - **Archived/returning clients (Trello)** — how often does it happen, and how do they
   currently re-find the archived list? (Shapes the eventual fix; not blocking.)
+- **Multi-select in Targeted Display / Social Media Ads — clarified into two SEPARATE
+  questions (2026-07-10), since the old vague note conflated two different situations.**
+  Pulled the real tier membership via SQL rather than guess:
+  - **Targeted Display (`td-tier`):** Geotargeting & Audience ($10 CPM), Site Retargeting
+    ($12), Dynamic Display ($15), Custom Site Targeting ($18) — these are 4 different
+    TARGETING METHODS, currently forced to single-select (picking one unchecks the others).
+    Question: should an AE be able to run MULTIPLE targeting methods for the same client at
+    once (e.g. Geotargeting AND Site Retargeting together), or is one method per campaign
+    intentional?
+  - **Social Media Ads (`sma-tier`):** Facebook & Instagram ($15 CPM), TikTok ($27),
+    Snapchat ($20), LinkedIn ($60) — these are 4 different PLATFORMS, also currently
+    forced to single-select. Question: should an AE be able to run ads on multiple
+    platforms for the same client at once (e.g. Facebook + TikTok together)?
+  **Technical note for the AM conversation, not a constraint on the answer:** each item
+  already has its own independent rate and its own spend field — nothing about how pricing
+  is calculated would need to change to allow multiple selections in either section. The
+  single-select restriction is a pure business-rule choice (`exclusivity_group`), not a
+  technical limitation — whichever way the AM decides, it's a small, low-risk change either
+  to leave as-is or to remove the exclusivity grouping for one or both sections.
+  `td-offline` (Offline Visits Tracking, a flat modifier add-on) is NOT part of the
+  `td-tier` group and is unaffected by this question either way.
 
 ---
 
@@ -732,6 +753,9 @@ form-edit pass or pre-launch audit.
   admin code from `index.html`" cleanup (already planned, parked on Claire's timing with
   her developer) specifically to eliminate this duplication risk for good, rather than
   purely for the subdomain-vs-path reason it was originally framed around.
+  **RESOLVED — see the "admin code fully removed from index.html" entry below (2026-07-10,
+  same session).** This standing risk no longer exists; there's only one copy of this code
+  now.
 - **SECOND real bug found live, same session (2026-07-10): editing a service's
   pricing_group saved correctly to Supabase but didn't move it in the Custom Pricing list
   on screen without a full page reload.** Claire's exact words: removing the pricing_group
@@ -763,6 +787,54 @@ form-edit pass or pre-launch audit.
   the rate itself? a flat add-on instead?) and new logic in `buildReview()`/`submitIO()`/
   `printIO()`, the money-total calculators — deliberately not something to guess at or
   rush.
+- **Full catalog reconciliation against the updated PDF (Version 7.9.26) — DONE
+  (2026-07-10), ahead of Claire's leadership presentation.** Claire provided the current
+  IO PDF plus a full `services` table export; checked every section line-by-line rather
+  than spot-check. Confirmed MATCHING with no changes needed: Audio (Programmatic Audio/
+  Native Display/Social Display Ads/Mobile Audience Targeting), CTV's Streaming TV/Social
+  OTT/Hulu/Amazon, Email Marketing, GBP/Local Listing/Reputation, SEM, SEO, Social Media
+  Management, Social Media Ads, Targeted Display, Targeted Landing Pages, all of Video.
+  Real discrepancies found and fixed, each confirmed with Claire before writing SQL (not
+  guessed):
+  - `lt-event` (Location Targeting — Event/Lookback) had `spend_minimum` at the general
+    $1,000 rate; PDF calls out a separate $1,500 minimum for this one item specifically.
+    Fixed.
+  - `w-hosting` was missed by the earlier `pricing_group` migration (2026-07-10, same
+    day) — its siblings `w-ecomm-hosting`/`w-ada-hosting` were correctly tagged
+    'Hosting Fees', this one wasn't. Fixed.
+  - `w-hosting` and `w-ada-hosting` labels had internal working-notes baked directly into
+    the CLIENT-FACING label field (e.g. "...(standalone — use hosting prompt on site
+    purchase)", "...(due upfront, renews annually from IO date)") — labels show on the
+    live form, Suggested Map, and printed IO, so these were visible to real clients, not
+    just admins. Reverted to plain PDF wording.
+  - `alc-testdelete` ("TEST — Delete Me") was sitting ACTIVE in the live catalog — a
+    leftover test row that would have shown as a real, selectable checkbox on the public
+    form. Deactivated.
+  - **Website Monthly Hosting restructured** — the 4-tier Content/Chatbot/ADA bundling
+    ladder (`wm-hosting` $49 / `wm-host-content` $69 / `wm-host-ai` $89 / `wm-host-all`
+    $109) is replaced by 2 flat tiers per the updated PDF: `wm-hosting` ("Hosting Only")
+    repriced 49→69; new service `wm-ecomm-hosting` ("E-commerceHosting") added at $99/mo;
+    `wm-host-content`/`wm-host-ai`/`wm-host-all` deactivated (not deleted — any past order
+    referencing them stays intact). Confirmed explicitly with Claire before deactivating,
+    since this removes real, currently-sellable options, not just a price change.
+    `wm-ai`(AI ChatBot)/`wm-email`(Addl. Email) deliberately left untouched — prices
+    already matched, and their exact relationship to site tiers is part of the ALREADY-
+    PARKED Website business-logic questions awaiting AM review, not something to resolve
+    here.
+  - **New service: Netflix Ads** (`netflix-bp`) added — same shape as Hulu/Amazon Prime,
+    a subsection inside the existing `ctv` section (`subsection_label:'Netflix Ads'`),
+    matching how Hulu/Amazon/Social OTT are each their own header block on the PDF while
+    sharing one section/card on the live form. $90 CPM, $3,000/mo minimum, `pricing_mode:
+    'spend'`. Confirmed this interpretation with Claire rather than assume a brand-new
+    top-level section (which would have needed code changes, not just a data insert).
+  Explicitly confirmed as staying SPLIT, not merged, per Claire (already discussed with
+  the AM separately): the PDF prints "Radio to Video **or** YouTube Pre-Roll" and "Banner
+  **or** Social Media Ad Set" as single combined lines, but the catalog's 4 separate
+  active services (`alc-radio`/`alc-preroll`/`alc-banner`/`alc-social-ad-set`) are the
+  correct, intended structure — the PDF's wording is what's behind, not the database.
+  VERIFIED: Claire ran the full script and pasted back the result of the verify query —
+  all 10 changed/added rows confirmed matching the intended values (prices, active flags,
+  pricing_group tags all correct).
 - **Dev picker reachable on the LIVE production domain by accident — FIXED, real safety
   gap closed (2026-07-08).** Came up while mapping the admin-portal/URL split (see below):
   Claire asked what happens if someone's group link loses its slug — could they land on
@@ -1622,8 +1694,10 @@ which is why they slipped off this doc — but several gate a real client-facing
   the placeholder for this.
 
 **Team-decision items (gather input; some may become later-phase features):**
-- **Remove the admin portal from public group IO pages — defer to the URL/structure work
-  (logged 2026-06-26; HARD GATE added 2026-07-07).** Part of the "shared backend, separate
+- **Remove the admin portal from public group IO pages — COMPLETE (2026-07-10). Originally
+  logged 2026-06-26; HARD GATE added 2026-07-07; see the detailed step-by-step entries
+  under "Backend / code-review findings" above for the extraction (2026-07-08) and removal
+  (2026-07-10) work.** Part of the "shared backend, separate
   views" architecture: the admin portal (gear → login → Groups/Orders panel) currently
   lives in the SAME file as the public IO form. Eventually it should move to its own
   internal URL, leaving the public form with no admin code. NOT urgent today: no links
@@ -1703,6 +1777,46 @@ which is why they slipped off this doc — but several gate a real client-facing
   (removing admin code from `index.html`) can be scheduled.
   **CONFIRMED WORKING by Claire (2026-07-10) — login and saves all functioned correctly
   in a real browser.**
+  **STEP 2 (removal) COMPLETE (2026-07-10, same session).** With `/admin` fully confirmed
+  working (including today's real-bug fixes above), Claire asked for the cleanup pass
+  itself rather than wait — the two duplication bugs found earlier today made the case for
+  doing it now, not later. Mapped every admin-only boundary precisely before touching
+  anything (via a dedicated Explore pass, not assumption): the gear icon (`index.html`,
+  one `<div>`), the admin panel markup (`#page-admin` root, one contiguous block), the
+  login modal (one contiguous block), and the entire admin JS section (`ADMIN_USERS`
+  through `adminSaveGroup()` — one clean, unbroken run with zero public-form code
+  interleaved). One delicate exception, NOT part of any contiguous admin block: a 23-line
+  chunk inside the shared/public `loadCatalog()` function that derived the admin-only
+  `PRICEABLE_SERVICES` global — trimmed out of that otherwise-kept function rather than
+  left dangling once `PRICEABLE_SERVICES`/`MAP_SECTION_LABELS` were deleted along with the
+  rest of the admin code.
+  Removed roughly 1,766 lines total. The gear icon was removed with NO replacement (not
+  even a link to `/admin`) — confirmed as the right call: the whole point of today's work
+  is that the public form should carry zero admin surface area, and `/admin` is already
+  the known, bookmarked entry point.
+  VERIFIED programmatically, the same rigor as every prior extraction step: `node --check`
+  passes on the modified script; every one of the ~45 deleted admin-only symbol names
+  (functions, globals, DOM ids) confirmed to have ZERO remaining references anywhere in
+  the file; every kept shared/public function (`loadCatalog`, `applyCustomPricing`,
+  `applyGroupBranding`, `loadGroup`, `renderCatalogSection`, `renderMultiTableSection`,
+  `buildReview`, `submitIO`, `printIO`, `RADIO_GROUPS`, `SPEND_MINIMUMS`, `CATALOG_ROWS`,
+  `sb`, `esc`, `showToast`, `rowToServiceData`, `priceAndFrequency`) confirmed still present
+  and intact; zero dangling `getElementById`/`onclick`/`onchange` references anywhere in
+  the file (same completeness check used for the original admin.html extraction); braces
+  and parens confirmed balanced; exactly one `DOMContentLoaded` listener remains (the
+  public form's own startup sequence — admin never had a separate one, it was reachable
+  on-demand via the gear icon, so nothing was lost there). `CLAUDE.md` updated to stop
+  describing the admin portal as living in `index.html`, and to fix a separately-noticed
+  stale reference to a working-file name (`io_v2_45_backend_security.html`) that no longer
+  exists in the repo (the real file has been `index.html` this whole time).
+  HONEST CAVEAT, same as every prior step touching this file: this can't be verified in an
+  actual browser from here. Claire should do one real smoke test on the public form (load
+  a group, select services across a few sections, submit a real test IO against `ctg`)
+  before trusting this in front of her bosses — everything checked out at the code level,
+  but rendering/runtime behavior needs a real browser to be certain.
+  `index.html` and `admin/index.html` now each contain exactly one copy of the Custom
+  Pricing/Services-editor code — the duplication that caused both of today's real bugs no
+  longer exists.
 - **Admin portal: subdomain vs. path decision — RESOLVED, path chosen (2026-07-10).** A
   coworker asked whether a subdomain (the original plan) was actually necessary versus
   putting the admin portal at a path on the existing `io` domain. Checked the actual
@@ -1760,9 +1874,22 @@ which is why they slipped off this doc — but several gate a real client-facing
   cleaner bare `/admin/` URL — worth raising with Claire's developer when the
   Strategist/Accounting paths get built (same fix would apply to `/strategist`/
   `/accounting` too), not urgent on its own.
-- **Spend minimums — wording vs. enforcement** — text says "recommended," disclaimers imply
-  required, but only $0 is actually blocked. Decide hard requirement vs. guidance, then make
-  wording, warnings, and submit-blocking all agree.
+- **Spend minimums — wording vs. enforcement — RESOLVED (2026-07-10).** Claire's decision:
+  recommended, not enforced — confirmed as the CORRECT existing behavior, not a bug to
+  change. Checked the actual code before touching anything: the inline warning shown while
+  typing a spend amount already said "Recommended minimum is $X/mo" (not "required"); the
+  only hard block at submission is that a spend-tracked service needs SOME real spend
+  entered (can't submit $0/blank) — the specific minimum number itself was never enforced.
+  The one inconsistent piece was the legal disclaimer text, which said campaigns "require a
+  minimum monthly spend as noted" — overclaiming a hard requirement that isn't real. FIXED:
+  reworded to "have a recommended minimum monthly spend as noted, for the campaign to have
+  a meaningful chance at results" — now consistent with the inline warning and the actual
+  submit-blocking behavior. No JS logic changed, wording only.
+- **Campaign Length required? — RESOLVED, confirmed as intentional (2026-07-10).** Claire's
+  decision: stays optional, a quick-select helper — confirmed this already matches current
+  behavior (the dropdown has always been optional; End Date is a normal, unlocked date
+  field an AE can freely override regardless of what's picked). No change needed — this was
+  already correct, just hadn't been explicitly confirmed as a deliberate choice before.
 - **Auto-check a service when a spend is typed** — entering spend in an unchecked row
   currently doesn't count it. Auto-check on input so spend can't silently fail to register.
   (Tier-A correctness item from the rollout plan.)
@@ -1777,8 +1904,6 @@ which is why they slipped off this doc — but several gate a real client-facing
   new option values render correctly in the file.
 - **Per-service start/end dates** — one date set today covers the whole order; per-service
   is a structural change. Confirm it's actually needed.
-- **Multi-select in ad categories** — Targeted Display and Social Ads are single-select;
-  decide whether an AE can run several at once (e.g. Facebook + TikTok).
 - **Intake form back button** — intake modal intentionally has no dismiss (forces a
   decision). Decide if that's too rigid.
 - **Cancellations** — not handled anywhere. Decide if it lives here, in Trello, or as an
@@ -1814,6 +1939,31 @@ Building a table ≠ building its editing screen. Status per table:
 
 Role-gating to preserve: Custom Pricing is super-admin only (AM-tier can't see/change
 pricing), enforced in UI AND server-side. Carry this pattern to new editing screens.
+
+**Two feature requests logged, not built (2026-07-10).** Claire wants these as visible
+progress to show her bosses, but correctly deprioritized both behind the `index.html`
+cleanup and Monday prep — genuinely two different-sized pieces of work, checked against
+the actual code before writing this down:
+- **Drag-and-drop reordering of services within a section** — moderate-sized UI upgrade.
+  `sort_order` already exists as a per-service field, editable today only by typing a
+  number into the Services editor (no visual feedback on where it'll land relative to
+  siblings). A drag-and-drop reorder would replace the number-guessing with something
+  that shows the real order directly; self-contained to the Services editor, doesn't
+  touch section-level structure at all.
+- **Section-level management (reorder whole sections, add a new section without code)**
+  — a bigger structural gap, confirmed by reading the actual startup code rather than
+  assumed: a section's ON-SCREEN POSITION today is purely the physical order its HTML
+  block is typed into `index.html` (`renderCatalogSection('id')`/`renderMultiTableSection
+  ('id')` calls at startup only fill ROWS into a card that already exists at a fixed
+  position — they don't control where that card sits). There is no database table for
+  sections at all; unlike individual services, a section has no row, no order field, no
+  admin screen. Adding a genuinely NEW top-level section, or reordering existing ones,
+  needs a code change either way today. Closer in scope to the original services-table
+  migration than a quick add — a real `sections` table (label, icon, order, whatever else
+  a card needs) plus a generic per-section render loop instead of one hardcoded call per
+  section.
+Both parked for whenever there's time/priority — worth revisiting once the `index.html`
+cleanup and Trello work are further along, per Claire's own prioritization.
 
 ---
 
