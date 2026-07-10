@@ -1093,10 +1093,10 @@ function renderAdminSectionsList() {
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const canDrag = isSuperAdmin && sec.active;
     const dragHandle = canDrag
-      ? `<span draggable="true" ondragstart="sectionDragStart(event,'${esc(sec.id)}')" style="cursor:grab;color:var(--muted);font-size:14px;user-select:none" title="Drag to reorder">⠿</span>`
+      ? `<span draggable="true" ondragstart="sectionDragStart(event,'${esc(sec.id)}')" ondragend="sectionDragEnd(event)" style="cursor:grab;color:var(--muted);font-size:14px;user-select:none" title="Drag to reorder">⠿</span>`
       : '';
     const dragAttrs = canDrag
-      ? `ondragover="sectionDragOver(event)" ondrop="sectionDrop(event,'${esc(sec.id)}')"`
+      ? `ondragover="sectionDragOver(event)" ondragleave="sectionDragLeave(event)" ondrop="sectionDrop(event,'${esc(sec.id)}')"`
       : '';
     const editBtn = isSuperAdmin
       ? `<button onclick="adminEditSection('${esc(sec.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
@@ -1120,20 +1120,44 @@ function renderAdminSectionsList() {
 // simpler: sections are one flat list, not grouped into bands, so there's no
 // cross-group rejection to handle.
 let sectionDragSourceId = null;
+let sectionDragOverRowEl = null;
+
+function clearSectionDragOverHighlight() {
+  if (sectionDragOverRowEl) { sectionDragOverRowEl.style.borderTop = ''; sectionDragOverRowEl.style.borderBottom = ''; }
+  sectionDragOverRowEl = null;
+}
 
 function sectionDragStart(e, id) {
   sectionDragSourceId = id;
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', id);
+  const tr = e.target.closest('tr');
+  if (tr) tr.style.opacity = '0.4';
+}
+
+function sectionDragEnd(e) {
+  const tr = e.target.closest('tr');
+  if (tr) tr.style.opacity = '';
+  clearSectionDragOverHighlight();
+  sectionDragSourceId = null;
 }
 
 function sectionDragOver(e) {
   e.preventDefault();
   e.dataTransfer.dropEffect = 'move';
+  const tr = e.currentTarget;
+  if (sectionDragOverRowEl && sectionDragOverRowEl !== tr) clearSectionDragOverHighlight();
+  tr.style.borderTop = '2px solid var(--accent)';
+  sectionDragOverRowEl = tr;
+}
+
+function sectionDragLeave(e) {
+  if (e.currentTarget === sectionDragOverRowEl) clearSectionDragOverHighlight();
 }
 
 async function sectionDrop(e, targetId) {
   e.preventDefault();
+  clearSectionDragOverHighlight();
   if (!sectionDragSourceId || sectionDragSourceId === targetId) return;
 
   const ordered = SECTIONS.filter(s => s.active).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
@@ -1150,6 +1174,12 @@ async function sectionDrop(e, targetId) {
   });
   if (!updates.length) return;
 
+  // Same scroll-jump cause as the Suggested Map's reorder: loadAdminSections() briefly
+  // swaps the table for a "Loading…" placeholder, shrinking the page and making the
+  // browser scroll up. Restore position once the real table is back.
+  const scrollY = window.scrollY;
+  const restoreScroll = () => window.scrollTo(0, scrollY);
+
   try {
     for (const u of updates) {
       await sb('rpc/admin_save_section', {
@@ -1163,10 +1193,12 @@ async function sectionDrop(e, targetId) {
       });
     }
     showToast('Order updated!');
-    loadAdminSections();
+    await loadAdminSections();
+    restoreScroll();
   } catch (err) {
     showToast('Error saving new order: ' + err.message, 'error');
-    loadAdminSections();
+    await loadAdminSections();
+    restoreScroll();
   }
 }
 
