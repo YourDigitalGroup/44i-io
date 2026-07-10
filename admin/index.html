@@ -219,7 +219,7 @@
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl">Pricing Mode</label>
-              <select id="admin-svc-pricing-mode" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+              <select id="admin-svc-pricing-mode" onchange="onPricingModeChange(true)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
                 <option value="flat">Flat fee</option>
                 <option value="per_unit">Per-unit (needs a quantity)</option>
                 <option value="modifier">Modifier (add-on to a parent total)</option>
@@ -241,7 +241,7 @@
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
-            <div>
+            <div id="admin-svc-unit-wrap">
               <label class="lbl">Unit <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only used if Pricing Mode is Per-unit</span></label>
               <select id="admin-svc-unit" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
                 <option value="">—</option>
@@ -249,11 +249,11 @@
                 <option value="each">each</option>
               </select>
             </div>
-            <div>
+            <div id="admin-svc-modifier-wrap">
               <label class="lbl">Modifier Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Modifier</span></label>
               <input type="number" step="0.01" id="admin-svc-modifier" placeholder="e.g. 2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
-            <div>
+            <div id="admin-svc-cpm-wrap">
               <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Spend</span></label>
               <input type="number" step="0.01" id="admin-svc-cpm" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
@@ -265,7 +265,7 @@
               <input type="text" id="admin-svc-exclusivity-new" placeholder="e.g. new-service-tier" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
               <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a broken duplicate tier. New group names auto-suggest as "<em>section</em>-tier" (e.g. seo-tier, sm-tier, em-tier) — the established convention.</p>
             </div>
-            <div>
+            <div id="admin-svc-spendmin-wrap">
               <label class="lbl">Spend Minimum <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Spend-based services; shows a soft reminder if entered spend is below this</span></label>
               <input type="number" step="1" id="admin-svc-spend-min" placeholder="e.g. 1000" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
@@ -1506,6 +1506,36 @@ function onServiceSectionChange() {
   populateServiceSubsectionDropdown(section, null);
 }
 
+// Shows only the fields relevant to the selected Pricing Mode — Unit only means
+// anything for Per-unit, Modifier Amount only for Modifier, Retail CPM/Spend Minimum
+// only for Spend-based. Without this, a service could be saved with a leftover value
+// in a field that mode doesn't use at all — exactly what happened live: a flat-fee test
+// service kept a stray Spend Minimum from an earlier edit, which silently blocked the
+// live form's step navigation for anyone who selected it. adminSaveService() also
+// force-nulls these same fields server-side based on the final Pricing Mode as the real
+// guarantee; this function is the UI half — hiding the field so it's never filled in to
+// begin with, and clearing it when the admin actively switches mode (not when merely
+// opening an existing service for edit, since that shouldn't erase real saved data
+// before Save is even clicked).
+const PRICING_MODE_FIELDS = [
+  { wrap: 'admin-svc-unit-wrap', input: 'admin-svc-unit', mode: 'per_unit' },
+  { wrap: 'admin-svc-modifier-wrap', input: 'admin-svc-modifier', mode: 'modifier' },
+  { wrap: 'admin-svc-cpm-wrap', input: 'admin-svc-cpm', mode: 'spend' },
+  { wrap: 'admin-svc-spendmin-wrap', input: 'admin-svc-spend-min', mode: 'spend' },
+];
+function onPricingModeChange(fromUserAction) {
+  const mode = document.getElementById('admin-svc-pricing-mode').value;
+  PRICING_MODE_FIELDS.forEach(f => {
+    const show = mode === f.mode;
+    const wrap = document.getElementById(f.wrap);
+    if (wrap) wrap.style.display = show ? '' : 'none';
+    if (!show && fromUserAction) {
+      const input = document.getElementById(f.input);
+      if (input) input.value = '';
+    }
+  });
+}
+
 // ── SERVICE ID AUTO-GENERATION ─────────────────────────────────
 // Builds "section-label-slug" (e.g. "alc-stock-video-clips") from the currently
 // selected Section + typed Label — matches the existing id convention (alc-design,
@@ -1587,6 +1617,7 @@ function adminNewService() {
   // Section dropdown defaults to its first option once populated above — scope the
   // subsection list to whatever that ends up being, not blindly to null.
   populateServiceSubsectionDropdown(document.getElementById('admin-svc-section').value, null);
+  onPricingModeChange(false);
   document.getElementById('admin-service-form').style.display = 'block';
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
 }
@@ -1628,6 +1659,7 @@ function adminEditService(id) {
   populateServiceExclusivityDropdown(s.exclusivity_group);
   populateServicePricingGroupDropdown(s.pricing_group);
   populateServiceSubsectionDropdown(s.section, s.subsection_label);
+  onPricingModeChange(false);
   document.getElementById('admin-service-form').style.display = 'block';
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
 }
@@ -1677,6 +1709,17 @@ async function adminSaveService() {
   const sortVal = document.getElementById('admin-svc-sort').value;
   const spendMinVal = document.getElementById('admin-svc-spend-min').value;
 
+  // Hard guarantee, independent of onPricingModeChange()'s field-hiding: whatever the
+  // final Pricing Mode is, a field that mode doesn't use is saved as null, never
+  // whatever happens to still be sitting in that DOM input. This is what actually
+  // prevents the live-form bug this was built for (a flat-fee service quietly carrying
+  // a leftover Spend Minimum from a prior edit and blocking checkout for anyone who
+  // picked it) — the UI hiding the field is a nice-to-have, this is the real fix.
+  const unitLabelFinal = pricingModeVal === 'per_unit' ? (document.getElementById('admin-svc-unit').value || null) : null;
+  const modifierAmountFinal = pricingModeVal === 'modifier' ? (modifierVal === '' ? null : parseFloat(modifierVal)) : null;
+  const retailCpmFinal = pricingModeVal === 'spend' ? (cpmVal === '' ? null : parseFloat(cpmVal)) : null;
+  const spendMinimumFinal = pricingModeVal === 'spend' ? (spendMinVal === '' ? null : parseFloat(spendMinVal)) : null;
+
   // Exclusivity group: either the picked existing group, or the typed new-group name if
   // "+ Create a new group..." was selected — see populateServiceExclusivityDropdown()
   // for why this is a pick-list rather than a free-typed field.
@@ -1715,9 +1758,9 @@ async function adminSaveService() {
     pricing_mode: document.getElementById('admin-svc-pricing-mode').value,
     default_price: priceVal === '' ? null : parseFloat(priceVal),
     billing_type: document.getElementById('admin-svc-billing').value,
-    unit_label: document.getElementById('admin-svc-unit').value || null,
-    modifier_amount: modifierVal === '' ? null : parseFloat(modifierVal),
-    retail_cpm: cpmVal === '' ? null : parseFloat(cpmVal),
+    unit_label: unitLabelFinal,
+    modifier_amount: modifierAmountFinal,
+    retail_cpm: retailCpmFinal,
     koc_requirement: document.getElementById('admin-svc-koc').value,
     intake_form_id: document.getElementById('admin-svc-intake').value || null,
     workflow: document.getElementById('admin-svc-workflow').value.trim() || null,
@@ -1727,7 +1770,7 @@ async function adminSaveService() {
     setup_fee_threshold: setupThresholdVal === '' ? null : parseFloat(setupThresholdVal),
     fee_note: document.getElementById('admin-svc-fee-note').value.trim() || null,
     exclusivity_group: exclusivityGroupVal,
-    spend_minimum: spendMinVal === '' ? null : parseFloat(spendMinVal),
+    spend_minimum: spendMinimumFinal,
     subsection_label: subsectionLabelVal,
     hosting_prompt_type: document.getElementById('admin-svc-hosting-prompt').value || null,
     pricing_group: pricingGroupVal,
