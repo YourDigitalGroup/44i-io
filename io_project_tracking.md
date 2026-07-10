@@ -1681,6 +1681,70 @@ Moderate:
   upgrades the product to require a KOC. Likely deliberate (info gets collected one way or
   the other) but confirm with AM.
 
+- **Print preview grey lines covering data on page 2+ — FIXED + VERIFIED VIA REAL RENDER
+  (2026-07-10).** Claire caught this in live testing: the 2026-07-08 print-overlap fix only
+  held up on a single-page IO — any IO long enough to span multiple pages still had the
+  running header/footer landing on top of real content, but only on pages AFTER the first.
+  Root cause, finally confirmed with certainty this time (not just reasoned about): the
+  2026-07-08 fix reserved a gap using `body{padding-top/padding-bottom}`, which CSS only
+  ever applies ONCE — at the very top/bottom of the whole document's flowed content, i.e.
+  effectively just page 1's top and the last page's bottom. But the running header/footer
+  use `position:fixed`, which Chrome's print engine repeats on EVERY physical page at the
+  same anchor point as the flowing content — so any page in the middle had zero reserved
+  gap and the header/footer sat directly on top of the table/section content there.
+  VERIFICATION METHOD (new for this project): built an actual multi-page test print using
+  the real CSS/markup from `printIO()`, rendered it with headless Chromium (Playwright,
+  pre-installed in this environment) to a real PDF, and inspected each page as an image —
+  this is a step up from the previous session's "reasoning-based, needs Claire's live
+  confirmation" caveat; the bug was reproduced and the fix confirmed by actually looking at
+  rendered output, not by reasoning about CSS behavior alone. Also empirically ruled out an
+  alternative fix (bigger `@page` margin alone, no body padding) — still overlapped
+  identically, proving margin size was never the variable that mattered. Also prototyped
+  the "textbook correct" fix (wrap the whole document in one table with `thead`/`tfoot` so
+  the header/footer repeat the same reliable way the services table's own header already
+  does) — but Chrome doesn't paginate a single giant table row cleanly; the footer
+  misrendered at the TOP of the page instead of the bottom. Not viable without much more
+  engineering time than made sense to spend right before Monday.
+  REAL FIX SHIPPED: removed the repeating per-page running header/footer entirely.
+  The letterhead (already only rendered once, at the very top of page 1) now serves as
+  the one-time header. Added a small, plain (non-fixed) `.doc-footer` line after the
+  signature section — appears exactly once, at the true end of the document. This
+  guarantees zero overlap on any page in any browser, since there's no `position:fixed`
+  content left to conflict with anything. TRADE-OFF: pages 2+ no longer show a running
+  "Group / Business / IO#" identifier or "Page X of Y" — flagged to Claire; can revisit a
+  true repeating header later with more time if she wants it back, but no CSS technique
+  found today could deliver that reliably in Chrome's print engine.
+- **Suggested Map drag-and-drop reorder — smoothed out after Claire's live testing
+  (2026-07-10).** Two rough edges from the earlier session's build: (1) no visual feedback
+  while dragging — the dragged row and the drop target both looked static, so it wasn't
+  clear where a drop would land. Fixed by dimming the dragged row and drawing a highlight
+  bar on whichever row the cursor is currently over, cleared on drop/dragend. (2) the page
+  visibly jumped to the top after every successful reorder — root cause: `loadSuggestedMap()`
+  (and the Sections tab's equivalent `loadAdminSections()`) briefly swap the table for a
+  "Loading…" placeholder while refetching, which shrinks the page and makes the browser
+  scroll up to keep the now-gone content in view. Fixed by capturing `window.scrollY`
+  before the refresh and restoring it after. Found live by Claire, not by our own testing —
+  the Sections tab had a fully separate, independently-written drag-and-drop
+  implementation (not shared code with the Suggested Map's), so the same fix had to be
+  applied twice; Claire specifically asked "did you also update the same function in
+  Sections?" and it turned out no, it needed the identical fix ported over by hand.
+- **Service editor: Pricing Mode-irrelevant fields no longer save leftover values
+  (2026-07-10).** Claire's ask, directly triggered by the `alc-testdelete` incident from
+  earlier this session (a flat-fee test service that kept a stray `spend_minimum` from an
+  earlier edit, which silently blocked "Next: Review & Submit" for anyone who selected it
+  on the live form): "should we look at limiting what can be added for spend/cost... based
+  on the pricing mode." Unit/Modifier Amount/Retail CPM/Spend Minimum now hide in the
+  Service editor unless the selected Pricing Mode actually uses them (Unit→Per-unit,
+  Modifier Amount→Modifier, Retail CPM & Spend Minimum→Spend-based), and clear immediately
+  if the admin actively switches Pricing Mode after filling one in. The REAL guarantee is
+  server-side-payload-adjacent: `adminSaveService()` now force-nulls whichever of these
+  four fields the FINAL selected Pricing Mode doesn't use, independent of whatever is
+  still sitting in the DOM input — so even a stale/hidden field value from before a mode
+  switch can never be saved. VERIFIED via simulation: reproduced the exact
+  `alc-testdelete` shape (flat mode + a stray spend_minimum value) and confirmed all four
+  fields correctly resolve to null; confirmed a genuine spend-mode save with real CPM/spend
+  minimum values still passes them through unchanged.
+
 Minor / cosmetic:
 - **`onKocDateChange()` / `globalKocSchedule` / doubled `display:none` — DONE (v44,
   committed + tested 2026-06-26).** Removed the empty stub, the dead variable + its reset
