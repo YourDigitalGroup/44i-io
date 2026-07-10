@@ -387,18 +387,49 @@
           <input type="hidden" id="admin-sec-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Section ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— must match exactly what's used as each service's Section value</span></label>
-              <input type="text" id="admin-sec-id" placeholder="e.g. podcast-ads" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
+              <label class="lbl">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the card's title text</span></label>
+              <input type="text" id="admin-sec-label" placeholder="e.g. Podcast Advertising" oninput="autoSectionId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Icon <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— a single emoji, shown in the card header</span></label>
-              <input type="text" id="admin-sec-icon" placeholder="e.g. 🎙️" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <label class="lbl">Icon <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— pick from the list or type any emoji</span></label>
+              <input type="text" id="admin-sec-icon" list="admin-sec-icon-options" placeholder="e.g. 🎙️" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <datalist id="admin-sec-icon-options">
+                <option value="🌐">Website</option>
+                <option value="📄">Landing Page</option>
+                <option value="📱">Social</option>
+                <option value="✉️">Email</option>
+                <option value="🔍">SEO/Search</option>
+                <option value="⭐">Reputation</option>
+                <option value="📍">Local Listing</option>
+                <option value="🗺️">Maps/Profile</option>
+                <option value="🎯">Display Ads</option>
+                <option value="🔎">SEM</option>
+                <option value="📣">Social Ads</option>
+                <option value="📡">Location Targeting</option>
+                <option value="🎬">Video</option>
+                <option value="📺">Streaming/CTV</option>
+                <option value="🎵">Audio</option>
+                <option value="🎨">À La Carte</option>
+                <option value="🎙️">Podcast</option>
+                <option value="📊">Analytics/Reporting</option>
+                <option value="💰">Budget/Spend</option>
+                <option value="🛒">E-commerce</option>
+                <option value="📈">Growth</option>
+                <option value="🖥️">Web/Desktop</option>
+                <option value="📷">Photo/Creative</option>
+                <option value="🔗">Links/Integration</option>
+                <option value="🚀">Launch/New</option>
+              </datalist>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the card's title text</span></label>
-              <input type="text" id="admin-sec-label" placeholder="e.g. Podcast Advertising" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <label class="lbl">Section ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Label, override if needed. Must match exactly what's used as each service's Section value; cannot be changed after creation.</span></label>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input type="text" id="admin-sec-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkSectionIdCollision()"/>
+                <button type="button" onclick="regenerateSectionId()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
+              </div>
+              <p id="admin-sec-id-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ A section with this ID already exists — please choose a different one.</p>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
@@ -1102,6 +1133,40 @@ async function sectionDrop(e, targetId) {
   }
 }
 
+// Builds a slug id from the Label (e.g. "Podcast Advertising" -> "podcast-advertising") —
+// sections aren't prefixed like service ids, so this is just the label slug on its own.
+function generateSectionId(label) {
+  return (label || '').trim().toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+// Re-generates the ID field live as Label changes — UNLESS the admin has typed directly
+// into the ID field themselves (dataset.manuallyEdited), same "auto unless overridden"
+// pattern as the Service editor's id field.
+function autoSectionId() {
+  const idField = document.getElementById('admin-sec-id');
+  if (idField.dataset.manuallyEdited) return;
+  idField.value = generateSectionId(document.getElementById('admin-sec-label').value);
+  checkSectionIdCollision();
+}
+
+function regenerateSectionId() {
+  const idField = document.getElementById('admin-sec-id');
+  idField.dataset.manuallyEdited = '';
+  autoSectionId();
+}
+
+function checkSectionIdCollision() {
+  const idField = document.getElementById('admin-sec-id');
+  const warn = document.getElementById('admin-sec-id-warn');
+  const isNew = !document.getElementById('admin-sec-original-id').value;
+  const exists = isNew && idField.value && SECTIONS.some(s => s.id === idField.value);
+  if (warn) warn.style.display = exists ? 'block' : 'none';
+}
+
 function adminNewSection() {
   if (currentAdminUser?.role === 'am') {
     showToast('Section management is restricted to super admins', 'error');
@@ -1113,6 +1178,8 @@ function adminNewSection() {
     document.getElementById(id).value = '';
   });
   document.getElementById('admin-sec-id').disabled = false;
+  document.getElementById('admin-sec-id').dataset.manuallyEdited = '';
+  document.getElementById('admin-sec-id-warn').style.display = 'none';
   document.getElementById('admin-section-form').style.display = 'block';
   document.getElementById('admin-section-form').scrollIntoView({behavior:'smooth'});
 }
@@ -1128,6 +1195,8 @@ function adminEditSection(id) {
   document.getElementById('admin-sec-original-id').value = sec.id;
   document.getElementById('admin-sec-id').value = sec.id;
   document.getElementById('admin-sec-id').disabled = true; // id is the key services reference by section — immutable after creation
+  document.getElementById('admin-sec-id').dataset.manuallyEdited = '1'; // don't let label edits during Edit clobber the existing id
+  document.getElementById('admin-sec-id-warn').style.display = 'none';
   document.getElementById('admin-sec-icon').value = sec.icon || '';
   document.getElementById('admin-sec-label').value = sec.label || '';
   document.getElementById('admin-sec-header-note').value = sec.header_note || '';
