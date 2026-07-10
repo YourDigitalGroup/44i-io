@@ -875,15 +875,13 @@ function getSlug() {
 }
 
 // ── HOSTING PRORATION ─────────────────────────────────────────
-// Proration DAYS-from-IO-date and the page-type's display wording are tied to
-// hosting_prompt_type, which is itself a small closed set by explicit design (see the
-// "fixed dropdown, not a pick-list" note in the admin editor) — not per-service catalog
-// data, so these two stay as plain config rather than new DB columns. The FEE, however,
-// used to be a separate hardcoded dollar figure that could silently drift from the real
-// price if the standalone hosting service's price ever changed in the Services editor —
-// that part now reads the live price via HOSTING_LOCK_MAP + CATALOG_ROWS (2026-07-10).
-const HOSTING_PRORATION_DAYS = { '1p':10, '5p':30, '10p':60, 'ecomm':60 };
-const HOSTING_PAGE_TYPE_LABELS = { '1p':'1-page', '5p':'5-page', '10p':'10-page', 'ecomm':'E-Commerce' };
+// Proration DAYS-from-IO-date and the page-type's display wording — populated by
+// loadCatalog() from the `hosting_proration_settings` table (2026-07-10), editable via
+// the admin Services tab, instead of a hardcoded object. The FEE is separate — that
+// reads the live price via HOSTING_LOCK_MAP + CATALOG_ROWS, so it can never drift from
+// what the Services editor actually shows for the standalone hosting item.
+let HOSTING_PRORATION_DAYS = {};
+let HOSTING_PAGE_TYPE_LABELS = {};
 
 function standaloneHostingFee(serviceId) {
   const standaloneId = HOSTING_LOCK_MAP[serviceId];
@@ -3898,8 +3896,10 @@ function renderPriceCells() {
 async function loadCatalog() {
   const services = await sb('services?active=eq.true&order=section,sort_order&select=*');
   const forms    = await sb('intake_forms?active=eq.true&select=*');
+  const hosting  = await sb('hosting_proration_settings?select=*');
   if (!Array.isArray(services) || !services.length) throw new Error('No active services returned from catalog');
   if (!Array.isArray(forms) || !forms.length) throw new Error('No active intake forms returned from catalog');
+  if (!Array.isArray(hosting) || !hosting.length) throw new Error('No hosting proration settings returned from catalog');
 
   // Populate the module-level objects in place
   const sd = {}, pc = {}, iff = {};
@@ -3917,6 +3917,11 @@ async function loadCatalog() {
   INTAKE_FORMS = iff;
   CATALOG_ROWS = {};
   services.forEach(r => { CATALOG_ROWS[r.id] = r; });
+
+  const hpd = {}, hpl = {};
+  hosting.forEach(h => { hpd[h.page_type] = h.days; hpl[h.page_type] = h.label; });
+  HOSTING_PRORATION_DAYS = hpd;
+  HOSTING_PAGE_TYPE_LABELS = hpl;
 
   // Derive RADIO_GROUPS and SPEND_MINIMUMS from the live catalog (2026-07-08) — replaces
   // the old hardcoded frozen snapshots, which silently broke for any new item added to an
