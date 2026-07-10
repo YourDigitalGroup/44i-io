@@ -753,6 +753,9 @@ form-edit pass or pre-launch audit.
   admin code from `index.html`" cleanup (already planned, parked on Claire's timing with
   her developer) specifically to eliminate this duplication risk for good, rather than
   purely for the subdomain-vs-path reason it was originally framed around.
+  **RESOLVED — see the "admin code fully removed from index.html" entry below (2026-07-10,
+  same session).** This standing risk no longer exists; there's only one copy of this code
+  now.
 - **SECOND real bug found live, same session (2026-07-10): editing a service's
   pricing_group saved correctly to Supabase but didn't move it in the Custom Pricing list
   on screen without a full page reload.** Claire's exact words: removing the pricing_group
@@ -1691,8 +1694,10 @@ which is why they slipped off this doc — but several gate a real client-facing
   the placeholder for this.
 
 **Team-decision items (gather input; some may become later-phase features):**
-- **Remove the admin portal from public group IO pages — defer to the URL/structure work
-  (logged 2026-06-26; HARD GATE added 2026-07-07).** Part of the "shared backend, separate
+- **Remove the admin portal from public group IO pages — COMPLETE (2026-07-10). Originally
+  logged 2026-06-26; HARD GATE added 2026-07-07; see the detailed step-by-step entries
+  under "Backend / code-review findings" above for the extraction (2026-07-08) and removal
+  (2026-07-10) work.** Part of the "shared backend, separate
   views" architecture: the admin portal (gear → login → Groups/Orders panel) currently
   lives in the SAME file as the public IO form. Eventually it should move to its own
   internal URL, leaving the public form with no admin code. NOT urgent today: no links
@@ -1772,6 +1777,46 @@ which is why they slipped off this doc — but several gate a real client-facing
   (removing admin code from `index.html`) can be scheduled.
   **CONFIRMED WORKING by Claire (2026-07-10) — login and saves all functioned correctly
   in a real browser.**
+  **STEP 2 (removal) COMPLETE (2026-07-10, same session).** With `/admin` fully confirmed
+  working (including today's real-bug fixes above), Claire asked for the cleanup pass
+  itself rather than wait — the two duplication bugs found earlier today made the case for
+  doing it now, not later. Mapped every admin-only boundary precisely before touching
+  anything (via a dedicated Explore pass, not assumption): the gear icon (`index.html`,
+  one `<div>`), the admin panel markup (`#page-admin` root, one contiguous block), the
+  login modal (one contiguous block), and the entire admin JS section (`ADMIN_USERS`
+  through `adminSaveGroup()` — one clean, unbroken run with zero public-form code
+  interleaved). One delicate exception, NOT part of any contiguous admin block: a 23-line
+  chunk inside the shared/public `loadCatalog()` function that derived the admin-only
+  `PRICEABLE_SERVICES` global — trimmed out of that otherwise-kept function rather than
+  left dangling once `PRICEABLE_SERVICES`/`MAP_SECTION_LABELS` were deleted along with the
+  rest of the admin code.
+  Removed roughly 1,766 lines total. The gear icon was removed with NO replacement (not
+  even a link to `/admin`) — confirmed as the right call: the whole point of today's work
+  is that the public form should carry zero admin surface area, and `/admin` is already
+  the known, bookmarked entry point.
+  VERIFIED programmatically, the same rigor as every prior extraction step: `node --check`
+  passes on the modified script; every one of the ~45 deleted admin-only symbol names
+  (functions, globals, DOM ids) confirmed to have ZERO remaining references anywhere in
+  the file; every kept shared/public function (`loadCatalog`, `applyCustomPricing`,
+  `applyGroupBranding`, `loadGroup`, `renderCatalogSection`, `renderMultiTableSection`,
+  `buildReview`, `submitIO`, `printIO`, `RADIO_GROUPS`, `SPEND_MINIMUMS`, `CATALOG_ROWS`,
+  `sb`, `esc`, `showToast`, `rowToServiceData`, `priceAndFrequency`) confirmed still present
+  and intact; zero dangling `getElementById`/`onclick`/`onchange` references anywhere in
+  the file (same completeness check used for the original admin.html extraction); braces
+  and parens confirmed balanced; exactly one `DOMContentLoaded` listener remains (the
+  public form's own startup sequence — admin never had a separate one, it was reachable
+  on-demand via the gear icon, so nothing was lost there). `CLAUDE.md` updated to stop
+  describing the admin portal as living in `index.html`, and to fix a separately-noticed
+  stale reference to a working-file name (`io_v2_45_backend_security.html`) that no longer
+  exists in the repo (the real file has been `index.html` this whole time).
+  HONEST CAVEAT, same as every prior step touching this file: this can't be verified in an
+  actual browser from here. Claire should do one real smoke test on the public form (load
+  a group, select services across a few sections, submit a real test IO against `ctg`)
+  before trusting this in front of her bosses — everything checked out at the code level,
+  but rendering/runtime behavior needs a real browser to be certain.
+  `index.html` and `admin/index.html` now each contain exactly one copy of the Custom
+  Pricing/Services-editor code — the duplication that caused both of today's real bugs no
+  longer exists.
 - **Admin portal: subdomain vs. path decision — RESOLVED, path chosen (2026-07-10).** A
   coworker asked whether a subdomain (the original plan) was actually necessary versus
   putting the admin portal at a path on the existing `io` domain. Checked the actual

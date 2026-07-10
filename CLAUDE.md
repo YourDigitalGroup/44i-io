@@ -9,12 +9,17 @@ deliberately short; that one is the source of truth for detail.
 A single-page Insertion Order (IO) form for 44i, a digital marketing agency. Client-facing
 groups (white-labeled agency partners) fill out a form selecting services, review pricing,
 sign, and submit. Submissions create a client record in Supabase and build a Trello card.
-An admin portal (currently in the same file, behind a gear icon) lets super-admins and
-account managers manage groups, custom pricing, and the service catalog.
+A separate admin portal at `/admin` lets super-admins and account managers manage groups,
+custom pricing, and the service catalog — same Supabase backend, its own page, no admin
+code left in the public form.
 
-- **Working file:** `io_v2_45_backend_security.html` (single HTML file — inline CSS/JS)
+- **Working file:** `index.html` (the public IO form — inline CSS/JS). Admin portal lives
+  at `admin/index.html`, sharing `shared.js`/`shared.css` (repo root) for the catalog-
+  loading logic both pages genuinely need.
 - **Backend:** Supabase project "44i-io" (Postgres + RPCs, no separate API server)
 - **Deploy:** GitHub Actions on push to `main` → `io.yourdigitalgroupresources.com`
+  (deploys the whole repo tree, so `/admin` and any future `/strategist`/`/accounting`
+  paths need no separate deploy step)
 - **Tracking doc:** `io_project_tracking.md` — full session history, open questions,
   parked decisions, everything currently pending an AM/business review. Check this before
   assuming something is undecided or unbuilt — it's usually already been resolved and
@@ -76,7 +81,8 @@ building before assuming a schema change is enough on its own.
 
 All 17 catalog sections are converted to dynamic, catalog-driven rows. Several Website
 business-logic questions are explicitly parked for an Account Manager review (see
-"OPEN QUESTIONS FOR THE AM" in the tracking doc). The admin portal is planned to move to
-its own subdomain/file (not yet started) — same Supabase backend, just a separate
-front-end entry point, designed to hold role-based views for future Strategist/Accounting
-access without needing further new subdomains later.
+"OPEN QUESTIONS FOR THE AM" in the tracking doc). The admin portal has moved to its own
+path (`/admin`) and all admin code has been removed from the public form's file
+(`index.html`) — no more duplicate copies to keep in sync. Future `/strategist`/
+`/accounting` role-based views are expected to land as their own paths the same way,
+sharing `shared.js`/`shared.css`.
