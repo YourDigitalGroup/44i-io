@@ -583,6 +583,29 @@ form-edit pass or pre-launch audit.
   into one declaration carrying both sets of properties; re-ran the full duplicate-
   selector scan across the entire stylesheet afterward and confirmed zero remain anywhere
   in the file, not just this one instance.
+- **NEW GAP FOUND, same shape as above but NOT yet fixed: `PRICEABLE_SERVICES` doesn't
+  auto-include new services in Custom Pricing at all (2026-07-10).** Claire asked
+  directly: if a new service is added via the Suggested Map/Services admin screen, does
+  it automatically become available to price-override per group in Custom Pricing? NO —
+  checked the actual code (not assumed): `PRICEABLE_SERVICES` is its own separate
+  hardcoded list (distinct from the price-drift fix above, which only fixed the
+  PLACEHOLDER VALUES shown for services already on the list — it never made the LIST
+  ITSELF dynamic). A brand-new service needs someone to manually add it to this array in
+  the code before an AM/super-admin can set a custom price for it per group. Same
+  underlying shape as the already-fixed `RADIO_GROUPS`/`SPEND_MINIMUMS` staleness bug, but
+  NOT automatically covered by that fix since this is a completely separate list.
+  GENUINE DESIGN QUESTION before this can be fixed the same way: `PRICEABLE_SERVICES`'
+  whole reason for existing is a deliberately hand-curated admin-friendly grouping that
+  doesn't match the catalog's own `section` field (e.g. "Visitor IDs" bundles items from
+  BOTH `web-ot` and `web-mo`) — making it auto-populate from the catalog needs a decision
+  on where a brand-new service lands by default (most likely its own catalog section) vs.
+  preserving the ability to hand-place items into a cross-section bundle like Visitor IDs.
+  Flagged to Claire directly; NOT fixed yet, awaiting her call on which of those two she
+  wants before writing it. IMPORTANT: this does NOT affect what price a CLIENT sees — the
+  base/standard price still renders correctly for any new service with zero admin action
+  (confirmed separately, see the "service catalog vs. price overrides" answer given
+  2026-07-10) — this gap is scoped ONLY to whether a group-specific override can be set
+  for that new service without a code change.
 - **Dev picker reachable on the LIVE production domain by accident — FIXED, real safety
   gap closed (2026-07-08).** Came up while mapping the admin-portal/URL split (see below):
   Claire asked what happens if someone's group link loses its slug — could they land on
@@ -1586,7 +1609,15 @@ which is why they slipped off this doc — but several gate a real client-facing
 - **Auto-check a service when a spend is typed** — entering spend in an unchecked row
   currently doesn't count it. Auto-check on input so spend can't silently fail to register.
   (Tier-A correctness item from the rollout plan.)
-- **Campaign length required?** — selector offers 3/6/12 only; not currently required.
+- **Campaign length required?** — not currently required (still open).
+  **Dropdown options updated 2026-07-10** (Claire's request, ahead of her Monday
+  leadership meeting): options changed from 3/6/12 to **1/2/3/6/12 months**, for faster
+  quick-select on shorter campaigns. Confirmed via code inspection (not just this edit)
+  that the End Date field is a normal, unlocked `<input type="date">` — `calcEndDate()`
+  only auto-fills it when Start Date or the Length dropdown changes, so an AE can freely
+  type/pick a custom end date afterward and it holds. Purely an HTML options-list edit;
+  no JS touched. Verified: `node --check` on the main script block still passes; the five
+  new option values render correctly in the file.
 - **Per-service start/end dates** — one date set today covers the whole order; per-service
   is a structural change. Confirm it's actually needed.
 - **Multi-select in ad categories** — Targeted Display and Social Ads are single-select;
