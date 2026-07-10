@@ -732,6 +732,31 @@ form-edit pass or pre-launch audit.
   admin code from `index.html`" cleanup (already planned, parked on Claire's timing with
   her developer) specifically to eliminate this duplication risk for good, rather than
   purely for the subdomain-vs-path reason it was originally framed around.
+- **SECOND real bug found live, same session (2026-07-10): editing a service's
+  pricing_group saved correctly to Supabase but didn't move it in the Custom Pricing list
+  on screen without a full page reload.** Claire's exact words: removing the pricing_group
+  from a Hosting Fee item "stuck" (confirmed in the database) but "didn't update to the
+  pricing list within the group." ROOT CAUSE: `adminSaveService()` and
+  `adminToggleServiceActive()` both end by calling `loadSuggestedMap()`, which refreshes
+  `allServicesMap` (the Suggested Map table + editor dropdowns) — but NOT `CATALOG_ROWS`,
+  which `loadCatalog()` only populates ONCE, at initial page load. Since
+  `PRICEABLE_SERVICES` is derived from `CATALOG_ROWS`, it stayed frozen at whatever it was
+  when the admin session started, regardless of how many services got edited afterward —
+  a real, generically-applicable staleness gap (affects price/section/exclusion changes
+  too, not just pricing_group), not something specific to today's new field.
+  FIXED in BOTH `index.html` and `admin/index.html`: both functions now also call
+  `await loadCatalog()` after a successful save/toggle (in `admin/index.html`, followed by
+  `rebuildPriceableServices()`, since that derivation is its own separate step there — see
+  the entry above for why). Confirmed safe to re-run mid-session: `loadCatalog()` only
+  reassigns the underlying data objects (`CATALOG_ROWS`/`SERVICE_DATA`/etc.) — the actual
+  HTML row generation (`renderCatalogSection()` and friends) happens as SEPARATE calls
+  right after the initial `loadCatalog()` at page startup, not inside it, so re-running it
+  later cannot duplicate or disturb already-rendered rows.
+  VERIFIED via simulation: reproduced Claire's exact scenario (a service starts tagged
+  `pricing_group:'Hosting Fees'`, appears there; its `pricing_group` is cleared and the
+  refresh re-runs) — confirmed the group correctly disappears (was its only member) and
+  the service correctly reappears under its own section's label instead, matching what
+  should have happened live. `node --check` passes on both modified files.
 - **Custom Pricing for ad-spend/CPM services — deferred, scoped as its own follow-up
   (2026-07-10).** Explicitly out of scope for the fix above (see that entry for why).
   Needs its own design pass on what "custom price" even means for a CPM/CPC rate (override
