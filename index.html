@@ -4398,6 +4398,14 @@ async function adminSaveService() {
     showToast(isNew ? 'Service created!' : 'Service updated!');
     adminCancelServiceEdit();
     loadSuggestedMap();
+    // loadSuggestedMap() only refreshes allServicesMap (the Suggested Map table + editor
+    // dropdowns) — it does NOT refresh CATALOG_ROWS, which loadCatalog() only populates
+    // ONCE at page load. Without this, Custom Pricing keeps showing the PRE-edit grouping/
+    // price/exclusion for the just-saved service until the whole page is reloaded — found
+    // live by Claire (2026-07-10) removing a pricing_group and seeing it "stick" in the
+    // database but not move in the Custom Pricing list on screen. loadCatalog() already
+    // rebuilds PRICEABLE_SERVICES itself here (unlike admin/index.html's separate copy).
+    await loadCatalog();
   } catch(e) {
     showToast('Error saving service: ' + e.message, 'error');
   }
@@ -4429,6 +4437,10 @@ async function adminToggleServiceActive(id, makeActive) {
     });
     showToast(`Service ${makeActive ? 'reactivated' : 'deactivated'}!`);
     loadSuggestedMap();
+    // Same staleness gap as adminSaveService() above — refresh CATALOG_ROWS/
+    // PRICEABLE_SERVICES so a just-deactivated service actually disappears from Custom
+    // Pricing immediately, not just in the database.
+    await loadCatalog();
   } catch(e) {
     showToast(`Error trying to ${verb}: ` + e.message, 'error');
   }
