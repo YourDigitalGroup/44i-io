@@ -158,6 +158,27 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   should skip intake for a reason.
 - **Archived/returning clients (Trello)** — how often does it happen, and how do they
   currently re-find the archived list? (Shapes the eventual fix; not blocking.)
+- **Multi-select in Targeted Display / Social Media Ads — clarified into two SEPARATE
+  questions (2026-07-10), since the old vague note conflated two different situations.**
+  Pulled the real tier membership via SQL rather than guess:
+  - **Targeted Display (`td-tier`):** Geotargeting & Audience ($10 CPM), Site Retargeting
+    ($12), Dynamic Display ($15), Custom Site Targeting ($18) — these are 4 different
+    TARGETING METHODS, currently forced to single-select (picking one unchecks the others).
+    Question: should an AE be able to run MULTIPLE targeting methods for the same client at
+    once (e.g. Geotargeting AND Site Retargeting together), or is one method per campaign
+    intentional?
+  - **Social Media Ads (`sma-tier`):** Facebook & Instagram ($15 CPM), TikTok ($27),
+    Snapchat ($20), LinkedIn ($60) — these are 4 different PLATFORMS, also currently
+    forced to single-select. Question: should an AE be able to run ads on multiple
+    platforms for the same client at once (e.g. Facebook + TikTok together)?
+  **Technical note for the AM conversation, not a constraint on the answer:** each item
+  already has its own independent rate and its own spend field — nothing about how pricing
+  is calculated would need to change to allow multiple selections in either section. The
+  single-select restriction is a pure business-rule choice (`exclusivity_group`), not a
+  technical limitation — whichever way the AM decides, it's a small, low-risk change either
+  to leave as-is or to remove the exclusivity grouping for one or both sections.
+  `td-offline` (Offline Visits Tracking, a flat modifier add-on) is NOT part of the
+  `td-tier` group and is unaffected by this question either way.
 
 ---
 
@@ -1790,8 +1811,6 @@ which is why they slipped off this doc — but several gate a real client-facing
   new option values render correctly in the file.
 - **Per-service start/end dates** — one date set today covers the whole order; per-service
   is a structural change. Confirm it's actually needed.
-- **Multi-select in ad categories** — Targeted Display and Social Ads are single-select;
-  decide whether an AE can run several at once (e.g. Facebook + TikTok).
 - **Intake form back button** — intake modal intentionally has no dismiss (forces a
   decision). Decide if that's too rigid.
 - **Cancellations** — not handled anywhere. Decide if it lives here, in Trello, or as an
