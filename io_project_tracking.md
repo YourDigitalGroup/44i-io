@@ -1744,6 +1744,57 @@ Moderate:
   `alc-testdelete` shape (flat mode + a stray spend_minimum value) and confirmed all four
   fields correctly resolve to null; confirmed a genuine spend-mode save with real CPM/spend
   minimum values still passes them through unchanged.
+- **Full hardcoded-catalog-data audit + cleanup pass (2026-07-10).** Claire asked for a
+  sweep of `index.html`/`admin/index.html` given how many edits this session made, worried
+  about lingering per-service data that should be Supabase-driven instead of a JS literal.
+  Ran an Explore-agent audit across both files; confirmed the OLD hardcoded section maps
+  (`SECTION_LABELS`/`MAP_SECTION_LABELS`/`SAFE_DYNAMIC_SECTIONS`) are genuinely gone, no
+  renamed leftovers. Found and fixed four real cases, all verified via simulation against
+  the old hardcoded values before shipping (baseline must match exactly, plus a "new item
+  added later" case to prove the fix actually solves the brittleness, not just relocates it):
+  - **`WEB_OTO`/`WEB_MRR`** (cross-section lock between Website One-Time and Monthly
+    Recurring) — was a frozen 4-id array per section. Zero schema change needed: both are
+    now derived at `loadCatalog()` time from whichever `exclusivity_group` the known
+    anchor tier (`w-bs` / `wm-1p`) currently belongs to, via the already-existing
+    `RADIO_GROUPS`. A future 5th tier added to the same group is picked up automatically.
+  - **Tier-name derivation** (`if (selected['sm-bp']) tier='pro'`) — replaced with a new
+    `services.tier` column (`starter`/`builder`/`pro`) read via a `tierOfSelected(anchorId)`
+    helper that finds whichever service in the anchor's exclusivity group is currently
+    selected and reads ITS `tier` value. Scoped deliberately to just the `tier` variable
+    used in the client-record payload (submitted on every order) — left `seoTier` (line
+    ~2600) untouched since it only feeds `TACTIC_MAP`, which is Trello-only code Claire
+    asked to leave for next week's dedicated session.
+  - **`HOSTING_LOCK_MAP`** (site-tier → standalone-hosting double-charge lock) — was a
+    hardcoded 4-pair map with a comment defending it as an intentional one-off. Replaced
+    with a new `services.standalone_hosting_service_id` column, now exposed in the
+    Services editor (new field next to Hosting Prompt) and read/written by
+    `admin_save_service`. Derived live from `CATALOG_ROWS` at catalog load — a renamed or
+    added hosting product no longer needs a code change.
+  - **`HOSTING_CFG`'s hardcoded `fee`** ($450/$750, tied to hosting page-type) — this was
+    genuine duplicate-of-catalog-price data with real drift risk (if `w-hosting`'s price
+    ever changed in the Services editor, the printed prorated hosting fee would still show
+    the old hardcoded number). Fee now reads live via `standaloneHostingFee()` →
+    `HOSTING_LOCK_MAP` → `CATALOG_ROWS[...].default_price`. Verified the fee automatically
+    tracks a simulated price change from $450 → $500 with no code edit. Deliberately did
+    **NOT** turn the proration `days` (10/30/60) or the page-type display wording
+    ("1-page"/"E-Commerce") into DB columns — both are tied to `hosting_prompt_type`,
+    which is itself explicitly documented elsewhere in the admin editor as a closed,
+    fixed 4-value set ("a fixed dropdown, not a pick-list... nothing new to create here"),
+    so unlike the other fixes above there's no real "new item added later" risk this
+    solves; adding columns for it would be pure ceremony. Flagged this reasoning to
+    Claire rather than deciding unilaterally.
+  - **Explicitly deferred to next week, not touched:** `TACTIC_MAP` and
+    `WORKFLOW_TO_INTAKE` — both are Trello card-creation config (workflow name → Trello
+    list-search pattern / intake key), only reachable inside the "Setting up Trello…"
+    submit branch. Same category of hardcoding, but Claire confirmed leaving these for
+    the dedicated Trello session next week rather than fixing twice.
+  - **SQL delivered:** `hardcode_cleanup_migration_2026-07-10.sql` — adds `services.tier`
+    and `services.standalone_hosting_service_id`, populates the known rows, includes a
+    verification query to run FIRST (confirms `sm-bs`/`sm-bb`/`sm-bp` really do already
+    share one `exclusivity_group`, since the tier fix depends on that and it couldn't be
+    verified without live DB access), and ships an updated `admin_save_service` RPC with
+    both new columns wired in (case-when-present, same pattern as every other nullable
+    field added this session).
 
 Minor / cosmetic:
 - **`onKocDateChange()` / `globalKocSchedule` / doubled `display:none` — DONE (v44,
