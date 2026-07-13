@@ -206,8 +206,24 @@
             </p>
           </div>
           <div style="display:flex;gap:8px">
+            <button id="admin-workflows-btn" onclick="toggleWorkflowManager()" style="padding:8px 16px;border-radius:7px;background:#fff;color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚙ Workflows</button>
             <button id="admin-hosting-settings-btn" onclick="toggleHostingSettings()" style="padding:8px 16px;border-radius:7px;background:#fff;color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚙ Hosting Proration</button>
             <button id="admin-new-service-btn" onclick="adminNewService()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Service</button>
+          </div>
+        </div>
+
+        <!-- Workflow manager — hidden until the ⚙ Workflows button above is clicked.
+             Lists every workflow name currently in use (derived live from the services
+             below, not a separate table) with a count of how many services use it, and
+             lets a super admin rename or delete one everywhere it's used in one action —
+             instead of opening every service that uses it individually. Creating a NEW
+             workflow still happens inline on the Service edit form's Workflow dropdown. -->
+        <div id="admin-workflow-manager" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Manage Workflows</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:14px">A workflow is the category that groups several services into ONE Trello tactic (e.g. all 4 Digital Advertising services share the workflow "Digital Advertising" so buying more than one still only creates one card). Renaming or deleting here updates every service using that workflow at once.</p>
+          <div id="admin-workflow-rows"></div>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button onclick="toggleWorkflowManager()" style="padding:9px 18px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Close</button>
           </div>
         </div>
 
@@ -953,6 +969,8 @@ function adminSection(section) {
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     const hostingBtn = document.getElementById('admin-hosting-settings-btn');
     if (hostingBtn) hostingBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    const workflowsBtn = document.getElementById('admin-workflows-btn');
+    if (workflowsBtn) workflowsBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadSuggestedMap();
   } else if (section === 'sections') {
     // Same restriction level as Suggested Map — section layout is a super-admin-only
@@ -1086,6 +1104,105 @@ async function adminSaveHostingSettings() {
     document.getElementById('admin-hosting-settings').style.display = 'none';
   } catch(e) {
     showToast('Error saving hosting settings: ' + e.message, 'error');
+  }
+}
+
+// ── WORKFLOW MANAGER (2026-07-13) ──────────────────────────────────
+// Workflow names live only as a column on `services` (no separate table) — this
+// panel just gives a place to rename/delete one EVERYWHERE it's used in one action,
+// instead of opening every service that shares it individually (the gap Claire
+// flagged: renaming meant editing N services one at a time with real risk of
+// missing one and silently splitting a tactic into two).
+function toggleWorkflowManager() {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Workflow management is restricted to super admins', 'error');
+    return;
+  }
+  const panel = document.getElementById('admin-workflow-manager');
+  const opening = panel.style.display === 'none';
+  panel.style.display = opening ? 'block' : 'none';
+  if (opening) renderWorkflowManagerRows();
+}
+
+function renderWorkflowManagerRows() {
+  const el = document.getElementById('admin-workflow-rows');
+  const counts = {};
+  allServicesMap.forEach(s => { if (s.workflow) counts[s.workflow] = (counts[s.workflow] || 0) + 1; });
+  const workflows = Object.keys(counts).sort();
+
+  if (!workflows.length) {
+    el.innerHTML = '<p style="font-size:12px;color:var(--muted)">No workflows in use yet — set one on a service\'s Workflow field to create the first.</p>';
+    return;
+  }
+
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 80px 1fr auto auto;gap:10px;margin-bottom:6px">
+    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Current Name</span>
+    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Used By</span>
+    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Rename To</span>
+    <span></span><span></span>
+  </div>` + workflows.map(wf => `
+    <div style="display:grid;grid-template-columns:1fr 80px 1fr auto auto;gap:10px;margin-bottom:8px;align-items:center">
+      <span style="font-size:12.5px;color:var(--text)">${esc(wf)}</span>
+      <span style="font-size:12px;color:var(--muted)">${counts[wf]} service${counts[wf] !== 1 ? 's' : ''}</span>
+      <input type="text" data-workflow-rename="${esc(wf)}" placeholder="type a new name to rename" style="padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+      <button onclick="adminRenameWorkflow('${esc(wf)}')" style="padding:7px 14px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Rename</button>
+      <button onclick="adminDeleteWorkflow('${esc(wf)}')" style="padding:7px 14px;border-radius:6px;background:#fff;color:#EF4444;border:1px solid #EF4444;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Delete</button>
+    </div>
+  `).join('');
+}
+
+async function adminRenameWorkflow(oldName) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Workflow management is restricted to super admins', 'error');
+    return;
+  }
+  const input = document.querySelector(`[data-workflow-rename="${oldName}"]`);
+  const newName = input.value.trim();
+  if (!newName) {
+    showToast('Type the new name in the box first', 'error');
+    return;
+  }
+  const count = allServicesMap.filter(s => s.workflow === oldName).length;
+  if (!confirm(`Rename "${oldName}" to "${newName}" on all ${count} service${count !== 1 ? 's' : ''} that use it?`)) return;
+  try {
+    await sb('rpc/admin_rename_workflow', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_old_workflow: oldName,
+        p_new_workflow: newName
+      })
+    });
+    showToast(`Renamed "${oldName}" to "${newName}"`);
+    await loadSuggestedMap();
+    renderWorkflowManagerRows();
+  } catch(e) {
+    showToast('Error renaming workflow: ' + e.message, 'error');
+  }
+}
+
+async function adminDeleteWorkflow(name) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Workflow management is restricted to super admins', 'error');
+    return;
+  }
+  const count = allServicesMap.filter(s => s.workflow === name).length;
+  if (!confirm(`Remove workflow "${name}" from all ${count} service${count !== 1 ? 's' : ''} that use it? Those services will no longer create a Trello card on their own (existing orders are unaffected).`)) return;
+  try {
+    await sb('rpc/admin_delete_workflow', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_workflow: name
+      })
+    });
+    showToast(`Removed workflow "${name}"`);
+    await loadSuggestedMap();
+    renderWorkflowManagerRows();
+  } catch(e) {
+    showToast('Error deleting workflow: ' + e.message, 'error');
   }
 }
 
