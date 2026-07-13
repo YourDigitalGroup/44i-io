@@ -40,6 +40,8 @@
       <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Services</button>
       <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
       <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
+      <button id="section-tab-trello" onclick="adminSection('trello')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Trello Templates</button>
+      <button id="section-tab-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
     </div>
 
     <div style="padding:20px">
@@ -552,6 +554,54 @@
         <div id="admin-intake-table"></div>
       </div><!-- /section-intake -->
 
+      <!-- ── SECTION: Trello Templates (workflow -> standard template list) ── -->
+      <div id="section-trello" style="display:none">
+        <div style="margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Trello Template Routing</p>
+          <p style="font-size:11px;color:var(--muted)">One global set of standard template lists — when an order includes a workflow with a template mapped here, its cards get copied from that Trello list into the client's own list. Leave a workflow's Template List ID blank for "no template — just a plain card."</p>
+        </div>
+        <div id="admin-trello-rows"></div>
+        <button onclick="adminSaveWorkflowTemplates()" style="margin-top:16px;padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Trello Templates</button>
+      </div><!-- /section-trello -->
+
+      <!-- ── SECTION: AEs (roster + Trello handle, for form autofill) ── -->
+      <div id="section-ae" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Account Executives</p>
+            <p style="font-size:11px;color:var(--muted)">Powers the AE picker on the public form — selecting a name autofills their Trello handle instead of retyping it every submission.</p>
+          </div>
+          <button id="admin-new-ae-btn" onclick="adminNewAe()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New AE</button>
+        </div>
+
+        <div id="admin-ae-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-ae-form-title">New AE</p>
+          <input type="hidden" id="admin-ae-original-id"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Name</label>
+              <input type="text" id="admin-ae-name" placeholder="e.g. Jordan Smith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Trello Handle</label>
+              <input type="text" id="admin-ae-trello" placeholder="@jordansmith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
+            <div>
+              <label class="lbl">Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— this AE only appears in the picker for this group's form</span></label>
+              <select id="admin-ae-group" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onclick="adminSaveAe()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save AE</button>
+            <button onclick="adminCancelAeEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-ae-table"></div>
+      </div><!-- /section-ae -->
+
     </div>
   </div>
 </div>
@@ -871,8 +921,8 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Five sections: groups | orders | map | sections | intake
-  const sections = ['groups','orders','map','sections','intake'];
+  // Seven sections: groups | orders | map | sections | intake | trello | ae
+  const sections = ['groups','orders','map','sections','intake','trello','ae'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups' needs display:flex specifically — its edit form/list use flex `order`
@@ -912,6 +962,19 @@ function adminSection(section) {
     const newBtn = document.getElementById('admin-new-intake-btn');
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadAdminIntakeForms();
+  } else if (section === 'trello') {
+    // Same restriction level as Suggested Map/Sections/Intake — routing changes what
+    // every submission does, super-admin only.
+    if (currentAdminUser?.role === 'am') {
+      document.getElementById('admin-trello-rows').innerHTML =
+        '<p style="font-size:12px;color:var(--muted)">Trello template routing is restricted to super admins.</p>';
+      return;
+    }
+    loadWorkflowTemplates();
+  } else if (section === 'ae') {
+    const newBtn = document.getElementById('admin-new-ae-btn');
+    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    loadAdminAes();
   }
 }
 
@@ -1934,6 +1997,250 @@ async function adminToggleIntakeFormActive(id, makeActive) {
     loadAdminIntakeForms();
   } catch(e) {
     showToast('Error updating intake form: ' + e.message, 'error');
+  }
+}
+
+// ── TRELLO TEMPLATE ROUTING (2026-07-10) ─────────────────────────
+// Replaces TACTIC_MAP's Trello-list-NAME pattern matching (index.html) with a real,
+// admin-editable table keyed on a stable Trello list ID — one global set of standard
+// template lists, per Claire + AM's decision, not per-group.
+let WORKFLOW_TEMPLATES = [];
+
+// The set of workflow keys Trello routing actually uses. Mostly derived live from
+// each service's own `workflow` column (CATALOG_ROWS) — EXCEPT the literal 'Website'
+// value, which the live form's own submit logic (soldWorkflows, index.html) expands
+// into one of 3 tier-specific pseudo-workflows at submit time based on which site
+// package was actually selected. That expansion is a code-level business rule (which
+// site tier implies which template), not catalog data, so — same reasoning as
+// HOSTING_PRORATION_DAYS staying plain config — these 3 names are kept as a small
+// fixed list here rather than forced into a data-driven derivation that can't
+// actually represent the rule.
+function getTrelloRoutableWorkflows() {
+  const fromCatalog = new Set(Object.values(CATALOG_ROWS).map(r => r.workflow).filter(Boolean));
+  fromCatalog.delete('Website');
+  // SEO/AEO has 3 separate templates by tier (Starter/Builder/Pro), matching
+  // index.html's getTemplateWorkflowKey() lookup — not one generic 'SEO/AEO' row.
+  fromCatalog.delete('SEO/AEO');
+  const all = [
+    'Website (1-page)', 'Website (5-page)', 'Website (10-page)',
+    'SEO/AEO (Starter)', 'SEO/AEO (Builder)', 'SEO/AEO (Pro)',
+    ...fromCatalog,
+  ];
+  return all.sort((a, b) => a.localeCompare(b));
+}
+
+async function loadWorkflowTemplates() {
+  try {
+    WORKFLOW_TEMPLATES = await sb('workflow_trello_templates?select=*') || [];
+    renderWorkflowTemplateRows();
+  } catch(e) {
+    document.getElementById('admin-trello-rows').innerHTML =
+      `<p style="color:#EF4444;font-size:13px">Error loading Trello templates: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderWorkflowTemplateRows() {
+  const el = document.getElementById('admin-trello-rows');
+  const byWorkflow = {};
+  WORKFLOW_TEMPLATES.forEach(t => { byWorkflow[t.workflow] = t; });
+  const workflows = getTrelloRoutableWorkflows();
+
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 220px;gap:10px;margin-bottom:8px">
+    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Workflow</span>
+    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Template List ID</span>
+    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Label (optional)</span>
+  </div>` + workflows.map(wf => {
+    const existing = byWorkflow[wf];
+    return `
+    <div style="display:grid;grid-template-columns:1fr 1fr 220px;gap:10px;margin-bottom:8px;align-items:center">
+      <span style="font-size:12.5px;color:var(--text)">${esc(wf)}</span>
+      <input type="text" data-trello-workflow="${esc(wf)}" data-trello-field="template_list_id" value="${esc(existing?.template_list_id || '')}" placeholder="blank = no template" style="padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:monospace"/>
+      <input type="text" data-trello-workflow="${esc(wf)}" data-trello-field="label" value="${esc(existing?.label || '')}" placeholder="e.g. SEO Packages" style="padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+    </div>`;
+  }).join('');
+}
+
+async function adminSaveWorkflowTemplates() {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Trello template routing is restricted to super admins', 'error');
+    return;
+  }
+  const byWorkflow = {};
+  WORKFLOW_TEMPLATES.forEach(t => { byWorkflow[t.workflow] = t; });
+  try {
+    for (const wf of getTrelloRoutableWorkflows()) {
+      const listIdInput = document.querySelector(`[data-trello-workflow="${wf}"][data-trello-field="template_list_id"]`);
+      const labelInput = document.querySelector(`[data-trello-workflow="${wf}"][data-trello-field="label"]`);
+      const listId = listIdInput.value.trim();
+      const label = labelInput.value.trim();
+      const existed = !!byWorkflow[wf];
+      if (!listId) {
+        // Blank means "no template" — remove any existing mapping rather than save an empty one.
+        if (existed) {
+          await sb('rpc/admin_delete_workflow_template', {
+            method: 'POST',
+            body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_workflow: wf })
+          });
+        }
+        continue;
+      }
+      await sb('rpc/admin_save_workflow_template', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '',
+          p_pw: currentAdminUser?.pw || '',
+          p_workflow: wf,
+          p_data: { template_list_id: listId, label: label || null }
+        })
+      });
+    }
+    showToast('Trello template routing updated!');
+    await loadWorkflowTemplates();
+  } catch(e) {
+    showToast('Error saving Trello templates: ' + e.message, 'error');
+  }
+}
+
+// ── AE ROSTER (2026-07-10) ────────────────────────────────────────
+// Powers the public form's AE picker (replaces free-typed name + Trello handle).
+let ALL_AES = [];
+
+async function loadAdminAes() {
+  const el = document.getElementById('admin-ae-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    ALL_AES = await sb('ae?order=name&select=*') || [];
+    renderAdminAeList();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading AEs: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderAdminAeList() {
+  const el = document.getElementById('admin-ae-table');
+  const isSuperAdmin = currentAdminUser?.role !== 'am';
+  if (!ALL_AES.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No AEs yet.</p>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello Handle</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  ALL_AES.forEach(a => {
+    const inactive = !a.active;
+    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const groupName = allGroups.find(g => g.id === a.group_id)?.name || '<span style="color:var(--muted)">—</span>';
+    const editBtn = isSuperAdmin
+      ? `<button onclick="adminEditAe('${esc(a.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
+      : '';
+    const deactivateBtn = !isSuperAdmin ? '' :
+      `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
+      <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(a.trello_handle || '—')}</td>
+      <td style="padding:8px 10px">${groupName}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function populateAeGroupDropdown(selectedId) {
+  const sel = document.getElementById('admin-ae-group');
+  sel.innerHTML = allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  if (selectedId) sel.value = selectedId;
+}
+
+function adminNewAe() {
+  if (currentAdminUser?.role === 'am') {
+    showToast('AE management is restricted to super admins', 'error');
+    return;
+  }
+  document.getElementById('admin-ae-form-title').textContent = 'New AE';
+  document.getElementById('admin-ae-original-id').value = '';
+  document.getElementById('admin-ae-name').value = '';
+  document.getElementById('admin-ae-trello').value = '';
+  populateAeGroupDropdown(null);
+  document.getElementById('admin-ae-form').style.display = 'block';
+  document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminEditAe(id) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('AE management is restricted to super admins', 'error');
+    return;
+  }
+  const a = ALL_AES.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('admin-ae-form-title').textContent = 'Edit AE — ' + a.name;
+  document.getElementById('admin-ae-original-id').value = a.id;
+  document.getElementById('admin-ae-name').value = a.name || '';
+  document.getElementById('admin-ae-trello').value = a.trello_handle || '';
+  populateAeGroupDropdown(a.group_id);
+  document.getElementById('admin-ae-form').style.display = 'block';
+  document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelAeEdit() {
+  document.getElementById('admin-ae-form').style.display = 'none';
+}
+
+async function adminSaveAe() {
+  const isNew = !document.getElementById('admin-ae-original-id').value;
+  const name = document.getElementById('admin-ae-name').value.trim();
+  const trelloHandle = document.getElementById('admin-ae-trello').value.trim();
+  const groupId = document.getElementById('admin-ae-group').value;
+  if (!name) { showToast('Name is required', 'error'); return; }
+  if (!groupId) { showToast('Group is required', 'error'); return; }
+
+  const payload = { name, trello_handle: trelloHandle || null, group_id: groupId };
+  if (isNew) payload.active = true;
+  try {
+    await sb('rpc/admin_save_ae', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_ae_id: isNew ? null : document.getElementById('admin-ae-original-id').value,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'AE created!' : 'AE updated!');
+    document.getElementById('admin-ae-form').style.display = 'none';
+    await loadAdminAes();
+  } catch(e) {
+    showToast('Error saving AE: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleAeActive(id, makeActive) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('AE management is restricted to super admins', 'error');
+    return;
+  }
+  const a = ALL_AES.find(x => x.id === id);
+  if (!a) return;
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${a.name}?`)) return;
+  try {
+    await sb('rpc/admin_save_ae', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_ae_id: id,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`AE ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadAdminAes();
+  } catch(e) {
+    showToast('Error updating AE: ' + e.message, 'error');
   }
 }
 
