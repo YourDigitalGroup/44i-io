@@ -797,7 +797,7 @@ function renderPricingFields() {
   PRICEABLE_SERVICES.forEach(section => {
     html += `<div style="margin-bottom:20px">
       <div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">${section.section}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px">`;
+      <div style="display:grid;grid-template-columns:1fr;gap:8px">`;
     section.items.forEach(item => {
       const override = currentPricingOverrides[item.id];
       const isOverridden = override !== undefined;
