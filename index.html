@@ -367,10 +367,18 @@ textarea{resize:vertical;min-height:70px}
 
     <div class="card">
       <div class="card-head"><h3>Client Information</h3></div>
+      <div class="field-group" id="client-picker-wrap" style="display:none">
+        <div>
+          <label class="lbl">Returning Client? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— picks an existing client and fills in their info below. New client? Leave this as "New Client" and just fill in the fields.</span></label>
+          <select id="client-picker" onchange="applyClientPick(this.value)">
+            <option value="">— New Client —</option>
+          </select>
+        </div>
+      </div>
       <div class="field-group">
         <div>
           <label class="lbl">Business Name</label>
-          <input type="text" id="biz-name" placeholder="Client business name"/>
+          <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()"/>
         </div>
       </div>
       <div class="field-group cols2">
@@ -872,6 +880,70 @@ function applyAePick(id) {
   if (!a) return;
   document.getElementById('ae-name').value = a.name || '';
   document.getElementById('ae-trello').value = a.trello_handle || '';
+}
+
+// Client picker (2026-07-13) — replaces relying on exact-name matching to find a
+// returning client (the same class of fragility the AE picker fixed: a typo like
+// "CI Digital LLC" vs "CI Digital" would previously create a second, disconnected
+// client, which is also how a client ended up with two Trello lists before the
+// stored trello_list_id fix). Picking from this list carries the client's real id
+// straight through to submission (see selectedClientId below), so identity is never
+// re-derived from typed text for a returning client.
+// `clients` has no public read policy — this goes through get_group_clients(), a
+// narrow function that only returns THIS group's clients (id/contact-only fields).
+let CLIENT_ROSTER = [];
+let selectedClientId = null;
+
+async function loadClientRoster(groupId) {
+  const wrap = document.getElementById('client-picker-wrap');
+  const sel = document.getElementById('client-picker');
+  selectedClientId = null;
+  if (!groupId) { wrap.style.display = 'none'; CLIENT_ROSTER = []; return; }
+  try {
+    CLIENT_ROSTER = await sb('rpc/get_group_clients', { method: 'POST', body: JSON.stringify({ p_group_id: groupId }) }) || [];
+  } catch(e) {
+    console.warn('Could not load client roster:', e.message);
+    CLIENT_ROSTER = [];
+  }
+  if (!CLIENT_ROSTER.length) { wrap.style.display = 'none'; return; }
+  sel.innerHTML = '<option value="">— New Client —</option>' +
+    CLIENT_ROSTER.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  sel.value = '';
+  wrap.style.display = 'block';
+}
+
+function applyClientPick(id) {
+  selectedClientId = id || null;
+  if (!id) {
+    // Switched back to "New Client" — clear the fields so a previously-picked
+    // client's info doesn't linger on what's now meant to be a fresh record.
+    ['biz-name','contact-name','contact-phone','contact-email','website-url','city','biz-type'].forEach(fid => {
+      const el = document.getElementById(fid); if (el) el.value = '';
+    });
+    return;
+  }
+  const c = CLIENT_ROSTER.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('biz-name').value = c.name || '';
+  document.getElementById('contact-name').value = c.contact_name || '';
+  document.getElementById('contact-phone').value = c.contact_phone || '';
+  document.getElementById('contact-email').value = c.contact_email || '';
+  document.getElementById('website-url').value = c.website_url || '';
+  document.getElementById('city').value = c.city || '';
+  document.getElementById('biz-type').value = c.business_type || '';
+}
+
+// Safety net: if a client was picked but the business name is then hand-edited away
+// from that client's actual name, un-pin the id — otherwise submitting would silently
+// overwrite the originally-picked client's record with an unrelated new business's info.
+function onBizNameEdited() {
+  if (!selectedClientId) return;
+  const c = CLIENT_ROSTER.find(x => x.id === selectedClientId);
+  const current = document.getElementById('biz-name').value;
+  if (!c || current !== c.name) {
+    selectedClientId = null;
+    document.getElementById('client-picker').value = '';
+  }
 }
 
 // Set true by showDevModePicker() and never cleared for the rest of the session — the
@@ -1586,6 +1658,7 @@ async function loadGroup() {
     applyGroupBranding(selectedGroup);
     if (selectedGroup.io_pricing) applyCustomPricing(selectedGroup.io_pricing);
     loadAeRoster(selectedGroup.id);
+    loadClientRoster(selectedGroup.id);
     document.getElementById('group-display').style.display = 'block';
     document.getElementById('group-name-display').textContent = selectedGroup.name;
   } catch(e) {
@@ -1664,6 +1737,7 @@ window.applyDevGroup = function(id) {
   renderPriceCells();
   if (g.io_pricing) applyCustomPricing(g.io_pricing);
   loadAeRoster(g.id);
+  loadClientRoster(g.id);
   const sel = document.getElementById('dev-group-select');
   if (sel) sel.value = id;
 };
@@ -2594,6 +2668,11 @@ async function submitIO() {
     const clientPayload = {
       name: bizName,
       group_id: groupId,
+      // Picked from the Client picker above — carries the client's real id straight
+      // through so the RPC uses it directly instead of re-deriving identity from the
+      // typed name (see onBizNameEdited(), which un-pins this if the name no longer
+      // matches what was picked).
+      client_id: selectedClientId || null,
       contact_name: document.getElementById('contact-name').value,
       contact_email: document.getElementById('contact-email').value,
       contact_phone: document.getElementById('contact-phone').value,
