@@ -40,7 +40,6 @@
       <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Services</button>
       <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
       <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
-      <button id="section-tab-trello" onclick="adminSection('trello')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Trello Templates</button>
       <button id="section-tab-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
     </div>
 
@@ -382,6 +381,19 @@
                 <input type="text" id="admin-svc-workflow" placeholder="e.g. Website" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="lbl">Trello Template <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the Trello list or card ID to copy into the client's list when this service is sold. Leave blank for "no template — just a plain card." Services that share a workflow and use one shared template (e.g. the 4 Digital Advertising services) should all be given the same ID here.</span></label>
+                <input type="text" id="admin-svc-trello-template-ref" placeholder="Trello list or card ID" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
+              </div>
+              <div>
+                <label class="lbl">Template Type</label>
+                <select id="admin-svc-trello-template-type" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                  <option value="list">List (copy every card in it)</option>
+                  <option value="card">Single Card (copy just this one)</option>
+                </select>
+              </div>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;padding-top:12px;border-top:1px solid var(--border)">
               <div>
                 <label class="lbl">Auto-Add Setup Fee <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— spend-based services only</span></label>
@@ -553,16 +565,6 @@
 
         <div id="admin-intake-table"></div>
       </div><!-- /section-intake -->
-
-      <!-- ── SECTION: Trello Templates (workflow -> standard template list) ── -->
-      <div id="section-trello" style="display:none">
-        <div style="margin-bottom:16px">
-          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Trello Template Routing</p>
-          <p style="font-size:11px;color:var(--muted)">One global set of standard template lists — when an order includes a workflow with a template mapped here, its cards get copied from that Trello list into the client's own list. Leave a workflow's Template List ID blank for "no template — just a plain card."</p>
-        </div>
-        <div id="admin-trello-rows"></div>
-        <button onclick="adminSaveWorkflowTemplates()" style="margin-top:16px;padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Trello Templates</button>
-      </div><!-- /section-trello -->
 
       <!-- ── SECTION: AEs (roster + Trello handle, for form autofill) ── -->
       <div id="section-ae" style="display:none">
@@ -921,8 +923,8 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Seven sections: groups | orders | map | sections | intake | trello | ae
-  const sections = ['groups','orders','map','sections','intake','trello','ae'];
+  // Six sections: groups | orders | map | sections | intake | ae
+  const sections = ['groups','orders','map','sections','intake','ae'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups' needs display:flex specifically — its edit form/list use flex `order`
@@ -962,15 +964,6 @@ function adminSection(section) {
     const newBtn = document.getElementById('admin-new-intake-btn');
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadAdminIntakeForms();
-  } else if (section === 'trello') {
-    // Same restriction level as Suggested Map/Sections/Intake — routing changes what
-    // every submission does, super-admin only.
-    if (currentAdminUser?.role === 'am') {
-      document.getElementById('admin-trello-rows').innerHTML =
-        '<p style="font-size:12px;color:var(--muted)">Trello template routing is restricted to super admins.</p>';
-      return;
-    }
-    loadWorkflowTemplates();
   } else if (section === 'ae') {
     const newBtn = document.getElementById('admin-new-ae-btn');
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
@@ -2000,107 +1993,6 @@ async function adminToggleIntakeFormActive(id, makeActive) {
   }
 }
 
-// ── TRELLO TEMPLATE ROUTING (2026-07-10) ─────────────────────────
-// Replaces TACTIC_MAP's Trello-list-NAME pattern matching (index.html) with a real,
-// admin-editable table keyed on a stable Trello list ID — one global set of standard
-// template lists, per Claire + AM's decision, not per-group.
-let WORKFLOW_TEMPLATES = [];
-
-// The set of workflow keys Trello routing actually uses. Mostly derived live from
-// each service's own `workflow` column (CATALOG_ROWS) — EXCEPT the literal 'Website'
-// value, which the live form's own submit logic (soldWorkflows, index.html) expands
-// into one of 3 tier-specific pseudo-workflows at submit time based on which site
-// package was actually selected. That expansion is a code-level business rule (which
-// site tier implies which template), not catalog data, so — same reasoning as
-// HOSTING_PRORATION_DAYS staying plain config — these 3 names are kept as a small
-// fixed list here rather than forced into a data-driven derivation that can't
-// actually represent the rule.
-function getTrelloRoutableWorkflows() {
-  const fromCatalog = new Set(Object.values(CATALOG_ROWS).map(r => r.workflow).filter(Boolean));
-  fromCatalog.delete('Website');
-  // SEO/AEO has 3 separate templates by tier (Starter/Builder/Pro), matching
-  // index.html's getTemplateWorkflowKey() lookup — not one generic 'SEO/AEO' row.
-  fromCatalog.delete('SEO/AEO');
-  const all = [
-    'Website (1-page)', 'Website (5-page)', 'Website (10-page)',
-    'SEO/AEO (Starter)', 'SEO/AEO (Builder)', 'SEO/AEO (Pro)',
-    ...fromCatalog,
-  ];
-  return all.sort((a, b) => a.localeCompare(b));
-}
-
-async function loadWorkflowTemplates() {
-  try {
-    WORKFLOW_TEMPLATES = await sb('workflow_trello_templates?select=*') || [];
-    renderWorkflowTemplateRows();
-  } catch(e) {
-    document.getElementById('admin-trello-rows').innerHTML =
-      `<p style="color:#EF4444;font-size:13px">Error loading Trello templates: ${esc(e.message)}</p>`;
-  }
-}
-
-function renderWorkflowTemplateRows() {
-  const el = document.getElementById('admin-trello-rows');
-  const byWorkflow = {};
-  WORKFLOW_TEMPLATES.forEach(t => { byWorkflow[t.workflow] = t; });
-  const workflows = getTrelloRoutableWorkflows();
-
-  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr 220px;gap:10px;margin-bottom:8px">
-    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Workflow</span>
-    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Template List ID</span>
-    <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Label (optional)</span>
-  </div>` + workflows.map(wf => {
-    const existing = byWorkflow[wf];
-    return `
-    <div style="display:grid;grid-template-columns:1fr 1fr 220px;gap:10px;margin-bottom:8px;align-items:center">
-      <span style="font-size:12.5px;color:var(--text)">${esc(wf)}</span>
-      <input type="text" data-trello-workflow="${esc(wf)}" data-trello-field="template_list_id" value="${esc(existing?.template_list_id || '')}" placeholder="blank = no template" style="padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:monospace"/>
-      <input type="text" data-trello-workflow="${esc(wf)}" data-trello-field="label" value="${esc(existing?.label || '')}" placeholder="e.g. SEO Packages" style="padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
-    </div>`;
-  }).join('');
-}
-
-async function adminSaveWorkflowTemplates() {
-  if (currentAdminUser?.role === 'am') {
-    showToast('Trello template routing is restricted to super admins', 'error');
-    return;
-  }
-  const byWorkflow = {};
-  WORKFLOW_TEMPLATES.forEach(t => { byWorkflow[t.workflow] = t; });
-  try {
-    for (const wf of getTrelloRoutableWorkflows()) {
-      const listIdInput = document.querySelector(`[data-trello-workflow="${wf}"][data-trello-field="template_list_id"]`);
-      const labelInput = document.querySelector(`[data-trello-workflow="${wf}"][data-trello-field="label"]`);
-      const listId = listIdInput.value.trim();
-      const label = labelInput.value.trim();
-      const existed = !!byWorkflow[wf];
-      if (!listId) {
-        // Blank means "no template" — remove any existing mapping rather than save an empty one.
-        if (existed) {
-          await sb('rpc/admin_delete_workflow_template', {
-            method: 'POST',
-            body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_workflow: wf })
-          });
-        }
-        continue;
-      }
-      await sb('rpc/admin_save_workflow_template', {
-        method: 'POST',
-        body: JSON.stringify({
-          p_name: currentAdminUser?.name || '',
-          p_pw: currentAdminUser?.pw || '',
-          p_workflow: wf,
-          p_data: { template_list_id: listId, label: label || null }
-        })
-      });
-    }
-    showToast('Trello template routing updated!');
-    await loadWorkflowTemplates();
-  } catch(e) {
-    showToast('Error saving Trello templates: ' + e.message, 'error');
-  }
-}
-
 // ── AE ROSTER (2026-07-10) ────────────────────────────────────────
 // Powers the public form's AE picker (replaces free-typed name + Trello handle).
 let ALL_AES = [];
@@ -2493,10 +2385,11 @@ function adminNewService() {
   ['admin-svc-id','admin-svc-label','admin-svc-sort','admin-svc-price',
    'admin-svc-modifier','admin-svc-cpm','admin-svc-workflow',
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
-   'admin-svc-spend-min'].forEach(id => {
+   'admin-svc-spend-min','admin-svc-trello-template-ref'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
+  document.getElementById('admin-svc-trello-template-type').value = 'list';
   document.getElementById('admin-svc-id').disabled = false;
   document.getElementById('admin-svc-id').dataset.manuallyEdited = ''; // fresh form → auto-generate again
   document.getElementById('admin-svc-id-warn').style.display = 'none';
@@ -2545,6 +2438,8 @@ function adminEditService(id) {
   document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
   document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
   document.getElementById('admin-svc-workflow').value = s.workflow || '';
+  document.getElementById('admin-svc-trello-template-ref').value = s.trello_template_ref || '';
+  document.getElementById('admin-svc-trello-template-type').value = s.trello_template_type || 'list';
   document.getElementById('admin-svc-auto-setup').value = s.auto_add_setup_fee ? 'true' : 'false';
   document.getElementById('admin-svc-setup-fee').value = s.setup_fee ?? '';
   document.getElementById('admin-svc-setup-threshold').value = s.setup_fee_threshold ?? '';
@@ -2663,6 +2558,8 @@ async function adminSaveService() {
     koc_requirement: document.getElementById('admin-svc-koc').value,
     intake_form_id: document.getElementById('admin-svc-intake').value || null,
     workflow: document.getElementById('admin-svc-workflow').value.trim() || null,
+    trello_template_ref: document.getElementById('admin-svc-trello-template-ref').value.trim() || null,
+    trello_template_type: document.getElementById('admin-svc-trello-template-type').value,
     sort_order: sortVal === '' ? null : parseInt(sortVal, 10),
     auto_add_setup_fee: autoSetupVal,
     setup_fee: setupFeeVal === '' ? null : parseFloat(setupFeeVal),

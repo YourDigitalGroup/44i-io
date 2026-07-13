@@ -2694,31 +2694,27 @@ async function submitIO() {
         const aeTrello = document.getElementById('ae-trello').value.trim();
         const amTrello = selectedGroup.am_trello_handle || '';
 
-        // ── Workflow → Trello template list ID (2026-07-10) ──
-        // Replaces the old TACTIC_MAP, which matched Trello LIST NAMES against
-        // hardcoded text patterns on the client's OWN board — fragile (a renamed list
-        // silently breaks it, no error) and, per Claire + the AM's decision, wrong
-        // shape entirely: templates are ONE global standard set, not per-group. Now a
-        // direct lookup by stable Trello list ID from `workflow_trello_templates`,
-        // admin-editable in /admin's Trello Templates tab. Absent from the map =
-        // no template for that workflow, same meaning as `null` in the old TACTIC_MAP.
-        const workflowTemplateRows = await sb('workflow_trello_templates?select=*') || [];
-        const WORKFLOW_TEMPLATES = {};
-        workflowTemplateRows.forEach(t => { WORKFLOW_TEMPLATES[t.workflow] = t.template_list_id; });
-
-        // The OLD TACTIC_MAP's SEO/AEO pattern also required matching the specific
-        // tier (seoTier) — meaning there were really 3 separate SEO templates
-        // (Starter/Builder/Pro), not one generic one. Preserved here, but scoped
-        // ONLY to template lookup — the plain 'SEO/AEO' name (tier-agnostic) is still
-        // what's used for intake-form lookup and card naming below, since there's
-        // only one SEO intake form regardless of which tier was sold.
-        function getTemplateWorkflowKey(wf) {
-          if (wf === 'SEO/AEO') {
-            if (selected['seo-bp']) return 'SEO/AEO (Pro)';
-            if (selected['seo-bb']) return 'SEO/AEO (Builder)';
-            return 'SEO/AEO (Starter)';
+        // ── Per-service Trello template routing (2026-07-13) ──
+        // Replaces the old TACTIC_MAP (matched Trello LIST NAMES against hardcoded text
+        // patterns on the client's OWN board — fragile, silent failure on rename) AND a
+        // short-lived global workflow-keyed table design that turned out to be the wrong
+        // shape. Each SERVICE now carries its own `trello_template_ref` (a stable Trello
+        // list or card ID) + `trello_template_type` ('list' or 'card'), admin-editable
+        // right on the Service edit form. Tier services (SEO Starter/Builder/Pro, Website
+        // 1/5/10-page) each carry their own ref directly — no tier-detection code needed.
+        // Services that share a workflow but use ONE shared template (e.g. the 4 Digital
+        // Advertising services all pointing at the same "Display" card) should be given
+        // an identical ref/type value by whoever sets up the catalog.
+        function resolveWorkflowTemplate(originalWorkflow) {
+          const soldRows = Object.keys(selected)
+            .map(id => CATALOG_ROWS[id])
+            .filter(r => r && r.workflow === originalWorkflow && r.trello_template_ref);
+          if (!soldRows.length) return null;
+          const distinctRefs = new Set(soldRows.map(r => r.trello_template_ref));
+          if (distinctRefs.size > 1) {
+            console.warn(`Multiple different Trello templates configured for workflow "${originalWorkflow}" among sold services — using "${soldRows[0].label}"'s template.`);
           }
-          return wf;
+          return { ref: soldRows[0].trello_template_ref, type: soldRows[0].trello_template_type || 'list' };
         }
 
         // ── Resolve website workflow name ──
@@ -2903,18 +2899,50 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
 
         // ── Step 5: Add tactic cards for new products only ──
         let cardsAdded = 0;
+        const originalWorkflows = [...workflows]; // same order as soldWorkflows, pre-tier-remap
 
-        for (const wf of soldWorkflows) {
-          const templateListId = WORKFLOW_TEMPLATES[getTemplateWorkflowKey(wf)];
+        for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
+          const wf = soldWorkflows[wfIdx];
+          const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
           const intakeDesc = buildIntakeDesc(wf);
 
-          if (templateListId) {
-            // Has template — fetch its cards directly by the stored, stable list id
-            // (no more name-pattern search across the client's own board)
+          if (template && template.type === 'card') {
+            // Single-card template (e.g. "Display", "SEM") — copy just this one card,
+            // preserving its own template name rather than the generic workflow name.
+            // Requires the claude-proxy Edge Function's trello_get_card target.
+            const cardInfoRes = await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_get_card', card_id: template.ref })
+            });
+            const templateCard = await cardInfoRes.json();
+            const cn = (templateCard?.name || wf).trim();
+
+            if (!cardExists(cn)) {
+              const copyRes = await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_copy_card', card_id: template.ref, list_id: clientList.id, name: cn, pos: 'bottom' })
+              });
+              const copiedCard = await copyRes.json();
+              addedCardNames.add(norm(cn));
+              cardsAdded++;
+
+              if (intakeDesc && copiedCard?.id) {
+                await fetch(PROXY, {
+                  method: 'POST',
+                  headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                  body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
+                });
+              }
+            }
+          } else if (template && template.type === 'list') {
+            // Whole-list template (e.g. SEO/Website tier packages) — copy every
+            // (non-placeholder) card in it, fetched directly by the stored, stable list id.
             const tCardsRes = await fetch(PROXY, {
               method: 'POST',
               headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-              body: JSON.stringify({ target: 'trello_get_list_cards', list_id: templateListId })
+              body: JSON.stringify({ target: 'trello_get_list_cards', list_id: template.ref })
             });
             const templateCards = await tCardsRes.json();
 
