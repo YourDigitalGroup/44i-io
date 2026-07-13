@@ -45,9 +45,15 @@
     <div style="padding:20px">
 
       <!-- ── SECTION: Groups ── -->
-      <div id="section-groups">
+      <div id="section-groups" style="display:flex;flex-direction:column">
+      <!-- Edit form rendered first in the DOM (order:1) so it opens near the top of the
+           page, matching Services/Sections/Intake Forms — was physically AFTER the list
+           (order not set = source order), which put it below every group in the list and
+           made it look like you were editing the LAST group regardless of which one was
+           actually clicked. Flex `order` repositions it without moving/duplicating the
+           form's ~100 lines of markup. -->
       <!-- Group list -->
-      <div id="admin-group-list" style="margin-bottom:20px">
+      <div id="admin-group-list" style="margin-bottom:20px;order:2">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <p style="font-size:13px;font-weight:700;color:var(--text)">Groups</p>
           <button onclick="adminNewGroup()" style="padding:7px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">+ New Group</button>
@@ -56,7 +62,7 @@
       </div>
 
       <!-- Group edit form — tabbed -->
-      <div id="admin-group-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);overflow:hidden">
+      <div id="admin-group-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);overflow:hidden;order:1;margin-bottom:20px">
         <!-- Tab bar -->
         <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
           <button id="tab-btn-info" onclick="adminTab('info')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Group Info</button>
@@ -791,7 +797,7 @@ function renderPricingFields() {
   PRICEABLE_SERVICES.forEach(section => {
     html += `<div style="margin-bottom:20px">
       <div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">${section.section}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px">`;
+      <div style="display:grid;grid-template-columns:1fr;gap:8px">`;
     section.items.forEach(item => {
       const override = currentPricingOverrides[item.id];
       const isOverridden = override !== undefined;
