@@ -378,37 +378,37 @@ textarea{resize:vertical;min-height:70px}
       <div class="field-group">
         <div>
           <label class="lbl">Business Name</label>
-          <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()"/>
+          <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()" autocomplete="off"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">Contact Name(s)</label>
-          <input type="text" id="contact-name" placeholder="Primary contact"/>
+          <input type="text" id="contact-name" placeholder="Primary contact" autocomplete="off"/>
         </div>
         <div>
           <label class="lbl">Phone</label>
-          <input type="tel" id="contact-phone" placeholder="(000) 000-0000" oninput="fmtPhone(this)" maxlength="14"/>
+          <input type="tel" id="contact-phone" placeholder="(000) 000-0000" oninput="fmtPhone(this)" maxlength="14" autocomplete="off"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">Email</label>
-          <input type="email" id="contact-email" placeholder="client@email.com"/>
+          <input type="email" id="contact-email" placeholder="client@email.com" autocomplete="off"/>
         </div>
         <div>
           <label class="lbl">Website URL</label>
-          <input type="text" id="website-url" placeholder="https://"/>
+          <input type="text" id="website-url" placeholder="https://" autocomplete="off"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">City / Service Area</label>
-          <input type="text" id="city" placeholder="City, State"/>
+          <input type="text" id="city" placeholder="City, State" autocomplete="off"/>
         </div>
         <div>
           <label class="lbl">Business Type</label>
-          <input type="text" id="biz-type" placeholder="e.g. Flooring Retailer"/>
+          <input type="text" id="biz-type" placeholder="e.g. Flooring Retailer" autocomplete="off"/>
         </div>
       </div>
     </div>
@@ -3757,6 +3757,12 @@ function resetForm() {
   kocCalendarOpened = false;
   currentIntakeServiceId = null;
   document.querySelectorAll('.koc-row-badge').forEach(el => el.remove());
+  // FIXED (2026-07-13, found live): "⚠ Finish Intake"/"📋 Edit Intake" row badges are a
+  // SEPARATE element (.row-intake-link, built by updateIntakeRowLinks()) from the
+  // similar-looking .koc-row-badge above — never removed here, so a previous
+  // submission's intake status kept showing on rows even though intakeData itself
+  // was correctly reset in memory.
+  document.querySelectorAll('.row-intake-link').forEach(el => el.remove());
   setVidGroupDisabled('vid-pkg', false);
   setVidGroupDisabled('wm-vid-pkg', false);
   setWebSectionDisabled('web-ot', false);
