@@ -3644,6 +3644,7 @@ function autoSaveDraft() {
     const d = buildDraft();
     // If the form is effectively empty, remove the draft instead of storing a blank one
     const hasContent = d.ae || d.biz || d.contact || d.email || Object.keys(d.selected).length > 0;
+    console.log('[autoSaveDraft]', hasContent ? 'WRITING draft, biz=' + JSON.stringify(d.biz) + ' ae=' + JSON.stringify(d.ae) : 'removing draft (empty)', new Error().stack.split('\n').slice(1,4).join(' <- '));
     if (hasContent) writeDraft(d);
     else localStorage.removeItem(getDraftKey());
   } catch(e) { /* silent */ }
@@ -3654,6 +3655,7 @@ function loadDraft() {
     // Per-tab draft keys: a NEW tab has a fresh tab_id → no draft found → blank
     // form automatically. A REFRESH keeps the same tab_id → draft restores.
     const raw = localStorage.getItem(getDraftKey());
+    console.log('[loadDraft] key:', getDraftKey(), 'raw draft found:', raw);
     if (!raw) return;
     const d = JSON.parse(raw);
 
@@ -3753,10 +3755,12 @@ function loadDraft() {
 function clearDraft() {
   try {
     // Remove the draft for THIS device + slug.
+    console.log('[clearDraft] removing key:', getDraftKey(), 'was:', localStorage.getItem(getDraftKey()));
     localStorage.removeItem(getDraftKey());
     // Also clean up legacy keys from prior versions
     localStorage.removeItem('io_draft');
     localStorage.removeItem('io_submitted_at');
+    console.log('[clearDraft] confirmed after removal:', localStorage.getItem(getDraftKey()));
   } catch(e) { /* silent */ }
 }
 
