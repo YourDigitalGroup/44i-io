@@ -2827,30 +2827,76 @@ ${servicesDesc}
 **Special Instructions:** ${document.getElementById('special-instructions')?.value||'None'}
 ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.slice(0, 16000);
 
-        // ── Step 1: Get all lists on the board ──
-        const listsRes = await fetch(PROXY, {
-          method: 'POST',
-          headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-          body: JSON.stringify({ target: 'trello_get_lists', board_id: selectedGroup.trello_board_id })
-        });
-        const allLists = await listsRes.json();
-        if (!Array.isArray(allLists)) throw new Error('Could not fetch board lists');
+        // ── Step 1-2: Resolve the client's Trello list (2026-07-13) ──
+        // Prefers the STORED, PERMANENT id on the client record (clients.trello_list_id)
+        // over a live name search. The old approach re-searched the board's list NAMES on
+        // every single submission — fragile to typos (silently creates a duplicate list
+        // for the same client) and blind to archived/closed lists (silently creates ANOTHER
+        // new list for a returning client instead of reopening their real one). Falls back
+        // to the name search only for clients created before this fix existed (no stored id
+        // yet) or if the stored list was genuinely deleted on Trello (not just archived).
+        let clientList = null;
 
-        // ── Step 2: Find existing client list or create new ──
-        const existingList = allLists.find(l => l.name.toLowerCase() === bizName.toLowerCase());
-        let clientList;
-        if (existingList) {
-          clientList = existingList;
-          console.log('Found existing list:', clientList.name);
-        } else {
-          const newListRes = await fetch(PROXY, {
+        if (client?.trello_list_id) {
+          const storedListRes = await fetch(PROXY, {
             method: 'POST',
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_create_list', board_id: selectedGroup.trello_board_id, name: bizName, pos: 'top' })
+            body: JSON.stringify({ target: 'trello_get_list', list_id: client.trello_list_id })
           });
-          clientList = await newListRes.json();
-          if (!clientList.id) throw new Error('Failed to create client list');
-          console.log('Created new list:', clientList.name);
+          const storedList = await storedListRes.json();
+          if (storedList?.id) {
+            if (storedList.closed) {
+              // Reopen an archived list for a returning client instead of creating a new one
+              await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_update_list', list_id: storedList.id, closed: false })
+              });
+              console.log('Reopened archived list for returning client:', storedList.name);
+            } else {
+              console.log('Found client list via stored id:', storedList.name);
+            }
+            clientList = storedList;
+          }
+        }
+
+        if (!clientList) {
+          const listsRes = await fetch(PROXY, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+            body: JSON.stringify({ target: 'trello_get_lists', board_id: selectedGroup.trello_board_id })
+          });
+          const allLists = await listsRes.json();
+          if (!Array.isArray(allLists)) throw new Error('Could not fetch board lists');
+
+          const existingList = allLists.find(l => l.name.toLowerCase() === bizName.toLowerCase());
+          if (existingList) {
+            clientList = existingList;
+            console.log('Found existing list by name (no stored id yet):', clientList.name);
+          } else {
+            const newListRes = await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_create_list', board_id: selectedGroup.trello_board_id, name: bizName, pos: 'top' })
+            });
+            clientList = await newListRes.json();
+            if (!clientList.id) throw new Error('Failed to create client list');
+            console.log('Created new list:', clientList.name);
+          }
+        }
+
+        // Persist the resolved list id on the client record so future submissions skip
+        // the name search entirely — this is what actually closes the duplicate/archived
+        // client bug for good, rather than just working around it this one time.
+        if (client?.id && clientList?.id && clientList.id !== client.trello_list_id) {
+          try {
+            await sb('rpc/set_client_trello_list_id', {
+              method: 'POST',
+              body: JSON.stringify({ p_client_id: client.id, p_trello_list_id: clientList.id })
+            });
+          } catch(e) {
+            console.warn('Could not persist client trello_list_id:', e.message);
+          }
         }
 
         // ── Step 3: Get existing cards in the list ──
