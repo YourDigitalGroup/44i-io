@@ -28,8 +28,10 @@ in conversation.
 ## STATUS SUMMARY
 
 **Track 1 — Catalog migration to Supabase: COMPLETE (structurally).**
-Four tables built. Two populated + verified (`services`, `intake_forms`); two
-built-but-empty awaiting data (`group_service_overrides`, `ae`).
+Four tables built. Two populated + verified (`services`, `intake_forms`); `ae` is
+built-but-empty awaiting data; `group_service_overrides` is built but DEAD/UNUSED —
+see BUILT-BUT-EMPTY TABLES below, corrected 2026-07-10 — the live mechanism is
+`groups.io_pricing`, not this table.
 
 **Track 2 — Form switchover to table-driven catalog: COMPLETE & VERIFIED (2026-06-25).**
 The form now loads `SERVICE_DATA` / `PRODUCT_CONFIG` / `INTAKE_FORMS` from Supabase
@@ -94,7 +96,9 @@ These gate sending the form to AEs to start using.
   population issues with spot-checks (missing TLP/GBP section; offline-modifier
   inconsistency), so a full pass is warranted before launch.
 
-- **C. Load the 8 groups' custom pricing** into `group_service_overrides`. Comes
+- **C. Load the groups' custom pricing** — CORRECTED 2026-07-10: goes into
+  `groups.io_pricing`, not `group_service_overrides` (that table is dead/unused —
+  see BUILT-BUT-EMPTY TABLES). In progress via Claire's paper-IO uploads. Comes
   AFTER B — overrides are deltas from verified base prices, so the base must be
   correct first. Spreadsheet-sourced; CSV-friendly import.
 
@@ -2149,10 +2153,22 @@ which is why they slipped off this doc — but several gate a real client-facing
 
 ## BUILT-BUT-EMPTY TABLES (awaiting data)
 
-- **`group_service_overrides`** — sparse per-group price overrides. Empty by design
-  during testing (keeps a clean baseline). Populate with the 8 groups' custom prices
-  (item C) once base catalog is verified. NOTE: while empty, every group shows
-  standard pricing — expected, not a bug.
+- **`group_service_overrides`** — CORRECTED (2026-07-10): this table is NOT the live
+  mechanism and should NOT be treated as "awaiting population." The original plan
+  (see the now-stale ADMIN UI ROADMAP note below) was to swap Custom Pricing's
+  save-target from `groups.io_pricing` over to this table — that swap never happened.
+  Custom Pricing has continued to write real, live overrides straight to
+  `groups.io_pricing` (a JSON column on `groups` itself) ever since, including the
+  paper-IO-sourced overrides loaded this session (e.g. CI Digital's site-tier pricing).
+  This table remains empty and disconnected from every part of the running app —
+  it is dead groundwork from an abandoned migration, not a populated-later table.
+  Found live by Claire: she ran a Custom Pricing override, saw it correctly reflected
+  in the admin editor, then checked this table in Supabase directly and (correctly)
+  found nothing there — flagged it specifically so a future dev/AM poking around the
+  database doesn't mistake it for where pricing overrides actually live.
+  **Not dropped** — flagged here instead, since dropping a table is a one-way,
+  destructive schema change; say the word if you want it removed outright instead of
+  just documented as dead.
 - **`ae`** — AE roster (name, trello_handle, group_id, active). Powers a name-picker
   so AEs select themselves and their Trello handle autofills. Populate via CSV once
   handles are collected from staff (a people task, not a code task). Needs each
@@ -2163,9 +2179,14 @@ which is why they slipped off this doc — but several gate a real client-facing
 ## ADMIN UI ROADMAP (front-end editing)
 
 Building a table ≠ building its editing screen. Status per table:
-- **`group_service_overrides`** — editing screen mostly EXISTS (the Custom Pricing
-  sub-tab); needs its save-target swapped from the old `io_pricing` blob to override
-  rows. Nearly free.
+- **`group_service_overrides`** — STALE NOTE, corrected 2026-07-10 (see
+  BUILT-BUT-EMPTY TABLES above): the plan described just below ("needs its
+  save-target swapped... Nearly free") never happened and should not be treated as
+  upcoming/planned work — `groups.io_pricing` is the real, permanent, live mechanism
+  now, with real production overrides already stored in it. Original stale note, kept
+  for history only: ~~editing screen mostly EXISTS (the Custom Pricing sub-tab); needs
+  its save-target swapped from the old `io_pricing` blob to override rows. Nearly
+  free.~~
 - **`services`** — NO admin screen yet. (A) read-only view = next up; (5b) full
   add/edit/retire CRUD with a permission-guarded server-side save (mirror the
   `admin_save_group` RPC pattern) = bigger, later.
@@ -2347,8 +2368,11 @@ file (same completeness check used for every admin-editor addition this project)
   can underlying data be extracted from Looker, or only PDFs?
 - **Phase 3 — Accounting / billing reconciliation.** Replaces the monthly spreadsheet.
   Needs three things not captured today: proration policy, revenue-share data, and
-  service-status-over-time. The `group_service_overrides` table is structured to
-  extend with revenue-share columns for this.
+  service-status-over-time. `group_service_overrides` was originally earmarked to
+  extend with revenue-share columns for this — still a reasonable option since it's
+  currently unused either way, but note (2026-07-10) it is NOT where current pricing
+  overrides live (that's `groups.io_pricing`); reusing it here would mean designing
+  its actual activation from scratch, not just adding columns to something already live.
 - **Shared join key — now an IO ID, not a campaign ID (decided 2026-06-26).** One IO can
   sell multiple campaigns, so the key identifies the IO; campaigns hang off it later. Being
   added now as a stored, system-assigned `io_number` (format `YYYYMMDD-BIZ6-XXX`, see
