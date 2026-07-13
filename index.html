@@ -2606,41 +2606,22 @@ async function submitIO() {
     };
 
     let client = null;
-    // Primary path: server-side find_or_create_client RPC (LIVE). Does the lookup +
-    // insert/update inside the database, so the clients table doesn't need public read
-    // access. The direct-REST block below is a defensive fallback if the RPC call errors.
-    // RPC now RETURNS jsonb ({id, trello_list_id}) instead of a bare uuid (2026-07-10) —
+    // find_or_create_client RPC is the ONLY path to the clients table (2026-07-13) —
+    // `clients` holds real customer contact info and has no public read/write policy
+    // at all now (a leftover wide-open policy that granted unrestricted public access
+    // was found and closed this week). A direct-REST fallback used to sit here for
+    // when the RPC call errored, but it could only ever fail the same way the RPC did
+    // (no public access either way) — removed rather than kept as dead code that always
+    // fails. If this RPC call fails, the order still saves below, just without a linked
+    // client record (client?.id is already handled as optional everywhere it's read).
+    // RPC RETURNS jsonb ({id, trello_list_id}) instead of a bare uuid (2026-07-10) —
     // trello_list_id is the reliable, stored link to this client's actual Trello list
     // (see the client-list resolution below), replacing the old name-search-only
     // approach that couldn't tell an archived list from a genuinely new client.
     try {
       const result = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify({ p_payload: clientPayload }) });
       if (result && result.id) client = { id: result.id, trello_list_id: result.trello_list_id || null };
-    } catch(e) { /* RPC errored — fall through to the direct path below */ }
-
-    if (!client) {
-      try {
-        // Look for an existing client with the same business name in this group
-        const groupClause = groupId ? '&group_id=eq.' + groupId : '&group_id=is.null';
-        const existing = await sb('clients?name=eq.' + encodeURIComponent(bizName) + groupClause + '&limit=1');
-        if (Array.isArray(existing) && existing.length) {
-          client = existing[0];
-          // Update with the latest contact info in case it changed
-          try {
-            await sb('clients?id=eq.' + client.id, {
-              method: 'PATCH',
-              body: JSON.stringify(clientPayload),
-              prefer: 'return=minimal'
-            });
-          } catch(e) { console.warn('Could not update existing client:', e.message); }
-        }
-      } catch(e) { console.warn('Client lookup failed, will create new:', e.message); }
-    }
-
-    if (!client) {
-      const clients = await sb('clients', {method:'POST', body: JSON.stringify(clientPayload)});
-      client = Array.isArray(clients) ? clients[0] : clients;
-    }
+    } catch(e) { console.warn('find_or_create_client failed — order will save without a linked client record:', e.message); }
 
     // 1b. Save order directly to Supabase
     // System-assigned IO number — generated once here, stored on the order, and reused
