@@ -3022,24 +3022,37 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               body: JSON.stringify({ target: 'trello_get_card', card_id: template.ref })
             });
             const templateCard = await cardInfoRes.json();
-            const cn = (templateCard?.name || wf).trim();
 
-            if (!cardExists(cn)) {
-              const copyRes = await fetch(PROXY, {
-                method: 'POST',
-                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_copy_card', card_id: template.ref, list_id: clientList.id, name: cn, pos: 'bottom' })
-              });
-              const copiedCard = await copyRes.json();
-              addedCardNames.add(norm(cn));
-              cardsAdded++;
-
-              if (intakeDesc && copiedCard?.id) {
-                await fetch(PROXY, {
+            if (!templateCard?.id) {
+              // FIXED (2026-07-13, found live): a short "copy link" code (e.g. bN5GJEkd)
+              // works fine for LOOKING UP a card here, but Trello's copy-card endpoint
+              // below rejects it — only the resolved full id works there. If even the
+              // lookup failed, the ref itself is bad (deleted card, wrong id, etc.) —
+              // log it and skip rather than attempt a copy that's certain to fail too.
+              console.warn(`Could not resolve single-card template for workflow "${originalWorkflows[wfIdx]}" (ref ${template.ref}) — no card added. Check the Trello Template field on the relevant service.`);
+            } else {
+              const cn = (templateCard.name || wf).trim();
+              if (!cardExists(cn)) {
+                const copyRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
+                  body: JSON.stringify({ target: 'trello_copy_card', card_id: templateCard.id, list_id: clientList.id, name: cn, pos: 'bottom' })
                 });
+                const copiedCard = await copyRes.json();
+
+                if (copiedCard?.id) {
+                  addedCardNames.add(norm(cn));
+                  cardsAdded++;
+                  if (intakeDesc) {
+                    await fetch(PROXY, {
+                      method: 'POST',
+                      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                      body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
+                    });
+                  }
+                } else {
+                  console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
+                }
               }
             }
           } else if (template && template.type === 'list') {
@@ -3070,6 +3083,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: 'bottom' })
                 });
                 const copiedCard = await copyRes.json();
+                if (!copiedCard?.id) {
+                  console.warn(`Failed to copy template card "${cn}":`, copiedCard);
+                  continue;
+                }
                 addedCardNames.add(norm(cn));
                 cardsAdded++;
 
