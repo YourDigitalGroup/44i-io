@@ -3757,6 +3757,12 @@ function resetForm() {
   kocCalendarOpened = false;
   currentIntakeServiceId = null;
   document.querySelectorAll('.koc-row-badge').forEach(el => el.remove());
+  // FIXED (2026-07-13, found live): "⚠ Finish Intake"/"📋 Edit Intake" row badges are a
+  // SEPARATE element (.row-intake-link, built by updateIntakeRowLinks()) from the
+  // similar-looking .koc-row-badge above — never removed here, so a previous
+  // submission's intake status kept showing on rows even though intakeData itself
+  // was correctly reset in memory.
+  document.querySelectorAll('.row-intake-link').forEach(el => el.remove());
   setVidGroupDisabled('vid-pkg', false);
   setVidGroupDisabled('wm-vid-pkg', false);
   setWebSectionDisabled('web-ot', false);
