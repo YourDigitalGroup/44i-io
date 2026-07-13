@@ -2777,6 +2777,26 @@ async function submitIO() {
           return { ref: soldRows[0].trello_template_ref, type: soldRows[0].trello_template_type || 'list' };
         }
 
+        // Lists every sold line item sharing a workflow (2026-07-13) — so a small add-on
+        // (e.g. a modifier like Offline Visits Tracking) never gets missed just because it
+        // only ever appeared on the IO card, not the specific tactic card someone's actually
+        // working from. Only used for single-card templates and the plain-fallback path,
+        // which each only ever produce ONE card per workflow — a whole-LIST template (e.g.
+        // SEO's multi-card copy) has no single obvious card to put this on, so it's
+        // deliberately left off those for now, pending a decision on where it'd go there.
+        function formatSiblingLineItems(originalWorkflow) {
+          const siblings = lineItems.filter(li => li.workflow === originalWorkflow);
+          if (!siblings.length) return '';
+          const lines = siblings.map(li => {
+            let line = `• ${li.label}`;
+            if (li.fee > 0) line += ` — $${li.fee.toLocaleString()} one-time`;
+            if (li.recurring > 0) line += ` — $${li.recurring.toLocaleString()}/mo`;
+            if (li.spend > 0) line += ` — $${li.spend.toLocaleString()}/mo spend`;
+            return line;
+          }).join('\n');
+          return `**Services sold under this workflow:**\n${lines}`;
+        }
+
         // ── Resolve website workflow name ──
         const soldWorkflows = [...workflows].map(wf => {
           if (wf === 'Website') {
@@ -3043,11 +3063,12 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 if (copiedCard?.id) {
                   addedCardNames.add(norm(cn));
                   cardsAdded++;
-                  if (intakeDesc) {
+                  const fullDesc = [intakeDesc, formatSiblingLineItems(originalWorkflows[wfIdx])].filter(Boolean).join('\n\n');
+                  if (fullDesc) {
                     await fetch(PROXY, {
                       method: 'POST',
                       headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                      body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
+                      body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: fullDesc.slice(0, 16000) })
                     });
                   }
                 } else {
@@ -3103,22 +3124,27 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               // Template list id configured but its cards couldn't be read (e.g. the
               // list was deleted) — fall back to a plain card so submission still works
               if (!cardExists(wf)) {
+                const fallbackDesc = [intakeDesc, formatSiblingLineItems(originalWorkflows[wfIdx])].filter(Boolean).join('\n\n');
                 await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: wf, desc: intakeDesc, pos: 'bottom' })
+                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: wf, desc: fallbackDesc, pos: 'bottom' })
                 });
                 addedCardNames.add(norm(wf));
                 cardsAdded++;
               }
             }
           } else {
-            // No template — create plain tactic card if not already there
+            // No template — create plain tactic card if not already there. Includes
+            // every sold line item sharing this workflow (2026-07-13) — since this card
+            // has no template content at all, it's the one place a modifier/add-on
+            // riding alongside the main service could otherwise go completely unmentioned.
             if (!cardExists(wf)) {
+              const plainDesc = [intakeDesc, formatSiblingLineItems(originalWorkflows[wfIdx])].filter(Boolean).join('\n\n');
               await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: wf, desc: intakeDesc, pos: 'bottom' })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: wf, desc: plainDesc, pos: 'bottom' })
               });
               addedCardNames.add(norm(wf));
               cardsAdded++;
