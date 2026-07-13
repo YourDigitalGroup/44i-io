@@ -3735,7 +3735,9 @@ function clearDraft() {
 }
 
 function resetForm() {
+  console.log('[resetForm] START. biz-name before clear:', document.getElementById('biz-name')?.value, 'checked checkboxes before:', document.querySelectorAll('tr[data-id] input[type=checkbox]:checked').length, 'draft key:', getDraftKey(), 'draft in localStorage before clearDraft:', localStorage.getItem(getDraftKey()));
   clearDraft();
+  console.log('[resetForm] after clearDraft, draft in localStorage:', localStorage.getItem(getDraftKey()));
   selected = {};
   // NOTE: do NOT null selectedGroup — the page is still on the same group URL.
   // Nulling it broke "Submit Another IO" (next submit threw "Please select a group").
@@ -3778,6 +3780,7 @@ function resetForm() {
   const kocTimeSel = document.getElementById('koc-time');
   if (kocTimeSel) kocTimeSel.value = '';
   document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
+  console.log('[resetForm] after DOM clearing. biz-name:', document.getElementById('biz-name')?.value, 'checked checkboxes:', document.querySelectorAll('tr[data-id] input[type=checkbox]:checked').length, 'campaign-length:', document.getElementById('campaign-length')?.value);
   // Re-default today's dates (wiped above)
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('auth-date').value = new Date().toISOString().slice(0,10);
@@ -3792,6 +3795,7 @@ function resetForm() {
   document.getElementById('koc-card').style.display = 'none';
   document.getElementById('intake-status-card').style.display = 'none';
   updateBadges();
+  console.log('[resetForm] END, right before goStep(1). biz-name:', document.getElementById('biz-name')?.value, 'draft in localStorage after updateBadges/autoSaveDraft:', localStorage.getItem(getDraftKey()));
   goStep(1);
 }
 
