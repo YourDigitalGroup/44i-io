@@ -3022,24 +3022,37 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               body: JSON.stringify({ target: 'trello_get_card', card_id: template.ref })
             });
             const templateCard = await cardInfoRes.json();
-            const cn = (templateCard?.name || wf).trim();
 
-            if (!cardExists(cn)) {
-              const copyRes = await fetch(PROXY, {
-                method: 'POST',
-                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_copy_card', card_id: template.ref, list_id: clientList.id, name: cn, pos: 'bottom' })
-              });
-              const copiedCard = await copyRes.json();
-              addedCardNames.add(norm(cn));
-              cardsAdded++;
-
-              if (intakeDesc && copiedCard?.id) {
-                await fetch(PROXY, {
+            if (!templateCard?.id) {
+              // FIXED (2026-07-13, found live): a short "copy link" code (e.g. bN5GJEkd)
+              // works fine for LOOKING UP a card here, but Trello's copy-card endpoint
+              // below rejects it — only the resolved full id works there. If even the
+              // lookup failed, the ref itself is bad (deleted card, wrong id, etc.) —
+              // log it and skip rather than attempt a copy that's certain to fail too.
+              console.warn(`Could not resolve single-card template for workflow "${originalWorkflows[wfIdx]}" (ref ${template.ref}) — no card added. Check the Trello Template field on the relevant service.`);
+            } else {
+              const cn = (templateCard.name || wf).trim();
+              if (!cardExists(cn)) {
+                const copyRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
+                  body: JSON.stringify({ target: 'trello_copy_card', card_id: templateCard.id, list_id: clientList.id, name: cn, pos: 'bottom' })
                 });
+                const copiedCard = await copyRes.json();
+
+                if (copiedCard?.id) {
+                  addedCardNames.add(norm(cn));
+                  cardsAdded++;
+                  if (intakeDesc) {
+                    await fetch(PROXY, {
+                      method: 'POST',
+                      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                      body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
+                    });
+                  }
+                } else {
+                  console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
+                }
               }
             }
           } else if (template && template.type === 'list') {
@@ -3070,6 +3083,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: 'bottom' })
                 });
                 const copiedCard = await copyRes.json();
+                if (!copiedCard?.id) {
+                  console.warn(`Failed to copy template card "${cn}":`, copiedCard);
+                  continue;
+                }
                 addedCardNames.add(norm(cn));
                 cardsAdded++;
 
@@ -3744,9 +3761,22 @@ function resetForm() {
   setWebSectionDisabled('web-mo', false);
   // Scope the wipe to the IO form pages — not the admin panel
   const formPages = '#page-1, #page-2, #page-3';
+  // FIXED (2026-07-13, found live): target service-row checkboxes directly by their
+  // data-id row (the ONLY thing that pattern is used for in this app) rather than
+  // relying on the broad formPages container scoping alone — belt-and-suspenders
+  // after finding the actual bug was a missed <select> below, not this line, but this
+  // is the more reliable selector regardless of how a given row ends up nested.
+  document.querySelectorAll('tr[data-id] input[type=checkbox]').forEach(cb => cb.checked = false);
   document.querySelectorAll(`${formPages} input[type=checkbox]`).forEach(cb => cb.checked = false);
   document.querySelectorAll(`${formPages} tr.selected`).forEach(tr => tr.classList.remove('selected'));
   document.querySelectorAll(`${formPages} input[type=text], ${formPages} input[type=email], ${formPages} input[type=tel], ${formPages} input[type=date], ${formPages} input[type=time], ${formPages} input[type=number], ${formPages} textarea`).forEach(i => i.value = '');
+  // FIXED (2026-07-13, found live): campaign-length is a <select>, not a text input —
+  // same blind spot the AE/Client pickers had. koc-time is also a <select>, disabled
+  // above but never had its stale VALUE cleared.
+  const campaignLength = document.getElementById('campaign-length');
+  if (campaignLength) campaignLength.value = '';
+  const kocTimeSel = document.getElementById('koc-time');
+  if (kocTimeSel) kocTimeSel.value = '';
   document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
   // Re-default today's dates (wiped above)
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
