@@ -2727,27 +2727,27 @@ async function submitIO() {
           return wf;
         });
 
-        // ── Map intake form data to a tactic name ──
-        const WORKFLOW_TO_INTAKE = {
-          'SEO/AEO':                    'seo',
-          'AI ChatBot':                 'chatbot',
-          'Social Media Management':    'sm',
-          'Targeted Landing Pages':     'tlp',
-          'Email Marketing':            'email',
-          'Reputation Management':      'reputation',
-          'Local Listing Optimization': 'llo',
-          'Google Business Profile':    'gbp',
-          'Digital Advertising':        'display',
-          'Search Engine Marketing':    'sem',
-          'Social Media Ads':           'fbig',
-          'Location Targeting':         'geofence',
-          'Video Advertising':          'youtube',
-          'Streaming TV/OTT/CTV':       'streamingtv',
-          'Audio/Mobile/Display':       'audio',
-        };
+        // ── Map intake form data to a tactic (2026-07-13) ──
+        // Replaces the hardcoded workflow-name → intake-form-key map with a direct
+        // read of each sold service's own `intake_form_id` (already on `services`,
+        // already used everywhere else — this map was a redundant, only-here-until-now
+        // parallel path that could silently disagree with the real per-service value).
+        // Same "services sharing a workflow should carry the same value" convention as
+        // resolveWorkflowTemplate() above.
+        function resolveWorkflowIntakeFormId(originalWorkflow) {
+          const soldRows = Object.keys(selected)
+            .map(id => CATALOG_ROWS[id])
+            .filter(r => r && r.workflow === originalWorkflow && r.intake_form_id);
+          if (!soldRows.length) return null;
+          const distinctIds = new Set(soldRows.map(r => r.intake_form_id));
+          if (distinctIds.size > 1) {
+            console.warn(`Multiple different intake forms configured for workflow "${originalWorkflow}" among sold services — using "${soldRows[0].label}"'s intake form.`);
+          }
+          return soldRows[0].intake_form_id;
+        }
 
-        const buildIntakeDesc = (wf) => {
-          const formKey = WORKFLOW_TO_INTAKE[wf];
+        const buildIntakeDesc = (originalWorkflow) => {
+          const formKey = resolveWorkflowIntakeFormId(originalWorkflow);
           if (!formKey) return '';
           const formDef = INTAKE_FORMS[formKey];
           if (!formDef) return '';
@@ -2904,7 +2904,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
           const wf = soldWorkflows[wfIdx];
           const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
-          const intakeDesc = buildIntakeDesc(wf);
+          const intakeDesc = buildIntakeDesc(originalWorkflows[wfIdx]);
 
           if (template && template.type === 'card') {
             // Single-card template (e.g. "Display", "SEM") — copy just this one card,

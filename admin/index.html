@@ -377,8 +377,10 @@
                 </select>
               </div>
               <div>
-                <label class="lbl">Workflow <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional, drives the Trello workflow chip</span></label>
-                <input type="text" id="admin-svc-workflow" placeholder="e.g. Website" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                <label class="lbl">Workflow <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which tactic this belongs to on Trello. Services sharing a workflow are treated as ONE tactic (one shared card, not a duplicate per service). Leave "None" if this service shouldn't create any Trello card on its own.</span></label>
+                <select id="admin-svc-workflow" onchange="onWorkflowChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+                <input type="text" id="admin-svc-workflow-new" placeholder="e.g. Website" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently splitting one tactic into two.</p>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px">
@@ -2213,6 +2215,41 @@ function onExclusivityGroupChange() {
   }
 }
 
+// Populates the Workflow dropdown from workflow names that ALREADY EXIST in the real
+// data (allServicesMap) — same pick-list-not-free-text reasoning as Exclusivity Group:
+// a typo here would silently split one tactic into two disconnected Trello cards
+// instead of the sold services sharing one, exactly the kind of silent breakage this
+// whole rebuild is meant to prevent. Deliberately global (not section-scoped), since a
+// workflow can span services in different sections (e.g. Website's tiers + hosting).
+function populateServiceWorkflowDropdown(current) {
+  const sel = document.getElementById('admin-svc-workflow');
+  const workflows = [...new Set(allServicesMap.map(s => s.workflow).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">None (no Trello card for this service)</option>' +
+    workflows.map(w => `<option value="${esc(w)}">${esc(w)}</option>`).join('') +
+    '<option value="__new__">+ Create a new workflow...</option>';
+  const newInput = document.getElementById('admin-svc-workflow-new');
+  if (current && workflows.includes(current)) {
+    sel.value = current;
+    newInput.style.display = 'none';
+    newInput.value = '';
+  } else if (current) {
+    sel.value = '__new__';
+    newInput.style.display = 'block';
+    newInput.value = current;
+  } else {
+    sel.value = '';
+    newInput.style.display = 'none';
+    newInput.value = '';
+  }
+}
+
+function onWorkflowChange() {
+  const sel = document.getElementById('admin-svc-workflow');
+  const newInput = document.getElementById('admin-svc-workflow-new');
+  newInput.style.display = sel.value === '__new__' ? 'block' : 'none';
+  if (sel.value !== '__new__') newInput.value = '';
+}
+
 // Populates the Subsection dropdown, SCOPED to whichever section is currently selected
 // (unlike Exclusivity Group, which is global — "YouTube Video" only makes sense inside
 // "vid", so showing subsections from other sections would be actively confusing/wrong).
@@ -2383,7 +2420,7 @@ function adminNewService() {
     'Restricted to sections already converted to dynamic rows — see note below.';
   document.getElementById('admin-svc-original-id').value = '';
   ['admin-svc-id','admin-svc-label','admin-svc-sort','admin-svc-price',
-   'admin-svc-modifier','admin-svc-cpm','admin-svc-workflow',
+   'admin-svc-modifier','admin-svc-cpm',
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
    'admin-svc-spend-min','admin-svc-trello-template-ref'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
@@ -2404,6 +2441,7 @@ function adminNewService() {
   populateServiceIntakeDropdown(null);
   populateServiceExclusivityDropdown(null);
   populateServicePricingGroupDropdown(null);
+  populateServiceWorkflowDropdown(null);
   // Section dropdown defaults to its first option once populated above — scope the
   // subsection list to whatever that ends up being, not blindly to null.
   populateServiceSubsectionDropdown(document.getElementById('admin-svc-section').value, null);
@@ -2437,7 +2475,6 @@ function adminEditService(id) {
   document.getElementById('admin-svc-modifier').value = s.modifier_amount ?? '';
   document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
   document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
-  document.getElementById('admin-svc-workflow').value = s.workflow || '';
   document.getElementById('admin-svc-trello-template-ref').value = s.trello_template_ref || '';
   document.getElementById('admin-svc-trello-template-type').value = s.trello_template_type || 'list';
   document.getElementById('admin-svc-auto-setup').value = s.auto_add_setup_fee ? 'true' : 'false';
@@ -2452,6 +2489,7 @@ function adminEditService(id) {
   populateServiceIntakeDropdown(s.intake_form_id);
   populateServiceExclusivityDropdown(s.exclusivity_group);
   populateServicePricingGroupDropdown(s.pricing_group);
+  populateServiceWorkflowDropdown(s.workflow);
   populateServiceSubsectionDropdown(s.section, s.subsection_label);
   onPricingModeChange(false);
   document.getElementById('admin-service-form').style.display = 'block';
@@ -2546,6 +2584,18 @@ async function adminSaveService() {
   }
   const pricingGroupVal = pricingGroupSel === '__new__' ? pricingGroupNewVal : (pricingGroupSel || null);
 
+  // Workflow: same pick-list-or-create-new pattern as Exclusivity Group above, global
+  // like Exclusivity Group — see populateServiceWorkflowDropdown() for why this is a
+  // pick-list rather than a free-typed field (a typo would silently split one tactic
+  // into two disconnected Trello cards).
+  const workflowSel = document.getElementById('admin-svc-workflow').value;
+  const workflowNewVal = document.getElementById('admin-svc-workflow-new').value.trim();
+  if (workflowSel === '__new__' && !workflowNewVal) {
+    showToast('Enter a name for the new workflow, or pick an existing one / None', 'error');
+    return;
+  }
+  const workflowVal = workflowSel === '__new__' ? workflowNewVal : (workflowSel || null);
+
   const payload = {
     label: label,
     section: document.getElementById('admin-svc-section').value,
@@ -2557,7 +2607,7 @@ async function adminSaveService() {
     retail_cpm: retailCpmFinal,
     koc_requirement: document.getElementById('admin-svc-koc').value,
     intake_form_id: document.getElementById('admin-svc-intake').value || null,
-    workflow: document.getElementById('admin-svc-workflow').value.trim() || null,
+    workflow: workflowVal,
     trello_template_ref: document.getElementById('admin-svc-trello-template-ref').value.trim() || null,
     trello_template_type: document.getElementById('admin-svc-trello-template-type').value,
     sort_order: sortVal === '' ? null : parseInt(sortVal, 10),
