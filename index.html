@@ -3063,7 +3063,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 if (copiedCard?.id) {
                   addedCardNames.add(norm(cn));
                   cardsAdded++;
-                  const fullDesc = [intakeDesc, formatSiblingLineItems(originalWorkflows[wfIdx])].filter(Boolean).join('\n\n');
+                  const fullDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
                   if (fullDesc) {
                     await fetch(PROXY, {
                       method: 'POST',
@@ -3124,7 +3124,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               // Template list id configured but its cards couldn't be read (e.g. the
               // list was deleted) — fall back to a plain card so submission still works
               if (!cardExists(wf)) {
-                const fallbackDesc = [intakeDesc, formatSiblingLineItems(originalWorkflows[wfIdx])].filter(Boolean).join('\n\n');
+                const fallbackDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
                 await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
@@ -3140,7 +3140,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             // has no template content at all, it's the one place a modifier/add-on
             // riding alongside the main service could otherwise go completely unmentioned.
             if (!cardExists(wf)) {
-              const plainDesc = [intakeDesc, formatSiblingLineItems(originalWorkflows[wfIdx])].filter(Boolean).join('\n\n');
+              const plainDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
               await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
