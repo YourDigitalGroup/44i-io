@@ -3724,6 +3724,16 @@ function resetForm() {
   // Nulling it broke "Submit Another IO" (next submit threw "Please select a group").
   intakeData = {};
   hostingChoices = {};
+  // FIXED (2026-07-13, found live): the text-input wipe below never touched the AE/
+  // Client picker <select> elements, and never reset selectedClientId at all — so
+  // "Submit Another IO" silently carried the PREVIOUS client's id into the next
+  // submission even though the form looked blank, which would have made that next
+  // submission overwrite the old client's record instead of creating a new one.
+  selectedClientId = null;
+  const clientPicker = document.getElementById('client-picker');
+  if (clientPicker) clientPicker.value = '';
+  const aePicker = document.getElementById('ae-picker');
+  if (aePicker) aePicker.value = '';
   window.__lastIoNumber = null; // clear so the next IO generates its own number
   kocCalendarOpened = false;
   currentIntakeServiceId = null;
