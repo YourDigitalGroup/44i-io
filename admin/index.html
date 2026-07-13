@@ -1135,18 +1135,18 @@ function renderWorkflowManagerRows() {
     return;
   }
 
-  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 80px 1fr auto auto;gap:10px;margin-bottom:6px">
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 90px 1fr 84px 84px;gap:10px;margin-bottom:6px">
     <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Current Name</span>
     <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Used By</span>
     <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Rename To</span>
     <span></span><span></span>
   </div>` + workflows.map(wf => `
-    <div style="display:grid;grid-template-columns:1fr 80px 1fr auto auto;gap:10px;margin-bottom:8px;align-items:center">
+    <div style="display:grid;grid-template-columns:1fr 90px 1fr 84px 84px;gap:10px;margin-bottom:8px;align-items:center">
       <span style="font-size:12.5px;color:var(--text)">${esc(wf)}</span>
       <span style="font-size:12px;color:var(--muted)">${counts[wf]} service${counts[wf] !== 1 ? 's' : ''}</span>
       <input type="text" data-workflow-rename="${esc(wf)}" placeholder="type a new name to rename" style="padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
-      <button onclick="adminRenameWorkflow('${esc(wf)}')" style="padding:7px 14px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Rename</button>
-      <button onclick="adminDeleteWorkflow('${esc(wf)}')" style="padding:7px 14px;border-radius:6px;background:#fff;color:#EF4444;border:1px solid #EF4444;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Delete</button>
+      <button onclick="adminRenameWorkflow('${esc(wf)}')" style="width:100%;padding:7px 4px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Rename</button>
+      <button onclick="adminDeleteWorkflow('${esc(wf)}')" style="width:100%;padding:7px 4px;border-radius:6px;background:#fff;color:#EF4444;border:1px solid #EF4444;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Delete</button>
     </div>
   `).join('');
 }
@@ -1288,16 +1288,20 @@ function renderSuggestedMap() {
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Tier Group</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Intake Form</th>
       <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">KOC</th>
+      <th style="padding:9px 10px;text-align:center;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Workflow</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
 
   orderedSectionIds.forEach(sec => {
-    html += `<tr><td colspan="9" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
+    html += `<tr><td colspan="10" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
     bySection[sec].forEach(s => {
       const inactive = !s.active;
       const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
       const koc = s.koc_requirement === 'required'
         ? '<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">Required</span>'
+        : '<span style="color:var(--muted);font-size:11px">—</span>';
+      const workflow = s.workflow
+        ? `<span style="font-size:11px;color:var(--text)">${esc(s.workflow)}</span>`
         : '<span style="color:var(--muted);font-size:11px">—</span>';
       const intake = s.intake_form_id
         ? `<span style="font-size:11px;font-family:monospace;color:var(--text)">${esc(s.intake_form_id)}</span>`
@@ -1354,6 +1358,7 @@ function renderSuggestedMap() {
         <td style="padding:8px 10px;text-align:center">${tierGroup}</td>
         <td style="padding:8px 10px;text-align:center">${intake}</td>
         <td style="padding:8px 10px;text-align:center">${koc}</td>
+        <td style="padding:8px 10px;text-align:center">${workflow}</td>
         <td style="padding:8px 10px;text-align:right;white-space:nowrap">
           ${editBtn}
           ${deactivateBtn}
