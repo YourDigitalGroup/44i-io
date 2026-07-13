@@ -378,37 +378,37 @@ textarea{resize:vertical;min-height:70px}
       <div class="field-group">
         <div>
           <label class="lbl">Business Name</label>
-          <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()" autocomplete="off"/>
+          <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">Contact Name(s)</label>
-          <input type="text" id="contact-name" placeholder="Primary contact" autocomplete="off"/>
+          <input type="text" id="contact-name" placeholder="Primary contact" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
         </div>
         <div>
           <label class="lbl">Phone</label>
-          <input type="tel" id="contact-phone" placeholder="(000) 000-0000" oninput="fmtPhone(this)" maxlength="14" autocomplete="off"/>
+          <input type="tel" id="contact-phone" placeholder="(000) 000-0000" oninput="fmtPhone(this)" maxlength="14" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">Email</label>
-          <input type="email" id="contact-email" placeholder="client@email.com" autocomplete="off"/>
+          <input type="email" id="contact-email" placeholder="client@email.com" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
         </div>
         <div>
           <label class="lbl">Website URL</label>
-          <input type="text" id="website-url" placeholder="https://" autocomplete="off"/>
+          <input type="text" id="website-url" placeholder="https://" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">City / Service Area</label>
-          <input type="text" id="city" placeholder="City, State" autocomplete="off"/>
+          <input type="text" id="city" placeholder="City, State" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
         </div>
         <div>
           <label class="lbl">Business Type</label>
-          <input type="text" id="biz-type" placeholder="e.g. Flooring Retailer" autocomplete="off"/>
+          <input type="text" id="biz-type" placeholder="e.g. Flooring Retailer" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
         </div>
       </div>
     </div>
