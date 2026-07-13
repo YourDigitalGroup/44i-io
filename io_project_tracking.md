@@ -2432,6 +2432,26 @@ file (same completeness check used for every admin-editor addition this project)
   3. **Email content** — not decided (a short "new IO submitted" notification+link vs. a
      fuller summary of client/services/totals).
   Do not build any part of this from a guess — all three need Claire's answer first.
+- **Returning-client IO card should accumulate history, not overwrite — PARKED, flagged
+  2026-07-13 (found live testing).** Today's actual behavior: submitting a new IO for a
+  client who already has an "IO" card on Trello OVERWRITES that card's description with
+  the new IO, discarding the previous one's visible content entirely (the full history IS
+  still safely preserved in Supabase's `orders` table — one row per submission — this is
+  only about what's visible on the Trello card itself). Claire confirmed real client boards
+  show a growing list of past IOs attached as dated PDFs on the one IO card, not an
+  overwritten description. Two options discussed, PARKED pending Claire's AM conversation:
+  1. **Real PDF attachments** — matches what she's seen on real boards exactly, but is a
+     genuinely new capability: (a) actual PDF generation (today's `printIO()` only opens a
+     browser print dialog for a human to manually save — nothing server/client-side turns
+     an IO into a PDF file the code could grab), and (b) file-upload support added to the
+     `claude-proxy` Edge Function (today it only proxies simple JSON/text requests to
+     Trello, no multipart file upload path). Comparable in size to this week's whole Trello
+     rebuild, not a small tweak.
+  2. **Append-only text on the same card** — every past IO's text stays on the card,
+     newest stacked on top, each dated — same end result (nothing lost/overwritten) with
+     none of the PDF/file-upload complexity. Much smaller lift, could go in this same week.
+  Waiting on Claire's AM: is the actual PDF specifically needed (e.g. AMs want something
+  downloadable/forwardable), or does the same-card running text log satisfy the real need?
 
 ---
 
