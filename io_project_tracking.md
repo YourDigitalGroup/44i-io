@@ -2452,6 +2452,35 @@ file (same completeness check used for every admin-editor addition this project)
      none of the PDF/file-upload complexity. Much smaller lift, could go in this same week.
   Waiting on Claire's AM: is the actual PDF specifically needed (e.g. AMs want something
   downloadable/forwardable), or does the same-card running text log satisfy the real need?
+- **UNRESOLVED, carries into next session (2026-07-13): Client Information fields
+  (`biz-name`/`contact-email` etc.) get silently repopulated with the PREVIOUS
+  submission's data on a genuinely fresh page load (hard refresh, no draft to restore).**
+  Confirmed NOT any of the following, in this order, each with real evidence:
+  1. NOT our own draft-restore code — `clearDraft()`'s own before/after log confirms the
+     saved draft is genuinely removed (`null`) right before this happens.
+  2. NOT `resetForm()` failing to clear the DOM — same symptom reproduces on a page load
+     where `resetForm()` never even ran.
+  3. NOT a duplicate `id="biz-name"` element — `document.querySelectorAll('[id="biz-name"]').length`
+     confirmed `1`.
+  4. NOT Chrome's own "Addresses and more" / "Payment methods" autofill — Claire turned
+     both off directly in Chrome settings; still happened.
+  5. NOT a browser extension — confirmed via incognito (clean there, which pointed at an
+     extension) but Claire's actual installed extensions are only Google Drive launcher,
+     Claude, and Google Docs Offline — none plausibly inject form data. Incognito being
+     clean is still real signal, just pointing at something ELSE that differs in incognito
+     (separate storage/session/profile state), not extensions specifically as first assumed.
+  Tried so far, in order: `autocomplete="off"` (insufficient alone) → `readonly` +
+  `onfocus="removeAttribute('readonly')"` (insufficient) → a delayed post-load guard
+  (`695a44c`) that clears any unexpected value in these fields ~1s after a load with no
+  draft to restore, skipping any field the AE has already focused (so it can't clobber
+  real typing). **Not yet confirmed whether this guard actually fixes it** — Claire's
+  last reproduction may have been tested before merging that specific commit. First thing
+  to check next session: confirm `695a44c` is merged/live, then retest with console open
+  (the `[loadDraft]`/`[autofill-guard]` logs are still in place) before trying anything new.
+  If still unresolved after that, worth investigating: Chrome Sync (if enabled, form/
+  autofill data can sync from a DIFFERENT device where addresses were never cleared),
+  or a broader/newer Chrome "form fill predictions" feature possibly separate from the
+  Addresses/Payment settings pages already checked.
 
 ---
 
