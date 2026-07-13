@@ -40,6 +40,7 @@
       <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Services</button>
       <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
       <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
+      <button id="section-tab-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
     </div>
 
     <div style="padding:20px">
@@ -380,6 +381,19 @@
                 <input type="text" id="admin-svc-workflow" placeholder="e.g. Website" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="lbl">Trello Template <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the Trello list or card ID to copy into the client's list when this service is sold. Leave blank for "no template — just a plain card." Services that share a workflow and use one shared template (e.g. the 4 Digital Advertising services) should all be given the same ID here.</span></label>
+                <input type="text" id="admin-svc-trello-template-ref" placeholder="Trello list or card ID" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
+              </div>
+              <div>
+                <label class="lbl">Template Type</label>
+                <select id="admin-svc-trello-template-type" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                  <option value="list">List (copy every card in it)</option>
+                  <option value="card">Single Card (copy just this one)</option>
+                </select>
+              </div>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;padding-top:12px;border-top:1px solid var(--border)">
               <div>
                 <label class="lbl">Auto-Add Setup Fee <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— spend-based services only</span></label>
@@ -551,6 +565,44 @@
 
         <div id="admin-intake-table"></div>
       </div><!-- /section-intake -->
+
+      <!-- ── SECTION: AEs (roster + Trello handle, for form autofill) ── -->
+      <div id="section-ae" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Account Executives</p>
+            <p style="font-size:11px;color:var(--muted)">Powers the AE picker on the public form — selecting a name autofills their Trello handle instead of retyping it every submission.</p>
+          </div>
+          <button id="admin-new-ae-btn" onclick="adminNewAe()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New AE</button>
+        </div>
+
+        <div id="admin-ae-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-ae-form-title">New AE</p>
+          <input type="hidden" id="admin-ae-original-id"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Name</label>
+              <input type="text" id="admin-ae-name" placeholder="e.g. Jordan Smith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Trello Handle</label>
+              <input type="text" id="admin-ae-trello" placeholder="@jordansmith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
+            <div>
+              <label class="lbl">Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— this AE only appears in the picker for this group's form</span></label>
+              <select id="admin-ae-group" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onclick="adminSaveAe()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save AE</button>
+            <button onclick="adminCancelAeEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-ae-table"></div>
+      </div><!-- /section-ae -->
 
     </div>
   </div>
@@ -871,8 +923,8 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Five sections: groups | orders | map | sections | intake
-  const sections = ['groups','orders','map','sections','intake'];
+  // Six sections: groups | orders | map | sections | intake | ae
+  const sections = ['groups','orders','map','sections','intake','ae'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups' needs display:flex specifically — its edit form/list use flex `order`
@@ -912,6 +964,10 @@ function adminSection(section) {
     const newBtn = document.getElementById('admin-new-intake-btn');
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadAdminIntakeForms();
+  } else if (section === 'ae') {
+    const newBtn = document.getElementById('admin-new-ae-btn');
+    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    loadAdminAes();
   }
 }
 
@@ -1937,6 +1993,149 @@ async function adminToggleIntakeFormActive(id, makeActive) {
   }
 }
 
+// ── AE ROSTER (2026-07-10) ────────────────────────────────────────
+// Powers the public form's AE picker (replaces free-typed name + Trello handle).
+let ALL_AES = [];
+
+async function loadAdminAes() {
+  const el = document.getElementById('admin-ae-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    ALL_AES = await sb('ae?order=name&select=*') || [];
+    renderAdminAeList();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading AEs: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderAdminAeList() {
+  const el = document.getElementById('admin-ae-table');
+  const isSuperAdmin = currentAdminUser?.role !== 'am';
+  if (!ALL_AES.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No AEs yet.</p>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello Handle</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  ALL_AES.forEach(a => {
+    const inactive = !a.active;
+    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const groupName = allGroups.find(g => g.id === a.group_id)?.name || '<span style="color:var(--muted)">—</span>';
+    const editBtn = isSuperAdmin
+      ? `<button onclick="adminEditAe('${esc(a.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
+      : '';
+    const deactivateBtn = !isSuperAdmin ? '' :
+      `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
+      <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(a.trello_handle || '—')}</td>
+      <td style="padding:8px 10px">${groupName}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function populateAeGroupDropdown(selectedId) {
+  const sel = document.getElementById('admin-ae-group');
+  sel.innerHTML = allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  if (selectedId) sel.value = selectedId;
+}
+
+function adminNewAe() {
+  if (currentAdminUser?.role === 'am') {
+    showToast('AE management is restricted to super admins', 'error');
+    return;
+  }
+  document.getElementById('admin-ae-form-title').textContent = 'New AE';
+  document.getElementById('admin-ae-original-id').value = '';
+  document.getElementById('admin-ae-name').value = '';
+  document.getElementById('admin-ae-trello').value = '';
+  populateAeGroupDropdown(null);
+  document.getElementById('admin-ae-form').style.display = 'block';
+  document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminEditAe(id) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('AE management is restricted to super admins', 'error');
+    return;
+  }
+  const a = ALL_AES.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('admin-ae-form-title').textContent = 'Edit AE — ' + a.name;
+  document.getElementById('admin-ae-original-id').value = a.id;
+  document.getElementById('admin-ae-name').value = a.name || '';
+  document.getElementById('admin-ae-trello').value = a.trello_handle || '';
+  populateAeGroupDropdown(a.group_id);
+  document.getElementById('admin-ae-form').style.display = 'block';
+  document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelAeEdit() {
+  document.getElementById('admin-ae-form').style.display = 'none';
+}
+
+async function adminSaveAe() {
+  const isNew = !document.getElementById('admin-ae-original-id').value;
+  const name = document.getElementById('admin-ae-name').value.trim();
+  const trelloHandle = document.getElementById('admin-ae-trello').value.trim();
+  const groupId = document.getElementById('admin-ae-group').value;
+  if (!name) { showToast('Name is required', 'error'); return; }
+  if (!groupId) { showToast('Group is required', 'error'); return; }
+
+  const payload = { name, trello_handle: trelloHandle || null, group_id: groupId };
+  if (isNew) payload.active = true;
+  try {
+    await sb('rpc/admin_save_ae', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_ae_id: isNew ? null : document.getElementById('admin-ae-original-id').value,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'AE created!' : 'AE updated!');
+    document.getElementById('admin-ae-form').style.display = 'none';
+    await loadAdminAes();
+  } catch(e) {
+    showToast('Error saving AE: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleAeActive(id, makeActive) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('AE management is restricted to super admins', 'error');
+    return;
+  }
+  const a = ALL_AES.find(x => x.id === id);
+  if (!a) return;
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${a.name}?`)) return;
+  try {
+    await sb('rpc/admin_save_ae', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_ae_id: id,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`AE ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadAdminAes();
+  } catch(e) {
+    showToast('Error updating AE: ' + e.message, 'error');
+  }
+}
+
 // ── SERVICE CREATE / EDIT / DEACTIVATE ─────────────────────────
 // Populates the Section dropdown for the create/edit form. Every ACTIVE section is now a
 // valid choice for a new service (2026-07-10) — the old "only 4 dynamic-row sections are
@@ -2186,10 +2385,11 @@ function adminNewService() {
   ['admin-svc-id','admin-svc-label','admin-svc-sort','admin-svc-price',
    'admin-svc-modifier','admin-svc-cpm','admin-svc-workflow',
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
-   'admin-svc-spend-min'].forEach(id => {
+   'admin-svc-spend-min','admin-svc-trello-template-ref'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
+  document.getElementById('admin-svc-trello-template-type').value = 'list';
   document.getElementById('admin-svc-id').disabled = false;
   document.getElementById('admin-svc-id').dataset.manuallyEdited = ''; // fresh form → auto-generate again
   document.getElementById('admin-svc-id-warn').style.display = 'none';
@@ -2238,6 +2438,8 @@ function adminEditService(id) {
   document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
   document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
   document.getElementById('admin-svc-workflow').value = s.workflow || '';
+  document.getElementById('admin-svc-trello-template-ref').value = s.trello_template_ref || '';
+  document.getElementById('admin-svc-trello-template-type').value = s.trello_template_type || 'list';
   document.getElementById('admin-svc-auto-setup').value = s.auto_add_setup_fee ? 'true' : 'false';
   document.getElementById('admin-svc-setup-fee').value = s.setup_fee ?? '';
   document.getElementById('admin-svc-setup-threshold').value = s.setup_fee_threshold ?? '';
@@ -2356,6 +2558,8 @@ async function adminSaveService() {
     koc_requirement: document.getElementById('admin-svc-koc').value,
     intake_form_id: document.getElementById('admin-svc-intake').value || null,
     workflow: document.getElementById('admin-svc-workflow').value.trim() || null,
+    trello_template_ref: document.getElementById('admin-svc-trello-template-ref').value.trim() || null,
+    trello_template_type: document.getElementById('admin-svc-trello-template-type').value,
     sort_order: sortVal === '' ? null : parseInt(sortVal, 10),
     auto_add_setup_fee: autoSetupVal,
     setup_fee: setupFeeVal === '' ? null : parseFloat(setupFeeVal),

@@ -347,6 +347,12 @@ textarea{resize:vertical;min-height:70px}
           <p style="color:var(--muted);font-size:13px">This form link is not valid. Please contact your account manager for the correct link.</p>
         </div>
         <div style="display:flex;flex-direction:column;gap:12px">
+          <div id="ae-picker-wrap" style="display:none">
+            <label class="lbl">I am… <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— picks your name and fills in your Trello handle below. Not listed? Just type your info in the fields below instead.</span></label>
+            <select id="ae-picker" onchange="applyAePick(this.value)">
+              <option value="">— Select your name —</option>
+            </select>
+          </div>
           <div>
             <label class="lbl">Digital Account Executive</label>
             <input type="text" id="ae-name" placeholder="AE full name"/>
@@ -838,6 +844,36 @@ let INTAKE_FORMS = {};
 // State
 let groups = [];
 let selectedGroup = null;
+let AE_ROSTER = [];
+
+// AE picker (2026-07-10) — loads the roster for whichever group is currently active
+// and shows the picker only if that group actually has any AEs on file. Selecting a
+// name autofills both #ae-name and #ae-trello; the fields stay directly editable
+// either way, so an AE not yet in the roster can just type their info as before.
+async function loadAeRoster(groupId) {
+  const wrap = document.getElementById('ae-picker-wrap');
+  const sel = document.getElementById('ae-picker');
+  if (!groupId) { wrap.style.display = 'none'; AE_ROSTER = []; return; }
+  try {
+    AE_ROSTER = await sb('ae?group_id=eq.' + groupId + '&active=eq.true&order=name&select=*') || [];
+  } catch(e) {
+    console.warn('Could not load AE roster:', e.message);
+    AE_ROSTER = [];
+  }
+  if (!AE_ROSTER.length) { wrap.style.display = 'none'; return; }
+  sel.innerHTML = '<option value="">— Select your name —</option>' +
+    AE_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  wrap.style.display = 'block';
+}
+
+function applyAePick(id) {
+  if (!id) return;
+  const a = AE_ROSTER.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('ae-name').value = a.name || '';
+  document.getElementById('ae-trello').value = a.trello_handle || '';
+}
+
 // Set true by showDevModePicker() and never cleared for the rest of the session — the
 // submit guard below used to infer "dev mode" purely from selectedGroup.id NOT looking
 // like a UUID, which was safe only because the old hardcoded dev picker used fake
@@ -1549,6 +1585,7 @@ async function loadGroup() {
     });
     applyGroupBranding(selectedGroup);
     if (selectedGroup.io_pricing) applyCustomPricing(selectedGroup.io_pricing);
+    loadAeRoster(selectedGroup.id);
     document.getElementById('group-display').style.display = 'block';
     document.getElementById('group-name-display').textContent = selectedGroup.name;
   } catch(e) {
@@ -1626,6 +1663,7 @@ window.applyDevGroup = function(id) {
   Object.values(CATALOG_ROWS).forEach(r => { SERVICE_DATA[r.id] = rowToServiceData(r); });
   renderPriceCells();
   if (g.io_pricing) applyCustomPricing(g.io_pricing);
+  loadAeRoster(g.id);
   const sel = document.getElementById('dev-group-select');
   if (sel) sel.value = id;
 };
@@ -2571,11 +2609,13 @@ async function submitIO() {
     // Primary path: server-side find_or_create_client RPC (LIVE). Does the lookup +
     // insert/update inside the database, so the clients table doesn't need public read
     // access. The direct-REST block below is a defensive fallback if the RPC call errors.
+    // RPC now RETURNS jsonb ({id, trello_list_id}) instead of a bare uuid (2026-07-10) —
+    // trello_list_id is the reliable, stored link to this client's actual Trello list
+    // (see the client-list resolution below), replacing the old name-search-only
+    // approach that couldn't tell an archived list from a genuinely new client.
     try {
-      const cid = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify({ p_payload: clientPayload }) });
-      // RPC RETURNS uuid; PostgREST serializes a scalar uuid as a bare JSON string, so a
-      // string check is correct here (confirmed — not a bug, don't "fix" to expect an array).
-      if (cid && typeof cid === 'string') client = { id: cid };
+      const result = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify({ p_payload: clientPayload }) });
+      if (result && result.id) client = { id: result.id, trello_list_id: result.trello_list_id || null };
     } catch(e) { /* RPC errored — fall through to the direct path below */ }
 
     if (!client) {
@@ -2654,29 +2694,28 @@ async function submitIO() {
         const aeTrello = document.getElementById('ae-trello').value.trim();
         const amTrello = selectedGroup.am_trello_handle || '';
 
-        // ── TACTIC MAP: workflow → template list name patterns ──
-        // null = no template, create a plain card instead
-        const seoTier = selected['seo-bp'] ? 'pro' : selected['seo-bb'] ? 'builder' : 'starter';
-        const TACTIC_MAP = {
-          'Website (1-page)':           ['website', '1 page'],
-          'Website (5-page)':           ['website', '5 page'],
-          'Website (10-page)':          ['website', '10 page'],
-          'SEO/AEO':                    ['seo', 'packages', seoTier],
-          'AI ChatBot':                 ['ai chatbot'],
-          'Social Media Management':    null,
-          'Targeted Landing Pages':     null,
-          'Email Marketing':            null,
-          'Reputation Management':      null,
-          'Local Listing Optimization': null,
-          'Google Business Profile':    null,
-          'Digital Advertising':        null,
-          'Search Engine Marketing':    null,
-          'Social Media Ads':           null,
-          'Location Targeting':         null,
-          'Video Advertising':          null,
-          'Streaming TV/OTT/CTV':       null,
-          'Audio/Mobile/Display':       null,
-        };
+        // ── Per-service Trello template routing (2026-07-13) ──
+        // Replaces the old TACTIC_MAP (matched Trello LIST NAMES against hardcoded text
+        // patterns on the client's OWN board — fragile, silent failure on rename) AND a
+        // short-lived global workflow-keyed table design that turned out to be the wrong
+        // shape. Each SERVICE now carries its own `trello_template_ref` (a stable Trello
+        // list or card ID) + `trello_template_type` ('list' or 'card'), admin-editable
+        // right on the Service edit form. Tier services (SEO Starter/Builder/Pro, Website
+        // 1/5/10-page) each carry their own ref directly — no tier-detection code needed.
+        // Services that share a workflow but use ONE shared template (e.g. the 4 Digital
+        // Advertising services all pointing at the same "Display" card) should be given
+        // an identical ref/type value by whoever sets up the catalog.
+        function resolveWorkflowTemplate(originalWorkflow) {
+          const soldRows = Object.keys(selected)
+            .map(id => CATALOG_ROWS[id])
+            .filter(r => r && r.workflow === originalWorkflow && r.trello_template_ref);
+          if (!soldRows.length) return null;
+          const distinctRefs = new Set(soldRows.map(r => r.trello_template_ref));
+          if (distinctRefs.size > 1) {
+            console.warn(`Multiple different Trello templates configured for workflow "${originalWorkflow}" among sold services — using "${soldRows[0].label}"'s template.`);
+          }
+          return { ref: soldRows[0].trello_template_ref, type: soldRows[0].trello_template_type || 'list' };
+        }
 
         // ── Resolve website workflow name ──
         const soldWorkflows = [...workflows].map(wf => {
@@ -2767,7 +2806,8 @@ async function submitIO() {
           return line;
         }).join('\n');
 
-        const ioDesc = `**Client:** ${bizName}
+        const ioDesc = `**IO #:** ${ioNumber}
+**Client:** ${bizName}
 **Contact:** ${document.getElementById('contact-name').value}
 **Email:** ${document.getElementById('contact-email').value}
 **Phone:** ${document.getElementById('contact-phone').value}
@@ -2859,28 +2899,54 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
 
         // ── Step 5: Add tactic cards for new products only ──
         let cardsAdded = 0;
+        const originalWorkflows = [...workflows]; // same order as soldWorkflows, pre-tier-remap
 
-        for (const wf of soldWorkflows) {
-          const patterns = TACTIC_MAP[wf];
+        for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
+          const wf = soldWorkflows[wfIdx];
+          const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
           const intakeDesc = buildIntakeDesc(wf);
 
-          if (patterns) {
-            // Has template — find matching template list
-            const templateList = allLists.find(l => {
-              const name = l.name.toLowerCase();
-              return patterns.every(p => name.includes(p.toLowerCase()));
+          if (template && template.type === 'card') {
+            // Single-card template (e.g. "Display", "SEM") — copy just this one card,
+            // preserving its own template name rather than the generic workflow name.
+            // Requires the claude-proxy Edge Function's trello_get_card target.
+            const cardInfoRes = await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_get_card', card_id: template.ref })
             });
+            const templateCard = await cardInfoRes.json();
+            const cn = (templateCard?.name || wf).trim();
 
-            if (templateList) {
-              // Get template cards
-              const tCardsRes = await fetch(PROXY, {
+            if (!cardExists(cn)) {
+              const copyRes = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_get_list_cards', list_id: templateList.id })
+                body: JSON.stringify({ target: 'trello_copy_card', card_id: template.ref, list_id: clientList.id, name: cn, pos: 'bottom' })
               });
-              const templateCards = await tCardsRes.json();
-              if (!Array.isArray(templateCards)) continue;
+              const copiedCard = await copyRes.json();
+              addedCardNames.add(norm(cn));
+              cardsAdded++;
 
+              if (intakeDesc && copiedCard?.id) {
+                await fetch(PROXY, {
+                  method: 'POST',
+                  headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                  body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
+                });
+              }
+            }
+          } else if (template && template.type === 'list') {
+            // Whole-list template (e.g. SEO/Website tier packages) — copy every
+            // (non-placeholder) card in it, fetched directly by the stored, stable list id.
+            const tCardsRes = await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_get_list_cards', list_id: template.ref })
+            });
+            const templateCards = await tCardsRes.json();
+
+            if (Array.isArray(templateCards)) {
               for (const card of templateCards) {
                 if (card.name.startsWith('🧪')) continue; // skip test cards
                 const cn = card.name.trim();
@@ -2911,7 +2977,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 }
               }
             } else {
-              // Template list configured but not found — fall back to plain card
+              // Template list id configured but its cards couldn't be read (e.g. the
+              // list was deleted) — fall back to a plain card so submission still works
               if (!cardExists(wf)) {
                 await fetch(PROXY, {
                   method: 'POST',
