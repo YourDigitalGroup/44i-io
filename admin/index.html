@@ -806,8 +806,8 @@ function renderPricingFields() {
       // CATALOG_ROWS on every load) — no removed-service fallback needed anymore.
       const liveDefault = CATALOG_ROWS[item.id]?.default_price;
       const fieldType = item.field === 'recurring' ? '/mo' : '';
-      html += `<div style="display:flex;align-items:center;gap:8px">
-        <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4">${item.label}</label>
+      html += `<div style="display:flex;align-items:center;gap:14px;max-width:420px">
+        <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4;min-width:0">${item.label}</label>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
           <span style="font-size:11px;color:${isOverridden ? 'var(--accent)' : 'var(--muted)'}">$</span>
           <input type="number" min="0" step="0.01"
@@ -875,7 +875,11 @@ function adminSection(section) {
   const sections = ['groups','orders','map','sections','intake'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
-    if (panel) panel.style.display = (s === section) ? 'block' : 'none';
+    // 'groups' needs display:flex specifically — its edit form/list use flex `order`
+    // to render the form above the list regardless of DOM source order (see
+    // #section-groups markup). Setting plain 'block' here would silently cancel that
+    // ordering the moment this tab is shown, which is exactly what was happening.
+    if (panel) panel.style.display = s !== section ? 'none' : (s === 'groups' ? 'flex' : 'block');
     const tab = document.getElementById('section-tab-' + s);
     if (tab) {
       tab.style.borderBottomColor = (s === section) ? 'var(--accent)' : 'transparent';
