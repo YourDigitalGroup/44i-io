@@ -3761,9 +3761,22 @@ function resetForm() {
   setWebSectionDisabled('web-mo', false);
   // Scope the wipe to the IO form pages — not the admin panel
   const formPages = '#page-1, #page-2, #page-3';
+  // FIXED (2026-07-13, found live): target service-row checkboxes directly by their
+  // data-id row (the ONLY thing that pattern is used for in this app) rather than
+  // relying on the broad formPages container scoping alone — belt-and-suspenders
+  // after finding the actual bug was a missed <select> below, not this line, but this
+  // is the more reliable selector regardless of how a given row ends up nested.
+  document.querySelectorAll('tr[data-id] input[type=checkbox]').forEach(cb => cb.checked = false);
   document.querySelectorAll(`${formPages} input[type=checkbox]`).forEach(cb => cb.checked = false);
   document.querySelectorAll(`${formPages} tr.selected`).forEach(tr => tr.classList.remove('selected'));
   document.querySelectorAll(`${formPages} input[type=text], ${formPages} input[type=email], ${formPages} input[type=tel], ${formPages} input[type=date], ${formPages} input[type=time], ${formPages} input[type=number], ${formPages} textarea`).forEach(i => i.value = '');
+  // FIXED (2026-07-13, found live): campaign-length is a <select>, not a text input —
+  // same blind spot the AE/Client pickers had. koc-time is also a <select>, disabled
+  // above but never had its stale VALUE cleared.
+  const campaignLength = document.getElementById('campaign-length');
+  if (campaignLength) campaignLength.value = '';
+  const kocTimeSel = document.getElementById('koc-time');
+  if (kocTimeSel) kocTimeSel.value = '';
   document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
   // Re-default today's dates (wiped above)
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
