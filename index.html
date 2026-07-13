@@ -838,6 +838,15 @@ let INTAKE_FORMS = {};
 // State
 let groups = [];
 let selectedGroup = null;
+// Set true by showDevModePicker() and never cleared for the rest of the session — the
+// submit guard below used to infer "dev mode" purely from selectedGroup.id NOT looking
+// like a UUID, which was safe only because the old hardcoded dev picker used fake
+// string ids. Now that the dev picker lists REAL groups (real UUIDs) so bosses can
+// browse every group's actual page, that inference breaks: previewing a real group and
+// clicking all the way through to Submit would otherwise write a real client record and
+// Trello card. This flag is the authoritative guard now, independent of what the
+// selected group's id happens to look like.
+let isDevPreviewMode = false;
 let selected = {}; // id -> {label, fee, recurring, notes, spend}
 let currentStep = 1;
 let intakeData = {}; // formKey -> { fields, bypassed, bypassNote }
@@ -1548,29 +1557,43 @@ async function loadGroup() {
   }
 }
 
-function showDevModePicker() {
-  const DEV_GROUPS = [
-    { id:'dev-cfdg',   name:'CF Digital (test → Claude board)', io_slug:'cfdg', brand_color:'#36C3F2', logo_url:'https://cfdigitalgroup.com/wp-content/uploads/CFDigital_logo.svg',  am_name:'Carol',  am_calendar_url:'https://calendar.app.google/4keGs8EikxDYW3uGA',                                                                                                                                                             has_koc:true,  am_trello_handle:'@caroloren1',  trello_board_id:'69b59ae8ce5662600fbf6b3d', from_name:'CF Digital Group', from_email:'hello@cfdigitalgroup.com' },
-    { id:'dev-stmm',   name:'STMM Digital',           io_slug:'stmm',      brand_color:'#F5B01E', logo_url:'https://stmmdigital.com/wp-content/uploads/logo-stmm-digital.svg',                                                                                                    am_name:'Carol',  am_calendar_url:'https://calendar.app.google/4keGs8EikxDYW3uGA',                                                                                                                                                             has_koc:true,  am_trello_handle:'@caroloren1',  trello_board_id:'6102f2da956132044a8e0ac6', from_name:'STMM Digital',     from_email:'digital@stmmdigital.com' },
-    { id:'dev-brazos', name:'Brazos Digital',          io_slug:'brazos',    brand_color:'#D83030', logo_url:'https://brazosdigitalmedia.com/wp-content/uploads/2023/05/logonew.png',                                                                                               am_name:'Peggy',  am_calendar_url:'https://calendar.google.com/calendar/u/0/appointments/schedules/AcZssZ0qBRZHHGjP8mi9-PLNGVD2ntwq8BWZBDsf7PWBPOKQCn8CZz2mxag7PriankVAjMX7SdmxBcSW', has_koc:true,  am_trello_handle:'@peggyolson3', trello_board_id:'644bc660a882a19216babcee', from_name:'Brazos Digital',   from_email:'digital@brazosdigitalmedia.com' },
-    { id:'dev-44i',    name:'44i (Internal Test)',     io_slug:'ctg',       brand_color:'#489BD4', logo_url:'https://44i.com/wp-content/uploads/2021/05/44i.svg',                                                                                                                  am_name:'Darren', am_calendar_url:null,                                                                                                                                                                                                           has_koc:false, am_trello_handle:null,           trello_board_id:'69b59ae8ce5662600fbf6b3d', from_name:'44i Digital',      from_email:'darren@44i.com' },
-  ];
+// Populated from the real `groups` table (2026-07-10) — was a hardcoded 4-entry list
+// of fake/placeholder groups (CF Digital, STMM, Brazos, an internal test one), none of
+// which reflected the actual client groups or their real branding/pricing. Claire
+// wanted her bosses to be able to browse EVERY real group's own version of the form
+// without typing dummy client data into each one — listing the live table directly
+// does that automatically, with zero maintenance as groups are added/renamed/repriced.
+let DEV_GROUPS = [];
 
-  // Apply CF Digital immediately — before any DOM changes
-  selectedGroup = DEV_GROUPS[0];
-  applyGroupBranding(DEV_GROUPS[0]);
+async function showDevModePicker() {
+  isDevPreviewMode = true;
+  const display = document.getElementById('group-display');
+  const nameEl  = document.getElementById('group-name-display');
+  display.style.display = 'block';
+  document.getElementById('group-error').style.display = 'none';
+  nameEl.innerHTML = `<span style="font-size:12px;color:var(--muted)">Loading groups…</span>`;
+
+  try {
+    DEV_GROUPS = await sb('groups?order=name&select=*') || [];
+  } catch(e) {
+    nameEl.innerHTML = `<span style="font-size:12px;color:#EF4444">Could not load groups: ${esc(e.message)}</span>`;
+    return;
+  }
+  if (!DEV_GROUPS.length) {
+    nameEl.innerHTML = `<span style="font-size:12px;color:#EF4444">No groups found in Supabase.</span>`;
+    return;
+  }
+
+  // Apply the first group immediately — before any further DOM changes — same as the
+  // old hardcoded version's "apply CF Digital immediately" behavior.
+  applyDevGroup(DEV_GROUPS[0].id);
 
   // Show dev skip button
   const skipBtn = document.getElementById('dev-skip-btn');
   if (skipBtn) skipBtn.style.display = 'block';
 
-  const display = document.getElementById('group-display');
-  const nameEl  = document.getElementById('group-name-display');
-  display.style.display = 'block';
-  document.getElementById('group-error').style.display = 'none';
-
   const opts = DEV_GROUPS.map(g =>
-    `<option value="${g.id}">${g.name}</option>`
+    `<option value="${esc(g.id)}">${esc(g.name)}</option>`
   ).join('');
 
   nameEl.innerHTML = `
@@ -1580,16 +1603,32 @@ function showDevModePicker() {
         ${opts}
       </select>
     </div>`;
-
-  window.applyDevGroup = function(id) {
-    const g = DEV_GROUPS.find(x => x.id === id);
-    if (!g) return;
-    selectedGroup = g;
-    applyGroupBranding(g);
-    const sel = document.getElementById('dev-group-select');
-    if (sel) sel.value = id;
-  };
+  const sel = document.getElementById('dev-group-select');
+  if (sel) sel.value = DEV_GROUPS[0].id;
 }
+
+// Applies both branding AND custom pricing for the picked group — the old hardcoded
+// version only ever called applyGroupBranding(), which never mattered when every dev
+// entry was a fake group with no real io_pricing. Now that this lists real groups
+// (some of which DO have custom pricing, e.g. CI Digital/SnapMe), skipping
+// applyCustomPricing() here would show a group's page with the WRONG prices — the
+// exact opposite of what this picker exists to preview accurately.
+window.applyDevGroup = function(id) {
+  const g = DEV_GROUPS.find(x => x.id === id);
+  if (!g) return;
+  selectedGroup = g;
+  applyGroupBranding(g);
+  // Rebuild SERVICE_DATA from the raw catalog rows before applying this group's
+  // overrides — applyCustomPricing() only ever mutates the specific keys it's given,
+  // so without this reset, a PREVIOUS group's override would stay stuck in memory for
+  // any service the newly-picked group doesn't itself override (renderPriceCells()
+  // alone only fixes what's visibly on screen, not the underlying totals math).
+  Object.values(CATALOG_ROWS).forEach(r => { SERVICE_DATA[r.id] = rowToServiceData(r); });
+  renderPriceCells();
+  if (g.io_pricing) applyCustomPricing(g.io_pricing);
+  const sel = document.getElementById('dev-group-select');
+  if (sel) sel.value = id;
+};
 
 function devSkipToStep2() {
   // Pre-fill minimal required fields so Step 2 works without validation errors
@@ -2489,12 +2528,16 @@ async function submitIO() {
 
     // Use real UUID group_id, or null for dev mode
     const isRealUuid = selectedGroup.id && /^[0-9a-f]{8}-/.test(selectedGroup.id);
-    const groupId = isRealUuid ? selectedGroup.id : null;
+    const groupId = (isRealUuid && !isDevPreviewMode) ? selectedGroup.id : null;
 
     // ── DEV MODE GUARD ───────────────────────────────────────────────
-    // If the selected group isn't a real Supabase row (dev picker), skip the database
-    // and Trello entirely so we don't pollute production with test data.
-    if (!isRealUuid) {
+    // isDevPreviewMode (set once by showDevModePicker(), never cleared) is the real
+    // guard now — the dev picker lists actual groups with real UUIDs so bosses can
+    // browse every group's real page, so a real-looking id no longer implies a real
+    // submission is safe. Skip the database and Trello entirely in dev preview,
+    // regardless of which group was selected, so browsing pages can never pollute
+    // production with a real client record or Trello card.
+    if (!isRealUuid || isDevPreviewMode) {
       console.log('DEV mode submit — skipping Supabase and Trello.');
       showToast('🧪 DEV mode — order NOT saved (no Supabase / no Trello). Reset to try again.', 'success');
       // Still go to the success screen so the AE can see the flow

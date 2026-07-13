@@ -1827,6 +1827,36 @@ Moderate:
     row), enables RLS with a public SELECT policy (the live form reads this table with
     the anon key, same as `services`/`intake_forms`/`sections`), and adds the
     `admin_save_hosting_setting` RPC.
+- **Dev picker (`?dev=1`) now lists every REAL group, not 4 hardcoded fake ones —
+  with a real submission-safety fix along the way (2026-07-10).** Claire wanted her
+  bosses to browse every group's own branded version of the form ahead of Monday
+  without typing dummy client data into each one. `showDevModePicker()` previously
+  showed a hardcoded 4-entry list (CF Digital, STMM, Brazos, an internal test group) —
+  none of them real, none of their branding/pricing able to drift as real groups
+  change. Now fetches the live `groups` table directly (`groups?order=name&select=*`),
+  so every current and future group appears automatically, with its real logo/colors/
+  AM info AND its real Custom Pricing overrides (`applyDevGroup()` now calls
+  `applyCustomPricing()` too, and fully rebuilds `SERVICE_DATA` from `CATALOG_ROWS`
+  before applying — the old version only ever patched the specific keys a given
+  group's overrides touched, so switching from an overridden group to a non-overridden
+  one would leave the previous group's stale price stuck in memory for anything the
+  new group doesn't itself override).
+  **CAUGHT BEFORE SHIPPING — a real accidental-write risk, not just a UI gap:** the
+  submit-time dev-mode guard (`isRealUuid` — skip Supabase/Trello if
+  `selectedGroup.id` doesn't look like a UUID) was ONLY ever safe because the old
+  hardcoded dev groups used fake string ids like `'dev-cfdg'`. The moment the picker
+  lists REAL groups with REAL UUIDs, that inference silently breaks: someone
+  previewing a real group through `?dev=1` and clicking all the way through to Submit
+  would have created a real client record and a real Trello card under that group —
+  the exact opposite of what a safe preview tool should ever do. Fixed by adding an
+  explicit `isDevPreviewMode` flag, set once by `showDevModePicker()` and never
+  cleared for the rest of that page session, used as the authoritative guard
+  (`if (!isRealUuid || isDevPreviewMode)`) instead of inferring safety from the id's
+  shape. VERIFIED via simulation: real-prod-submission path unaffected; a real group
+  previewed via the dev picker now correctly skips the write; both old-style fake-id
+  cases (dev-mode-flagged and, defensively, not-flagged) still skip the write either
+  way. Also verified the SERVICE_DATA-reset fix directly: after applying a group with
+  an override then a group with none, the first group's override no longer lingers.
 
 Minor / cosmetic:
 - **`onKocDateChange()` / `globalKocSchedule` / doubled `display:none` — DONE (v44,
