@@ -2415,6 +2415,23 @@ file (same completeness check used for every admin-editor addition this project)
   stay STABLE across edits (an edit = a new version of the same IO, not a new IO), so audit
   rows and any joined campaigns/billing point at an anchor that never changes. The
   `io_number` being built now is designed to be that stable anchor.
+- **Email notification on IO submission — PARKED, flagged 2026-07-13.** On real submission,
+  send an email to a group's configured "IO recipients" — explicitly NOT the client, only
+  internal staff (e.g. AM, possibly accounting). This is genuinely new infrastructure: no
+  email-sending capability exists anywhere in this app today (confirmed via repo search —
+  the existing `groups.am_email`/`from_email` fields are print-display-only, used on the
+  PDF, never sent anywhere). Needs, before building:
+  1. **Email provider** — none chosen yet (Resend/SendGrid/Postmark/tied to an existing
+     Google or Microsoft business account are all options). Requires a new secret + likely
+     a new Edge Function (or an addition to `claude-proxy`).
+  2. **Recipients field shape** — confirmed (2026-07-13) there can be MULTIPLE recipients
+     per group, so this needs its own new field on `groups` (e.g. a comma-separated list or
+     a proper array/jsonb column), distinct from the existing `am_email` — not decided yet
+     which storage shape, keep it simple (comma-separated text is probably enough, matches
+     how this app tends to keep small multi-value fields plain rather than normalized).
+  3. **Email content** — not decided (a short "new IO submitted" notification+link vs. a
+     fuller summary of client/services/totals).
+  Do not build any part of this from a guess — all three need Claire's answer first.
 
 ---
 
