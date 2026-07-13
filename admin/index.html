@@ -728,13 +728,21 @@ function regenerateSlug() {
 let PRICEABLE_SERVICES = [];
 
 function rebuildPriceableServices() {
-  const groupOrder = [], groupMap = {};
+  // Group order follows the live form's own section order (SECTIONS.sort_order), not
+  // alphabetical-by-section-id — was ordering "alc, audio, ctv, em, ..." purely because
+  // that's the string order Supabase happened to return sections in. A pricing_group
+  // heading that crosscuts sections (e.g. "Visitor IDs" spans web-ot AND web-mo) is
+  // placed at the position of whichever section its EARLIEST member belongs to.
+  const sectionOrderIndex = {};
+  SECTIONS.forEach((s, i) => { sectionOrderIndex[s.id] = s.sort_order ?? i; });
+
+  const groupOrder = [], groupMap = {}, groupMinOrder = {};
   Object.values(CATALOG_ROWS).forEach(r => {
     const mode = r.pricing_mode || 'flat';
     if (mode !== 'flat' && mode !== 'per_unit') return;
     if (r.default_price == null) return;
     const groupLabel = r.pricing_group || sectionLabel(r.section);
-    if (!groupMap[groupLabel]) { groupMap[groupLabel] = []; groupOrder.push(groupLabel); }
+    if (!groupMap[groupLabel]) { groupMap[groupLabel] = []; groupOrder.push(groupLabel); groupMinOrder[groupLabel] = Infinity; }
     groupMap[groupLabel].push({
       id: r.id,
       label: r.label,
@@ -745,7 +753,10 @@ function rebuildPriceableServices() {
       // totals purposes, but showing "/mo" next to an annual price would be misleading.
       field: r.billing_type === 'monthly' ? 'recurring' : 'fee',
     });
+    const secOrder = sectionOrderIndex[r.section] ?? Infinity;
+    if (secOrder < groupMinOrder[groupLabel]) groupMinOrder[groupLabel] = secOrder;
   });
+  groupOrder.sort((a, b) => groupMinOrder[a] - groupMinOrder[b]);
   PRICEABLE_SERVICES = groupOrder.map(section => ({ section, items: groupMap[section] }));
 }
 
@@ -768,16 +779,23 @@ function adminTab(tab) {
 // ── PRICING FIELDS BUILDER ────────────────────────────────────
 let currentPricingOverrides = {};
 
+// Visual marker for an overridden price — same treatment applied on initial render
+// and live as the admin types/clears a value (see onPriceInput()), so it's obvious at
+// a glance which prices are custom to this group vs. still standard.
+const OVERRIDE_INPUT_STYLE = 'border-color:var(--accent);background:var(--accent-dim,#EAF6FC);color:var(--accent);font-weight:600';
+const DEFAULT_INPUT_STYLE = 'border-color:var(--border);background:#fff;color:var(--text);font-weight:400';
+
 function renderPricingFields() {
   const container = document.getElementById('pricing-fields');
   let html = '';
   PRICEABLE_SERVICES.forEach(section => {
     html += `<div style="margin-bottom:20px">
       <div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">${section.section}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">`;
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px">`;
     section.items.forEach(item => {
       const override = currentPricingOverrides[item.id];
-      const displayVal = override !== undefined ? override : '';
+      const isOverridden = override !== undefined;
+      const displayVal = isOverridden ? override : '';
       // item is always a live catalog row now (PRICEABLE_SERVICES is rebuilt fresh from
       // CATALOG_ROWS on every load) — no removed-service fallback needed anymore.
       const liveDefault = CATALOG_ROWS[item.id]?.default_price;
@@ -785,12 +803,13 @@ function renderPricingFields() {
       html += `<div style="display:flex;align-items:center;gap:8px">
         <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4">${item.label}</label>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
-          <span style="font-size:11px;color:var(--muted)">$</span>
+          <span style="font-size:11px;color:${isOverridden ? 'var(--accent)' : 'var(--muted)'}">$</span>
           <input type="number" min="0" step="0.01"
             id="price-${item.id}"
             value="${displayVal}"
             placeholder="${liveDefault}"
-            style="width:80px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px;text-align:right"
+            title="${isOverridden ? 'Custom price for this group (standard is $' + liveDefault + ')' : ''}"
+            style="width:74px;padding:5px 8px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
             oninput="onPriceInput('${item.id}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:24px">${fieldType}</span>
         </div>
@@ -802,12 +821,23 @@ function renderPricingFields() {
 }
 
 function onPriceInput(serviceId, val) {
+  const isOverridden = val !== '' && val !== null && !isNaN(parseFloat(val)) && parseFloat(val) >= 0;
   if (val === '' || val === null) {
     delete currentPricingOverrides[serviceId];
   } else {
     const num = parseFloat(val);
     if (!isNaN(num) && num >= 0) currentPricingOverrides[serviceId] = num;
   }
+  // Toggle the highlight live, in step with the value just typed/cleared — matches
+  // renderPricingFields()'s own initial-render styling exactly, so there's no visual
+  // "flash" difference between a page-load override and one just typed in.
+  const input = document.getElementById('price-' + serviceId);
+  const dollarSign = input?.previousElementSibling;
+  if (input) {
+    input.style.cssText += ';' + (isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE);
+    input.title = isOverridden ? `Custom price for this group (standard is $${CATALOG_ROWS[serviceId]?.default_price})` : '';
+  }
+  if (dollarSign) dollarSign.style.color = isOverridden ? 'var(--accent)' : 'var(--muted)';
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────
@@ -1052,9 +1082,16 @@ function renderSuggestedMap() {
     groupCounts[s.exclusivity_group] = (groupCounts[s.exclusivity_group] || 0) + 1;
   });
 
-  // Group rows by section with a header band
+  // Group rows by section with a header band. Section band ORDER follows the live
+  // form's own section order (SECTIONS.sort_order) — was alphabetical-by-section-id
+  // before (an artifact of the fetch's `order=section,sort_order` clause sorting by
+  // the raw section id string, not by how sections actually appear on the form).
   const bySection = {};
   rows.forEach(s => { (bySection[s.section] = bySection[s.section] || []).push(s); });
+  const sectionOrderIndex = {};
+  SECTIONS.forEach((sec, i) => { sectionOrderIndex[sec.id] = sec.sort_order ?? i; });
+  const orderedSectionIds = Object.keys(bySection).sort((a, b) =>
+    (sectionOrderIndex[a] ?? Infinity) - (sectionOrderIndex[b] ?? Infinity));
 
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
@@ -1069,7 +1106,7 @@ function renderSuggestedMap() {
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
 
-  Object.keys(bySection).forEach(sec => {
+  orderedSectionIds.forEach(sec => {
     html += `<tr><td colspan="9" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
     bySection[sec].forEach(s => {
       const inactive = !s.active;
