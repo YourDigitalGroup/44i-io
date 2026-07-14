@@ -2830,16 +2830,26 @@ file (same completeness check used for every admin-editor addition this project)
   submission itself was never broken** — client, order, Trello card, and the KOC label
   had all already succeeded correctly before she clicked away; this was purely a stale
   leftover UI state on a button that was temporarily out of view.
-  Fixed by having `goStep()` detect "the success screen is currently showing" and run the
-  same full `resetForm()` reset in that case, so any way of leaving the success screen
-  (not just the dedicated button) behaves consistently. Had to hide `page-success`
-  BEFORE calling `resetForm()` specifically to avoid infinite recursion — `resetForm()`
-  itself calls `goStep(1)` at its own end, and without hiding it first, that inner call
-  would still see success as "showing" and call `resetForm()` again, forever. Caught this
-  during implementation, not after — verified via a direct simulation of the
-  `goStep()`/`resetForm()` control flow before committing (confirms exactly one
-  `resetForm()` call, correct landing on step 1, success left hidden). Not yet retested
-  live in a browser.
+  **First fix attempt:** had `goStep()` detect "the success screen is currently showing"
+  and run the same full `resetForm()` reset in that case, so any way of leaving the
+  success screen behaved consistently. Had to hide `page-success` BEFORE calling
+  `resetForm()` specifically to avoid infinite recursion — `resetForm()` itself calls
+  `goStep(1)` at its own end, and without hiding it first, that inner call would still
+  see success as "showing" and call `resetForm()` again, forever. Caught this during
+  implementation, not after — verified via a direct simulation of the control flow before
+  committing.
+  **Superseded same day (`eb9b769`) — Claire's better idea:** rather than letting a
+  breadcrumb click through and silently redirecting, make the breadcrumb itself inert
+  (`pointer-events:none`, dimmed) the instant the success screen shows — nothing left to
+  click at all, so there's no silent-redirect surprise (e.g. clicking "Services" right
+  after a submit would otherwise land on a blank services page with no client info filled
+  in, since everything was just cleared). "Submit Another IO" is now the ONLY way back
+  into the form; `resetForm()` re-enables the breadcrumb as part of its reset. The
+  `goStep()` safety net from the first attempt is left in place as defense in depth
+  (unreachable via normal clicks now, but still correct if anything else ever calls
+  `goStep()` while success is showing). Verified via simulation: breadcrumb confirmed
+  inert immediately after a submission, fully re-enabled after Submit Another IO. Not yet
+  retested live in a browser.
 - **AE-facing embed plan — SCOPED AND CONFIRMED READY, 2026-07-14.** Claire's plan: AEs
   will reach the form through a link/embed sitting inside an existing password-protected
   resource section, rather than ever seeing or navigating to the raw
