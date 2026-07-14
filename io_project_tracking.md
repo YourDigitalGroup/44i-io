@@ -2850,6 +2850,28 @@ file (same completeness check used for every admin-editor addition this project)
   `goStep()` while success is showing). Verified via simulation: breadcrumb confirmed
   inert immediately after a submission, fully re-enabled after Submit Another IO. Not yet
   retested live in a browser.
+- **Full admin-editor coverage audit — COMPLETE 2026-07-14.** Claire asked, after noticing
+  Pricing Mode/Unit felt hard to find on a service, to confirm every real database column
+  across every admin-editable table actually has a matching field somewhere in the admin
+  UI (minus auto-managed columns like `id`/`created_at`). Ran `information_schema.columns`
+  directly against Postgres (not against what any save function claims to handle) for
+  `services`, `groups`, `sections`, `intake_forms`, `ae`, `legal_content` and cross-checked
+  every single column.
+  **Clean — every real column already covered:** `ae` (4/4), `intake_forms` (3/3),
+  `sections` (4/4), `legal_content` (11/11), `services` (24/24 — confirms Pricing Mode and
+  Unit were never actually missing, see the real bug found instead, next entry).
+  **Two real gaps found in `groups` — NOT built, Claire's explicit call:**
+  `trello_email` and `portal_domain`. Unlike every other finding this session, these
+  aren't merely absent from the admin UI — they don't appear ANYWHERE in either file at
+  all (not read, not written, not referenced). No history on them in this tracking doc
+  either, so origin unknown before this audit.
+  - `trello_email` — Claire confirmed: a group-specific email address meant to be used to
+    email questions directly into that group's Trello board (Trello's own board-level
+    email-to-board feature). A real, understood concept — just never wired up.
+  - `portal_domain` — Claire wasn't sure what this was for either.
+  Claire's explicit decision: don't build admin UI for either right now. Logged here so
+  the audit and the decision are both on record — revisit if either ever becomes relevant
+  again (e.g. `trello_email` could matter if email-to-board ever comes up as a feature).
 - **AE-facing embed plan — SCOPED AND CONFIRMED READY, 2026-07-14.** Claire's plan: AEs
   will reach the form through a link/embed sitting inside an existing password-protected
   resource section, rather than ever seeing or navigating to the raw
