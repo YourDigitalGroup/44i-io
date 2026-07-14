@@ -1919,9 +1919,11 @@ which is why they slipped off this doc — but several gate a real client-facing
   policies (writes exclusively via the password-gated RPC), `orders` has exactly the
   three narrowly-scoped policies the app needs (anon insert, 2-hour-windowed read/update
   for the "Submit Another IO" correction window). Re-tested live afterward: admin Groups
-  tab and a new order submission both still work normally. Non-urgent leftover noted but
-  not touched: `groups` has three duplicate (functionally identical) read policies —
-  cosmetic clutter, not a security issue, can consolidate later if wanted.
+  tab and a new order submission both still work normally. Cosmetic follow-up also done
+  same day (`rls-groups-dedupe-2026-07-14.sql` in scratch): consolidated the three
+  duplicate (functionally identical) `groups` read policies down to one
+  (`groups_public_read`, anon+authenticated, `qual: true`) — confirmed via `pg_policies`.
+  RLS audit fully closed out.
 - **Admin passwords (front-end hashes) — DONE + TESTED (2026-06-26).**
   Claire's call (James trusts her to decide): remove the SHA-256 hash fallback from the
   shipped file and make the `admin_login` RPC the sole gate. Rationale: everything's moving
