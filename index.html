@@ -384,6 +384,7 @@ textarea{resize:vertical;min-height:70px}
         <div>
           <label class="lbl">Business Name</label>
           <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()"/>
+          <div id="biz-name-match-warning" style="display:none;margin-top:6px;padding:8px 10px;border-radius:8px;background:#FFF7ED;border:1px solid #FED7AA;font-size:13px;color:#9A3412"></div>
         </div>
       </div>
       <div class="field-group cols2">
@@ -942,13 +943,95 @@ function applyClientPick(id) {
 // from that client's actual name, un-pin the id — otherwise submitting would silently
 // overwrite the originally-picked client's record with an unrelated new business's info.
 function onBizNameEdited() {
-  if (!selectedClientId) return;
-  const c = CLIENT_ROSTER.find(x => x.id === selectedClientId);
-  const current = document.getElementById('biz-name').value;
-  if (!c || current !== c.name) {
-    selectedClientId = null;
-    document.getElementById('client-picker').value = '';
+  if (selectedClientId) {
+    const c = CLIENT_ROSTER.find(x => x.id === selectedClientId);
+    const current = document.getElementById('biz-name').value;
+    if (!c || current !== c.name) {
+      selectedClientId = null;
+      document.getElementById('client-picker').value = '';
+    }
   }
+  checkClientNameMatch();
+}
+
+// Duplicate-by-typo warning (2026-07-14): find_or_create_client's own name-match fallback
+// only catches an EXACT (case-insensitive) name match — a typo, missing "Inc", or extra
+// space still slips past it and creates a genuinely separate client record. This is a
+// front-end-only nudge, not a hard block: it warns and offers a one-click way to pick the
+// likely-intended existing client instead, but never stops someone from typing a real new
+// client's name that just happens to look similar. Skipped entirely once a client IS
+// picked (selectedClientId set) — nothing to warn about matching itself.
+function normalizeClientName(s) {
+  return (s || '').trim().toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+}
+
+// Strips a trailing business-entity suffix (Inc/LLC/Corp/etc.) so "ABC Plumbing" and
+// "ABC Plumbing, Inc." are recognized as the same business — the single most common real-
+// world way this kind of near-duplicate happens, and one plain Levenshtein distance alone
+// wouldn't reliably catch (the added suffix can push the edit distance past any tolerance
+// short-enough to still reject truly different names).
+function stripBizSuffix(s) {
+  return s.replace(/\b(inc|llc|corp|co|company|ltd|incorporated)\b\.?\s*/g, '').trim().replace(/\s+/g, ' ');
+}
+
+// Standard iterative Levenshtein distance — fine for short business names.
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const row = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = row[j];
+      row[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, row[j], row[j - 1]);
+      prev = tmp;
+    }
+  }
+  return row[n];
+}
+
+function checkClientNameMatch() {
+  const warnEl = document.getElementById('biz-name-match-warning');
+  if (!warnEl) return;
+  const hide = () => { warnEl.style.display = 'none'; warnEl.innerHTML = ''; };
+
+  if (selectedClientId || !CLIENT_ROSTER.length) { hide(); return; }
+  const raw = document.getElementById('biz-name').value;
+  const typed = normalizeClientName(raw);
+  if (typed.length < 3) { hide(); return; }
+  const typedCore = stripBizSuffix(typed);
+
+  let best = null; // { client, distance }
+  CLIENT_ROSTER.forEach(c => {
+    const name = normalizeClientName(c.name);
+    if (!name) return;
+    // Same business with/without an "Inc"/"LLC"/etc. suffix — flag regardless of distance.
+    if (typedCore === stripBizSuffix(name)) {
+      if (!best || best.distance > 0) best = { client: c, distance: 0 };
+      return;
+    }
+    // Otherwise, scale the tolerance to name length so short names need a near-exact
+    // match while longer ones can absorb a couple of typo'd characters.
+    const distance = typed === name ? 0 : levenshtein(typed, name);
+    const tolerance = Math.max(1, Math.round(Math.max(typed.length, name.length) * 0.2));
+    if (distance <= tolerance && (!best || distance < best.distance)) {
+      best = { client: c, distance };
+    }
+  });
+
+  if (!best) { hide(); return; }
+  warnEl.innerHTML = `⚠ This looks similar to an existing client: <strong>${esc(best.client.name)}</strong>. ` +
+    `Is this the same business? <a href="#" onclick="useSuggestedClientMatch('${esc(best.client.id)}');return false;" style="color:#9A3412;font-weight:700;text-decoration:underline">Use existing client</a>`;
+  warnEl.style.display = 'block';
+}
+
+function useSuggestedClientMatch(id) {
+  const picker = document.getElementById('client-picker');
+  if (picker) picker.value = id;
+  applyClientPick(id);
+  checkClientNameMatch();
 }
 
 // Set true by showDevModePicker() and never cleared for the rest of the session — the
