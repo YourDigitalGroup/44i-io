@@ -2526,6 +2526,16 @@ file (same completeness check used for every admin-editor addition this project)
   order, and confirmed the PDF now attaches to the Trello IO card successfully. Feature is
   fully working end-to-end: real PDF attachment on every submission, no silent
   false-success logging.
+- **Dev-picker group switch not clearing prior form data — FIXED 2026-07-14 (`528b6a0`).**
+  Claire noticed while prepping for an AM walkthrough: using the `?dev=1` picker dropdown
+  to switch between groups left the previously-entered business info/selected services on
+  screen under the new group's branding. Root cause: `applyDevGroup()` re-applies the
+  newly-picked group's branding/pricing/AE-and-client rosters, but never reset the form
+  itself — a different gap from the "Submit Another IO" bug fixed the same day (that one
+  was in `resetForm()` itself; this one was a caller that never called it at all). Fixed
+  by calling the existing `resetForm()` at the top of `applyDevGroup()`, same clearing
+  logic already proven for Submit Another IO. Not yet retested live — Claire should
+  confirm switching groups in the dev picker now shows a clean form before her AM meeting.
 - **UNRESOLVED, carries into next session (2026-07-13): Client Information fields
   (`biz-name`/`contact-email` etc.) get silently repopulated with the PREVIOUS
   submission's data on a genuinely fresh page load (hard refresh, no draft to restore).**
