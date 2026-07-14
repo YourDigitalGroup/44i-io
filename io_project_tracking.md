@@ -1881,6 +1881,39 @@ Minor / cosmetic:
 These came out of the first-session review and the rollout plan. None are catalog work,
 which is why they slipped off this doc — but several gate a real client-facing launch.
 
+- **RLS audit — IN PROGRESS 2026-07-14, triggered by a phishing scare.** Claire's AM
+  forwarded a suspicious "IN REVIEW: Insertion Order" email with review/approve links,
+  for a client not in her orders — confirmed via full repo grep this did NOT originate
+  from this system (no email-sending code exists anywhere; no review/approve workflow
+  concept exists in this app's design, which is direct-sign-only; the client isn't in the
+  `orders` table this system writes to). Flagged to Claire as likely phishing, unrelated
+  to this project. Understandably rattled, she asked for a full security pass over who
+  can see what. Ran a comprehensive `pg_policies` query across all public tables and found
+  the SAME wide-open historical mistake already fixed once on `clients` also exists,
+  unfixed, on two more tables:
+  - `groups` — has a `groups_anon_write` (or similarly named) `ALL`/`qual: true` policy
+    alongside its narrower ones, meaning literally anyone with the anon key can read/write/
+    delete every group's config (including pricing overrides, Trello board IDs, IO
+    recipient emails).
+  - `orders` — same shape: a wide-open `orders_anon_all` policy PLUS a duplicate "Public
+    insert orders" policy, sitting alongside the already-correctly-scoped
+    `orders_public_insert` / `orders_recent_read` / `orders_recent_update` policies that
+    the live app actually needs.
+  **Planned fix (established pattern from the `clients` fix earlier in the project):**
+  DROP the wide-open/duplicate policies, keep the narrowly-scoped ones already in place.
+  Confirmed via grep that the public form only ever needs anon INSERT + a time-window
+  UPDATE on `orders` (both already exist as separate policies) and read-only access to
+  `groups` (writes go through the admin panel). **Blocked on one verification step before
+  writing the `groups` fix:** the admin Groups editor (`adminSaveGroup()` in
+  `admin/index.html`) already tries a password-gated `admin_save_group` RPC as its
+  PRIMARY save path (falling back to a direct anon PATCH only if the RPC throws) — good,
+  since it means dropping `groups`' anon-write policy shouldn't break the admin editor —
+  but the RPC's actual definition hasn't been confirmed to genuinely validate
+  password/role server-side rather than just trusting the JS comment claiming it does.
+  Need Claire to run `select pg_get_functiondef(oid) from pg_proc where proname =
+  'admin_save_group';` in the Supabase SQL editor and paste the result before the `groups`
+  lockdown SQL is finalized and delivered. The `orders` fix has no such blocker (no RPC
+  dependency either way) and can be written and delivered independently.
 - **Admin passwords (front-end hashes) — DONE + TESTED (2026-06-26).**
   Claire's call (James trusts her to decide): remove the SHA-256 hash fallback from the
   shipped file and make the `admin_login` RPC the sole gate. Rationale: everything's moving
@@ -2457,20 +2490,31 @@ file (same completeness check used for every admin-editor addition this project)
   Still needed before the email send itself works: **Email provider** (see point 1 above)
   — PDF generation itself is done and also already wired into Trello (see below).
 - **Returning-client IO card should accumulate history, not overwrite — BUILT 2026-07-14
-  (`d22d93a`), pending Edge Function deploy.** Originally flagged 2026-07-13: submitting a
-  new IO for a client who already has an "IO" card on Trello OVERWRITES that card's
-  description with the new IO, discarding the previous one's visible content (the full
-  history was always safely preserved in Supabase's `orders` table regardless — this was
-  only ever about what's visible on the Trello card itself). Resolved via the same PDF
-  generation built for the email feature (see above) — the card's text description still
-  shows the LATEST IO only (unchanged behavior), but every submission now ALSO attaches a
-  dated PDF snapshot to that same card, so nothing before it ever disappears. Needs the
-  new `trello_attach_file` Edge Function target (see `claude-proxy-index-2026-07-14.ts` in
-  scratch — real multipart file upload, different shape from every other Trello target
-  this function handles) deployed before this actually works; code is live/merged but
-  will silently do nothing for this specific piece until that Edge Function update ships
-  (wrapped in its own try/catch, so it fails quietly rather than blocking the rest of
-  submission — check Trello directly after deploying to confirm the attachment appears).
+  (`d22d93a`), Edge Function deployed, payload-size bug fixed 2026-07-14 (`878be08`).**
+  Originally flagged 2026-07-13: submitting a new IO for a client who already has an "IO"
+  card on Trello OVERWRITES that card's description with the new IO, discarding the
+  previous one's visible content (the full history was always safely preserved in
+  Supabase's `orders` table regardless — this was only ever about what's visible on the
+  Trello card itself). Resolved via the same PDF generation built for the email feature
+  (see above) — the card's text description still shows the LATEST IO only (unchanged
+  behavior), but every submission now ALSO attaches a dated PDF snapshot to that same
+  card, so nothing before it ever disappears. Needed the new `trello_attach_file` Edge
+  Function target (see `claude-proxy-index-2026-07-14.ts` in scratch — real multipart
+  file upload, different shape from every other Trello target this function handles);
+  Claire merged the app code and deployed the Edge Function.
+  **Bug found on first live test:** the attach failed with HTTP 546 (Supabase Edge
+  Function memory-limit-exceeded) — the base64-encoded, uncompressed PNG capture at
+  `html2canvas` scale 2 was too large for the function to decode into a Trello upload.
+  Compounding bug: the code logged `"Attached IO PDF to card"` even though the attach
+  failed, because `fetch()` only rejects on network failure, not on HTTP error status —
+  the code never checked `response.ok`, so a failed attach was indistinguishable from a
+  successful one in the console. Both fixed in `878be08`: `html2canvas` scale lowered to
+  1.5, canvas/PDF export switched from PNG to JPEG (0.85 quality) with jsPDF `compress:
+  true`, shrinking the payload well under the memory limit; the attach fetch now checks
+  `response.ok` and `console.warn`s with the actual status/body on failure instead of
+  always logging success. **Not yet retested live** — Claire needs to merge this PR and
+  submit another IO for a returning client to confirm the PDF now actually appears on the
+  Trello card.
 - **UNRESOLVED, carries into next session (2026-07-13): Client Information fields
   (`biz-name`/`contact-email` etc.) get silently repopulated with the PREVIOUS
   submission's data on a genuinely fresh page load (hard refresh, no draft to restore).**
