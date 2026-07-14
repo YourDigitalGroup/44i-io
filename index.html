@@ -378,37 +378,37 @@ textarea{resize:vertical;min-height:70px}
       <div class="field-group">
         <div>
           <label class="lbl">Business Name</label>
-          <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
+          <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">Contact Name(s)</label>
-          <input type="text" id="contact-name" placeholder="Primary contact" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
+          <input type="text" id="contact-name" placeholder="Primary contact"/>
         </div>
         <div>
           <label class="lbl">Phone</label>
-          <input type="tel" id="contact-phone" placeholder="(000) 000-0000" oninput="fmtPhone(this)" maxlength="14" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
+          <input type="tel" id="contact-phone" placeholder="(000) 000-0000" oninput="fmtPhone(this)" maxlength="14"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">Email</label>
-          <input type="email" id="contact-email" placeholder="client@email.com" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
+          <input type="email" id="contact-email" placeholder="client@email.com"/>
         </div>
         <div>
           <label class="lbl">Website URL</label>
-          <input type="text" id="website-url" placeholder="https://" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
+          <input type="text" id="website-url" placeholder="https://"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
           <label class="lbl">City / Service Area</label>
-          <input type="text" id="city" placeholder="City, State" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
+          <input type="text" id="city" placeholder="City, State"/>
         </div>
         <div>
           <label class="lbl">Business Type</label>
-          <input type="text" id="biz-type" placeholder="e.g. Flooring Retailer" autocomplete="off" readonly onfocus="this.removeAttribute('readonly')"/>
+          <input type="text" id="biz-type" placeholder="e.g. Flooring Retailer"/>
         </div>
       </div>
     </div>
@@ -3644,7 +3644,6 @@ function autoSaveDraft() {
     const d = buildDraft();
     // If the form is effectively empty, remove the draft instead of storing a blank one
     const hasContent = d.ae || d.biz || d.contact || d.email || Object.keys(d.selected).length > 0;
-    console.log('[autoSaveDraft]', hasContent ? 'WRITING draft, biz=' + JSON.stringify(d.biz) + ' ae=' + JSON.stringify(d.ae) : 'removing draft (empty)', new Error().stack.split('\n').slice(1,4).join(' <- '));
     if (hasContent) writeDraft(d);
     else localStorage.removeItem(getDraftKey());
   } catch(e) { /* silent */ }
@@ -3655,7 +3654,6 @@ function loadDraft() {
     // Per-tab draft keys: a NEW tab has a fresh tab_id → no draft found → blank
     // form automatically. A REFRESH keeps the same tab_id → draft restores.
     const raw = localStorage.getItem(getDraftKey());
-    console.log('[loadDraft] key:', getDraftKey(), 'raw draft found:', raw);
     if (!raw) return false;
     const d = JSON.parse(raw);
 
@@ -3756,19 +3754,15 @@ function loadDraft() {
 function clearDraft() {
   try {
     // Remove the draft for THIS device + slug.
-    console.log('[clearDraft] removing key:', getDraftKey(), 'was:', localStorage.getItem(getDraftKey()));
     localStorage.removeItem(getDraftKey());
     // Also clean up legacy keys from prior versions
     localStorage.removeItem('io_draft');
     localStorage.removeItem('io_submitted_at');
-    console.log('[clearDraft] confirmed after removal:', localStorage.getItem(getDraftKey()));
   } catch(e) { /* silent */ }
 }
 
 function resetForm() {
-  console.log('[resetForm] START. biz-name before clear:', document.getElementById('biz-name')?.value, 'checked checkboxes before:', document.querySelectorAll('tr[data-id] input[type=checkbox]:checked').length, 'draft key:', getDraftKey(), 'draft in localStorage before clearDraft:', localStorage.getItem(getDraftKey()));
   clearDraft();
-  console.log('[resetForm] after clearDraft, draft in localStorage:', localStorage.getItem(getDraftKey()));
   selected = {};
   // NOTE: do NOT null selectedGroup — the page is still on the same group URL.
   // Nulling it broke "Submit Another IO" (next submit threw "Please select a group").
@@ -3830,7 +3824,6 @@ function resetForm() {
   const kocTimeSel = document.getElementById('koc-time');
   if (kocTimeSel) kocTimeSel.value = '';
   document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
-  console.log('[resetForm] after DOM clearing. biz-name:', document.getElementById('biz-name')?.value, 'checked checkboxes:', document.querySelectorAll('tr[data-id] input[type=checkbox]:checked').length, 'campaign-length:', document.getElementById('campaign-length')?.value);
   // Re-default today's dates (wiped above)
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('auth-date').value = new Date().toISOString().slice(0,10);
@@ -3845,7 +3838,6 @@ function resetForm() {
   document.getElementById('koc-card').style.display = 'none';
   document.getElementById('intake-status-card').style.display = 'none';
   updateBadges();
-  console.log('[resetForm] END, right before goStep(1). biz-name:', document.getElementById('biz-name')?.value, 'draft in localStorage after updateBadges/autoSaveDraft:', localStorage.getItem(getDraftKey()));
   goStep(1);
 }
 
@@ -4387,27 +4379,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderPriceCells();
   loadGroup();
   purgeExpiredDrafts();
-  setTimeout(() => {
-    const restoredADraft = loadDraft();
-    // Defense against a browser extension (password manager/form-filler) silently
-    // filling Client Information fields on page load — found live (2026-07-13):
-    // readonly-until-focus + autocomplete="off" didn't stop it, confirmed via
-    // incognito testing to be an extension, not our own code or Chrome's own
-    // address/payment autofill. Only runs when NO legitimate draft was restored
-    // (a real draft restore should never get wiped), and skips any field the AE
-    // has already clicked into, so it can't clobber real typing.
-    if (!restoredADraft) {
-      setTimeout(() => {
-        ['biz-name','contact-name','contact-phone','contact-email','website-url','city','biz-type'].forEach(id => {
-          const el = document.getElementById(id);
-          if (el && el.value && document.activeElement !== el) {
-            console.warn(`[autofill-guard] "${id}" had an unexpected value on a fresh page load (no draft to restore) — likely a browser extension. Clearing it.`, el.value);
-            el.value = '';
-          }
-        });
-      }, 400);
-    }
-  }, 600);
+  setTimeout(loadDraft, 600);
 });
 </script>
 </body>
