@@ -2817,6 +2817,29 @@ file (same completeness check used for every admin-editor addition this project)
   form — parked as a future improvement (e.g. the page proactively checking for a newer
   version) rather than built speculatively. Worth mentioning in AE training regardless:
   open a fresh link at the start of each new client conversation.
+- **Submit button stuck "Submitting..." after clicking the step breadcrumb post-success —
+  FIXED 2026-07-14 (`6954a9c`).** Claire noticed this while testing the KOC label feature:
+  the IO looked fine in Trello, but when she went back to check something else in that
+  same browser tab, the submit button was still frozen mid-spin. Root cause: the Step
+  1/2/3 breadcrumb at the top of the page stays visible and clickable even on the success
+  screen — she'd clicked "Client Info" instead of "Submit Another IO" after seeing
+  success. Only "Submit Another IO" (`resetForm()`) ever resets the submit button back to
+  normal; navigating via the breadcrumb (`goStep()`) skipped that entirely, so the
+  button's leftover disabled/"Submitting..." state from the already-completed submission
+  was still sitting there, just not visible until she scrolled back to Step 3. **The
+  submission itself was never broken** — client, order, Trello card, and the KOC label
+  had all already succeeded correctly before she clicked away; this was purely a stale
+  leftover UI state on a button that was temporarily out of view.
+  Fixed by having `goStep()` detect "the success screen is currently showing" and run the
+  same full `resetForm()` reset in that case, so any way of leaving the success screen
+  (not just the dedicated button) behaves consistently. Had to hide `page-success`
+  BEFORE calling `resetForm()` specifically to avoid infinite recursion — `resetForm()`
+  itself calls `goStep(1)` at its own end, and without hiding it first, that inner call
+  would still see success as "showing" and call `resetForm()` again, forever. Caught this
+  during implementation, not after — verified via a direct simulation of the
+  `goStep()`/`resetForm()` control flow before committing (confirms exactly one
+  `resetForm()` call, correct landing on step 1, success left hidden). Not yet retested
+  live in a browser.
 - **AE-facing embed plan — SCOPED AND CONFIRMED READY, 2026-07-14.** Claire's plan: AEs
   will reach the form through a link/embed sitting inside an existing password-protected
   resource section, rather than ever seeing or navigating to the raw
