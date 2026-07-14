@@ -309,6 +309,11 @@ textarea{resize:vertical;min-height:70px}
 .help-row input[type=checkbox]{width:14px;height:14px;accent-color:#F97316;flex-shrink:0}
 .help-row label{font-size:12px;color:#92400E;cursor:pointer;flex:1}
 </style>
+<!-- PDF generation (2026-07-14) — free, client-side, no vendor account needed. Used by
+     generateIoPdfBlob() to turn the same document printIO() shows into a real PDF file
+     for the email attachment + Trello card history features. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -3198,7 +3203,11 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
 
 
 // ── PRINT IO ───────────────────────────────────────────────────
-function printIO() {
+// Shared IO document HTML builder (2026-07-14) — was previously inlined directly inside
+// printIO(). Extracted so the same exact content/layout can also be captured into a real
+// PDF file (see generateIoPdfBlob()) for the email attachment + Trello card history
+// features, without maintaining two separate representations of the IO document.
+function buildIoDocumentHtml() {
   syncRowInputs(); // pull Notes + Spend inputs into selected{} for the printed IO
   const group = selectedGroup || {};
   const logo = group.logo_url || '';
@@ -3573,10 +3582,77 @@ ${specialInstructions ? `<div class="special-box"><strong>Special Instructions</
 
 </body></html>`;
 
+  return { html, ioNumber, bizNameRaw };
+}
+
+function printIO() {
+  const { html } = buildIoDocumentHtml();
   const win = window.open('', '_blank');
   win.document.write(html);
   win.document.close();
   setTimeout(() => win.print(), 600);
+}
+
+// ── PDF GENERATION (2026-07-14) ───────────────────────────────
+// Captures the exact same document buildIoDocumentHtml() produces — screenshot-style via
+// html2canvas + jsPDF, not a from-scratch PDF layout — deliberately chosen over a native
+// rebuild: reuses the ALREADY-WORKING print layout as-is (no second representation of the
+// IO that could drift out of sync with it over time), at the cost of the PDF being an
+// embedded image rather than selectable text. Used for both the email attachment and the
+// Trello card history attachment — one PDF-generation path serving both features.
+// Renders into a hidden iframe (not a plain div) so the document's own <style> block
+// (letterhead colors, fonts, @page rules, etc.) applies exactly as it does in the real
+// print window, isolated from the main page's own CSS.
+async function generateIoPdfBlob() {
+  const { html, ioNumber, bizNameRaw } = buildIoDocumentHtml();
+
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-10000px;left:-10000px;width:850px;height:1100px;border:none;';
+  document.body.appendChild(iframe);
+
+  try {
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(html);
+    iframe.contentDocument.close();
+
+    // Give web fonts / the group logo image time to load before capturing — a capture
+    // taken too early would silently freeze in system-font/broken-image state.
+    await new Promise(resolve => setTimeout(resolve, 700));
+
+    const canvas = await html2canvas(iframe.contentDocument.body, {
+      scale: 2,
+      useCORS: true,
+      windowWidth: iframe.contentDocument.body.scrollWidth,
+      windowHeight: iframe.contentDocument.body.scrollHeight,
+    });
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'letter');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgData = canvas.toDataURL('image/png');
+
+    // Standard "long single image sliced across multiple PDF pages" technique — the same
+    // full-height image is drawn on each page at a progressively more negative Y offset,
+    // so each page's fixed height naturally clips to show only its own slice of content.
+    let heightLeft = imgHeight;
+    let position = 0;
+    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    const fileName = `IO-${ioNumber}.pdf`;
+    return { blob: pdf.output('blob'), base64: pdf.output('datauristring').split(',')[1], fileName };
+  } finally {
+    document.body.removeChild(iframe);
+  }
 }
 
 // ── DRAFT SAVE/LOAD ────────────────────────────────────────────
