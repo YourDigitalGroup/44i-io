@@ -2805,6 +2805,18 @@ file (same completeness check used for every admin-editor addition this project)
      submissions (same class of fragility the AE picker/roster was built to fix) — the
      existing `ae` roster table might be the right identity anchor for this instead of a
      free-typed name, worth deciding together with the answers above.
+- **Stale-data-after-admin-change — PARKED as a future improvement, 2026-07-14.** Came up
+  while Claire was testing: the catalog, legal text, and group settings are all loaded
+  ONCE when the public form's page first opens — nothing on the page re-checks Supabase
+  after that. So if an admin changes something (a price, a new service, a template ref)
+  while an AE already has the form open, that AE's tab keeps showing the old version
+  until they reload. In practice this is a non-issue if each AE opens a fresh link per
+  client conversation, but an AE who keeps one tab open across multiple meetings in a day
+  could be working from stale data without realizing it. Claire's call: not worth solving
+  now, since she doesn't plan to make frequent changes once AEs start actively using the
+  form — parked as a future improvement (e.g. the page proactively checking for a newer
+  version) rather than built speculatively. Worth mentioning in AE training regardless:
+  open a fresh link at the start of each new client conversation.
 
 ## KEY PRINCIPLES (how we've been working)
 
