@@ -2443,7 +2443,39 @@ function validateStep1() {
 }
 
 // ── STEP NAVIGATION ───────────────────────────────────────────
+// Makes the Step 1/2/3 breadcrumb inert while the success screen is showing (2026-07-14,
+// per Claire) — rather than letting a click through and silently redirecting (the
+// previous fix for the stuck-submit-button bug), the breadcrumb now simply can't be
+// clicked at all once a submission succeeds, so there's nothing confusing to click in
+// the first place (e.g. "Services" with no client info filled in yet, since everything
+// was just cleared). "Submit Another IO" is the only way back into the form. Re-enabled
+// by resetForm(), the only path that ever leaves the success screen.
+function setStepsNavEnabled(enabled) {
+  const nav = document.getElementById('steps-nav');
+  if (!nav) return;
+  nav.style.pointerEvents = enabled ? '' : 'none';
+  nav.style.opacity = enabled ? '' : '0.5';
+}
+
 function goStep(n) {
+  // FIXED (2026-07-14, found live): the Step 1/2/3 breadcrumb stays visible and clickable
+  // even on the success screen after a submit — clicking it (instead of "Submit Another
+  // IO") silently skipped resetForm(), so the submit button stayed frozen in its
+  // "Submitting..." disabled state from the just-completed submission, invisible until
+  // navigating back to Step 3. The submission itself had already fully succeeded; this
+  // was purely a stale leftover UI state on a button no longer in view. Any way of
+  // leaving the success screen back into the form should behave like "Submit Another
+  // IO" — full reset — so this detects that case and resets first.
+  const successShowing = document.getElementById('page-success').style.display !== 'none';
+  if (successShowing) {
+    // Hide it BEFORE calling resetForm() — resetForm() itself calls goStep(1) at its end,
+    // and this same check would otherwise still see success as "showing" on that inner
+    // call (resetForm() never hides it directly, only goStep() does, further below) —
+    // infinite recursion without this line.
+    document.getElementById('page-success').style.display = 'none';
+    resetForm();
+    return;
+  }
   if (n >= 2 && !validateStep1()) return;
   if (n === 3) {
     // Hard block if ad products selected with no spend — highlight the fields.
@@ -2874,6 +2906,7 @@ async function submitIO() {
         '<span class="chip" style="background:#FEF3C7;color:#92400E">DEV MODE — NOT SAVED</span>';
       document.getElementById('page-3').style.display = 'none';
       document.getElementById('page-success').style.display = 'block';
+      setStepsNavEnabled(false);
       window.scrollTo({top:0,behavior:'smooth'});
       // Do NOT clearDraft() in dev — let the user keep playing with the data
       return;
@@ -3475,6 +3508,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
     document.getElementById('success-chips').innerHTML = chips;
     document.getElementById('page-3').style.display = 'none';
     document.getElementById('page-success').style.display = 'block';
+    setStepsNavEnabled(false);
     clearDraft();
     window.scrollTo({top:0,behavior:'smooth'});
 
@@ -4146,6 +4180,7 @@ function clearDraft() {
 }
 
 function resetForm() {
+  setStepsNavEnabled(true); // re-enable the breadcrumb, disabled while success was showing
   clearDraft();
   selected = {};
   // NOTE: do NOT null selectedGroup — the page is still on the same group URL.

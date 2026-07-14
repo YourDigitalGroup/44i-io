@@ -2805,6 +2805,78 @@ file (same completeness check used for every admin-editor addition this project)
      submissions (same class of fragility the AE picker/roster was built to fix) — the
      existing `ae` roster table might be the right identity anchor for this instead of a
      free-typed name, worth deciding together with the answers above.
+- **Stale-data-after-admin-change — PARKED as a future improvement, 2026-07-14.** Came up
+  while Claire was testing: the catalog, legal text, and group settings are all loaded
+  ONCE when the public form's page first opens — nothing on the page re-checks Supabase
+  after that. So if an admin changes something (a price, a new service, a template ref)
+  while an AE already has the form open, that AE's tab keeps showing the old version
+  until they reload. In practice this is a non-issue if each AE opens a fresh link per
+  client conversation, but an AE who keeps one tab open across multiple meetings in a day
+  could be working from stale data without realizing it. Claire's call: not worth solving
+  now, since she doesn't plan to make frequent changes once AEs start actively using the
+  form — parked as a future improvement (e.g. the page proactively checking for a newer
+  version) rather than built speculatively. Worth mentioning in AE training regardless:
+  open a fresh link at the start of each new client conversation.
+- **Submit button stuck "Submitting..." after clicking the step breadcrumb post-success —
+  FIXED 2026-07-14 (`6954a9c`).** Claire noticed this while testing the KOC label feature:
+  the IO looked fine in Trello, but when she went back to check something else in that
+  same browser tab, the submit button was still frozen mid-spin. Root cause: the Step
+  1/2/3 breadcrumb at the top of the page stays visible and clickable even on the success
+  screen — she'd clicked "Client Info" instead of "Submit Another IO" after seeing
+  success. Only "Submit Another IO" (`resetForm()`) ever resets the submit button back to
+  normal; navigating via the breadcrumb (`goStep()`) skipped that entirely, so the
+  button's leftover disabled/"Submitting..." state from the already-completed submission
+  was still sitting there, just not visible until she scrolled back to Step 3. **The
+  submission itself was never broken** — client, order, Trello card, and the KOC label
+  had all already succeeded correctly before she clicked away; this was purely a stale
+  leftover UI state on a button that was temporarily out of view.
+  **First fix attempt:** had `goStep()` detect "the success screen is currently showing"
+  and run the same full `resetForm()` reset in that case, so any way of leaving the
+  success screen behaved consistently. Had to hide `page-success` BEFORE calling
+  `resetForm()` specifically to avoid infinite recursion — `resetForm()` itself calls
+  `goStep(1)` at its own end, and without hiding it first, that inner call would still
+  see success as "showing" and call `resetForm()` again, forever. Caught this during
+  implementation, not after — verified via a direct simulation of the control flow before
+  committing.
+  **Superseded same day (`eb9b769`) — Claire's better idea:** rather than letting a
+  breadcrumb click through and silently redirecting, make the breadcrumb itself inert
+  (`pointer-events:none`, dimmed) the instant the success screen shows — nothing left to
+  click at all, so there's no silent-redirect surprise (e.g. clicking "Services" right
+  after a submit would otherwise land on a blank services page with no client info filled
+  in, since everything was just cleared). "Submit Another IO" is now the ONLY way back
+  into the form; `resetForm()` re-enables the breadcrumb as part of its reset. The
+  `goStep()` safety net from the first attempt is left in place as defense in depth
+  (unreachable via normal clicks now, but still correct if anything else ever calls
+  `goStep()` while success is showing). Verified via simulation: breadcrumb confirmed
+  inert immediately after a submission, fully re-enabled after Submit Another IO. Not yet
+  retested live in a browser.
+- **AE-facing embed plan — SCOPED AND CONFIRMED READY, 2026-07-14.** Claire's plan: AEs
+  will reach the form through a link/embed sitting inside an existing password-protected
+  resource section, rather than ever seeing or navigating to the raw
+  `io.yourdigitalgroupresources.com` URL directly. Decided as a plain `<iframe>` embed
+  (not a link-out), fixed height with its own internal scrollbar (the simpler of two
+  options discussed — the alternative, an auto-resizing iframe, was scoped but not
+  chosen). Confirmed via Claire checking the live site's actual response headers in
+  DevTools: no `X-Frame-Options` and no `Content-Security-Policy` header present at all
+  (`Server: nginx`) — nothing server-side blocks this from being framed, which was the
+  one real risk in the whole plan. Also confirmed: the resource section is WordPress, on
+  the SAME domain as the IO tool (avoids any cross-origin storage-partitioning concerns
+  entirely). **No code changes needed on our side** for the fixed-height approach — this
+  is purely a WordPress-side embed:
+  ```html
+  <iframe
+    src="https://io.yourdigitalgroupresources.com/[group-slug]"
+    style="width:100%; height:1400px; border:none;"
+    title="Insertion Order Form">
+  </iframe>
+  ```
+  Notes for whoever builds the WordPress side: the `1400px` height is a starting guess
+  (the form is tall, especially Step 2) — worth eyeballing live and adjusting; and the
+  `<iframe>` must NOT have a `sandbox` attribute (or if one gets added by a WP plugin/page
+  builder, it must include `allow-scripts allow-forms allow-popups allow-same-origin` —
+  without `allow-popups` specifically, the Print/PDF button's popup window would silently
+  stop working). Ready to set up whenever Claire's team is ready — nothing blocking on
+  our end.
 
 ## KEY PRINCIPLES (how we've been working)
 
