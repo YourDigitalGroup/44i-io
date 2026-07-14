@@ -183,6 +183,19 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   to leave as-is or to remove the exclusivity grouping for one or both sections.
   `td-offline` (Offline Visits Tracking, a flat modifier add-on) is NOT part of the
   `td-tier` group and is unaffected by this question either way.
+- **Should reselling an already-sold product update its existing Trello tactic card? —
+  raised 2026-07-14, found while testing the archived-client reopen flow.** Confirmed
+  current code behavior (never explicitly decided with the AM before, just how it's
+  quietly worked since the original build): when a product being sold already has a
+  matching-named card in the client's Trello list, that card is skipped entirely — never
+  touched, updated, or duplicated. Only genuinely new products get a new card added. The
+  IO card itself is NOT affected by this question — it already gets its description
+  updated and a new dated PDF attached on every submission regardless. Question: is
+  "never touch an existing tactic card again after its first sale" the right behavior
+  (safest against overwriting notes/checklist progress an AE or strategist has since
+  added to that card), or should reselling a product somehow update its card (e.g.
+  append a note about the new sale, or refresh its description) — and if so, append vs.
+  replace? Not blocking; current behavior is a safe, defensible default either way.
 
 ---
 
