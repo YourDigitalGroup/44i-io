@@ -2535,6 +2535,32 @@ file (same completeness check used for every admin-editor addition this project)
   created a new client record. Fixed by calling `loadClientRoster(selectedGroup.id)`
   right after a successful submit, before the success page shows, so the very next
   submission's picker is already current. Not yet retested live.
+- **Services editor silently discarding Label edits — FIXED 2026-07-14 (`ef37166`),
+  found by Claire while removing the diamond (§) service-specific term via the new Legal
+  Text tab.** Editing an existing service's Label showed the normal "Service updated!"
+  success toast, but the label itself never actually changed after reload — every other
+  field saved correctly. Root cause: `autoServiceId()` (bound to the Label field's
+  `oninput`) regenerates the ID field's value live from Section+Label, UNLESS the ID
+  field is flagged `dataset.manuallyEdited` — a guard that exists specifically so editing
+  an EXISTING service's label doesn't touch its (immutable, disabled) id. `adminEditService()`
+  disabled the id field when opening an existing service, but never set that flag — so
+  typing a new label silently regenerated the DISABLED field's value anyway (disabling an
+  input only blocks direct typing into it, not JS setting `.value`). That regenerated id —
+  not the service's real one — is what got sent as `p_service_id` on Save, matching zero
+  rows in the RPC's `UPDATE ... WHERE id = p_service_id` (a 0-row UPDATE raises no error in
+  Postgres), so nothing persisted despite the success toast. Confirmed via the exact same
+  bug already found and fixed once before on the analogous Sections editor
+  (`adminEditSection()`, which does set this flag, with a comment reading "don't let label
+  edits during Edit clobber the existing id") — the fix was apparently never carried over
+  to Services. Fixed with the identical one-line change: set
+  `admin-svc-id`'s `dataset.manuallyEdited = '1'` when populating the edit form.
+  **Also delivered (`admin-save-service-fix-2026-07-14.sql`, in scratch, Claire needs to
+  run):** hardened the `admin_save_service` RPC itself so a `p_service_id` that matches no
+  row raises a clear exception instead of silently updating nothing while still reporting
+  success — this makes the RPC safe against any FUTURE bug of this same shape, not just
+  today's specific cause. Not yet retested live — Claire should merge, run the SQL, and
+  confirm editing a service's label (including the diamond-term removal she was in the
+  middle of) actually sticks now.
 - **Agreement & Disclaimers text made admin-editable — BUILT 2026-07-14 (`4c84de4`),
   Claire needs to run the SQL to activate.** Claire asked for a way to update the legal
   text without a code change — the 4 disclaimers (Non-Cancellation, Intellectual

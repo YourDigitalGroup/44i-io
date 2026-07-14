@@ -2743,6 +2743,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-original-id').value = s.id;
   document.getElementById('admin-svc-id').value = s.id;
   document.getElementById('admin-svc-id').disabled = true; // id is the key everything else references — immutable after creation
+  document.getElementById('admin-svc-id').dataset.manuallyEdited = '1'; // FIXED (2026-07-14, found live): without this, autoServiceId() (bound to the Label field's oninput) silently regenerated this disabled-but-still-live ID field to match whatever new label was typed, on every keystroke. That regenerated id — not the service's real one — was what got sent as p_service_id on Save, matching zero rows in the UPDATE (no error raised on a 0-row update), so the label (and nothing else, since a same-session edit to other fields still carried the correct original id right up until the label was touched) silently failed to persist despite the success toast. Same fix already applied to the Sections editor's analogous bug — never carried over here.
   document.getElementById('admin-svc-label').value = s.label || '';
   document.getElementById('admin-svc-sort').value = s.sort_order ?? '';
   document.getElementById('admin-svc-pricing-mode').value = s.pricing_mode || 'flat';
