@@ -41,6 +41,7 @@
       <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
       <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
       <button id="section-tab-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
+      <button id="section-tab-legal" onclick="adminSection('legal')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Legal Text</button>
     </div>
 
     <div style="padding:20px">
@@ -622,6 +623,100 @@
         <div id="admin-ae-table"></div>
       </div><!-- /section-ae -->
 
+      <!-- ── SECTION: Legal Text (Agreement & Disclaimers, global — same for every group) ── -->
+      <div id="section-legal" style="display:none">
+        <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Legal Text — Agreement &amp; Disclaimers</p>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:16px">
+          Same text for every group. "On-Screen" is what a client sees and checks off before signing;
+          "Printed / PDF" is what appears in the actual IO document. These are edited separately and can
+          say different things, exactly as they do today — editing one does not change the other. In the
+          Intellectual Property printed field, the literal text <code>{{group_name}}</code> is replaced with
+          the signing group's actual name — don't type a real group name in its place.
+        </p>
+
+        <div id="admin-legal-readonly-note" style="display:none;margin-bottom:16px;padding:10px 14px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;font-size:12px;color:#991B1B">
+          Legal text is view-only for your role — only a super admin can save changes here.
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:20px;margin-bottom:20px">
+          <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff">
+            <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Non-Cancellation</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label class="lbl">On-Screen</label>
+                <textarea id="legal-non_cancellation_onscreen" rows="3" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+              <div>
+                <label class="lbl">Printed / PDF</label>
+                <textarea id="legal-non_cancellation_printed" rows="3" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff">
+            <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Intellectual Property</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label class="lbl">On-Screen</label>
+                <textarea id="legal-ip_onscreen" rows="4" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+              <div>
+                <label class="lbl">Printed / PDF <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— use <code>{{group_name}}</code> for the signing group's name</span></label>
+                <textarea id="legal-ip_printed" rows="4" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff">
+            <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Service-Specific Terms</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label class="lbl">On-Screen <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— HTML allowed (e.g. &lt;br&gt;, &lt;strong&gt;)</span></label>
+                <textarea id="legal-service_specific_onscreen" rows="6" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+              <div>
+                <label class="lbl">Printed / PDF</label>
+                <textarea id="legal-service_specific_printed" rows="6" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff">
+            <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Digital Advertising</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <label class="lbl">On-Screen</label>
+                <textarea id="legal-digital_advertising_onscreen" rows="3" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+              <div>
+                <label class="lbl">Printed / PDF</label>
+                <textarea id="legal-digital_advertising_printed" rows="3" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff">
+            <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Checkbox Labels <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— on-screen only, no printed equivalent</span></p>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <label class="lbl">Non-Cancellation checkbox</label>
+                <textarea id="legal-checkbox_terms" rows="2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+              <div>
+                <label class="lbl">Intellectual Property checkbox</label>
+                <textarea id="legal-checkbox_ip" rows="2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+              <div>
+                <label class="lbl">Pricing checkbox</label>
+                <textarea id="legal-checkbox_pricing" rows="2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button id="admin-legal-save-btn" onclick="adminSaveLegalContent()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Legal Text</button>
+      </div><!-- /section-legal -->
+
     </div>
   </div>
 </div>
@@ -941,8 +1036,8 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Six sections: groups | orders | map | sections | intake | ae
-  const sections = ['groups','orders','map','sections','intake','ae'];
+  // Seven sections: groups | orders | map | sections | intake | ae | legal
+  const sections = ['groups','orders','map','sections','intake','ae','legal'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups' needs display:flex specifically — its edit form/list use flex `order`
@@ -988,6 +1083,18 @@ function adminSection(section) {
     const newBtn = document.getElementById('admin-new-ae-btn');
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadAdminAes();
+  } else if (section === 'legal') {
+    // Legal text is super-admin only (same restriction level as pricing/services/
+    // sections) — AM logins can view the current text but Save is disabled, matching
+    // the "am can browse, can't change what every AE/client sees" pattern used
+    // elsewhere. The RPC itself also hard-rejects this for AM regardless of the UI.
+    const isAm = currentAdminUser?.role === 'am';
+    const saveBtn = document.getElementById('admin-legal-save-btn');
+    if (saveBtn) saveBtn.style.display = isAm ? 'none' : '';
+    const note = document.getElementById('admin-legal-readonly-note');
+    if (note) note.style.display = isAm ? 'block' : 'none';
+    document.querySelectorAll('#section-legal textarea').forEach(t => t.disabled = isAm);
+    loadAdminLegalContent();
   }
 }
 
@@ -2257,6 +2364,54 @@ async function adminToggleAeActive(id, makeActive) {
     loadAdminAes();
   } catch(e) {
     showToast('Error updating AE: ' + e.message, 'error');
+  }
+}
+
+// ── LEGAL TEXT (Agreement & Disclaimers, global — same for every group) ────────
+// Maps each admin textarea id to its column in the legal_content singleton row.
+const LEGAL_FIELDS = [
+  'non_cancellation_onscreen', 'non_cancellation_printed',
+  'ip_onscreen', 'ip_printed',
+  'service_specific_onscreen', 'service_specific_printed',
+  'digital_advertising_onscreen', 'digital_advertising_printed',
+  'checkbox_terms', 'checkbox_ip', 'checkbox_pricing',
+];
+
+async function loadAdminLegalContent() {
+  try {
+    const rows = await sb('legal_content?id=eq.1&select=*') || [];
+    const row = rows[0] || {};
+    LEGAL_FIELDS.forEach(f => {
+      const el = document.getElementById('legal-' + f);
+      if (el) el.value = row[f] || '';
+    });
+  } catch(e) {
+    showToast('Error loading legal text: ' + e.message, 'error');
+  }
+}
+
+async function adminSaveLegalContent() {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Legal text can only be changed by a super admin', 'error');
+    return;
+  }
+  const payload = {};
+  LEGAL_FIELDS.forEach(f => {
+    const el = document.getElementById('legal-' + f);
+    payload[f] = el ? el.value : '';
+  });
+  try {
+    await sb('rpc/admin_save_legal_content', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_data: payload
+      })
+    });
+    showToast('Legal text saved!');
+  } catch(e) {
+    showToast('Error saving legal text: ' + e.message, 'error');
   }
 }
 

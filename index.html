@@ -584,40 +584,42 @@ textarea{resize:vertical;min-height:70px}
       <div style="padding:18px">
 
         <div class="legal" style="margin-bottom:14px">
-          <strong>Non-Cancellation:</strong> This agreement is non-cancellable and non-refundable. Final pricing may vary by sales tax where applicable.
+          <strong>Non-Cancellation:</strong> <span id="legal-text-non-cancellation">This agreement is non-cancellable and non-refundable. Final pricing may vary by sales tax where applicable.</span>
         </div>
 
         <div class="legal" style="margin-bottom:14px">
-          <strong>Intellectual Property:</strong> The Client represents and warrants that it has the right, including patents, trademarks, and copyrights, whether published or unpublished, to use any and all materials supplied including, without limitations, imagery, content and software code and holds the vendor and its partners harmless, and assumes all liability.
+          <strong>Intellectual Property:</strong> <span id="legal-text-ip">The Client represents and warrants that it has the right, including patents, trademarks, and copyrights, whether published or unpublished, to use any and all materials supplied including, without limitations, imagery, content and software code and holds the vendor and its partners harmless, and assumes all liability.</span>
         </div>
 
         <div class="legal" style="margin-bottom:14px">
           <strong>Service-Specific Terms:</strong><br>
+          <span id="legal-text-service-specific">
           <strong>*</strong> Annual hosting fee of $450 required each year (January 1).<br>
           <strong>**</strong> 12-month minimum commitment required.<br>
           <strong>***</strong> Annual hosting fee of $750 required each year (January 1).<br>
           <strong>‡</strong> 6-month non-cancellable and non-refundable agreement required.<br>
           <strong>◊</strong> 12-month non-cancellable and non-refundable agreement required.<br>
           <strong>§</strong> 18-month non-cancellable and non-refundable agreement required.
+          </span>
         </div>
 
         <div class="legal" style="margin-bottom:20px">
-          <strong>Digital Advertising:</strong> Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, Audio, and Mobile campaigns have a recommended minimum monthly spend as noted, for the campaign to have a meaningful chance at results. All advertising budgets are non-refundable once campaigns have launched.
+          <strong>Digital Advertising:</strong> <span id="legal-text-digital-advertising">Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, Audio, and Mobile campaigns have a recommended minimum monthly spend as noted, for the campaign to have a meaningful chance at results. All advertising budgets are non-refundable once campaigns have launched.</span>
         </div>
 
         <!-- Disclaimer checkboxes -->
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
           <label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;cursor:pointer;line-height:1.5">
             <input type="checkbox" id="agree-terms" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:var(--accent)"/>
-            I have read and agree to the non-cancellation and non-refundable terms outlined above.
+            <span id="legal-checkbox-terms">I have read and agree to the non-cancellation and non-refundable terms outlined above.</span>
           </label>
           <label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;cursor:pointer;line-height:1.5">
             <input type="checkbox" id="agree-ip" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:var(--accent)"/>
-            I confirm that all materials provided are owned by or licensed to the client, and I accept full liability for their use.
+            <span id="legal-checkbox-ip">I confirm that all materials provided are owned by or licensed to the client, and I accept full liability for their use.</span>
           </label>
           <label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;cursor:pointer;line-height:1.5">
             <input type="checkbox" id="agree-pricing" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:var(--accent)"/>
-            I understand that final pricing may vary based on applicable sales tax and that service-specific minimum terms apply as noted.
+            <span id="legal-checkbox-pricing">I understand that final pricing may vary based on applicable sales tax and that service-specific minimum terms apply as noted.</span>
           </label>
         </div>
 
@@ -859,6 +861,38 @@ let INTAKE_FORMS = {};
 let groups = [];
 let selectedGroup = null;
 let AE_ROSTER = [];
+
+// Agreement/disclaimer text (2026-07-14) — admin-editable (Legal Text tab), global/
+// site-wide (same for every group, per Claire's call), stored in the `legal_content`
+// singleton table. The hardcoded strings still sitting in the HTML/below are the
+// fallback: if this fetch fails (or the table is empty), the page simply keeps showing
+// that built-in text untouched — deliberately NOT treated like the catalog loader (which
+// refuses to run at all on failure), since stale-but-correct legal wording is a much
+// safer failure mode here than blocking the whole form.
+let LEGAL_CONTENT = null;
+async function loadLegalContent() {
+  try {
+    const rows = await sb('legal_content?id=eq.1&select=*');
+    if (!rows || !rows[0]) return;
+    LEGAL_CONTENT = rows[0];
+    const map = {
+      'legal-text-non-cancellation': LEGAL_CONTENT.non_cancellation_onscreen,
+      'legal-text-ip': LEGAL_CONTENT.ip_onscreen,
+      'legal-text-service-specific': LEGAL_CONTENT.service_specific_onscreen,
+      'legal-text-digital-advertising': LEGAL_CONTENT.digital_advertising_onscreen,
+      'legal-checkbox-terms': LEGAL_CONTENT.checkbox_terms,
+      'legal-checkbox-ip': LEGAL_CONTENT.checkbox_ip,
+      'legal-checkbox-pricing': LEGAL_CONTENT.checkbox_pricing,
+    };
+    Object.entries(map).forEach(([id, val]) => {
+      if (val == null) return; // leave the built-in default in place
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = val;
+    });
+  } catch(e) {
+    console.warn('Could not load legal_content — showing built-in default text:', e.message);
+  }
+}
 
 // AE picker (2026-07-10) — loads the roster for whichever group is currently active
 // and shows the picker only if that group actually has any AEs on file. Selecting a
@@ -3342,6 +3376,19 @@ function buildIoDocumentHtml() {
   const group = selectedGroup || {};
   const logo = group.logo_url || '';
   const groupName = group.name || 'Your Digital Group';
+  // Printed Terms & Conditions text — sourced from the admin-editable legal_content
+  // table (Legal Text tab) when loaded, falling back to this exact built-in wording
+  // otherwise. {{group_name}} is a literal placeholder admins can use in the IP clause
+  // (or any printed field) to have the signing group's actual name substituted in here.
+  const subGroupName = t => (t || '').split('{{group_name}}').join(groupName);
+  const legalNonCancellation = subGroupName(LEGAL_CONTENT?.non_cancellation_printed) ||
+    'This agreement is non-cancellable and non-refundable for the duration of the campaign term. Final pricing may vary by applicable sales tax.';
+  const legalIp = subGroupName(LEGAL_CONTENT?.ip_printed) ||
+    `The Client represents and warrants that it has the right, including patents, trademarks, and copyrights, whether published or unpublished, to use any and all materials supplied including imagery, content, and software code, and holds ${groupName} and its partners harmless from any claims arising therefrom.`;
+  const legalDigitalAdvertising = subGroupName(LEGAL_CONTENT?.digital_advertising_printed) ||
+    'Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, and Audio campaigns are billed based on the agreed campaign budget. Advertising budgets are non-refundable once campaigns have launched.';
+  const legalServiceSpecific = subGroupName(LEGAL_CONTENT?.service_specific_printed) ||
+    '* Annual hosting fee required each year on IO anniversary date. ** 12-month minimum commitment. *** E-commerce hosting fee required annually. ‡ 6-month non-cancellable agreement. ◊ 12-month non-cancellable agreement. § 18-month non-cancellable agreement. ADA Web Accessibility hosting collected upfront and renews annually.';
   const fromName = group.from_name || groupName;
   const fromEmail = group.from_email || '';
   const amName = group.am_name || '';
@@ -3685,10 +3732,10 @@ ${specialInstructions ? `<div class="special-box"><strong>Special Instructions</
 <!-- Legal -->
 <div class="legal">
   <div class="legal-title">Terms &amp; Conditions</div>
-  <p><strong>Non-Cancellation.</strong> This agreement is non-cancellable and non-refundable for the duration of the campaign term. Final pricing may vary by applicable sales tax.</p>
-  <p><strong>Intellectual Property.</strong> The Client represents and warrants that it has the right, including patents, trademarks, and copyrights, whether published or unpublished, to use any and all materials supplied including imagery, content, and software code, and holds ${groupName} and its partners harmless from any claims arising therefrom.</p>
-  <p><strong>Digital Advertising.</strong> Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, and Audio campaigns are billed based on the agreed campaign budget. Advertising budgets are non-refundable once campaigns have launched.</p>
-  <p><strong>Service-Specific Terms.</strong> * Annual hosting fee required each year on IO anniversary date. ** 12-month minimum commitment. *** E-commerce hosting fee required annually. ‡ 6-month non-cancellable agreement. ◊ 12-month non-cancellable agreement. § 18-month non-cancellable agreement. ADA Web Accessibility hosting collected upfront and renews annually.</p>
+  <p><strong>Non-Cancellation.</strong> ${legalNonCancellation}</p>
+  <p><strong>Intellectual Property.</strong> ${legalIp}</p>
+  <p><strong>Digital Advertising.</strong> ${legalDigitalAdvertising}</p>
+  <p><strong>Service-Specific Terms.</strong> ${legalServiceSpecific}</p>
 </div>
 
 <!-- Signature — client only -->
@@ -4588,6 +4635,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   renderAllSectionRows();
   renderPriceCells();
   loadGroup();
+  loadLegalContent();
   purgeExpiredDrafts();
   setTimeout(loadDraft, 600);
 });
