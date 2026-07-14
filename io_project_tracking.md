@@ -2622,6 +2622,27 @@ file (same completeness check used for every admin-editor addition this project)
   match, suffix-added match, single-typo match, "and" vs. "&", genuinely different name,
   too-short input all behaved correctly) before committing — not yet confirmed live in a
   browser.
+- **Per-unit service rows corrupting after a dev-picker group switch — FIXED 2026-07-14
+  (`816edc6`).** Claire noticed a screenshot showing "Email Marketing — Addl. Monthly
+  Email" (a per-unit-priced service) with a duplicated "$175 × [box]" and a Notes column
+  shifted out of alignment with every other row. `renderPriceCells()` is documented as
+  running once at page load, but `applyDevGroup()` (the `?dev=1` picker's group-switch
+  handler) ALSO calls it, to refresh prices for whichever group is now being previewed —
+  a pre-existing call site, not something added this session. Root cause: the function's
+  way of finding a row's genuine ad-spend column was `tds.find(td =>
+  td.querySelector('input[type=number]'))` — but a per-unit row's own quantity box
+  (`class="qty-field"`) is ALSO an `input[type=number]`. On a SECOND call (i.e. after
+  switching groups in the dev picker), that quantity box — inserted by the FIRST call —
+  got mistaken for a real ad-spend input, so the stale old fee cell was kept instead of
+  removed, then re-inserted into what should have been the spend column slot, producing
+  the doubled fee/quantity display and the resulting misalignment. Fixed by excluding
+  `.qty-field` from the match: `input[type=number]:not(.qty-field)`. Verified via a DOM-
+  shim simulation of the exact removal/insertion logic run twice in a row (the same
+  sequence a dev-picker group switch triggers) — cell count grows 5→7 with the old
+  selector (matching the garbled screenshot) and stays stable at 5 with the fix. Only
+  reachable via the `?dev=1` preview picker's group dropdown, not the normal single-group
+  live form (which only ever calls `renderPriceCells()` once) — but real regardless, since
+  Claire and her AM are actively using that picker to test.
 - **Dev-picker group switch not clearing prior form data — FIXED 2026-07-14 (`528b6a0`).**
   Claire noticed while prepping for an AM walkthrough: using the `?dev=1` picker dropdown
   to switch between groups left the previously-entered business info/selected services on
@@ -2632,8 +2653,8 @@ file (same completeness check used for every admin-editor addition this project)
   by calling the existing `resetForm()` at the top of `applyDevGroup()`, same clearing
   logic already proven for Submit Another IO. Not yet retested live — Claire should
   confirm switching groups in the dev picker now shows a clean form before her AM meeting.
-- **UNRESOLVED, carries into next session (2026-07-13): Client Information fields
-  (`biz-name`/`contact-email` etc.) get silently repopulated with the PREVIOUS
+- **RESOLVED 2026-07-14 (see full root-cause writeup below) — Client Information fields
+  (`biz-name`/`contact-email` etc.) were getting silently repopulated with the PREVIOUS
   submission's data on a genuinely fresh page load (hard refresh, no draft to restore).**
   Confirmed NOT any of the following, in this order, each with real evidence:
   1. NOT our own draft-restore code — `clearDraft()`'s own before/after log confirms the
