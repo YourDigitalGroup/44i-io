@@ -2535,18 +2535,28 @@ file (same completeness check used for every admin-editor addition this project)
   created a new client record. Fixed by calling `loadClientRoster(selectedGroup.id)`
   right after a successful submit, before the success page shows, so the very next
   submission's picker is already current. Not yet retested live.
-- **Duplicate-client-by-typo protection — asked about 2026-07-14, answer: partially
-  covered already, gap flagged not built.** Claire asked whether anything catches an AE
-  typing a client name that matches an EXISTING client instead of using the picker.
-  What's already there (built earlier, `find_or_create_client` RPC): if no `client_id` is
-  passed, it falls back to a case-insensitive EXACT name match within the same group — so
-  typing the exact same business name (any case) as an existing client correctly links to
-  that client's existing record and updates it, rather than creating a duplicate. What's
-  NOT built: no live front-end warning for a near-match/typo (e.g. a missing "Inc", extra
-  space, or a genuine misspelling) — that still creates a genuinely separate client
-  record, since the RPC's fallback only catches an exact match, not a fuzzy one. Flagged
-  to Claire rather than built unprompted; a "did you mean [existing client]?" live check
-  against the roster while typing the business name would close this gap if wanted.
+- **Duplicate-client-by-typo protection — BUILT 2026-07-14 (`4ed42ce`).** Claire asked
+  whether anything catches an AE typing a client name that matches an EXISTING client
+  instead of using the picker. Existing coverage (built earlier, `find_or_create_client`
+  RPC): if no `client_id` is passed, it falls back to a case-insensitive EXACT name match
+  within the same group. Gap identified: a typo, missing "Inc", or extra space still slips
+  past an exact match and creates a genuinely separate client record. Closed the gap with
+  a front-end-only advisory check, live while typing the Business Name field (only runs
+  when no client is already picked): normalizes both the typed name and every roster
+  name (strip punctuation, collapse whitespace, lowercase), then checks two ways — (1)
+  strips a trailing business-entity suffix (Inc/LLC/Corp/Co/Ltd/etc.) from both and flags
+  an exact match regardless of edit distance, specifically to catch "ABC Plumbing" vs.
+  "ABC Plumbing, Inc." — the single most common real-world cause of this kind of near-
+  duplicate; (2) otherwise falls back to a length-scaled Levenshtein distance to catch
+  genuine typos, without flagging names that are just legitimately similar-but-different.
+  On a likely match, shows an inline orange banner under the field naming the existing
+  client with a one-click "Use existing client" link that pulls their record in via the
+  same `applyClientPick()` the picker itself uses. Purely advisory, never blocks
+  submission — an AE can still type straight past it for a genuinely new, similarly-named
+  business. Verified via simulation run directly against the shipped functions (exact
+  match, suffix-added match, single-typo match, "and" vs. "&", genuinely different name,
+  too-short input all behaved correctly) before committing — not yet confirmed live in a
+  browser.
 - **Dev-picker group switch not clearing prior form data — FIXED 2026-07-14 (`528b6a0`).**
   Claire noticed while prepping for an AM walkthrough: using the `?dev=1` picker dropdown
   to switch between groups left the previously-entered business info/selected services on
