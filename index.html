@@ -1731,6 +1731,14 @@ async function showDevModePicker() {
 window.applyDevGroup = function(id) {
   const g = DEV_GROUPS.find(x => x.id === id);
   if (!g) return;
+  // FIXED (2026-07-14, found live): switching groups via the dev-picker dropdown only
+  // ever re-applied the NEW group's branding/pricing/rosters — it never cleared the form
+  // itself, so whatever business info/selected services were on screen from the
+  // PREVIOUS group carried straight over under the new group's branding. resetForm()
+  // does exactly the clearing "Submit Another IO" already relies on; safe to reuse here
+  // since it deliberately never nulls selectedGroup (see its own comment) and this
+  // function sets selectedGroup itself right after.
+  resetForm();
   selectedGroup = g;
   applyGroupBranding(g);
   // Rebuild SERVICE_DATA from the raw catalog rows before applying this group's
