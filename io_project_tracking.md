@@ -2535,6 +2535,45 @@ file (same completeness check used for every admin-editor addition this project)
   created a new client record. Fixed by calling `loadClientRoster(selectedGroup.id)`
   right after a successful submit, before the success page shows, so the very next
   submission's picker is already current. Not yet retested live.
+- **Agreement & Disclaimers text made admin-editable — BUILT 2026-07-14 (`4c84de4`),
+  Claire needs to run the SQL to activate.** Claire asked for a way to update the legal
+  text without a code change — the 4 disclaimers (Non-Cancellation, Intellectual
+  Property, Service-Specific Terms, Digital Advertising) and their 3 checkbox labels were
+  hardcoded directly in `index.html`. Two design questions asked and answered before
+  building (both her call, not guessed at): (1) global text for every group, not
+  per-group — matches how it works today; (2) on-screen wording and printed/PDF wording
+  stay two SEPARATE editable fields per disclaimer, same as today, rather than unified
+  into one canonical version — **note:** while scoping this, found the on-screen and
+  printed text for the same 4 disclaimers already say slightly different things today
+  (e.g. the printed Digital Advertising clause omits "Mobile" and is worded around
+  billing rather than minimum spend) — Claire chose to preserve this as-is rather than
+  have me silently correct/unify actual legal wording.
+  **Built:** new `legal_content` Supabase table (single global settings row, not a
+  per-item list — this is a small fixed set of known fields, not something Claire adds
+  new rows to), read-only to the public form, written only through a new
+  `admin_save_legal_content` RPC (mirrors `admin_save_group`'s password+role validation;
+  restricted to super-admin, same level as Custom Pricing/Services/Sections — Claire,
+  flag if AMs should be able to edit this too). New "Legal Text" admin tab: one
+  on-screen/printed textarea pair per disclaimer, plus the 3 checkbox labels, Save button
+  (and textareas) disabled for AM logins. On the public form, the 4 on-screen disclaimers
+  and 3 checkbox labels are wrapped in spans with stable ids; a new `loadLegalContent()`
+  overwrites them from the table on page load — if that fetch fails, the existing
+  hardcoded HTML is simply left in place untouched, so a Supabase hiccup degrades to
+  today's exact text rather than breaking the Agreement card. The printed/PDF Terms &
+  Conditions section in `buildIoDocumentHtml()` works the same way, with a literal
+  `{{group_name}}` placeholder token (documented in the admin UI) substituted with the
+  signing group's real name — used today only in the printed Intellectual Property
+  clause, same as the current hardcoded `${groupName}` interpolation.
+  **Verified:** all 3 files' script blocks parse; the SQL seed text was checked
+  byte-for-byte against the actual live HTML/JS strings (not retyped from memory) to
+  rule out a transcription error in the special characters (‡◊§) — confirmed exact
+  match; the `{{group_name}}` fallback/substitution logic was simulated directly against
+  the extracted function and produces identical output to today's hardcoded version when
+  the table hasn't loaded, and correctly substitutes when it has.
+  **Not yet done:** Claire needs to run `legal-content-2026-07-14.sql` (in scratch) in
+  the Supabase SQL editor to create the table/RPC — nothing renders from the new source
+  until then (the page just keeps showing the hardcoded default, which is intentionally
+  identical). Not yet confirmed live in a browser either.
 - **Duplicate-client-by-typo protection — BUILT 2026-07-14 (`4ed42ce`).** Claire asked
   whether anything catches an AE typing a client name that matches an EXISTING client
   instead of using the picker. Existing coverage (built earlier, `find_or_create_client`
