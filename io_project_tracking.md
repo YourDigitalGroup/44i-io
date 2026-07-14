@@ -2415,23 +2415,28 @@ file (same completeness check used for every admin-editor addition this project)
   stay STABLE across edits (an edit = a new version of the same IO, not a new IO), so audit
   rows and any joined campaigns/billing point at an anchor that never changes. The
   `io_number` being built now is designed to be that stable anchor.
-- **Email notification on IO submission — PARKED, flagged 2026-07-13.** On real submission,
-  send an email to a group's configured "IO recipients" — explicitly NOT the client, only
-  internal staff (e.g. AM, possibly accounting). This is genuinely new infrastructure: no
-  email-sending capability exists anywhere in this app today (confirmed via repo search —
-  the existing `groups.am_email`/`from_email` fields are print-display-only, used on the
-  PDF, never sent anywhere). Needs, before building:
+- **Email notification on IO submission — PARKED, flagged 2026-07-13, updated 2026-07-14.**
+  On real submission, send an email to a group's configured "IO recipients" — explicitly
+  NOT the client, only internal staff (e.g. AM, possibly accounting). No actual
+  email-SENDING capability exists anywhere in this app today (confirmed via repo search —
+  nothing currently dispatches an email; this genuinely needs a provider + trigger code).
+  Correction from the 2026-07-13 note: the RECIPIENTS FIELD ALREADY EXISTS and already has
+  a full admin UI — found live 2026-07-14, built in an earlier session, missed on first
+  pass. `groups.io_recipient` (singular column name, comma-separated text) is already
+  editable in the Groups editor ("IO Recipients — comma-separated, notified on every
+  submission," alongside From Name/From Email/Has KOC), and the public form already fetches
+  it as part of `selectedGroup` (confirmed in console output) — nothing reads or acts on it
+  yet, but no new column or admin UI work is needed for this piece. Still needs, before
+  building the actual send:
   1. **Email provider** — none chosen yet (Resend/SendGrid/Postmark/tied to an existing
      Google or Microsoft business account are all options). Requires a new secret + likely
      a new Edge Function (or an addition to `claude-proxy`).
-  2. **Recipients field shape** — confirmed (2026-07-13) there can be MULTIPLE recipients
-     per group, so this needs its own new field on `groups` (e.g. a comma-separated list or
-     a proper array/jsonb column), distinct from the existing `am_email` — not decided yet
-     which storage shape, keep it simple (comma-separated text is probably enough, matches
-     how this app tends to keep small multi-value fields plain rather than normalized).
+  2. ~~Recipients field shape~~ — RESOLVED, see above. Use `selectedGroup.io_recipient`,
+     split on commas.
   3. **Email content** — not decided (a short "new IO submitted" notification+link vs. a
      fuller summary of client/services/totals).
-  Do not build any part of this from a guess — all three need Claire's answer first.
+  Claire is getting AM confirmation on this (2026-07-14) — do not build the send capability
+  itself from a guess until that's back, but the recipients-field research is done.
 - **Returning-client IO card should accumulate history, not overwrite — PARKED, flagged
   2026-07-13 (found live testing).** Today's actual behavior: submitting a new IO for a
   client who already has an "IO" card on Trello OVERWRITES that card's description with
