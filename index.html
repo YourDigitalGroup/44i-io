@@ -1432,11 +1432,17 @@ let tlpGridState = null; // { serviceId, cap, mode, single, many: [] }
 let tlpSoftReminderAcknowledged = false; // once true, don't re-nag on re-save in the same session
 
 function renderTlpGrid(serviceId, existing) {
-  const cap = TLP_CAPS[serviceId];
-  const tierName = TLP_TIER_NAMES[serviceId];
+  // tlp-custom (2026-07-14, per Claire): no fixed tier, so its cap comes from the AE's
+  // own "how many pages were quoted?" entry instead of the TLP_CAPS lookup. Persisted as
+  // tlp_custom_quoted_pages (see serializeTlpGrid()) so it survives a reopen the same way
+  // every other TLP field does.
+  const isCustom = serviceId === 'tlp-custom';
+  const f = existing.fields || {};
+  const customPageCount = f.tlp_custom_quoted_pages || '';
+  const cap = isCustom ? (parseInt(customPageCount, 10) || 0) : TLP_CAPS[serviceId];
+  const tierName = isCustom ? 'Custom' : TLP_TIER_NAMES[serviceId];
 
   // Restore from saved fields if present, else fresh
-  const f = existing.fields || {};
   let mode = f.tlp_mode === 'multi-service' ? 'multi-service'
            : f.tlp_mode === 'single-service' ? 'single-service'
            : '';
@@ -1449,22 +1455,51 @@ function renderTlpGrid(serviceId, existing) {
   tlpGridState = { serviceId, cap, mode, single, many: many.length ? many : [''] };
   tlpSoftReminderAcknowledged = false; // fresh each time the form opens
 
+  // Disabled until a page count is entered — picking a campaign type before that would
+  // let the AE start filling in entries against a cap of 0.
+  const pageCountFieldHtml = isCustom ? `
+      <div class="modal-field" style="margin-bottom:14px">
+        <label>How many pages were quoted?</label>
+        <input type="number" min="1" id="tlp-custom-page-count" value="${esc(customPageCount)}"
+          oninput="onTlpCustomPageCountChange(this.value)"
+          style="width:120px;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+      </div>` : '';
+
   return `
     <div class="modal-section" id="tlp-grid-section">
-      <div class="modal-section-title">Locations &amp; Services — ${tierName} (up to ${cap} pages)</div>
+      ${pageCountFieldHtml}
+      <div class="modal-section-title" id="tlp-grid-title">Locations &amp; Services — ${tierName}${cap ? ` (up to ${cap} pages)` : ''}</div>
       <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px">
         A TLP campaign is either <strong>one service across multiple locations</strong>, or
-        <strong>multiple services in one location</strong>. Pick which, then add up to ${cap} entries.
+        <strong>multiple services in one location</strong>.${cap ? ` Pick which, then add up to ${cap} entries.` : ' Enter the quoted page count above first, then pick which.'}
       </p>
       <div class="modal-field" style="margin-bottom:14px">
         <label>Campaign type</label>
         <div class="radio-group" style="margin-top:6px">
-          <label><input type="radio" name="tlp-mode" value="single-service" ${mode==='single-service'?'checked':''} onchange="onTlpModeChange('single-service')"/> One service → multiple locations</label>
-          <label><input type="radio" name="tlp-mode" value="multi-service" ${mode==='multi-service'?'checked':''} onchange="onTlpModeChange('multi-service')"/> Multiple services → one location</label>
+          <label><input type="radio" name="tlp-mode" value="single-service" ${mode==='single-service'?'checked':''} onchange="onTlpModeChange('single-service')" ${cap ? '' : 'disabled'}/> One service → multiple locations</label>
+          <label><input type="radio" name="tlp-mode" value="multi-service" ${mode==='multi-service'?'checked':''} onchange="onTlpModeChange('multi-service')" ${cap ? '' : 'disabled'}/> Multiple services → one location</label>
         </div>
       </div>
-      <div id="tlp-grid-body" style="${mode ? '' : 'display:none'}"></div>
+      <div id="tlp-grid-body" style="${(mode && cap) ? '' : 'display:none'}"></div>
     </div>`;
+}
+
+// tlp-custom only (2026-07-14) — re-caps the grid live as the AE types the quoted page
+// count, trimming any already-entered rows that now exceed the new cap, and enabling the
+// Campaign type radios the moment a real count is entered.
+function onTlpCustomPageCountChange(val) {
+  if (!tlpGridState) return;
+  const newCap = parseInt(val, 10) || 0;
+  tlpGridState.cap = newCap;
+  if (newCap > 0 && tlpGridState.many.length > newCap) {
+    tlpGridState.many = tlpGridState.many.slice(0, newCap);
+  }
+  const titleEl = document.getElementById('tlp-grid-title');
+  if (titleEl) titleEl.textContent = `Locations & Services — Custom${newCap ? ` (up to ${newCap} pages)` : ''}`;
+  document.querySelectorAll('input[name=tlp-mode]').forEach(r => { r.disabled = !newCap; });
+  const bodyWrap = document.getElementById('tlp-grid-body');
+  if (bodyWrap) bodyWrap.style.display = (tlpGridState.mode && newCap) ? '' : 'none';
+  if (tlpGridState.mode && newCap) renderTlpGridBody();
 }
 
 function onTlpModeChange(mode) {
@@ -1526,6 +1561,9 @@ function onTlpManyInput(i, val) {
 function serializeTlpGrid(fields) {
   const s = tlpGridState;
   if (!s || !s.mode) return;
+  // tlp-custom's own quoted page count — persisted so reopening the form restores the
+  // same cap instead of resetting to blank.
+  if (s.serviceId === 'tlp-custom') fields.tlp_custom_quoted_pages = String(s.cap || '');
   fields.tlp_mode = s.mode; // 'single-service' | 'multi-service' (raw key for restore)
   fields.tlp_mode_label = s.mode === 'single-service'
     ? 'One service → multiple locations'
@@ -1571,13 +1609,15 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
   });
 
   // ── TLP STRUCTURED GRID ───────────────────────────────────────
-  // Appended AFTER the existing TLP questions, for the three capped tiers
-  // only (Starter/Builder/Pro). tlp-custom is intentionally untouched
-  // (it loads no intake form today; pending AM decision). The grid enforces
-  // the either/or rule: one service → many locations, OR many services →
-  // one location — never a matrix. Tier sets the hard max; minimum is a
-  // soft reminder. Serializes to readable string fields on save.
-  if (cfg.intake === 'tlp' && TLP_CAPS[serviceId]) {
+  // For the three capped tiers (Starter/Builder/Pro), plus tlp-custom
+  // (2026-07-14, per Claire — was previously excluded pending this exact
+  // decision). The grid enforces the either/or rule: one service → many
+  // locations, OR many services → one location — never a matrix. A fixed
+  // tier sets the hard max; tlp-custom's max instead comes from the AE's own
+  // "how many pages were quoted?" entry (see renderTlpGrid()). Minimum is a
+  // soft reminder (fixed tiers only). Serializes to readable string fields
+  // on save.
+  if (cfg.intake === 'tlp' && (TLP_CAPS[serviceId] || serviceId === 'tlp-custom')) {
     html += renderTlpGrid(serviceId, existing);
   }
 
@@ -1633,9 +1673,11 @@ function saveIntakeForm() {
   }
 
   // Check if fully completed (all fields have values) or partial
+  // tlp-custom (2026-07-14) now gets a real grid too — the "!TLP_CAPS[sid]" escape hatch
+  // that used to let it skip the tlpGridFilled requirement no longer applies to it.
   const allFields = formDef.sections.flatMap(s => s.fields);
   const filledCount = allFields.filter(f => fields[f.key]).length;
-  const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !TLP_CAPS[sid] || tlpGridFilled);
+  const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !(TLP_CAPS[sid] || sid === 'tlp-custom') || tlpGridFilled);
 
   intakeData[formKey] = {
     fields,
