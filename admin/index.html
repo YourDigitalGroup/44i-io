@@ -378,6 +378,10 @@
                 <label class="lbl">Standalone Hosting Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only for site-tier packages with a Hosting Prompt. The standalone hosting item this package's "we host it" choice would otherwise double-charge for. Leave blank for everything else.</span></label>
                 <input type="text" id="admin-svc-standalone-hosting" placeholder="e.g. w-hosting" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
               </div>
+              <div>
+                <label class="lbl">Auto-Select Companion Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— checking THIS service also auto-checks the service with this ID (e.g. a Visitor ID tier auto-checking "Visitor IDs Setup Fee"). Still a normal, overridable checkbox — not a hard lock. Leave blank for everything else.</span></label>
+                <input type="text" id="admin-svc-auto-select" placeholder="e.g. w-vid-setup" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
+              </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
@@ -2713,6 +2717,7 @@ function adminNewService() {
   document.getElementById('admin-svc-koc').value = 'none';
   document.getElementById('admin-svc-hosting-prompt').value = '';
   document.getElementById('admin-svc-standalone-hosting').value = '';
+  document.getElementById('admin-svc-auto-select').value = '';
   document.getElementById('admin-svc-tier').value = '';
   populateServiceSectionDropdown(true, null);
   populateServiceIntakeDropdown(null);
@@ -2762,6 +2767,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-spend-min').value = s.spend_minimum ?? '';
   document.getElementById('admin-svc-hosting-prompt').value = s.hosting_prompt_type || '';
   document.getElementById('admin-svc-standalone-hosting').value = s.standalone_hosting_service_id || '';
+  document.getElementById('admin-svc-auto-select').value = s.auto_select_service_id || '';
   document.getElementById('admin-svc-tier').value = s.tier || '';
   populateServiceSectionDropdown(false, s.section);
   populateServiceIntakeDropdown(s.intake_form_id);
@@ -2898,6 +2904,7 @@ async function adminSaveService() {
     subsection_label: subsectionLabelVal,
     hosting_prompt_type: document.getElementById('admin-svc-hosting-prompt').value || null,
     standalone_hosting_service_id: document.getElementById('admin-svc-standalone-hosting').value.trim() || null,
+    auto_select_service_id: document.getElementById('admin-svc-auto-select').value.trim() || null,
     tier: document.getElementById('admin-svc-tier').value || null,
     pricing_group: pricingGroupVal,
   };

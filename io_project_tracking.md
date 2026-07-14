@@ -2539,6 +2539,71 @@ file (same completeness check used for every admin-editor addition this project)
   order, and confirmed the PDF now attaches to the Trello IO card successfully. Feature is
   fully working end-to-end: real PDF attachment on every submission, no silent
   false-success logging.
+- **AM/leadership meeting feedback (round 1) — 2026-07-14. Four items built, two scoped
+  for later, two need Claire/AM follow-up before building.** Claire brought back initial
+  notes from a meeting; more detail expected once the AM spends more time in the form.
+  **Built (`dacd3e8`, `0f1b74a`):**
+  1. **Business name on every Trello tactic card** — every tactic card name now ends
+     `Tactic — Client` (e.g. `SEM — Acme Corp`). Applied before the existing dedup check
+     so resubmissions correctly recognize a card that already has the suffix. The IO card
+     itself is deliberately NOT renamed — it's already scoped to one client via its list,
+     and renaming it would break `isIoName()`'s exact-match detection used to find/update
+     it on future submissions (flagged to Claire as a deliberate exception, not an
+     oversight).
+  2. **New/reopened client lists always land at board position 5** — after the 4 fixed
+     reference lists every group's board starts with (confirmed via Claire's screenshot:
+     Quick Resources / Podcast / General Questions / 44i Recommendations). Computes an
+     exact position between the current 4th and 5th list so a new one always lands in
+     the same spot even if other client lists already exist; falls back to `'bottom'` if
+     the board doesn't have 4 lists to anchor against. Applies both to brand-new list
+     creation and to reopening an archived list. Needed the Edge Function's
+     `trello_update_list` target extended to accept `pos` (not just `closed`/`name`).
+  3. **Visitor ID Setup Fee auto-selects** — confirmed via Claire's screenshot that
+     "Visitor IDs Setup Fee" is its own separate, standalone checkbox (not the existing
+     spend-threshold `auto_add_setup_fee` mechanism, which is a different, already-built
+     concept). Built a new `auto_select_service_id` column (mirrors
+     `standalone_hosting_service_id`'s exact pattern) — checking a Visitor ID tier
+     auto-checks its companion Setup Fee row, but it stays a normal, fully overridable
+     checkbox (a courtesy pre-check, not a hard lock, per Claire: "have it selected if the
+     AE forgets"). Added to the admin Services editor's field list.
+     **Needs Claire to run/confirm:** `auto-select-service-2026-07-14.sql` (in scratch)
+     adds the column and updates `admin_save_service`; the actual linking (which Visitor
+     ID tier ids should point at the Setup Fee id) needs the real ids pulled from
+     Supabase first — a verify query is included in the SQL file.
+  4. **"Needs KOC" label attached automatically** — confirmed via Claire: exact label
+     title `Needs KOC`, color yellow. Rather than relying on a Trello template card
+     already carrying the label (confirmed it wouldn't transfer anyway — Trello's
+     copy-card `keepFromSource` doesn't include labels, only checklists/attachments/
+     stickers), the label is now applied by our own code based on each service's
+     `koc_requirement`, reusing the `requires_koc` flag already computed per line item.
+     Looked up by name once per submission (not per card, and only when something sold
+     actually needs it), then attached to every tactic card under a KOC-requiring
+     workflow. Logs a warning rather than failing the submission if the board has no
+     "Needs KOC" label yet. Needs the new `trello_attach_label` Edge Function target (in
+     `claude-proxy-index-2026-07-14.ts`, in scratch) deployed — attaches an EXISTING label
+     by id, distinct from the pre-existing `trello_add_label` target which creates a
+     brand new label every time (would have littered boards with duplicate "Needs KOC"
+     labels over time).
+  **Scoped, not yet built — bigger pieces, deliberately sequenced separately:**
+  5. **Reselling a product should update its Trello card via a PDF, same pattern as the
+     IO card** — Claire's own idea, directly solves the "reselling doesn't update the
+     tactic card" question logged earlier today: keep the card's description showing the
+     latest sale, but attach a dated PDF of that submission's intake answers for history,
+     reusing the same PDF-generation approach already built for the IO card. Also
+     resolves item 6 below (intake as PDF instead of in the description).
+  6. **Intake answers as a PDF instead of in the card description** — folds into item 5
+     above rather than being built twice.
+  **Needs more detail before scoping further:**
+  7. **QUR quoted price** — AEs need to enter the actual price once quoted for a QUR
+     (Quote Upon Request) item; today there's no input for this at all, only the "QUR"
+     placeholder label. Needs a new "Quoted Price" field on QUR rows that flows through
+     Review, the printed IO, and Trello descriptions in place of the placeholder.
+  8. **TLP Custom (15+) dynamic intake grid** — ties into item 7: the structured
+     locations/services grid already exists for the 3 fixed TLP tiers (5/10/15 pages),
+     with the Custom/QUR tier explicitly left out of it in the original build ("pending
+     AM decision" per the code's own comment) — this isn't new territory, just finishing
+     a decision that was already anticipated. Once an AE enters the quoted page count,
+     the same grid mechanism can size itself to that number instead of a fixed tier cap.
 - **New client didn't appear in Client picker until a hard refresh — FIXED 2026-07-14
   (`7119cf9`).** Claire noticed: submit an IO for a brand-new client, then immediately
   "Submit Another IO" for the same group — the client just created wasn't selectable in

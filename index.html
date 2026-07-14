@@ -2070,6 +2070,19 @@ function toggle(cb, id) {
       setTimeout(() => openIntakeForService(id), 200);
     }
 
+    // Auto-select a companion service (e.g. Visitor IDs Setup Fee) in case the AE forgets
+    // — see AUTO_SELECT_MAP's declaration. A courtesy pre-check only: fully overridable,
+    // never re-forced if the AE unchecks the companion afterward.
+    const companionId = AUTO_SELECT_MAP[id];
+    if (companionId && companionId !== id && !selected[companionId]) {
+      const companionRow = document.querySelector(`tr[data-id="${companionId}"]`);
+      const companionCb = companionRow?.querySelector('input[type=checkbox]');
+      if (companionCb && !companionCb.checked) {
+        companionCb.checked = true;
+        toggle(companionCb, companionId);
+      }
+    }
+
   } else {
     delete selected[id];
     row.classList.remove('selected');
@@ -2256,6 +2269,16 @@ function toggleSingle(cb, id, groupName) {
 // excluded — none of the tiers' modals ever offer it, so there's no double-charge risk
 // for that item (Claire's call).
 let HOSTING_LOCK_MAP = {};
+
+// ── AUTO-SELECT COMPANION SERVICE (2026-07-14) ─────────────────────────────
+// Checking a service can auto-check a DIFFERENT companion service, in case the AE
+// forgets to add it separately — e.g. selecting any Visitor ID tier auto-checks
+// "Visitor IDs Setup Fee". Unlike HOSTING_LOCK_MAP above, this is a courtesy pre-check,
+// not a hard lock: the companion row stays a normal, fully overridable checkbox — the AE
+// can uncheck it afterward if it genuinely isn't needed. Populated by loadCatalog() from
+// each service's own `auto_select_service_id` column, same "derive from data, not a
+// hardcoded pair list" pattern as HOSTING_LOCK_MAP.
+let AUTO_SELECT_MAP = {};
 
 function updateStandaloneHostingLocks() {
   const shouldLock = new Set();
@@ -2666,6 +2689,69 @@ function getSignatureData() {
   return document.getElementById('sig-canvas').toDataURL();
 }
 
+// Computes the Trello list `pos` value that places a list at "5th position" on the
+// board (2026-07-14, per Claire) — after 4 fixed reference lists (e.g. Quick Resources /
+// Podcast / General Questions / 44i Recommendations) every group's board starts with.
+// Used both when creating a brand-new client list and when reopening an archived one.
+// Sorts the board's OPEN lists by their real `pos` and returns a value between the 4th
+// and 5th (pushing whatever was 5th down to 6th), or 'bottom' if there's no 5th list yet
+// (nothing to push past) or fewer than 4 lists exist at all (board isn't set up with the
+// expected reference lists — 'bottom' is the safest fallback rather than guessing).
+async function computeFifthListPosition(boardId) {
+  try {
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'trello_get_lists', board_id: boardId })
+    });
+    const lists = await res.json();
+    if (!Array.isArray(lists) || lists.length < 4) return 'bottom';
+    const sorted = [...lists].sort((a, b) => a.pos - b.pos);
+    const fourth = sorted[3];
+    const fifth = sorted[4];
+    return fifth ? (fourth.pos + fifth.pos) / 2 : 'bottom';
+  } catch (e) {
+    console.warn('Could not compute board position 5, falling back to bottom:', e.message);
+    return 'bottom';
+  }
+}
+
+// Finds the real id of the board's existing "Needs KOC" label (2026-07-14, per Claire —
+// exact title "Needs KOC", yellow) so it can be ATTACHED to cards via trello_attach_label,
+// rather than creating a fresh duplicate label per card (which trello_add_label would do).
+// Matched by name (case-insensitive), not color alone, since color isn't unique on a
+// board. Returns null (never throws) if the board has no such label yet — callers should
+// log a warning and skip labeling rather than fail the whole submission over it.
+async function findKocLabelId(boardId) {
+  try {
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'trello_get_labels', board_id: boardId })
+    });
+    const labels = await res.json();
+    if (!Array.isArray(labels)) return null;
+    const match = labels.find(l => (l.name || '').trim().toLowerCase() === 'needs koc');
+    return match?.id || null;
+  } catch (e) {
+    console.warn('Could not look up the "Needs KOC" label:', e.message);
+    return null;
+  }
+}
+
+async function attachKocLabel(cardId, kocLabelId) {
+  if (!kocLabelId) return;
+  try {
+    await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'trello_attach_label', card_id: cardId, label_id: kocLabelId })
+    });
+  } catch (e) {
+    console.warn('Could not attach the "Needs KOC" label to card', cardId, ':', e.message);
+  }
+}
+
 // ── SUBMIT ────────────────────────────────────────────────────
 async function submitIO() {
   const btn = document.getElementById('submit-btn');
@@ -3056,11 +3142,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           const storedList = await storedListRes.json();
           if (storedList?.id) {
             if (storedList.closed) {
-              // Reopen an archived list for a returning client instead of creating a new one
+              // Reopen an archived list for a returning client instead of creating a new one.
+              // Also repositions it to board slot 5 (2026-07-14, per Claire) — an unarchived
+              // list otherwise reappears wherever Trello happens to leave it, not necessarily
+              // in the standard spot after the board's 4 fixed reference lists.
+              const reopenPos = await computeFifthListPosition(selectedGroup.trello_board_id);
               await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_update_list', list_id: storedList.id, closed: false })
+                body: JSON.stringify({ target: 'trello_update_list', list_id: storedList.id, closed: false, pos: reopenPos })
               });
               console.log('Reopened archived list for returning client:', storedList.name);
             } else {
@@ -3084,10 +3174,17 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             clientList = existingList;
             console.log('Found existing list by name (no stored id yet):', clientList.name);
           } else {
+            // New client list also goes to board slot 5 (2026-07-14, per Claire) — reuses
+            // `allLists`, already fetched just above for the name search, instead of a
+            // second fetch.
+            const sortedForNew = [...allLists].sort((a, b) => a.pos - b.pos);
+            const newListPos = sortedForNew.length >= 5
+              ? (sortedForNew[3].pos + sortedForNew[4].pos) / 2
+              : 'bottom';
             const newListRes = await fetch(PROXY, {
               method: 'POST',
               headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-              body: JSON.stringify({ target: 'trello_create_list', board_id: selectedGroup.trello_board_id, name: bizName, pos: 'top' })
+              body: JSON.stringify({ target: 'trello_create_list', board_id: selectedGroup.trello_board_id, name: bizName, pos: newListPos })
             });
             clientList = await newListRes.json();
             if (!clientList.id) throw new Error('Failed to create client list');
@@ -3189,10 +3286,22 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         let cardsAdded = 0;
         const originalWorkflows = [...workflows]; // same order as soldWorkflows, pre-tier-remap
 
+        // "Needs KOC" label (2026-07-14, per Claire) — looked up ONCE per submission
+        // (not per card) and only if something sold actually needs it, since it's an
+        // extra Trello API call. `li.requires_koc` already exists on each line item
+        // (see its own comment above), so this reuses that same source of truth rather
+        // than re-deriving it.
+        const anyKocNeeded = lineItems.some(li => li.requires_koc);
+        const kocLabelId = anyKocNeeded ? await findKocLabelId(selectedGroup.trello_board_id) : null;
+        if (anyKocNeeded && !kocLabelId) {
+          console.warn('A sold service needs a Kick-Off Call, but no "Needs KOC" label was found on this board — card(s) created without the label.');
+        }
+
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
           const wf = soldWorkflows[wfIdx];
           const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
           const intakeDesc = buildIntakeDesc(originalWorkflows[wfIdx]);
+          const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflows[wfIdx] && li.requires_koc);
 
           if (template && template.type === 'card') {
             // Single-card template (e.g. "Display", "SEM") — copy just this one card,
@@ -3213,7 +3322,11 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               // log it and skip rather than attempt a copy that's certain to fail too.
               console.warn(`Could not resolve single-card template for workflow "${originalWorkflows[wfIdx]}" (ref ${template.ref}) — no card added. Check the Trello Template field on the relevant service.`);
             } else {
-              const cn = (templateCard.name || wf).trim();
+              // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
+              // the business name. Appended HERE, before cardExists(), so the dedup check
+              // and the actual Trello name always agree — a resubmission checks for THIS
+              // exact suffixed name, not the bare tactic name.
+              const cn = (templateCard.name || wf).trim() + ' — ' + bizName;
               if (!cardExists(cn)) {
                 const copyRes = await fetch(PROXY, {
                   method: 'POST',
@@ -3233,6 +3346,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                       body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: fullDesc.slice(0, 16000) })
                     });
                   }
+                  if (workflowNeedsKoc) await attachKocLabel(copiedCard.id, kocLabelId);
                 } else {
                   console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
                 }
@@ -3251,12 +3365,16 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             if (Array.isArray(templateCards)) {
               for (const card of templateCards) {
                 if (card.name.startsWith('🧪')) continue; // skip test cards
-                const cn = card.name.trim();
+                let cn = card.name.trim();
                 // Skip any template placeholder named "IO", "IO -", "IO :", etc.
                 if (isIoName(cn)) continue;
                 // Skip AE Questions cards from any template — redundant; the intake
                 // answers are written into each tactic card's description instead
                 if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
+                // Tactic — Client (2026-07-14, per Claire) — appended AFTER the filters
+                // above (which need to match the template's own plain name), but BEFORE
+                // cardExists(), so the dedup check agrees with the actual Trello name.
+                cn += ' — ' + bizName;
                 // Skip if card with this name already exists OR was just added in this run
                 if (cardExists(cn)) continue;
 
@@ -3281,19 +3399,24 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                     body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
                   });
                 }
+                if (workflowNeedsKoc) await attachKocLabel(copiedCard.id, kocLabelId);
               }
             } else {
               // Template list id configured but its cards couldn't be read (e.g. the
               // list was deleted) — fall back to a plain card so submission still works
-              if (!cardExists(wf)) {
+              // Tactic — Client (2026-07-14, per Claire)
+              const fallbackName = wf + ' — ' + bizName;
+              if (!cardExists(fallbackName)) {
                 const fallbackDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
-                await fetch(PROXY, {
+                const fallbackRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: wf, desc: fallbackDesc, pos: 'bottom' })
+                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: fallbackDesc, pos: 'bottom' })
                 });
-                addedCardNames.add(norm(wf));
+                const fallbackCard = await fallbackRes.json();
+                addedCardNames.add(norm(fallbackName));
                 cardsAdded++;
+                if (workflowNeedsKoc && fallbackCard?.id) await attachKocLabel(fallbackCard.id, kocLabelId);
               }
             }
           } else {
@@ -3301,15 +3424,19 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             // every sold line item sharing this workflow (2026-07-13) — since this card
             // has no template content at all, it's the one place a modifier/add-on
             // riding alongside the main service could otherwise go completely unmentioned.
-            if (!cardExists(wf)) {
+            // Tactic — Client (2026-07-14, per Claire)
+            const plainName = wf + ' — ' + bizName;
+            if (!cardExists(plainName)) {
               const plainDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
-              await fetch(PROXY, {
+              const plainRes = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: wf, desc: plainDesc, pos: 'bottom' })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: plainName, desc: plainDesc, pos: 'bottom' })
               });
-              addedCardNames.add(norm(wf));
+              const plainCard = await plainRes.json();
+              addedCardNames.add(norm(plainName));
               cardsAdded++;
+              if (workflowNeedsKoc && plainCard?.id) await attachKocLabel(plainCard.id, kocLabelId);
             }
           }
         }
@@ -4524,6 +4651,14 @@ async function loadCatalog() {
     if (r.standalone_hosting_service_id) hlm[r.id] = r.standalone_hosting_service_id;
   });
   HOSTING_LOCK_MAP = hlm;
+
+  // AUTO_SELECT_MAP: any service carrying an auto_select_service_id — see the comment
+  // above its declaration.
+  const asm = {};
+  services.forEach(r => {
+    if (r.auto_select_service_id) asm[r.id] = r.auto_select_service_id;
+  });
+  AUTO_SELECT_MAP = asm;
 
   console.log(`[Catalog] Loaded ${Object.keys(SERVICE_DATA).length} services, ${Object.keys(INTAKE_FORMS).length} intake forms from Supabase.`);
 }
