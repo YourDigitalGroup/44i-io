@@ -2485,9 +2485,29 @@ file (same completeness check used for every admin-editor addition this project)
   If still unresolved after that, worth investigating: Chrome Sync (if enabled, form/
   autofill data can sync from a DIFFERENT device where addresses were never cleared),
   or a broader/newer Chrome "form fill predictions" feature possibly separate from the
-  Addresses/Payment settings pages already checked.
-
----
+  Addresses/Payment settings pages already checked. UPDATE (2026-07-14): Claire confirmed
+  the delayed post-load guard (695a44c) did NOT fix it — still auto-fills. This is a real,
+  useful data point: it means the guard's own precondition (only runs when `loadDraft()`
+  found NO saved draft) may be wrong — worth checking next whether a draft IS actually
+  present again at the point of the failure (i.e., something is still writing one after a
+  clean reset, which would explain why a guard that only acts on "no draft found" never
+  fires) rather than continuing to assume this is purely an external/browser-level fill.
+- **NEW — AE self-service "My IOs" view (in progress + submitted), raised by Claire's boss
+  2026-07-14.** Not scoped yet — needs answers before any design/build:
+  1. Should this show every order for the AE's OWN name only, or everything for whichever
+     group they're viewing (closer to a lightweight version of the admin Orders tab)?
+  2. "In progress" is the harder half — today, an in-progress IO exists ONLY as a
+     browser-local draft (localStorage, one device/tab, never synced to Supabase at all).
+     Showing "in progress" IOs to an AE — especially across devices — would mean turning
+     drafts into a real server-side record (new table, or an `orders`-table draft/incomplete
+     status), which is a real architecture change, not a small addition. Needs Claire's/her
+     boss's confirmation this is actually intended before scoping further.
+  3. Related to the concurrent-AE question also raised today: if this view is per-AE by
+     name (not by login), two AEs with the same or similar typed name could see each
+     other's IOs, or an AE could see none if their name is typed inconsistently across
+     submissions (same class of fragility the AE picker/roster was built to fix) — the
+     existing `ae` roster table might be the right identity anchor for this instead of a
+     free-typed name, worth deciding together with the answers above.
 
 ## KEY PRINCIPLES (how we've been working)
 
