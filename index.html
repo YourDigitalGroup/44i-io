@@ -4719,7 +4719,11 @@ function renderPriceCells() {
       const existingVal = selected[id]?.quotedPriceEntered
         ? (isOneTime ? selected[id].fee : selected[id].recurring)
         : '';
-      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quoted Price" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
+      // Fits inside the shared 96px .c-fee column (a 100px input was overflowing it,
+      // clipping the placeholder text to "Quoted Pric" — found live). Shortened
+      // placeholder + narrower box + tighter padding, matching the qty box's own
+      // same-constraint compact styling right below.
+      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quoted $" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:76px;padding:3px 4px;font-size:11px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
     } else if (r.pricing_mode === 'per_unit') {
       // 96px fixed column width (.c-fee, shared by every table) can't fit "$175 ×
       // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
@@ -4732,7 +4736,11 @@ function renderPriceCells() {
 
     const freqTd = document.createElement('td');
     freqTd.className = 'svc-freq';
-    freqTd.textContent = freq;
+    // QUR items (2026-07-14, per Claire): show "QUR" itself in the Frequency column
+    // instead of the generic "—", now that the Fee column holds an input box rather than
+    // static "QUR" text — keeps the "this needs a quote" signal visible regardless of
+    // whether the AE has typed a price into the box yet.
+    freqTd.textContent = fee === 'QUR' ? 'QUR' : freq;
 
     serviceTd.after(feeTd);
     feeTd.after(freqTd);
