@@ -2526,6 +2526,27 @@ file (same completeness check used for every admin-editor addition this project)
   order, and confirmed the PDF now attaches to the Trello IO card successfully. Feature is
   fully working end-to-end: real PDF attachment on every submission, no silent
   false-success logging.
+- **New client didn't appear in Client picker until a hard refresh — FIXED 2026-07-14
+  (`7119cf9`).** Claire noticed: submit an IO for a brand-new client, then immediately
+  "Submit Another IO" for the same group — the client just created wasn't selectable in
+  the Client picker dropdown yet. Root cause: `CLIENT_ROSTER` (the picker's data source,
+  via `get_group_clients`) was only ever loaded once, on the initial group page load
+  (`loadGroup()`/`applyDevGroup()`) — nothing re-loaded it after a submission actually
+  created a new client record. Fixed by calling `loadClientRoster(selectedGroup.id)`
+  right after a successful submit, before the success page shows, so the very next
+  submission's picker is already current. Not yet retested live.
+- **Duplicate-client-by-typo protection — asked about 2026-07-14, answer: partially
+  covered already, gap flagged not built.** Claire asked whether anything catches an AE
+  typing a client name that matches an EXISTING client instead of using the picker.
+  What's already there (built earlier, `find_or_create_client` RPC): if no `client_id` is
+  passed, it falls back to a case-insensitive EXACT name match within the same group — so
+  typing the exact same business name (any case) as an existing client correctly links to
+  that client's existing record and updates it, rather than creating a duplicate. What's
+  NOT built: no live front-end warning for a near-match/typo (e.g. a missing "Inc", extra
+  space, or a genuine misspelling) — that still creates a genuinely separate client
+  record, since the RPC's fallback only catches an exact match, not a fuzzy one. Flagged
+  to Claire rather than built unprompted; a "did you mean [existing client]?" live check
+  against the roster while typing the business name would close this gap if wanted.
 - **Dev-picker group switch not clearing prior form data — FIXED 2026-07-14 (`528b6a0`).**
   Claire noticed while prepping for an AM walkthrough: using the `?dev=1` picker dropdown
   to switch between groups left the previously-entered business info/selected services on
