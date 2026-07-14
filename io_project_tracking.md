@@ -2485,9 +2485,52 @@ file (same completeness check used for every admin-editor addition this project)
   If still unresolved after that, worth investigating: Chrome Sync (if enabled, form/
   autofill data can sync from a DIFFERENT device where addresses were never cleared),
   or a broader/newer Chrome "form fill predictions" feature possibly separate from the
-  Addresses/Payment settings pages already checked.
-
----
+  Addresses/Payment settings pages already checked. UPDATE (2026-07-14): Claire confirmed
+  the delayed post-load guard (695a44c) did NOT fix it — still auto-fills. This is a real,
+  useful data point: it means the guard's own precondition (only runs when `loadDraft()`
+  found NO saved draft) may be wrong — worth checking next whether a draft IS actually
+  present again at the point of the failure (i.e., something is still writing one after a
+  clean reset, which would explain why a guard that only acts on "no draft found" never
+  fires) rather than continuing to assume this is purely an external/browser-level fill.
+  **RESOLVED 2026-07-14 (`0b53416`) — was never browser/extension autofill at all.**
+  Following exactly the lead above: the `[loadDraft]` log on a fresh reload showed a real
+  saved draft present, with `selected:{}` (correctly empty) but `biz`/`email`/campaign
+  dates still holding the PREVIOUS submission's values — proving `resetForm()` itself was
+  writing this stale draft back out, not something external restoring it. Root cause: the
+  `formPages` variable (`'#page-1, #page-2, #page-3'`) is a string CONTAINING COMMAS,
+  interpolated directly before `input[type=x]` in several `querySelectorAll` calls. As a
+  CSS selector LIST, only the segment immediately after `#page-3` (no comma before it)
+  ever got the type descendant-selector attached — `#page-1` and `#page-2` became bare,
+  inert selectors matching the page `<div>`s themselves. Every text/email/date/number
+  field AND every checked/selected row on pages 1–2 was silently excluded from clearing
+  the entire time. It looked like most fields cleared correctly purely because those
+  particular fields happened to be empty in every test run — only fields with real
+  leftover data (biz-name, email, campaign dates) exposed it. Also explains the earlier
+  "rows still visually highlighted despite unchecked checkboxes" report from the same
+  investigation — same bug, the `tr.selected` line. Fixed by looping over each page
+  individually instead of interpolating the joined string; confirmed via direct string-level
+  reproduction of the broken vs. fixed selector construction (not yet confirmed by Claire
+  live at time of writing — do that first before removing the temporary diagnostic
+  `console.log` calls still present in `loadDraft`/`autoSaveDraft`/`clearDraft`/`resetForm`,
+  and before removing the now-probably-unnecessary `readonly`/`autocomplete=off`/delayed-
+  guard mitigations added while this was misdiagnosed as autofill — those are harmless to
+  leave, but were never the real fix and can be cleaned up once the real fix is confirmed).
+- **NEW — AE self-service "My IOs" view (in progress + submitted), raised by Claire's boss
+  2026-07-14.** Not scoped yet — needs answers before any design/build:
+  1. Should this show every order for the AE's OWN name only, or everything for whichever
+     group they're viewing (closer to a lightweight version of the admin Orders tab)?
+  2. "In progress" is the harder half — today, an in-progress IO exists ONLY as a
+     browser-local draft (localStorage, one device/tab, never synced to Supabase at all).
+     Showing "in progress" IOs to an AE — especially across devices — would mean turning
+     drafts into a real server-side record (new table, or an `orders`-table draft/incomplete
+     status), which is a real architecture change, not a small addition. Needs Claire's/her
+     boss's confirmation this is actually intended before scoping further.
+  3. Related to the concurrent-AE question also raised today: if this view is per-AE by
+     name (not by login), two AEs with the same or similar typed name could see each
+     other's IOs, or an AE could see none if their name is typed inconsistently across
+     submissions (same class of fragility the AE picker/roster was built to fix) — the
+     existing `ae` roster table might be the right identity anchor for this instead of a
+     free-typed name, worth deciding together with the answers above.
 
 ## KEY PRINCIPLES (how we've been working)
 

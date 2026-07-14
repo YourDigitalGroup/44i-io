@@ -3799,16 +3799,29 @@ function resetForm() {
   setWebSectionDisabled('web-ot', false);
   setWebSectionDisabled('web-mo', false);
   // Scope the wipe to the IO form pages — not the admin panel
-  const formPages = '#page-1, #page-2, #page-3';
-  // FIXED (2026-07-13, found live): target service-row checkboxes directly by their
-  // data-id row (the ONLY thing that pattern is used for in this app) rather than
-  // relying on the broad formPages container scoping alone — belt-and-suspenders
-  // after finding the actual bug was a missed <select> below, not this line, but this
-  // is the more reliable selector regardless of how a given row ends up nested.
+  // FIXED (2026-07-14, found live — the ACTUAL root cause of the whole "Submit Another
+  // IO leaves stale data" saga, misdiagnosed for two days as browser/extension autofill):
+  // `formPages` is a STRING CONTAINING COMMAS ("#page-1, #page-2, #page-3"). Interpolating
+  // it directly before " input[type=x]" doesn't apply that descendant selector to all
+  // three pages — as a CSS selector LIST, only the segment immediately after "#page-3"
+  // (no comma in between) ever gets combined with "input[type=x]"; "#page-1" and
+  // "#page-2" become bare, standalone selectors matching the page <div>s themselves,
+  // which have no .value to clear. Every text/email/date/number field on pages 1 and 2
+  // was silently excluded from this line the whole time — it only looked like most
+  // fields were clearing correctly because those particular fields happened to be empty
+  // in every test run so far; the ones with real leftover data (biz-name, email,
+  // campaign dates) were what actually exposed it. Same bug affected the checkbox and
+  // tr.selected lines below (only page-3's would ever be touched) — fixed by looping
+  // over each page individually instead of interpolating the comma-joined string.
+  const formPages = ['#page-1', '#page-2', '#page-3'];
+  formPages.forEach(page => {
+    document.querySelectorAll(`${page} input[type=checkbox]`).forEach(cb => cb.checked = false);
+    document.querySelectorAll(`${page} tr.selected`).forEach(tr => tr.classList.remove('selected'));
+    document.querySelectorAll(`${page} input[type=text], ${page} input[type=email], ${page} input[type=tel], ${page} input[type=date], ${page} input[type=time], ${page} input[type=number], ${page} textarea`).forEach(i => i.value = '');
+  });
+  // Kept as a second, redundant safety net now that the root cause above is fixed —
+  // harmless to leave in place.
   document.querySelectorAll('tr[data-id] input[type=checkbox]').forEach(cb => cb.checked = false);
-  document.querySelectorAll(`${formPages} input[type=checkbox]`).forEach(cb => cb.checked = false);
-  document.querySelectorAll(`${formPages} tr.selected`).forEach(tr => tr.classList.remove('selected'));
-  document.querySelectorAll(`${formPages} input[type=text], ${formPages} input[type=email], ${formPages} input[type=tel], ${formPages} input[type=date], ${formPages} input[type=time], ${formPages} input[type=number], ${formPages} textarea`).forEach(i => i.value = '');
   // FIXED (2026-07-13, found live): campaign-length is a <select>, not a text input —
   // same blind spot the AE/Client pickers had. koc-time is also a <select>, disabled
   // above but never had its stale VALUE cleared.
