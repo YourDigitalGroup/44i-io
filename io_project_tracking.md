@@ -2433,10 +2433,30 @@ file (same completeness check used for every admin-editor addition this project)
      a new Edge Function (or an addition to `claude-proxy`).
   2. ~~Recipients field shape~~ — RESOLVED, see above. Use `selectedGroup.io_recipient`,
      split on commas.
-  3. **Email content** — not decided (a short "new IO submitted" notification+link vs. a
-     fuller summary of client/services/totals).
-  Claire is getting AM confirmation on this (2026-07-14) — do not build the send capability
-  itself from a guess until that's back, but the recipients-field research is done.
+  3. **Email content — RESOLVED 2026-07-14: real PDF attachment, not inline HTML/text.**
+     Context: the CURRENT (WordPress-based) IO submission process Claire's team is used to
+     emails the team a notification with the submitted IO as a PDF attachment (there, it's
+     a human-uploaded file, not machine-generated). An inline-HTML-email alternative (reuse
+     `printIO()`'s existing styled output directly as the email body, no file at all) was
+     proposed as a simpler option — Claire's boss confirmed a real PDF attachment specifically,
+     so accounting can download it. This means actual PDF GENERATION is now a confirmed
+     requirement, not just a nice-to-have — same underlying capability the parked
+     IO-card-history feature below also needs, so building it once should serve both.
+  Still needed before building:
+  - **Email provider** — none chosen yet (see point 1 above).
+  - **How the PDF actually gets generated** — two real approaches, needs a decision:
+    (a) Client-side generation in the browser at submit time (a JS library like jsPDF,
+        possibly combined with html2canvas to capture printIO()'s existing layout) — no new
+        vendor/account, but visual fidelity to the existing print layout takes more care/
+        rebuilding, and quality can suffer if done as a rendered screenshot rather than a
+        native PDF layout.
+    (b) A hosted HTML-to-PDF conversion API called from the Edge Function — reuses
+        `printIO()`'s existing HTML directly with minimal rework, generally cleaner/more
+        reliable output (real browser rendering engine), but is a NEW third-party vendor
+        (new account, new API key/secret, likely per-conversion cost) — same category of
+        decision as the email provider itself.
+  Do not pick either approach unilaterally — this is a real cost/vendor decision, same as
+  the email provider choice, not a pure engineering call.
 - **Returning-client IO card should accumulate history, not overwrite — PARKED, flagged
   2026-07-13 (found live testing).** Today's actual behavior: submitting a new IO for a
   client who already has an "IO" card on Trello OVERWRITES that card's description with
@@ -2451,7 +2471,12 @@ file (same completeness check used for every admin-editor addition this project)
      an IO into a PDF file the code could grab), and (b) file-upload support added to the
      `claude-proxy` Edge Function (today it only proxies simple JSON/text requests to
      Trello, no multipart file upload path). Comparable in size to this week's whole Trello
-     rebuild, not a small tweak.
+     rebuild, not a small tweak. UPDATE 2026-07-14: real PDF generation is now a CONFIRMED
+     requirement anyway (Claire's boss decided the email notification needs a real PDF
+     attachment, not inline HTML — see that item above), so whichever approach gets picked
+     there (client-side library vs. hosted HTML-to-PDF API) likely serves this Trello
+     attachment need too — build once, use in both places, rather than solving PDF
+     generation twice.
   2. **Append-only text on the same card** — every past IO's text stays on the card,
      newest stacked on top, each dated — same end result (nothing lost/overwritten) with
      none of the PDF/file-upload complexity. Much smaller lift, could go in this same week.
