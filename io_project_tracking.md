@@ -2632,8 +2632,8 @@ file (same completeness check used for every admin-editor addition this project)
   by calling the existing `resetForm()` at the top of `applyDevGroup()`, same clearing
   logic already proven for Submit Another IO. Not yet retested live — Claire should
   confirm switching groups in the dev picker now shows a clean form before her AM meeting.
-- **UNRESOLVED, carries into next session (2026-07-13): Client Information fields
-  (`biz-name`/`contact-email` etc.) get silently repopulated with the PREVIOUS
+- **RESOLVED 2026-07-14 (see full root-cause writeup below) — Client Information fields
+  (`biz-name`/`contact-email` etc.) were getting silently repopulated with the PREVIOUS
   submission's data on a genuinely fresh page load (hard refresh, no draft to restore).**
   Confirmed NOT any of the following, in this order, each with real evidence:
   1. NOT our own draft-restore code — `clearDraft()`'s own before/after log confirms the
