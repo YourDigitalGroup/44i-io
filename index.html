@@ -3009,6 +3009,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           ? existingCards.find(c => isIoName(c.name))
           : null;
 
+        let ioCardId = existingIoCard?.id || null;
         if (existingIoCard) {
           // Update existing IO card
           await fetch(PROXY, {
@@ -3019,13 +3020,36 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           console.log('Updated existing IO card');
         } else {
           // Create new IO card at top
-          await fetch(PROXY, {
+          const newIoCardRes = await fetch(PROXY, {
             method: 'POST',
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
             body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: 'IO', desc: ioDesc, pos: 'top' })
           });
+          const newIoCard = await newIoCardRes.json();
+          ioCardId = newIoCard?.id || null;
           addedCardNames.add(norm('IO'));
           console.log('Created IO card');
+        }
+
+        // Attach a dated PDF snapshot of THIS submission to the IO card (2026-07-14) —
+        // the card's text description above only ever shows the LATEST IO (a returning
+        // client's second submission overwrites the first's visible text), so this is
+        // what actually preserves history: every submission adds one more PDF attachment,
+        // nothing already there ever gets removed. Wrapped in its own try/catch — a
+        // failure here (e.g. this browser's html2canvas/jsPDF didn't load) shouldn't
+        // block the tactic cards below from still being created.
+        if (ioCardId) {
+          try {
+            const { base64, fileName } = await generateIoPdfBlob();
+            await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' })
+            });
+            console.log('Attached IO PDF to card');
+          } catch(e) {
+            console.warn('Could not attach IO PDF to Trello card:', e.message);
+          }
         }
 
         // ── Step 5: Add tactic cards for new products only ──
