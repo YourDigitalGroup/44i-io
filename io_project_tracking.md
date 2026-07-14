@@ -2442,46 +2442,35 @@ file (same completeness check used for every admin-editor addition this project)
      so accounting can download it. This means actual PDF GENERATION is now a confirmed
      requirement, not just a nice-to-have — same underlying capability the parked
      IO-card-history feature below also needs, so building it once should serve both.
-  Still needed before building:
-  - **Email provider** — none chosen yet (see point 1 above).
-  - **How the PDF actually gets generated** — two real approaches, needs a decision:
-    (a) Client-side generation in the browser at submit time (a JS library like jsPDF,
-        possibly combined with html2canvas to capture printIO()'s existing layout) — no new
-        vendor/account, but visual fidelity to the existing print layout takes more care/
-        rebuilding, and quality can suffer if done as a rendered screenshot rather than a
-        native PDF layout.
-    (b) A hosted HTML-to-PDF conversion API called from the Edge Function — reuses
-        `printIO()`'s existing HTML directly with minimal rework, generally cleaner/more
-        reliable output (real browser rendering engine), but is a NEW third-party vendor
-        (new account, new API key/secret, likely per-conversion cost) — same category of
-        decision as the email provider itself.
-  Do not pick either approach unilaterally — this is a real cost/vendor decision, same as
-  the email provider choice, not a pure engineering call.
-- **Returning-client IO card should accumulate history, not overwrite — PARKED, flagged
-  2026-07-13 (found live testing).** Today's actual behavior: submitting a new IO for a
-  client who already has an "IO" card on Trello OVERWRITES that card's description with
-  the new IO, discarding the previous one's visible content entirely (the full history IS
-  still safely preserved in Supabase's `orders` table — one row per submission — this is
-  only about what's visible on the Trello card itself). Claire confirmed real client boards
-  show a growing list of past IOs attached as dated PDFs on the one IO card, not an
-  overwritten description. Two options discussed, PARKED pending Claire's AM conversation:
-  1. **Real PDF attachments** — matches what she's seen on real boards exactly, but is a
-     genuinely new capability: (a) actual PDF generation (today's `printIO()` only opens a
-     browser print dialog for a human to manually save — nothing server/client-side turns
-     an IO into a PDF file the code could grab), and (b) file-upload support added to the
-     `claude-proxy` Edge Function (today it only proxies simple JSON/text requests to
-     Trello, no multipart file upload path). Comparable in size to this week's whole Trello
-     rebuild, not a small tweak. UPDATE 2026-07-14: real PDF generation is now a CONFIRMED
-     requirement anyway (Claire's boss decided the email notification needs a real PDF
-     attachment, not inline HTML — see that item above), so whichever approach gets picked
-     there (client-side library vs. hosted HTML-to-PDF API) likely serves this Trello
-     attachment need too — build once, use in both places, rather than solving PDF
-     generation twice.
-  2. **Append-only text on the same card** — every past IO's text stays on the card,
-     newest stacked on top, each dated — same end result (nothing lost/overwritten) with
-     none of the PDF/file-upload complexity. Much smaller lift, could go in this same week.
-  Waiting on Claire's AM: is the actual PDF specifically needed (e.g. AMs want something
-  downloadable/forwardable), or does the same-card running text log satisfy the real need?
+  **RESOLVED 2026-07-14 — PDF generation approach: client-side (Option a), no vendor.**
+  Explicitly chosen over a hosted HTML-to-PDF API specifically to avoid a new recurring
+  cost ("the idea with building this is to avoid recurring costs" — Claire). Screenshot-
+  quality output confirmed acceptable — Claire's own words: current manually-uploaded IO
+  PDFs from the WordPress-based predecessor system already "look like they used a fax
+  machine from 1990," so a clean html2canvas capture is a real improvement, not a
+  downgrade. Built 2026-07-14 (`9877052`): `buildIoDocumentHtml()` extracted from
+  `printIO()` so the print view and the PDF are ALWAYS the same content (no second,
+  driftable representation of the IO — the exact risk flagged before picking this
+  approach); `generateIoPdfBlob()` renders that same HTML in a hidden iframe, captures it
+  via `html2canvas`, and wraps the result into a real multi-page PDF via `jsPDF` — both
+  free, client-side libraries loaded via CDN script tag, no account/key needed.
+  Still needed before the email send itself works: **Email provider** (see point 1 above)
+  — PDF generation itself is done and also already wired into Trello (see below).
+- **Returning-client IO card should accumulate history, not overwrite — BUILT 2026-07-14
+  (`d22d93a`), pending Edge Function deploy.** Originally flagged 2026-07-13: submitting a
+  new IO for a client who already has an "IO" card on Trello OVERWRITES that card's
+  description with the new IO, discarding the previous one's visible content (the full
+  history was always safely preserved in Supabase's `orders` table regardless — this was
+  only ever about what's visible on the Trello card itself). Resolved via the same PDF
+  generation built for the email feature (see above) — the card's text description still
+  shows the LATEST IO only (unchanged behavior), but every submission now ALSO attaches a
+  dated PDF snapshot to that same card, so nothing before it ever disappears. Needs the
+  new `trello_attach_file` Edge Function target (see `claude-proxy-index-2026-07-14.ts` in
+  scratch — real multipart file upload, different shape from every other Trello target
+  this function handles) deployed before this actually works; code is live/merged but
+  will silently do nothing for this specific piece until that Edge Function update ships
+  (wrapped in its own try/catch, so it fails quietly rather than blocking the rest of
+  submission — check Trello directly after deploying to confirm the attachment appears).
 - **UNRESOLVED, carries into next session (2026-07-13): Client Information fields
   (`biz-name`/`contact-email` etc.) get silently repopulated with the PREVIOUS
   submission's data on a genuinely fresh page load (hard refresh, no draft to restore).**
