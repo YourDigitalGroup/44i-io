@@ -1432,11 +1432,17 @@ let tlpGridState = null; // { serviceId, cap, mode, single, many: [] }
 let tlpSoftReminderAcknowledged = false; // once true, don't re-nag on re-save in the same session
 
 function renderTlpGrid(serviceId, existing) {
-  const cap = TLP_CAPS[serviceId];
-  const tierName = TLP_TIER_NAMES[serviceId];
+  // tlp-custom (2026-07-14, per Claire): no fixed tier, so its cap comes from the AE's
+  // own "how many pages were quoted?" entry instead of the TLP_CAPS lookup. Persisted as
+  // tlp_custom_quoted_pages (see serializeTlpGrid()) so it survives a reopen the same way
+  // every other TLP field does.
+  const isCustom = serviceId === 'tlp-custom';
+  const f = existing.fields || {};
+  const customPageCount = f.tlp_custom_quoted_pages || '';
+  const cap = isCustom ? (parseInt(customPageCount, 10) || 0) : TLP_CAPS[serviceId];
+  const tierName = isCustom ? 'Custom' : TLP_TIER_NAMES[serviceId];
 
   // Restore from saved fields if present, else fresh
-  const f = existing.fields || {};
   let mode = f.tlp_mode === 'multi-service' ? 'multi-service'
            : f.tlp_mode === 'single-service' ? 'single-service'
            : '';
@@ -1449,22 +1455,51 @@ function renderTlpGrid(serviceId, existing) {
   tlpGridState = { serviceId, cap, mode, single, many: many.length ? many : [''] };
   tlpSoftReminderAcknowledged = false; // fresh each time the form opens
 
+  // Disabled until a page count is entered — picking a campaign type before that would
+  // let the AE start filling in entries against a cap of 0.
+  const pageCountFieldHtml = isCustom ? `
+      <div class="modal-field" style="margin-bottom:14px">
+        <label>How many pages were quoted?</label>
+        <input type="number" min="1" id="tlp-custom-page-count" value="${esc(customPageCount)}"
+          oninput="onTlpCustomPageCountChange(this.value)"
+          style="width:120px;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+      </div>` : '';
+
   return `
     <div class="modal-section" id="tlp-grid-section">
-      <div class="modal-section-title">Locations &amp; Services — ${tierName} (up to ${cap} pages)</div>
+      ${pageCountFieldHtml}
+      <div class="modal-section-title" id="tlp-grid-title">Locations &amp; Services — ${tierName}${cap ? ` (up to ${cap} pages)` : ''}</div>
       <p style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:12px">
         A TLP campaign is either <strong>one service across multiple locations</strong>, or
-        <strong>multiple services in one location</strong>. Pick which, then add up to ${cap} entries.
+        <strong>multiple services in one location</strong>.${cap ? ` Pick which, then add up to ${cap} entries.` : ' Enter the quoted page count above first, then pick which.'}
       </p>
       <div class="modal-field" style="margin-bottom:14px">
         <label>Campaign type</label>
         <div class="radio-group" style="margin-top:6px">
-          <label><input type="radio" name="tlp-mode" value="single-service" ${mode==='single-service'?'checked':''} onchange="onTlpModeChange('single-service')"/> One service → multiple locations</label>
-          <label><input type="radio" name="tlp-mode" value="multi-service" ${mode==='multi-service'?'checked':''} onchange="onTlpModeChange('multi-service')"/> Multiple services → one location</label>
+          <label><input type="radio" name="tlp-mode" value="single-service" ${mode==='single-service'?'checked':''} onchange="onTlpModeChange('single-service')" ${cap ? '' : 'disabled'}/> One service → multiple locations</label>
+          <label><input type="radio" name="tlp-mode" value="multi-service" ${mode==='multi-service'?'checked':''} onchange="onTlpModeChange('multi-service')" ${cap ? '' : 'disabled'}/> Multiple services → one location</label>
         </div>
       </div>
-      <div id="tlp-grid-body" style="${mode ? '' : 'display:none'}"></div>
+      <div id="tlp-grid-body" style="${(mode && cap) ? '' : 'display:none'}"></div>
     </div>`;
+}
+
+// tlp-custom only (2026-07-14) — re-caps the grid live as the AE types the quoted page
+// count, trimming any already-entered rows that now exceed the new cap, and enabling the
+// Campaign type radios the moment a real count is entered.
+function onTlpCustomPageCountChange(val) {
+  if (!tlpGridState) return;
+  const newCap = parseInt(val, 10) || 0;
+  tlpGridState.cap = newCap;
+  if (newCap > 0 && tlpGridState.many.length > newCap) {
+    tlpGridState.many = tlpGridState.many.slice(0, newCap);
+  }
+  const titleEl = document.getElementById('tlp-grid-title');
+  if (titleEl) titleEl.textContent = `Locations & Services — Custom${newCap ? ` (up to ${newCap} pages)` : ''}`;
+  document.querySelectorAll('input[name=tlp-mode]').forEach(r => { r.disabled = !newCap; });
+  const bodyWrap = document.getElementById('tlp-grid-body');
+  if (bodyWrap) bodyWrap.style.display = (tlpGridState.mode && newCap) ? '' : 'none';
+  if (tlpGridState.mode && newCap) renderTlpGridBody();
 }
 
 function onTlpModeChange(mode) {
@@ -1526,6 +1561,9 @@ function onTlpManyInput(i, val) {
 function serializeTlpGrid(fields) {
   const s = tlpGridState;
   if (!s || !s.mode) return;
+  // tlp-custom's own quoted page count — persisted so reopening the form restores the
+  // same cap instead of resetting to blank.
+  if (s.serviceId === 'tlp-custom') fields.tlp_custom_quoted_pages = String(s.cap || '');
   fields.tlp_mode = s.mode; // 'single-service' | 'multi-service' (raw key for restore)
   fields.tlp_mode_label = s.mode === 'single-service'
     ? 'One service → multiple locations'
@@ -1571,13 +1609,15 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
   });
 
   // ── TLP STRUCTURED GRID ───────────────────────────────────────
-  // Appended AFTER the existing TLP questions, for the three capped tiers
-  // only (Starter/Builder/Pro). tlp-custom is intentionally untouched
-  // (it loads no intake form today; pending AM decision). The grid enforces
-  // the either/or rule: one service → many locations, OR many services →
-  // one location — never a matrix. Tier sets the hard max; minimum is a
-  // soft reminder. Serializes to readable string fields on save.
-  if (cfg.intake === 'tlp' && TLP_CAPS[serviceId]) {
+  // For the three capped tiers (Starter/Builder/Pro), plus tlp-custom
+  // (2026-07-14, per Claire — was previously excluded pending this exact
+  // decision). The grid enforces the either/or rule: one service → many
+  // locations, OR many services → one location — never a matrix. A fixed
+  // tier sets the hard max; tlp-custom's max instead comes from the AE's own
+  // "how many pages were quoted?" entry (see renderTlpGrid()). Minimum is a
+  // soft reminder (fixed tiers only). Serializes to readable string fields
+  // on save.
+  if (cfg.intake === 'tlp' && (TLP_CAPS[serviceId] || serviceId === 'tlp-custom')) {
     html += renderTlpGrid(serviceId, existing);
   }
 
@@ -1633,9 +1673,11 @@ function saveIntakeForm() {
   }
 
   // Check if fully completed (all fields have values) or partial
+  // tlp-custom (2026-07-14) now gets a real grid too — the "!TLP_CAPS[sid]" escape hatch
+  // that used to let it skip the tlpGridFilled requirement no longer applies to it.
   const allFields = formDef.sections.flatMap(s => s.fields);
   const filledCount = allFields.filter(f => fields[f.key]).length;
-  const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !TLP_CAPS[sid] || tlpGridFilled);
+  const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !(TLP_CAPS[sid] || sid === 'tlp-custom') || tlpGridFilled);
 
   intakeData[formKey] = {
     fields,
@@ -2192,6 +2234,28 @@ function updateQty(input, id) {
   if (selected[id]) selected[id].qty = parseInt(input.value, 10) || 1;
 }
 
+// Quoted Price (2026-07-14, per Claire) — QUR (Quote Upon Request) items have no set
+// price until the AE has an actual quote in hand; this lets them enter it directly on
+// the row, same live-onchange + auto-check pattern as Spend/Quantity above. Writes into
+// the SAME fee/recurring fields a normally-priced service would use (picking whichever
+// one matches the service's billing_type) rather than a separate field, so every
+// existing total/Review/printed-IO/Trello-description calc already sums it correctly
+// with no further changes needed anywhere else — only the "is this still unpriced?"
+// display checks needed updating (buildReview, buildIoDocumentHtml).
+// `quotedPriceEntered` is set from whether the input has ANY text, not from the amount
+// being > 0 — so a genuine $0 quote still displays as "priced," not silently reverting
+// to "Quote Upon Request" just because the number happens to be zero (same reasoning as
+// `qty`'s mere presence, not its value, signaling a per-unit item elsewhere).
+function updateQuotedPrice(input, id) {
+  autoCheckIfNeeded(id);
+  if (!selected[id]) return;
+  const r = CATALOG_ROWS[id];
+  const amount = parseFloat(input.value) || 0;
+  if (r?.billing_type === 'one_time') selected[id].fee = amount;
+  else selected[id].recurring = amount;
+  selected[id].quotedPriceEntered = input.value !== '';
+}
+
 // ── SINGLE-SELECT CHECKBOX GROUPS ────────────────────────────
 // Behaves like radio buttons but uses checkboxes so the selected
 // item can be deselected by clicking it again.
@@ -2401,7 +2465,19 @@ function syncRowInputs() {
     // value per service), but kept explicit rather than relying on that never happening.
     const qtyInput = row.querySelector('input[type=number].qty-field');
     if (qtyInput) selected[id].qty = parseInt(qtyInput.value, 10) || 1;
-    const spendInput = row.querySelector('input[type=number]:not(.qty-field)');
+    // Quoted Price (2026-07-14) has its own class for the same reason qty does — without
+    // excluding it here too, a QUR row's quoted-price input would be misidentified as the
+    // ad-spend input below and silently overwrite `selected[id].spend` with the quoted
+    // dollar amount instead of the fee/recurring field it actually belongs in.
+    const quotedInput = row.querySelector('input[type=number].quoted-price-field');
+    if (quotedInput) {
+      const r = CATALOG_ROWS[id];
+      const amount = parseFloat(quotedInput.value) || 0;
+      if (r?.billing_type === 'one_time') selected[id].fee = amount;
+      else selected[id].recurring = amount;
+      selected[id].quotedPriceEntered = quotedInput.value !== '';
+    }
+    const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
   });
 }
@@ -2571,7 +2647,13 @@ function buildReview() {
     // IO is the actual contract, so it should show the same math as this internal review,
     // not a simplified version. Keeping them consistent avoids exactly the kind of
     // discrepancy ("the document says X, the record says Y") that could become a dispute.
-    const feeDisplay = data.is_qur
+    // Once a QUR item's quoted price has actually been entered, it falls through to the
+    // SAME fee/recurring display logic every normally-priced item already uses below —
+    // the quoted amount was written directly into data.fee/data.recurring (whichever
+    // this service's billing_type calls for), so a one-time QUR shows in this Fee column
+    // and a recurring QUR correctly shows '—' here and its amount in the Recurring
+    // column instead, exactly like any other recurring service.
+    const feeDisplay = (data.is_qur && !data.quotedPriceEntered)
       ? '<span style="color:#B45309;font-weight:600">Quote Upon Request</span>'
       : (data.qty != null && data.fee > 0) ? `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}` : (data.fee > 0 ? fmt(data.fee) : '—');
     // Recurring column: ONLY genuinely recurring/spend content — a one-time item's total
@@ -3622,7 +3704,9 @@ function buildIoDocumentHtml() {
       // wording buildReview() now shows, keeping the printed contract consistent with the
       // internal Step 3 review exactly, per Claire's established principle for this
       // function (same reasoning as the qty-display consistency above).
-      if (data.is_qur) {
+      // Once quoted, falls through to the normal amount composition below — same
+      // reasoning as buildReview()'s identical check.
+      if (data.is_qur && !data.quotedPriceEntered) {
         amtCol = 'Quote Upon Request';
       } else if (data.qty != null) {
         amtCol = fmt(data.fee) + ' × ' + qty + ' = ' + fmt(feeTotal) + (recurringTotal > 0 || data.spend > 0 ? ' one-time' : '');
@@ -4028,6 +4112,7 @@ function buildDraft() {
     spendValues: {},
     noteValues: {},
     qtyValues: {},
+    quotedValues: {},
   };
   Object.keys(selected).forEach(id => {
     const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -4035,11 +4120,15 @@ function buildDraft() {
     // .qty-field must be excluded here — same fix as syncRowInputs(). Missed this
     // function originally; caught live when a typed quantity ("3") got saved into the
     // draft as spend and, on restore, corrupted selected[id].spend to $3/mo.
-    const spendInput = row.querySelector('input[type=number]:not(.qty-field)');
+    // .quoted-price-field (2026-07-14) excluded for the identical reason — a QUR item's
+    // quoted price would otherwise be captured/restored as spend instead.
+    const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     const qtyInput   = row.querySelector('input[type=number].qty-field');
+    const quotedInput = row.querySelector('input[type=number].quoted-price-field');
     const noteInput  = row.querySelector('input[type=text]');
     if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
     if (qtyInput && qtyInput.value) draft.qtyValues[id] = qtyInput.value;
+    if (quotedInput && quotedInput.value) draft.quotedValues[id] = quotedInput.value;
     if (noteInput && noteInput.value) draft.noteValues[id] = noteInput.value;
   });
   return draft;
@@ -4116,7 +4205,8 @@ function loadDraft() {
           // a per-unit item's saved quantity was restored INTO selected[id].spend instead
           // of selected[id].qty, corrupting the monthly total with a bogus "$3/mo" style
           // charge (caught live, matched exactly to the quantity that had been typed).
-          const input = row.querySelector('input[type=number]:not(.qty-field)');
+          // .quoted-price-field (2026-07-14) excluded for the identical reason.
+          const input = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
           if (input) { input.value = val; if (selected[id]) selected[id].spend = parseFloat(val) || 0; }
         });
       }
@@ -4126,6 +4216,18 @@ function loadDraft() {
           if (!row) return;
           const input = row.querySelector('input[type=number].qty-field');
           if (input) { input.value = val; if (selected[id]) selected[id].qty = parseInt(val, 10) || 1; }
+        });
+      }
+      if (d.quotedValues) {
+        // Only restores the visible DOM input's value — selected[id].fee/.recurring/
+        // .quotedPriceEntered are already correctly restored above via d.selected itself
+        // (buildDraft() saves the whole selected object directly, quoted price included),
+        // this just makes the on-screen box show what was typed before the reload.
+        Object.entries(d.quotedValues).forEach(([id, val]) => {
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          if (!row) return;
+          const input = row.querySelector('input[type=number].quoted-price-field');
+          if (input) input.value = val;
         });
       }
       if (d.noteValues) {
@@ -4566,7 +4668,9 @@ function renderPriceCells() {
     // here, a second call mistook that box for a genuine ad-spend input, left the STALE old
     // fee cell in place instead of removing it, and re-inserted it into the spend slot,
     // producing a duplicated "$175 × box" and a misaligned Notes column.
-    const spendTd   = tds.find(td => td.querySelector('input[type=number]:not(.qty-field)'));
+    // .quoted-price-field (2026-07-14) excluded for the identical reason — a QUR row's
+    // own quoted-price input is also an input[type=number].
+    const spendTd   = tds.find(td => td.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)'));
 
     // Closes "label drift": refreshes the service name from the catalog's `label` field
     // for EVERY row, not just sections already converted to dynamic generation (alc/rep/
@@ -4601,7 +4705,22 @@ function renderPriceCells() {
     // syncRowInputs()/renderPriceCells distinguish this from a genuine ad-spend input
     // (never both on the same row in practice — pricing_mode is one value per service —
     // but kept explicit for safety).
-    if (r.pricing_mode === 'per_unit') {
+    if (fee === 'QUR') {
+      // Quoted Price (2026-07-14, per Claire — "similar to Spend, but say Quoted
+      // Price"): a QUR item has no set price until the AE has an actual quote, so this
+      // replaces the plain "QUR" text with a live input, styled/sized like the Spend
+      // input elsewhere. `.quoted-price-field` class (not `.qty-field`, never both on
+      // the same row in practice) lets syncRowInputs()/buildDraft()/renderPriceCells
+      // distinguish this from a genuine ad-spend input — see each of those functions'
+      // own comments for why that distinction actually matters. Preserves whatever the
+      // AE already typed across a re-render (e.g. a dev-picker group switch), reading
+      // straight from `selected[id]` — the same live state updateQuotedPrice() writes to.
+      const isOneTime = r.billing_type === 'one_time';
+      const existingVal = selected[id]?.quotedPriceEntered
+        ? (isOneTime ? selected[id].fee : selected[id].recurring)
+        : '';
+      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quoted Price" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
+    } else if (r.pricing_mode === 'per_unit') {
       // 96px fixed column width (.c-fee, shared by every table) can't fit "$175 ×
       // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
       // Deliberate 2-line stack instead: fee on top, compact "× [box]" beneath,
