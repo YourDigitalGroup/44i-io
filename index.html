@@ -2716,6 +2716,42 @@ async function computeFifthListPosition(boardId) {
   }
 }
 
+// Finds the real id of the board's existing "Needs KOC" label (2026-07-14, per Claire —
+// exact title "Needs KOC", yellow) so it can be ATTACHED to cards via trello_attach_label,
+// rather than creating a fresh duplicate label per card (which trello_add_label would do).
+// Matched by name (case-insensitive), not color alone, since color isn't unique on a
+// board. Returns null (never throws) if the board has no such label yet — callers should
+// log a warning and skip labeling rather than fail the whole submission over it.
+async function findKocLabelId(boardId) {
+  try {
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'trello_get_labels', board_id: boardId })
+    });
+    const labels = await res.json();
+    if (!Array.isArray(labels)) return null;
+    const match = labels.find(l => (l.name || '').trim().toLowerCase() === 'needs koc');
+    return match?.id || null;
+  } catch (e) {
+    console.warn('Could not look up the "Needs KOC" label:', e.message);
+    return null;
+  }
+}
+
+async function attachKocLabel(cardId, kocLabelId) {
+  if (!kocLabelId) return;
+  try {
+    await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'trello_attach_label', card_id: cardId, label_id: kocLabelId })
+    });
+  } catch (e) {
+    console.warn('Could not attach the "Needs KOC" label to card', cardId, ':', e.message);
+  }
+}
+
 // ── SUBMIT ────────────────────────────────────────────────────
 async function submitIO() {
   const btn = document.getElementById('submit-btn');
@@ -3250,10 +3286,22 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         let cardsAdded = 0;
         const originalWorkflows = [...workflows]; // same order as soldWorkflows, pre-tier-remap
 
+        // "Needs KOC" label (2026-07-14, per Claire) — looked up ONCE per submission
+        // (not per card) and only if something sold actually needs it, since it's an
+        // extra Trello API call. `li.requires_koc` already exists on each line item
+        // (see its own comment above), so this reuses that same source of truth rather
+        // than re-deriving it.
+        const anyKocNeeded = lineItems.some(li => li.requires_koc);
+        const kocLabelId = anyKocNeeded ? await findKocLabelId(selectedGroup.trello_board_id) : null;
+        if (anyKocNeeded && !kocLabelId) {
+          console.warn('A sold service needs a Kick-Off Call, but no "Needs KOC" label was found on this board — card(s) created without the label.');
+        }
+
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
           const wf = soldWorkflows[wfIdx];
           const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
           const intakeDesc = buildIntakeDesc(originalWorkflows[wfIdx]);
+          const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflows[wfIdx] && li.requires_koc);
 
           if (template && template.type === 'card') {
             // Single-card template (e.g. "Display", "SEM") — copy just this one card,
@@ -3298,6 +3346,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                       body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: fullDesc.slice(0, 16000) })
                     });
                   }
+                  if (workflowNeedsKoc) await attachKocLabel(copiedCard.id, kocLabelId);
                 } else {
                   console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
                 }
@@ -3350,6 +3399,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                     body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
                   });
                 }
+                if (workflowNeedsKoc) await attachKocLabel(copiedCard.id, kocLabelId);
               }
             } else {
               // Template list id configured but its cards couldn't be read (e.g. the
@@ -3358,13 +3408,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               const fallbackName = wf + ' — ' + bizName;
               if (!cardExists(fallbackName)) {
                 const fallbackDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
-                await fetch(PROXY, {
+                const fallbackRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
                   body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: fallbackDesc, pos: 'bottom' })
                 });
+                const fallbackCard = await fallbackRes.json();
                 addedCardNames.add(norm(fallbackName));
                 cardsAdded++;
+                if (workflowNeedsKoc && fallbackCard?.id) await attachKocLabel(fallbackCard.id, kocLabelId);
               }
             }
           } else {
@@ -3376,13 +3428,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             const plainName = wf + ' — ' + bizName;
             if (!cardExists(plainName)) {
               const plainDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
-              await fetch(PROXY, {
+              const plainRes = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
                 body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: plainName, desc: plainDesc, pos: 'bottom' })
               });
+              const plainCard = await plainRes.json();
               addedCardNames.add(norm(plainName));
               cardsAdded++;
+              if (workflowNeedsKoc && plainCard?.id) await attachKocLabel(plainCard.id, kocLabelId);
             }
           }
         }
