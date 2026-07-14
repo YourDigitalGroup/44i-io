@@ -2192,6 +2192,28 @@ function updateQty(input, id) {
   if (selected[id]) selected[id].qty = parseInt(input.value, 10) || 1;
 }
 
+// Quoted Price (2026-07-14, per Claire) — QUR (Quote Upon Request) items have no set
+// price until the AE has an actual quote in hand; this lets them enter it directly on
+// the row, same live-onchange + auto-check pattern as Spend/Quantity above. Writes into
+// the SAME fee/recurring fields a normally-priced service would use (picking whichever
+// one matches the service's billing_type) rather than a separate field, so every
+// existing total/Review/printed-IO/Trello-description calc already sums it correctly
+// with no further changes needed anywhere else — only the "is this still unpriced?"
+// display checks needed updating (buildReview, buildIoDocumentHtml).
+// `quotedPriceEntered` is set from whether the input has ANY text, not from the amount
+// being > 0 — so a genuine $0 quote still displays as "priced," not silently reverting
+// to "Quote Upon Request" just because the number happens to be zero (same reasoning as
+// `qty`'s mere presence, not its value, signaling a per-unit item elsewhere).
+function updateQuotedPrice(input, id) {
+  autoCheckIfNeeded(id);
+  if (!selected[id]) return;
+  const r = CATALOG_ROWS[id];
+  const amount = parseFloat(input.value) || 0;
+  if (r?.billing_type === 'one_time') selected[id].fee = amount;
+  else selected[id].recurring = amount;
+  selected[id].quotedPriceEntered = input.value !== '';
+}
+
 // ── SINGLE-SELECT CHECKBOX GROUPS ────────────────────────────
 // Behaves like radio buttons but uses checkboxes so the selected
 // item can be deselected by clicking it again.
@@ -2401,7 +2423,19 @@ function syncRowInputs() {
     // value per service), but kept explicit rather than relying on that never happening.
     const qtyInput = row.querySelector('input[type=number].qty-field');
     if (qtyInput) selected[id].qty = parseInt(qtyInput.value, 10) || 1;
-    const spendInput = row.querySelector('input[type=number]:not(.qty-field)');
+    // Quoted Price (2026-07-14) has its own class for the same reason qty does — without
+    // excluding it here too, a QUR row's quoted-price input would be misidentified as the
+    // ad-spend input below and silently overwrite `selected[id].spend` with the quoted
+    // dollar amount instead of the fee/recurring field it actually belongs in.
+    const quotedInput = row.querySelector('input[type=number].quoted-price-field');
+    if (quotedInput) {
+      const r = CATALOG_ROWS[id];
+      const amount = parseFloat(quotedInput.value) || 0;
+      if (r?.billing_type === 'one_time') selected[id].fee = amount;
+      else selected[id].recurring = amount;
+      selected[id].quotedPriceEntered = quotedInput.value !== '';
+    }
+    const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
   });
 }
@@ -2571,7 +2605,13 @@ function buildReview() {
     // IO is the actual contract, so it should show the same math as this internal review,
     // not a simplified version. Keeping them consistent avoids exactly the kind of
     // discrepancy ("the document says X, the record says Y") that could become a dispute.
-    const feeDisplay = data.is_qur
+    // Once a QUR item's quoted price has actually been entered, it falls through to the
+    // SAME fee/recurring display logic every normally-priced item already uses below —
+    // the quoted amount was written directly into data.fee/data.recurring (whichever
+    // this service's billing_type calls for), so a one-time QUR shows in this Fee column
+    // and a recurring QUR correctly shows '—' here and its amount in the Recurring
+    // column instead, exactly like any other recurring service.
+    const feeDisplay = (data.is_qur && !data.quotedPriceEntered)
       ? '<span style="color:#B45309;font-weight:600">Quote Upon Request</span>'
       : (data.qty != null && data.fee > 0) ? `${fmt(data.fee)} × ${qty} = ${fmt(feeTotal)}` : (data.fee > 0 ? fmt(data.fee) : '—');
     // Recurring column: ONLY genuinely recurring/spend content — a one-time item's total
@@ -3622,7 +3662,9 @@ function buildIoDocumentHtml() {
       // wording buildReview() now shows, keeping the printed contract consistent with the
       // internal Step 3 review exactly, per Claire's established principle for this
       // function (same reasoning as the qty-display consistency above).
-      if (data.is_qur) {
+      // Once quoted, falls through to the normal amount composition below — same
+      // reasoning as buildReview()'s identical check.
+      if (data.is_qur && !data.quotedPriceEntered) {
         amtCol = 'Quote Upon Request';
       } else if (data.qty != null) {
         amtCol = fmt(data.fee) + ' × ' + qty + ' = ' + fmt(feeTotal) + (recurringTotal > 0 || data.spend > 0 ? ' one-time' : '');
@@ -4028,6 +4070,7 @@ function buildDraft() {
     spendValues: {},
     noteValues: {},
     qtyValues: {},
+    quotedValues: {},
   };
   Object.keys(selected).forEach(id => {
     const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -4035,11 +4078,15 @@ function buildDraft() {
     // .qty-field must be excluded here — same fix as syncRowInputs(). Missed this
     // function originally; caught live when a typed quantity ("3") got saved into the
     // draft as spend and, on restore, corrupted selected[id].spend to $3/mo.
-    const spendInput = row.querySelector('input[type=number]:not(.qty-field)');
+    // .quoted-price-field (2026-07-14) excluded for the identical reason — a QUR item's
+    // quoted price would otherwise be captured/restored as spend instead.
+    const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     const qtyInput   = row.querySelector('input[type=number].qty-field');
+    const quotedInput = row.querySelector('input[type=number].quoted-price-field');
     const noteInput  = row.querySelector('input[type=text]');
     if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
     if (qtyInput && qtyInput.value) draft.qtyValues[id] = qtyInput.value;
+    if (quotedInput && quotedInput.value) draft.quotedValues[id] = quotedInput.value;
     if (noteInput && noteInput.value) draft.noteValues[id] = noteInput.value;
   });
   return draft;
@@ -4116,7 +4163,8 @@ function loadDraft() {
           // a per-unit item's saved quantity was restored INTO selected[id].spend instead
           // of selected[id].qty, corrupting the monthly total with a bogus "$3/mo" style
           // charge (caught live, matched exactly to the quantity that had been typed).
-          const input = row.querySelector('input[type=number]:not(.qty-field)');
+          // .quoted-price-field (2026-07-14) excluded for the identical reason.
+          const input = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
           if (input) { input.value = val; if (selected[id]) selected[id].spend = parseFloat(val) || 0; }
         });
       }
@@ -4126,6 +4174,18 @@ function loadDraft() {
           if (!row) return;
           const input = row.querySelector('input[type=number].qty-field');
           if (input) { input.value = val; if (selected[id]) selected[id].qty = parseInt(val, 10) || 1; }
+        });
+      }
+      if (d.quotedValues) {
+        // Only restores the visible DOM input's value — selected[id].fee/.recurring/
+        // .quotedPriceEntered are already correctly restored above via d.selected itself
+        // (buildDraft() saves the whole selected object directly, quoted price included),
+        // this just makes the on-screen box show what was typed before the reload.
+        Object.entries(d.quotedValues).forEach(([id, val]) => {
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          if (!row) return;
+          const input = row.querySelector('input[type=number].quoted-price-field');
+          if (input) input.value = val;
         });
       }
       if (d.noteValues) {
@@ -4566,7 +4626,9 @@ function renderPriceCells() {
     // here, a second call mistook that box for a genuine ad-spend input, left the STALE old
     // fee cell in place instead of removing it, and re-inserted it into the spend slot,
     // producing a duplicated "$175 × box" and a misaligned Notes column.
-    const spendTd   = tds.find(td => td.querySelector('input[type=number]:not(.qty-field)'));
+    // .quoted-price-field (2026-07-14) excluded for the identical reason — a QUR row's
+    // own quoted-price input is also an input[type=number].
+    const spendTd   = tds.find(td => td.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)'));
 
     // Closes "label drift": refreshes the service name from the catalog's `label` field
     // for EVERY row, not just sections already converted to dynamic generation (alc/rep/
@@ -4601,7 +4663,22 @@ function renderPriceCells() {
     // syncRowInputs()/renderPriceCells distinguish this from a genuine ad-spend input
     // (never both on the same row in practice — pricing_mode is one value per service —
     // but kept explicit for safety).
-    if (r.pricing_mode === 'per_unit') {
+    if (fee === 'QUR') {
+      // Quoted Price (2026-07-14, per Claire — "similar to Spend, but say Quoted
+      // Price"): a QUR item has no set price until the AE has an actual quote, so this
+      // replaces the plain "QUR" text with a live input, styled/sized like the Spend
+      // input elsewhere. `.quoted-price-field` class (not `.qty-field`, never both on
+      // the same row in practice) lets syncRowInputs()/buildDraft()/renderPriceCells
+      // distinguish this from a genuine ad-spend input — see each of those functions'
+      // own comments for why that distinction actually matters. Preserves whatever the
+      // AE already typed across a re-render (e.g. a dev-picker group switch), reading
+      // straight from `selected[id]` — the same live state updateQuotedPrice() writes to.
+      const isOneTime = r.billing_type === 'one_time';
+      const existingVal = selected[id]?.quotedPriceEntered
+        ? (isOneTime ? selected[id].fee : selected[id].recurring)
+        : '';
+      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quoted Price" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:100px;padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
+    } else if (r.pricing_mode === 'per_unit') {
       // 96px fixed column width (.c-fee, shared by every table) can't fit "$175 ×
       // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
       // Deliberate 2-line stack instead: fee on top, compact "× [box]" beneath,
