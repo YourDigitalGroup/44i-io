@@ -3234,6 +3234,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
     clearDraft();
     window.scrollTo({top:0,behavior:'smooth'});
 
+    // FIXED (2026-07-14, found live): a brand-new client created by THIS submission
+    // never showed up in the Client picker for "Submit Another IO" until a hard refresh
+    // — the picker's list (CLIENT_ROSTER) was only ever loaded once, on the initial
+    // group page load. Refresh it now that the new client genuinely exists in Supabase,
+    // so the very next submission for the same group can pick them by id immediately.
+    if (selectedGroup?.id) loadClientRoster(selectedGroup.id);
+
   } catch(e) {
     showToast(e.message, 'error');
     btn.innerHTML = '✓ Submit Insertion Order';
