@@ -1881,7 +1881,7 @@ Minor / cosmetic:
 These came out of the first-session review and the rollout plan. None are catalog work,
 which is why they slipped off this doc — but several gate a real client-facing launch.
 
-- **RLS audit — IN PROGRESS 2026-07-14, triggered by a phishing scare.** Claire's AM
+- **RLS audit — RESOLVED 2026-07-14, triggered by a phishing scare.** Claire's AM
   forwarded a suspicious "IN REVIEW: Insertion Order" email with review/approve links,
   for a client not in her orders — confirmed via full repo grep this did NOT originate
   from this system (no email-sending code exists anywhere; no review/approve workflow
@@ -1907,13 +1907,23 @@ which is why they slipped off this doc — but several gate a real client-facing
   writing the `groups` fix:** the admin Groups editor (`adminSaveGroup()` in
   `admin/index.html`) already tries a password-gated `admin_save_group` RPC as its
   PRIMARY save path (falling back to a direct anon PATCH only if the RPC throws) — good,
-  since it means dropping `groups`' anon-write policy shouldn't break the admin editor —
-  but the RPC's actual definition hasn't been confirmed to genuinely validate
-  password/role server-side rather than just trusting the JS comment claiming it does.
-  Need Claire to run `select pg_get_functiondef(oid) from pg_proc where proname =
-  'admin_save_group';` in the Supabase SQL editor and paste the result before the `groups`
-  lockdown SQL is finalized and delivered. The `orders` fix has no such blocker (no RPC
-  dependency either way) and can be written and delivered independently.
+  since it means dropping `groups`' anon-write policy shouldn't break the admin editor.
+  Claire ran `select pg_get_functiondef(oid) from pg_proc where proname =
+  'admin_save_group';` and pasted the result — confirmed it genuinely checks the
+  submitted name/password against `admin_users` (hashed comparison) and raises an
+  exception on mismatch before writing, not just a JS-side assumption. That cleared the
+  blocker. Delivered `rls-lockdown-2026-07-14.sql` (in scratch): dropped
+  `groups_anon_write`/`Public insert`/`Public update` on `groups` and
+  `orders_anon_all`/`Public insert orders` on `orders`. Claire ran it and pasted the
+  "after" `pg_policies` result — confirmed clean: `groups` now has only read-only SELECT
+  policies (writes exclusively via the password-gated RPC), `orders` has exactly the
+  three narrowly-scoped policies the app needs (anon insert, 2-hour-windowed read/update
+  for the "Submit Another IO" correction window). Re-tested live afterward: admin Groups
+  tab and a new order submission both still work normally. Cosmetic follow-up also done
+  same day (`rls-groups-dedupe-2026-07-14.sql` in scratch): consolidated the three
+  duplicate (functionally identical) `groups` read policies down to one
+  (`groups_public_read`, anon+authenticated, `qual: true`) — confirmed via `pg_policies`.
+  RLS audit fully closed out.
 - **Admin passwords (front-end hashes) — DONE + TESTED (2026-06-26).**
   Claire's call (James trusts her to decide): remove the SHA-256 hash fallback from the
   shipped file and make the `admin_login` RPC the sole gate. Rationale: everything's moving
@@ -2512,9 +2522,20 @@ file (same completeness check used for every admin-editor addition this project)
   1.5, canvas/PDF export switched from PNG to JPEG (0.85 quality) with jsPDF `compress:
   true`, shrinking the payload well under the memory limit; the attach fetch now checks
   `response.ok` and `console.warn`s with the actual status/body on failure instead of
-  always logging success. **Not yet retested live** — Claire needs to merge this PR and
-  submit another IO for a returning client to confirm the PDF now actually appears on the
-  Trello card.
+  always logging success. **CONFIRMED LIVE 2026-07-14** — Claire merged, submitted a new
+  order, and confirmed the PDF now attaches to the Trello IO card successfully. Feature is
+  fully working end-to-end: real PDF attachment on every submission, no silent
+  false-success logging.
+- **Dev-picker group switch not clearing prior form data — FIXED 2026-07-14 (`528b6a0`).**
+  Claire noticed while prepping for an AM walkthrough: using the `?dev=1` picker dropdown
+  to switch between groups left the previously-entered business info/selected services on
+  screen under the new group's branding. Root cause: `applyDevGroup()` re-applies the
+  newly-picked group's branding/pricing/AE-and-client rosters, but never reset the form
+  itself — a different gap from the "Submit Another IO" bug fixed the same day (that one
+  was in `resetForm()` itself; this one was a caller that never called it at all). Fixed
+  by calling the existing `resetForm()` at the top of `applyDevGroup()`, same clearing
+  logic already proven for Submit Another IO. Not yet retested live — Claire should
+  confirm switching groups in the dev picker now shows a clean form before her AM meeting.
 - **UNRESOLVED, carries into next session (2026-07-13): Client Information fields
   (`biz-name`/`contact-email` etc.) get silently repopulated with the PREVIOUS
   submission's data on a genuinely fresh page load (hard refresh, no draft to restore).**
