@@ -4719,11 +4719,16 @@ function renderPriceCells() {
       const existingVal = selected[id]?.quotedPriceEntered
         ? (isOneTime ? selected[id].fee : selected[id].recurring)
         : '';
-      // Fits inside the shared 96px .c-fee column (a 100px input was overflowing it,
-      // clipping the placeholder text to "Quoted Pric" — found live). Shortened
-      // placeholder + narrower box + tighter padding, matching the qty box's own
-      // same-constraint compact styling right below.
-      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quoted $" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:76px;padding:3px 4px;font-size:11px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
+      // Fits inside the shared 96px .c-fee column — the column's own 12px-each-side
+      // cell padding (.svc-table td) leaves only ~72px of usable content width, and the
+      // cell itself has overflow:hidden + text-overflow:ellipsis (.svc-table td.right),
+      // so anything wider gets silently clipped with a trailing "…" rather than wrapping
+      // or visibly overflowing. A 100px input clipped its own placeholder text to
+      // "Quoted Pric"; a follow-up at 76px was STILL a few px over that ~72px ceiling,
+      // producing the "…" sitting just past the visible box. Shrunk further (64px, well
+      // under the ceiling) with an even shorter placeholder so there's real margin, not
+      // a razor's-edge fit.
+      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quote $" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:64px;padding:2px 3px;font-size:11px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
     } else if (r.pricing_mode === 'per_unit') {
       // 96px fixed column width (.c-fee, shared by every table) can't fit "$175 ×
       // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
