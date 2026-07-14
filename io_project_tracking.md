@@ -2817,6 +2817,33 @@ file (same completeness check used for every admin-editor addition this project)
   form — parked as a future improvement (e.g. the page proactively checking for a newer
   version) rather than built speculatively. Worth mentioning in AE training regardless:
   open a fresh link at the start of each new client conversation.
+- **AE-facing embed plan — SCOPED AND CONFIRMED READY, 2026-07-14.** Claire's plan: AEs
+  will reach the form through a link/embed sitting inside an existing password-protected
+  resource section, rather than ever seeing or navigating to the raw
+  `io.yourdigitalgroupresources.com` URL directly. Decided as a plain `<iframe>` embed
+  (not a link-out), fixed height with its own internal scrollbar (the simpler of two
+  options discussed — the alternative, an auto-resizing iframe, was scoped but not
+  chosen). Confirmed via Claire checking the live site's actual response headers in
+  DevTools: no `X-Frame-Options` and no `Content-Security-Policy` header present at all
+  (`Server: nginx`) — nothing server-side blocks this from being framed, which was the
+  one real risk in the whole plan. Also confirmed: the resource section is WordPress, on
+  the SAME domain as the IO tool (avoids any cross-origin storage-partitioning concerns
+  entirely). **No code changes needed on our side** for the fixed-height approach — this
+  is purely a WordPress-side embed:
+  ```html
+  <iframe
+    src="https://io.yourdigitalgroupresources.com/[group-slug]"
+    style="width:100%; height:1400px; border:none;"
+    title="Insertion Order Form">
+  </iframe>
+  ```
+  Notes for whoever builds the WordPress side: the `1400px` height is a starting guess
+  (the form is tall, especially Step 2) — worth eyeballing live and adjusting; and the
+  `<iframe>` must NOT have a `sandbox` attribute (or if one gets added by a WP plugin/page
+  builder, it must include `allow-scripts allow-forms allow-popups allow-same-origin` —
+  without `allow-popups` specifically, the Print/PDF button's popup window would silently
+  stop working). Ready to set up whenever Claire's team is ready — nothing blocking on
+  our end.
 
 ## KEY PRINCIPLES (how we've been working)
 
