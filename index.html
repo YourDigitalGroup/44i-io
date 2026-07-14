@@ -3041,12 +3041,20 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         if (ioCardId) {
           try {
             const { base64, fileName } = await generateIoPdfBlob();
-            await fetch(PROXY, {
+            const attachRes = await fetch(PROXY, {
               method: 'POST',
               headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
               body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' })
             });
-            console.log('Attached IO PDF to card');
+            const attachData = await attachRes.json().catch(() => null);
+            // fetch() only rejects on network failure — a Trello/Edge-Function error status
+            // (e.g. 546 memory-limit-exceeded) still resolves normally, so it must be checked
+            // explicitly or a failed attach silently logs as a success.
+            if (!attachRes.ok) {
+              console.warn('Could not attach IO PDF to Trello card:', attachRes.status, attachData);
+            } else {
+              console.log('Attached IO PDF to card');
+            }
           } catch(e) {
             console.warn('Could not attach IO PDF to Trello card:', e.message);
           }
@@ -3643,32 +3651,36 @@ async function generateIoPdfBlob() {
     // taken too early would silently freeze in system-font/broken-image state.
     await new Promise(resolve => setTimeout(resolve, 700));
 
+    // scale 1.5 (not 2) + JPEG (not PNG) — a full-page PNG at scale 2 produced a base64
+    // payload large enough to blow past the Edge Function's memory limit (HTTP 546) when
+    // decoded for the Trello upload. JPEG at 0.85 quality is still plenty sharp for a
+    // document that's mostly text/tables, at a fraction of the size.
     const canvas = await html2canvas(iframe.contentDocument.body, {
-      scale: 2,
+      scale: 1.5,
       useCORS: true,
       windowWidth: iframe.contentDocument.body.scrollWidth,
       windowHeight: iframe.contentDocument.body.scrollHeight,
     });
 
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF('p', 'mm', 'letter');
+    const pdf = new jsPDF('p', 'mm', 'letter', { compress: true });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    const imgData = canvas.toDataURL('image/png');
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
     // Standard "long single image sliced across multiple PDF pages" technique — the same
     // full-height image is drawn on each page at a progressively more negative Y offset,
     // so each page's fixed height naturally clips to show only its own slice of content.
     let heightLeft = imgHeight;
     let position = 0;
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
     while (heightLeft > 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
     }
 
