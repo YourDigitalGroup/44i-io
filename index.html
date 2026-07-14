@@ -4397,7 +4397,14 @@ function renderPriceCells() {
 
     const serviceTd = tds[1];
     const notesTd   = tds[tds.length - 1];
-    const spendTd   = tds.find(td => td.querySelector('input[type=number]'));
+    // FIXED (2026-07-14, found live via a garbled per-unit row after a dev-picker group
+    // switch): this function isn't called only once at page load — applyDevGroup() also
+    // calls it, to refresh prices when previewing a different group. A per-unit row's own
+    // injected quantity box (below) is ALSO an input[type=number] — without :not(.qty-field)
+    // here, a second call mistook that box for a genuine ad-spend input, left the STALE old
+    // fee cell in place instead of removing it, and re-inserted it into the spend slot,
+    // producing a duplicated "$175 × box" and a misaligned Notes column.
+    const spendTd   = tds.find(td => td.querySelector('input[type=number]:not(.qty-field)'));
 
     // Closes "label drift": refreshes the service name from the catalog's `label` field
     // for EVERY row, not just sections already converted to dynamic generation (alc/rep/
