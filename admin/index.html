@@ -1765,9 +1765,28 @@ async function sectionDrop(e, targetId) {
   }
 }
 
-// Builds a slug id from the Label (e.g. "Podcast Advertising" -> "podcast-advertising") —
-// sections aren't prefixed like service ids, so this is just the label slug on its own.
+// Builds a SHORT id from the Label's initials (e.g. "Social Display Ads" -> "sda",
+// matching most of the original hand-picked section ids — td, sem, sma, lt, gbp, llo,
+// tlp, alc, em are all literally initials of their own labels). REWRITTEN 2026-07-16
+// (per Claire, found live — a new section's auto-generated id was the full label slug,
+// e.g. "social-display-ads", much longer than the short ids the first sections shipped
+// with). Splits on whitespace/slash/hyphen (so "Streaming TV / OTT / CTV" and
+// "One-Time" both split into separate words), strips accents so "À La Carte" reads as
+// "alc" rather than dropping the accented word entirely, and takes each word's first
+// letter. A single-word label has no "initials" worth taking (one letter would be
+// cryptic, not short-but-readable) — falls back to the full slug for that case only.
+// Always just a starting suggestion: the ID field stays fully editable, same
+// auto-unless-manually-edited pattern as before.
 function generateSectionId(label) {
+  const words = (label || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents (À -> A)
+    .trim()
+    .split(/[\s/-]+/)
+    .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter(Boolean);
+  if (words.length >= 2) {
+    return words.map(w => w[0].toLowerCase()).join('');
+  }
   return (label || '').trim().toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
