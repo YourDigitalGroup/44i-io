@@ -2135,13 +2135,21 @@ function toggle(cb, id) {
     // this same toggle() path internally.
     updateStandaloneHostingLocks();
 
-    // Reset the visible spend/quantity inputs so a later re-check starts fresh, rather
-    // than silently picking the stale leftover number back up at the next
+    // Reset the visible spend/quantity/quoted-price inputs so a later re-check starts
+    // fresh, rather than silently picking the stale leftover number back up at the next
     // syncRowInputs() call (Step 2→3 transition, submit, print). selected[id] is already
     // deleted above, but the DOM input itself doesn't clear on its own — these are
     // separate elements with no automatic link, so the stale value stays visible/live
     // until acted on explicitly.
-    const spendInput = row.querySelector('input[type=number]:not(.qty-field)');
+    // FIXED (2026-07-15, found live by Claire — a QUR item's typed quoted price
+    // silently reverted to "Quote Upon Request" after the row got unchecked and
+    // rechecked): this selector excluded .qty-field but NOT .quoted-price-field — the
+    // same class-exclusion gap already fixed in renderPriceCells()/syncRowInputs()/
+    // buildDraft()/loadDraft() this session, just missed here. A QUR row's own quoted-
+    // price box was misidentified as a plain spend input and blanked out on every
+    // uncheck, discarding the AE's typed price even though nothing else about the
+    // uncheck/recheck sequence looked wrong.
+    const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     if (spendInput) {
       spendInput.value = '';
       spendInput.classList.remove('spend-missing');
@@ -2150,6 +2158,8 @@ function toggle(cb, id) {
     }
     const qtyInput = row.querySelector('input[type=number].qty-field');
     if (qtyInput) qtyInput.value = '1';
+    const quotedInput = row.querySelector('input[type=number].quoted-price-field');
+    if (quotedInput) quotedInput.value = '';
 
     // Clear intake data when unchecked so reselect re-prompts
     const cfg = PRODUCT_CONFIG[id];

@@ -723,11 +723,11 @@
         <button id="admin-legal-save-btn" onclick="adminSaveLegalContent()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Legal Text</button>
       </div><!-- /section-legal -->
 
-      <!-- ── SECTION: Notifications (always-CC recipients, global — every group's emails) ── -->
+      <!-- ── SECTION: Notifications (always-BCC recipients, global — every group's emails) ── -->
       <div id="section-notifications" style="display:none">
         <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Notifications</p>
         <p style="font-size:11px;color:var(--muted);margin-bottom:16px">
-          These addresses are CC'd on every submission email, for every group, in addition to that
+          These addresses are BCC'd on every submission email, for every group, in addition to that
           group's own IO Recipients (set per-group on the Group Info tab). Use this for internal team
           members who need to see every IO regardless of which group it came in on.
         </p>
@@ -737,8 +737,8 @@
         </div>
 
         <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff;margin-bottom:20px;max-width:520px">
-          <label class="lbl">Always-CC Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, every group</span></label>
-          <textarea id="notif-always_cc_recipients" rows="3" placeholder="name@44interactive.com, name2@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+          <label class="lbl">Always-BCC Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, every group</span></label>
+          <textarea id="notif-always_bcc_recipients" rows="3" placeholder="name@44interactive.com, name2@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;resize:vertical"></textarea>
         </div>
 
         <button id="admin-notifications-save-btn" onclick="adminSaveNotificationSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Notifications</button>
@@ -1765,14 +1765,42 @@ async function sectionDrop(e, targetId) {
   }
 }
 
-// Builds a slug id from the Label (e.g. "Podcast Advertising" -> "podcast-advertising") —
-// sections aren't prefixed like service ids, so this is just the label slug on its own.
-function generateSectionId(label) {
+// Builds a SHORT id from a label's initials (e.g. "Social Display Ads" -> "sda",
+// "Business Pro" -> "bp") — matches most of the original hand-picked section ids (td,
+// sem, sma, lt, gbp, llo, tlp, alc, em) and service-id suffixes (tlp-bs/bb/bp, sda-bp)
+// alike, since both were really the same "initials of each word" convention all along.
+// REWRITTEN 2026-07-16 (per Claire, found live — a new section's auto-generated id was
+// the full label slug, e.g. "social-display-ads", much longer than the short ids the
+// first sections shipped with; the same gap existed for service ids, e.g.
+// "sda-social-display-ads-business-pro"). Shared by generateSectionId() and
+// generateServiceId() below so the two never drift into two different conventions.
+// Splits on whitespace/slash/hyphen (so "Streaming TV / OTT / CTV" and "One-Time" both
+// split into separate words), strips accents so "À La Carte" reads as "alc" rather than
+// dropping the accented word entirely, and takes each word's first letter. A single-word
+// label has no "initials" worth taking (one letter would be cryptic, not
+// short-but-readable) — falls back to the full slug for that case only (e.g. "Design",
+// "Custom" stay as themselves, matching alc-design/tlp-custom). Always just a starting
+// suggestion: the ID field stays fully editable, same auto-unless-manually-edited
+// pattern as before.
+function slugOrInitials(label) {
+  const words = (label || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // strip accents (À -> A)
+    .trim()
+    .split(/[\s/-]+/)
+    .map(w => w.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter(Boolean);
+  if (words.length >= 2) {
+    return words.map(w => w[0].toLowerCase()).join('');
+  }
   return (label || '').trim().toLowerCase()
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+}
+
+function generateSectionId(label) {
+  return slugOrInitials(label);
 }
 
 // Re-generates the ID field live as Label changes — UNLESS the admin has typed directly
@@ -2452,14 +2480,16 @@ async function adminSaveLegalContent() {
   }
 }
 
-// ── NOTIFICATIONS (always-CC recipients, global — every group's emails) ────────
+// ── NOTIFICATIONS (always-BCC recipients, global — every group's emails) ────────
 // Same singleton-row pattern as legal_content — a small fixed set of known fields Claire
-// edits directly, not a per-item list she'd add new rows to.
+// edits directly, not a per-item list she'd add new rows to. BCC (not CC, per Claire
+// 2026-07-15) — recipients on this list shouldn't see each other or the group's own
+// io_recipient addresses in the To/CC headers.
 async function loadAdminNotificationSettings() {
   try {
     const rows = await sb('notification_settings?id=eq.1&select=*') || [];
     const row = rows[0] || {};
-    document.getElementById('notif-always_cc_recipients').value = row.always_cc_recipients || '';
+    document.getElementById('notif-always_bcc_recipients').value = row.always_bcc_recipients || '';
   } catch(e) {
     showToast('Error loading notification settings: ' + e.message, 'error');
   }
@@ -2471,7 +2501,7 @@ async function adminSaveNotificationSettings() {
     return;
   }
   const payload = {
-    always_cc_recipients: document.getElementById('notif-always_cc_recipients').value.trim()
+    always_bcc_recipients: document.getElementById('notif-always_bcc_recipients').value.trim()
   };
   try {
     await sb('rpc/admin_save_notification_settings', {
@@ -2711,16 +2741,15 @@ function onPricingModeChange(fromUserAction) {
 }
 
 // ── SERVICE ID AUTO-GENERATION ─────────────────────────────────
-// Builds "section-label-slug" (e.g. "alc-stock-video-clips") from the currently
-// selected Section + typed Label — matches the existing id convention (alc-design,
-// rep-bp, etc. all follow section-prefix + short-name), reducing both typing and the
-// chance of an inconsistent or accidentally-duplicated id.
+// Builds "section-label-initials" (e.g. "sda-bp") from the currently selected Section +
+// typed Label — matches the existing id convention (alc-design, rep-bp, tlp-bs/bb/bp all
+// follow section-prefix + short-name). REWRITTEN 2026-07-16 (per Claire, same fix as
+// generateSectionId() — a new service's label suffix was the FULL label slug, e.g.
+// "sda-social-display-ads-business-pro", instead of a short one like "sda-bp"). Now
+// shares slugOrInitials() with generateSectionId(), so a section and a service never
+// drift into two different "what counts as short" conventions.
 function generateServiceId(section, label) {
-  const slug = (label || '').trim().toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')  // strip anything not alphanumeric/space/hyphen
-    .replace(/\s+/g, '-')          // spaces → hyphens
-    .replace(/-+/g, '-')           // collapse doubled hyphens
-    .replace(/^-|-$/g, '');        // trim leading/trailing hyphens
+  const slug = slugOrInitials(label);
   if (!section) return slug;
   return slug ? `${section}-${slug}` : `${section}-`;
 }

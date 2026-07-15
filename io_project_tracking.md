@@ -182,6 +182,28 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   package) before choosing an approach, since this is a business-logic call about what
   each package should actually collect, not a pure code bug with one obvious right
   answer.
+- **QUR quoted price silently reverting to "Quote Upon Request" — FIXED 2026-07-15, found
+  live by Claire testing TLP Custom.** Typed a quoted price, confirmed it showed correctly
+  on Review after a hard refresh, then later saw it revert to "Quote Upon Request" again
+  with no obvious cause. Root cause found via a real headless-browser test driving the
+  actual extracted `toggle()`/`renderPriceCells()`/`syncRowInputs()`/`buildReview()`
+  functions against a real DOM: `toggle()`'s UNCHECK branch resets a row's spend input via
+  a selector that excludes `.qty-field` but NOT `.quoted-price-field` — the same
+  class-exclusion gap already fixed in `renderPriceCells()`/`syncRowInputs()`/
+  `buildDraft()`/`loadDraft()` earlier this session (see the "Quoted Price input box
+  clipped" entry and the per-unit-row-duplication fix), just missed in this 5th location.
+  A QUR row's own quoted-price box gets misidentified as a plain spend input and silently
+  blanked every time the row is unchecked — so if the checkbox ever gets unchecked and
+  rechecked (an accidental double-click, some other interaction toggling it) without the
+  AE consciously re-typing the price, Review/print reverts to "Quote Upon Request" with
+  nothing on-screen obviously explaining why. Fixed by adding the same `:not(.quoted-
+  price-field)` exclusion used everywhere else, plus an explicit reset of the quoted-price
+  box's own value on uncheck (previously implicitly caught by the buggy selector, now
+  handled deliberately and consistently with the qty-field reset right next to it).
+  Verified via the same real-browser test: uncheck now cleanly clears the box, and a
+  recheck without re-entering a price now HONESTLY shows "Quote Upon Request" (matching
+  what's actually stored) instead of a silent, confusing mismatch. Not yet re-confirmed
+  live by Claire.
 - **Archived/returning clients (Trello) — CONFIRMED WORKING 2026-07-15.** Claire tested
   this live: submitting an IO for a client whose Trello list was archived correctly
   reopens that same list (and repositions it to board slot 5, per the fix built the same
