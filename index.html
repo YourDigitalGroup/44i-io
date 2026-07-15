@@ -4496,6 +4496,12 @@ function resetForm() {
   updateTypedSig('');
   document.getElementById('koc-card').style.display = 'none';
   document.getElementById('intake-status-card').style.display = 'none';
+  // FIXED (2026-07-15, found live): biz-name's VALUE gets wiped by the page-1 text-input
+  // loop above, but the similar-client warning banner it triggers is a separate element
+  // that nothing here ever hid — so "Submit Another IO" left the PREVIOUS client's
+  // "looks similar to X" warning on screen even though the field itself was blank.
+  const bizNameWarn = document.getElementById('biz-name-match-warning');
+  if (bizNameWarn) { bizNameWarn.style.display = 'none'; bizNameWarn.innerHTML = ''; }
   updateBadges();
   goStep(1);
 }
