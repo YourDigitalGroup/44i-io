@@ -165,6 +165,23 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   to the `visitorid` intake. The table now gives all six the intake form (assuming the
   omission was an oversight). Confirm that's correct, or whether the email versions
   should skip intake for a reason. **STILL OPEN as of 2026-07-15.**
+- **Wrong intake form attached to a bundled tactic card — FOUND LIVE 2026-07-15, asking
+  the AM.** Claire spotted a "Targeted Landing Page" card on Test Business 6's Trello
+  list with an SEO/AEO intake PDF attached, even though neither IO sold TLP on its own —
+  traced to a real bundled package where TLP comes along as one of several cards inside
+  a whole-list Trello template. Root cause: `finalizeTacticCard()` resolves ONE intake
+  form for the entire WORKFLOW (via `resolveWorkflowIntakeFormId`, "first sold row's
+  intake_form_id wins" — a known ambiguity, already flagged in its own code comment) and
+  attaches that SAME PDF to every card copied from that workflow's template list,
+  regardless of which specific tactic each individual card actually represents. So a
+  package whose primary/first-listed component is SEO-intake-tagged puts the SEO intake
+  PDF on every card it produces — including an unrelated bundled TLP card. **Not yet
+  fixed — Claire is checking with the AM on what the CORRECT behavior should be** (options
+  discussed: skip intake entirely for a bundled card that isn't the package's own primary
+  service, vs. give it its own correctly-matched intake, vs. it depends on the specific
+  package) before choosing an approach, since this is a business-logic call about what
+  each package should actually collect, not a pure code bug with one obvious right
+  answer.
 - **Archived/returning clients (Trello) — CONFIRMED WORKING 2026-07-15.** Claire tested
   this live: submitting an IO for a client whose Trello list was archived correctly
   reopens that same list (and repositions it to board slot 5, per the fix built the same
