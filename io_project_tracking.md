@@ -268,6 +268,52 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   alongside the other leftover-state clears already there. Verified via `node --check`-
   equivalent syntax parse only — the actual disappearing-banner behavior itself hasn't
   been re-confirmed live yet.
+- **Section-collapse fix — CONFIRMED WORKING LIVE 2026-07-15.** Same test round; sections
+  now correctly collapse back to closed on "Submit Another IO" instead of staying open
+  from whatever the previous submission had expanded.
+- **Intake status emoji regression — FIXED 2026-07-15, found live by Claire same day as
+  the PDF-format fix above.** The PDF-format fix's own rewrite had swapped the banner's
+  full compound emoji (⚠️/✅, with the variation selector) for bare text glyphs (⚠/✓),
+  which render as small monochrome symbols rather than full-color emoji — Claire correctly
+  read this as "we lost the emojis" in the card description. Restored the full emoji
+  versions. Also bold-wrapped the description-only `bannerHeader` with Trello's own `**`
+  markdown (safe there — Trello renders it — unlike the shared `banner` string, which
+  still carries zero markdown since it also feeds the PDF's styled div, and literal
+  asterisks there was the ORIGINAL messy-PDF bug this whole feature started from).
+- **Intake PDF visual redesign — BUILT 2026-07-15, per Claire ("less bland, more
+  structured like the IO").** The PDF-format fix earlier the same day switched intake
+  PDFs from garbled jsPDF text-drawing to an html2canvas screenshot, but the HTML itself
+  was still just a flat stack of plain `<div>`s — functionally correct but visually
+  unstructured. Rewrote `buildIntakeDesc()`'s `html` fragment to mirror the IO PDF's own
+  visual language: a letterhead-style header bar in the group's brand color
+  (`selectedGroup.brand_color`, same fallback the IO PDF uses), uppercase bordered section
+  headers, and a real two-column table per section for Q&A instead of stacked lines. The
+  TLP structured grid gets its own numbered-row table (parsed back out of the stored
+  "1. Dallas, TX" line format) instead of inline text with `<br>` breaks — this was
+  reported missing from a PDF Claire generated, but tracing the code found the
+  grid-rendering logic itself works correctly given real saved data (confirmed via
+  simulation); root cause not fully pinned down, watching for a repeat now that the
+  section is visually much more prominent. Also fixed a latent gap while touching this
+  code: `bizName` was being interpolated into this template raw (unescaped) — now goes
+  through `esc()` like everywhere else. Verified via simulation (field escaping, TLP
+  row-number parsing) AND by rendering the actual template to a screenshot via a headless
+  browser to visually confirm layout/colors/table structure — not the same as seeing it
+  render inside the real PDF pipeline, but as close as this environment allows.
+- **Notification recipients — SCOPED + FOUNDATION BUILT 2026-07-15.** Discussed the
+  planned submission-email feature (still parked pending an email provider choice, per
+  Claire: "very similar to what we're doing now... some of the information in the email
+  copy and then a PDF of the actual IO"). Two recipient audiences: per-group recipients —
+  already exists, `groups.io_recipient` (comma-separated, edited on the Group Info tab) —
+  and a NEW global "always CC every group" list for internal team members, which didn't
+  have a home. Built the global side now (independent of the email feature itself actually
+  sending anything yet): new `notification_settings` table (singleton row, same shape as
+  `legal_content`) with one `always_cc_recipients` column, a new `admin_save_notification_
+  settings` RPC (super-admin only, same restriction level as Legal Text), and a new
+  "Notifications" admin tab mirroring the Legal Text tab's exact pattern (one textarea,
+  AM-tier view-only). **Requires running `notification-settings-2026-07-15.sql` in
+  Supabase** before this tab will load/save — not yet run as of this entry. Verified via
+  `node --check`-equivalent syntax parse and simulated load/save payload logic; the tab
+  itself hasn't been opened live yet (blocked on the migration).
 
 ---
 

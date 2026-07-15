@@ -3183,45 +3183,89 @@ async function submitIO() {
           const totalCount = allFields.length;
 
           // Status banner — ALWAYS shown, plain text (goes in the card DESCRIPTION) and
-          // an HTML version (goes in the PDF, colored by status).
+          // an HTML version (goes in the PDF, colored by status). Uses the FULL compound
+          // emoji (⚠️/✅, with the variation selector) rather than the bare ⚠/✓ text glyphs
+          // an earlier pass of this same fix used — Claire flagged those as "we lost the
+          // emojis," since a bare glyph renders as a small monochrome symbol instead of a
+          // full-color emoji in Trello's card view. No markdown asterisks inside `banner`
+          // itself, though — this same string also feeds the PDF's styled div via esc(),
+          // and literal "**" is exactly what made the OLD jsPDF-text version messy.
           let banner, bannerColor;
           if (data.bypassed) {
-            banner = `⚠ AM HELP REQUESTED — AE asked the AM to cover this intake on the Kick-Off Call.${data.bypassNote ? ' ' + data.bypassNote : ''}`;
+            banner = `⚠️ AM HELP REQUESTED — AE asked the AM to cover this intake on the Kick-Off Call.${data.bypassNote ? ' ' + data.bypassNote : ''}`;
             bannerColor = '#7C3AED';
           } else if (filledCount === 0) {
-            banner = `⚠ INTAKE NOT STARTED — AE did not fill out this form. AM to collect every answer on the Kick-Off Call.`;
+            banner = `⚠️ INTAKE NOT STARTED — AE did not fill out this form. AM to collect every answer on the Kick-Off Call.`;
             bannerColor = '#DC2626';
           } else if (filledCount < totalCount) {
-            banner = `⚠ PARTIALLY COMPLETE (${filledCount} of ${totalCount} answered) — AM to collect remaining items on the Kick-Off Call.`;
+            banner = `⚠️ PARTIALLY COMPLETE (${filledCount} of ${totalCount} answered) — AM to collect remaining items on the Kick-Off Call.`;
             bannerColor = '#B45309';
           } else {
-            banner = `✓ COMPLETE — all ${totalCount} questions answered.`;
+            banner = `✅ COMPLETE — all ${totalCount} questions answered.`;
             bannerColor = '#1F8A5F';
           }
-          const bannerHeader = `${esc(formDef.title)} — ${esc(banner)}`;
+          // bannerHeader is ONLY used in the card DESCRIPTION (Trello renders real
+          // markdown there, unlike the PDF) — safe to bold-wrap here without touching the
+          // shared `banner` string the PDF also reads.
+          const bannerHeader = `**${esc(formDef.title)} — ${esc(banner)}**`;
 
+          // REWRITTEN 2026-07-15 (per Claire — "less bland, more structured like the
+          // IO"): was a flat stack of plain <div>s with no table structure at all. Now
+          // mirrors the IO PDF's own visual language (letterhead bar in the group's
+          // brand color, uppercase bordered section headers, a real two-column table for
+          // Q&A instead of stacked lines) so the two documents read as the same family.
+          const color = selectedGroup?.brand_color || '#1C9BD7';
           let sectionsHtml = '';
           formDef.sections.forEach(section => {
-            sectionsHtml += `<div style="font-weight:700;margin:14px 0 6px">${esc(section.title)}</div>`;
-            section.fields.forEach(field => {
+            const rows = section.fields.map(field => {
               const val = fields[field.key] || '';
-              sectionsHtml += `<div style="margin-bottom:4px"><strong>${esc(field.label)}:</strong> ${val ? esc(val) : '<span style="color:#9CA3AF">—</span>'}</div>`;
-            });
+              return `<tr>
+                <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151;width:38%;vertical-align:top">${esc(field.label)}</td>
+                <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827;vertical-align:top">${val ? esc(val) : '<span style="color:#9CA3AF">—</span>'}</td>
+              </tr>`;
+            }).join('');
+            sectionsHtml += `
+              <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">${esc(section.title)}</div>
+              <table style="width:100%;border-collapse:collapse">${rows}</table>`;
           });
-          // TLP structured grid — not part of the section field list, append explicitly
+          // TLP structured grid — not part of the section field list, appended as its
+          // own table (matching the on-screen grid's own numbered-row shape) rather than
+          // inline text with <br> line breaks.
           if (formKey === 'tlp' && fields.tlp_mode_label) {
-            sectionsHtml += `<div style="font-weight:700;margin:14px 0 6px">Campaign Layout</div>`;
-            sectionsHtml += `<div style="margin-bottom:4px"><strong>Type:</strong> ${esc(fields.tlp_mode_label)}</div>`;
-            sectionsHtml += `<div style="margin-bottom:4px"><strong>${esc(fields.tlp_single_label || 'Single')}:</strong> ${esc(fields.tlp_single_value || '—')}</div>`;
-            sectionsHtml += `<div style="margin-bottom:4px"><strong>${esc(fields.tlp_many_label || 'Entries')} (${fields.tlp_page_count || 0} pages):</strong><br>${esc(fields.tlp_many_values || '—').replace(/\n/g, '<br>')}</div>`;
+            const manyRows = (fields.tlp_many_values || '').split('\n').filter(Boolean).map(line => {
+              const m = line.match(/^\s*(\d+)\.\s*(.*)$/);
+              return `<tr>
+                <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:8.5pt;color:#9CA3AF;width:24px;text-align:right">${esc(m ? m[1] : '')}</td>
+                <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827">${esc(m ? m[2] : line)}</td>
+              </tr>`;
+            }).join('') || `<tr><td colspan="2" style="padding:6px 10px;font-size:9.5pt;color:#9CA3AF">—</td></tr>`;
+            sectionsHtml += `
+              <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Campaign Layout</div>
+              <table style="width:100%;border-collapse:collapse">
+                <tr>
+                  <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151;width:38%;vertical-align:top">Type</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827">${esc(fields.tlp_mode_label)}</td>
+                </tr>
+                <tr>
+                  <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151;width:38%;vertical-align:top">${esc(fields.tlp_single_label || 'Single')}</td>
+                  <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827">${esc(fields.tlp_single_value || '—')}</td>
+                </tr>
+              </table>
+              <div style="font-size:8pt;font-weight:600;color:#6B7280;margin:10px 0 4px">${esc(fields.tlp_many_label || 'Entries')} (${fields.tlp_page_count || 0})</div>
+              <table style="width:100%;border-collapse:collapse">${manyRows}</table>`;
           }
 
           const html = `
-            <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111;padding:24px;width:700px">
-              <div style="font-size:20px;font-weight:700;margin-bottom:4px">${esc(formDef.title)} — Intake</div>
-              <div style="font-size:12px;color:#6B7280;margin-bottom:16px">${bizName} — ${new Date().toLocaleDateString('en-US')}</div>
-              <div style="font-size:13px;font-weight:700;color:${bannerColor};background:${bannerColor}18;border:1px solid ${bannerColor}55;border-radius:6px;padding:8px 12px;margin-bottom:14px">${esc(banner)}</div>
-              <div style="font-size:13px;line-height:1.5">${sectionsHtml}</div>
+            <div style="font-family:'Montserrat',-apple-system,Helvetica,Arial,sans-serif;color:#111827;padding:28px;width:700px">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:3px solid ${color};margin-bottom:16px">
+                <div style="font-size:16pt;font-weight:800;color:${color};letter-spacing:-.01em">${esc(formDef.title)}</div>
+                <div style="text-align:right;font-size:8.5pt;color:#6B7280;line-height:1.5">
+                  <strong style="color:#374151;font-size:9pt">${esc(bizName)}</strong><br>
+                  ${new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})}
+                </div>
+              </div>
+              <div style="font-size:10pt;font-weight:700;color:${bannerColor};background:${bannerColor}18;border:1px solid ${bannerColor}55;border-radius:6px;padding:9px 13px;margin-bottom:6px">${esc(banner)}</div>
+              ${sectionsHtml}
             </div>`;
 
           return { formTitle: formDef.title, banner, bannerHeader, html };

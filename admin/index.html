@@ -42,6 +42,7 @@
       <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
       <button id="section-tab-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
       <button id="section-tab-legal" onclick="adminSection('legal')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Legal Text</button>
+      <button id="section-tab-notifications" onclick="adminSection('notifications')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Notifications</button>
     </div>
 
     <div style="padding:20px">
@@ -722,6 +723,27 @@
         <button id="admin-legal-save-btn" onclick="adminSaveLegalContent()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Legal Text</button>
       </div><!-- /section-legal -->
 
+      <!-- ── SECTION: Notifications (always-CC recipients, global — every group's emails) ── -->
+      <div id="section-notifications" style="display:none">
+        <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Notifications</p>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:16px">
+          These addresses are CC'd on every submission email, for every group, in addition to that
+          group's own IO Recipients (set per-group on the Group Info tab). Use this for internal team
+          members who need to see every IO regardless of which group it came in on.
+        </p>
+
+        <div id="admin-notifications-readonly-note" style="display:none;margin-bottom:16px;padding:10px 14px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;font-size:12px;color:#991B1B">
+          Notification settings are view-only for your role — only a super admin can save changes here.
+        </div>
+
+        <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff;margin-bottom:20px;max-width:520px">
+          <label class="lbl">Always-CC Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, every group</span></label>
+          <textarea id="notif-always_cc_recipients" rows="3" placeholder="name@44interactive.com, name2@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+        </div>
+
+        <button id="admin-notifications-save-btn" onclick="adminSaveNotificationSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Notifications</button>
+      </div><!-- /section-notifications -->
+
     </div>
   </div>
 </div>
@@ -1041,8 +1063,8 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Seven sections: groups | orders | map | sections | intake | ae | legal
-  const sections = ['groups','orders','map','sections','intake','ae','legal'];
+  // Eight sections: groups | orders | map | sections | intake | ae | legal | notifications
+  const sections = ['groups','orders','map','sections','intake','ae','legal','notifications'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups' needs display:flex specifically — its edit form/list use flex `order`
@@ -1100,6 +1122,16 @@ function adminSection(section) {
     if (note) note.style.display = isAm ? 'block' : 'none';
     document.querySelectorAll('#section-legal textarea').forEach(t => t.disabled = isAm);
     loadAdminLegalContent();
+  } else if (section === 'notifications') {
+    // Same restriction level as Legal Text — this changes what every group's emails CC,
+    // not just one group's own settings.
+    const isAm = currentAdminUser?.role === 'am';
+    const saveBtn = document.getElementById('admin-notifications-save-btn');
+    if (saveBtn) saveBtn.style.display = isAm ? 'none' : '';
+    const note = document.getElementById('admin-notifications-readonly-note');
+    if (note) note.style.display = isAm ? 'block' : 'none';
+    document.querySelectorAll('#section-notifications textarea').forEach(t => t.disabled = isAm);
+    loadAdminNotificationSettings();
   }
 }
 
@@ -2417,6 +2449,42 @@ async function adminSaveLegalContent() {
     showToast('Legal text saved!');
   } catch(e) {
     showToast('Error saving legal text: ' + e.message, 'error');
+  }
+}
+
+// ── NOTIFICATIONS (always-CC recipients, global — every group's emails) ────────
+// Same singleton-row pattern as legal_content — a small fixed set of known fields Claire
+// edits directly, not a per-item list she'd add new rows to.
+async function loadAdminNotificationSettings() {
+  try {
+    const rows = await sb('notification_settings?id=eq.1&select=*') || [];
+    const row = rows[0] || {};
+    document.getElementById('notif-always_cc_recipients').value = row.always_cc_recipients || '';
+  } catch(e) {
+    showToast('Error loading notification settings: ' + e.message, 'error');
+  }
+}
+
+async function adminSaveNotificationSettings() {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Notification settings can only be changed by a super admin', 'error');
+    return;
+  }
+  const payload = {
+    always_cc_recipients: document.getElementById('notif-always_cc_recipients').value.trim()
+  };
+  try {
+    await sb('rpc/admin_save_notification_settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_data: payload
+      })
+    });
+    showToast('Notification settings saved!');
+  } catch(e) {
+    showToast('Error saving notification settings: ' + e.message, 'error');
   }
 }
 
