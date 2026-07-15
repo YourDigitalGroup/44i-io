@@ -299,6 +299,21 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   row-number parsing) AND by rendering the actual template to a screenshot via a headless
   browser to visually confirm layout/colors/table structure — not the same as seeing it
   render inside the real PDF pipeline, but as close as this environment allows.
+- **Notification recipients — SCOPED + FOUNDATION BUILT 2026-07-15.** Discussed the
+  planned submission-email feature (still parked pending an email provider choice, per
+  Claire: "very similar to what we're doing now... some of the information in the email
+  copy and then a PDF of the actual IO"). Two recipient audiences: per-group recipients —
+  already exists, `groups.io_recipient` (comma-separated, edited on the Group Info tab) —
+  and a NEW global "always CC every group" list for internal team members, which didn't
+  have a home. Built the global side now (independent of the email feature itself actually
+  sending anything yet): new `notification_settings` table (singleton row, same shape as
+  `legal_content`) with one `always_cc_recipients` column, a new `admin_save_notification_
+  settings` RPC (super-admin only, same restriction level as Legal Text), and a new
+  "Notifications" admin tab mirroring the Legal Text tab's exact pattern (one textarea,
+  AM-tier view-only). **Requires running `notification-settings-2026-07-15.sql` in
+  Supabase** before this tab will load/save — not yet run as of this entry. Verified via
+  `node --check`-equivalent syntax parse and simulated load/save payload logic; the tab
+  itself hasn't been opened live yet (blocked on the migration).
 
 ---
 
