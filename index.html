@@ -3183,22 +3183,31 @@ async function submitIO() {
           const totalCount = allFields.length;
 
           // Status banner — ALWAYS shown, plain text (goes in the card DESCRIPTION) and
-          // an HTML version (goes in the PDF, colored by status).
+          // an HTML version (goes in the PDF, colored by status). Uses the FULL compound
+          // emoji (⚠️/✅, with the variation selector) rather than the bare ⚠/✓ text glyphs
+          // an earlier pass of this same fix used — Claire flagged those as "we lost the
+          // emojis," since a bare glyph renders as a small monochrome symbol instead of a
+          // full-color emoji in Trello's card view. No markdown asterisks inside `banner`
+          // itself, though — this same string also feeds the PDF's styled div via esc(),
+          // and literal "**" is exactly what made the OLD jsPDF-text version messy.
           let banner, bannerColor;
           if (data.bypassed) {
-            banner = `⚠ AM HELP REQUESTED — AE asked the AM to cover this intake on the Kick-Off Call.${data.bypassNote ? ' ' + data.bypassNote : ''}`;
+            banner = `⚠️ AM HELP REQUESTED — AE asked the AM to cover this intake on the Kick-Off Call.${data.bypassNote ? ' ' + data.bypassNote : ''}`;
             bannerColor = '#7C3AED';
           } else if (filledCount === 0) {
-            banner = `⚠ INTAKE NOT STARTED — AE did not fill out this form. AM to collect every answer on the Kick-Off Call.`;
+            banner = `⚠️ INTAKE NOT STARTED — AE did not fill out this form. AM to collect every answer on the Kick-Off Call.`;
             bannerColor = '#DC2626';
           } else if (filledCount < totalCount) {
-            banner = `⚠ PARTIALLY COMPLETE (${filledCount} of ${totalCount} answered) — AM to collect remaining items on the Kick-Off Call.`;
+            banner = `⚠️ PARTIALLY COMPLETE (${filledCount} of ${totalCount} answered) — AM to collect remaining items on the Kick-Off Call.`;
             bannerColor = '#B45309';
           } else {
-            banner = `✓ COMPLETE — all ${totalCount} questions answered.`;
+            banner = `✅ COMPLETE — all ${totalCount} questions answered.`;
             bannerColor = '#1F8A5F';
           }
-          const bannerHeader = `${esc(formDef.title)} — ${esc(banner)}`;
+          // bannerHeader is ONLY used in the card DESCRIPTION (Trello renders real
+          // markdown there, unlike the PDF) — safe to bold-wrap here without touching the
+          // shared `banner` string the PDF also reads.
+          const bannerHeader = `**${esc(formDef.title)} — ${esc(banner)}**`;
 
           let sectionsHtml = '';
           formDef.sections.forEach(section => {
