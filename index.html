@@ -3157,11 +3157,23 @@ async function submitIO() {
           return soldRows[0].intake_form_id;
         }
 
+        // REWRITTEN 2026-07-15 (per Claire, found live): the full Q&A text — including
+        // literal "**bold**" markdown and emoji like ✅/⚠️ meant for Trello's own
+        // renderer — was being drawn directly as PDF text via jsPDF's plain-text API,
+        // which has no markdown support and can't render most emoji at all (garbled
+        // characters, and the bold markers showing as literal asterisks). Now returns
+        // BOTH a short plain-text `banner` (the completion-status line only, e.g.
+        // "PARTIALLY COMPLETE (3 of 13 answered)") for the card DESCRIPTION — Claire's
+        // explicit ask, so that status stays visible without the full Q&A cluttering it
+        // — and a real styled `html` fragment (real <strong> tags, real emoji, colored by
+        // status) for the PDF, captured via html2canvas as a screenshot exactly like the
+        // IO PDF already is, so it renders correctly regardless of jsPDF's font
+        // limitations.
         const buildIntakeDesc = (originalWorkflow) => {
           const formKey = resolveWorkflowIntakeFormId(originalWorkflow);
-          if (!formKey) return '';
+          if (!formKey) return null;
           const formDef = INTAKE_FORMS[formKey];
-          if (!formDef) return '';
+          if (!formDef) return null;
           const data = intakeData[formKey] || {};
           const fields = data.fields || {};
 
@@ -3170,38 +3182,49 @@ async function submitIO() {
           const filledCount = allFields.filter(f => fields[f.key]).length;
           const totalCount = allFields.length;
 
-          // Status banner — ALWAYS shown
-          let banner;
+          // Status banner — ALWAYS shown, plain text (goes in the card DESCRIPTION) and
+          // an HTML version (goes in the PDF, colored by status).
+          let banner, bannerColor;
           if (data.bypassed) {
-            banner = `⚠️ **AM HELP REQUESTED** — AE asked the AM to cover this intake on the Kick-Off Call.${data.bypassNote ? '\n\n' + data.bypassNote : ''}`;
+            banner = `⚠ AM HELP REQUESTED — AE asked the AM to cover this intake on the Kick-Off Call.${data.bypassNote ? ' ' + data.bypassNote : ''}`;
+            bannerColor = '#7C3AED';
           } else if (filledCount === 0) {
-            banner = `⚠️ **INTAKE NOT STARTED** — AE did not fill out this form. AM to collect every answer on the Kick-Off Call.`;
+            banner = `⚠ INTAKE NOT STARTED — AE did not fill out this form. AM to collect every answer on the Kick-Off Call.`;
+            bannerColor = '#DC2626';
           } else if (filledCount < totalCount) {
-            banner = `⚠️ **PARTIALLY COMPLETE** (${filledCount} of ${totalCount} answered) — AM to collect remaining items on the Kick-Off Call.`;
+            banner = `⚠ PARTIALLY COMPLETE (${filledCount} of ${totalCount} answered) — AM to collect remaining items on the Kick-Off Call.`;
+            bannerColor = '#B45309';
           } else {
-            banner = `✅ **COMPLETE** — all ${totalCount} questions answered.`;
+            banner = `✓ COMPLETE — all ${totalCount} questions answered.`;
+            bannerColor = '#1F8A5F';
           }
+          const bannerHeader = `${esc(formDef.title)} — ${esc(banner)}`;
 
-          let desc = `**${formDef.title}**\n\n${banner}\n`;
+          let sectionsHtml = '';
           formDef.sections.forEach(section => {
-            desc += `\n**${section.title}**\n`;
+            sectionsHtml += `<div style="font-weight:700;margin:14px 0 6px">${esc(section.title)}</div>`;
             section.fields.forEach(field => {
               const val = fields[field.key] || '';
-              if (val) {
-                desc += `✅ **${field.label}:** ${val}\n`;
-              } else {
-                desc += `**${field.label}:**\n`;
-              }
+              sectionsHtml += `<div style="margin-bottom:4px"><strong>${esc(field.label)}:</strong> ${val ? esc(val) : '<span style="color:#9CA3AF">—</span>'}</div>`;
             });
           });
           // TLP structured grid — not part of the section field list, append explicitly
           if (formKey === 'tlp' && fields.tlp_mode_label) {
-            desc += `\n**Campaign Layout**\n`;
-            desc += `✅ **Type:** ${fields.tlp_mode_label}\n`;
-            desc += `✅ **${fields.tlp_single_label || 'Single'}:** ${fields.tlp_single_value || '—'}\n`;
-            desc += `✅ **${fields.tlp_many_label || 'Entries'} (${fields.tlp_page_count || 0} pages):**\n${fields.tlp_many_values || '—'}\n`;
+            sectionsHtml += `<div style="font-weight:700;margin:14px 0 6px">Campaign Layout</div>`;
+            sectionsHtml += `<div style="margin-bottom:4px"><strong>Type:</strong> ${esc(fields.tlp_mode_label)}</div>`;
+            sectionsHtml += `<div style="margin-bottom:4px"><strong>${esc(fields.tlp_single_label || 'Single')}:</strong> ${esc(fields.tlp_single_value || '—')}</div>`;
+            sectionsHtml += `<div style="margin-bottom:4px"><strong>${esc(fields.tlp_many_label || 'Entries')} (${fields.tlp_page_count || 0} pages):</strong><br>${esc(fields.tlp_many_values || '—').replace(/\n/g, '<br>')}</div>`;
           }
-          return desc;
+
+          const html = `
+            <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111;padding:24px;width:700px">
+              <div style="font-size:20px;font-weight:700;margin-bottom:4px">${esc(formDef.title)} — Intake</div>
+              <div style="font-size:12px;color:#6B7280;margin-bottom:16px">${bizName} — ${new Date().toLocaleDateString('en-US')}</div>
+              <div style="font-size:13px;font-weight:700;color:${bannerColor};background:${bannerColor}18;border:1px solid ${bannerColor}55;border-radius:6px;padding:8px 12px;margin-bottom:14px">${esc(banner)}</div>
+              <div style="font-size:13px;line-height:1.5">${sectionsHtml}</div>
+            </div>`;
+
+          return { formTitle: formDef.title, banner, bannerHeader, html };
         };
 
         const calUrl = selectedGroup.am_calendar_url || '';
@@ -3432,9 +3455,16 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // a dated PDF of this round's intake answers (if any), and apply the KOC label
         // if this workflow needs it. Closes over wfIdx/originalWorkflows/soldWorkflows/
         // lineItems/bizName/kocLabelId from the enclosing submitIO() scope.
-        async function finalizeTacticCard(cardId, wfIdx) {
+        // applyKoc (2026-07-15, per Claire): a whole-list template can copy SEVERAL
+        // cards for one workflow — the KOC label should only land on the first of them,
+        // not every sub-card, so the caller passes false for every card after the first.
+        async function finalizeTacticCard(cardId, wfIdx, applyKoc = true) {
           if (!cardId) return;
-          const sellDesc = formatSiblingLineItems(originalWorkflows[wfIdx]);
+          const intake = buildIntakeDesc(originalWorkflows[wfIdx]);
+          // Card description = services-sold summary + the short completion-status
+          // banner (2026-07-15, per Claire — kept visible without the full Q&A
+          // cluttering it; the full detail lives in the PDF instead).
+          const sellDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intake?.bannerHeader].filter(Boolean).join('\n\n');
           if (sellDesc) {
             await fetch(PROXY, {
               method: 'POST',
@@ -3442,10 +3472,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc: sellDesc.slice(0, 16000) })
             });
           }
-          const intakeText = buildIntakeDesc(originalWorkflows[wfIdx]);
-          if (intakeText) {
+          if (intake) {
             try {
-              const { base64, fileName } = await generateIntakePdfBlob(soldWorkflows[wfIdx], intakeText, bizName);
+              const { base64, fileName } = await generateIntakePdfBlob(soldWorkflows[wfIdx], intake.html);
               const attachRes = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
@@ -3458,7 +3487,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             }
           }
           const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflows[wfIdx] && li.requires_koc);
-          if (workflowNeedsKoc) await attachKocLabel(cardId, kocLabelId);
+          if (applyKoc && workflowNeedsKoc) await attachKocLabel(cardId, kocLabelId);
         }
 
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
@@ -3519,6 +3548,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             const templateCards = await tCardsRes.json();
 
             if (Array.isArray(templateCards)) {
+              // KOC label only goes on the FIRST card actually processed for this
+              // workflow (2026-07-15, per Claire) — a whole-list template can copy
+              // several cards for one sold product, and plastering the same label on
+              // every one of them was cluttered. Flips to false after the first genuine
+              // hit; cards skipped above (test cards, IO/AE placeholders, already
+              // handled this run) never touch this flag.
+              let isFirstCardThisWorkflow = true;
               for (const card of templateCards) {
                 if (card.name.startsWith('🧪')) continue; // skip test cards
                 let cn = card.name.trim();
@@ -3534,7 +3570,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const existing = findExistingCardByName(cn);
                 if (existing && !addedCardNames.has(norm(cn))) {
                   addedCardNames.add(norm(cn));
-                  await finalizeTacticCard(existing.id, wfIdx);
+                  await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow);
+                  isFirstCardThisWorkflow = false;
                   continue;
                 }
                 if (existing || cardExists(cn)) continue; // already handled this run
@@ -3551,7 +3588,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 }
                 addedCardNames.add(norm(cn));
                 cardsAdded++;
-                await finalizeTacticCard(copiedCard.id, wfIdx);
+                await finalizeTacticCard(copiedCard.id, wfIdx, isFirstCardThisWorkflow);
+                isFirstCardThisWorkflow = false;
               }
             } else {
               // Template list id configured but its cards couldn't be read (e.g. the
@@ -4059,48 +4097,60 @@ function printIO() {
 }
 
 // ── INTAKE PDF GENERATION (2026-07-15) ─────────────────────────
-// A separate, much lighter PDF path than generateIoPdfBlob() below — intake answers are
-// plain structured text, not a styled document that needs pixel-perfect reproduction, so
-// this draws real selectable text directly via jsPDF's own API instead of screenshotting
-// an HTML page through html2canvas. Used for the "reselling a tactic updates its Trello
-// card" feature (per Claire): the card's description always shows the LATEST sale, but
-// every resubmission also attaches a dated snapshot of that round's intake answers here,
-// same "description = latest, PDF = history" split the IO card already uses. Also
-// replaces intake answers living directly in the card description at all (Claire's
-// original ask) — the description now only ever holds the services-sold summary.
-async function generateIntakePdfBlob(workflowName, intakeText, bizNameRaw) {
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF('p', 'mm', 'letter', { compress: true });
-  const marginX = 15;
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const maxWidth = pdf.internal.pageSize.getWidth() - marginX * 2;
-  let y = 20;
+// REWRITTEN 2026-07-15 (found live, per Claire — "format that PDF like the IO"): the
+// first version drew intake text directly via jsPDF's plain-text API, which has no
+// markdown support and can't render most emoji at all — the literal "**bold**" markers
+// showed as asterisks and status emoji (✅/⚠️) came out as garbled characters. Now mirrors
+// generateIoPdfBlob() below exactly: renders real styled HTML (real <strong> tags, real
+// emoji/checkmarks, colored status banner) into a hidden iframe and captures it via
+// html2canvas, same screenshot approach — guarantees it renders exactly as a browser
+// actually displays it, with none of jsPDF's font limitations. Same scale/JPEG choices as
+// the IO PDF (see that function's own comment) to stay well under the Edge Function's
+// memory limit.
+async function generateIntakePdfBlob(workflowName, html) {
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-10000px;left:-10000px;width:750px;height:100px;border:none;';
+  document.body.appendChild(iframe);
 
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(14);
-  pdf.text(`${workflowName} — Intake`, marginX, y);
-  y += 7;
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(10);
-  pdf.setTextColor(110);
-  pdf.text(`${bizNameRaw} — ${new Date().toLocaleDateString('en-US')}`, marginX, y);
-  y += 10;
+  try {
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(`<!DOCTYPE html><html><body style="margin:0">${html}</body></html>`);
+    iframe.contentDocument.close();
 
-  pdf.setTextColor(20);
-  pdf.setFontSize(10);
-  const lineHeight = 5.5;
-  String(intakeText).split('\n').forEach(paragraph => {
-    const wrapped = pdf.splitTextToSize(paragraph || ' ', maxWidth);
-    wrapped.forEach(line => {
-      if (y > pageHeight - 20) { pdf.addPage(); y = 20; }
-      pdf.text(line, marginX, y);
-      y += lineHeight;
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    const canvas = await html2canvas(iframe.contentDocument.body, {
+      scale: 1.5,
+      useCORS: true,
+      windowWidth: iframe.contentDocument.body.scrollWidth,
+      windowHeight: iframe.contentDocument.body.scrollHeight,
     });
-  });
 
-  const safeWf = workflowName.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
-  const fileName = `Intake-${safeWf || 'workflow'}-${new Date().toISOString().slice(0, 10)}.pdf`;
-  return { base64: pdf.output('datauristring').split(',')[1], fileName };
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'letter', { compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
+
+    let heightLeft = imgHeight;
+    let position = 0;
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+    heightLeft -= pageHeight;
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+    }
+
+    const safeWf = workflowName.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+    const fileName = `Intake-${safeWf || 'workflow'}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    return { base64: pdf.output('datauristring').split(',')[1], fileName };
+  } finally {
+    document.body.removeChild(iframe);
+  }
 }
 
 // ── PDF GENERATION (2026-07-14) ───────────────────────────────
@@ -4446,6 +4496,12 @@ function resetForm() {
   updateTypedSig('');
   document.getElementById('koc-card').style.display = 'none';
   document.getElementById('intake-status-card').style.display = 'none';
+  // FIXED (2026-07-15, found live): biz-name's VALUE gets wiped by the page-1 text-input
+  // loop above, but the similar-client warning banner it triggers is a separate element
+  // that nothing here ever hid — so "Submit Another IO" left the PREVIOUS client's
+  // "looks similar to X" warning on screen even though the field itself was blank.
+  const bizNameWarn = document.getElementById('biz-name-match-warning');
+  if (bizNameWarn) { bizNameWarn.style.display = 'none'; bizNameWarn.innerHTML = ''; }
   updateBadges();
   goStep(1);
 }

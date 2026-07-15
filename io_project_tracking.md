@@ -220,6 +220,54 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   correct title/subtitle/wrapped body text, pagination, and filename — not yet confirmed
   live in a browser.
   once built).
+- **Intake PDF/card follow-up fixes — BUILT 2026-07-15, found live by Claire testing the
+  feature above.** Claire tested a resold tactic card and reported the intake PDF was
+  "messy": literal `**bold**` markdown showing as raw asterisks, emoji/checkmarks
+  (✅/⚠️) rendering as garbled characters (e.g. `&þ`), odd letter-spacing throughout. Root
+  cause: `generateIntakePdfBlob()`'s first version drew intake text directly via jsPDF's
+  plain-text API (`.text()`/`.splitTextToSize()`), which has no markdown support and can't
+  render most emoji/Unicode at all — a real limitation of that approach, not a bug in the
+  text itself. Fixed by abandoning raw text-drawing and switching to the SAME
+  html2canvas-screenshot approach the IO PDF already uses: render real styled HTML (real
+  `<strong>` tags, real emoji, a colored status banner) into a hidden iframe, capture it
+  with html2canvas, embed as a JPEG image across paginated jsPDF pages — guarantees the
+  PDF renders exactly as a browser displays it, no font-limitation garbling possible.
+  Two more pieces of feedback landed in the same fix: (1) Claire wants the short
+  completion-status line (not started / partially complete / complete / AM-help-requested)
+  kept visible in the card DESCRIPTION too, not moved entirely into the PDF — `buildIntakeDesc()`
+  now returns `{ formTitle, banner, bannerHeader, html }` instead of one string: `banner`/
+  `bannerHeader` are the short plain-text status line appended to the card description
+  (after the services-sold summary), `html` is the full styled fragment for the PDF.
+  (2) For a whole-list Trello template that copies several cards for one workflow (e.g. a
+  Website tier package), the KOC label was landing on every copied card — Claire wants it
+  on the FIRST card only. `finalizeTacticCard()` gained an `applyKoc` parameter
+  (default `true`); the whole-list-template loop now tracks `isFirstCardThisWorkflow`,
+  passes it through, and flips it to `false` after the first genuine card is processed
+  (test/IO/AE-placeholder cards skipped by earlier filters never touch the flag). Verified
+  via simulation: all four intake-completion states (not started/partial/complete/bypassed)
+  produce correct banner text and color; a simulated 3-card whole-list copy (with an IO
+  placeholder, an AE-questions card, and a test card interspersed) correctly applies
+  `applyKoc:true` to only the first real card and `false` to the rest. Not yet confirmed
+  live in a browser — Claire was mid-test (about to do the second submission for the same
+  test client to verify description-updates-to-latest + PDF-history-accumulates) when she
+  paused to report this.
+- **Stuck submit button breadcrumb fix — CONFIRMED WORKING LIVE 2026-07-15.** Claire
+  retested; clicking a Step 1/2/3 breadcrumb while the success screen is showing no longer
+  leaves the submit button frozen — the breadcrumb-disable fix (`pointer-events:none`
+  while success is showing, re-enabled by `resetForm()`) holds up in practice.
+- **Stale "similar to existing client" warning surviving Submit Another IO — FIXED
+  2026-07-15, found live by Claire.** Created a new "Test Business 6" client, got the
+  expected typo/duplicate warning ("looks similar to Test Business 1" — a false positive
+  from her own test naming, not a real bug in the similarity logic itself), then clicked
+  "Submit Another IO" — the warning banner was still showing even though the business-name
+  field itself was blank. Root cause: `resetForm()`'s text-input wipe clears the
+  `biz-name` input's VALUE, but the warning is a separate element
+  (`#biz-name-match-warning`) that nothing in `resetForm()` ever hid directly — it's
+  normally only hidden/updated by `checkClientNameMatch()`, which only runs on typing, not
+  on form reset. Fixed by explicitly hiding/clearing that element inside `resetForm()`
+  alongside the other leftover-state clears already there. Verified via `node --check`-
+  equivalent syntax parse only — the actual disappearing-banner behavior itself hasn't
+  been re-confirmed live yet.
 
 ---
 
