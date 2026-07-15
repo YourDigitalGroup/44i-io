@@ -251,6 +251,23 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   live in a browser — Claire was mid-test (about to do the second submission for the same
   test client to verify description-updates-to-latest + PDF-history-accumulates) when she
   paused to report this.
+- **Stuck submit button breadcrumb fix — CONFIRMED WORKING LIVE 2026-07-15.** Claire
+  retested; clicking a Step 1/2/3 breadcrumb while the success screen is showing no longer
+  leaves the submit button frozen — the breadcrumb-disable fix (`pointer-events:none`
+  while success is showing, re-enabled by `resetForm()`) holds up in practice.
+- **Stale "similar to existing client" warning surviving Submit Another IO — FIXED
+  2026-07-15, found live by Claire.** Created a new "Test Business 6" client, got the
+  expected typo/duplicate warning ("looks similar to Test Business 1" — a false positive
+  from her own test naming, not a real bug in the similarity logic itself), then clicked
+  "Submit Another IO" — the warning banner was still showing even though the business-name
+  field itself was blank. Root cause: `resetForm()`'s text-input wipe clears the
+  `biz-name` input's VALUE, but the warning is a separate element
+  (`#biz-name-match-warning`) that nothing in `resetForm()` ever hid directly — it's
+  normally only hidden/updated by `checkClientNameMatch()`, which only runs on typing, not
+  on form reset. Fixed by explicitly hiding/clearing that element inside `resetForm()`
+  alongside the other leftover-state clears already there. Verified via `node --check`-
+  equivalent syntax parse only — the actual disappearing-banner behavior itself hasn't
+  been re-confirmed live yet.
 
 ---
 
