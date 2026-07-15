@@ -154,17 +154,24 @@ isn't known until the quote, so timing matters. _Awaiting AM._
 
 ## OPEN QUESTIONS FOR THE AM
 
-- **TLP 15+ intake timing** — fill structured intake before or after the quote? (above)
+- **TLP 15+ intake timing — RESOLVED/MOOT 2026-07-15.** Originally: fill structured
+  intake before or after the quote? Claire's call: no longer needs a separate answer —
+  building the QUR Quoted Price field and the TLP Custom dynamic intake grid (both built
+  2026-07-14) already resolves this naturally, since the AE now enters the quote and the
+  page count together at intake time, in whichever order makes sense for that
+  conversation. Nothing further needed here.
 - **Visitor-ID email-bundle intake** — `w-vid200e` / `w-vid350e` / `w-vid500e` had
   NO intake form in the old code, while the plain versions (`w-vid200/350/500`) route
   to the `visitorid` intake. The table now gives all six the intake form (assuming the
   omission was an oversight). Confirm that's correct, or whether the email versions
-  should skip intake for a reason.
-- **Archived/returning clients (Trello)** — how often does it happen, and how do they
-  currently re-find the archived list? (Shapes the eventual fix; not blocking.)
-- **Multi-select in Targeted Display / Social Media Ads — clarified into two SEPARATE
-  questions (2026-07-10), since the old vague note conflated two different situations.**
-  Pulled the real tier membership via SQL rather than guess:
+  should skip intake for a reason. **STILL OPEN as of 2026-07-15.**
+- **Archived/returning clients (Trello) — CONFIRMED WORKING 2026-07-15.** Claire tested
+  this live: submitting an IO for a client whose Trello list was archived correctly
+  reopens that same list (and repositions it to board slot 5, per the fix built the same
+  day) instead of creating a duplicate. No further action needed.
+- **Multi-select in Targeted Display / Social Media Ads — IN TESTING as of 2026-07-15.**
+  Clarified into two SEPARATE questions (2026-07-10), since the old vague note conflated
+  two different situations. Pulled the real tier membership via SQL rather than guess:
   - **Targeted Display (`td-tier`):** Geotargeting & Audience ($10 CPM), Site Retargeting
     ($12), Dynamic Display ($15), Custom Site Targeting ($18) — these are 4 different
     TARGETING METHODS, currently forced to single-select (picking one unchecks the others).
@@ -184,18 +191,17 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   `td-offline` (Offline Visits Tracking, a flat modifier add-on) is NOT part of the
   `td-tier` group and is unaffected by this question either way.
 - **Should reselling an already-sold product update its existing Trello tactic card? —
-  raised 2026-07-14, found while testing the archived-client reopen flow.** Confirmed
-  current code behavior (never explicitly decided with the AM before, just how it's
-  quietly worked since the original build): when a product being sold already has a
-  matching-named card in the client's Trello list, that card is skipped entirely — never
-  touched, updated, or duplicated. Only genuinely new products get a new card added. The
-  IO card itself is NOT affected by this question — it already gets its description
-  updated and a new dated PDF attached on every submission regardless. Question: is
-  "never touch an existing tactic card again after its first sale" the right behavior
-  (safest against overwriting notes/checklist progress an AE or strategist has since
-  added to that card), or should reselling a product somehow update its card (e.g.
-  append a note about the new sale, or refresh its description) — and if so, append vs.
-  replace? Not blocking; current behavior is a safe, defensible default either way.
+  ANSWERED 2026-07-15: YES.** Raised 2026-07-14, found while testing the archived-client
+  reopen flow. Confirmed current code behavior at the time (never explicitly decided with
+  the AM before, just how it quietly worked since the original build): when a product
+  being sold already has a matching-named card in the client's Trello list, that card was
+  skipped entirely — never touched, updated, or duplicated. Claire's decision: yes, build
+  it, scoped to work the same way the IO card already does — keep the card's description
+  showing the LATEST sale, but attach a dated PDF snapshot for history on every
+  resubmission, so nothing before it is ever lost. This also folds in the earlier
+  "intake answers as a PDF instead of in the description" request — one build serves
+  both. **Status: scope confirmed, build starting 2026-07-15** (see entry further below
+  once built).
 
 ---
 
