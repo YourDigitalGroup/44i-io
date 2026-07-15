@@ -2630,6 +2630,19 @@ file (same completeness check used for every admin-editor addition this project)
   free, client-side libraries loaded via CDN script tag, no account/key needed.
   Still needed before the email send itself works: **Email provider** (see point 1 above)
   — PDF generation itself is done and also already wired into Trello (see below).
+  **UPDATE 2026-07-15 — content confirmed + always-CC recipient list added:** Claire
+  confirmed the email itself will be "very similar to what we're doing now... some of the
+  information in the email copy and then a PDF of the actual IO" — same for every group,
+  nothing group-specific in the template beyond the recipients. Also confirmed a SECOND
+  recipient audience beyond `groups.io_recipient`: internal team members (e.g. every AM)
+  who should be CC'd on every group's emails, not just their own, in case someone's out —
+  built as a new global `notification_settings.always_cc_recipients` field (see
+  "Notification recipients" entry above for the admin-tab build). **Requirement flagged
+  for whenever the actual send logic gets built:** an AM will likely appear in BOTH their
+  own group's `io_recipient` list AND the global always-CC list — the send step must
+  merge both recipient lists into one set (case-insensitive dedup) before sending, so that
+  person doesn't get the same email twice. Not yet built (no send logic exists at all
+  yet) — just recorded here so whoever writes the actual send function doesn't miss it.
 - **Returning-client IO card should accumulate history, not overwrite — BUILT 2026-07-14
   (`d22d93a`), Edge Function deployed, payload-size bug fixed 2026-07-14 (`878be08`).**
   Originally flagged 2026-07-13: submitting a new IO for a client who already has an "IO"
