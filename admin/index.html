@@ -723,11 +723,11 @@
         <button id="admin-legal-save-btn" onclick="adminSaveLegalContent()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Legal Text</button>
       </div><!-- /section-legal -->
 
-      <!-- ── SECTION: Notifications (always-CC recipients, global — every group's emails) ── -->
+      <!-- ── SECTION: Notifications (always-BCC recipients, global — every group's emails) ── -->
       <div id="section-notifications" style="display:none">
         <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Notifications</p>
         <p style="font-size:11px;color:var(--muted);margin-bottom:16px">
-          These addresses are CC'd on every submission email, for every group, in addition to that
+          These addresses are BCC'd on every submission email, for every group, in addition to that
           group's own IO Recipients (set per-group on the Group Info tab). Use this for internal team
           members who need to see every IO regardless of which group it came in on.
         </p>
@@ -737,8 +737,8 @@
         </div>
 
         <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff;margin-bottom:20px;max-width:520px">
-          <label class="lbl">Always-CC Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, every group</span></label>
-          <textarea id="notif-always_cc_recipients" rows="3" placeholder="name@44interactive.com, name2@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+          <label class="lbl">Always-BCC Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, every group</span></label>
+          <textarea id="notif-always_bcc_recipients" rows="3" placeholder="name@44interactive.com, name2@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;resize:vertical"></textarea>
         </div>
 
         <button id="admin-notifications-save-btn" onclick="adminSaveNotificationSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Notifications</button>
@@ -2452,14 +2452,16 @@ async function adminSaveLegalContent() {
   }
 }
 
-// ── NOTIFICATIONS (always-CC recipients, global — every group's emails) ────────
+// ── NOTIFICATIONS (always-BCC recipients, global — every group's emails) ────────
 // Same singleton-row pattern as legal_content — a small fixed set of known fields Claire
-// edits directly, not a per-item list she'd add new rows to.
+// edits directly, not a per-item list she'd add new rows to. BCC (not CC, per Claire
+// 2026-07-15) — recipients on this list shouldn't see each other or the group's own
+// io_recipient addresses in the To/CC headers.
 async function loadAdminNotificationSettings() {
   try {
     const rows = await sb('notification_settings?id=eq.1&select=*') || [];
     const row = rows[0] || {};
-    document.getElementById('notif-always_cc_recipients').value = row.always_cc_recipients || '';
+    document.getElementById('notif-always_bcc_recipients').value = row.always_bcc_recipients || '';
   } catch(e) {
     showToast('Error loading notification settings: ' + e.message, 'error');
   }
@@ -2471,7 +2473,7 @@ async function adminSaveNotificationSettings() {
     return;
   }
   const payload = {
-    always_cc_recipients: document.getElementById('notif-always_cc_recipients').value.trim()
+    always_bcc_recipients: document.getElementById('notif-always_bcc_recipients').value.trim()
   };
   try {
     await sb('rpc/admin_save_notification_settings', {
