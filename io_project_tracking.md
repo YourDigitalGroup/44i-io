@@ -200,7 +200,25 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   showing the LATEST sale, but attach a dated PDF snapshot for history on every
   resubmission, so nothing before it is ever lost. This also folds in the earlier
   "intake answers as a PDF instead of in the description" request — one build serves
-  both. **Status: scope confirmed, build starting 2026-07-15** (see entry further below
+  both. **BUILT 2026-07-15 (`cebddda`).** Rewrote the whole Step 5 tactic-card loop:
+  every one of the 4 card-creation paths (single-card template, whole-list template,
+  whole-list-unreadable fallback, no-template plain card) now shares one
+  `finalizeTacticCard()` finishing step, called whether the card was just created OR
+  already existed before this run — no more "skip if it already exists." The card
+  description no longer ever contains intake answers, only the services-sold summary
+  (`formatSiblingLineItems`), always refreshed to the current state. Intake answers
+  instead go into a new `generateIntakePdfBlob()` — deliberately NOT the IO PDF's
+  html2canvas-screenshot approach, since intake content is plain structured text with no
+  layout worth reproducing pixel-for-pixel; draws real text directly via jsPDF's own API
+  instead, much lighter than a screenshot. Preserved the existing within-run dedup
+  (`addedCardNames`) so two workflow entries resolving to the same card name in one
+  submission still only get processed once, now distinguished from
+  "already existed before this run, needs updating" via a new `findExistingCardByName()`
+  lookup against `existingCards` (fetched once at Step 3, already in scope). Verified via
+  simulation: all four routing scenarios (brand-new card, resold existing card, and both
+  flavors of within-run duplicate) resolve correctly, and the new PDF generator produces
+  correct title/subtitle/wrapped body text, pagination, and filename — not yet confirmed
+  live in a browser.
   once built).
 
 ---
