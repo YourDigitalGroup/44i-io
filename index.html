@@ -4502,6 +4502,17 @@ function resetForm() {
   // "looks similar to X" warning on screen even though the field itself was blank.
   const bizNameWarn = document.getElementById('biz-name-match-warning');
   if (bizNameWarn) { bizNameWarn.style.display = 'none'; bizNameWarn.innerHTML = ''; }
+  // FIXED (2026-07-15, found live): sections start COLLAPSED (see renderSectionShells())
+  // and only open because the AE clicked the header to check something inside — nothing
+  // ever re-collapsed them, so "Submit Another IO" left every section the previous
+  // submission had opened still expanded, even though the checkboxes inside were
+  // correctly cleared. Collapse every section back to its default closed state here.
+  SECTIONS.forEach(sec => {
+    const body = document.getElementById('sec-' + sec.id);
+    const chev = document.getElementById('chevron-' + sec.id);
+    if (body) body.style.display = 'none';
+    if (chev) chev.textContent = '▶';
+  });
   updateBadges();
   goStep(1);
 }
