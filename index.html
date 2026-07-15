@@ -3397,7 +3397,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           }
         }
 
-        // ── Step 5: Add tactic cards for new products only ──
+        // ── Step 5: Add or UPDATE tactic cards for every sold product ──
+        // REWRITTEN 2026-07-15 (per Claire, explicitly greenlit): reselling an
+        // already-sold product used to skip its existing card entirely — now it updates
+        // it, same "description = latest, PDF = history" split the IO card already uses.
+        // The card description no longer holds intake answers at all (Claire's original
+        // ask) — only the services-sold summary (formatSiblingLineItems), always
+        // refreshed to the current state. Intake answers instead go into a dated PDF
+        // attached on every submission (new or resold), building real history instead of
+        // being overwritten or, previously, never touched again after the first sale.
         let cardsAdded = 0;
         const originalWorkflows = [...workflows]; // same order as soldWorkflows, pre-tier-remap
 
@@ -3412,11 +3420,50 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           console.warn('A sold service needs a Kick-Off Call, but no "Needs KOC" label was found on this board — card(s) created without the label.');
         }
 
+        // Looks up a card that already existed BEFORE this run (from existingCards,
+        // fetched once at Step 3) — distinct from addedCardNames, which only tracks
+        // cards created/updated DURING this same run (used to avoid double-processing
+        // if two workflow entries somehow resolve to the same card name in one submit).
+        const findExistingCardByName = (name) =>
+          Array.isArray(existingCards) ? existingCards.find(c => norm(c.name) === norm(name)) : null;
+
+        // Shared finishing step for every tactic card, whether just created or already
+        // existing: refresh the description to the current services-sold summary, attach
+        // a dated PDF of this round's intake answers (if any), and apply the KOC label
+        // if this workflow needs it. Closes over wfIdx/originalWorkflows/soldWorkflows/
+        // lineItems/bizName/kocLabelId from the enclosing submitIO() scope.
+        async function finalizeTacticCard(cardId, wfIdx) {
+          if (!cardId) return;
+          const sellDesc = formatSiblingLineItems(originalWorkflows[wfIdx]);
+          if (sellDesc) {
+            await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc: sellDesc.slice(0, 16000) })
+            });
+          }
+          const intakeText = buildIntakeDesc(originalWorkflows[wfIdx]);
+          if (intakeText) {
+            try {
+              const { base64, fileName } = await generateIntakePdfBlob(soldWorkflows[wfIdx], intakeText, bizName);
+              const attachRes = await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' })
+              });
+              const attachData = await attachRes.json().catch(() => null);
+              if (!attachRes.ok) console.warn('Could not attach intake PDF to card', cardId, ':', attachRes.status, attachData);
+            } catch (e) {
+              console.warn('Could not generate/attach intake PDF for card', cardId, ':', e.message);
+            }
+          }
+          const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflows[wfIdx] && li.requires_koc);
+          if (workflowNeedsKoc) await attachKocLabel(cardId, kocLabelId);
+        }
+
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
           const wf = soldWorkflows[wfIdx];
           const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
-          const intakeDesc = buildIntakeDesc(originalWorkflows[wfIdx]);
-          const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflows[wfIdx] && li.requires_koc);
 
           if (template && template.type === 'card') {
             // Single-card template (e.g. "Display", "SEM") — copy just this one card,
@@ -3438,11 +3485,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               console.warn(`Could not resolve single-card template for workflow "${originalWorkflows[wfIdx]}" (ref ${template.ref}) — no card added. Check the Trello Template field on the relevant service.`);
             } else {
               // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
-              // the business name. Appended HERE, before cardExists(), so the dedup check
-              // and the actual Trello name always agree — a resubmission checks for THIS
-              // exact suffixed name, not the bare tactic name.
+              // the business name.
               const cn = (templateCard.name || wf).trim() + ' — ' + bizName;
-              if (!cardExists(cn)) {
+              const existing = findExistingCardByName(cn);
+              if (existing && !addedCardNames.has(norm(cn))) {
+                addedCardNames.add(norm(cn));
+                await finalizeTacticCard(existing.id, wfIdx);
+              } else if (!existing && !cardExists(cn)) {
                 const copyRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
@@ -3453,15 +3502,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 if (copiedCard?.id) {
                   addedCardNames.add(norm(cn));
                   cardsAdded++;
-                  const fullDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
-                  if (fullDesc) {
-                    await fetch(PROXY, {
-                      method: 'POST',
-                      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                      body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: fullDesc.slice(0, 16000) })
-                    });
-                  }
-                  if (workflowNeedsKoc) await attachKocLabel(copiedCard.id, kocLabelId);
+                  await finalizeTacticCard(copiedCard.id, wfIdx);
                 } else {
                   console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
                 }
@@ -3484,14 +3525,19 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 // Skip any template placeholder named "IO", "IO -", "IO :", etc.
                 if (isIoName(cn)) continue;
                 // Skip AE Questions cards from any template — redundant; the intake
-                // answers are written into each tactic card's description instead
+                // answers now live in the PDF attachment instead
                 if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
                 // Tactic — Client (2026-07-14, per Claire) — appended AFTER the filters
-                // above (which need to match the template's own plain name), but BEFORE
-                // cardExists(), so the dedup check agrees with the actual Trello name.
+                // above (which need to match the template's own plain name).
                 cn += ' — ' + bizName;
-                // Skip if card with this name already exists OR was just added in this run
-                if (cardExists(cn)) continue;
+
+                const existing = findExistingCardByName(cn);
+                if (existing && !addedCardNames.has(norm(cn))) {
+                  addedCardNames.add(norm(cn));
+                  await finalizeTacticCard(existing.id, wfIdx);
+                  continue;
+                }
+                if (existing || cardExists(cn)) continue; // already handled this run
 
                 const copyRes = await fetch(PROXY, {
                   method: 'POST',
@@ -3505,33 +3551,27 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 }
                 addedCardNames.add(norm(cn));
                 cardsAdded++;
-
-                // ALWAYS inject intake form into every copied tactic card — regardless of fill state
-                if (intakeDesc && copiedCard?.id) {
-                  await fetch(PROXY, {
-                    method: 'POST',
-                    headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                    body: JSON.stringify({ target: 'trello_update_card', card_id: copiedCard.id, desc: intakeDesc.slice(0, 16000) })
-                  });
-                }
-                if (workflowNeedsKoc) await attachKocLabel(copiedCard.id, kocLabelId);
+                await finalizeTacticCard(copiedCard.id, wfIdx);
               }
             } else {
               // Template list id configured but its cards couldn't be read (e.g. the
               // list was deleted) — fall back to a plain card so submission still works
               // Tactic — Client (2026-07-14, per Claire)
               const fallbackName = wf + ' — ' + bizName;
-              if (!cardExists(fallbackName)) {
-                const fallbackDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
+              const existing = findExistingCardByName(fallbackName);
+              if (existing && !addedCardNames.has(norm(fallbackName))) {
+                addedCardNames.add(norm(fallbackName));
+                await finalizeTacticCard(existing.id, wfIdx);
+              } else if (!existing && !cardExists(fallbackName)) {
                 const fallbackRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: fallbackDesc, pos: 'bottom' })
+                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: '', pos: 'bottom' })
                 });
                 const fallbackCard = await fallbackRes.json();
                 addedCardNames.add(norm(fallbackName));
                 cardsAdded++;
-                if (workflowNeedsKoc && fallbackCard?.id) await attachKocLabel(fallbackCard.id, kocLabelId);
+                if (fallbackCard?.id) await finalizeTacticCard(fallbackCard.id, wfIdx);
               }
             }
           } else {
@@ -3541,17 +3581,20 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             // riding alongside the main service could otherwise go completely unmentioned.
             // Tactic — Client (2026-07-14, per Claire)
             const plainName = wf + ' — ' + bizName;
-            if (!cardExists(plainName)) {
-              const plainDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intakeDesc].filter(Boolean).join('\n\n');
+            const existing = findExistingCardByName(plainName);
+            if (existing && !addedCardNames.has(norm(plainName))) {
+              addedCardNames.add(norm(plainName));
+              await finalizeTacticCard(existing.id, wfIdx);
+            } else if (!existing && !cardExists(plainName)) {
               const plainRes = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: plainName, desc: plainDesc, pos: 'bottom' })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: plainName, desc: '', pos: 'bottom' })
               });
               const plainCard = await plainRes.json();
               addedCardNames.add(norm(plainName));
               cardsAdded++;
-              if (workflowNeedsKoc && plainCard?.id) await attachKocLabel(plainCard.id, kocLabelId);
+              if (plainCard?.id) await finalizeTacticCard(plainCard.id, wfIdx);
             }
           }
         }
@@ -4013,6 +4056,51 @@ function printIO() {
   win.document.write(html);
   win.document.close();
   setTimeout(() => win.print(), 600);
+}
+
+// ── INTAKE PDF GENERATION (2026-07-15) ─────────────────────────
+// A separate, much lighter PDF path than generateIoPdfBlob() below — intake answers are
+// plain structured text, not a styled document that needs pixel-perfect reproduction, so
+// this draws real selectable text directly via jsPDF's own API instead of screenshotting
+// an HTML page through html2canvas. Used for the "reselling a tactic updates its Trello
+// card" feature (per Claire): the card's description always shows the LATEST sale, but
+// every resubmission also attaches a dated snapshot of that round's intake answers here,
+// same "description = latest, PDF = history" split the IO card already uses. Also
+// replaces intake answers living directly in the card description at all (Claire's
+// original ask) — the description now only ever holds the services-sold summary.
+async function generateIntakePdfBlob(workflowName, intakeText, bizNameRaw) {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF('p', 'mm', 'letter', { compress: true });
+  const marginX = 15;
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const maxWidth = pdf.internal.pageSize.getWidth() - marginX * 2;
+  let y = 20;
+
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(14);
+  pdf.text(`${workflowName} — Intake`, marginX, y);
+  y += 7;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(10);
+  pdf.setTextColor(110);
+  pdf.text(`${bizNameRaw} — ${new Date().toLocaleDateString('en-US')}`, marginX, y);
+  y += 10;
+
+  pdf.setTextColor(20);
+  pdf.setFontSize(10);
+  const lineHeight = 5.5;
+  String(intakeText).split('\n').forEach(paragraph => {
+    const wrapped = pdf.splitTextToSize(paragraph || ' ', maxWidth);
+    wrapped.forEach(line => {
+      if (y > pageHeight - 20) { pdf.addPage(); y = 20; }
+      pdf.text(line, marginX, y);
+      y += lineHeight;
+    });
+  });
+
+  const safeWf = workflowName.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+  const fileName = `Intake-${safeWf || 'workflow'}-${new Date().toISOString().slice(0, 10)}.pdf`;
+  return { base64: pdf.output('datauristring').split(',')[1], fileName };
 }
 
 // ── PDF GENERATION (2026-07-14) ───────────────────────────────
