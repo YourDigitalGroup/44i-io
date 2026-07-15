@@ -241,6 +241,17 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   `services.section` has no enforced foreign key to `sections.id`, so both the section
   row and every service pointing at it need updating together, or those services would
   silently stop appearing anywhere).
+- **Supabase compute/connection health check — CONFIRMED HEALTHY 2026-07-16.** Claire was
+  on high alert after hitting a real capacity wall on a separate, unrelated database
+  project (too many uncapped calls, ultimately needing a support ticket + a compute
+  upgrade to recover) and wanted 44i-io checked for the same risk. Reviewed the Supabase
+  dashboard together: CPU 2%, RAM 31%, disk 11%, 7 of 60 connections in use, 642 total
+  requests with a 99.8% success rate over 24 hours (the one error traced to a duplicate-
+  key SQL error Claire hit and already resolved earlier the same session — not a new or
+  ongoing issue). All comfortably healthy for this project's current usage (internal
+  testing only, not yet AE-launched). Added a new standing principle (below, under KEY
+  PRINCIPLES) to check query patterns for N+1/uncapped-call risk on every new feature
+  going forward, rather than only after traffic grows.
 - **Archived/returning clients (Trello) — CONFIRMED WORKING 2026-07-15.** Claire tested
   this live: submitting an IO for a client whose Trello list was archived correctly
   reopens that same list (and repositions it to board slot 5, per the fix built the same
@@ -3117,3 +3128,15 @@ file (same completeness check used for every admin-editor addition this project)
 - Verify before trusting (the switchover's two-stage check caught real issues before
   they went live).
 - GitHub commit = the undo button. Bank known-good checkpoints.
+- **Watch database load on every new feature, not just correctness** (added 2026-07-16,
+  per Claire — a separate project of hers hit a real wall: too many calls with no cap on
+  how much could run, eventually needing a support ticket and a compute upgrade to
+  recover). Before adding any new query pattern, especially inside a loop, check: is this
+  making ONE call per item instead of one call for the whole batch (an N+1 pattern)? Is
+  there any cap on how many things a single action can trigger, or could a large enough
+  input make it call the database an unbounded number of times? Does a new admin/AE
+  feature add repeated Supabase calls per keystroke/render where a single call would do?
+  This project's actual usage is currently light (internal testing only, low request
+  volume, connections nowhere near the pool limit — see the 2026-07-16 Supabase-metrics
+  check in this doc), so nothing here is urgent, but it's worth checking as a habit on
+  every new feature rather than only after traffic grows and it becomes a real problem.
