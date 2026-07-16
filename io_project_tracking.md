@@ -63,6 +63,44 @@ rather than trickled out one at a time):
 - Submission-email content/recipients — Claire confirming with her AM next week; email
   provider (Mailgun) identified and the whole send pipeline is built, just needs the
   real API key once she has it.
+- Custom Pricing for ad-spend/CPM services — deliberately deferred (2026-07-10) as its
+  own design pass (what does "override" even mean for a CPM rate — the rate itself, or
+  a flat add-on?); still unbuilt, not urgent.
+- Hosting exclusivity/presentation — own section vs. mixed with other services, and the
+  one-time-build vs. recurring-hosting relationship; vague, never fully scoped.
+
+**Small, still-open items (low priority, no urgency):**
+- Duplicate clients from typos — the `norm()` normalization helper used elsewhere was
+  never applied to the client-list-lookup step itself; a typo'd name can still create a
+  duplicate client record. (The separate archived-client Trello-list routing bug this
+  was originally bundled with IS confirmed fixed — see 2026-07-15 entries below — this
+  is only the remaining name-matching half.)
+- `loadDraft()` doesn't re-run `updateIntakeStatusCard()`/`updateKocCard()` after
+  restoring a draft — a restored draft with intake/KOC-requiring products can show a
+  stale status badge until the user navigates away and back.
+- Notes input on Step 2 doesn't wrap while typing (it's a single-line `<input>`, not a
+  `<textarea>`) — deferred pending real AM feedback on whether it's worth the change.
+  Not urgent: Step 3's Review page already wraps Notes correctly, and that's the version
+  that's actually saved/printed/sent to Trello.
+- Contract-term footnote symbols (◊ § ‡ *) may need explaining to whoever signs — never
+  addressed either way.
+- TLP page-count detail ("1–5 Pages" etc.) lives only in hardcoded HTML text, not the
+  service's actual stored label — cosmetic drift risk, never folded into the label itself.
+- `printIO()`'s `setTimeout(..., 600)` before printing is a little fragile if fonts/logo
+  load slowly on a given device — works in practice, not bulletproof.
+- Two small future intake-builder features, never picked up: a checkbox field type
+  (added as a supported type, never actually used by any form) and simple conditional
+  ("if yes, show X") field support.
+
+**Old item, found during this cleanup pass, status uncertain — needs a fresh look:**
+- **"Intake-selected services don't flow to order/totals"** — flagged HIGH PRIORITY very
+  early in the project (line ~1950 in the historical detail below), asking whether
+  intake-form selections should add to the order or just flag interest. No resolution
+  found anywhere later in the doc. Likely MOOT given how much the intake architecture
+  has changed since (intake forms today are Q&A tied to an already-SOLD service —
+  e.g. the TLP grid, visitor-ID details — not a mechanism for selecting additional
+  services), but this is a guess, not confirmed. Worth a 2-minute sanity check next
+  session rather than assuming it's fine.
 
 **Mobile/tablet pass** (flagged as a launch requirement, never finished):
 - Step 1 Campaign Length dropdown and Step 3 date field clipped on a real device.
