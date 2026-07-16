@@ -25,6 +25,67 @@ in conversation.
 
 ---
 
+## CURRENT OUTSTANDING ITEMS (as of 2026-07-16)
+
+Read this section first — it's the up-to-date "what's actually left" list, verified
+against the full document below (not just grepped for keywords; each item here was
+individually checked to confirm it's still genuinely open, not just flagged once and
+later resolved elsewhere in the doc without this summary being updated). Everything
+below this section is full historical detail, kept for context/continuity, not a
+second to-do list — if it disagrees with this section, this section is newer and wins.
+
+**Waiting on a dedicated AM catalog review** (deliberately batched into one session
+rather than trickled out one at a time):
+- Website hosting/chatbot tier exclusivity — the 4 Monthly hosting/chatbot tiers have
+  no exclusivity wiring; someone could currently select all 4 at once.
+- Standalone Hosting Fee / E-Commerce Hosting Fee checkboxes vs. the hosting-setup
+  modal triggered by site tiers — completely independent today, real double-charge risk.
+- "AI Chatbot" bundles bought standalone — does it make sense, or should it be blocked?
+- Modules / Optional Content Support vs. a site-tier pick — should selecting these be
+  limited by which site tier was chosen? (Domain Transfer/DNS/Convert Logo already
+  resolved as independent — this is narrower, just these two.)
+- Traditional Media Buying & Consultation (`alc-media`, 15%) — percentage-based pricing
+  that still calculates as $0; how should % pricing actually work?
+- KOC requirements catalog-wide — never fully cross-checked against Claire's own
+  expected list (Website/SMM/Email/SEO Builder & Pro).
+- `hulu-bp`/`amz-bp` missing an intake form — confirm intentional.
+- `yttv-addl` billing type — stored as a flat modifier, never explicitly AM-confirmed.
+- Visitor-ID email-bundle intake (`w-vid200/350/500e`) — confirm the assumed fix (all
+  six variants get the intake form) was correct.
+- Multi-select in Targeted Display / Social Media Ads — single-select is currently
+  forced; confirm intentional or allow multiple.
+- Bundled tactic card's intake form (e.g. Targeted Landing Page riding inside a
+  package) — should it get its own intake, none, or does it depend on the package?
+- Event Targeting resell behavior — Claire's AM wants a fresh Trello card every time
+  it's resold (each event differs), not the usual "update the existing card." Mechanism
+  proposed (2026-07-16), not yet built — needs a decision on whether repeat cards for
+  the same client should be visually distinguished (e.g. a date in the card name).
+- Submission-email content/recipients — Claire confirming with her AM next week; email
+  provider (Mailgun) identified and the whole send pipeline is built, just needs the
+  real API key once she has it.
+
+**Mobile/tablet pass** (flagged as a launch requirement, never finished):
+- Step 1 Campaign Length dropdown and Step 3 date field clipped on a real device.
+- Intake modal usability on a phone.
+- Signature canvas usability with a finger.
+
+**People-task, not code:**
+- AE roster table is built but still empty — needs a real CSV of AE names/Trello
+  handles per group whenever Claire is ready to load it.
+- Netflix Ads section header note (minimum spend) — left blank during the 2026-07-16
+  paper-IO section split since Netflix wasn't on the reference PDF; needs the real
+  number filled in via the Sections tab.
+
+**Action items handed to Claire:**
+- Deploy the `claude-proxy` Edge Function update for `send_email` — **confirmed
+  deployed 2026-07-16.**
+- Run `qty-preset-options-2026-07-16.sql`, fill in the Netflix header note, and
+  retest the resell/PDF flow + QUR quoted-price uncheck/recheck fix — Claire
+  acknowledged this list ("these should all be good") but did not explicitly confirm
+  each one individually; worth a quick check next session rather than assuming done.
+
+---
+
 ## STATUS SUMMARY
 
 **Track 1 — Catalog migration to Supabase: COMPLETE (structurally).**
