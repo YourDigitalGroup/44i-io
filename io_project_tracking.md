@@ -310,6 +310,40 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   (`qty-preset-options-2026-07-16.sql`) still needs to be run** — adds the column and
   sets it on the two Optional Content Support rows (matched by label + section, since
   their exact ids weren't confirmed in this session).
+- **Submission email — provider identified, PIPELINE BUILT 2026-07-16, ready for the
+  Mailgun API key.** Claire confirmed the current WordPress-based submission process
+  already emails from `info@yourdigitalgroupresources.com`, and checking a received
+  email's "Show original" headers (`mailed-by: mg.yourdigitalgroupresources.com`)
+  identified the provider as **Mailgun** — meaning the domain is already verified there,
+  the hardest part of setting up transactional email. Claire will get the API key from
+  whoever manages that Mailgun account, after her next meeting with her bosses/AM
+  (timing: sometime next week, not blocking). Built the whole pipeline ahead of having
+  the key so it's ready the moment it's added:
+  - `claude-proxy` Edge Function gets a new `send_email` target (checked/handled BEFORE
+    the existing Trello-credential check, since it doesn't need Trello creds at all) —
+    calls Mailgun's HTTP API (`POST /v3/{domain}/messages`, Basic auth `api:{key}`) with
+    `to`/`bcc`/`subject`/`html`/attachment passed straight through from the caller.
+    Needs 3 new secrets: `MAILGUN_API_KEY`, `MAILGUN_DOMAIN` (`mg.yourdigitalgroupresources.com`),
+    and optionally `MAILGUN_FROM` (defaults to `Digital Resources <info@{domain minus
+    "mg." prefix}>` if not set). Full updated file in scratchpad
+    (`claude-proxy-index-2026-07-16.ts`) — **still needs to be deployed**, and the 3
+    Mailgun secrets still need to be added once Claire has the key.
+  - `submitIO()` gets a new Step 6 (after the Trello block, independent of whether Trello
+    is configured/succeeded): builds recipients from `selectedGroup.io_recipient` (To) +
+    `notification_settings.always_bcc_recipients` (Bcc), deduped case-insensitively so
+    someone in both lists isn't emailed twice (closes the gap flagged 2026-07-15), falls
+    back to sending as a plain To if a group has no `io_recipient` but does have
+    always-BCC addresses (BCC-with-no-To is malformed). Builds a short HTML summary
+    (IO #, client, contact, AE, KOC, totals) in the group's brand color, reuses
+    `generateIoPdfBlob()` for the same IO PDF already attached to Trello. Wrapped in its
+    own try/catch — until the Mailgun secrets exist, `send_email` just returns an error
+    and this silently no-ops (a console warning only; the IO itself already saved
+    successfully regardless).
+  - Verified via direct simulation: recipient dedup (case-insensitive), the
+    no-group-recipient fallback, the no-bcc-list case, and the nothing-configured case
+    all produce the correct result. **Cannot verify actual email delivery until the
+    Mailgun secrets are added** — this is expected, not a gap, since that's the one
+    piece we're waiting on.
 - **Archived/returning clients (Trello) — CONFIRMED WORKING 2026-07-15.** Claire tested
   this live: submitting an IO for a client whose Trello list was archived correctly
   reopens that same list (and repositions it to board slot 5, per the fix built the same
