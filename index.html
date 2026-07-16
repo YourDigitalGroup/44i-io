@@ -2156,7 +2156,10 @@ function toggle(cb, id) {
       const warn = row.querySelector('.spend-min-warn');
       if (warn) warn.remove();
     }
-    const qtyInput = row.querySelector('input[type=number].qty-field');
+    // Selector dropped `input[type=number]` (2026-07-16) — a qty_preset_options service
+    // (Optional Content Support's quarter-hour dropdown) renders qty as a <select>, not
+    // an <input>, which the old tag-scoped selector would never match at all.
+    const qtyInput = row.querySelector('.qty-field');
     if (qtyInput) qtyInput.value = '1';
     const quotedInput = row.querySelector('input[type=number].quoted-price-field');
     if (quotedInput) quotedInput.value = '';
@@ -2241,7 +2244,10 @@ function updateSpend(input, id) {
 // handler is ever skipped for any reason.
 function updateQty(input, id) {
   autoCheckIfNeeded(id);
-  if (selected[id]) selected[id].qty = parseInt(input.value, 10) || 1;
+  // parseFloat, not parseInt (2026-07-16) — a qty_preset_options dropdown can select a
+  // fractional value (0.25hr = 15 min); parseInt("0.25") truncates to 0, which || 1
+  // would then silently round back up to a full hour's price.
+  if (selected[id]) selected[id].qty = parseFloat(input.value) || 1;
 }
 
 // Quoted Price (2026-07-14, per Claire) — QUR (Quote Upon Request) items have no set
@@ -2473,8 +2479,9 @@ function syncRowInputs() {
     // Quantity has its own class so it's never mistaken for the ad-spend input below —
     // in practice a row is never both per-unit AND spend-priced (pricing_mode is a single
     // value per service), but kept explicit rather than relying on that never happening.
-    const qtyInput = row.querySelector('input[type=number].qty-field');
-    if (qtyInput) selected[id].qty = parseInt(qtyInput.value, 10) || 1;
+    const qtyInput = row.querySelector('.qty-field');
+    // parseFloat, not parseInt (2026-07-16) — same reasoning as updateQty().
+    if (qtyInput) selected[id].qty = parseFloat(qtyInput.value) || 1;
     // Quoted Price (2026-07-14) has its own class for the same reason qty does — without
     // excluding it here too, a QUR row's quoted-price input would be misidentified as the
     // ad-spend input below and silently overwrite `selected[id].spend` with the quoted
@@ -2625,7 +2632,12 @@ function goStep(n) {
 }
 
 // ── BUILD REVIEW ──────────────────────────────────────────────
-function fmt(n) { return n ? '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}) : '—'; }
+// maximumFractionDigits raised from 0 -> 2 (2026-07-16, per Claire's AM — Optional
+// Content Support's new quarter-hour billing produces real cents, e.g. $175 x 0.25hr =
+// $43.75). minimumFractionDigits stays 0 so every existing whole-dollar amount still
+// renders exactly as before ("$175", not "$175.00") — only a genuinely fractional total
+// picks up decimals now, instead of being silently rounded away.
+function fmt(n) { return n ? '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}) : '—'; }
 
 function buildReview() {
   let oneTime = 0, monthly = 0, count = 0;
@@ -4315,7 +4327,7 @@ function buildDraft() {
     // .quoted-price-field (2026-07-14) excluded for the identical reason — a QUR item's
     // quoted price would otherwise be captured/restored as spend instead.
     const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
-    const qtyInput   = row.querySelector('input[type=number].qty-field');
+    const qtyInput   = row.querySelector('.qty-field');
     const quotedInput = row.querySelector('input[type=number].quoted-price-field');
     const noteInput  = row.querySelector('input[type=text]');
     if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
@@ -4406,8 +4418,9 @@ function loadDraft() {
         Object.entries(d.qtyValues).forEach(([id, val]) => {
           const row = document.querySelector(`tr[data-id="${id}"]`);
           if (!row) return;
-          const input = row.querySelector('input[type=number].qty-field');
-          if (input) { input.value = val; if (selected[id]) selected[id].qty = parseInt(val, 10) || 1; }
+          const input = row.querySelector('.qty-field');
+          // parseFloat, not parseInt (2026-07-16) — same reasoning as updateQty().
+          if (input) { input.value = val; if (selected[id]) selected[id].qty = parseFloat(val) || 1; }
         });
       }
       if (d.quotedValues) {
@@ -4683,6 +4696,16 @@ function getFeeNoteText(r) {
   return r.fee_note || null;
 }
 
+// Converts a qty_preset_options hour value into its dropdown label — "15 min"/"30
+// min"/"45 min" under an hour, "1 hr"/"2 hrs"/etc. at or above an hour. Purely a
+// display helper; the underlying value (0.25, 0.5, 1, 2...) is what actually flows
+// into qty/fee math.
+function qtyOptionLabel(hours) {
+  const h = Number(hours);
+  if (h < 1) return `${Math.round(h * 60)} min`;
+  return `${h} hr${h === 1 ? '' : 's'}`;
+}
+
 function priceAndFrequency(r) {
   if (!r) return { fee: '—', freq: '' };
   if (r.pricing_mode === 'spend') {
@@ -4943,7 +4966,26 @@ function renderPriceCells() {
       // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
       // Deliberate 2-line stack instead: fee on top, compact "× [box]" beneath,
       // both right-aligned (inherits feeTd's .right class) — reads as intentional.
-      feeTd.innerHTML = `<div>${esc(fee)}</div><div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> <input type="number" class="qty-field" min="1" value="1" onchange="updateQty(this,'${esc(id)}')" style="width:36px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity"/></div>`;
+      // Quarter-hour presets (2026-07-16, per Claire's AM — Optional Content Support's
+      // two web-section rows now bill in 15-minute increments up to an hour, then whole
+      // hours after that): `qty_preset_options` (jsonb array of hour values, e.g.
+      // [0.25,0.5,0.75,1,2,...]) swaps the free-typed qty box for a constrained
+      // dropdown, so an AE can't enter an invalid increment that doesn't match a real
+      // billing tier. Everything downstream (fee = default_price × qty, totals,
+      // Review, printed IO, Trello) already works generically off `selected[id].qty`
+      // regardless of whether it came from a typed box or this dropdown — same
+      // `.qty-field` class, same `onchange="updateQty(...)"` handler, no other change
+      // needed except making sure qty is parsed as a float (not int) wherever it's
+      // read, so a 0.25 selection doesn't get truncated to 0.
+      const presetOptions = r.qty_preset_options
+        ? (typeof r.qty_preset_options === 'string' ? JSON.parse(r.qty_preset_options) : r.qty_preset_options)
+        : null;
+      const qtyControl = (Array.isArray(presetOptions) && presetOptions.length)
+        ? `<select class="qty-field" onchange="updateQty(this,'${esc(id)}')" style="width:64px;padding:2px 3px;font-size:11px;border:1px solid var(--border);border-radius:5px" title="Quantity">
+            ${presetOptions.map(h => `<option value="${h}" ${h === 1 ? 'selected' : ''}>${esc(qtyOptionLabel(h))}</option>`).join('')}
+          </select>`
+        : `<input type="number" class="qty-field" min="1" value="1" onchange="updateQty(this,'${esc(id)}')" style="width:36px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity"/>`;
+      feeTd.innerHTML = `<div>${esc(fee)}</div><div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> ${qtyControl}</div>`;
     } else {
       feeTd.textContent = fee;
     }
