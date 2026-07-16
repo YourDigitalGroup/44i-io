@@ -252,6 +252,64 @@ isn't known until the quote, so timing matters. _Awaiting AM._
   testing only, not yet AE-launched). Added a new standing principle (below, under KEY
   PRINCIPLES) to check query patterns for N+1/uncapped-call risk on every new feature
   going forward, rather than only after traffic grows.
+- **Sections didn't match the paper IO — split 3 merged sections into 12, per Claire's
+  AM, 2026-07-16.** Claire's AM flagged that some sections were "pulled together and
+  given sub headers" compared to the paper IO. Confirmed by reading the SnapMe paper
+  IO PDF directly: the video/streaming/audio family has 12 separate top-level sections
+  there (YouTube Video, Native Video, Native Display, Programmatic Video, Programmatic
+  Audio, Mobile Audience Targeting, Social OTT/CTV, Social Display Ads — split earlier
+  the same day, see above — YouTube TV Ads, Streaming TV Advertising, Hulu Ads, Amazon
+  Prime Ads), but the tool had only 3 merged sections (`vid`, `ctv`, `audio`) using
+  `subsection_label` sub-tables to fake the distinction. Split via direct SQL: 12 new
+  section rows (ids reused from each service's own existing id prefix — `yt`, `nv`,
+  `pv`, `yttv`, `stv`, `ottctv`, `hulu`, `amz`, `netflix`, `pa`, `nd`, `mob` — for
+  consistency, same reasoning as `sda` earlier), every affected service's `section`
+  updated to its new home with `subsection_label` cleared (no longer needed — each
+  is single-table now), and the 3 old merged sections deactivated (not deleted,
+  reversible). Header-note minimums pulled directly from the paper IO's own printed
+  text. **Gap flagged, not guessed at:** Netflix Ads doesn't appear on the SnapMe
+  paper IO at all, so its header note (minimum spend) was left blank — Claire needs to
+  fill in the real number via the Sections tab.
+- **Section icons removed entirely, per Claire, 2026-07-16.** After the 12-way split
+  above, several new sections would have had to reuse the same 2-3 emoji (🎬/📺) right
+  next to each other, which read as visual noise rather than helping scannability —
+  Claire's own read: "pretty busy now." Considered giving each of the 12 a distinct
+  icon instead, but several (Native Video vs. Programmatic Video vs. YouTube Video)
+  don't have a meaningfully different real-world icon, so forced distinctness would
+  have been arbitrary rather than useful. Claire's call, once framed as an all-or-
+  nothing consistency question (icons on some sections but not others would look
+  unfinished): remove icons from every section, site-wide, not just the new ones —
+  `update sections set icon = null;`. Fully reversible — nothing about the underlying
+  data or rendering requires icons; the `<h3>` header simply omits the icon span when
+  `sec.icon` is falsy (unchanged existing behavior, already handled by
+  `renderSectionCards()`'s `sec.icon ? esc(sec.icon) + ' ' : ''`).
+- **Optional Content Support quarter-hour billing — BUILT 2026-07-16, per Claire's
+  AM.** Scoped to ONLY the two Optional Content Support rows (web-ot and web-mo
+  sections) — confirmed explicitly NOT for every hourly service. Below 1 hour, bills
+  in 15-minute increments (15/30/45 min); at or above 1 hour, whole hours (1-8 hrs).
+  Claire's own call on mechanism: a constrained dropdown rather than free-typed
+  minutes, so an AE can't enter an invalid increment that doesn't correspond to a
+  real billing tier. New `services.qty_preset_options` column (jsonb array of hour
+  values, e.g. `[0.25,0.5,0.75,1,2,3,4,5,6,7,8]`) — same "put per-service behavior in
+  data, not code" pattern as `exclusivity_group`/`spend_minimum`/`subsection_label`/
+  `hosting_prompt_type`. When set, a per_unit service's qty control renders as a
+  dropdown (labeled "15 min"/"1 hr"/"2 hrs" etc., generated from the raw number) instead
+  of the free-typed box every other per-unit service still uses. Pricing needed ZERO
+  special-casing — it's still `fee = default_price × qty`, so $175/hr × 0.25 = $43.75
+  falls out of the exact same math every other per-unit service already uses. Two real
+  gaps this surfaced and fixed: (1) `fmt()` rounded to 0 decimal places unconditionally,
+  which would have silently rounded $43.75 to $44 — raised to 2 decimal places max
+  (minimum stays 0, so every existing whole-dollar price still renders exactly as
+  before); (2) every place that reads a qty value assumed `input[type=number]` and used
+  `parseInt` — neither matches a `<select>` element, and `parseInt("0.25")` truncates to
+  0 regardless. Fixed in `updateQty()`, `syncRowInputs()`, `loadDraft()`, and the
+  `.qty-field` lookup selector itself (dropped the tag restriction). Verified via a real
+  headless-browser test using the actual extracted functions: dropdown labels render
+  correctly, selecting 15 min produces exactly $43.75 on Review, selecting 3 hrs
+  produces $525, totals update correctly for both. **SQL migration
+  (`qty-preset-options-2026-07-16.sql`) still needs to be run** — adds the column and
+  sets it on the two Optional Content Support rows (matched by label + section, since
+  their exact ids weren't confirmed in this session).
 - **Archived/returning clients (Trello) — CONFIRMED WORKING 2026-07-15.** Claire tested
   this live: submitting an IO for a client whose Trello list was archived correctly
   reopens that same list (and repositions it to board slot 5, per the fix built the same
