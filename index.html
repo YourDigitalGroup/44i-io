@@ -3732,6 +3732,86 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
       }
     }
 
+    // ── Step 6: Email notification (2026-07-16, built ahead of having the real
+    // Mailgun API key so the whole pipeline is ready the moment it's added as a
+    // secret) — sends the group's io_recipient list + the global always-BCC list
+    // (notification_settings.always_bcc_recipients) a short summary email with the
+    // same IO PDF already used for the Trello attachment above. Runs regardless of
+    // whether the group has Trello configured/succeeded — this is an independent
+    // notification path, not part of the Trello block. Wrapped in its own try/catch,
+    // same "shouldn't block anything else" pattern as every other post-submission
+    // side effect: until MAILGUN_API_KEY/MAILGUN_DOMAIN are actually configured on
+    // the claude-proxy Edge Function, send_email just returns an error and this
+    // silently no-ops (logged as a console warning, nothing shown to the AE — the IO
+    // itself already saved successfully regardless of whether this email goes out).
+    try {
+      const groupRecipients = (selectedGroup.io_recipient || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+      let alwaysBcc = [];
+      try {
+        const notifRows = await sb('notification_settings?id=eq.1&select=always_bcc_recipients');
+        const raw = Array.isArray(notifRows) ? notifRows[0]?.always_bcc_recipients : null;
+        alwaysBcc = (raw || '').split(',').map(s => s.trim()).filter(Boolean);
+      } catch(e) {
+        console.warn('Could not load notification_settings (table may not exist yet):', e.message);
+      }
+      // Dedup: don't BCC someone who's already in the group's own To list, so they
+      // don't get the same email twice (see io_project_tracking.md — flagged before
+      // this was built).
+      const toLower = new Set(groupRecipients.map(r => r.toLowerCase()));
+      const bccRecipients = alwaysBcc.filter(r => !toLower.has(r.toLowerCase()));
+      // If there's no group recipient at all, send directly to the always-BCC list
+      // instead — BCC-with-no-To is a malformed send, and there's no one left to
+      // "hide" those addresses from anyway.
+      let emailTo = groupRecipients.join(',');
+      let emailBcc = bccRecipients.join(',');
+      if (!emailTo && emailBcc) { emailTo = emailBcc; emailBcc = ''; }
+
+      if (emailTo) {
+        const calUrlEmail = selectedGroup.am_calendar_url || '';
+        const color = selectedGroup?.brand_color || '#1C9BD7';
+        const emailHtml = `
+          <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px">
+            <div style="background:${color};padding:16px 20px;border-radius:8px 8px 0 0">
+              <div style="color:#fff;font-size:16px;font-weight:700">New Insertion Order Submitted</div>
+            </div>
+            <div style="border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;padding:20px">
+              <table style="width:100%;border-collapse:collapse;font-size:13px">
+                <tr><td style="padding:6px 0;color:#6B7280;width:140px">IO #</td><td style="padding:6px 0;font-weight:600">${esc(ioNumber)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">Client</td><td style="padding:6px 0;font-weight:600">${esc(bizName)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">Contact</td><td style="padding:6px 0">${esc(document.getElementById('contact-name').value)} — ${esc(document.getElementById('contact-email').value)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">AE</td><td style="padding:6px 0">${esc(aeName)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">KOC</td><td style="padding:6px 0">${esc(kocDate || '—')}${kocTime ? ' at ' + esc(kocTime) : ''}${calUrlEmail ? ` — <a href="${esc(calUrlEmail)}">Calendar</a>` : ''}</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">One-Time Total</td><td style="padding:6px 0;font-weight:600">$${oneTime.toLocaleString()}</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">Monthly Recurring</td><td style="padding:6px 0;font-weight:600">$${monthly.toLocaleString()}/mo</td></tr>
+              </table>
+              <p style="font-size:12px;color:#6B7280;margin-top:16px">Full details attached as PDF.</p>
+            </div>
+          </div>`;
+
+        const { base64, fileName } = await generateIoPdfBlob();
+        const emailRes = await fetch(PROXY, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+          body: JSON.stringify({
+            target: 'send_email',
+            to: emailTo,
+            bcc: emailBcc,
+            subject: 'New submission from Insertion Order Submission',
+            html: emailHtml,
+            base64, filename: fileName, mime_type: 'application/pdf'
+          })
+        });
+        const emailData = await emailRes.json().catch(() => null);
+        if (!emailRes.ok) console.warn('Could not send submission email:', emailRes.status, emailData);
+        else console.log('Submission email sent');
+      } else {
+        console.log('No email recipients configured for this group — skipping submission email.');
+      }
+    } catch(e) {
+      console.warn('Could not send submission email:', e.message);
+    }
+
         // 3. Show success
     const chips = [...workflows].map(w => `<span class="chip green">${w}</span>`).join('');
     document.getElementById('success-chips').innerHTML = chips;
