@@ -2887,6 +2887,55 @@ async function findKocLabelId(boardId) {
   }
 }
 
+// Resolves AM/AE Trello HANDLES (stored on the group/AE roster as plain @username text,
+// only ever inserted as text into a card's description today) to real Trello MEMBER IDs
+// (2026-07-17, per Claire — "assigning them to the cards, not just mention them"). Trello
+// can only assign a card to someone who's already a member of that board, so this looks
+// up the board's member list once per submission and matches by username — same
+// "look it up once per submission, not per card" pattern as findKocLabelId. Returns an
+// empty Map (never throws) if the lookup fails or nobody matches; callers should warn and
+// skip assignment rather than fail the whole submission over it.
+async function findBoardMemberIds(boardId, handles) {
+  const wanted = handles.filter(Boolean).map(h => h.replace(/^@/, '').trim().toLowerCase());
+  if (!wanted.length) return new Map();
+  try {
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'trello_get_board_members', board_id: boardId })
+    });
+    const members = await res.json();
+    if (!Array.isArray(members)) return new Map();
+    const map = new Map();
+    wanted.forEach(handle => {
+      const match = members.find(m => (m.username || '').toLowerCase() === handle);
+      if (match) map.set(handle, match.id);
+    });
+    return map;
+  } catch (e) {
+    console.warn('Could not look up Trello board members for AM/AE tagging:', e.message);
+    return new Map();
+  }
+}
+
+// Assigns already-resolved Trello member IDs to a card (used for every IO/tactic card,
+// per Claire — "tag the AM and AE on every card"). Silently no-ops on an empty/missing
+// list so callers can pass memberIds straight through without an extra guard.
+async function assignCardMembers(cardId, memberIds) {
+  if (!cardId || !memberIds || !memberIds.length) return;
+  for (const memberId of memberIds) {
+    try {
+      await fetch(PROXY, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+        body: JSON.stringify({ target: 'trello_add_member', card_id: cardId, member_id: memberId })
+      });
+    } catch (e) {
+      console.warn('Could not assign Trello member', memberId, 'to card', cardId, ':', e.message);
+    }
+  }
+}
+
 async function attachKocLabel(cardId, kocLabelId) {
   if (!kocLabelId) return;
   try {
@@ -3118,6 +3167,14 @@ async function submitIO() {
         const aeName   = document.getElementById('ae-name').value.trim();
         const aeTrello = document.getElementById('ae-trello').value.trim();
         const amTrello = selectedGroup.am_trello_handle || '';
+
+        // Real Trello card assignment for the AM/AE, resolved once per submission and
+        // reused on every card created below (2026-07-17, per Claire).
+        const amAeMemberMap = await findBoardMemberIds(selectedGroup.trello_board_id, [aeTrello, amTrello]);
+        const amAeMemberIds = [...new Set(amAeMemberMap.values())];
+        if ((aeTrello || amTrello) && !amAeMemberIds.length) {
+          console.warn('AM/AE Trello handle(s) set, but neither matched a member of this board — cards created without assignment. They likely need to be added as members of this Trello board first.');
+        }
 
         // ── Per-service Trello template routing (2026-07-13) ──
         // Replaces the old TACTIC_MAP (matched Trello LIST NAMES against hardcoded text
@@ -3468,6 +3525,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           addedCardNames.add(norm('IO'));
           console.log('Created IO card');
         }
+        await assignCardMembers(ioCardId, amAeMemberIds);
 
         // Attach a dated PDF snapshot of THIS submission to the IO card (2026-07-14) —
         // the card's text description above only ever shows the LATEST IO (a returning
@@ -3566,6 +3624,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           }
           const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflows[wfIdx] && li.requires_koc);
           if (applyKoc && workflowNeedsKoc) await attachKocLabel(cardId, kocLabelId);
+          await assignCardMembers(cardId, amAeMemberIds);
         }
 
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
