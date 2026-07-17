@@ -110,9 +110,9 @@ rather than trickled out one at a time):
 **People-task, not code:**
 - AE roster table is built but still empty — needs a real CSV of AE names/Trello
   handles per group whenever Claire is ready to load it.
-- Netflix Ads section header note (minimum spend) — left blank during the 2026-07-16
-  paper-IO section split since Netflix wasn't on the reference PDF; needs the real
-  number filled in via the Sections tab.
+- Netflix Ads section header note (minimum spend) — **RESOLVED 2026-07-17**: confirmed
+  from the new paper IO PDF, real minimum is $3,000/mo; SQL given to update the header
+  note.
 
 **Action items handed to Claire:**
 - Deploy the `claude-proxy` Edge Function update for `send_email` — **confirmed
@@ -121,6 +121,27 @@ rather than trickled out one at a time):
   retest the resell/PDF flow + QUR quoted-price uncheck/recheck fix — Claire
   acknowledged this list ("these should all be good") but did not explicitly confirm
   each one individually; worth a quick check next session rather than assuming done.
+- **Run `enforce-spend-minimum-2026-07-17.sql`** (adds `enforce_spend_minimum` column,
+  sets it true for Hulu/Amazon/Netflix by label match) — needed for the new hard-block
+  minimum-spend fix below to take effect.
+
+**New from Claire's 2026-07-17 batch (paper-IO reconciliation + 7-item AM-notes list)
+— still open, needs her input before building:**
+- **Item 1 — "tag the AM and AE on every card"**: unclear whether "tag" means real Trello
+  card-member assignment (needs real Trello member IDs per AM/AE, which we don't have
+  today — only handle/name strings) or a text @mention in the card description. Need
+  Claire to clarify which, and if it's real assignment, whether we have Trello member
+  IDs to work with yet.
+- **Item 2 — "intake form attached in Trello is a little messy, missing spaces"**: fixed
+  (see below) based on comparing the working IO-PDF generator against the intake-PDF
+  generator — the intake PDF's hidden iframe never loaded the Montserrat webfont it
+  references, so html2canvas could mismeasure text and drop spaces. This is a diagnosis-
+  based fix, not visually re-confirmed against Claire's actual broken PDF — needs her to
+  regenerate an intake PDF and confirm it looks right now.
+- **Item 5/6 (her numbering) — Gold card at top of every list, Green card at bottom once**:
+  can't build without her actual Trello template card IDs, and need to clarify what
+  "once" means for the Green card (once ever per client? once per list?) and exact
+  positioning semantics relative to cards already in the list.
 
 ---
 
@@ -1715,6 +1736,70 @@ file (same completeness check used for every admin-editor addition this project)
   without `allow-popups` specifically, the Print/PDF button's popup window would silently
   stop working). Ready to set up whenever Claire's team is ready — nothing blocking on
   our end.
+
+## 2026-07-17 — Paper-IO reconciliation + fee-note wording + intake-PDF font fix + hard
+minimum-spend enforcement
+
+Claire uploaded a new paper IO PDF (Version 7.9.26) and asked for a full comparison
+against live Supabase data.
+
+**Found and fixed:**
+- `wm-email` and `wm-ai` were inactive and still living in `web-mo` (Monthly) — the new
+  PDF has them active under One-Time Website. Reactivated, moved to `web-ot`, then
+  renamed to `w-email`/`w-ai` to match that section's `w-` naming convention (same
+  pattern as the earlier `sda-bp` rename — self-referencing columns
+  `standalone_hosting_service_id`/`auto_select_service_id` checked and updated first).
+- Netflix Ads header note (real minimum spend, $3,000/mo) — confirmed from the PDF,
+  filled in the previously-blank header note.
+- Full line-by-line comparison of every remaining section against the PDF — everything
+  else matched exactly. Flagged (not fixed, needs her/her AM's call) that the Social
+  Media Ads "minimums vary by platform" footnote doesn't match the uniform $1,000
+  minimum currently set for all 4 platforms in the catalog.
+
+Then Claire sent a batch of 7 items (one "small bug" plus 6 numbered AM notes). Of
+those, 3 were code-completable this session:
+
+1. **SEM fee-note wording bug** — Claire had edited the manual `fee_note` field directly
+   in Supabase, expecting it to show, but it never did. Root cause: `getFeeNoteText()`
+   always prefers the auto-generated setup-fee sentence (driven by `auto_add_setup_fee`/
+   `setup_fee`/`setup_fee_threshold`) over the manual `fee_note` field whenever
+   auto-add is on — by design, so the wording can never drift from the real numbers, but
+   Claire didn't know that sentence existed or that it took priority. Fixed by changing
+   the auto-generated wording itself to what she asked for: `(a $200 setup fee will be
+   added to campaigns <$1,000/mo)`. Verified via direct simulation of the function
+   against real inputs — output matches exactly (only difference from her literal request
+   is a comma in "$1,000" from `toLocaleString`, a readability improvement, not a bug).
+
+2. **Intake-form Trello PDF "missing spaces"** — `generateIntakePdfBlob()`'s hidden
+   iframe never loaded the Montserrat webfont its own HTML references, unlike the
+   working `generateIoPdfBlob()`, which writes a full `<head>` with the Google Fonts
+   `<link>` and waits 700ms before capturing. Without the real font loaded, html2canvas
+   can mismeasure an unloaded/substituted font's glyph widths — a known way text loses
+   its inter-word spacing. Fixed by adding the same font `<link>` and 700ms wait.
+   **Honest caveat: this is a diagnosis based on comparing the two PDF generators, not a
+   visual re-confirmation against Claire's actual broken PDF** — needs her to regenerate
+   one and confirm it looks right.
+
+3. **Hulu/Amazon/Netflix can't go below their spend minimum** — the existing
+   `SPEND_MINIMUMS`/`updateSpend()` mechanism is soft/advisory only (a "Recommended
+   minimum" warning that never blocks navigation), for every spend-priced service. Since
+   Claire wants a HARD block for just these three, added a new `enforce_spend_minimum`
+   boolean column (same "new column, not hardcoded ids" pattern as everything else in
+   this catalog) and a new `spendProblems` check in `goStep()`'s Step-3 validation:
+   blocks navigation if spend is missing entirely (existing behavior, any spend
+   service) OR if spend is entered but below the minimum AND `enforce_spend_minimum` is
+   true for that row. Verified via direct simulation against 5 synthetic cases (below
+   minimum with hard-enforce → blocks; at minimum → passes; below minimum on a
+   soft-only service → does NOT block; missing spend on a hard-enforce service →
+   blocks; stray non-spend row with leftover spend_minimum data → does NOT block, same
+   protection added 2026-07-10). SQL given: `enforce-spend-minimum-2026-07-17.sql` —
+   uses label matching (`ilike '%hulu%'` etc.) rather than guessed-at ids, since I don't
+   have Hulu/Amazon/Netflix's real service ids confirmed; ends with a verify SELECT so
+   Claire can confirm exactly 3 rows match before trusting it.
+
+The remaining 3 items from her batch (tag AM/AE on every card, Gold card at top of every
+list, Green card at bottom once) need clarifying info only Claire has before they can be
+built — see "CURRENT OUTSTANDING ITEMS" above for the specific open questions on each.
 
 ## KEY PRINCIPLES (how we've been working)
 

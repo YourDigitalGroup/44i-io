@@ -2579,21 +2579,33 @@ function goStep(n) {
     // with NO spend input to ever fill in, permanently blocking navigation with nothing
     // visible to fix — reproduced exactly against a real leftover test service
     // (flat pricing_mode, spend_minimum=1000 left over from earlier testing).
-    const missingSpend = Object.entries(selected).filter(([id,d]) => {
+    // spendProblems (renamed from missingSpend, 2026-07-17) now covers two cases: spend
+    // missing entirely (existing, applies to any spend-priced service) AND spend entered
+    // but still below the minimum on a service that opted into HARD enforcement — per
+    // Claire, Hulu/Amazon/Netflix specifically can't go below their minimum at all,
+    // unlike every other spend service, which only ever shows a soft, non-blocking
+    // "Recommended minimum" warning (see updateSpend()). New `enforce_spend_minimum`
+    // boolean column, same "put per-service behavior in data, not hardcoded ids" pattern
+    // as everything else in this catalog.
+    const spendProblems = Object.entries(selected).filter(([id,d]) => {
       const min = SPEND_MINIMUMS[id];
-      return min && min > 0 && CATALOG_ROWS[id]?.pricing_mode === 'spend' && !d.spend;
+      if (!min || min <= 0 || CATALOG_ROWS[id]?.pricing_mode !== 'spend') return false;
+      if (!d.spend) return true;
+      return CATALOG_ROWS[id]?.enforce_spend_minimum && d.spend < min;
     });
     // Clear previous highlights
     document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
-    if (missingSpend.length > 0) {
-      // Highlight each missing spend input and open its section
-      missingSpend.forEach(([id]) => {
+    if (spendProblems.length > 0) {
+      // Highlight each problem spend input and open its section
+      spendProblems.forEach(([id, d]) => {
         const row = document.querySelector(`tr[data-id="${id}"]`);
         if (!row) return;
         const input = row.querySelector('input[type=number]');
         if (input) {
           input.classList.add('spend-missing');
-          input.placeholder = '$ required';
+          input.placeholder = d.spend
+            ? `$${SPEND_MINIMUMS[id].toLocaleString()} min required`
+            : '$ required';
         }
         // Open the section so the user can see the highlighted field
         const section = row.closest('.card-body');
@@ -4260,10 +4272,20 @@ async function generateIntakePdfBlob(workflowName, html) {
 
   try {
     iframe.contentDocument.open();
-    iframe.contentDocument.write(`<!DOCTYPE html><html><body style="margin:0">${html}</body></html>`);
+    // FIXED (2026-07-17, found live by Claire — "missing spaces" in the rendered PDF):
+    // this iframe never actually loaded the Montserrat webfont the html fragment
+    // specifies in its own font-family — unlike generateIoPdfBlob() below, which writes
+    // a full <head> with the Google Fonts <link> and waits 700ms for it. Without the
+    // real font loaded, the browser silently substitutes something else, and html2canvas
+    // can mismeasure an unloaded/substituted font's glyph widths — a known way that
+    // exact symptom (words losing the space between them) shows up. Now loads the same
+    // font link and waits the same 700ms as the working IO PDF.
+    iframe.contentDocument.write(`<!DOCTYPE html><html><head>
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+      </head><body style="margin:0">${html}</body></html>`);
     iframe.contentDocument.close();
 
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 700));
 
     const canvas = await html2canvas(iframe.contentDocument.body, {
       scale: 1.5,
@@ -4771,7 +4793,12 @@ function getFeeNoteText(r) {
   if (r.auto_add_setup_fee && r.setup_fee != null && r.setup_fee_threshold != null) {
     const fee = Number(r.setup_fee).toLocaleString('en-US', {maximumFractionDigits:0});
     const threshold = Number(r.setup_fee_threshold).toLocaleString('en-US', {maximumFractionDigits:0});
-    return `($${fee} min setup fee for campaigns <$${threshold})`;
+    // Wording updated 2026-07-17 per Claire — she'd edited the service's manual fee_note
+    // directly in Supabase expecting it to show, but this AUTO-GENERATED sentence always
+    // takes priority whenever auto_add_setup_fee is on (by design, so the wording can
+    // never drift from the real numbers) — the manual field only ever applies as a
+    // fallback for services with no auto-setup-fee configured at all.
+    return `(a $${fee} setup fee will be added to campaigns <$${threshold}/mo)`;
   }
   return r.fee_note || null;
 }
