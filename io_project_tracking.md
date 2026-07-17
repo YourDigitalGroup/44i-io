@@ -145,9 +145,18 @@ rather than trickled out one at a time):
   based fix, not visually re-confirmed against Claire's actual broken PDF — needs her to
   regenerate an intake PDF and confirm it looks right now.
 - **Item 5/6 (her numbering) — Gold card at top of every list, Green card at bottom once**:
-  can't build without her actual Trello template card IDs, and need to clarify what
-  "once" means for the Green card (once ever per client? once per list?) and exact
-  positioning semantics relative to cards already in the list.
+  built 2026-07-17. Claire gave real Trello share-link IDs for both templates (resolved
+  to real card ids at runtime via `trello_get_card`, same shortLink-resolution pattern
+  already used for single-card service templates). Gold gets a fresh copy at the top of
+  the client's list on EVERY IO submission, never deduped, per her explicit "for every
+  IO" wording. Green gets copied to the bottom only the very first time ever for a given
+  client — confirmed "once ever per client" — checked by looking for a card already
+  matching the Green template's own name anywhere on that client's list (via the same
+  `existingCards` list already fetched for the tactic-card dedup logic, so no new
+  Supabase column was needed). Verified via simulation of all 4 cases (Gold always
+  copies even if one already exists; Green copies on a client's first-ever submission;
+  Green skips on a later resubmission; matching is case/whitespace-insensitive). Not yet
+  confirmed in an actual Trello board by Claire.
 
 ---
 
