@@ -127,11 +127,17 @@ rather than trickled out one at a time):
 
 **New from Claire's 2026-07-17 batch (paper-IO reconciliation + 7-item AM-notes list)
 — still open, needs her input before building:**
-- **Item 1 — "tag the AM and AE on every card"**: unclear whether "tag" means real Trello
-  card-member assignment (needs real Trello member IDs per AM/AE, which we don't have
-  today — only handle/name strings) or a text @mention in the card description. Need
-  Claire to clarify which, and if it's real assignment, whether we have Trello member
-  IDs to work with yet.
+- **Item 1 — "tag the AM and AE on every card"**: confirmed 2026-07-17, real Trello
+  card-member assignment, not a text mention. Built: resolves the AM/AE's stored
+  `@handle` (group's `am_trello_handle`, AE roster's `trello_handle`) to a real Trello
+  member id by looking up the board's member list once per submission
+  (`findBoardMemberIds()`), then assigns both to the IO card and every tactic card via
+  the new `trello_add_member` target. **Prerequisite Claire needs to know**: Trello can
+  only assign a card to someone who is already a member of that specific board — if an
+  AM/AE isn't added to a client's board yet, assignment silently no-ops (logged as a
+  console warning, doesn't fail the submission). Needs the `claude-proxy` Edge Function
+  redeployed with the 2 new targets (`trello_get_board_members`, `trello_add_member`)
+  before this takes effect — full updated file given inline in chat.
 - **Item 2 — "intake form attached in Trello is a little messy, missing spaces"**: fixed
   (see below) based on comparing the working IO-PDF generator against the intake-PDF
   generator — the intake PDF's hidden iframe never loaded the Montserrat webfont it
