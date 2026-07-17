@@ -157,6 +157,13 @@ rather than trickled out one at a time):
   copies even if one already exists; Green copies on a client's first-ever submission;
   Green skips on a later resubmission; matching is case/whitespace-insensitive). Not yet
   confirmed in an actual Trello board by Claire.
+- **Item 3 — "allow Enter to create new lines in the Intake Form"**: no code change
+  needed — the "Text Area" field type in the admin Intake Forms editor already renders
+  a real `<textarea>` with native Enter-for-newline support. Claire opted to convert
+  every existing plain "Text" field to "Text Area" across all intake forms (blanket
+  change, her call, 2026-07-17) rather than pick specific fields — SQL given inline in
+  chat (a jsonb rebuild of `intake_forms.definition`, since field defs live as one JSON
+  blob per form, not a flat table). Hers to run.
 
 ---
 
