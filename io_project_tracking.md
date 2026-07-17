@@ -165,6 +165,23 @@ rather than trickled out one at a time):
   chat (a jsonb rebuild of `intake_forms.definition`, since field defs live as one JSON
   blob per form, not a flat table). Hers to run.
 
+**More Trello follow-ups, 2026-07-17 (after the 7-item batch above):**
+- **Client name on the IO card** — built. The IO card is now named `IO — <business name>`
+  instead of a bare "IO", same "Tactic — Client" naming convention every tactic card
+  already uses. `isIoName()` (used to find/skip IO cards) updated to also recognize the
+  new `IO — <name>` form, not just a bare "IO", so a returning client's already-created
+  IO card is still found and updated (and renamed, if it predates this change) rather
+  than treated as a brand-new card. Verified via simulation against 8 cases including a
+  deliberate false-positive check ("IOnline Marketing" correctly does NOT match).
+- **Do list-template "IO" placeholder cards still need to exist?** — confirmed NO, they
+  are pure dead weight. Every whole-list Trello template (SEO/Website tier packages
+  etc.) that includes its own "IO" card has that card silently skipped when the
+  template is copied (`isIoName(cn)` check, existing since before this session) — the
+  real IO card is always the separate one created once at the top of the client's list,
+  regardless of what was sold. Told Claire she can safely remove the IO placeholder from
+  her list templates going forward; leaving it in is harmless (just never copied) if she'd
+  rather not touch the templates right now.
+
 ---
 
 ## STATUS SUMMARY
