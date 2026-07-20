@@ -3914,11 +3914,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         const calUrlEmail = selectedGroup.am_calendar_url || '';
         const color = selectedGroup?.brand_color || '#1C9BD7';
         // Market + Overall Notes added 2026-07-17, per Claire's AM follow-up. "Overall
-        // Notes" maps to the Special Instructions / Notes field — the general catch-all
-        // notes field on the form (distinct from Campaign Notes, which is scoped to
-        // scheduling) — flagged to Claire in chat in case she actually meant the other one.
+        // Notes" maps to Campaign Notes (confirmed by Claire — "that is what it has
+        // been"), not Special Instructions.
         const marketVal = document.getElementById('city')?.value.trim();
-        const overallNotesVal = document.getElementById('special-instructions')?.value.trim();
+        const overallNotesVal = document.getElementById('campaign-notes')?.value.trim();
         const emailHtml = `
           <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px">
             <div style="background:${color};padding:16px 20px;border-radius:8px 8px 0 0">
