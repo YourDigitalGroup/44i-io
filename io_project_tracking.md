@@ -252,11 +252,10 @@ those two fields are actually used today is the printed/PDF IO document's footer
      `<group name>`").
    - Market row added, using the existing `#city` field (already free-text "City,
      State" combined, not split fields) — only shown if filled in.
-   - "Overall Notes" row added — **mapped to the Special Instructions / Notes field**
-     (the general catch-all notes field), NOT Campaign Notes (which is scoped to
-     scheduling/start conditions) — flagged this assumption to Claire in chat since
-     there's no field literally labeled "Overall Notes" in the form; only shown if
-     filled in. Needs her confirmation this is the right field.
+   - "Overall Notes" row added — mapped to **Campaign Notes** (Claire confirmed: "that
+     is what it has been," 2026-07-17 — corrected from an initial wrong guess of
+     Special Instructions since there's no field literally labeled "Overall Notes" in
+     the form); only shown if filled in.
 
 ---
 
