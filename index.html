@@ -366,6 +366,7 @@ textarea{resize:vertical;min-height:70px}
             <label class="lbl">AE Trello Handle <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— e.g. @johndoe</span></label>
             <input type="text" id="ae-trello" placeholder="@trellohandle"/>
           </div>
+          <input type="hidden" id="ae-email"/>
         </div>
       </div>
     </div>
@@ -920,6 +921,11 @@ function applyAePick(id) {
   if (!a) return;
   document.getElementById('ae-name').value = a.name || '';
   document.getElementById('ae-trello').value = a.trello_handle || '';
+  // AE's own email (2026-07-17, per Claire — "AEs should get the email for any IO they
+  // submit"), only ever available via the roster picker — an AE typed in freehand has
+  // no email on file, so this stays blank and Step 6's submission email just won't
+  // include them, same as any other field it can't resolve.
+  document.getElementById('ae-email').value = a.email || '';
 }
 
 // Client picker (2026-07-13) — replaces relying on exact-name matching to find a
@@ -3875,6 +3881,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
     try {
       const groupRecipients = (selectedGroup.io_recipient || '')
         .split(',').map(s => s.trim()).filter(Boolean);
+      // The submitting AE gets this too (2026-07-17, per Claire — "AE's should get the
+      // email for any IO they submit"), as a direct To recipient rather than BCC, since
+      // there's no reason to hide it from them. Only ever populated via the roster
+      // picker (applyAePick) — an AE typed in freehand has no email on file, so this
+      // is a no-op for them, same limitation as everywhere else this field is used.
+      const aeEmailVal = document.getElementById('ae-email')?.value.trim();
+      if (aeEmailVal && !groupRecipients.some(r => r.toLowerCase() === aeEmailVal.toLowerCase())) {
+        groupRecipients.push(aeEmailVal);
+      }
       let alwaysBcc = [];
       try {
         const notifRows = await sb('notification_settings?id=eq.1&select=always_bcc_recipients');
@@ -3898,20 +3913,28 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
       if (emailTo) {
         const calUrlEmail = selectedGroup.am_calendar_url || '';
         const color = selectedGroup?.brand_color || '#1C9BD7';
+        // Market + Overall Notes added 2026-07-17, per Claire's AM follow-up. "Overall
+        // Notes" maps to the Special Instructions / Notes field — the general catch-all
+        // notes field on the form (distinct from Campaign Notes, which is scoped to
+        // scheduling) — flagged to Claire in chat in case she actually meant the other one.
+        const marketVal = document.getElementById('city')?.value.trim();
+        const overallNotesVal = document.getElementById('special-instructions')?.value.trim();
         const emailHtml = `
           <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px">
             <div style="background:${color};padding:16px 20px;border-radius:8px 8px 0 0">
-              <div style="color:#fff;font-size:16px;font-weight:700">New Insertion Order Submitted</div>
+              <div style="color:#fff;font-size:16px;font-weight:700">New Insertion Order Submitted — ${esc(selectedGroup.name || '')}</div>
             </div>
             <div style="border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;padding:20px">
               <table style="width:100%;border-collapse:collapse;font-size:13px">
                 <tr><td style="padding:6px 0;color:#6B7280;width:140px">IO #</td><td style="padding:6px 0;font-weight:600">${esc(ioNumber)}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">Client</td><td style="padding:6px 0;font-weight:600">${esc(bizName)}</td></tr>
+                ${marketVal ? `<tr><td style="padding:6px 0;color:#6B7280">Market</td><td style="padding:6px 0">${esc(marketVal)}</td></tr>` : ''}
                 <tr><td style="padding:6px 0;color:#6B7280">Contact</td><td style="padding:6px 0">${esc(document.getElementById('contact-name').value)} — ${esc(document.getElementById('contact-email').value)}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">AE</td><td style="padding:6px 0">${esc(aeName)}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">KOC</td><td style="padding:6px 0">${esc(kocDate || '—')}${kocTime ? ' at ' + esc(kocTime) : ''}${calUrlEmail ? ` — <a href="${esc(calUrlEmail)}">Calendar</a>` : ''}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">One-Time Total</td><td style="padding:6px 0;font-weight:600">$${oneTime.toLocaleString()}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">Monthly Recurring</td><td style="padding:6px 0;font-weight:600">$${monthly.toLocaleString()}/mo</td></tr>
+                ${overallNotesVal ? `<tr><td style="padding:6px 0;color:#6B7280;vertical-align:top">Overall Notes</td><td style="padding:6px 0">${esc(overallNotesVal)}</td></tr>` : ''}
               </table>
               <p style="font-size:12px;color:#6B7280;margin-top:16px">Full details attached as PDF.</p>
             </div>
@@ -4511,6 +4534,7 @@ function buildDraft() {
     savedAt: Date.now(),                    // timestamp for 7-day expiry check
     ae: document.getElementById('ae-name').value,
     aeTrello: document.getElementById('ae-trello')?.value || '',
+    aeEmail: document.getElementById('ae-email')?.value || '',
     biz: document.getElementById('biz-name').value,
     contact: document.getElementById('contact-name').value,
     phone: document.getElementById('contact-phone').value,
@@ -4595,6 +4619,7 @@ function loadDraft() {
     const set = (id, val) => { const el = document.getElementById(id); if(el && val) el.value = val; };
     set('ae-name', d.ae);
     set('ae-trello', d.aeTrello);
+    set('ae-email', d.aeEmail);
     set('biz-name', d.biz);
     set('contact-name', d.contact);
     set('contact-phone', d.phone);

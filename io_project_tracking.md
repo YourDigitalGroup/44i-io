@@ -222,6 +222,39 @@ Mailgun API key. The white-label warning under a group's From Name/From Email fi
 intended behavior for a not-yet-built client-facing email feature; the only place
 those two fields are actually used today is the printed/PDF IO document's footer.
 
+**2026-07-17, AM follow-up meeting — 4 more items:**
+1. **Confirmed policy: clients will never be emailed anything from this system.** No
+   code change (matches current reality, see confirmation above) — recorded here so a
+   future session doesn't accidentally build a client-facing send without checking this
+   first.
+2. **AEs now get the submission email for any IO they submit — built.** Added `ae.email`
+   (new column + updated `admin_save_ae` RPC, SQL given inline in chat). Admin AE editor
+   (`admin/index.html`) gained an Email field (form input, table column, save payload).
+   Public form gained a hidden `#ae-email` field, populated only when an AE is chosen via
+   the roster picker (`applyAePick()`) — same limitation as the Trello-handle autofill:
+   an AE typed in freehand has no email on file, so they're silently not included, not a
+   bug. Wired into Step 6's recipient list as a direct To (not BCC, no reason to hide it
+   from them), case-insensitive deduped against the group's own `io_recipient` list so
+   the AE never gets double-added if already on it. Verified via simulation of 5 cases
+   (normal case, AE already in group list — caught and fixed a real duplicate-in-To bug
+   here, no AE email on file, AE as the only recipient, nobody at all).
+3. **AMs should see all orders in the admin, not just their own group's, "in case
+   someone is out"** — NOT YET BUILT. The client-side AM-scoping filter in
+   `loadAdminOrders()` is easy to remove, but the real restriction lives in the
+   server-side `admin_get_orders` RPC, which isn't in this repo — asked Claire to run
+   `select pg_get_functiondef(...)` to get its exact current source before editing it,
+   rather than guessing at its logic. Waiting on that.
+4. **Email copy edits — built**, all three in the Step 6 submission-notification email:
+   - Group name added to the colored header banner ("New Insertion Order Submitted —
+     `<group name>`").
+   - Market row added, using the existing `#city` field (already free-text "City,
+     State" combined, not split fields) — only shown if filled in.
+   - "Overall Notes" row added — **mapped to the Special Instructions / Notes field**
+     (the general catch-all notes field), NOT Campaign Notes (which is scoped to
+     scheduling/start conditions) — flagged this assumption to Claire in chat since
+     there's no field literally labeled "Overall Notes" in the form; only shown if
+     filled in. Needs her confirmation this is the right field.
+
 ---
 
 ## STATUS SUMMARY
