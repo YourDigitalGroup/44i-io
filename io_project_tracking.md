@@ -145,9 +145,118 @@ rather than trickled out one at a time):
   based fix, not visually re-confirmed against Claire's actual broken PDF — needs her to
   regenerate an intake PDF and confirm it looks right now.
 - **Item 5/6 (her numbering) — Gold card at top of every list, Green card at bottom once**:
-  can't build without her actual Trello template card IDs, and need to clarify what
-  "once" means for the Green card (once ever per client? once per list?) and exact
-  positioning semantics relative to cards already in the list.
+  built 2026-07-17. Claire gave real Trello share-link IDs for both templates (resolved
+  to real card ids at runtime via `trello_get_card`, same shortLink-resolution pattern
+  already used for single-card service templates). Gold gets a fresh copy at the top of
+  the client's list on EVERY IO submission, never deduped, per her explicit "for every
+  IO" wording. Green gets copied to the bottom only the very first time ever for a given
+  client — confirmed "once ever per client" — checked by looking for a card already
+  matching the Green template's own name anywhere on that client's list (via the same
+  `existingCards` list already fetched for the tactic-card dedup logic, so no new
+  Supabase column was needed). Verified via simulation of all 4 cases (Gold always
+  copies even if one already exists; Green copies on a client's first-ever submission;
+  Green skips on a later resubmission; matching is case/whitespace-insensitive). Not yet
+  confirmed in an actual Trello board by Claire.
+- **Item 3 — "allow Enter to create new lines in the Intake Form"**: no code change
+  needed — the "Text Area" field type in the admin Intake Forms editor already renders
+  a real `<textarea>` with native Enter-for-newline support. Claire opted to convert
+  every existing plain "Text" field to "Text Area" across all intake forms (blanket
+  change, her call, 2026-07-17) rather than pick specific fields — SQL given inline in
+  chat (a jsonb rebuild of `intake_forms.definition`, since field defs live as one JSON
+  blob per form, not a flat table). Hers to run.
+
+**More Trello follow-ups, 2026-07-17 (after the 7-item batch above):**
+- **Client name on the IO card** — built. The IO card is now named `IO — <business name>`
+  instead of a bare "IO", same "Tactic — Client" naming convention every tactic card
+  already uses. `isIoName()` (used to find/skip IO cards) updated to also recognize the
+  new `IO — <name>` form, not just a bare "IO", so a returning client's already-created
+  IO card is still found and updated (and renamed, if it predates this change) rather
+  than treated as a brand-new card. Verified via simulation against 8 cases including a
+  deliberate false-positive check ("IOnline Marketing" correctly does NOT match).
+- **Do list-template "IO" placeholder cards still need to exist?** — confirmed NO, they
+  are pure dead weight. Every whole-list Trello template (SEO/Website tier packages
+  etc.) that includes its own "IO" card has that card silently skipped when the
+  template is copied (`isIoName(cn)` check, existing since before this session) — the
+  real IO card is always the separate one created once at the top of the client's list,
+  regardless of what was sold. Told Claire she can safely remove the IO placeholder from
+  her list templates going forward; leaving it in is harmless (just never copied) if she'd
+  rather not touch the templates right now.
+- **Whole-list template cards all currently get the "services sold" note overwritten
+  onto them, not just the first** — corrected an earlier wrong answer I gave Claire (a
+  stale 2026-07-13 code comment claimed this was "deliberately left off" whole-list
+  templates; the actual 2026-07-15 rewrite of `finalizeTacticCard` already applies it
+  to every card copied from a list, unconditionally). Claire asked whether it could be
+  limited to just the FIRST card in the list instead (matching how the "Needs KOC"
+  label already works) — she's holding this until she hears back from her AM on the
+  broader question it came up under (Offline Tracking-style add-ons riding on a
+  whole-list template's card). Not yet built.
+- **Client name added to the IO card title, in-template "IO" placeholders confirmed
+  dead weight** — see above.
+
+**`notification_settings.always_bcc_recipients` was silently failing to save — FIXED
+2026-07-17.** Claire added emails to the Notifications tab, got a "saved" confirmation,
+but they were gone the next day. Root cause: the live database column was still named
+`always_cc_recipients` (leftover from before this feature's naming changed to BCC on
+2026-07-15 — see that entry above), while the front-end code sends the payload key as
+`always_bcc_recipients`. The save RPC ran without error and bumped `updated_at`, but
+since the incoming JSON had no key matching what the RPC was reading, it wrote `null`
+into the column every time — nothing was ever actually persisted, even though the UI
+reported success. Confirmed via `select * from notification_settings;` (showed
+`always_cc_recipients` present but null, with a fresh `updated_at`). Fixed via a
+column rename + `create or replace function` to bring the live RPC in line with what
+the front-end already sends; Claire needs to re-enter her emails and re-save once
+(the earlier save is unrecoverable — it was written as null). **Lesson for future
+sessions**: a `notification-settings-2026-07-15.sql` file already existed in scratch
+with the CORRECT (BCC-named) column/RPC — it was drafted but apparently never actually
+run in Supabase, so the live database silently stayed on the older CC-named version
+while the front-end code moved on. Worth remembering that a migration file existing
+in scratch/chat history is not proof it was ever executed.
+
+Also confirmed for Claire, while investigating: **no code path sends anything directly
+to the client today** — `contact-email` is only ever displayed/stored, never used as a
+send target anywhere. The one email-sending path that exists (`send_email`, Step 6 of
+`submitIO()`) is an internal notification to the group's own `io_recipient` list +
+the global always-BCC list — not the client — and it's still inert pending the real
+Mailgun API key. The white-label warning under a group's From Name/From Email fields
+("all client-facing emails... will show the group's branding, never 44i's") describes
+intended behavior for a not-yet-built client-facing email feature; the only place
+those two fields are actually used today is the printed/PDF IO document's footer.
+
+**2026-07-17, AM follow-up meeting — 4 more items:**
+1. **Confirmed policy: clients will never be emailed anything from this system.** No
+   code change (matches current reality, see confirmation above) — recorded here so a
+   future session doesn't accidentally build a client-facing send without checking this
+   first.
+2. **AEs now get the submission email for any IO they submit — built.** Added `ae.email`
+   (new column + updated `admin_save_ae` RPC, SQL given inline in chat). Admin AE editor
+   (`admin/index.html`) gained an Email field (form input, table column, save payload).
+   Public form gained a hidden `#ae-email` field, populated only when an AE is chosen via
+   the roster picker (`applyAePick()`) — same limitation as the Trello-handle autofill:
+   an AE typed in freehand has no email on file, so they're silently not included, not a
+   bug. Wired into Step 6's recipient list as a direct To (not BCC, no reason to hide it
+   from them), case-insensitive deduped against the group's own `io_recipient` list so
+   the AE never gets double-added if already on it. Verified via simulation of 5 cases
+   (normal case, AE already in group list — caught and fixed a real duplicate-in-To bug
+   here, no AE email on file, AE as the only recipient, nobody at all).
+3. **AMs should see all orders in the admin, not just their own group's, "in case
+   someone is out"** — BUILT 2026-07-17. Got the live `admin_get_orders` RPC source via
+   `pg_get_functiondef` (asked for it rather than guessing, since it's not in this
+   repo) — removed its `or o.group_id in (select ... where am_name = p_name)` clause
+   entirely, so any valid admin (AM or super) now gets every order within the day
+   window, no role check beyond valid credentials. Updated function given inline in
+   chat, Claire's to run. Also removed the matching client-side fallback filter in
+   `loadAdminOrders()` (only ever used if the RPC call itself errors) so it can't
+   silently reintroduce the same restriction.
+4. **Email copy edits — built**, all three in the Step 6 submission-notification email:
+   - Group name added to the colored header banner ("New Insertion Order Submitted —
+     `<group name>`").
+   - Market row added, using the existing `#city` field (already free-text "City,
+     State" combined, not split fields) — only shown if filled in.
+   - "Overall Notes" row added — **mapped to the Special Instructions / Notes field**
+     (the general catch-all notes field), NOT Campaign Notes (which is scoped to
+     scheduling/start conditions) — flagged this assumption to Claire in chat since
+     there's no field literally labeled "Overall Notes" in the form; only shown if
+     filled in. Needs her confirmation this is the right field.
 
 ---
 

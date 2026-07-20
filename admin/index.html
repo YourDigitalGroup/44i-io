@@ -614,7 +614,11 @@
               <input type="text" id="admin-ae-trello" placeholder="@jordansmith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+            <div>
+              <label class="lbl">Email <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— gets the submission notification for any IO this AE submits</span></label>
+              <input type="email" id="admin-ae-email" placeholder="jordan@agency.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
             <div>
               <label class="lbl">Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— this AE only appears in the picker for this group's form</span></label>
               <select id="admin-ae-group" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
@@ -2315,6 +2319,7 @@ function renderAdminAeList() {
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello Handle</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Email</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
@@ -2331,6 +2336,7 @@ function renderAdminAeList() {
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
       <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
       <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(a.trello_handle || '—')}</td>
+      <td style="padding:8px 10px;font-size:11px">${esc(a.email || '—')}</td>
       <td style="padding:8px 10px">${groupName}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
     </tr>`;
@@ -2354,6 +2360,7 @@ function adminNewAe() {
   document.getElementById('admin-ae-original-id').value = '';
   document.getElementById('admin-ae-name').value = '';
   document.getElementById('admin-ae-trello').value = '';
+  document.getElementById('admin-ae-email').value = '';
   populateAeGroupDropdown(null);
   document.getElementById('admin-ae-form').style.display = 'block';
   document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
@@ -2370,6 +2377,7 @@ function adminEditAe(id) {
   document.getElementById('admin-ae-original-id').value = a.id;
   document.getElementById('admin-ae-name').value = a.name || '';
   document.getElementById('admin-ae-trello').value = a.trello_handle || '';
+  document.getElementById('admin-ae-email').value = a.email || '';
   populateAeGroupDropdown(a.group_id);
   document.getElementById('admin-ae-form').style.display = 'block';
   document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
@@ -2383,11 +2391,12 @@ async function adminSaveAe() {
   const isNew = !document.getElementById('admin-ae-original-id').value;
   const name = document.getElementById('admin-ae-name').value.trim();
   const trelloHandle = document.getElementById('admin-ae-trello').value.trim();
+  const email = document.getElementById('admin-ae-email').value.trim();
   const groupId = document.getElementById('admin-ae-group').value;
   if (!name) { showToast('Name is required', 'error'); return; }
   if (!groupId) { showToast('Group is required', 'error'); return; }
 
-  const payload = { name, trello_handle: trelloHandle || null, group_id: groupId };
+  const payload = { name, trello_handle: trelloHandle || null, email: email || null, group_id: groupId };
   if (isNew) payload.active = true;
   try {
     await sb('rpc/admin_save_ae', {
@@ -3119,13 +3128,9 @@ async function loadAdminOrders() {
         } catch(e) { /* tolerable — fall back to '(unknown)' */ }
       }
       loaded.forEach(o => { o._client_name = clientMap[o.client_id] || '(unknown)'; });
-      // Apply role-based scoping client-side (server does this itself in the RPC path)
-      if (currentAdminUser?.role === 'am') {
-        const myGroupIds = allGroups
-          .filter(g => g.am_name && g.am_name.toLowerCase() === currentAdminUser.name.toLowerCase())
-          .map(g => g.id);
-        loaded = loaded.filter(o => myGroupIds.includes(o.group_id));
-      }
+      // No role-based scoping here (2026-07-17, per Claire — "AM's should be able to
+      // see all orders, in case someone is out"): every admin, AM or super, sees every
+      // order. Matches admin_get_orders itself, which no longer restricts by role either.
     }
     allOrders = loaded;
     // Populate group filter
