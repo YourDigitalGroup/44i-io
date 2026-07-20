@@ -181,6 +181,46 @@ rather than trickled out one at a time):
   regardless of what was sold. Told Claire she can safely remove the IO placeholder from
   her list templates going forward; leaving it in is harmless (just never copied) if she'd
   rather not touch the templates right now.
+- **Whole-list template cards all currently get the "services sold" note overwritten
+  onto them, not just the first** — corrected an earlier wrong answer I gave Claire (a
+  stale 2026-07-13 code comment claimed this was "deliberately left off" whole-list
+  templates; the actual 2026-07-15 rewrite of `finalizeTacticCard` already applies it
+  to every card copied from a list, unconditionally). Claire asked whether it could be
+  limited to just the FIRST card in the list instead (matching how the "Needs KOC"
+  label already works) — she's holding this until she hears back from her AM on the
+  broader question it came up under (Offline Tracking-style add-ons riding on a
+  whole-list template's card). Not yet built.
+- **Client name added to the IO card title, in-template "IO" placeholders confirmed
+  dead weight** — see above.
+
+**`notification_settings.always_bcc_recipients` was silently failing to save — FIXED
+2026-07-17.** Claire added emails to the Notifications tab, got a "saved" confirmation,
+but they were gone the next day. Root cause: the live database column was still named
+`always_cc_recipients` (leftover from before this feature's naming changed to BCC on
+2026-07-15 — see that entry above), while the front-end code sends the payload key as
+`always_bcc_recipients`. The save RPC ran without error and bumped `updated_at`, but
+since the incoming JSON had no key matching what the RPC was reading, it wrote `null`
+into the column every time — nothing was ever actually persisted, even though the UI
+reported success. Confirmed via `select * from notification_settings;` (showed
+`always_cc_recipients` present but null, with a fresh `updated_at`). Fixed via a
+column rename + `create or replace function` to bring the live RPC in line with what
+the front-end already sends; Claire needs to re-enter her emails and re-save once
+(the earlier save is unrecoverable — it was written as null). **Lesson for future
+sessions**: a `notification-settings-2026-07-15.sql` file already existed in scratch
+with the CORRECT (BCC-named) column/RPC — it was drafted but apparently never actually
+run in Supabase, so the live database silently stayed on the older CC-named version
+while the front-end code moved on. Worth remembering that a migration file existing
+in scratch/chat history is not proof it was ever executed.
+
+Also confirmed for Claire, while investigating: **no code path sends anything directly
+to the client today** — `contact-email` is only ever displayed/stored, never used as a
+send target anywhere. The one email-sending path that exists (`send_email`, Step 6 of
+`submitIO()`) is an internal notification to the group's own `io_recipient` list +
+the global always-BCC list — not the client — and it's still inert pending the real
+Mailgun API key. The white-label warning under a group's From Name/From Email fields
+("all client-facing emails... will show the group's branding, never 44i's") describes
+intended behavior for a not-yet-built client-facing email feature; the only place
+those two fields are actually used today is the printed/PDF IO document's footer.
 
 ---
 
