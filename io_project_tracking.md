@@ -256,6 +256,27 @@ those two fields are actually used today is the printed/PDF IO document's footer
      is what it has been," 2026-07-17 — corrected from an initial wrong guess of
      Special Instructions since there's no field literally labeled "Overall Notes" in
      the form); only shown if filled in.
+   - Built a live preview artifact of the actual email markup (real code, sample data)
+     so Claire could see it without a working Mailgun key — caught 2 more real requests
+     from her looking at it:
+     - **Removed the One-Time Total / Monthly Recurring rows entirely** ("we don't need
+       the amounts from the IO in the email copy").
+     - **The "Calendar" link now builds a real calendar-file link from the KOC's own
+       date/time**, instead of pointing at the AM's generic booking-page URL (Claire
+       correctly spotted this — the old link was never actually connected to whatever
+       date/time got picked on the form). New `buildKocCalendarLink()` generates a
+       `data:text/calendar` `.ics` link (opens directly in Outlook/Apple Calendar/Google
+       Calendar's import) for a 30-minute block starting at the exact picked time.
+       **Known limitation, flagged to Claire**: nothing in this system stores a
+       timezone anywhere (no group or client field for it), so the event is written as
+       a "floating" time — every recipient's own calendar app shows the same clock time
+       in ITS OWN local zone, not locked to one specific zone. Fine when everyone's in
+       the same region; not fully correct if an AM/client are ever in different zones.
+       Verified via simulation of 6 cases (normal PM time, noon edge case, midnight edge
+       case, a genuine bug caught and fixed — the initial manual modulo-math rollover
+       past midnight produced a DTEND before DTSTART on the same date; rewritten to use
+       real `Date` arithmetic, re-verified including a year-boundary rollover — and both
+       missing-date/missing-time no-ops).
 
 ---
 

@@ -2942,6 +2942,42 @@ async function assignCardMembers(cardId, memberIds) {
   }
 }
 
+// Builds a downloadable-calendar-file link (data URI, opens directly in Outlook/Apple
+// Calendar/Google Calendar's import) for the KOC's actual date/time (2026-07-17, per
+// Claire — the old "Calendar" link just pointed at the AM's generic booking page,
+// disconnected from whatever date/time was actually picked on the form). kocTime is
+// stored as a 12-hour string like "2:00 PM" (see the #koc-time <select> options).
+// Defaults to a 30-minute block. KNOWN LIMITATION, flagged to Claire: nothing in this
+// system stores a timezone anywhere (per group or per client), so this is written as a
+// "floating" time with no TZID/UTC — every recipient's own calendar app will show the
+// same clock time (e.g. "2:00 PM") in ITS OWN local zone, not locked to one specific
+// zone. Fine when everyone's in the same region, not fully correct otherwise.
+function buildKocCalendarLink(kocDate, kocTime, bizName) {
+  if (!kocDate || !kocTime) return '';
+  const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(kocTime.trim());
+  if (!m) return '';
+  let hours = parseInt(m[1], 10);
+  const minutes = parseInt(m[2], 10);
+  const isPM = /PM/i.test(m[3]);
+  if (isPM && hours !== 12) hours += 12;
+  if (!isPM && hours === 12) hours = 0;
+  const [y, mo, d] = kocDate.split('-').map(Number);
+  if (!y || !mo || !d) return '';
+  const pad = n => String(n).padStart(2, '0');
+  const fmt = dt => `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`;
+  const start = new Date(y, mo - 1, d, hours, minutes);
+  const end = new Date(start.getTime() + 30 * 60000); // correctly rolls into the next day/month/year if needed
+  const startStr = fmt(start);
+  const endStr = fmt(end);
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'BEGIN:VEVENT',
+    `DTSTART:${startStr}`, `DTEND:${endStr}`,
+    `SUMMARY:Kick-Off Call — ${(bizName || 'Client').replace(/[\r\n]/g, ' ')}`,
+    'END:VEVENT', 'END:VCALENDAR'
+  ].join('\r\n');
+  return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
+}
+
 async function attachKocLabel(cardId, kocLabelId) {
   if (!kocLabelId) return;
   try {
@@ -3911,11 +3947,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
       if (!emailTo && emailBcc) { emailTo = emailBcc; emailBcc = ''; }
 
       if (emailTo) {
-        const calUrlEmail = selectedGroup.am_calendar_url || '';
+        // Real "add to my calendar" link built from the KOC's own date/time, not the
+        // AM's generic booking-page URL (2026-07-17, per Claire — see buildKocCalendarLink
+        // for the timezone caveat). Only rendered if a KOC was actually scheduled.
+        const kocCalLink = buildKocCalendarLink(kocDate, kocTime, bizName);
         const color = selectedGroup?.brand_color || '#1C9BD7';
         // Market + Overall Notes added 2026-07-17, per Claire's AM follow-up. "Overall
         // Notes" maps to Campaign Notes (confirmed by Claire — "that is what it has
-        // been"), not Special Instructions.
+        // been"), not Special Instructions. Dollar totals removed 2026-07-17, per Claire
+        // ("we don't need the amounts from the IO in the email copy").
         const marketVal = document.getElementById('city')?.value.trim();
         const overallNotesVal = document.getElementById('campaign-notes')?.value.trim();
         const emailHtml = `
@@ -3930,9 +3970,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 ${marketVal ? `<tr><td style="padding:6px 0;color:#6B7280">Market</td><td style="padding:6px 0">${esc(marketVal)}</td></tr>` : ''}
                 <tr><td style="padding:6px 0;color:#6B7280">Contact</td><td style="padding:6px 0">${esc(document.getElementById('contact-name').value)} — ${esc(document.getElementById('contact-email').value)}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">AE</td><td style="padding:6px 0">${esc(aeName)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6B7280">KOC</td><td style="padding:6px 0">${esc(kocDate || '—')}${kocTime ? ' at ' + esc(kocTime) : ''}${calUrlEmail ? ` — <a href="${esc(calUrlEmail)}">Calendar</a>` : ''}</td></tr>
-                <tr><td style="padding:6px 0;color:#6B7280">One-Time Total</td><td style="padding:6px 0;font-weight:600">$${oneTime.toLocaleString()}</td></tr>
-                <tr><td style="padding:6px 0;color:#6B7280">Monthly Recurring</td><td style="padding:6px 0;font-weight:600">$${monthly.toLocaleString()}/mo</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">KOC</td><td style="padding:6px 0">${esc(kocDate || '—')}${kocTime ? ' at ' + esc(kocTime) : ''}${kocCalLink ? ` — <a href="${esc(kocCalLink)}">Add to Calendar</a>` : ''}</td></tr>
                 ${overallNotesVal ? `<tr><td style="padding:6px 0;color:#6B7280;vertical-align:top">Overall Notes</td><td style="padding:6px 0">${esc(overallNotesVal)}</td></tr>` : ''}
               </table>
               <p style="font-size:12px;color:#6B7280;margin-top:16px">Full details attached as PDF.</p>
