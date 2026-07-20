@@ -239,11 +239,14 @@ those two fields are actually used today is the printed/PDF IO document's footer
    (normal case, AE already in group list — caught and fixed a real duplicate-in-To bug
    here, no AE email on file, AE as the only recipient, nobody at all).
 3. **AMs should see all orders in the admin, not just their own group's, "in case
-   someone is out"** — NOT YET BUILT. The client-side AM-scoping filter in
-   `loadAdminOrders()` is easy to remove, but the real restriction lives in the
-   server-side `admin_get_orders` RPC, which isn't in this repo — asked Claire to run
-   `select pg_get_functiondef(...)` to get its exact current source before editing it,
-   rather than guessing at its logic. Waiting on that.
+   someone is out"** — BUILT 2026-07-17. Got the live `admin_get_orders` RPC source via
+   `pg_get_functiondef` (asked for it rather than guessing, since it's not in this
+   repo) — removed its `or o.group_id in (select ... where am_name = p_name)` clause
+   entirely, so any valid admin (AM or super) now gets every order within the day
+   window, no role check beyond valid credentials. Updated function given inline in
+   chat, Claire's to run. Also removed the matching client-side fallback filter in
+   `loadAdminOrders()` (only ever used if the RPC call itself errors) so it can't
+   silently reintroduce the same restriction.
 4. **Email copy edits — built**, all three in the Step 6 submission-notification email:
    - Group name added to the colored header banner ("New Insertion Order Submitted —
      `<group name>`").

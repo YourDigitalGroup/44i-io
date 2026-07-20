@@ -3128,13 +3128,9 @@ async function loadAdminOrders() {
         } catch(e) { /* tolerable — fall back to '(unknown)' */ }
       }
       loaded.forEach(o => { o._client_name = clientMap[o.client_id] || '(unknown)'; });
-      // Apply role-based scoping client-side (server does this itself in the RPC path)
-      if (currentAdminUser?.role === 'am') {
-        const myGroupIds = allGroups
-          .filter(g => g.am_name && g.am_name.toLowerCase() === currentAdminUser.name.toLowerCase())
-          .map(g => g.id);
-        loaded = loaded.filter(o => myGroupIds.includes(o.group_id));
-      }
+      // No role-based scoping here (2026-07-17, per Claire — "AM's should be able to
+      // see all orders, in case someone is out"): every admin, AM or super, sees every
+      // order. Matches admin_get_orders itself, which no longer restricts by role either.
     }
     allOrders = loaded;
     // Populate group filter
