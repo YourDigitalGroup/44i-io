@@ -92,6 +92,12 @@
                 <p id="admin-slug-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ Another group already uses this slug — its link would stop working. Please choose a different one.</p>
               </div>
             </div>
+            <div style="margin-bottom:12px">
+              <label class="lbl">Account Manager <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— picks name, email, calendar link, and Trello handle together</span></label>
+              <select id="admin-am-picker" onchange="applyAmPick(this.value)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="">— Select AM (or type below) —</option>
+              </select>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div><label class="lbl">Account Manager Name</label><input type="text" id="admin-am-name" placeholder="Full name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
               <div><label class="lbl">Account Manager Email</label><input type="email" id="admin-am-email" placeholder="am@email.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
@@ -4055,7 +4061,54 @@ function renderAdminGroups() {
   </table>`;
 }
 
-function adminNewGroup() {
+// ── STAFF ROSTER / AM PICKER (2026-07-18) ───────────────────────
+// Reuses admin_users (login accounts) rather than a new parallel roster — Claire
+// confirmed strategists/accounting will also need real logins later, not just be
+// selectable in a dropdown, so admin_users is already the right long-term home for
+// "staff who use this platform." AEs stay OUT of this — separate, external-to-
+// company roster, unchanged. Loaded lazily (same pattern as allGroups elsewhere)
+// rather than at page init, since only the Group form needs it.
+let ALL_STAFF = [];
+
+async function ensureStaffRosterLoaded() {
+  if (ALL_STAFF.length) return;
+  try {
+    ALL_STAFF = await sb('rpc/admin_get_staff', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+  } catch(e) {
+    console.warn('Could not load staff roster:', e.message);
+    ALL_STAFF = [];
+  }
+}
+
+// selectedAmName: pre-selects the picker when editing a group whose existing
+// am_name (free-typed, pre-picker) happens to match a real staff name — case-
+// insensitive, since that's how admin_login itself already matches names. No match
+// just leaves the picker blank without touching whatever's already in the text
+// fields — an unrecognized/custom AM name is left alone, not overwritten.
+function populateAmPickerDropdown(selectedAmName) {
+  const sel = document.getElementById('admin-am-picker');
+  if (!sel) return;
+  const ams = ALL_STAFF.filter(s => s.role === 'am');
+  const matched = selectedAmName ? ams.find(a => a.name.toLowerCase() === selectedAmName.trim().toLowerCase()) : null;
+  sel.innerHTML = '<option value="">— Select AM (or type below) —</option>' +
+    ams.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+  sel.value = matched ? matched.name : '';
+}
+
+function applyAmPick(name) {
+  if (!name) return;
+  const a = ALL_STAFF.find(s => s.name === name);
+  if (!a) return;
+  document.getElementById('admin-am-name').value = a.name || '';
+  document.getElementById('admin-am-email').value = a.email || '';
+  document.getElementById('admin-am-calendar').value = a.am_calendar_url || '';
+  document.getElementById('admin-am-trello').value = a.am_trello_handle || '';
+}
+
+async function adminNewGroup() {
   document.getElementById('admin-form-title').textContent = 'New Group';
   document.getElementById('admin-group-id').value = '';
   ['admin-name','admin-slug','admin-am-name','admin-am-email','admin-am-calendar','admin-am-trello',
@@ -4074,12 +4127,14 @@ function adminNewGroup() {
   currentPricingOverrides = {};
   const pricingTabBtn = document.getElementById('tab-btn-pricing');
   if (pricingTabBtn) pricingTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+  await ensureStaffRosterLoaded();
+  populateAmPickerDropdown(null);
   adminTab('info');
   document.getElementById('admin-group-form').style.display = 'block';
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
 }
 
-function adminEditGroup(id) {
+async function adminEditGroup(id) {
   const g = allGroups.find(x => x.id === id);
   if (!g) return;
   document.getElementById('admin-form-title').textContent = 'Edit Group — ' + g.name;
@@ -4094,6 +4149,8 @@ function adminEditGroup(id) {
   document.getElementById('admin-am-email').value = g.am_email || '';
   document.getElementById('admin-am-calendar').value = g.am_calendar_url || '';
   document.getElementById('admin-am-trello').value = g.am_trello_handle || '';
+  await ensureStaffRosterLoaded();
+  populateAmPickerDropdown(g.am_name || null);
   document.getElementById('admin-color').value = g.brand_color || '#1C9BD7';
   document.getElementById('admin-color-hex').value = g.brand_color || '#1C9BD7';
   document.getElementById('admin-color2').value = g.brand_color2 || '#1C9BD7';

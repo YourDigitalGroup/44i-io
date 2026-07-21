@@ -681,6 +681,41 @@ recorded for continuity into future sessions:**
   clients via the Import-from-Trello flow, rather than something that needs to stay
   in the nav permanently.
 
+**AM picker — BUILT 2026-07-18** (decided the previous session, built once Claire
+realized she needed it working before creating real groups). New `admin-am-picker`
+dropdown on the Group form, above the existing AM Name/Email/Calendar/Trello fields
+— picking a name fills all four together, same UX as the AE/Client pickers. Reuses
+`admin_users` (login accounts) rather than a new parallel roster, per the previous
+session's decision — added nullable `email`/`am_calendar_url`/`am_trello_handle`
+columns there, plus new `admin_get_staff` RPC (deliberately excludes `pw_hash`, any
+valid admin can call it — same access level as `admin_get_orders`/`admin_get_clients`).
+Picker options are filtered client-side to `role = 'am'`, so James/Jon (Super Admins)
+never show up as AM choices. When editing an EXISTING group, the picker pre-selects
+by case-insensitive name match against the group's current (free-typed, pre-picker)
+`am_name` — if it matches a real AM, the picker shows it selected; if not (a custom/
+unrecognized name), the picker stays blank without touching or overwriting whatever's
+already in the text fields. `adminNewGroup`/`adminEditGroup` both made `async` to
+load the roster (lazy-loaded once, same pattern as `allGroups` elsewhere) before
+populating the dropdown. Verified via a real headless-browser test across 4 cases:
+picker only lists the 3 real AMs (not James/Jon), case-insensitive pre-select match
+works, an unrecognized existing name correctly leaves the picker blank, and picking a
+name correctly fills all 4 fields. SQL given inline in chat, not yet run by Claire —
+includes commented-out placeholder UPDATE statements for backfilling Carol/Peggy/
+Shania's real contact info once she has it, since the roster starts empty otherwise.
+
+**From Name / From Email — under review, not yet removed.** Claire asked whether
+these are still needed, since the plan is to keep sending from the same shared
+address as before rather than white-label per-group emails. Traced actual usage:
+From Name is fully dead code (computed, never rendered anywhere); From Email's only
+effect is the printed IO document's footer line (`GroupName · FromEmail · IO#`) —
+neither is used for actual email sending (the one real email path uses a fixed
+sender, confirmed in the earlier audit). Recommended removing both, since they were
+built for a white-labeled client-email feature that's since been confirmed as
+permanently out of scope. Waiting on Claire's call on one specific thing before
+touching code: should the printed IO's footer just drop the email entirely once From
+Email is gone, or show the AM's email there instead (real, accurate, still in active
+use elsewhere) — not yet decided or built.
+
 ---
 
 ## STATUS SUMMARY
