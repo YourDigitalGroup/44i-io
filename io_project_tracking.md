@@ -321,6 +321,126 @@ update services set always_new_card = true where label ilike '%event targeting%'
 select id, label, section, workflow, always_new_card from services where always_new_card = true;
 ```
 
+**New "Reconcile Lists" admin tool — BUILT 2026-07-17.** Claire raised a real concern
+after the above: with a large existing Trello client base (many with card titles in
+inconsistent historical formats), how do we minimize new duplicate lists/cards being
+created going forward? Traced the actual risk precisely rather than reasoning
+abstractly:
+- **Client LISTS (the higher-risk one)**: once a client has been submitted through this
+  system once, their Supabase record gets a permanent `clients.trello_list_id`, and
+  every future submission uses it directly — completely safe regardless of naming.
+  The risk is entirely the FIRST submission for anyone who doesn't have that id yet
+  (i.e. most of the existing client base, since this only started auto-populating
+  2026-07-13) — that path falls back to an EXACT case-insensitive name match against
+  the board's list names, so any real-world naming drift silently creates a duplicate
+  list instead of finding the real one.
+- **Individual cards (lower risk)**: once the right list is found, matching an
+  existing card on resell is also a name comparison, not fuzzy — a historical card
+  whose title doesn't match today's exact naming convention will get a duplicate the
+  first time that service is resold. Recommended AGAINST an automated bulk fix here
+  (trades "creates a duplicate" for the riskier "silently updates the wrong card") —
+  better solved with a light manual glance per currently-active client.
+
+Built the tool for the higher-risk, safely-automatable half: a new **"Reconcile
+Lists"** admin tab (super-admin only, same restriction level as Legal Text/
+Notifications). Finds every client missing a stored `trello_list_id` (new
+`admin_get_clients_missing_trello_list` RPC), fetches each affected group's board
+lists ONCE per group (not per client — deliberately avoids an N+1 pattern against the
+Trello API), and suggests a best-match list per client using the exact same fuzzy-match
+logic already proven on the public form's own duplicate-client warning
+(`normalizeClientName`/`stripBizSuffix`/`levenshtein`, ported into
+`admin/index.html` rather than inventing a second, possibly-inconsistent rule) —
+labeled EXACT (suffix-stripped exact match) or CLOSE (within a length-scaled edit-
+distance tolerance), with a dropdown to override or select "no match" if a client is
+genuinely new. Confirming a row calls the already-existing `set_client_trello_list_id`
+RPC (same one the public form itself uses) — no new write path needed. Verified: the
+matching logic against 5 cases (exact match, suffix variant, one-character typo,
+genuinely-new-client correctly yields no match, empty name), and the full render →
+pre-select → dismiss → re-render cycle via a real headless-browser test (confirmed the
+correct list is pre-selected per row, a no-match row is correctly left blank, and
+dismissing a row correctly removes just that row and re-indexes the rest). New RPC SQL
+given inline in chat.
+
+**Client Profiles admin tab + Import from Trello — BUILT 2026-07-17.** Claire pointed
+out a real gap right after the Reconcile tool above: since her real client base has
+never gone through this system, they have NO Supabase `clients` row at all (Reconcile
+only helps clients that already have a row but are missing the link) — so a genuine
+bulk-import is needed, not just reconciliation. She also flagged, separately, that
+there's never been any way to edit an existing client's profile after the fact (a
+changed contact, a typo) — confirmed true: `clients` could previously ONLY be written
+during a live IO submission or by Reconcile (link only).
+
+Decisions confirmed with Claire before building: AM-tier gets FULL access to client
+profiles, same as Orders (no group scoping — any admin can help on any client). The
+existing client PDFs vary in format / she's not sure they're consistent, so **no
+automated PDF-parsing was attempted** — pulling in the rich contact/business info from
+those PDFs is left as a manual one-time data-entry pass into the new editor, not
+scripted extraction (a script silently misreading an inconsistent format is a worse
+failure mode than a bit of manual typing).
+
+Built:
+- **New "Clients" admin tab** (`section-clients`) — full CRUD on client profiles (name,
+  group, contact name/email/phone, website, city, business type, and a manual Trello
+  List ID override field), search box, same list+edit-form pattern as Groups/Services/
+  AEs. New `admin_get_clients`/`admin_save_client` RPCs (SQL given inline in chat) —
+  any valid admin (am or super) allowed, no role restriction beyond valid credentials,
+  per Claire's explicit call above.
+- **"Import from Trello" panel**, inside the same tab — for a chosen group, scans that
+  board's lists (`trello_get_lists`, already-existing target), filters out any list
+  already linked to a client (regardless of which group that client is filed under,
+  since a Trello list id is a Trello-side fact), and shows the remainder as a checklist
+  defaulted to all-checked. Deliberately review-before-create, same spirit as
+  Reconcile — Claire unchecks anything that isn't really a client (a template list, an
+  archived reference list) before anything gets written. Confirming calls the same
+  `admin_save_client` RPC once per checked list (`{name, group_id, trello_list_id}`) —
+  no separate bulk-insert RPC needed.
+- **Real layout bug caught and fixed during build, before it ever shipped**: the edit
+  form uses the same flex `order` trick as Groups (renders above the list regardless
+  of DOM position) — but Clients has 5 top-level siblings (header, search box, import
+  panel, form, table) vs. Groups' 2, and only giving the form an explicit `order` while
+  leaving the rest unset would have sorted the form to the very BOTTOM instead of above
+  the table (unset order defaults to 0, which sorts before the form's order:1). Fixed
+  by giving every sibling an explicit order (1 through 5) so the sequence is
+  deterministic. Also had to add `'clients'` to the same special-cased `display:flex`
+  branch in `adminSection()` that `'groups'` already needed, for the same reason.
+- Verified via two real headless-browser tests: (1) the Clients tab itself — row
+  rendering, LINKED/NOT LINKED badges, search filtering, edit-form populate-on-click,
+  and new-client-form blank state; (2) the import flow's actual filtering + selection
+  logic — confirmed an already-linked list is correctly excluded from the candidate
+  list, and unchecking a candidate (simulating Claire excluding a non-client list)
+  correctly excludes it from what actually gets saved.
+
+New SQL, all given inline in chat (not committed as files, per Claire's no-SQL-files
+constraint): `admin_get_clients_missing_trello_list` (Reconcile tool, above) and
+`admin_get_clients`/`admin_save_client` (Client Profiles + Import, this entry).
+
+**Import from Trello extended to include ARCHIVED lists — BUILT 2026-07-17.** Claire
+asked whether the import scans archived lists too — it didn't, and this turned out to
+matter more than a simple gap: `trello_get_lists` was hardcoded to `filter=open`
+everywhere it's used, including the LIVE SUBMISSION's own name-search fallback for any
+unlinked client. That means a former client whose list is archived wouldn't be found
+by either path — not the import, and not the live form's own fallback — so without a
+stored `trello_list_id`, a returning-but-archived client would get a genuine duplicate
+list on resubmission (only the stored-id path correctly reopens an archived list).
+Fixed by adding an optional `filter` passthrough to the `trello_get_lists` Edge
+Function target — defaults to `'open'` so every existing caller (the live form's
+fallback search, the "5th position" calc, etc.) keeps its exact current behavior
+unchanged; the import tool explicitly passes `filter:'all'`. Whitelisted against
+Trello's real accepted values (`open`/`closed`/`all`/`none`) server-side, so a
+caller-supplied value never reaches the request URL unvalidated. Each candidate list
+now shows an ARCHIVED badge when `closed:true`, so Claire can tell at a glance which
+ones are former/inactive clients before deciding whether to import them. Verified via
+simulation (the whitelist correctly passes through `'all'`, defaults `undefined` to
+`'open'`, and falls back to `'open'` for a garbage value) and a real headless-browser
+render check (the ARCHIVED badge appears on exactly the closed list, not the open
+one). Full updated Edge Function file given inline in chat — needs redeploying.
+
+Also confirmed for Claire, while discussing this: **clients are tied to the GROUP,
+not to an AE** — `ae_name` is only ever recorded on the individual order/submission,
+never stored on the client record itself. So there's no risk of a stale AE-to-client
+link if someone leaves; each new IO for a client just records whichever AE handled
+that particular submission. Nothing needed here — already built the way she wanted.
+
 ---
 
 ## STATUS SUMMARY
