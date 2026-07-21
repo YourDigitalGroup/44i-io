@@ -3007,10 +3007,15 @@ async function scanClientImportCandidates() {
   }
   resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Scanning board…</p>';
   try {
+    // filter:'all' (2026-07-17, per Claire) — includes ARCHIVED lists, not just open
+    // ones. Matters more than it looks: only a stored trello_list_id correctly reopens
+    // an archived list for a returning client instead of creating a duplicate — the
+    // live form's own name-search fallback only ever searches OPEN lists, so a former
+    // client whose list is archived needs linking here just as much as an active one.
     const res = await fetch(PROXY, {
       method: 'POST',
       headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-      body: JSON.stringify({ target: 'trello_get_lists', board_id: group.trello_board_id })
+      body: JSON.stringify({ target: 'trello_get_lists', board_id: group.trello_board_id, filter: 'all' })
     });
     const lists = await res.json();
     if (!Array.isArray(lists)) throw new Error('Could not read board lists');
@@ -3029,9 +3034,12 @@ async function scanClientImportCandidates() {
     let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:10px">Uncheck anything that isn't actually a client (a template, an archived reference list, etc.) before importing.</p>
       <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;margin-bottom:12px">`;
     CLIENT_IMPORT_CANDIDATES.forEach((l, idx) => {
+      const archivedBadge = l.closed
+        ? '<span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">ARCHIVED</span>'
+        : '';
       html += `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12.5px;cursor:pointer">
         <input type="checkbox" id="import-candidate-${idx}" checked style="width:14px;height:14px;accent-color:var(--accent)"/>
-        ${esc(l.name)}
+        ${esc(l.name)} ${archivedBadge}
       </label>`;
     });
     html += `</div><button onclick="importSelectedClients('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;

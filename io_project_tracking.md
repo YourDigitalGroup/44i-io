@@ -414,6 +414,33 @@ New SQL, all given inline in chat (not committed as files, per Claire's no-SQL-f
 constraint): `admin_get_clients_missing_trello_list` (Reconcile tool, above) and
 `admin_get_clients`/`admin_save_client` (Client Profiles + Import, this entry).
 
+**Import from Trello extended to include ARCHIVED lists — BUILT 2026-07-17.** Claire
+asked whether the import scans archived lists too — it didn't, and this turned out to
+matter more than a simple gap: `trello_get_lists` was hardcoded to `filter=open`
+everywhere it's used, including the LIVE SUBMISSION's own name-search fallback for any
+unlinked client. That means a former client whose list is archived wouldn't be found
+by either path — not the import, and not the live form's own fallback — so without a
+stored `trello_list_id`, a returning-but-archived client would get a genuine duplicate
+list on resubmission (only the stored-id path correctly reopens an archived list).
+Fixed by adding an optional `filter` passthrough to the `trello_get_lists` Edge
+Function target — defaults to `'open'` so every existing caller (the live form's
+fallback search, the "5th position" calc, etc.) keeps its exact current behavior
+unchanged; the import tool explicitly passes `filter:'all'`. Whitelisted against
+Trello's real accepted values (`open`/`closed`/`all`/`none`) server-side, so a
+caller-supplied value never reaches the request URL unvalidated. Each candidate list
+now shows an ARCHIVED badge when `closed:true`, so Claire can tell at a glance which
+ones are former/inactive clients before deciding whether to import them. Verified via
+simulation (the whitelist correctly passes through `'all'`, defaults `undefined` to
+`'open'`, and falls back to `'open'` for a garbage value) and a real headless-browser
+render check (the ARCHIVED badge appears on exactly the closed list, not the open
+one). Full updated Edge Function file given inline in chat — needs redeploying.
+
+Also confirmed for Claire, while discussing this: **clients are tied to the GROUP,
+not to an AE** — `ae_name` is only ever recorded on the individual order/submission,
+never stored on the client record itself. So there's no risk of a stale AE-to-client
+link if someone leaves; each new IO for a client just records whichever AE handled
+that particular submission. Nothing needed here — already built the way she wanted.
+
 ---
 
 ## STATUS SUMMARY
