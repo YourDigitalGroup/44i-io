@@ -385,6 +385,7 @@ textarea{resize:vertical;min-height:70px}
         <div>
           <label class="lbl">Business Name</label>
           <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()"/>
+          <p id="biz-name-locked-hint" style="display:none;margin-top:6px;font-size:11px;color:var(--muted)">🔒 Locked — editing an existing client's name here risks creating a duplicate client/Trello list instead of updating this one. Switch back to "— New Client —" above to use a different name, or correct this client's name in the admin portal's Client Profiles editor.</p>
           <div id="biz-name-match-warning" style="display:none;margin-top:6px;padding:8px 10px;border-radius:8px;background:#FFF7ED;border:1px solid #FED7AA;font-size:13px;color:#9A3412"></div>
         </div>
       </div>
@@ -944,6 +945,7 @@ async function loadClientRoster(groupId) {
   const wrap = document.getElementById('client-picker-wrap');
   const sel = document.getElementById('client-picker');
   selectedClientId = null;
+  setBizNameLocked(false);
   if (!groupId) { wrap.style.display = 'none'; CLIENT_ROSTER = []; return; }
   try {
     CLIENT_ROSTER = await sb('rpc/get_group_clients', { method: 'POST', body: JSON.stringify({ p_group_id: groupId }) }) || [];
@@ -958,6 +960,22 @@ async function loadClientRoster(groupId) {
   wrap.style.display = 'block';
 }
 
+// Business name gets DISABLED (not just discouraged) once a real client is picked
+// (2026-07-18, per Claire) — editing it used to just silently un-pin selectedClientId
+// (see onBizNameEdited below), which sounds harmless but isn't: the submission would
+// then fall through to find_or_create_client's name-based lookup, and if the edited
+// name doesn't happen to exactly match anything, that creates a brand-new duplicate
+// client record (and a duplicate Trello list) instead of updating the original —
+// exactly the failure mode the picker exists to prevent. Contact info fields stay
+// fully editable either way; find_or_create_client already writes those back onto
+// the SAME client record on every submission as long as the id stays attached.
+function setBizNameLocked(locked) {
+  const el = document.getElementById('biz-name');
+  const hint = document.getElementById('biz-name-locked-hint');
+  if (el) el.disabled = locked;
+  if (hint) hint.style.display = locked ? 'block' : 'none';
+}
+
 function applyClientPick(id) {
   selectedClientId = id || null;
   if (!id) {
@@ -966,6 +984,7 @@ function applyClientPick(id) {
     ['biz-name','contact-name','contact-phone','contact-email','website-url','city','biz-type'].forEach(fid => {
       const el = document.getElementById(fid); if (el) el.value = '';
     });
+    setBizNameLocked(false);
     return;
   }
   const c = CLIENT_ROSTER.find(x => x.id === id);
@@ -977,6 +996,7 @@ function applyClientPick(id) {
   document.getElementById('website-url').value = c.website_url || '';
   document.getElementById('city').value = c.city || '';
   document.getElementById('biz-type').value = c.business_type || '';
+  setBizNameLocked(true);
 }
 
 // Safety net: if a client was picked but the business name is then hand-edited away
@@ -1826,7 +1846,7 @@ async function loadGroup() {
     if (selectedGroup.active === false) { showGroupError(); return; }
     // Normalize stray whitespace from DB values (a trailing space in am_name
     // rendered as "Jim 's Calendar" on the KOC button)
-    ['am_name','name','from_name','am_email','from_email'].forEach(k => {
+    ['am_name','name','am_email'].forEach(k => {
       if (typeof selectedGroup[k] === 'string') selectedGroup[k] = selectedGroup[k].trim();
     });
     applyGroupBranding(selectedGroup);
@@ -4775,6 +4795,7 @@ function resetForm() {
   // submission even though the form looked blank, which would have made that next
   // submission overwrite the old client's record instead of creating a new one.
   selectedClientId = null;
+  setBizNameLocked(false);
   const clientPicker = document.getElementById('client-picker');
   if (clientPicker) clientPicker.value = '';
   const aePicker = document.getElementById('ae-picker');
