@@ -213,7 +213,12 @@
           </div>
         </div>
 
-        <input type="text" id="clients-filter-search" placeholder="Search by client name, contact, or city..." oninput="renderAdminClients()" style="order:2;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;margin-bottom:16px"/>
+        <div style="order:2;display:grid;grid-template-columns:1fr 220px;gap:10px;margin-bottom:16px">
+          <input type="text" id="clients-filter-search" placeholder="Search by client name, contact, or city..." oninput="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+          <select id="clients-filter-group" onchange="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;background:#fff">
+            <option value="">All groups</option>
+          </select>
+        </div>
 
         <!-- Import-from-Trello panel — scans a group's board for lists with no linked
              client yet, lets Claire uncheck any that aren't real clients (templates,
@@ -695,6 +700,12 @@
             <p style="font-size:11px;color:var(--muted)">Powers the AE picker on the public form — selecting a name autofills their Trello handle instead of retyping it every submission.</p>
           </div>
           <button id="admin-new-ae-btn" onclick="adminNewAe()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New AE</button>
+        </div>
+
+        <div style="margin-bottom:16px;max-width:280px">
+          <select id="ae-filter-group" onchange="renderAdminAeList()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;background:#fff">
+            <option value="">All groups</option>
+          </select>
         </div>
 
         <div id="admin-ae-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
@@ -2430,19 +2441,35 @@ async function loadAdminAes() {
   const el = document.getElementById('admin-ae-table');
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
   try {
+    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
     ALL_AES = await sb('ae?order=name&select=*') || [];
+    populateAeFilterGroupDropdown();
     renderAdminAeList();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading AEs: ${esc(e.message)}</p>`;
   }
 }
 
+// Group filter dropdown (2026-07-17, per Claire — same "filter by group" request as
+// Orders) — separate from populateAeGroupDropdown, which populates the EDIT FORM's
+// group select and always needs the full unfiltered list of groups.
+function populateAeFilterGroupDropdown() {
+  const sel = document.getElementById('ae-filter-group');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All groups</option>' +
+    allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  sel.value = current;
+}
+
 function renderAdminAeList() {
   const el = document.getElementById('admin-ae-table');
   // AM-tier gets full Edit/Deactivate access now too (2026-07-17, per Claire) — no
   // more role-gating on these buttons, same as Orders/Clients.
-  if (!ALL_AES.length) {
-    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No AEs yet.</p>';
+  const groupFilter = document.getElementById('ae-filter-group')?.value || '';
+  const rows = !groupFilter ? ALL_AES : ALL_AES.filter(a => a.group_id === groupFilter);
+  if (!rows.length) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">${ALL_AES.length ? 'No AEs in this group.' : 'No AEs yet.'}</p>`;
     return;
   }
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
@@ -2453,7 +2480,7 @@ function renderAdminAeList() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
-  ALL_AES.forEach(a => {
+  rows.forEach(a => {
     const inactive = !a.active;
     const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
@@ -2842,23 +2869,40 @@ async function loadAdminClients() {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
+    populateClientFilterGroupDropdown();
     renderAdminClients();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading clients: ${esc(e.message)}</p>`;
   }
 }
 
+// Group filter dropdown (2026-07-17, per Claire — same "filter by group" request as
+// Orders/AEs) — separate from populateClientGroupDropdown, which is shared by the edit
+// form's and import panel's group selects and always needs the full unfiltered list,
+// with no "All groups" option.
+function populateClientFilterGroupDropdown() {
+  const sel = document.getElementById('clients-filter-group');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All groups</option>' +
+    allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  sel.value = current;
+}
+
 function renderAdminClients() {
   const el = document.getElementById('admin-clients-table');
   const search = (document.getElementById('clients-filter-search')?.value || '').trim().toLowerCase();
-  const rows = !search ? ALL_CLIENTS : ALL_CLIENTS.filter(c =>
-    (c.name || '').toLowerCase().includes(search) ||
-    (c.contact_name || '').toLowerCase().includes(search) ||
-    (c.contact_email || '').toLowerCase().includes(search) ||
-    (c.city || '').toLowerCase().includes(search)
-  );
+  const groupFilter = document.getElementById('clients-filter-group')?.value || '';
+  const rows = ALL_CLIENTS.filter(c => {
+    if (groupFilter && c.group_id !== groupFilter) return false;
+    if (!search) return true;
+    return (c.name || '').toLowerCase().includes(search) ||
+      (c.contact_name || '').toLowerCase().includes(search) ||
+      (c.contact_email || '').toLowerCase().includes(search) ||
+      (c.city || '').toLowerCase().includes(search);
+  });
   if (!rows.length) {
-    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">${ALL_CLIENTS.length ? 'No clients match that search.' : 'No clients yet.'}</p>`;
+    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">${ALL_CLIENTS.length ? 'No clients match your filters.' : 'No clients yet.'}</p>`;
     return;
   }
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">

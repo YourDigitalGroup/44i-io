@@ -498,6 +498,22 @@ end;
 $function$;
 ```
 
+**Group filter added to Clients and AEs tabs — BUILT 2026-07-17.** Same "filter by
+group" convenience Orders already has, per Claire's direct request. Clients tab: added
+a group `<select>` next to the existing search box, combined via `renderAdminClients()`
+(a row must pass BOTH the group filter AND the search term, not either/or). AEs tab had
+no filter bar at all before this — added one group `<select>` above the table, wired
+into `renderAdminAeList()`. Both dropdowns are populated from `allGroups` with a
+prepended "All groups" option, kept deliberately separate from the existing
+`populateClientGroupDropdown`/`populateAeGroupDropdown` helpers (those serve the
+edit-form/import-panel group selects, which must never have an "all" option and always
+need the full unfiltered list) — new `populateClientFilterGroupDropdown`/
+`populateAeFilterGroupDropdown` instead. Verified via a real headless-browser test:
+dropdown option counts, single-group filtering on each tab (confirmed exactly the
+right row remains), and the combined group+search case on Clients (a client matching
+the search term but NOT the selected group correctly returns zero rows, proving it's
+an AND, not an OR).
+
 ---
 
 ## STATUS SUMMARY
