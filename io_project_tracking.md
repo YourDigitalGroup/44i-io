@@ -703,18 +703,25 @@ name correctly fills all 4 fields. SQL given inline in chat, not yet run by Clai
 includes commented-out placeholder UPDATE statements for backfilling Carol/Peggy/
 Shania's real contact info once she has it, since the roster starts empty otherwise.
 
-**From Name / From Email — under review, not yet removed.** Claire asked whether
-these are still needed, since the plan is to keep sending from the same shared
-address as before rather than white-label per-group emails. Traced actual usage:
-From Name is fully dead code (computed, never rendered anywhere); From Email's only
-effect is the printed IO document's footer line (`GroupName · FromEmail · IO#`) —
-neither is used for actual email sending (the one real email path uses a fixed
-sender, confirmed in the earlier audit). Recommended removing both, since they were
-built for a white-labeled client-email feature that's since been confirmed as
-permanently out of scope. Waiting on Claire's call on one specific thing before
-touching code: should the printed IO's footer just drop the email entirely once From
-Email is gone, or show the AM's email there instead (real, accurate, still in active
-use elsewhere) — not yet decided or built.
+**From Name / From Email — REMOVED 2026-07-18.** Traced actual usage first: From Name
+was fully dead code (computed, never rendered anywhere); From Email's only effect was
+the printed IO document's footer line — neither was ever used for actual email
+sending (the one real email path uses a fixed sender, confirmed in the earlier
+audit). Confirmed with Claire they're no longer needed (the plan is to keep sending
+from the same shared address as before, not white-label per-group) and that the
+footer should just become `GroupName · IO#` with no email at all. Removed: the two
+input fields and their now-stale white-label warning note from the Group form, the
+required-field validation that used to block saving a group without them (with a
+misleading "appears on all client emails" message), both from the save payload, from
+`adminNewGroup`'s clear-list, and from `adminEditGroup`'s populate step; the
+`fromName`/`fromEmail` variables and the footer template in `index.html`. Deliberately
+did NOT drop the `from_name`/`from_email` columns from the database — no reason to
+take an irreversible schema step just to stop showing/editing them in the UI; they're
+simply unused now (a new group's `admin_save_group` insert will just store `null` for
+them going forward, since the RPC's update branch was already fixed earlier this
+session to only touch a field when it's actually present in the payload). Verified via
+a fresh structural check of both files (no syntax errors, no leftover references) and
+a footer-format simulation.
 
 ---
 
