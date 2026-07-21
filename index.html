@@ -4044,8 +4044,6 @@ function buildIoDocumentHtml() {
     'Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, and Audio campaigns are billed based on the agreed campaign budget. Advertising budgets are non-refundable once campaigns have launched.';
   const legalServiceSpecific = subGroupName(LEGAL_CONTENT?.service_specific_printed) ||
     '* Annual hosting fee required each year on IO anniversary date. ** 12-month minimum commitment. *** E-commerce hosting fee required annually. ‡ 6-month non-cancellable agreement. ◊ 12-month non-cancellable agreement. § 18-month non-cancellable agreement. ADA Web Accessibility hosting collected upfront and renews annually.';
-  const fromName = group.from_name || groupName;
-  const fromEmail = group.from_email || '';
   const amName = group.am_name || '';
   const amEmail = group.am_email || '';
   const color = group.brand_color || '#1C9BD7';
@@ -4411,7 +4409,7 @@ ${specialInstructions ? `<div class="special-box"><strong>Special Instructions</
      printed page. See the @page comment near the top of the <style> block for why a
      repeating per-page version was removed. -->
 <div class="doc-footer">
-  <span>${groupName}${fromEmail ? ' · ' + fromEmail : ''} · ${ioNumber}</span>
+  <span>${groupName} · ${ioNumber}</span>
 </div>
 
 </body></html>`;

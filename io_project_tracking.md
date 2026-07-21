@@ -538,8 +538,8 @@ slug to match a DIFFERENT existing group's (warns), and a genuinely unique slug 
 warning). No SQL needed — purely front-end, and there's still no database-level
 uniqueness constraint on `io_slug`, so this is a helpful warning, not a hard guarantee.
 
-**Group deactivate/reactivate — MOSTLY BUILT 2026-07-17, one piece still needs the
-live `admin_save_group` RPC source before it's fully wired.** Claire has a few groups
+**Group deactivate/reactivate — BUILT 2026-07-17** (the `admin_save_group` RPC gap
+below was resolved same-day — see the full audit entry further down). Claire has a few groups
 in her list she no longer works with and asked how to remove them — recommended
 against a hard delete (same reasoning as every other entity type here: a group can be
 referenced by real historical orders/clients/AEs via foreign key, so deleting it
@@ -596,6 +596,132 @@ from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where p.proname = 'admin_save_group' and n.nspname = 'public';
 ```
+
+**Full pre-rollout audit — COMPLETE 2026-07-17.** Claire asked for a full solidity
+check across everything built this session before starting to use it for real
+(creating groups, adding real clients) — wanted to catch any big issues before
+relying on it more broadly. Checked:
+- **Code structure**: fresh syntax check of both files, no duplicate function/variable
+  declarations anywhere, no dangling references (every `onclick`/etc. call site
+  resolves to something real, including cross-file `shared.js` dependencies), no stale
+  state collisions across the new admin tabs (Clients/Reconcile/AE/Groups all reload
+  fresh on tab open; the Import-from-Trello flow correctly refreshes the Clients list
+  afterward).
+- **Full re-read of the submission pipeline** (`submitIO()` and everything it calls) —
+  the highest-stakes code path, given how many incremental edits touched different
+  parts of it this session (AE email, dated Event Targeting cards, KOC copy, market/
+  notes rows, AM/AE assignment). Confirmed everything still composes correctly as a
+  whole, not just individually.
+- **Every `admin_save_*` RPC**, pulled via a single consolidated
+  `pg_get_functiondef`-over-`pg_proc` query, specifically checked for the same
+  "unconditional field overwrite on a minimal payload" bug class that broke
+  `admin_save_group` (see the entry above). Result: **`admin_save_service`,
+  `admin_save_section`, `admin_save_intake_form`, and `admin_save_hosting_setting`
+  were already written safely** (case-when-present/coalesce throughout) — that bug was
+  unique to `admin_save_group`, not systemic, and it's already fixed and confirmed
+  live. Found one latent (never actually triggered, since its one caller always sends
+  every field) instance of the same pattern in `admin_save_legal_content` — hardened
+  it the same way as a precaution; Claire confirmed this SQL has been run.
+- **Permissions consistency** across every RPC — super-admin-only ones match their UI
+  restrictions exactly; the ones opened to any admin this session (Orders, Clients,
+  AEs, Groups) are consistently unrestricted beyond valid credentials.
+- **No SQL injection surface** — every function is properly parameterized, no dynamic
+  SQL built from raw string concatenation anywhere.
+- **Deploy verification**: diffed the live `claude-proxy` Edge Function (pasted back
+  by Claire) against the version given in chat — confirmed a match on every functional
+  line (the live one just has comments stripped) — genuinely confirmed via diff, not
+  assumed. Confirmed via `git merge-base --is-ancestor` that the working branch is
+  fully merged into `main` (PR #75), and `groups.active` exists per Claire's manual
+  check. Every checklist item from this session is now closed.
+- Minor, non-urgent note surfaced (not acted on): admin passwords are hashed with
+  unsalted SHA-256 rather than something like bcrypt — acceptable given this is a
+  small internal tool with a handful of known named admins, not treated as a real risk
+  at this scale, just recorded here in case it's ever worth revisiting.
+
+**Net result: build confirmed solid, cleared for Claire to start real use** (creating
+groups, adding real clients) as of 2026-07-17.
+
+**Bigger-picture planning notes, 2026-07-17 (post-audit conversation) — no code built,
+recorded for continuity into future sessions:**
+- **AM picker, decided but not yet built**: Claire wants the Group form's AM Name/
+  Email fields turned into a picker (same spirit as the AE picker) to eliminate typos
+  — real AMs today are Carol, Peggy, and Shania (James and Jon are Super Admins;
+  James is parked on the Claude Test Group for now, not a real AM to include yet).
+  Confirmed the right home for this is the EXISTING `admin_users` table, not a new
+  parallel roster — because strategists and accounting (see below) will need real
+  logins too, and `admin_users` already has the right shape (name + password + role).
+  Plan: add nullable `email`/`am_calendar_url`/`am_trello_handle` columns to
+  `admin_users`, then a Group-form dropdown sourced from `admin_users where role =
+  'am'` that auto-fills those fields on pick, same UX as the AE picker. Not yet built —
+  next session's work.
+- **Strategist/accounting roles — confirmed scope, deliberately deferred.** Claire
+  confirmed both will need their own logins (they'll each see their own views, not
+  just be selectable in a dropdown) — so they belong in `admin_users` via new `role`
+  values, not a separate staff table. AEs stay OUT of this unification — they're
+  external to the company, not staff, so they keep their own existing per-group
+  roster. Claire explicitly chose to wait on building the actual strategist/accounting
+  views/tables until later rather than build the full thing now — the AM picker above
+  is the only near-term piece.
+- **Role-based tab visibility, forward decision for that same future phase**: when
+  strategist/accounting logins do get built, Claire wants each role to see only the
+  admin tabs relevant to them, not the full current list — explicitly framed as an
+  extension of the pattern already in place today (AM-tier already has several
+  things hidden — the Pricing tab, "+ New Service/Section/Intake" buttons — just as a
+  binary super/AM split currently). No new mechanism needed, just more roles applied
+  to the same existing gating pattern once those roles exist.
+- **Admin tab audit, at Claire's request** — walked through whether the now-10-tab
+  admin portal has grown any dead weight. Verdict: everything is either core/vital
+  (Groups, Orders, Clients, Services, Sections, Intake Forms, Legal Text) or a real,
+  actively-useful convenience worth keeping (AEs, Notifications) — **except
+  "Reconcile Lists," which was explicitly built as a ONE-TIME onboarding tool** (see
+  its own entry above) to link Claire's pre-existing client base to their real Trello
+  lists before relying on this system for them. Flagged as the one tab with a natural
+  expiration point — harmless to leave (shows "nothing to reconcile" once done), but
+  a real candidate to remove later once Claire's finished onboarding her historical
+  clients via the Import-from-Trello flow, rather than something that needs to stay
+  in the nav permanently.
+
+**AM picker — BUILT 2026-07-18** (decided the previous session, built once Claire
+realized she needed it working before creating real groups). New `admin-am-picker`
+dropdown on the Group form, above the existing AM Name/Email/Calendar/Trello fields
+— picking a name fills all four together, same UX as the AE/Client pickers. Reuses
+`admin_users` (login accounts) rather than a new parallel roster, per the previous
+session's decision — added nullable `email`/`am_calendar_url`/`am_trello_handle`
+columns there, plus new `admin_get_staff` RPC (deliberately excludes `pw_hash`, any
+valid admin can call it — same access level as `admin_get_orders`/`admin_get_clients`).
+Picker options are filtered client-side to `role = 'am'`, so James/Jon (Super Admins)
+never show up as AM choices. When editing an EXISTING group, the picker pre-selects
+by case-insensitive name match against the group's current (free-typed, pre-picker)
+`am_name` — if it matches a real AM, the picker shows it selected; if not (a custom/
+unrecognized name), the picker stays blank without touching or overwriting whatever's
+already in the text fields. `adminNewGroup`/`adminEditGroup` both made `async` to
+load the roster (lazy-loaded once, same pattern as `allGroups` elsewhere) before
+populating the dropdown. Verified via a real headless-browser test across 4 cases:
+picker only lists the 3 real AMs (not James/Jon), case-insensitive pre-select match
+works, an unrecognized existing name correctly leaves the picker blank, and picking a
+name correctly fills all 4 fields. SQL given inline in chat, not yet run by Claire —
+includes commented-out placeholder UPDATE statements for backfilling Carol/Peggy/
+Shania's real contact info once she has it, since the roster starts empty otherwise.
+
+**From Name / From Email — REMOVED 2026-07-18.** Traced actual usage first: From Name
+was fully dead code (computed, never rendered anywhere); From Email's only effect was
+the printed IO document's footer line — neither was ever used for actual email
+sending (the one real email path uses a fixed sender, confirmed in the earlier
+audit). Confirmed with Claire they're no longer needed (the plan is to keep sending
+from the same shared address as before, not white-label per-group) and that the
+footer should just become `GroupName · IO#` with no email at all. Removed: the two
+input fields and their now-stale white-label warning note from the Group form, the
+required-field validation that used to block saving a group without them (with a
+misleading "appears on all client emails" message), both from the save payload, from
+`adminNewGroup`'s clear-list, and from `adminEditGroup`'s populate step; the
+`fromName`/`fromEmail` variables and the footer template in `index.html`. Deliberately
+did NOT drop the `from_name`/`from_email` columns from the database — no reason to
+take an irreversible schema step just to stop showing/editing them in the UI; they're
+simply unused now (a new group's `admin_save_group` insert will just store `null` for
+them going forward, since the RPC's update branch was already fixed earlier this
+session to only touch a field when it's actually present in the payload). Verified via
+a fresh structural check of both files (no syntax errors, no leftover references) and
+a footer-format simulation.
 
 ---
 
