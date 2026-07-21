@@ -1820,6 +1820,10 @@ async function loadGroup() {
     console.log('Supabase result:', JSON.stringify(results));
     if (!results || results.length === 0) { showGroupError(); return; }
     selectedGroup = results[0];
+    // Deactivated groups (2026-07-17, per Claire — groups she no longer works with)
+    // get the same "Invalid Link" screen as a bad/missing slug, rather than silently
+    // still accepting submissions for a group she's walked away from.
+    if (selectedGroup.active === false) { showGroupError(); return; }
     // Normalize stray whitespace from DB values (a trailing space in am_name
     // rendered as "Jim 's Calendar" on the KOC button)
     ['am_name','name','from_name','am_email','from_email'].forEach(k => {

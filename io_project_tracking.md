@@ -538,6 +538,65 @@ slug to match a DIFFERENT existing group's (warns), and a genuinely unique slug 
 warning). No SQL needed — purely front-end, and there's still no database-level
 uniqueness constraint on `io_slug`, so this is a helpful warning, not a hard guarantee.
 
+**Group deactivate/reactivate — MOSTLY BUILT 2026-07-17, one piece still needs the
+live `admin_save_group` RPC source before it's fully wired.** Claire has a few groups
+in her list she no longer works with and asked how to remove them — recommended
+against a hard delete (same reasoning as every other entity type here: a group can be
+referenced by real historical orders/clients/AEs via foreign key, so deleting it
+risks breaking or cascading into that history) in favor of the same soft-deactivate
+pattern Services/Sections/Intake Forms/AEs already use. Claire agreed.
+
+Built:
+- New `groups.active` boolean (default true).
+- Deactivate/Reactivate button + INACTIVE badge/grayed row in the Groups list
+  (`renderAdminGroups`), super-admin only — new `adminToggleGroupActive()`.
+- Deactivated groups are excluded from the AE and Client edit-forms' "assign to
+  group" dropdowns (`populateAeGroupDropdown`/`populateClientGroupDropdown`) — no
+  reason to add a new AE or client to a group no longer worked with — EXCEPT an
+  entity's own currently-assigned group stays visible (marked "(inactive)") so
+  editing an existing AE/client already in that group never silently blanks or
+  reselects it out from under them. New `includeInactive` param on
+  `populateClientGroupDropdown` so the Import-from-Trello panel's group picker
+  (`client-import-group`) can deliberately show inactive groups too — still useful
+  for finishing historical client linkage on a group being wound down.
+- Deliberately UNCHANGED: Orders/Clients/AEs group FILTER dropdowns (as opposed to
+  the assignment dropdowns above) still show every group regardless of active
+  status, same as they already do for Orders — you'd still want to look up a
+  deactivated group's historical orders/clients/AEs, not have them disappear.
+- Public form: visiting a deactivated group's slug now shows the same "Invalid
+  Link" screen a bad/missing slug already shows, instead of silently still
+  accepting submissions.
+- Verified via a real headless-browser test across 6 cases: new-AE/new-client
+  dropdowns correctly exclude the inactive group; editing an AE/client already
+  IN that inactive group correctly still shows and pre-selects it, marked; the
+  Import panel correctly shows both; the Groups list correctly shows the INACTIVE
+  badge and Reactivate button only on the deactivated row. Also verified the
+  public-form check handles the backward-compat case correctly — an existing
+  group with no `active` value set yet (`undefined`, from before this column
+  existed) defaults to still-accessible, not accidentally locked out.
+
+**Still needed**: `adminToggleGroupActive()` calls the existing `admin_save_group`
+RPC with a minimal `{active: makeActive}` payload, same pattern as
+`adminToggleAeActive`/`admin_save_ae` — but unlike `admin_save_ae`/`admin_save_client`
+(both written fresh this session, so their exact column-handling is already known),
+`admin_save_group` is an older RPC not in this repo, and every other admin_save_*
+RPC in this codebase explicitly enumerates its columns rather than forwarding
+arbitrary jsonb keys — so it likely needs `active` added to its update statement
+before this actually persists anything. Asked Claire for its current source via
+`pg_get_functiondef` (same approach used for `admin_get_orders` earlier this
+session) rather than guessing at a rewrite and risking silently dropping an
+existing column. There IS a working direct-PATCH fallback already coded in both
+`adminSaveGroup()` and the new `adminToggleGroupActive()` (used if the RPC call
+throws) — so deactivating may already work today via that fallback path even
+before the RPC itself is updated, but this needs confirming live, not assumed.
+
+```sql
+select pg_get_functiondef(p.oid)
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where p.proname = 'admin_save_group' and n.nspname = 'public';
+```
+
 ---
 
 ## STATUS SUMMARY
