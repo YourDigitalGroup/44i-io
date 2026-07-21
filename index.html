@@ -3911,11 +3911,11 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
       if (!emailTo && emailBcc) { emailTo = emailBcc; emailBcc = ''; }
 
       if (emailTo) {
-        const calUrlEmail = selectedGroup.am_calendar_url || '';
         const color = selectedGroup?.brand_color || '#1C9BD7';
         // Market + Overall Notes added 2026-07-17, per Claire's AM follow-up. "Overall
         // Notes" maps to Campaign Notes (confirmed by Claire — "that is what it has
-        // been"), not Special Instructions.
+        // been"), not Special Instructions. Dollar totals removed 2026-07-17, per Claire
+        // ("we don't need the amounts from the IO in the email copy").
         const marketVal = document.getElementById('city')?.value.trim();
         const overallNotesVal = document.getElementById('campaign-notes')?.value.trim();
         const emailHtml = `
@@ -3928,11 +3928,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 <tr><td style="padding:6px 0;color:#6B7280;width:140px">IO #</td><td style="padding:6px 0;font-weight:600">${esc(ioNumber)}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">Client</td><td style="padding:6px 0;font-weight:600">${esc(bizName)}</td></tr>
                 ${marketVal ? `<tr><td style="padding:6px 0;color:#6B7280">Market</td><td style="padding:6px 0">${esc(marketVal)}</td></tr>` : ''}
-                <tr><td style="padding:6px 0;color:#6B7280">Contact</td><td style="padding:6px 0">${esc(document.getElementById('contact-name').value)} — ${esc(document.getElementById('contact-email').value)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6B7280">AE</td><td style="padding:6px 0">${esc(aeName)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6B7280">KOC</td><td style="padding:6px 0">${esc(kocDate || '—')}${kocTime ? ' at ' + esc(kocTime) : ''}${calUrlEmail ? ` — <a href="${esc(calUrlEmail)}">Calendar</a>` : ''}</td></tr>
-                <tr><td style="padding:6px 0;color:#6B7280">One-Time Total</td><td style="padding:6px 0;font-weight:600">$${oneTime.toLocaleString()}</td></tr>
-                <tr><td style="padding:6px 0;color:#6B7280">Monthly Recurring</td><td style="padding:6px 0;font-weight:600">$${monthly.toLocaleString()}/mo</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">AE</td><td style="padding:6px 0">${esc(aeName)}${aeEmailVal ? ' — ' + esc(aeEmailVal) : ''}</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">KOC</td><td style="padding:6px 0">${esc(kocDate || '—')}${kocTime ? ' at ' + esc(kocTime) : ''}</td></tr>
                 ${overallNotesVal ? `<tr><td style="padding:6px 0;color:#6B7280;vertical-align:top">Overall Notes</td><td style="padding:6px 0">${esc(overallNotesVal)}</td></tr>` : ''}
               </table>
               <p style="font-size:12px;color:#6B7280;margin-top:16px">Full details attached as PDF.</p>
