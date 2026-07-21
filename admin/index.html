@@ -85,10 +85,11 @@
               <div>
                 <label class="lbl">IO Slug <span style="font-weight:400;text-transform:none;letter-spacing:0">— auto-generated, override if needed</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
-                  <input type="text" id="admin-slug" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';const sp=document.getElementById('slug-preview');if(sp)sp.textContent=this.value||'...'"/>
+                  <input type="text" id="admin-slug" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';const sp=document.getElementById('slug-preview');if(sp)sp.textContent=this.value||'...';checkGroupSlugCollision()"/>
                   <button type="button" onclick="regenerateSlug()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
                 </div>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">URL: io.yourdigitalgroupresources.com/<span id="slug-preview" style="color:var(--accent);font-weight:600">...</span></p>
+                <p id="admin-slug-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ Another group already uses this slug — its link would stop working. Please choose a different one.</p>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -1019,6 +1020,23 @@ function autoSlug(name) {
     // Auto-fill portal domain if not already set
 
   }
+  checkGroupSlugCollision();
+}
+
+// IO Slug collision check (2026-07-17, per Claire) — unlike Services/Sections/Intake
+// Forms, whose id fields ARE the primary key and get locked after creation, a group's
+// io_slug stays editable even when editing an EXISTING group, so this checks against
+// every OTHER group's slug (excludes the group currently being edited by id) rather
+// than only firing for brand-new groups. No uniqueness is enforced by the database —
+// two groups silently sharing a slug means the second one's link always resolves to
+// the first, so this is a real risk, not just a cosmetic warning.
+function checkGroupSlugCollision() {
+  const slugVal = document.getElementById('admin-slug')?.value || '';
+  const warn = document.getElementById('admin-slug-warn');
+  if (!warn) return;
+  const currentGroupId = document.getElementById('admin-group-id')?.value || '';
+  const exists = slugVal && allGroups.some(g => g.io_slug === slugVal && g.id !== currentGroupId);
+  warn.style.display = exists ? 'block' : 'none';
 }
 
 function regenerateSlug() {
@@ -1029,7 +1047,7 @@ function regenerateSlug() {
   const slug = generateSlug(name);
   slugField.value = slug;
   if (preview) preview.textContent = slug || '...';
-
+  checkGroupSlugCollision();
 }
 
 // ── PRICEABLE SERVICES (non-programmatic, non-SEM) ────────────
@@ -4020,6 +4038,7 @@ function adminNewGroup() {
   document.getElementById('admin-has-koc').value = 'true';
   const sf = document.getElementById('admin-slug'); if(sf) { sf.dataset.manuallyEdited=''; }
   const sp = document.getElementById('slug-preview'); if(sp) sp.textContent = '...';
+  const sw = document.getElementById('admin-slug-warn'); if(sw) sw.style.display = 'none';
   currentPricingOverrides = {};
   const pricingTabBtn = document.getElementById('tab-btn-pricing');
   if (pricingTabBtn) pricingTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
@@ -4038,6 +4057,7 @@ function adminEditGroup(id) {
   sField.value = g.io_slug || '';
   sField.dataset.manuallyEdited = g.io_slug ? '1' : '';
   const sp2 = document.getElementById('slug-preview'); if(sp2) sp2.textContent = g.io_slug || '...';
+  checkGroupSlugCollision();
   document.getElementById('admin-am-name').value = g.am_name || '';
   document.getElementById('admin-am-email').value = g.am_email || '';
   document.getElementById('admin-am-calendar').value = g.am_calendar_url || '';

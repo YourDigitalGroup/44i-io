@@ -514,6 +514,30 @@ right row remains), and the combined group+search case on Clients (a client matc
 the search term but NOT the selected group correctly returns zero rows, proving it's
 an AND, not an OR).
 
+**IO Slug collision warning added — BUILT 2026-07-17.** Came up while explaining to
+Claire how slugs are generated (auto-derived from the Group Name's initials, e.g. "CF
+Digital Group" → `cdg`, capped at 8 chars, editable/overridable) — pointed out there
+was no check anywhere for whether a slug is already in use, unlike Services/Sections/
+Intake Forms, which all warn on an id collision. Real risk, not cosmetic: `io_slug`
+has no uniqueness constraint enforced, and the public form's lookup
+(`groups?io_slug=eq.X`) just takes `results[0]` — two groups silently sharing a slug
+means the second one's link always resolves to the first, permanently, until someone
+notices. New `checkGroupSlugCollision()`, wired into every path that can change the
+slug field: manual typing, `autoSlug()` (typing the Group Name), `regenerateSlug()`
+(the ↺ Auto button), and once on `adminEditGroup()` load (in case an existing group's
+slug already collides from before this check existed). **Meaningfully different from
+the Services/Sections/Intake pattern it's modeled on**: those ids are the primary key
+and get locked after creation, so their collision check only ever needs to fire for
+brand-new items. A group's `io_slug` stays editable even when editing an EXISTING
+group, so this checks against every OTHER group's slug (excludes the group currently
+being edited by its own id) rather than gating on "is this a new group." Verified via
+a real headless-browser test across 4 cases: a new group's auto-generated slug
+colliding with an existing one (warns), editing a group and leaving its OWN existing
+slug unchanged (correctly does NOT warn against itself), changing that same group's
+slug to match a DIFFERENT existing group's (warns), and a genuinely unique slug (no
+warning). No SQL needed — purely front-end, and there's still no database-level
+uniqueness constraint on `io_slug`, so this is a helpful warning, not a hard guarantee.
+
 ---
 
 ## STATUS SUMMARY
