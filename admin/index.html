@@ -43,6 +43,7 @@
       <button id="section-tab-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
       <button id="section-tab-legal" onclick="adminSection('legal')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Legal Text</button>
       <button id="section-tab-notifications" onclick="adminSection('notifications')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Notifications</button>
+      <button id="section-tab-reconcile" onclick="adminSection('reconcile')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Reconcile Lists</button>
     </div>
 
     <div style="padding:20px">
@@ -748,6 +749,23 @@
         <button id="admin-notifications-save-btn" onclick="adminSaveNotificationSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Notifications</button>
       </div><!-- /section-notifications -->
 
+      <!-- ── SECTION: Reconcile Lists (one-time cleanup, super-admin only) ── -->
+      <div id="section-reconcile" style="display:none">
+        <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Reconcile Trello Lists</p>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:16px;max-width:640px">
+          Finds clients in Supabase that don't yet have a stored Trello list linked, and suggests a
+          matching list from that client's group's board by name similarity — same matching logic
+          used on the public form's own duplicate-client warning. Confirming a match here means the
+          next IO for that client goes straight to their real list instead of risking a duplicate
+          from an inexact name match. Skip if a client is genuinely new (no list yet) — their first
+          real submission will create one normally.
+        </p>
+
+        <button id="admin-reconcile-scan-btn" onclick="loadAdminReconcile()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:16px">Scan for Mismatches</button>
+
+        <div id="admin-reconcile-table"></div>
+      </div><!-- /section-reconcile -->
+
     </div>
   </div>
 </div>
@@ -1067,8 +1085,8 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Eight sections: groups | orders | map | sections | intake | ae | legal | notifications
-  const sections = ['groups','orders','map','sections','intake','ae','legal','notifications'];
+  // Nine sections: groups | orders | map | sections | intake | ae | legal | notifications | reconcile
+  const sections = ['groups','orders','map','sections','intake','ae','legal','notifications','reconcile'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups' needs display:flex specifically — its edit form/list use flex `order`
@@ -1136,6 +1154,19 @@ function adminSection(section) {
     if (note) note.style.display = isAm ? 'block' : 'none';
     document.querySelectorAll('#section-notifications textarea').forEach(t => t.disabled = isAm);
     loadAdminNotificationSettings();
+  } else if (section === 'reconcile') {
+    // Super-admin only — writes clients.trello_list_id directly, same restriction
+    // level as everything else that touches shared/global state rather than one AM's
+    // own group. Does NOT auto-scan on tab open (unlike every other tab) — this hits
+    // the Trello API once per group with a missing-list client, so it only runs when
+    // explicitly requested via the Scan button.
+    const isAm = currentAdminUser?.role === 'am';
+    const scanBtn = document.getElementById('admin-reconcile-scan-btn');
+    if (scanBtn) scanBtn.style.display = isAm ? 'none' : '';
+    if (isAm) {
+      document.getElementById('admin-reconcile-table').innerHTML =
+        '<p style="color:#991B1B;font-size:12px">Reconciling Trello lists is restricted to super admins.</p>';
+    }
   }
 }
 
@@ -2525,6 +2556,182 @@ async function adminSaveNotificationSettings() {
   } catch(e) {
     showToast('Error saving notification settings: ' + e.message, 'error');
   }
+}
+
+// ── RECONCILE TRELLO LISTS (2026-07-17) ────────────────────────
+// One-time cleanup tool: most clients predate the 2026-07-13 fix that stores a
+// permanent clients.trello_list_id on first submission, so their very next IO through
+// this system still relies on an EXACT (case-insensitive) name match against the
+// board's list names to find their real existing list — any naming drift (an "Inc.",
+// a stray space, an abbreviation) silently creates a duplicate list instead. This tool
+// surfaces likely matches so Claire can confirm them ahead of time and close that gap
+// for good, same as the reliable stored-id path already does for anyone who's already
+// gone through once. Reuses the exact same fuzzy-match approach as the public form's
+// own duplicate-client warning (normalizeClientName/stripBizSuffix/levenshtein) rather
+// than inventing a second, possibly-inconsistent matching rule.
+function reconcileNormalizeName(s) {
+  return (s || '').trim().toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+}
+function reconcileStripBizSuffix(s) {
+  return s.replace(/\b(inc|llc|corp|co|company|ltd|incorporated)\b\.?\s*/g, '').trim().replace(/\s+/g, ' ');
+}
+function reconcileLevenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const row = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = row[j];
+      row[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, row[j], row[j - 1]);
+      prev = tmp;
+    }
+  }
+  return row[n];
+}
+// Returns { list, confidence: 'exact'|'close'|null } — 'exact' when the names match
+// once suffixes are stripped (regardless of edit distance, same rule the public form
+// uses), 'close' when within a length-scaled Levenshtein tolerance, null if nothing
+// cleared the bar (caller should leave the suggestion blank, not guess).
+function reconcileBestMatch(clientName, lists) {
+  const typed = reconcileNormalizeName(clientName);
+  if (!typed || !Array.isArray(lists)) return { list: null, confidence: null };
+  const typedCore = reconcileStripBizSuffix(typed);
+  let best = null; // { list, distance }
+  lists.forEach(l => {
+    const name = reconcileNormalizeName(l.name);
+    if (!name) return;
+    if (typedCore === reconcileStripBizSuffix(name)) {
+      if (!best || best.distance > 0) best = { list: l, distance: 0 };
+      return;
+    }
+    const distance = typed === name ? 0 : reconcileLevenshtein(typed, name);
+    const tolerance = Math.max(1, Math.round(Math.max(typed.length, name.length) * 0.2));
+    if (distance <= tolerance && (!best || distance < best.distance)) {
+      best = { list: l, distance };
+    }
+  });
+  if (!best) return { list: null, confidence: null };
+  return { list: best.list, confidence: best.distance === 0 ? 'exact' : 'close' };
+}
+
+let RECONCILE_ROWS = []; // [{ client, group, lists, suggestion }]
+
+async function loadAdminReconcile() {
+  const el = document.getElementById('admin-reconcile-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Scanning…</p>';
+  try {
+    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
+
+    const clients = await sb('rpc/admin_get_clients_missing_trello_list', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    });
+    if (!Array.isArray(clients) || !clients.length) {
+      el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Every client already has a stored Trello list — nothing to reconcile.</p>';
+      RECONCILE_ROWS = [];
+      return;
+    }
+
+    // Fetch each distinct group's board lists ONCE, not once per client, to avoid an
+    // N+1 pattern against the Trello API (see this project's own "watch database load
+    // on every new feature" convention in io_project_tracking.md).
+    const listsByGroup = {};
+    const distinctGroupIds = [...new Set(clients.map(c => c.group_id).filter(Boolean))];
+    await Promise.all(distinctGroupIds.map(async gid => {
+      const group = allGroups.find(g => g.id === gid);
+      if (!group?.trello_board_id) { listsByGroup[gid] = []; return; }
+      try {
+        const res = await fetch(PROXY, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+          body: JSON.stringify({ target: 'trello_get_lists', board_id: group.trello_board_id })
+        });
+        const lists = await res.json();
+        listsByGroup[gid] = Array.isArray(lists) ? lists : [];
+      } catch(e) {
+        listsByGroup[gid] = [];
+      }
+    }));
+
+    RECONCILE_ROWS = clients.map(c => {
+      const group = allGroups.find(g => g.id === c.group_id);
+      const lists = listsByGroup[c.group_id] || [];
+      const suggestion = reconcileBestMatch(c.name, lists);
+      return { client: c, group, lists, suggestion };
+    });
+    renderAdminReconcile();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error scanning: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderAdminReconcile() {
+  const el = document.getElementById('admin-reconcile-table');
+  if (!RECONCILE_ROWS.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Nothing left to reconcile.</p>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Client</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Match to Trello List</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  RECONCILE_ROWS.forEach((row, idx) => {
+    const { client, group, lists, suggestion } = row;
+    const confidenceBadge = suggestion.confidence === 'exact'
+      ? '<span style="font-size:9px;font-weight:700;background:#DCFCE7;color:#166534;padding:1px 6px;border-radius:8px;margin-left:6px">EXACT</span>'
+      : suggestion.confidence === 'close'
+        ? '<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px;margin-left:6px">CLOSE</span>'
+        : '';
+    const options = ['<option value="">— No match / leave as-is —</option>']
+      .concat(lists.map(l => `<option value="${esc(l.id)}" ${suggestion.list?.id === l.id ? 'selected' : ''}>${esc(l.name)}</option>`));
+    html += `<tr style="border-bottom:1px solid var(--border)" id="reconcile-row-${idx}">
+      <td style="padding:8px 10px;font-weight:600">${esc(client.name)}</td>
+      <td style="padding:8px 10px">${esc(group?.name || '—')}</td>
+      <td style="padding:8px 10px">
+        <select id="reconcile-select-${idx}" style="width:100%;max-width:320px;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;background:#fff">${options.join('')}</select>
+        ${confidenceBadge}
+      </td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">
+        <button onclick="confirmReconcileRow(${idx})" style="padding:4px 12px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #BFDBFE;background:#EFF6FF;color:#1d4ed8">Confirm</button>
+        <button onclick="dismissReconcileRow(${idx})" style="padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--muted);margin-left:4px">Dismiss</button>
+      </td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+// Confirming with no list selected just dismisses the row (nothing to save) — a
+// genuinely new client with no existing list yet is expected to hit this path, since
+// their first real submission creates one normally.
+async function confirmReconcileRow(idx) {
+  const row = RECONCILE_ROWS[idx];
+  if (!row) return;
+  const sel = document.getElementById(`reconcile-select-${idx}`);
+  const listId = sel?.value || '';
+  if (!listId) { dismissReconcileRow(idx); return; }
+  try {
+    await sb('rpc/set_client_trello_list_id', {
+      method: 'POST',
+      body: JSON.stringify({ p_client_id: row.client.id, p_trello_list_id: listId })
+    });
+    showToast(`Linked ${row.client.name} to their Trello list`);
+    RECONCILE_ROWS.splice(idx, 1);
+    renderAdminReconcile();
+  } catch(e) {
+    showToast('Error linking client: ' + e.message, 'error');
+  }
+}
+
+function dismissReconcileRow(idx) {
+  RECONCILE_ROWS.splice(idx, 1);
+  renderAdminReconcile();
 }
 
 // ── SERVICE CREATE / EDIT / DEACTIVATE ─────────────────────────

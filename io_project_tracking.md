@@ -321,6 +321,46 @@ update services set always_new_card = true where label ilike '%event targeting%'
 select id, label, section, workflow, always_new_card from services where always_new_card = true;
 ```
 
+**New "Reconcile Lists" admin tool — BUILT 2026-07-17.** Claire raised a real concern
+after the above: with a large existing Trello client base (many with card titles in
+inconsistent historical formats), how do we minimize new duplicate lists/cards being
+created going forward? Traced the actual risk precisely rather than reasoning
+abstractly:
+- **Client LISTS (the higher-risk one)**: once a client has been submitted through this
+  system once, their Supabase record gets a permanent `clients.trello_list_id`, and
+  every future submission uses it directly — completely safe regardless of naming.
+  The risk is entirely the FIRST submission for anyone who doesn't have that id yet
+  (i.e. most of the existing client base, since this only started auto-populating
+  2026-07-13) — that path falls back to an EXACT case-insensitive name match against
+  the board's list names, so any real-world naming drift silently creates a duplicate
+  list instead of finding the real one.
+- **Individual cards (lower risk)**: once the right list is found, matching an
+  existing card on resell is also a name comparison, not fuzzy — a historical card
+  whose title doesn't match today's exact naming convention will get a duplicate the
+  first time that service is resold. Recommended AGAINST an automated bulk fix here
+  (trades "creates a duplicate" for the riskier "silently updates the wrong card") —
+  better solved with a light manual glance per currently-active client.
+
+Built the tool for the higher-risk, safely-automatable half: a new **"Reconcile
+Lists"** admin tab (super-admin only, same restriction level as Legal Text/
+Notifications). Finds every client missing a stored `trello_list_id` (new
+`admin_get_clients_missing_trello_list` RPC), fetches each affected group's board
+lists ONCE per group (not per client — deliberately avoids an N+1 pattern against the
+Trello API), and suggests a best-match list per client using the exact same fuzzy-match
+logic already proven on the public form's own duplicate-client warning
+(`normalizeClientName`/`stripBizSuffix`/`levenshtein`, ported into
+`admin/index.html` rather than inventing a second, possibly-inconsistent rule) —
+labeled EXACT (suffix-stripped exact match) or CLOSE (within a length-scaled edit-
+distance tolerance), with a dropdown to override or select "no match" if a client is
+genuinely new. Confirming a row calls the already-existing `set_client_trello_list_id`
+RPC (same one the public form itself uses) — no new write path needed. Verified: the
+matching logic against 5 cases (exact match, suffix variant, one-character typo,
+genuinely-new-client correctly yields no match, empty name), and the full render →
+pre-select → dismiss → re-render cycle via a real headless-browser test (confirmed the
+correct list is pre-selected per row, a no-match row is correctly left blank, and
+dismissing a row correctly removes just that row and re-indexes the rest). New RPC SQL
+given inline in chat.
+
 ---
 
 ## STATUS SUMMARY
