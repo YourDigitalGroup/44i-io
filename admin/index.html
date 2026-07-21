@@ -1226,8 +1226,9 @@ function adminSection(section) {
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadAdminIntakeForms();
   } else if (section === 'ae') {
-    const newBtn = document.getElementById('admin-new-ae-btn');
-    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    // AM-tier now gets full access here too (2026-07-17, per Claire — same call as
+    // Orders/Clients: any admin can manage any group's AE roster, in case someone is
+    // out), so the "+ New AE" button is no longer hidden for AM logins.
     loadAdminAes();
   } else if (section === 'legal') {
     // Legal text is super-admin only (same restriction level as pricing/services/
@@ -2438,7 +2439,8 @@ async function loadAdminAes() {
 
 function renderAdminAeList() {
   const el = document.getElementById('admin-ae-table');
-  const isSuperAdmin = currentAdminUser?.role !== 'am';
+  // AM-tier gets full Edit/Deactivate access now too (2026-07-17, per Claire) — no
+  // more role-gating on these buttons, same as Orders/Clients.
   if (!ALL_AES.length) {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No AEs yet.</p>';
     return;
@@ -2456,11 +2458,8 @@ function renderAdminAeList() {
     const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const groupName = allGroups.find(g => g.id === a.group_id)?.name || '<span style="color:var(--muted)">—</span>';
-    const editBtn = isSuperAdmin
-      ? `<button onclick="adminEditAe('${esc(a.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
-      : '';
-    const deactivateBtn = !isSuperAdmin ? '' :
-      `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    const editBtn = `<button onclick="adminEditAe('${esc(a.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`;
+    const deactivateBtn = `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
       <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
       <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(a.trello_handle || '—')}</td>
@@ -2480,10 +2479,6 @@ function populateAeGroupDropdown(selectedId) {
 }
 
 function adminNewAe() {
-  if (currentAdminUser?.role === 'am') {
-    showToast('AE management is restricted to super admins', 'error');
-    return;
-  }
   document.getElementById('admin-ae-form-title').textContent = 'New AE';
   document.getElementById('admin-ae-original-id').value = '';
   document.getElementById('admin-ae-name').value = '';
@@ -2495,10 +2490,6 @@ function adminNewAe() {
 }
 
 function adminEditAe(id) {
-  if (currentAdminUser?.role === 'am') {
-    showToast('AE management is restricted to super admins', 'error');
-    return;
-  }
   const a = ALL_AES.find(x => x.id === id);
   if (!a) return;
   document.getElementById('admin-ae-form-title').textContent = 'Edit AE — ' + a.name;
@@ -2545,10 +2536,6 @@ async function adminSaveAe() {
 }
 
 async function adminToggleAeActive(id, makeActive) {
-  if (currentAdminUser?.role === 'am') {
-    showToast('AE management is restricted to super admins', 'error');
-    return;
-  }
   const a = ALL_AES.find(x => x.id === id);
   if (!a) return;
   if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${a.name}?`)) return;

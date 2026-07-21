@@ -441,6 +441,63 @@ never stored on the client record itself. So there's no risk of a stale AE-to-cl
 link if someone leaves; each new IO for a client just records whichever AE handled
 that particular submission. Nothing needed here — already built the way she wanted.
 
+**AE roster management opened up to AM-tier — BUILT 2026-07-17.** Per Claire, same
+call as Orders/Clients: any admin (AM or super) can now add/edit/deactivate AEs across
+every group, not just their own — "in case someone is out." Removed the three
+client-side `role === 'am'` blocks in `adminNewAe`/`adminEditAe`/`adminToggleAeActive`,
+removed the now-unused `isSuperAdmin` gating in `renderAdminAeList` (Edit/Deactivate
+buttons always render), and removed the "+ New AE" button's AM-hiding in
+`adminSection('ae')`. Verified via a real headless-browser render check confirming an
+AM-tier login now sees both the Edit and Deactivate buttons. **Still needs a matching
+server-side RPC update** — `admin_save_ae` currently hard-rejects any role other than
+`'super'`, so the client-side change alone doesn't do anything until this is run:
+
+```sql
+create or replace function public.admin_save_ae(p_name text, p_pw text, p_ae_id uuid, p_data jsonb)
+ returns uuid
+ language plpgsql
+ security definer
+ set search_path to 'public', 'extensions'
+as $function$
+declare
+  v_role text;
+  v_id uuid;
+begin
+  select au.role into v_role
+  from admin_users au
+  where lower(au.name) = lower(p_name)
+    and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+
+  if v_role is null then
+    raise exception 'Invalid admin credentials';
+  end if;
+
+  if p_ae_id is null then
+    insert into ae (name, trello_handle, email, group_id, active)
+    values (
+      p_data->>'name',
+      p_data->>'trello_handle',
+      p_data->>'email',
+      (p_data->>'group_id')::uuid,
+      coalesce((p_data->>'active')::boolean, true)
+    )
+    returning id into v_id;
+  else
+    update ae set
+      name          = coalesce(p_data->>'name', name),
+      trello_handle = case when p_data ? 'trello_handle' then p_data->>'trello_handle' else trello_handle end,
+      email         = case when p_data ? 'email' then p_data->>'email' else email end,
+      group_id      = case when p_data ? 'group_id' then (p_data->>'group_id')::uuid else group_id end,
+      active        = case when p_data ? 'active' then (p_data->>'active')::boolean else active end
+    where id = p_ae_id
+    returning id into v_id;
+  end if;
+
+  return v_id;
+end;
+$function$;
+```
+
 ---
 
 ## STATUS SUMMARY
