@@ -723,6 +723,46 @@ session to only touch a field when it's actually present in the payload). Verifi
 a fresh structural check of both files (no syntax errors, no leftover references) and
 a footer-format simulation.
 
+**CORRECTION, same day**: momentarily told Claire this had somehow never actually
+landed in git history and re-did the change from scratch — that was wrong. The real
+cause was a stale LOCAL checkout losing track of the already-pushed-and-merged commit
+(`900e5c3`, confirmed present on both the branch and `main` via `git log
+origin/...`), not a lost commit — `git push` correctly rejected the resulting
+divergent duplicate push, which is what surfaced the mistake. Resolved by rebasing
+the follow-up work (the client-picker fix below, plus one small additional cleanup —
+removing the now-pointless `from_name`/`from_email` entries from the public form's
+stray-whitespace-trim list, which the original removal missed) cleanly onto the real,
+already-merged history, rather than layering a duplicate. **Lesson for future
+sessions**: a `git commit`/`git push` success result is normally sufficient
+confirmation on its own — but if a long gap or session interruption occurs before
+that code path is touched again, running `git log`/`git fetch` against the actual
+remote (not just trusting local history) before concluding something is "missing" is
+cheap insurance against exactly this false alarm.
+
+**Client picker — business name locked once a client is picked, BUILT 2026-07-18.**
+Claire asked whether an AE can edit a picked client's info, and specifically didn't
+want the name editable (to protect against the wrong Trello list being used) while
+wanting contact info left editable. Checked the live `find_or_create_client` source
+(not previously audited — doesn't match the `admin_%` prefix the earlier audit
+covered) to answer precisely rather than guess: confirmed contact fields (email,
+phone, city, business type, etc.) already write back to the SAME client record on
+every submission as long as the id stays attached — exactly what Claire wants kept.
+But the name was a real, live risk, worse than just "editable": nothing actually
+blocked editing it — a client-side safety net just silently un-pinned the selected
+client the instant the name changed, and the submission would then fall through to
+`find_or_create_client`'s name-based lookup, which creates a **brand-new duplicate
+client (and duplicate Trello list)** if the edited name doesn't exactly match
+anything — the exact failure mode the picker exists to prevent. Fixed by actually
+`disabled`-locking the Business Name field the moment a client is picked (new
+`setBizNameLocked()`), with a visible hint explaining why and pointing to the admin
+Client Profiles editor as the right place to fix a genuinely wrong name. Wired the
+unlock into every place that clears `selectedClientId` — switching back to "New
+Client", "Submit Another IO"'s form reset, and switching groups — not just the
+picker's own onchange handler, so the field can never get stuck locked. Verified via
+a real headless-browser test: name locked and unfocusable after picking, contact
+fields still freely editable, and switching back to "New Client" correctly unlocks
+and clears.
+
 ---
 
 ## STATUS SUMMARY
