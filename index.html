@@ -3602,6 +3602,40 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         const findExistingCardByName = (name) =>
           Array.isArray(existingCards) ? existingCards.find(c => norm(c.name) === norm(name)) : null;
 
+        // Event-style services (2026-07-17, per Claire's AM — Event Targeting
+        // specifically): each resell is a genuinely different event, so the AM wants a
+        // brand new Trello card every time instead of the normal "resell updates the
+        // existing card" behavior every other tactic card uses. New `always_new_card`
+        // boolean column (same "new column, not hardcoded ids" pattern as everything
+        // else in this catalog) — implemented by baking the campaign's own date range
+        // into the card title (e.g. "Event Targeting Jun 25 - 29 — Acme Corp"). Since a
+        // different resell almost always has different dates, the existing "does a card
+        // with this exact name already exist?" check above naturally creates a new card
+        // instead of matching an old one — no separate bypass logic needed.
+        function workflowWantsDatedCard(originalWorkflow) {
+          return Object.keys(selected).some(id => {
+            const r = CATALOG_ROWS[id];
+            return r && r.workflow === originalWorkflow && r.always_new_card;
+          });
+        }
+        function formatCampaignDateRange() {
+          const parseLocal = s => s ? new Date(s + 'T12:00:00') : null; // avoid UTC day-shift
+          const start = parseLocal(document.getElementById('campaign-start')?.value);
+          const end = parseLocal(document.getElementById('campaign-end')?.value);
+          const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          if (start && end) {
+            return (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear())
+              ? `${fmt(start)} - ${end.getDate()}`
+              : `${fmt(start)} - ${fmt(end)}`;
+          }
+          return start ? fmt(start) : (end ? fmt(end) : '');
+        }
+        function datedCardSuffix(originalWorkflow) {
+          if (!workflowWantsDatedCard(originalWorkflow)) return '';
+          const range = formatCampaignDateRange();
+          return range ? ' ' + range : '';
+        }
+
         // Shared finishing step for every tactic card, whether just created or already
         // existing: refresh the description to the current services-sold summary, attach
         // a dated PDF of this round's intake answers (if any), and apply the KOC label
@@ -3668,7 +3702,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             } else {
               // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
               // the business name.
-              const cn = (templateCard.name || wf).trim() + ' — ' + bizName;
+              const cn = (templateCard.name || wf).trim() + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
               const existing = findExistingCardByName(cn);
               if (existing && !addedCardNames.has(norm(cn))) {
                 addedCardNames.add(norm(cn));
@@ -3718,7 +3752,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
                 // Tactic — Client (2026-07-14, per Claire) — appended AFTER the filters
                 // above (which need to match the template's own plain name).
-                cn += ' — ' + bizName;
+                cn += datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
 
                 const existing = findExistingCardByName(cn);
                 if (existing && !addedCardNames.has(norm(cn))) {
@@ -3748,7 +3782,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               // Template list id configured but its cards couldn't be read (e.g. the
               // list was deleted) — fall back to a plain card so submission still works
               // Tactic — Client (2026-07-14, per Claire)
-              const fallbackName = wf + ' — ' + bizName;
+              const fallbackName = wf + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
               const existing = findExistingCardByName(fallbackName);
               if (existing && !addedCardNames.has(norm(fallbackName))) {
                 addedCardNames.add(norm(fallbackName));
@@ -3771,7 +3805,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             // has no template content at all, it's the one place a modifier/add-on
             // riding alongside the main service could otherwise go completely unmentioned.
             // Tactic — Client (2026-07-14, per Claire)
-            const plainName = wf + ' — ' + bizName;
+            const plainName = wf + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
             const existing = findExistingCardByName(plainName);
             if (existing && !addedCardNames.has(norm(plainName))) {
               addedCardNames.add(norm(plainName));

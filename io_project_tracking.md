@@ -56,10 +56,7 @@ rather than trickled out one at a time):
   forced; confirm intentional or allow multiple.
 - Bundled tactic card's intake form (e.g. Targeted Landing Page riding inside a
   package) — should it get its own intake, none, or does it depend on the package?
-- Event Targeting resell behavior — Claire's AM wants a fresh Trello card every time
-  it's resold (each event differs), not the usual "update the existing card." Mechanism
-  proposed (2026-07-16), not yet built — needs a decision on whether repeat cards for
-  the same client should be visually distinguished (e.g. a date in the card name).
+- ~~Event Targeting resell behavior~~ — **BUILT 2026-07-17**, see entry below.
 - Submission-email content/recipients — Claire confirming with her AM next week; email
   provider (Mailgun) identified and the whole send pipeline is built, just needs the
   real API key once she has it.
@@ -289,6 +286,40 @@ those two fields are actually used today is the printed/PDF IO document's footer
      - **Removed the Client Contact row entirely, added the AE's email next to their
        name** — same `#ae-email` field already wired in for item 2 above (only shows if
        the AE was picked via the roster, same limitation as everywhere else it's used).
+
+**Event Targeting always gets a fresh Trello card on resell — BUILT 2026-07-17.**
+Long-open item (see historical entry above, 2026-07-16): Claire's AM wants a brand new
+card every time Event Targeting is resold for the same client, since each event is a
+genuinely different booking — unlike every other tactic card, which intentionally
+updates in place on resell. Claire resolved the open "how should repeat cards be
+distinguished" question by sending a real Trello card screenshot: the card title should
+just include the campaign's date range (e.g. "Event Targeting Jun 25 - 29 — Louisiana
+Land Bank"). Implementation turned out simpler than the originally-proposed design: no
+separate "always create new" bypass was needed at all — since a different resell
+almost always has different campaign dates, baking the date range into the card title
+means the existing "does a card with this exact name already exist?" lookup naturally
+fails to match and creates a new card on its own. New `always_new_card` boolean column
+(same "new column, not hardcoded ids" pattern as everything else in this catalog),
+checked per-workflow (`workflowWantsDatedCard()`) and applied identically across all
+four card-naming code paths (single-card template, whole-list template, whole-list
+fallback, no-template plain) via a new shared `datedCardSuffix()` helper. New
+`formatCampaignDateRange()` matches Claire's screenshot format exactly: same
+month → "Jun 25 - 29", different months → "Jun 28 - Jul 3", different years →
+"Dec 29 - Jan 2". Verified via simulation: date formatting across 6 cases (same
+month/cross month/cross year/only-start/only-end/neither), and the full naming+lookup
+interplay across 4 scenarios (different-dates resell creates a new card, a normal
+non-flagged service resold twice still just updates in place, unaffected). **Honest
+edge case, not fixed, low priority**: if the exact same date range is ever resold twice
+for the same client, the second submission will match and update the first's card
+rather than create a genuinely separate one, since dedup is still by name — accepted as
+reasonable rather than engineered around, but worth knowing about. SQL needed (uses
+label matching, not a guessed-at id — same reasoning as the earlier Hulu/Amazon/Netflix
+minimum-spend SQL):
+```sql
+alter table services add column if not exists always_new_card boolean not null default false;
+update services set always_new_card = true where label ilike '%event targeting%';
+select id, label, section, workflow, always_new_card from services where always_new_card = true;
+```
 
 ---
 
