@@ -3928,8 +3928,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 <tr><td style="padding:6px 0;color:#6B7280;width:140px">IO #</td><td style="padding:6px 0;font-weight:600">${esc(ioNumber)}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">Client</td><td style="padding:6px 0;font-weight:600">${esc(bizName)}</td></tr>
                 ${marketVal ? `<tr><td style="padding:6px 0;color:#6B7280">Market</td><td style="padding:6px 0">${esc(marketVal)}</td></tr>` : ''}
-                <tr><td style="padding:6px 0;color:#6B7280">Contact</td><td style="padding:6px 0">${esc(document.getElementById('contact-name').value)} — ${esc(document.getElementById('contact-email').value)}</td></tr>
-                <tr><td style="padding:6px 0;color:#6B7280">AE</td><td style="padding:6px 0">${esc(aeName)}</td></tr>
+                <tr><td style="padding:6px 0;color:#6B7280">AE</td><td style="padding:6px 0">${esc(aeName)}${aeEmailVal ? ' — ' + esc(aeEmailVal) : ''}</td></tr>
                 <tr><td style="padding:6px 0;color:#6B7280">KOC</td><td style="padding:6px 0">${esc(kocDate || '—')}${kocTime ? ' at ' + esc(kocTime) : ''}</td></tr>
                 ${overallNotesVal ? `<tr><td style="padding:6px 0;color:#6B7280;vertical-align:top">Overall Notes</td><td style="padding:6px 0">${esc(overallNotesVal)}</td></tr>` : ''}
               </table>

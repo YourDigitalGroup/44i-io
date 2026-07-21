@@ -286,6 +286,9 @@ those two fields are actually used today is the printed/PDF IO document's footer
        the email is back to plain text (date + time, no link at all). The Review page's
        actual booking link (the one that opens the AM's real scheduling page for the AE
        to book) is unrelated and untouched throughout all of this.
+     - **Removed the Client Contact row entirely, added the AE's email next to their
+       name** — same `#ae-email` field already wired in for item 2 above (only shows if
+       the AE was picked via the roster, same limitation as everywhere else it's used).
 
 ---
 
