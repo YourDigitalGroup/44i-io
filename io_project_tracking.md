@@ -441,6 +441,162 @@ never stored on the client record itself. So there's no risk of a stale AE-to-cl
 link if someone leaves; each new IO for a client just records whichever AE handled
 that particular submission. Nothing needed here — already built the way she wanted.
 
+**AE roster management opened up to AM-tier — BUILT 2026-07-17.** Per Claire, same
+call as Orders/Clients: any admin (AM or super) can now add/edit/deactivate AEs across
+every group, not just their own — "in case someone is out." Removed the three
+client-side `role === 'am'` blocks in `adminNewAe`/`adminEditAe`/`adminToggleAeActive`,
+removed the now-unused `isSuperAdmin` gating in `renderAdminAeList` (Edit/Deactivate
+buttons always render), and removed the "+ New AE" button's AM-hiding in
+`adminSection('ae')`. Verified via a real headless-browser render check confirming an
+AM-tier login now sees both the Edit and Deactivate buttons. **Still needs a matching
+server-side RPC update** — `admin_save_ae` currently hard-rejects any role other than
+`'super'`, so the client-side change alone doesn't do anything until this is run:
+
+```sql
+create or replace function public.admin_save_ae(p_name text, p_pw text, p_ae_id uuid, p_data jsonb)
+ returns uuid
+ language plpgsql
+ security definer
+ set search_path to 'public', 'extensions'
+as $function$
+declare
+  v_role text;
+  v_id uuid;
+begin
+  select au.role into v_role
+  from admin_users au
+  where lower(au.name) = lower(p_name)
+    and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+
+  if v_role is null then
+    raise exception 'Invalid admin credentials';
+  end if;
+
+  if p_ae_id is null then
+    insert into ae (name, trello_handle, email, group_id, active)
+    values (
+      p_data->>'name',
+      p_data->>'trello_handle',
+      p_data->>'email',
+      (p_data->>'group_id')::uuid,
+      coalesce((p_data->>'active')::boolean, true)
+    )
+    returning id into v_id;
+  else
+    update ae set
+      name          = coalesce(p_data->>'name', name),
+      trello_handle = case when p_data ? 'trello_handle' then p_data->>'trello_handle' else trello_handle end,
+      email         = case when p_data ? 'email' then p_data->>'email' else email end,
+      group_id      = case when p_data ? 'group_id' then (p_data->>'group_id')::uuid else group_id end,
+      active        = case when p_data ? 'active' then (p_data->>'active')::boolean else active end
+    where id = p_ae_id
+    returning id into v_id;
+  end if;
+
+  return v_id;
+end;
+$function$;
+```
+
+**Group filter added to Clients and AEs tabs — BUILT 2026-07-17.** Same "filter by
+group" convenience Orders already has, per Claire's direct request. Clients tab: added
+a group `<select>` next to the existing search box, combined via `renderAdminClients()`
+(a row must pass BOTH the group filter AND the search term, not either/or). AEs tab had
+no filter bar at all before this — added one group `<select>` above the table, wired
+into `renderAdminAeList()`. Both dropdowns are populated from `allGroups` with a
+prepended "All groups" option, kept deliberately separate from the existing
+`populateClientGroupDropdown`/`populateAeGroupDropdown` helpers (those serve the
+edit-form/import-panel group selects, which must never have an "all" option and always
+need the full unfiltered list) — new `populateClientFilterGroupDropdown`/
+`populateAeFilterGroupDropdown` instead. Verified via a real headless-browser test:
+dropdown option counts, single-group filtering on each tab (confirmed exactly the
+right row remains), and the combined group+search case on Clients (a client matching
+the search term but NOT the selected group correctly returns zero rows, proving it's
+an AND, not an OR).
+
+**IO Slug collision warning added — BUILT 2026-07-17.** Came up while explaining to
+Claire how slugs are generated (auto-derived from the Group Name's initials, e.g. "CF
+Digital Group" → `cdg`, capped at 8 chars, editable/overridable) — pointed out there
+was no check anywhere for whether a slug is already in use, unlike Services/Sections/
+Intake Forms, which all warn on an id collision. Real risk, not cosmetic: `io_slug`
+has no uniqueness constraint enforced, and the public form's lookup
+(`groups?io_slug=eq.X`) just takes `results[0]` — two groups silently sharing a slug
+means the second one's link always resolves to the first, permanently, until someone
+notices. New `checkGroupSlugCollision()`, wired into every path that can change the
+slug field: manual typing, `autoSlug()` (typing the Group Name), `regenerateSlug()`
+(the ↺ Auto button), and once on `adminEditGroup()` load (in case an existing group's
+slug already collides from before this check existed). **Meaningfully different from
+the Services/Sections/Intake pattern it's modeled on**: those ids are the primary key
+and get locked after creation, so their collision check only ever needs to fire for
+brand-new items. A group's `io_slug` stays editable even when editing an EXISTING
+group, so this checks against every OTHER group's slug (excludes the group currently
+being edited by its own id) rather than gating on "is this a new group." Verified via
+a real headless-browser test across 4 cases: a new group's auto-generated slug
+colliding with an existing one (warns), editing a group and leaving its OWN existing
+slug unchanged (correctly does NOT warn against itself), changing that same group's
+slug to match a DIFFERENT existing group's (warns), and a genuinely unique slug (no
+warning). No SQL needed — purely front-end, and there's still no database-level
+uniqueness constraint on `io_slug`, so this is a helpful warning, not a hard guarantee.
+
+**Group deactivate/reactivate — MOSTLY BUILT 2026-07-17, one piece still needs the
+live `admin_save_group` RPC source before it's fully wired.** Claire has a few groups
+in her list she no longer works with and asked how to remove them — recommended
+against a hard delete (same reasoning as every other entity type here: a group can be
+referenced by real historical orders/clients/AEs via foreign key, so deleting it
+risks breaking or cascading into that history) in favor of the same soft-deactivate
+pattern Services/Sections/Intake Forms/AEs already use. Claire agreed.
+
+Built:
+- New `groups.active` boolean (default true).
+- Deactivate/Reactivate button + INACTIVE badge/grayed row in the Groups list
+  (`renderAdminGroups`), super-admin only — new `adminToggleGroupActive()`.
+- Deactivated groups are excluded from the AE and Client edit-forms' "assign to
+  group" dropdowns (`populateAeGroupDropdown`/`populateClientGroupDropdown`) — no
+  reason to add a new AE or client to a group no longer worked with — EXCEPT an
+  entity's own currently-assigned group stays visible (marked "(inactive)") so
+  editing an existing AE/client already in that group never silently blanks or
+  reselects it out from under them. New `includeInactive` param on
+  `populateClientGroupDropdown` so the Import-from-Trello panel's group picker
+  (`client-import-group`) can deliberately show inactive groups too — still useful
+  for finishing historical client linkage on a group being wound down.
+- Deliberately UNCHANGED: Orders/Clients/AEs group FILTER dropdowns (as opposed to
+  the assignment dropdowns above) still show every group regardless of active
+  status, same as they already do for Orders — you'd still want to look up a
+  deactivated group's historical orders/clients/AEs, not have them disappear.
+- Public form: visiting a deactivated group's slug now shows the same "Invalid
+  Link" screen a bad/missing slug already shows, instead of silently still
+  accepting submissions.
+- Verified via a real headless-browser test across 6 cases: new-AE/new-client
+  dropdowns correctly exclude the inactive group; editing an AE/client already
+  IN that inactive group correctly still shows and pre-selects it, marked; the
+  Import panel correctly shows both; the Groups list correctly shows the INACTIVE
+  badge and Reactivate button only on the deactivated row. Also verified the
+  public-form check handles the backward-compat case correctly — an existing
+  group with no `active` value set yet (`undefined`, from before this column
+  existed) defaults to still-accessible, not accidentally locked out.
+
+**Still needed**: `adminToggleGroupActive()` calls the existing `admin_save_group`
+RPC with a minimal `{active: makeActive}` payload, same pattern as
+`adminToggleAeActive`/`admin_save_ae` — but unlike `admin_save_ae`/`admin_save_client`
+(both written fresh this session, so their exact column-handling is already known),
+`admin_save_group` is an older RPC not in this repo, and every other admin_save_*
+RPC in this codebase explicitly enumerates its columns rather than forwarding
+arbitrary jsonb keys — so it likely needs `active` added to its update statement
+before this actually persists anything. Asked Claire for its current source via
+`pg_get_functiondef` (same approach used for `admin_get_orders` earlier this
+session) rather than guessing at a rewrite and risking silently dropping an
+existing column. There IS a working direct-PATCH fallback already coded in both
+`adminSaveGroup()` and the new `adminToggleGroupActive()` (used if the RPC call
+throws) — so deactivating may already work today via that fallback path even
+before the RPC itself is updated, but this needs confirming live, not assumed.
+
+```sql
+select pg_get_functiondef(p.oid)
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where p.proname = 'admin_save_group' and n.nspname = 'public';
+```
+
 ---
 
 ## STATUS SUMMARY

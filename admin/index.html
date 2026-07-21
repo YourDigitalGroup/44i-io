@@ -85,10 +85,11 @@
               <div>
                 <label class="lbl">IO Slug <span style="font-weight:400;text-transform:none;letter-spacing:0">— auto-generated, override if needed</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
-                  <input type="text" id="admin-slug" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';const sp=document.getElementById('slug-preview');if(sp)sp.textContent=this.value||'...'"/>
+                  <input type="text" id="admin-slug" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';const sp=document.getElementById('slug-preview');if(sp)sp.textContent=this.value||'...';checkGroupSlugCollision()"/>
                   <button type="button" onclick="regenerateSlug()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
                 </div>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">URL: io.yourdigitalgroupresources.com/<span id="slug-preview" style="color:var(--accent);font-weight:600">...</span></p>
+                <p id="admin-slug-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ Another group already uses this slug — its link would stop working. Please choose a different one.</p>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -213,7 +214,12 @@
           </div>
         </div>
 
-        <input type="text" id="clients-filter-search" placeholder="Search by client name, contact, or city..." oninput="renderAdminClients()" style="order:2;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;margin-bottom:16px"/>
+        <div style="order:2;display:grid;grid-template-columns:1fr 220px;gap:10px;margin-bottom:16px">
+          <input type="text" id="clients-filter-search" placeholder="Search by client name, contact, or city..." oninput="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+          <select id="clients-filter-group" onchange="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;background:#fff">
+            <option value="">All groups</option>
+          </select>
+        </div>
 
         <!-- Import-from-Trello panel — scans a group's board for lists with no linked
              client yet, lets Claire uncheck any that aren't real clients (templates,
@@ -697,6 +703,12 @@
           <button id="admin-new-ae-btn" onclick="adminNewAe()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New AE</button>
         </div>
 
+        <div style="margin-bottom:16px;max-width:280px">
+          <select id="ae-filter-group" onchange="renderAdminAeList()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;background:#fff">
+            <option value="">All groups</option>
+          </select>
+        </div>
+
         <div id="admin-ae-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-ae-form-title">New AE</p>
           <input type="hidden" id="admin-ae-original-id"/>
@@ -1008,6 +1020,23 @@ function autoSlug(name) {
     // Auto-fill portal domain if not already set
 
   }
+  checkGroupSlugCollision();
+}
+
+// IO Slug collision check (2026-07-17, per Claire) — unlike Services/Sections/Intake
+// Forms, whose id fields ARE the primary key and get locked after creation, a group's
+// io_slug stays editable even when editing an EXISTING group, so this checks against
+// every OTHER group's slug (excludes the group currently being edited by id) rather
+// than only firing for brand-new groups. No uniqueness is enforced by the database —
+// two groups silently sharing a slug means the second one's link always resolves to
+// the first, so this is a real risk, not just a cosmetic warning.
+function checkGroupSlugCollision() {
+  const slugVal = document.getElementById('admin-slug')?.value || '';
+  const warn = document.getElementById('admin-slug-warn');
+  if (!warn) return;
+  const currentGroupId = document.getElementById('admin-group-id')?.value || '';
+  const exists = slugVal && allGroups.some(g => g.io_slug === slugVal && g.id !== currentGroupId);
+  warn.style.display = exists ? 'block' : 'none';
 }
 
 function regenerateSlug() {
@@ -1018,7 +1047,7 @@ function regenerateSlug() {
   const slug = generateSlug(name);
   slugField.value = slug;
   if (preview) preview.textContent = slug || '...';
-
+  checkGroupSlugCollision();
 }
 
 // ── PRICEABLE SERVICES (non-programmatic, non-SEM) ────────────
@@ -1226,8 +1255,9 @@ function adminSection(section) {
     if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
     loadAdminIntakeForms();
   } else if (section === 'ae') {
-    const newBtn = document.getElementById('admin-new-ae-btn');
-    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    // AM-tier now gets full access here too (2026-07-17, per Claire — same call as
+    // Orders/Clients: any admin can manage any group's AE roster, in case someone is
+    // out), so the "+ New AE" button is no longer hidden for AM logins.
     loadAdminAes();
   } else if (section === 'legal') {
     // Legal text is super-admin only (same restriction level as pricing/services/
@@ -2429,18 +2459,35 @@ async function loadAdminAes() {
   const el = document.getElementById('admin-ae-table');
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
   try {
+    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
     ALL_AES = await sb('ae?order=name&select=*') || [];
+    populateAeFilterGroupDropdown();
     renderAdminAeList();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading AEs: ${esc(e.message)}</p>`;
   }
 }
 
+// Group filter dropdown (2026-07-17, per Claire — same "filter by group" request as
+// Orders) — separate from populateAeGroupDropdown, which populates the EDIT FORM's
+// group select and always needs the full unfiltered list of groups.
+function populateAeFilterGroupDropdown() {
+  const sel = document.getElementById('ae-filter-group');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All groups</option>' +
+    allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  sel.value = current;
+}
+
 function renderAdminAeList() {
   const el = document.getElementById('admin-ae-table');
-  const isSuperAdmin = currentAdminUser?.role !== 'am';
-  if (!ALL_AES.length) {
-    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No AEs yet.</p>';
+  // AM-tier gets full Edit/Deactivate access now too (2026-07-17, per Claire) — no
+  // more role-gating on these buttons, same as Orders/Clients.
+  const groupFilter = document.getElementById('ae-filter-group')?.value || '';
+  const rows = !groupFilter ? ALL_AES : ALL_AES.filter(a => a.group_id === groupFilter);
+  if (!rows.length) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">${ALL_AES.length ? 'No AEs in this group.' : 'No AEs yet.'}</p>`;
     return;
   }
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
@@ -2451,16 +2498,13 @@ function renderAdminAeList() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
-  ALL_AES.forEach(a => {
+  rows.forEach(a => {
     const inactive = !a.active;
     const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const groupName = allGroups.find(g => g.id === a.group_id)?.name || '<span style="color:var(--muted)">—</span>';
-    const editBtn = isSuperAdmin
-      ? `<button onclick="adminEditAe('${esc(a.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
-      : '';
-    const deactivateBtn = !isSuperAdmin ? '' :
-      `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    const editBtn = `<button onclick="adminEditAe('${esc(a.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`;
+    const deactivateBtn = `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
       <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
       <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(a.trello_handle || '—')}</td>
@@ -2475,15 +2519,18 @@ function renderAdminAeList() {
 
 function populateAeGroupDropdown(selectedId) {
   const sel = document.getElementById('admin-ae-group');
-  sel.innerHTML = allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  // Deactivated groups (2026-07-17) are excluded from new assignment — no reason to
+  // add an AE to a group you no longer work with — EXCEPT the AE's own currently-
+  // assigned group, kept visible (marked) so editing an existing AE never silently
+  // blanks/reselects their group out from under them.
+  const options = allGroups.filter(g => g.active !== false || g.id === selectedId);
+  sel.innerHTML = options.map(g =>
+    `<option value="${esc(g.id)}">${esc(g.name)}${g.active === false ? ' (inactive)' : ''}</option>`
+  ).join('');
   if (selectedId) sel.value = selectedId;
 }
 
 function adminNewAe() {
-  if (currentAdminUser?.role === 'am') {
-    showToast('AE management is restricted to super admins', 'error');
-    return;
-  }
   document.getElementById('admin-ae-form-title').textContent = 'New AE';
   document.getElementById('admin-ae-original-id').value = '';
   document.getElementById('admin-ae-name').value = '';
@@ -2495,10 +2542,6 @@ function adminNewAe() {
 }
 
 function adminEditAe(id) {
-  if (currentAdminUser?.role === 'am') {
-    showToast('AE management is restricted to super admins', 'error');
-    return;
-  }
   const a = ALL_AES.find(x => x.id === id);
   if (!a) return;
   document.getElementById('admin-ae-form-title').textContent = 'Edit AE — ' + a.name;
@@ -2545,10 +2588,6 @@ async function adminSaveAe() {
 }
 
 async function adminToggleAeActive(id, makeActive) {
-  if (currentAdminUser?.role === 'am') {
-    showToast('AE management is restricted to super admins', 'error');
-    return;
-  }
   const a = ALL_AES.find(x => x.id === id);
   if (!a) return;
   if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${a.name}?`)) return;
@@ -2839,10 +2878,21 @@ function dismissReconcileRow(idx) {
 // access here (same as Orders) — no group scoping, any admin can help on any client.
 let ALL_CLIENTS = [];
 
-function populateClientGroupDropdown(selectId, selectedId) {
+function populateClientGroupDropdown(selectId, selectedId, includeInactive) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
-  sel.innerHTML = allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  // Deactivated groups (2026-07-17) are excluded from the profile edit form (no reason
+  // to assign a client to a group you no longer work with) — EXCEPT the client's own
+  // currently-assigned group, kept visible so editing an existing client never
+  // silently blanks/reselects their group. The Import-from-Trello panel passes
+  // includeInactive=true instead — you might still want to import/reconcile a wound-
+  // down group's remaining historical clients, so it shouldn't disappear from there.
+  const options = includeInactive
+    ? allGroups
+    : allGroups.filter(g => g.active !== false || g.id === selectedId);
+  sel.innerHTML = options.map(g =>
+    `<option value="${esc(g.id)}">${esc(g.name)}${g.active === false ? ' (inactive)' : ''}</option>`
+  ).join('');
   if (selectedId) sel.value = selectedId;
 }
 
@@ -2855,23 +2905,40 @@ async function loadAdminClients() {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
+    populateClientFilterGroupDropdown();
     renderAdminClients();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading clients: ${esc(e.message)}</p>`;
   }
 }
 
+// Group filter dropdown (2026-07-17, per Claire — same "filter by group" request as
+// Orders/AEs) — separate from populateClientGroupDropdown, which is shared by the edit
+// form's and import panel's group selects and always needs the full unfiltered list,
+// with no "All groups" option.
+function populateClientFilterGroupDropdown() {
+  const sel = document.getElementById('clients-filter-group');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All groups</option>' +
+    allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  sel.value = current;
+}
+
 function renderAdminClients() {
   const el = document.getElementById('admin-clients-table');
   const search = (document.getElementById('clients-filter-search')?.value || '').trim().toLowerCase();
-  const rows = !search ? ALL_CLIENTS : ALL_CLIENTS.filter(c =>
-    (c.name || '').toLowerCase().includes(search) ||
-    (c.contact_name || '').toLowerCase().includes(search) ||
-    (c.contact_email || '').toLowerCase().includes(search) ||
-    (c.city || '').toLowerCase().includes(search)
-  );
+  const groupFilter = document.getElementById('clients-filter-group')?.value || '';
+  const rows = ALL_CLIENTS.filter(c => {
+    if (groupFilter && c.group_id !== groupFilter) return false;
+    if (!search) return true;
+    return (c.name || '').toLowerCase().includes(search) ||
+      (c.contact_name || '').toLowerCase().includes(search) ||
+      (c.contact_email || '').toLowerCase().includes(search) ||
+      (c.city || '').toLowerCase().includes(search);
+  });
   if (!rows.length) {
-    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">${ALL_CLIENTS.length ? 'No clients match that search.' : 'No clients yet.'}</p>`;
+    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">${ALL_CLIENTS.length ? 'No clients match your filters.' : 'No clients yet.'}</p>`;
     return;
   }
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
@@ -2986,7 +3053,7 @@ async function adminSaveClient() {
 let CLIENT_IMPORT_CANDIDATES = [];
 
 function openClientImportPanel() {
-  populateClientGroupDropdown('client-import-group', null);
+  populateClientGroupDropdown('client-import-group', null, true);
   document.getElementById('admin-client-import-results').innerHTML = '';
   document.getElementById('admin-client-import-panel').style.display = 'block';
 }
@@ -3953,11 +4020,24 @@ function renderAdminGroups() {
       const pricingBadge = overrideCount > 0
         ? `<span style="font-size:10px;font-weight:600;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:12px">${overrideCount} override${overrideCount>1?'s':''}</span>`
         : `<span style="font-size:10px;color:var(--muted)">Standard</span>`;
-      return `<tr style="border-bottom:1px solid var(--border)">
+      // Deactivate/Reactivate (2026-07-17, per Claire) — same soft-deactivate pattern
+      // as Services/Sections/Intake Forms/AEs, not a hard delete: a group can be
+      // referenced by real historical orders/clients/AEs via foreign key, so deleting
+      // it outright would risk breaking or cascading into that history. Deactivating
+      // instead blocks the public form for that group's slug (same "Invalid Link"
+      // screen a bad/missing slug already shows) and hides it from new AE/client
+      // group-assignment pickers, while everything historical (Orders, Clients, AEs
+      // filtering by this group) keeps working exactly as before.
+      const inactive = g.active === false;
+      const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+      const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+      const deactivateBtn = currentAdminUser?.role === 'am' ? '' :
+        `<button onclick="adminToggleGroupActive('${esc(g.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+      return `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
         <td style="padding:10px 12px">
           <div style="display:flex;align-items:center;gap:8px">
             <div style="width:10px;height:10px;border-radius:50%;background:${esc(g.brand_color||'#1C9BD7')};flex-shrink:0"></div>
-            <strong>${esc(g.name)}</strong>
+            <strong>${esc(g.name)}</strong>${inactiveBadge}
           </div>
         </td>
         <td style="padding:10px 12px;color:var(--muted);font-family:monospace">${esc(g.io_slug||'—')}</td>
@@ -3967,6 +4047,7 @@ function renderAdminGroups() {
         <td style="padding:10px 12px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
           <button onclick="adminEditGroup('${esc(g.id)}')" style="padding:5px 12px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12px;cursor:pointer;font-weight:600">Edit</button>
           ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}');setTimeout(()=>adminTab('pricing'),200)" style="padding:5px 12px;border-radius:6px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1d4ed8;font-size:12px;cursor:pointer;font-weight:600">Pricing</button>`}
+          ${deactivateBtn}
         </td>
       </tr>`;
     }).join('')}
@@ -3989,6 +4070,7 @@ function adminNewGroup() {
   document.getElementById('admin-has-koc').value = 'true';
   const sf = document.getElementById('admin-slug'); if(sf) { sf.dataset.manuallyEdited=''; }
   const sp = document.getElementById('slug-preview'); if(sp) sp.textContent = '...';
+  const sw = document.getElementById('admin-slug-warn'); if(sw) sw.style.display = 'none';
   currentPricingOverrides = {};
   const pricingTabBtn = document.getElementById('tab-btn-pricing');
   if (pricingTabBtn) pricingTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
@@ -4007,6 +4089,7 @@ function adminEditGroup(id) {
   sField.value = g.io_slug || '';
   sField.dataset.manuallyEdited = g.io_slug ? '1' : '';
   const sp2 = document.getElementById('slug-preview'); if(sp2) sp2.textContent = g.io_slug || '...';
+  checkGroupSlugCollision();
   document.getElementById('admin-am-name').value = g.am_name || '';
   document.getElementById('admin-am-email').value = g.am_email || '';
   document.getElementById('admin-am-calendar').value = g.am_calendar_url || '';
@@ -4108,6 +4191,46 @@ async function adminSaveGroup() {
     loadAdminGroups();
   } catch(e) {
     showToast('Error saving group: ' + e.message, 'error');
+  }
+}
+
+// Deactivate/Reactivate (2026-07-17, per Claire) — soft-deactivate, never a hard
+// delete (see the comment in renderAdminGroups for why). Same RPC-with-fallback
+// resilience as adminSaveGroup itself, minimal payload only ({active: makeActive}),
+// same pattern as adminToggleAeActive.
+async function adminToggleGroupActive(id, makeActive) {
+  if (currentAdminUser?.role === 'am') {
+    showToast('Deactivating a group is restricted to super admins', 'error');
+    return;
+  }
+  const g = allGroups.find(x => x.id === id);
+  if (!g) return;
+  const warnText = !makeActive
+    ? ' Its public form link will stop working, and it will no longer appear when assigning a new AE or client to a group — existing orders, clients, and AEs tied to it are unaffected and still visible.'
+    : '';
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} "${g.name}"?${warnText}`)) return;
+  try {
+    let savedViaRpc = false;
+    try {
+      await sb('rpc/admin_save_group', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '',
+          p_pw: currentAdminUser?.pw || '',
+          p_group_id: id,
+          p_data: { active: makeActive }
+        })
+      });
+      savedViaRpc = true;
+    } catch(e) { /* RPC errored — fall through to the direct write below */ }
+
+    if (!savedViaRpc) {
+      await sb('groups?id=eq.' + id, {method:'PATCH', body:JSON.stringify({active: makeActive}), prefer:'return=representation'});
+    }
+    showToast(`Group ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadAdminGroups();
+  } catch(e) {
+    showToast('Error updating group: ' + e.message, 'error');
   }
 }
 
