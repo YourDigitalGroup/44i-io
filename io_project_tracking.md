@@ -641,6 +641,46 @@ relying on it more broadly. Checked:
 **Net result: build confirmed solid, cleared for Claire to start real use** (creating
 groups, adding real clients) as of 2026-07-17.
 
+**Bigger-picture planning notes, 2026-07-17 (post-audit conversation) — no code built,
+recorded for continuity into future sessions:**
+- **AM picker, decided but not yet built**: Claire wants the Group form's AM Name/
+  Email fields turned into a picker (same spirit as the AE picker) to eliminate typos
+  — real AMs today are Carol, Peggy, and Shania (James and Jon are Super Admins;
+  James is parked on the Claude Test Group for now, not a real AM to include yet).
+  Confirmed the right home for this is the EXISTING `admin_users` table, not a new
+  parallel roster — because strategists and accounting (see below) will need real
+  logins too, and `admin_users` already has the right shape (name + password + role).
+  Plan: add nullable `email`/`am_calendar_url`/`am_trello_handle` columns to
+  `admin_users`, then a Group-form dropdown sourced from `admin_users where role =
+  'am'` that auto-fills those fields on pick, same UX as the AE picker. Not yet built —
+  next session's work.
+- **Strategist/accounting roles — confirmed scope, deliberately deferred.** Claire
+  confirmed both will need their own logins (they'll each see their own views, not
+  just be selectable in a dropdown) — so they belong in `admin_users` via new `role`
+  values, not a separate staff table. AEs stay OUT of this unification — they're
+  external to the company, not staff, so they keep their own existing per-group
+  roster. Claire explicitly chose to wait on building the actual strategist/accounting
+  views/tables until later rather than build the full thing now — the AM picker above
+  is the only near-term piece.
+- **Role-based tab visibility, forward decision for that same future phase**: when
+  strategist/accounting logins do get built, Claire wants each role to see only the
+  admin tabs relevant to them, not the full current list — explicitly framed as an
+  extension of the pattern already in place today (AM-tier already has several
+  things hidden — the Pricing tab, "+ New Service/Section/Intake" buttons — just as a
+  binary super/AM split currently). No new mechanism needed, just more roles applied
+  to the same existing gating pattern once those roles exist.
+- **Admin tab audit, at Claire's request** — walked through whether the now-10-tab
+  admin portal has grown any dead weight. Verdict: everything is either core/vital
+  (Groups, Orders, Clients, Services, Sections, Intake Forms, Legal Text) or a real,
+  actively-useful convenience worth keeping (AEs, Notifications) — **except
+  "Reconcile Lists," which was explicitly built as a ONE-TIME onboarding tool** (see
+  its own entry above) to link Claire's pre-existing client base to their real Trello
+  lists before relying on this system for them. Flagged as the one tab with a natural
+  expiration point — harmless to leave (shows "nothing to reconcile" once done), but
+  a real candidate to remove later once Claire's finished onboarding her historical
+  clients via the Import-from-Trello flow, rather than something that needs to stay
+  in the nav permanently.
+
 ---
 
 ## STATUS SUMMARY
