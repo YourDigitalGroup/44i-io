@@ -538,8 +538,8 @@ slug to match a DIFFERENT existing group's (warns), and a genuinely unique slug 
 warning). No SQL needed — purely front-end, and there's still no database-level
 uniqueness constraint on `io_slug`, so this is a helpful warning, not a hard guarantee.
 
-**Group deactivate/reactivate — MOSTLY BUILT 2026-07-17, one piece still needs the
-live `admin_save_group` RPC source before it's fully wired.** Claire has a few groups
+**Group deactivate/reactivate — BUILT 2026-07-17** (the `admin_save_group` RPC gap
+below was resolved same-day — see the full audit entry further down). Claire has a few groups
 in her list she no longer works with and asked how to remove them — recommended
 against a hard delete (same reasoning as every other entity type here: a group can be
 referenced by real historical orders/clients/AEs via foreign key, so deleting it
@@ -596,6 +596,50 @@ from pg_proc p
 join pg_namespace n on n.oid = p.pronamespace
 where p.proname = 'admin_save_group' and n.nspname = 'public';
 ```
+
+**Full pre-rollout audit — COMPLETE 2026-07-17.** Claire asked for a full solidity
+check across everything built this session before starting to use it for real
+(creating groups, adding real clients) — wanted to catch any big issues before
+relying on it more broadly. Checked:
+- **Code structure**: fresh syntax check of both files, no duplicate function/variable
+  declarations anywhere, no dangling references (every `onclick`/etc. call site
+  resolves to something real, including cross-file `shared.js` dependencies), no stale
+  state collisions across the new admin tabs (Clients/Reconcile/AE/Groups all reload
+  fresh on tab open; the Import-from-Trello flow correctly refreshes the Clients list
+  afterward).
+- **Full re-read of the submission pipeline** (`submitIO()` and everything it calls) —
+  the highest-stakes code path, given how many incremental edits touched different
+  parts of it this session (AE email, dated Event Targeting cards, KOC copy, market/
+  notes rows, AM/AE assignment). Confirmed everything still composes correctly as a
+  whole, not just individually.
+- **Every `admin_save_*` RPC**, pulled via a single consolidated
+  `pg_get_functiondef`-over-`pg_proc` query, specifically checked for the same
+  "unconditional field overwrite on a minimal payload" bug class that broke
+  `admin_save_group` (see the entry above). Result: **`admin_save_service`,
+  `admin_save_section`, `admin_save_intake_form`, and `admin_save_hosting_setting`
+  were already written safely** (case-when-present/coalesce throughout) — that bug was
+  unique to `admin_save_group`, not systemic, and it's already fixed and confirmed
+  live. Found one latent (never actually triggered, since its one caller always sends
+  every field) instance of the same pattern in `admin_save_legal_content` — hardened
+  it the same way as a precaution; Claire confirmed this SQL has been run.
+- **Permissions consistency** across every RPC — super-admin-only ones match their UI
+  restrictions exactly; the ones opened to any admin this session (Orders, Clients,
+  AEs, Groups) are consistently unrestricted beyond valid credentials.
+- **No SQL injection surface** — every function is properly parameterized, no dynamic
+  SQL built from raw string concatenation anywhere.
+- **Deploy verification**: diffed the live `claude-proxy` Edge Function (pasted back
+  by Claire) against the version given in chat — confirmed a match on every functional
+  line (the live one just has comments stripped) — genuinely confirmed via diff, not
+  assumed. Confirmed via `git merge-base --is-ancestor` that the working branch is
+  fully merged into `main` (PR #75), and `groups.active` exists per Claire's manual
+  check. Every checklist item from this session is now closed.
+- Minor, non-urgent note surfaced (not acted on): admin passwords are hashed with
+  unsalted SHA-256 rather than something like bcrypt — acceptable given this is a
+  small internal tool with a handful of known named admins, not treated as a real risk
+  at this scale, just recorded here in case it's ever worth revisiting.
+
+**Net result: build confirmed solid, cleared for Claire to start real use** (creating
+groups, adding real clients) as of 2026-07-17.
 
 ---
 
