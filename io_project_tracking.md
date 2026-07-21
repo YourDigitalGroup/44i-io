@@ -361,6 +361,59 @@ correct list is pre-selected per row, a no-match row is correctly left blank, an
 dismissing a row correctly removes just that row and re-indexes the rest). New RPC SQL
 given inline in chat.
 
+**Client Profiles admin tab + Import from Trello — BUILT 2026-07-17.** Claire pointed
+out a real gap right after the Reconcile tool above: since her real client base has
+never gone through this system, they have NO Supabase `clients` row at all (Reconcile
+only helps clients that already have a row but are missing the link) — so a genuine
+bulk-import is needed, not just reconciliation. She also flagged, separately, that
+there's never been any way to edit an existing client's profile after the fact (a
+changed contact, a typo) — confirmed true: `clients` could previously ONLY be written
+during a live IO submission or by Reconcile (link only).
+
+Decisions confirmed with Claire before building: AM-tier gets FULL access to client
+profiles, same as Orders (no group scoping — any admin can help on any client). The
+existing client PDFs vary in format / she's not sure they're consistent, so **no
+automated PDF-parsing was attempted** — pulling in the rich contact/business info from
+those PDFs is left as a manual one-time data-entry pass into the new editor, not
+scripted extraction (a script silently misreading an inconsistent format is a worse
+failure mode than a bit of manual typing).
+
+Built:
+- **New "Clients" admin tab** (`section-clients`) — full CRUD on client profiles (name,
+  group, contact name/email/phone, website, city, business type, and a manual Trello
+  List ID override field), search box, same list+edit-form pattern as Groups/Services/
+  AEs. New `admin_get_clients`/`admin_save_client` RPCs (SQL given inline in chat) —
+  any valid admin (am or super) allowed, no role restriction beyond valid credentials,
+  per Claire's explicit call above.
+- **"Import from Trello" panel**, inside the same tab — for a chosen group, scans that
+  board's lists (`trello_get_lists`, already-existing target), filters out any list
+  already linked to a client (regardless of which group that client is filed under,
+  since a Trello list id is a Trello-side fact), and shows the remainder as a checklist
+  defaulted to all-checked. Deliberately review-before-create, same spirit as
+  Reconcile — Claire unchecks anything that isn't really a client (a template list, an
+  archived reference list) before anything gets written. Confirming calls the same
+  `admin_save_client` RPC once per checked list (`{name, group_id, trello_list_id}`) —
+  no separate bulk-insert RPC needed.
+- **Real layout bug caught and fixed during build, before it ever shipped**: the edit
+  form uses the same flex `order` trick as Groups (renders above the list regardless
+  of DOM position) — but Clients has 5 top-level siblings (header, search box, import
+  panel, form, table) vs. Groups' 2, and only giving the form an explicit `order` while
+  leaving the rest unset would have sorted the form to the very BOTTOM instead of above
+  the table (unset order defaults to 0, which sorts before the form's order:1). Fixed
+  by giving every sibling an explicit order (1 through 5) so the sequence is
+  deterministic. Also had to add `'clients'` to the same special-cased `display:flex`
+  branch in `adminSection()` that `'groups'` already needed, for the same reason.
+- Verified via two real headless-browser tests: (1) the Clients tab itself — row
+  rendering, LINKED/NOT LINKED badges, search filtering, edit-form populate-on-click,
+  and new-client-form blank state; (2) the import flow's actual filtering + selection
+  logic — confirmed an already-linked list is correctly excluded from the candidate
+  list, and unchecking a candidate (simulating Claire excluding a non-client list)
+  correctly excludes it from what actually gets saved.
+
+New SQL, all given inline in chat (not committed as files, per Claire's no-SQL-files
+constraint): `admin_get_clients_missing_trello_list` (Reconcile tool, above) and
+`admin_get_clients`/`admin_save_client` (Client Profiles + Import, this entry).
+
 ---
 
 ## STATUS SUMMARY

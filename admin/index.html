@@ -37,6 +37,7 @@
     <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
       <button id="section-tab-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Groups</button>
       <button id="section-tab-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
+      <button id="section-tab-clients" onclick="adminSection('clients')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Clients</button>
       <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Services</button>
       <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
       <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
@@ -195,6 +196,100 @@
           <div id="admin-order-detail-body"></div>
         </div>
       </div><!-- /section-orders -->
+
+      <!-- ── SECTION: Clients (profiles — contact info, business type, linked Trello list) ── -->
+      <div id="section-clients" style="display:none;flex-direction:column">
+        <!-- Every direct child below gets an EXPLICIT order — with more than the usual
+             2 children (header/list/form), leaving any child's order unset would default
+             it to 0 and sort it ahead of the form, same trap this file's Groups section
+             comment already warns about (see order:2/order:1 there) but worse here with
+             5 siblings instead of 2. Intended sequence: header → search → import panel →
+             edit form (appears above the table when open) → table. -->
+        <div style="order:1;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap">
+          <p style="font-size:13px;font-weight:700;color:var(--text)">Clients</p>
+          <div style="display:flex;gap:8px">
+            <button onclick="openClientImportPanel()" style="padding:7px 16px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">Import from Trello</button>
+            <button onclick="adminNewClient()" style="padding:7px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">+ New Client</button>
+          </div>
+        </div>
+
+        <input type="text" id="clients-filter-search" placeholder="Search by client name, contact, or city..." oninput="renderAdminClients()" style="order:2;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;margin-bottom:16px"/>
+
+        <!-- Import-from-Trello panel — scans a group's board for lists with no linked
+             client yet, lets Claire uncheck any that aren't real clients (templates,
+             archived reference lists, etc.) before bulk-creating bare client records. -->
+        <div id="admin-client-import-panel" style="order:3;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:20px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Import Clients from Trello</p>
+          <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">
+            <div>
+              <label class="lbl">Group</label>
+              <select id="client-import-group" style="padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff;min-width:220px"></select>
+            </div>
+            <button onclick="scanClientImportCandidates()" style="padding:9px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Scan Board</button>
+            <button onclick="closeClientImportPanel()" style="padding:9px 16px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+          <div id="admin-client-import-results"></div>
+        </div>
+
+        <!-- Edit form (order:4) so it opens above the table (order:5) regardless of
+             DOM source order, same pattern as Groups/Services/Sections/Intake/AEs. -->
+        <div id="admin-client-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:20px;order:4">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-client-form-title">New Client</p>
+          <input type="hidden" id="admin-client-original-id"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Client / Business Name</label>
+              <input type="text" id="admin-client-name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Group</label>
+              <select id="admin-client-group" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Contact Name</label>
+              <input type="text" id="admin-client-contact-name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Contact Email</label>
+              <input type="email" id="admin-client-contact-email" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Contact Phone</label>
+              <input type="text" id="admin-client-contact-phone" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Website URL</label>
+              <input type="text" id="admin-client-website" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">City <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— City, State</span></label>
+              <input type="text" id="admin-client-city" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Business Type</label>
+              <input type="text" id="admin-client-biztype" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
+            <div>
+              <label class="lbl">Trello List ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— manual override; leave as-is unless you know what you're changing</span></label>
+              <input type="text" id="admin-client-trello-list-id" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onclick="adminSaveClient()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Client</button>
+            <button onclick="adminCancelClientEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-clients-table" style="order:5"></div>
+      </div><!-- /section-clients -->
 
       <!-- ── SECTION: Suggested Map (standard catalog — now editable) ── -->
       <div id="section-map" style="display:none">
@@ -1085,15 +1180,16 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Nine sections: groups | orders | map | sections | intake | ae | legal | notifications | reconcile
-  const sections = ['groups','orders','map','sections','intake','ae','legal','notifications','reconcile'];
+  // Ten sections: groups | orders | clients | map | sections | intake | ae | legal | notifications | reconcile
+  const sections = ['groups','orders','clients','map','sections','intake','ae','legal','notifications','reconcile'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
-    // 'groups' needs display:flex specifically — its edit form/list use flex `order`
-    // to render the form above the list regardless of DOM source order (see
-    // #section-groups markup). Setting plain 'block' here would silently cancel that
-    // ordering the moment this tab is shown, which is exactly what was happening.
-    if (panel) panel.style.display = s !== section ? 'none' : (s === 'groups' ? 'flex' : 'block');
+    // 'groups' and 'clients' need display:flex specifically — both use flex `order`
+    // on their edit form so it renders above the list regardless of DOM source order
+    // (see #section-groups/#section-clients markup). Setting plain 'block' here would
+    // silently cancel that ordering the moment this tab is shown, which is exactly
+    // what was happening before this was special-cased for 'groups'.
+    if (panel) panel.style.display = s !== section ? 'none' : ((s === 'groups' || s === 'clients') ? 'flex' : 'block');
     const tab = document.getElementById('section-tab-' + s);
     if (tab) {
       tab.style.borderBottomColor = (s === section) ? 'var(--accent)' : 'transparent';
@@ -1103,6 +1199,7 @@ function adminSection(section) {
   // Load data for the active section
   if (section === 'groups') loadAdminGroups();
   else if (section === 'orders') loadAdminOrders();
+  else if (section === 'clients') loadAdminClients();
   else if (section === 'map') {
     // Service catalog management is super-admin only (same restriction level as Group
     // Custom Pricing) — hide the entry point for AM-tier logins. Also guarded inside
@@ -2732,6 +2829,241 @@ async function confirmReconcileRow(idx) {
 function dismissReconcileRow(idx) {
   RECONCILE_ROWS.splice(idx, 1);
   renderAdminReconcile();
+}
+
+// ── CLIENT PROFILES (2026-07-17) ────────────────────────────────
+// Genuinely new capability, not just a UI gap — before this, clients.* could ONLY ever
+// be written during a live IO submission (find_or_create_client) or by the Reconcile
+// tool above (trello_list_id only). No way to view or fix an existing client's contact
+// info afterward (a changed phone number, a typo, etc.). Per Claire: AM-tier gets FULL
+// access here (same as Orders) — no group scoping, any admin can help on any client.
+let ALL_CLIENTS = [];
+
+function populateClientGroupDropdown(selectId, selectedId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = allGroups.map(g => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('');
+  if (selectedId) sel.value = selectedId;
+}
+
+async function loadAdminClients() {
+  const el = document.getElementById('admin-clients-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
+    ALL_CLIENTS = await sb('rpc/admin_get_clients', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+    renderAdminClients();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading clients: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderAdminClients() {
+  const el = document.getElementById('admin-clients-table');
+  const search = (document.getElementById('clients-filter-search')?.value || '').trim().toLowerCase();
+  const rows = !search ? ALL_CLIENTS : ALL_CLIENTS.filter(c =>
+    (c.name || '').toLowerCase().includes(search) ||
+    (c.contact_name || '').toLowerCase().includes(search) ||
+    (c.contact_email || '').toLowerCase().includes(search) ||
+    (c.city || '').toLowerCase().includes(search)
+  );
+  if (!rows.length) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">${ALL_CLIENTS.length ? 'No clients match that search.' : 'No clients yet.'}</p>`;
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Client</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Contact</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">City</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello List</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  rows.forEach(c => {
+    const groupName = allGroups.find(g => g.id === c.group_id)?.name || '<span style="color:var(--muted)">—</span>';
+    const contact = [c.contact_name, c.contact_email].filter(Boolean).join(' — ') || '<span style="color:var(--muted)">—</span>';
+    const linkedBadge = c.trello_list_id
+      ? '<span style="font-size:9px;font-weight:700;background:#DCFCE7;color:#166534;padding:1px 6px;border-radius:8px">LINKED</span>'
+      : '<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">NOT LINKED</span>';
+    html += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px 10px;font-weight:600">${esc(c.name)}</td>
+      <td style="padding:8px 10px">${groupName}</td>
+      <td style="padding:8px 10px">${contact}</td>
+      <td style="padding:8px 10px">${esc(c.city || '—')}</td>
+      <td style="padding:8px 10px">${linkedBadge}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">
+        <button onclick="adminEditClient('${esc(c.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">Edit</button>
+      </td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function adminNewClient() {
+  document.getElementById('admin-client-form-title').textContent = 'New Client';
+  document.getElementById('admin-client-original-id').value = '';
+  ['name','contact-name','contact-email','contact-phone','website','city','biztype','trello-list-id'].forEach(f => {
+    const el = document.getElementById('admin-client-' + f);
+    if (el) el.value = '';
+  });
+  populateClientGroupDropdown('admin-client-group', null);
+  document.getElementById('admin-client-form').style.display = 'block';
+  document.getElementById('admin-client-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminEditClient(id) {
+  const c = ALL_CLIENTS.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('admin-client-form-title').textContent = 'Edit Client — ' + c.name;
+  document.getElementById('admin-client-original-id').value = c.id;
+  document.getElementById('admin-client-name').value = c.name || '';
+  document.getElementById('admin-client-contact-name').value = c.contact_name || '';
+  document.getElementById('admin-client-contact-email').value = c.contact_email || '';
+  document.getElementById('admin-client-contact-phone').value = c.contact_phone || '';
+  document.getElementById('admin-client-website').value = c.website_url || '';
+  document.getElementById('admin-client-city').value = c.city || '';
+  document.getElementById('admin-client-biztype').value = c.business_type || '';
+  document.getElementById('admin-client-trello-list-id').value = c.trello_list_id || '';
+  populateClientGroupDropdown('admin-client-group', c.group_id);
+  document.getElementById('admin-client-form').style.display = 'block';
+  document.getElementById('admin-client-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelClientEdit() {
+  document.getElementById('admin-client-form').style.display = 'none';
+}
+
+async function adminSaveClient() {
+  const isNew = !document.getElementById('admin-client-original-id').value;
+  const name = document.getElementById('admin-client-name').value.trim();
+  const groupId = document.getElementById('admin-client-group').value;
+  if (!name) { showToast('Client name is required', 'error'); return; }
+  if (!groupId) { showToast('Group is required', 'error'); return; }
+
+  const payload = {
+    name,
+    group_id: groupId,
+    contact_name: document.getElementById('admin-client-contact-name').value.trim(),
+    contact_email: document.getElementById('admin-client-contact-email').value.trim(),
+    contact_phone: document.getElementById('admin-client-contact-phone').value.trim(),
+    website_url: document.getElementById('admin-client-website').value.trim(),
+    city: document.getElementById('admin-client-city').value.trim(),
+    business_type: document.getElementById('admin-client-biztype').value.trim(),
+    trello_list_id: document.getElementById('admin-client-trello-list-id').value.trim() || null,
+  };
+  try {
+    await sb('rpc/admin_save_client', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_client_id: isNew ? null : document.getElementById('admin-client-original-id').value,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'Client created!' : 'Client updated!');
+    document.getElementById('admin-client-form').style.display = 'none';
+    await loadAdminClients();
+  } catch(e) {
+    showToast('Error saving client: ' + e.message, 'error');
+  }
+}
+
+// ── IMPORT CLIENTS FROM TRELLO (2026-07-17) ─────────────────────
+// Bulk-creates bare client records (name + group + trello_list_id) for real Trello
+// lists that don't have a matching client yet — mainly for the existing client base,
+// which predates this system entirely and so has no Supabase row at all (the
+// Reconcile tool above only helps clients that already HAVE a row but are missing the
+// link). Deliberately review-before-create, same spirit as Reconcile: candidates are
+// shown with a checkbox defaulted to checked, so Claire can uncheck any list that
+// isn't actually a client (a template board, an archived reference list, etc.) before
+// anything gets written — never auto-creates without a look first.
+let CLIENT_IMPORT_CANDIDATES = [];
+
+function openClientImportPanel() {
+  populateClientGroupDropdown('client-import-group', null);
+  document.getElementById('admin-client-import-results').innerHTML = '';
+  document.getElementById('admin-client-import-panel').style.display = 'block';
+}
+
+function closeClientImportPanel() {
+  document.getElementById('admin-client-import-panel').style.display = 'none';
+  document.getElementById('admin-client-import-results').innerHTML = '';
+  CLIENT_IMPORT_CANDIDATES = [];
+}
+
+async function scanClientImportCandidates() {
+  const groupId = document.getElementById('client-import-group').value;
+  const resultsEl = document.getElementById('admin-client-import-results');
+  const group = allGroups.find(g => g.id === groupId);
+  if (!group?.trello_board_id) {
+    resultsEl.innerHTML = '<p style="color:#991B1B;font-size:12px">This group has no Trello board configured.</p>';
+    return;
+  }
+  resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Scanning board…</p>';
+  try {
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'trello_get_lists', board_id: group.trello_board_id })
+    });
+    const lists = await res.json();
+    if (!Array.isArray(lists)) throw new Error('Could not read board lists');
+
+    // Skip any list already linked to a client, regardless of which group that client
+    // is filed under — a list id is a Trello-side fact, not something two different
+    // clients could legitimately share.
+    const linkedListIds = new Set(ALL_CLIENTS.map(c => c.trello_list_id).filter(Boolean));
+    CLIENT_IMPORT_CANDIDATES = lists.filter(l => !linkedListIds.has(l.id));
+
+    if (!CLIENT_IMPORT_CANDIDATES.length) {
+      resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Every list on this board is already linked to a client.</p>';
+      return;
+    }
+
+    let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:10px">Uncheck anything that isn't actually a client (a template, an archived reference list, etc.) before importing.</p>
+      <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;margin-bottom:12px">`;
+    CLIENT_IMPORT_CANDIDATES.forEach((l, idx) => {
+      html += `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" id="import-candidate-${idx}" checked style="width:14px;height:14px;accent-color:var(--accent)"/>
+        ${esc(l.name)}
+      </label>`;
+    });
+    html += `</div><button onclick="importSelectedClients('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
+    resultsEl.innerHTML = html;
+  } catch(e) {
+    resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Error scanning board: ${esc(e.message)}</p>`;
+  }
+}
+
+async function importSelectedClients(groupId) {
+  const selected = CLIENT_IMPORT_CANDIDATES.filter((l, idx) => document.getElementById(`import-candidate-${idx}`)?.checked);
+  if (!selected.length) { showToast('Nothing selected to import', 'error'); return; }
+  let created = 0, failed = 0;
+  for (const l of selected) {
+    try {
+      await sb('rpc/admin_save_client', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '',
+          p_pw: currentAdminUser?.pw || '',
+          p_client_id: null,
+          p_data: { name: l.name, group_id: groupId, trello_list_id: l.id }
+        })
+      });
+      created++;
+    } catch(e) {
+      failed++;
+    }
+  }
+  showToast(`Imported ${created} client${created !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`, failed ? 'error' : 'success');
+  closeClientImportPanel();
+  await loadAdminClients();
 }
 
 // ── SERVICE CREATE / EDIT / DEACTIVATE ─────────────────────────
