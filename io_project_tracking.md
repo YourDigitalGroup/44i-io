@@ -763,6 +763,34 @@ a real headless-browser test: name locked and unfocusable after picking, contact
 fields still freely editable, and switching back to "New Client" correctly unlocks
 and clears.
 
+**Database growth/scale discussion, 2026-07-18 — no action taken, informational.**
+Claire started bulk-importing her real (active + archived) client base via
+Import-from-Trello and asked what effect this, plus ongoing incoming IOs, has on the
+database, and what to watch for. Assessed: client rows are tiny (short text fields)
+— hundreds or thousands of them is negligible for Postgres. Orders are the real
+long-term growth driver (richer per-row data: `line_items`/`intake_responses` jsonb,
+signature image), but even a couple years of normal-paced submissions stays modest by
+database standards. Real practical ceiling flagged: Supabase's Pro-tier storage
+limit (billed by total DB size in GB, tracked **per project** — she has multiple
+databases on the same account, so worth checking this specific project's own usage,
+not an org-wide aggregate), not row count. Current setup confirmed: Pro plan, Micro
+compute size — Micro should be comfortably sufficient for this app's actual query
+load (a handful of admin users, occasional public submissions), not a near-term
+concern. Longer-horizon, not-urgent items flagged: DB indexes if admin screens ever
+feel sluggish at higher row counts; Trello API rate limits only in a scenario of many
+simultaneous AE submissions at once.
+
+**Forward idea, not yet decided or built**: Claire is considering eventually
+replacing the in-form intake questions with just a link on the Trello card instead
+(e.g., to an external form/document), specifically because it would reduce future
+per-order storage — confirmed this is accurate: `intake_responses` (the raw Q&A data
+captured today) is genuinely one of the larger per-order fields, and would disappear
+entirely under that model. Clarified one distinction for accuracy: the e-signature
+capture (`signature_data`) is a separate, unrelated field (the legal agreement
+signature, not part of intake) and would be unaffected either way — the intake-link
+idea would help but isn't the single biggest contributor on its own. Logged here for
+whenever Claire is ready to revisit; nothing needs to happen until then.
+
 ---
 
 ## STATUS SUMMARY
