@@ -763,6 +763,64 @@ a real headless-browser test: name locked and unfocusable after picking, contact
 fields still freely editable, and switching back to "New Client" correctly unlocks
 and clears.
 
+**Database growth/scale discussion, 2026-07-18 — no action taken, informational.**
+Claire started bulk-importing her real (active + archived) client base via
+Import-from-Trello and asked what effect this, plus ongoing incoming IOs, has on the
+database, and what to watch for. Assessed: client rows are tiny (short text fields)
+— hundreds or thousands of them is negligible for Postgres. Orders are the real
+long-term growth driver (richer per-row data: `line_items`/`intake_responses` jsonb,
+signature image), but even a couple years of normal-paced submissions stays modest by
+database standards. Real practical ceiling flagged: Supabase's Pro-tier storage
+limit (billed by total DB size in GB, tracked **per project** — she has multiple
+databases on the same account, so worth checking this specific project's own usage,
+not an org-wide aggregate), not row count. Current setup confirmed: Pro plan, Micro
+compute size — Micro should be comfortably sufficient for this app's actual query
+load (a handful of admin users, occasional public submissions), not a near-term
+concern. Longer-horizon, not-urgent items flagged: DB indexes if admin screens ever
+feel sluggish at higher row counts; Trello API rate limits only in a scenario of many
+simultaneous AE submissions at once.
+
+**Forward idea, not yet decided or built**: Claire is considering eventually
+replacing the in-form intake questions with just a link on the Trello card instead
+(e.g., to an external form/document), specifically because it would reduce future
+per-order storage — confirmed this is accurate: `intake_responses` (the raw Q&A data
+captured today) is genuinely one of the larger per-order fields, and would disappear
+entirely under that model. Clarified one distinction for accuracy: the e-signature
+capture (`signature_data`) is a separate, unrelated field (the legal agreement
+signature, not part of intake) and would be unaffected either way — the intake-link
+idea would help but isn't the single biggest contributor on its own. Logged here for
+whenever Claire is ready to revisit; nothing needs to happen until then.
+
+**Import AEs from Trello board members — BUILT 2026-07-18.** Claire finished
+importing her ~300-client Trello base and asked for an equivalent bulk-add for AEs
+(~300 of those too) — confirmed her staff are already board members, which is what
+makes this possible. Same review-before-create spirit as the Client import, but
+scans a board's MEMBERS (`trello_get_board_members`, already built earlier this
+session for AM/AE card assignment) instead of its LISTS — there's no per-AE Trello
+object the way a client has its own list. A board's member list includes the AM (and
+possibly super admins), not just AEs, so this is deliberately never an auto-import —
+new "Import from Trello" panel on the AEs tab shows every member as a checkbox-
+reviewed checklist (default-checked, same as the Client import), and Claire unchecks
+anyone who isn't actually an AE before confirming. Trello's members endpoint doesn't
+expose email, so only name + Trello handle import automatically — email still needs
+filling in per AE afterward, same limitation already true of the AE picker generally.
+
+**Real design difference from the Client import, worth being explicit about**: dedup
+is scoped to the SELECTED GROUP ONLY, not global. A Trello list genuinely can't
+belong to two different clients (global dedup was correct there), but the AE table is
+inherently per-group (same shape as the Client picker — "this AE only appears in the
+picker for this group's form") — the same real person legitimately needs a SEPARATE
+`ae` row for each group they work across. Deduping globally by Trello handle would
+have wrongly blocked re-adding a real AE to their second or third group. Reuses the
+existing `admin_save_ae` RPC (no new backend needed) and the same generic group-
+dropdown populator already shared by the Client import/edit-form pickers (renamed its
+comment to reflect three callers now, not renaming the function itself). Verified via
+a real headless-browser test: confirmed the critical per-group distinction directly
+(a person already an AE on group A is correctly excluded when scanning group A, but
+correctly still shows up as importable when scanning group B, even though they're the
+same real person) — and confirmed unchecking a non-AE candidate (simulating
+unchecking the AM) correctly excludes them from what actually gets saved.
+
 ---
 
 ## STATUS SUMMARY
