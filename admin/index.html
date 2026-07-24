@@ -45,6 +45,7 @@
       <button id="section-tab-legal" onclick="adminSection('legal')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Legal Text</button>
       <button id="section-tab-notifications" onclick="adminSection('notifications')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Notifications</button>
       <button id="section-tab-reconcile" onclick="adminSection('reconcile')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Reconcile Lists</button>
+      <button id="section-tab-users" onclick="adminSection('users')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Users</button>
     </div>
 
     <div style="padding:20px">
@@ -889,6 +890,64 @@
         <div id="admin-reconcile-table"></div>
       </div><!-- /section-reconcile -->
 
+      <!-- ── SECTION: Users (login accounts — admin_users, super-admin only) ── -->
+      <div id="section-users" style="display:none;flex-direction:column">
+        <!-- Every direct child gets an explicit order, same reasoning as Groups/Clients
+             above (with the edit form in the mix, letting order default to 0 would sort
+             it after the table instead of above it). -->
+        <div style="order:1;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div>
+            <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Users</p>
+            <p style="font-size:11px;color:var(--muted)">Login accounts for this admin portal — Super Admins and Account Managers. Restricted to super admins.</p>
+          </div>
+          <button onclick="adminNewUser()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New User</button>
+        </div>
+
+        <div id="admin-user-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-user-form-title">New User</p>
+          <input type="hidden" id="admin-user-original-name"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Name <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— also their login username</span></label>
+              <input type="text" id="admin-user-name" placeholder="e.g. Carol" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Role</label>
+              <select id="admin-user-role" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="am">Account Manager</option>
+                <option value="super">Super Admin</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Email</label>
+              <input type="email" id="admin-user-email" placeholder="name@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">AM Trello Handle</label>
+              <input type="text" id="admin-user-trello" placeholder="@handle" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">AM Calendar URL <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for KOC scheduling</span></label>
+              <input type="text" id="admin-user-calendar" placeholder="https://calendar.app.google/..." style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl" id="admin-user-password-label">New Password <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— leave blank to keep current password</span></label>
+              <input type="password" id="admin-user-password" placeholder="" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onclick="adminSaveUser()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save User</button>
+            <button onclick="adminCancelUserEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-users-table" style="order:3"></div>
+      </div><!-- /section-users -->
+
     </div>
   </div>
 </div>
@@ -1225,16 +1284,16 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Ten sections: groups | orders | clients | map | sections | intake | ae | legal | notifications | reconcile
-  const sections = ['groups','orders','clients','map','sections','intake','ae','legal','notifications','reconcile'];
+  // Eleven sections: groups | orders | clients | map | sections | intake | ae | legal | notifications | reconcile | users
+  const sections = ['groups','orders','clients','map','sections','intake','ae','legal','notifications','reconcile','users'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
-    // 'groups' and 'clients' need display:flex specifically — both use flex `order`
-    // on their edit form so it renders above the list regardless of DOM source order
-    // (see #section-groups/#section-clients markup). Setting plain 'block' here would
-    // silently cancel that ordering the moment this tab is shown, which is exactly
-    // what was happening before this was special-cased for 'groups'.
-    if (panel) panel.style.display = s !== section ? 'none' : ((s === 'groups' || s === 'clients') ? 'flex' : 'block');
+    // 'groups', 'clients', and 'users' need display:flex specifically — all three use
+    // flex `order` on their edit form so it renders above the list regardless of DOM
+    // source order (see their markup). Setting plain 'block' here would silently
+    // cancel that ordering the moment this tab is shown, which is exactly what was
+    // happening before this was special-cased for 'groups'.
+    if (panel) panel.style.display = s !== section ? 'none' : ((s === 'groups' || s === 'clients' || s === 'users') ? 'flex' : 'block');
     const tab = document.getElementById('section-tab-' + s);
     if (tab) {
       tab.style.borderBottomColor = (s === section) ? 'var(--accent)' : 'transparent';
@@ -1309,6 +1368,19 @@ function adminSection(section) {
     if (isAm) {
       document.getElementById('admin-reconcile-table').innerHTML =
         '<p style="color:#991B1B;font-size:12px">Reconciling Trello lists is restricted to super admins.</p>';
+    }
+  } else if (section === 'users') {
+    // Super-admin only — manages login credentials for the whole team, same
+    // restriction level as Reconcile/Legal Text/Notifications.
+    const isAm = currentAdminUser?.role === 'am';
+    const newBtn = document.querySelector('#section-users button[onclick="adminNewUser()"]');
+    if (newBtn) newBtn.style.display = isAm ? 'none' : '';
+    if (isAm) {
+      document.getElementById('admin-user-form').style.display = 'none';
+      document.getElementById('admin-users-table').innerHTML =
+        '<p style="color:#991B1B;font-size:12px">User management is restricted to super admins.</p>';
+    } else {
+      loadAdminUsers();
     }
   }
 }
@@ -2621,6 +2693,153 @@ async function adminToggleAeActive(id, makeActive) {
     loadAdminAes();
   } catch(e) {
     showToast('Error updating AE: ' + e.message, 'error');
+  }
+}
+
+// ── USERS (admin_users login accounts, 2026-07-18) ──────────────
+// Manages the table admin logins are validated against — previously only editable via
+// raw SQL. Keyed by NAME (admin_users has no separate id exposed anywhere else in this
+// app — name is the natural key used for login itself), so rename is supported via
+// admin-user-original-name tracking the pre-edit name. Super-admin only.
+let ALL_ADMIN_USERS = [];
+
+async function loadAdminUsers() {
+  const el = document.getElementById('admin-users-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    ALL_ADMIN_USERS = await sb('rpc/admin_get_staff', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+    renderAdminUsersList();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading users: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderAdminUsersList() {
+  const el = document.getElementById('admin-users-table');
+  if (!ALL_ADMIN_USERS.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No users yet.</p>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Role</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Email</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello Handle</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  ALL_ADMIN_USERS.forEach(u => {
+    const inactive = u.active === false;
+    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const roleLabel = u.role === 'super' ? 'Super Admin' : (u.role === 'am' ? 'Account Manager' : esc(u.role));
+    const editBtn = `<button onclick="adminEditUser('${esc(u.name)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`;
+    const deactivateBtn = `<button onclick="adminToggleUserActive('${esc(u.name)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      <td style="padding:8px 10px">${esc(u.name)}${inactiveBadge}</td>
+      <td style="padding:8px 10px">${roleLabel}</td>
+      <td style="padding:8px 10px;font-size:11px">${esc(u.email || '—')}</td>
+      <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(u.am_trello_handle || '—')}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function adminNewUser() {
+  document.getElementById('admin-user-form-title').textContent = 'New User';
+  document.getElementById('admin-user-original-name').value = '';
+  document.getElementById('admin-user-name').value = '';
+  document.getElementById('admin-user-role').value = 'am';
+  document.getElementById('admin-user-email').value = '';
+  document.getElementById('admin-user-trello').value = '';
+  document.getElementById('admin-user-calendar').value = '';
+  document.getElementById('admin-user-password').value = '';
+  document.getElementById('admin-user-password-label').innerHTML = 'Password';
+  document.getElementById('admin-user-form').style.display = 'block';
+  document.getElementById('admin-user-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminEditUser(name) {
+  const u = ALL_ADMIN_USERS.find(x => x.name === name);
+  if (!u) return;
+  document.getElementById('admin-user-form-title').textContent = 'Edit User — ' + u.name;
+  document.getElementById('admin-user-original-name').value = u.name;
+  document.getElementById('admin-user-name').value = u.name || '';
+  document.getElementById('admin-user-role').value = u.role || 'am';
+  document.getElementById('admin-user-email').value = u.email || '';
+  document.getElementById('admin-user-trello').value = u.am_trello_handle || '';
+  document.getElementById('admin-user-calendar').value = u.am_calendar_url || '';
+  document.getElementById('admin-user-password').value = '';
+  document.getElementById('admin-user-password-label').innerHTML =
+    'New Password <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— leave blank to keep current password</span>';
+  document.getElementById('admin-user-form').style.display = 'block';
+  document.getElementById('admin-user-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelUserEdit() {
+  document.getElementById('admin-user-form').style.display = 'none';
+}
+
+async function adminSaveUser() {
+  const originalName = document.getElementById('admin-user-original-name').value;
+  const isNew = !originalName;
+  const name = document.getElementById('admin-user-name').value.trim();
+  const role = document.getElementById('admin-user-role').value;
+  const email = document.getElementById('admin-user-email').value.trim();
+  const trelloHandle = document.getElementById('admin-user-trello').value.trim();
+  const calendarUrl = document.getElementById('admin-user-calendar').value.trim();
+  const password = document.getElementById('admin-user-password').value;
+  if (!name) { showToast('Name is required', 'error'); return; }
+  if (isNew && !password) { showToast('An initial password is required for a new user', 'error'); return; }
+
+  const payload = {
+    name, role,
+    email: email || null,
+    am_trello_handle: trelloHandle || null,
+    am_calendar_url: calendarUrl || null
+  };
+  if (password) payload.new_password = password;
+  try {
+    await sb('rpc/admin_save_user', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_original_name: isNew ? null : originalName,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'User created!' : 'User updated!');
+    document.getElementById('admin-user-form').style.display = 'none';
+    await loadAdminUsers();
+  } catch(e) {
+    showToast('Error saving user: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleUserActive(name, makeActive) {
+  const u = ALL_ADMIN_USERS.find(x => x.name === name);
+  if (!u) return;
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${u.name}?${!makeActive ? ' They will no longer be able to log in.' : ''}`)) return;
+  try {
+    await sb('rpc/admin_save_user', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_original_name: u.name,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`User ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadAdminUsers();
+  } catch(e) {
+    showToast('Error updating user: ' + e.message, 'error');
   }
 }
 
@@ -4212,10 +4431,14 @@ async function ensureStaffRosterLoaded() {
 function populateAmPickerDropdown(selectedAmName) {
   const sel = document.getElementById('admin-am-picker');
   if (!sel) return;
-  const ams = ALL_STAFF.filter(s => s.role === 'am');
+  // Deactivated staff (2026-07-18, added alongside the Users tab) are excluded from
+  // new picks — same convention as deactivated groups in the AE assignment dropdown —
+  // except a match against the group's own already-set am_name, kept selectable so
+  // editing a group whose AM has since been deactivated doesn't silently blank it out.
+  const ams = ALL_STAFF.filter(s => s.role === 'am' && (s.active !== false || (selectedAmName && s.name.toLowerCase() === selectedAmName.trim().toLowerCase())));
   const matched = selectedAmName ? ams.find(a => a.name.toLowerCase() === selectedAmName.trim().toLowerCase()) : null;
   sel.innerHTML = '<option value="">— Select AM (or type below) —</option>' +
-    ams.map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+    ams.map(a => `<option value="${esc(a.name)}">${esc(a.name)}${a.active === false ? ' (inactive)' : ''}</option>`).join('');
   sel.value = matched ? matched.name : '';
 }
 

@@ -853,6 +853,50 @@ row-action buttons (Group ×3, Services ×2, Sections ×2, Intake Forms ×2, AEs
 Clients ×1, Reconcile ×2 — one more turned up matching by coincidence) now share the
 exact same size string.
 
+**Users tab — BUILT 2026-07-18.** Claire needs to add Carol/Peggy/Shania's AM contact
+info (email, Trello handle, calendar URL) and asked for a real editor instead of raw
+SQL, "since we will need it for the next stages" (strategist/accounting roles landing
+later). New "Users" admin tab manages `admin_users` (the login table itself) directly —
+full CRUD (Name/Role/Email/AM Trello Handle/AM Calendar URL/password), restricted to
+super-admin only (same sensitivity level as Legal Text/Notifications/Reconcile, since
+this table holds login credentials for the whole team). Design decisions:
+- Keyed by NAME (admin_users has no separate id exposed anywhere in this app — name is
+  the natural key login itself already uses), so `admin_save_user` takes an
+  `p_original_name` to support renaming, same insert-or-update shape as every other
+  `admin_save_*` RPC.
+- Role dropdown deliberately only offers Account Manager / Super Admin for now — NOT
+  Strategist/Accounting, since those roles have no actual permission-gating built yet
+  and would behave identically to Super Admin if selectable today. Add them as real
+  options once role-based tab visibility (already discussed, deferred) actually lands.
+- Added a `active` boolean column (soft-deactivate, same pattern as Services/Sections/
+  Intake Forms/AEs/Groups) — a deactivated user can't log in but their history/
+  assignments aren't destroyed. This wasn't explicitly requested; flagging that it's
+  in scope for you to veto if you'd rather leave it out.
+- Password changes go through a dedicated "New Password" field, hashed server-side
+  (never stored or transmitted in plaintext beyond the one hashing pass) — required on
+  create, optional (blank = keep current) on edit.
+- Loose end this surfaced and fixed in the same pass: `admin_get_staff` now also
+  returns `active`, and the Group editor's AM picker (`populateAmPickerDropdown`) now
+  excludes deactivated staff from new picks — matching the same convention already used
+  for deactivated groups in the AE assignment dropdown — while still keeping a group's
+  *already-assigned* AM selectable/visible (labeled "(inactive)") so editing that group
+  never silently blanks out its AM.
+
+Verified via `node --check`-equivalent syntax scan (no errors) and a Playwright
+headless-browser simulation against a mocked `admin_get_staff`/`admin_save_user`:
+create-with-password succeeds, create-without-password is rejected client-side before
+any network call, editing an existing user's email while leaving password blank
+updates the email and leaves the password payload key absent entirely (server keeps
+old hash), and deactivate correctly flips `active` to false. Also separately verified
+the AM-picker fix: an inactive AM is excluded from a fresh dropdown build, but still
+appears (marked "(inactive)") and stays selected when the group being edited already
+has that AM assigned.
+
+SQL to run (not yet executed by Claire — gave inline in chat, not committed to the
+repo): adds `admin_users.active`, updates `admin_get_staff` to return it, and adds the
+new `admin_save_user` RPC (insert-or-update, password-hashed, `v_role = 'super'`-gated,
+uses the same safe `case when p_data ? 'x'` pattern as every other admin_save_* RPC).
+
 ---
 
 ## STATUS SUMMARY
