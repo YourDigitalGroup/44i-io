@@ -791,6 +791,36 @@ signature, not part of intake) and would be unaffected either way — the intake
 idea would help but isn't the single biggest contributor on its own. Logged here for
 whenever Claire is ready to revisit; nothing needs to happen until then.
 
+**Import AEs from Trello board members — BUILT 2026-07-18.** Claire finished
+importing her ~300-client Trello base and asked for an equivalent bulk-add for AEs
+(~300 of those too) — confirmed her staff are already board members, which is what
+makes this possible. Same review-before-create spirit as the Client import, but
+scans a board's MEMBERS (`trello_get_board_members`, already built earlier this
+session for AM/AE card assignment) instead of its LISTS — there's no per-AE Trello
+object the way a client has its own list. A board's member list includes the AM (and
+possibly super admins), not just AEs, so this is deliberately never an auto-import —
+new "Import from Trello" panel on the AEs tab shows every member as a checkbox-
+reviewed checklist (default-checked, same as the Client import), and Claire unchecks
+anyone who isn't actually an AE before confirming. Trello's members endpoint doesn't
+expose email, so only name + Trello handle import automatically — email still needs
+filling in per AE afterward, same limitation already true of the AE picker generally.
+
+**Real design difference from the Client import, worth being explicit about**: dedup
+is scoped to the SELECTED GROUP ONLY, not global. A Trello list genuinely can't
+belong to two different clients (global dedup was correct there), but the AE table is
+inherently per-group (same shape as the Client picker — "this AE only appears in the
+picker for this group's form") — the same real person legitimately needs a SEPARATE
+`ae` row for each group they work across. Deduping globally by Trello handle would
+have wrongly blocked re-adding a real AE to their second or third group. Reuses the
+existing `admin_save_ae` RPC (no new backend needed) and the same generic group-
+dropdown populator already shared by the Client import/edit-form pickers (renamed its
+comment to reflect three callers now, not renaming the function itself). Verified via
+a real headless-browser test: confirmed the critical per-group distinction directly
+(a person already an AE on group A is correctly excluded when scanning group A, but
+correctly still shows up as importable when scanning group B, even though they're the
+same real person) — and confirmed unchecking a non-AE candidate (simulating
+unchecking the AM) correctly excludes them from what actually gets saved.
+
 ---
 
 ## STATUS SUMMARY

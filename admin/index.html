@@ -695,13 +695,34 @@
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Account Executives</p>
             <p style="font-size:11px;color:var(--muted)">Powers the AE picker on the public form — selecting a name autofills their Trello handle instead of retyping it every submission.</p>
           </div>
-          <button id="admin-new-ae-btn" onclick="adminNewAe()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New AE</button>
+          <div style="display:flex;gap:8px">
+            <button onclick="openAeImportPanel()" style="padding:8px 16px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Import from Trello</button>
+            <button id="admin-new-ae-btn" onclick="adminNewAe()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New AE</button>
+          </div>
         </div>
 
         <div style="margin-bottom:16px;max-width:280px">
           <select id="ae-filter-group" onchange="renderAdminAeList()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;background:#fff">
             <option value="">All groups</option>
           </select>
+        </div>
+
+        <!-- Import-from-Trello panel — scans a group's board MEMBERS (not lists, unlike
+             the Client import) and shows them as a review-before-create checklist. A
+             board's members include the AM (and possibly super admins), not just AEs, so
+             this is deliberately not an auto-import — Claire unchecks anyone who isn't
+             actually an AE for that group before anything gets created. -->
+        <div id="admin-ae-import-panel" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Import AEs from Trello Board Members</p>
+          <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">
+            <div>
+              <label class="lbl">Group</label>
+              <select id="ae-import-group" style="padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff;min-width:220px"></select>
+            </div>
+            <button onclick="scanAeImportCandidates()" style="padding:9px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Scan Board Members</button>
+            <button onclick="closeAeImportPanel()" style="padding:9px 16px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+          <div id="admin-ae-import-results"></div>
         </div>
 
         <div id="admin-ae-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
@@ -2603,6 +2624,103 @@ async function adminToggleAeActive(id, makeActive) {
   }
 }
 
+// ── IMPORT AES FROM TRELLO BOARD MEMBERS (2026-07-18) ───────────
+// Same review-before-create spirit as the Client import, but scans a board's MEMBERS
+// (trello_get_board_members, already built for AM/AE card assignment) instead of its
+// LISTS — there's no per-AE Trello object the way a client has its own list. A board's
+// member list includes the AM (and possibly super admins), not just AEs, so this is
+// deliberately never an auto-import — every candidate is reviewed and can be
+// unchecked. Trello's members endpoint doesn't expose email, so only name + Trello
+// handle import automatically; email still needs filling in per AE afterward.
+//
+// Dedup is scoped to the SELECTED GROUP ONLY, unlike the Client import's global
+// dedup-by-trello-list-id — a Trello list genuinely can't belong to two different
+// clients, but the same real person legitimately CAN be a separate `ae` row for each
+// of several groups they work across (the AE table is inherently per-group, same
+// shape as the Client picker). So this only skips a candidate if THIS group already
+// has an AE with that Trello handle, not if they exist as an AE anywhere at all.
+let AE_IMPORT_CANDIDATES = [];
+
+function openAeImportPanel() {
+  populateClientGroupDropdown('ae-import-group', null, true); // reused helper, generic enough
+  document.getElementById('admin-ae-import-results').innerHTML = '';
+  document.getElementById('admin-ae-import-panel').style.display = 'block';
+}
+
+function closeAeImportPanel() {
+  document.getElementById('admin-ae-import-panel').style.display = 'none';
+  document.getElementById('admin-ae-import-results').innerHTML = '';
+  AE_IMPORT_CANDIDATES = [];
+}
+
+async function scanAeImportCandidates() {
+  const groupId = document.getElementById('ae-import-group').value;
+  const resultsEl = document.getElementById('admin-ae-import-results');
+  const group = allGroups.find(g => g.id === groupId);
+  if (!group?.trello_board_id) {
+    resultsEl.innerHTML = '<p style="color:#991B1B;font-size:12px">This group has no Trello board configured.</p>';
+    return;
+  }
+  resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Scanning board members…</p>';
+  try {
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'trello_get_board_members', board_id: group.trello_board_id })
+    });
+    const members = await res.json();
+    if (!Array.isArray(members)) throw new Error('Could not read board members');
+
+    // Only this group's own existing AEs count for dedup — see comment above.
+    const groupAes = ALL_AES.filter(a => a.group_id === groupId);
+    const linkedHandles = new Set(groupAes.map(a => (a.trello_handle || '').toLowerCase().replace(/^@/, '')));
+    AE_IMPORT_CANDIDATES = members.filter(m => !linkedHandles.has((m.username || '').toLowerCase()));
+
+    if (!AE_IMPORT_CANDIDATES.length) {
+      resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:20px">Every member of this board is already an AE on this group.</p>';
+      return;
+    }
+
+    let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:10px">A board's members include the AM (and possibly super admins) — uncheck anyone who isn't actually an AE before importing.</p>
+      <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;margin-bottom:12px">`;
+    AE_IMPORT_CANDIDATES.forEach((m, idx) => {
+      html += `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12.5px;cursor:pointer">
+        <input type="checkbox" id="ae-import-candidate-${idx}" checked style="width:14px;height:14px;accent-color:var(--accent)"/>
+        ${esc(m.fullName || m.username)} <span style="color:var(--muted);font-family:monospace;font-size:11px">@${esc(m.username)}</span>
+      </label>`;
+    });
+    html += `</div><button onclick="importSelectedAes('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
+    resultsEl.innerHTML = html;
+  } catch(e) {
+    resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Error scanning board members: ${esc(e.message)}</p>`;
+  }
+}
+
+async function importSelectedAes(groupId) {
+  const selected = AE_IMPORT_CANDIDATES.filter((m, idx) => document.getElementById(`ae-import-candidate-${idx}`)?.checked);
+  if (!selected.length) { showToast('Nothing selected to import', 'error'); return; }
+  let created = 0, failed = 0;
+  for (const m of selected) {
+    try {
+      await sb('rpc/admin_save_ae', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '',
+          p_pw: currentAdminUser?.pw || '',
+          p_ae_id: null,
+          p_data: { name: m.fullName || m.username, trello_handle: '@' + m.username, group_id: groupId }
+        })
+      });
+      created++;
+    } catch(e) {
+      failed++;
+    }
+  }
+  showToast(`Imported ${created} AE${created !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`, failed ? 'error' : 'success');
+  closeAeImportPanel();
+  await loadAdminAes();
+}
+
 // ── LEGAL TEXT (Agreement & Disclaimers, global — same for every group) ────────
 // Maps each admin textarea id to its column in the legal_content singleton row.
 const LEGAL_FIELDS = [
@@ -2873,6 +2991,9 @@ function dismissReconcileRow(idx) {
 // access here (same as Orders) — no group scoping, any admin can help on any client.
 let ALL_CLIENTS = [];
 
+// Generic "pick a group" dropdown populator, despite the client-specific name (kept to
+// avoid a pointless rename) — also reused by the Client import panel and the AE import
+// panel's group picker, since all three need the exact same behavior.
 function populateClientGroupDropdown(selectId, selectedId, includeInactive) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
