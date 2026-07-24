@@ -837,6 +837,22 @@ went out (previously would have been two). Gave Claire cleanup SQL (a
 what's duplicated, then a `row_number()`-based delete keeping one row per
 group+handle) for the duplicates already created before this fix landed.
 
+**Row-action button sizing normalized across all admin tabs — BUILT 2026-07-18.**
+Claire noticed the Edit/Deactivate/Reactivate/Pricing buttons were visibly different
+sizes between tabs and asked to match the Group editor's size. Confirmed: Group used
+`padding:5px 12px;border-radius:6px;font-size:12px`, while Services/Sections/Intake
+Forms/AEs/Clients all used a smaller `padding:3px 9px;border-radius:5px;font-size:10px`
+(9 identical button instances, one global find-and-replace), and Reconcile's
+Confirm/Dismiss buttons used a third, in-between size. Normalized all of them to the
+Group editor's size. Deliberately left every other differently-sized button in the
+file untouched (Close buttons, Manage Workflows' Rename/Delete, the intake-form-
+builder's Add/Remove Section/Question buttons, etc.) — those aren't the same kind of
+row-action button Claire flagged, and changing them wasn't asked for. Verified via a
+fresh structural check (no syntax errors) and a grep confirming all 12 targeted
+row-action buttons (Group ×3, Services ×2, Sections ×2, Intake Forms ×2, AEs ×2,
+Clients ×1, Reconcile ×2 — one more turned up matching by coincidence) now share the
+exact same size string.
+
 ---
 
 ## STATUS SUMMARY
