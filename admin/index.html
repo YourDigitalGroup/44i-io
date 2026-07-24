@@ -1651,12 +1651,12 @@ function renderSuggestedMap() {
       // the old per-section restriction (and its disabled "ⓘ" placeholder) no longer
       // applies anywhere.
       const deactivateBtn = !isSuperAdmin ? '' :
-        `<button onclick="adminToggleServiceActive('${esc(s.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+        `<button onclick="adminToggleServiceActive('${esc(s.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
       // Matches the EXACT pattern used for the Groups Pricing button: AM sees nothing at
       // all here, not a placeholder dash (an earlier version showed "—", which read like
       // a mystery unlabeled column since the header itself has no title — caught live).
       const editBtn = isSuperAdmin
-        ? `<button onclick="adminEditService('${esc(s.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
+        ? `<button onclick="adminEditService('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
         : '';
       // Drag-and-drop reorder: only offered when it would actually mean something — super
       // admin only (matches Edit's own gating), active rows only (inactive rows don't
@@ -1840,10 +1840,10 @@ function renderAdminSectionsList() {
       ? `ondragover="sectionDragOver(event)" ondragleave="sectionDragLeave(event)" ondrop="sectionDrop(event,'${esc(sec.id)}')"`
       : '';
     const editBtn = isSuperAdmin
-      ? `<button onclick="adminEditSection('${esc(sec.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
+      ? `<button onclick="adminEditSection('${esc(sec.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
       : '';
     const deactivateBtn = !isSuperAdmin ? '' :
-      `<button onclick="adminToggleSectionActive('${esc(sec.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+      `<button onclick="adminToggleSectionActive('${esc(sec.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}" ${dragAttrs}>
       <td style="padding:8px 10px;text-align:center">${dragHandle}</td>
       <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(sec.id)}</td>
@@ -2181,10 +2181,10 @@ function renderAdminIntakeList() {
     const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const editBtn = isSuperAdmin
-      ? `<button onclick="adminEditIntakeForm('${esc(f.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
+      ? `<button onclick="adminEditIntakeForm('${esc(f.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`
       : '';
     const deactivateBtn = !isSuperAdmin ? '' :
-      `<button onclick="adminToggleIntakeFormActive('${esc(f.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+      `<button onclick="adminToggleIntakeFormActive('${esc(f.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
       <td style="padding:8px 10px;font-family:monospace;font-size:11px;color:var(--muted)">${esc(f.id)}</td>
       <td style="padding:8px 10px">${esc(f.title || '')}${inactiveBadge}</td>
@@ -2519,8 +2519,8 @@ function renderAdminAeList() {
     const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const groupName = allGroups.find(g => g.id === a.group_id)?.name || '<span style="color:var(--muted)">—</span>';
-    const editBtn = `<button onclick="adminEditAe('${esc(a.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`;
-    const deactivateBtn = `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    const editBtn = `<button onclick="adminEditAe('${esc(a.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`;
+    const deactivateBtn = `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
       <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
       <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(a.trello_handle || '—')}</td>
@@ -2953,8 +2953,8 @@ function renderAdminReconcile() {
         ${confidenceBadge}
       </td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">
-        <button onclick="confirmReconcileRow(${idx})" style="padding:4px 12px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #BFDBFE;background:#EFF6FF;color:#1d4ed8">Confirm</button>
-        <button onclick="dismissReconcileRow(${idx})" style="padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--muted);margin-left:4px">Dismiss</button>
+        <button onclick="confirmReconcileRow(${idx})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #BFDBFE;background:#EFF6FF;color:#1d4ed8">Confirm</button>
+        <button onclick="dismissReconcileRow(${idx})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--muted);margin-left:4px">Dismiss</button>
       </td>
     </tr>`;
   });
@@ -3085,7 +3085,7 @@ function renderAdminClients() {
       <td style="padding:8px 10px">${esc(c.city || '—')}</td>
       <td style="padding:8px 10px">${linkedBadge}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">
-        <button onclick="adminEditClient('${esc(c.id)}')" style="padding:3px 9px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">Edit</button>
+        <button onclick="adminEditClient('${esc(c.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">Edit</button>
       </td>
     </tr>`;
   });
