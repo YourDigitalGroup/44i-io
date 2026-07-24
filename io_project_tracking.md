@@ -821,6 +821,22 @@ correctly still shows up as importable when scanning group B, even though they'r
 same real person) — and confirmed unchecking a non-AE candidate (simulating
 unchecking the AM) correctly excludes them from what actually gets saved.
 
+**Duplicate-AE bug found and fixed — 2026-07-18.** Claire accidentally created
+duplicate AEs for a group via the new import. The per-group dedup logic itself was
+already confirmed correct (verified above), so this pointed at a different, real bug:
+neither "Import Selected" button (AE or Client) guarded against being clicked twice
+in quick succession — a double-click could fire two concurrent import runs against
+the same candidate list before the panel closed, each independently creating the same
+rows. Fixed both `importSelectedAes` and `importSelectedClients` with a synchronous
+guard — the button disables itself (and shows "Importing…") on the very first call,
+before anything `await`s, closing the race window entirely; a second call while
+already running is a no-op. Verified via a real headless-browser test that fired two
+overlapping calls back-to-back and confirmed only one `admin_save_ae` call actually
+went out (previously would have been two). Gave Claire cleanup SQL (a
+`select ... group by group_id, trello_handle having count(*) > 1` to see exactly
+what's duplicated, then a `row_number()`-based delete keeping one row per
+group+handle) for the duplicates already created before this fix landed.
+
 ---
 
 ## STATUS SUMMARY

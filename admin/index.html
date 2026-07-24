@@ -2689,7 +2689,7 @@ async function scanAeImportCandidates() {
         ${esc(m.fullName || m.username)} <span style="color:var(--muted);font-family:monospace;font-size:11px">@${esc(m.username)}</span>
       </label>`;
     });
-    html += `</div><button onclick="importSelectedAes('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
+    html += `</div><button id="ae-import-selected-btn" onclick="importSelectedAes('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
     resultsEl.innerHTML = html;
   } catch(e) {
     resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Error scanning board members: ${esc(e.message)}</p>`;
@@ -2697,8 +2697,14 @@ async function scanAeImportCandidates() {
 }
 
 async function importSelectedAes(groupId) {
+  // Guards against a double-click firing this twice before the panel closes (the actual
+  // cause of Claire's accidental duplicate AEs, 2026-07-18) — disabling synchronously,
+  // before anything awaits, closes the race window completely.
+  const btn = document.getElementById('ae-import-selected-btn');
+  if (btn?.disabled) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
   const selected = AE_IMPORT_CANDIDATES.filter((m, idx) => document.getElementById(`ae-import-candidate-${idx}`)?.checked);
-  if (!selected.length) { showToast('Nothing selected to import', 'error'); return; }
+  if (!selected.length) { showToast('Nothing selected to import', 'error'); if (btn) { btn.disabled = false; btn.textContent = 'Import Selected'; } return; }
   let created = 0, failed = 0;
   for (const m of selected) {
     try {
@@ -3225,7 +3231,7 @@ async function scanClientImportCandidates() {
         ${esc(l.name)} ${archivedBadge}
       </label>`;
     });
-    html += `</div><button onclick="importSelectedClients('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
+    html += `</div><button id="client-import-selected-btn" onclick="importSelectedClients('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
     resultsEl.innerHTML = html;
   } catch(e) {
     resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Error scanning board: ${esc(e.message)}</p>`;
@@ -3233,8 +3239,13 @@ async function scanClientImportCandidates() {
 }
 
 async function importSelectedClients(groupId) {
+  // Same double-click guard as importSelectedAes — disabling synchronously, before
+  // anything awaits, closes the race window completely.
+  const btn = document.getElementById('client-import-selected-btn');
+  if (btn?.disabled) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
   const selected = CLIENT_IMPORT_CANDIDATES.filter((l, idx) => document.getElementById(`import-candidate-${idx}`)?.checked);
-  if (!selected.length) { showToast('Nothing selected to import', 'error'); return; }
+  if (!selected.length) { showToast('Nothing selected to import', 'error'); if (btn) { btn.disabled = false; btn.textContent = 'Import Selected'; } return; }
   let created = 0, failed = 0;
   for (const l of selected) {
     try {
