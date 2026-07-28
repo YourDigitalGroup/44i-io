@@ -2842,6 +2842,12 @@ async function adminSaveUser() {
     });
     showToast(isNew ? 'User created!' : 'User updated!');
     document.getElementById('admin-user-form').style.display = 'none';
+    // ALL_STAFF (the Group editor's AM picker roster) is cached once per page load by
+    // ensureStaffRosterLoaded() — without clearing it here, a Trello handle/calendar URL
+    // just saved on this tab would silently keep showing its old (blank) value on the
+    // Groups tab until the whole page is reloaded. Found 2026-07-18 after Claire added
+    // AM info here and it didn't show up when picking that AM on a group.
+    ALL_STAFF = [];
     await loadAdminUsers();
   } catch(e) {
     showToast('Error saving user: ' + e.message, 'error');
@@ -2863,6 +2869,7 @@ async function adminToggleUserActive(name, makeActive) {
       })
     });
     showToast(`User ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    ALL_STAFF = []; // same cache-invalidation reasoning as adminSaveUser() above
     loadAdminUsers();
   } catch(e) {
     showToast('Error updating user: ' + e.message, 'error');
