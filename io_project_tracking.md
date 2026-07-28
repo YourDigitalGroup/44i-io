@@ -1184,15 +1184,179 @@ relationship) to check what TapClicks actually exposes before deciding which way
 build the automation. Not assumed either way — just flagging the option since it could
 change the entire shape of this piece.
 
-**Still open / needs Claire's input before any of this gets built:**
-- Does TapClicks already aggregate this data in a way this platform could pull from,
-  or does automation mean direct integrations with all four ad platforms?
-- IO visibility for strategists — still waiting on confirmation.
+**TapClicks/Data Studio split clarified (2026-07-18):** it's not one-or-the-other —
+44i uses TapClicks specifically for Simpli.fi reporting, because their Google
+connection to it keeps having its token expire; the majority of everything else stays
+in Google Data Studio since TapClicks costs more to run broadly. So this isn't "one
+aggregator covers everything" — it's a mixed setup, per platform, largely for
+reliability/cost reasons rather than data availability.
+
+**Real risk this surfaces, not yet answered:** if Simpli.fi's OAuth token expiring is
+a property of *Simpli.fi's own API* (not something specific to how Google Data Studio
+happens to implement its connector), a direct Simpli.fi integration built for this
+platform could hit the exact same expiring-token problem — meaning TapClicks might be
+the more reliable path for Simpli.fi specifically, even though it's the pricier option
+generally. Needs Claire (or whoever manages the TapClicks/Simpli.fi relationship) to
+confirm whether the token issue is Data-Studio-specific or inherent to Simpli.fi's API
+before deciding how to pull Simpli.fi data for this platform.
+
+**Both remaining questions RESOLVED 2026-07-18:**
+- **IO visibility for strategists** — Claire confirmed strategists are already set up
+  to receive every IO as a BCC today (outside this platform, presumably via each
+  group's existing notification settings — the `always_bcc_recipients` mechanism
+  built earlier this session). Since they already see every IO by email, giving them
+  the same visibility inside the strategist portal (an Orders-style view, same shape
+  as what AMs already get) is just matching existing practice, not a new access grant.
+  Confirms the earlier assumption that Layout rows should be able to auto-populate
+  from real order/line-item data.
+- **Simpli.fi token issue** — Claire believes it's specifically because Data Studio's
+  Simpli.fi connector isn't a native integration (i.e., a Data-Studio-side limitation),
+  not a property of Simpli.fi's own API. This suggests a direct, purpose-built
+  Simpli.fi integration for this platform should be fine on its own merits — but this
+  is Claire's belief, not something independently verified against Simpli.fi's actual
+  API docs, so worth a quick real check before committing engineering time to a direct
+  integration (cheap to verify up front; expensive to discover mid-build that Simpli.fi
+  really does expire tokens unusually often regardless of client).
+
+**Still open before any of this gets built:**
+- Quick verification of the Simpli.fi API's real token/auth behavior (see above) before
+  assuming a direct integration is the right call.
+- For the other three platforms (Google Ads, Facebook Ads, The Trade Desk) — direct
+  integration, or any reason to route those through TapClicks too? (Leaning direct,
+  not yet explicitly confirmed.)
 - Scope/sequencing: platform-report automation is a substantially bigger lift than the
   Layout-equivalent dashboard itself (which is mostly "derive from data already in
   Supabase," this project's usual pattern) — worth deciding whether the dashboard ships
   first with the existing manual paste step, and automation comes as its own later
   phase, rather than treating both as one project.
+- Whether strategist Orders-view access should be scoped per-strategist (like the
+  per-group AM scoping already built) or see everything, given Claire's answer that
+  the portal is shared but separated by strategist.
+
+All four rounds of scoping questions from this pass are now resolved except the items
+above — this is likely close to ready for an actual implementation plan once those
+last few are nailed down, rather than more open-ended scoping.
+
+**Pacing color thresholds — RESOLVED 2026-07-18.** Claire confirmed the exact
+conditional-formatting bands already in use on the pacing spreadsheet: **light green
+≥ 90%, light yellow 70%–89.99%, light red ≤ 69.99%.** A simple 3-band system, not the
+4-state "Ahead / On Pace / Behind / At Risk" language invented for the first mockup
+draft — that was a guess, corrected once Claire pointed to the real spreadsheet rule.
+Whatever gets built should show the literal percentage with this exact 3-color
+threshold, not an invented label system.
+
+**Concept mockup + plan/questions doc — BUILT 2026-07-18, shared as an Artifact (not
+committed to the repo — a discussion aid, not application code).** Claire asked for
+something simple to have ready to share with the strategist team, since this section
+is being scoped from scratch rather than mid-build like the rest of the platform.
+Built a single page with three parts: (1) a static visual mockup of the dashboard using
+the pacing template's real columns, sample fictional data, and the corrected 3-band
+pacing color coding; (2) a plain-language recap of every decision from this scoping
+pass (rows auto-populate from the IO, Goal auto-calculates from spend + rate including
+per-group overrides, Optimize is a dated log not a single field, IO visibility already
+matches existing BCC practice, report automation is a later phase); (3) open questions
+grouped by topic (Pacing & Goals, Optimize Log, Day-to-Day Use, Reporting Automation)
+for Claire to walk the strategists through directly. Explicitly labeled throughout as
+a concept only — nothing built, meant to gather feedback before any build starts.
+
+**Mockup revised 2026-07-18 (same day) — two corrections from Claire's review:**
+- **Actual Spend added alongside Actual Performance.** The mockup originally only
+  showed Actual clicks/impressions; Claire wants dollars spent tracked too, not just
+  the performance metric. Added as its own column, distinct from Goal/Budget.
+- **Platform is strategist-selected, not auto-populated.** Originally assumed
+  Group/Client/Platform/Tactic could all auto-populate from the matching IO line item.
+  Claire corrected this: Platform specifically needs to be picked by the strategist,
+  because the same ordered tactic can run on more than one platform depending on how
+  it's actually executed (the IO records what tactic a client bought, not which ad
+  platform fulfills it). Tactic, Client, Budget, and dates still auto-populate — this
+  is a narrower exception, not a reversal of the "derive from the order" plan. Updated
+  the mockup's auto/manual legend dots and the "Rows come from the IO" plan card to
+  reflect Platform as the one exception, and added two new questions for the
+  strategists: whether pacing should weigh Actual Spend, Actual Performance, or both,
+  and whether a tactic's platform ever changes mid-flight or is set once and left alone.
+
+**Mockup revised again 2026-07-18 (same day) — layout/grouping corrections:**
+- **Budget/Actual Spend and Goal/Actual Perf. now sit adjacent** — Claire wants the two
+  spend figures next to each other and the two performance figures next to each other,
+  so they're easy to compare side by side, instead of the original interleaved order
+  (Budget, Goal, Actual Spend, Actual Perf.). New column order: Client, Tactic,
+  Platform, Flight, Budget, Actual Spend, Goal, Actual Perf., Pacing, Optimize Log,
+  Notes.
+- **Rows grouped visually by Group** — matches how the rest of the platform already
+  organizes everything (Groups is the top-level entity everywhere else in this app).
+  The mockup now shows a group-header row above each cluster of that group's campaigns,
+  instead of repeating the group name in every row's client cell.
+- **Start/End dates added back as a "Flight" column** — Claire confirmed these are
+  needed; they'd been described in the plan text ("flight dates populate from the
+  order") but weren't actually shown in the visual table until now.
+- Added a new "Rows grouped by Group" plan card explaining the grouping choice.
+- Structural check: tag-balance verified (table/thead/tbody/tr/td/th/div/section counts
+  all matched) before republishing.
+
+**New requirement surfaced 2026-07-18 (same day) — historical data / per-strategist
+tabs.** Claire clarified something she said she should have mentioned from the start:
+the current pacing spreadsheet has a separate tab per strategist AND a separate tab
+per month, specifically so historical data stays available alongside the current
+month. This doesn't need to carry over as literal "tabs" in the portal — a database-
+backed dashboard can just filter by month and by strategist instead of duplicating a
+whole sheet each time. Added to the mockup: a "July 2026 ▾" month selector next to the
+existing My Campaigns/All Strategists scope toggle, plus a short inline note
+explaining that history accumulates automatically instead of requiring a new tab each
+month. Added a new "History is a month picker, not a new tab" plan card, and a new
+"Historical data" question group covering: how far back strategists actually need to
+look in practice, whether a closed-out month should be locked/read-only or still allow
+adding Optimize Log entries retroactively, and whether they ever need to compare two
+months side by side. None of this is decided yet — purely added to the discussion doc
+for the strategist conversation, same as everything else in this section.
+
+**Gross Budget vs. In-Platform Budget split added 2026-07-18 (same day).** Claire
+clarified the single "Budget" column in the mockup needs to be two real columns,
+matching the original spreadsheet's actual F/G columns that got collapsed into one
+during the first mockup draft: **Gross Budget** (what the client pays) and
+**In-Platform Budget** (what actually gets spent with the ad platform, after agency
+margin). Updated the mockup's column order to Gross Budget → In-Platform Budget →
+Actual Spend → Goal → Actual Perf.
+
+**Real open question this surfaces, not yet decided:** Gross Budget is what's on the
+IO (the client's payment), so it can auto-populate the same way the rest of the order
+data does. In-Platform Budget is NOT something the IO records — it depends on the
+agency's margin arrangement for that client — so it's marked strategist-entered
+(manual) in the mockup, not automatic. This directly affects the earlier "Goal
+calculates itself automatically" plan: if Goal should be based on what's actually
+spent with the platform (In-Platform Budget) rather than what the client pays (Gross
+Budget), Goal can't be 100% automatic end-to-end after all — it would need In-Platform
+Budget entered first, then calculate from that. Flagged clearly in the mockup's plan
+card and added as a new question under Pacing & Goals rather than assumed either way.
+
+**Two more additions, same day (2026-07-18):**
+
+1. **In-Platform Budget should auto-calculate from an "accounting map."** Claire
+   resolved the Gross-vs-In-Platform Goal question from the entry above: Goal should
+   be based on In-Platform Budget, and In-Platform Budget itself should be calculated
+   automatically from Gross Budget via a new reference source she called "the
+   accounting map" that this project will also need to build/reference — not something
+   a strategist manually enters after all. Updated the mockup's In-Platform Budget
+   column to auto (was manual), and the plan card now describes it as automatic
+   pending the accounting map's real shape. **Nothing about the accounting map's
+   actual structure is known yet** — added as its own new question group: what it
+   contains (a margin % per client? per platform? per tier?), where it currently lives
+   (a spreadsheet, the accounting software, somewhere else), and who maintains it. This
+   needs real answers before any schema work can start — deliberately not guessed at.
+
+2. **Click-through detail view + live campaign link.** Claire asked whether
+   strategists could click a client/tactic row to see more granular platform-report
+   detail (to help pinpoint exactly what needs attention) and potentially a link to the
+   live campaign in the actual ad platform, once the API/automation work is in place.
+   Answered yes — added to the mockup as an expanded detail panel below a selected row
+   (Harbor & Vine used as the example), showing an ad-group-level breakdown pulled from
+   the same platform-report data already powering Actual Spend/Performance, plus a
+   "View in Simpli.fi ↗" link. Framed honestly: until platform APIs are connected, this
+   would be a plain reference link a strategist keeps updated by hand, becoming a real
+   deep link only once that automation phase lands — not promising live-linking before
+   the API work it depends on exists. Added a new question group asking what specific
+   detail would actually help them (beyond the illustrative ad-group breakdown), and
+   whether a manually-kept reference link is worth having on its own before the real
+   API-based version exists.
 
 ---
 
