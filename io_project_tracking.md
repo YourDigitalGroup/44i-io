@@ -1293,6 +1293,22 @@ a concept only — nothing built, meant to gather feedback before any build star
 - Structural check: tag-balance verified (table/thead/tbody/tr/td/th/div/section counts
   all matched) before republishing.
 
+**New requirement surfaced 2026-07-18 (same day) — historical data / per-strategist
+tabs.** Claire clarified something she said she should have mentioned from the start:
+the current pacing spreadsheet has a separate tab per strategist AND a separate tab
+per month, specifically so historical data stays available alongside the current
+month. This doesn't need to carry over as literal "tabs" in the portal — a database-
+backed dashboard can just filter by month and by strategist instead of duplicating a
+whole sheet each time. Added to the mockup: a "July 2026 ▾" month selector next to the
+existing My Campaigns/All Strategists scope toggle, plus a short inline note
+explaining that history accumulates automatically instead of requiring a new tab each
+month. Added a new "History is a month picker, not a new tab" plan card, and a new
+"Historical data" question group covering: how far back strategists actually need to
+look in practice, whether a closed-out month should be locked/read-only or still allow
+adding Optimize Log entries retroactively, and whether they ever need to compare two
+months side by side. None of this is decided yet — purely added to the discussion doc
+for the strategist conversation, same as everything else in this section.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
