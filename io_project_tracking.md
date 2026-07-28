@@ -1200,18 +1200,42 @@ generally. Needs Claire (or whoever manages the TapClicks/Simpli.fi relationship
 confirm whether the token issue is Data-Studio-specific or inherent to Simpli.fi's API
 before deciding how to pull Simpli.fi data for this platform.
 
-**Still open / needs Claire's input before any of this gets built:**
-- Is Simpli.fi's expiring-token issue specific to Google Data Studio's connector, or
-  a property of Simpli.fi's API generally (determines whether a direct integration
-  would hit the same wall TapClicks was brought in to solve)?
+**Both remaining questions RESOLVED 2026-07-18:**
+- **IO visibility for strategists** — Claire confirmed strategists are already set up
+  to receive every IO as a BCC today (outside this platform, presumably via each
+  group's existing notification settings — the `always_bcc_recipients` mechanism
+  built earlier this session). Since they already see every IO by email, giving them
+  the same visibility inside the strategist portal (an Orders-style view, same shape
+  as what AMs already get) is just matching existing practice, not a new access grant.
+  Confirms the earlier assumption that Layout rows should be able to auto-populate
+  from real order/line-item data.
+- **Simpli.fi token issue** — Claire believes it's specifically because Data Studio's
+  Simpli.fi connector isn't a native integration (i.e., a Data-Studio-side limitation),
+  not a property of Simpli.fi's own API. This suggests a direct, purpose-built
+  Simpli.fi integration for this platform should be fine on its own merits — but this
+  is Claire's belief, not something independently verified against Simpli.fi's actual
+  API docs, so worth a quick real check before committing engineering time to a direct
+  integration (cheap to verify up front; expensive to discover mid-build that Simpli.fi
+  really does expire tokens unusually often regardless of client).
+
+**Still open before any of this gets built:**
+- Quick verification of the Simpli.fi API's real token/auth behavior (see above) before
+  assuming a direct integration is the right call.
 - For the other three platforms (Google Ads, Facebook Ads, The Trade Desk) — direct
-  integration, or is there a reason to route any of those through TapClicks too?
-- IO visibility for strategists — still waiting on confirmation.
+  integration, or any reason to route those through TapClicks too? (Leaning direct,
+  not yet explicitly confirmed.)
 - Scope/sequencing: platform-report automation is a substantially bigger lift than the
   Layout-equivalent dashboard itself (which is mostly "derive from data already in
   Supabase," this project's usual pattern) — worth deciding whether the dashboard ships
   first with the existing manual paste step, and automation comes as its own later
   phase, rather than treating both as one project.
+- Whether strategist Orders-view access should be scoped per-strategist (like the
+  per-group AM scoping already built) or see everything, given Claire's answer that
+  the portal is shared but separated by strategist.
+
+All four rounds of scoping questions from this pass are now resolved except the items
+above — this is likely close to ready for an actual implementation plan once those
+last few are nailed down, rather than more open-ended scoping.
 
 ---
 
