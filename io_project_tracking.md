@@ -1358,6 +1358,34 @@ card and added as a new question under Pacing & Goals rather than assumed either
    whether a manually-kept reference link is worth having on its own before the real
    API-based version exists.
 
+**Accounting map headers received 2026-07-18 (same day):** Claire shared the actual
+column headers from the real accounting map: Item, Default Retail, YDA, 44i Cut %,
+44i Cut $, (Of Gross) Budgeted Spend, (0 is not fixed) 44i Fixed Cut, Retail CPM, 44i
+CPM, Platform CPM, Spend %.
+
+**Not enough to design a schema/formula from yet — asked Claire for specifics rather
+than guessing:**
+- What does **YDA** stand for?
+- **44i Cut %** vs. **(0 is not fixed) 44i Fixed Cut** — when a row has a nonzero
+  Fixed Cut, does that override the percentage cut for that item, or do the two
+  combine somehow?
+- Is **Item** the same thing as this project's `services` catalog rows (one accounting
+  map row per service), or a different, coarser/finer grouping?
+- Does **Spend %** mean the percentage of Gross that actually becomes in-platform
+  media spend, or something else?
+- Two apparently-parallel pricing shapes show up here — a percentage/dollar-cut model
+  (44i Cut %/$$) and a CPM model (Retail CPM / 44i CPM / Platform CPM). Does the
+  formula for In-Platform Budget depend on which pricing shape a given Item uses (i.e.
+  CPM-priced items use the CPM columns, percentage-priced items use the Cut columns),
+  or is one formula used universally?
+- Is this map company-wide per Item (a standard cut/rate applied the same way for
+  every group), or can an individual group's negotiated rate override it — and if so,
+  is that the same `io_pricing` override mechanism already built, or something
+  separate?
+
+No schema or formula work has started — this needs real answers first, same
+discipline as everything else parked in this section.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
