@@ -1160,13 +1160,39 @@ convention Claire and the AMs already know from pricing. This makes Goal fully
 automatic end to end: spend (from the order) ÷ rate (catalog default, or that group's
 override if one exists) — no per-campaign manual input needed after all.
 
-**Still open / needs Claire or the strategists' input before any of this gets built:**
-- Does the strategist portal need to reproduce the twice-weekly manual platform-report
-  paste step, or is automating that pull itself part of what "next stage" means?
-- Confirmation still pending: do strategists need to see the IO directly, or just the
-  order-line data that feeds their pacing view?
-- For non-SEM platforms/tactics, what does "Goal" mean (still assumed impressions/
-  clicks-shaped, not confirmed for every platform)?
+**Claire's answers, round 3 (2026-07-18):**
+- **Platform-report pulling should be automated** — not a reproduction of the manual
+  twice-weekly paste step. This is a real scope increase from "build a dashboard over
+  existing data" to "integrate with each ad platform's own reporting API (Google Ads,
+  Simpli.fi, Facebook Ads, The Trade Desk)" — each is its own OAuth/API-credential
+  setup, its own rate limits, and needs some kind of scheduled pull (a cron-style job,
+  not something that happens live in a page load). Meaningfully bigger than anything
+  built so far in this project — flagging that clearly rather than treating it as a
+  small add-on.
+- **IO visibility**: still waiting on her confirmation — no answer yet.
+- **Goal metric confirmed**: non-SEM platforms/tactics use **impressions**; SEM
+  specifically uses **clicks**. (Resolves the last open question on what Goal means.)
+
+**New consideration Claire raised: reporting overlap with Google Data Studio /
+TapClicks.** 44i currently uses both for client-facing reporting. Worth asking before
+any automation work starts: **does TapClicks already aggregate pulls from these same
+ad platforms** (Google Ads, Simpli.fi, Facebook Ads, The Trade Desk)? If so, pulling
+FROM TapClicks's own API/export (one integration) could replace building and
+maintaining four separate direct ad-platform integrations — meaningfully less work and
+fewer things that can break. This needs Claire (or whoever owns the TapClicks
+relationship) to check what TapClicks actually exposes before deciding which way to
+build the automation. Not assumed either way — just flagging the option since it could
+change the entire shape of this piece.
+
+**Still open / needs Claire's input before any of this gets built:**
+- Does TapClicks already aggregate this data in a way this platform could pull from,
+  or does automation mean direct integrations with all four ad platforms?
+- IO visibility for strategists — still waiting on confirmation.
+- Scope/sequencing: platform-report automation is a substantially bigger lift than the
+  Layout-equivalent dashboard itself (which is mostly "derive from data already in
+  Supabase," this project's usual pattern) — worth deciding whether the dashboard ships
+  first with the existing manual paste step, and automation comes as its own later
+  phase, rather than treating both as one project.
 
 ---
 
