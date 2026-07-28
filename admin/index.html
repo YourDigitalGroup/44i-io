@@ -30,7 +30,7 @@
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
-      <button onclick="adminLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✕ Close</button>
+      <button onclick="adminLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
     </div>
 
     <!-- Top-level section tabs: Groups | Orders -->
@@ -979,10 +979,10 @@
 // change needed ONLY because this file no longer lives inside the same
 // page as the public IO form:
 //
-// - `adminLogout()` — index.html's "✕ Close" button calls showAdmin(false),
+// - `adminLogout()` — index.html's "Logout" button calls showAdmin(false),
 //   which hides the admin panel and reveals the public form's own
 //   `.wrap` div. There is no public form here for it to reveal, so
-//   Close would otherwise leave a blank page. adminLogout() hides the
+//   this would otherwise leave a blank page. adminLogout() hides the
 //   admin panel and re-opens the login modal instead — the standalone
 //   equivalent of "logged out". This is the only behavior change from
 //   the original.
