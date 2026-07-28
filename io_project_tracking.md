@@ -1237,6 +1237,28 @@ All four rounds of scoping questions from this pass are now resolved except the 
 above — this is likely close to ready for an actual implementation plan once those
 last few are nailed down, rather than more open-ended scoping.
 
+**Pacing color thresholds — RESOLVED 2026-07-18.** Claire confirmed the exact
+conditional-formatting bands already in use on the pacing spreadsheet: **light green
+≥ 90%, light yellow 70%–89.99%, light red ≤ 69.99%.** A simple 3-band system, not the
+4-state "Ahead / On Pace / Behind / At Risk" language invented for the first mockup
+draft — that was a guess, corrected once Claire pointed to the real spreadsheet rule.
+Whatever gets built should show the literal percentage with this exact 3-color
+threshold, not an invented label system.
+
+**Concept mockup + plan/questions doc — BUILT 2026-07-18, shared as an Artifact (not
+committed to the repo — a discussion aid, not application code).** Claire asked for
+something simple to have ready to share with the strategist team, since this section
+is being scoped from scratch rather than mid-build like the rest of the platform.
+Built a single page with three parts: (1) a static visual mockup of the dashboard using
+the pacing template's real columns, sample fictional data, and the corrected 3-band
+pacing color coding; (2) a plain-language recap of every decision from this scoping
+pass (rows auto-populate from the IO, Goal auto-calculates from spend + rate including
+per-group overrides, Optimize is a dated log not a single field, IO visibility already
+matches existing BCC practice, report automation is a later phase); (3) open questions
+grouped by topic (Pacing & Goals, Optimize Log, Day-to-Day Use, Reporting Automation)
+for Claire to walk the strategists through directly. Explicitly labeled throughout as
+a concept only — nothing built, meant to gather feedback before any build starts.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
