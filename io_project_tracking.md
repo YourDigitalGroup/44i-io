@@ -1259,6 +1259,22 @@ grouped by topic (Pacing & Goals, Optimize Log, Day-to-Day Use, Reporting Automa
 for Claire to walk the strategists through directly. Explicitly labeled throughout as
 a concept only — nothing built, meant to gather feedback before any build starts.
 
+**Mockup revised 2026-07-18 (same day) — two corrections from Claire's review:**
+- **Actual Spend added alongside Actual Performance.** The mockup originally only
+  showed Actual clicks/impressions; Claire wants dollars spent tracked too, not just
+  the performance metric. Added as its own column, distinct from Goal/Budget.
+- **Platform is strategist-selected, not auto-populated.** Originally assumed
+  Group/Client/Platform/Tactic could all auto-populate from the matching IO line item.
+  Claire corrected this: Platform specifically needs to be picked by the strategist,
+  because the same ordered tactic can run on more than one platform depending on how
+  it's actually executed (the IO records what tactic a client bought, not which ad
+  platform fulfills it). Tactic, Client, Budget, and dates still auto-populate — this
+  is a narrower exception, not a reversal of the "derive from the order" plan. Updated
+  the mockup's auto/manual legend dots and the "Rows come from the IO" plan card to
+  reflect Platform as the one exception, and added two new questions for the
+  strategists: whether pacing should weigh Actual Spend, Actual Performance, or both,
+  and whether a tactic's platform ever changes mid-flight or is set once and left alone.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
