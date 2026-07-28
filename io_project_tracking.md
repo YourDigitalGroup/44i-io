@@ -1127,13 +1127,43 @@ described.
   table) or eventually connects to real ad-platform APIs is a much bigger, separate
   decision — not assumed one way or the other here.
 
+**Claire's answers, round 2 (2026-07-18):**
+- **Optimize** = a log entry: a date plus what the strategist did (an optimization
+  action taken on that date) — not a single status flag. Implies this is really a
+  one-to-many history (multiple dated entries over a campaign's life), not a single
+  editable field like Notes — worth designing as its own small table
+  (`pacing_optimizations` or similar: campaign line id, date, note) rather than one
+  text column, once this gets built.
+- **Goal** is impressions- and clicks-based for SEM specifically (confirms it varies —
+  other platforms/tactics may use a different metric; not yet asked one-by-one).
+- **Goals should be calculated automatically from the IO submission's budget and
+  CPM/CPC** — not manually typed. Claire explicitly wants this automatic if possible.
+
+**Checked feasibility of the auto-Goal idea against the real order data (read-only
+check, no changes):** this is genuinely buildable. `index.html`'s `submitIO()` already
+stores a `line_items` JSON array per order (`orders.line_items`), and each spend-priced
+line item already carries the client's monthly `spend` dollar amount alongside its
+`service_id`. That `service_id` resolves to the catalog's rate — `retail_cpm` for CPM-
+priced services, or the `sem-bp` CPC range ("$4–$12") for SEM specifically. So `Goal`
+could genuinely be derived as `spend ÷ CPM × 1000` (impressions) or `spend ÷ CPC`
+(clicks), with no new manual entry needed, confirming Claire's "automatic if possible"
+is realistic — not a promise made without checking.
+
+**One real design question this surfaces, not yet decided:** SEM's CPC is stored as a
+*range* ("$4–$12"), not a single number — computing a single Goal number needs picking
+a specific rate. Is that the group's actual negotiated/custom rate (if one exists) at
+the time the order was placed, the catalog's current default, or something the
+strategist enters once per campaign? This determines whether Goal is 100% automatic or
+"automatic with one strategist-set input." Needs Claire's call before building.
+
 **Still open / needs Claire or the strategists' input before any of this gets built:**
-- Does "Optimize" mean a status flag, a free-text action note, or something else?
-- Is "Goal" always an impressions/clicks range, or does it vary by platform/tactic?
-- Does the strategist portal need to reproduce the twice-weekly manual paste step, or
-  is automating that report-pull itself part of what "next stage" means?
+- The CPC-range question just above.
+- Does the strategist portal need to reproduce the twice-weekly manual platform-report
+  paste step, or is automating that pull itself part of what "next stage" means?
 - Confirmation still pending: do strategists need to see the IO directly, or just the
   order-line data that feeds their pacing view?
+- For non-SEM platforms/tactics, what does "Goal" mean (still assumed impressions/
+  clicks-shaped, not confirmed for every platform)?
 
 ---
 
