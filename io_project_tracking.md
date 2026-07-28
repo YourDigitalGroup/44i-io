@@ -1149,15 +1149,18 @@ could genuinely be derived as `spend ÷ CPM × 1000` (impressions) or `spend ÷ 
 (clicks), with no new manual entry needed, confirming Claire's "automatic if possible"
 is realistic — not a promise made without checking.
 
-**One real design question this surfaces, not yet decided:** SEM's CPC is stored as a
-*range* ("$4–$12"), not a single number — computing a single Goal number needs picking
-a specific rate. Is that the group's actual negotiated/custom rate (if one exists) at
-the time the order was placed, the catalog's current default, or something the
-strategist enters once per campaign? This determines whether Goal is 100% automatic or
-"automatic with one strategist-set input." Needs Claire's call before building.
+**CPC-range question — RESOLVED 2026-07-18.** Claire confirmed some groups' actual
+negotiated rate/split differs slightly from the catalog default, and asked for the
+same mechanism the Suggested Map/Custom Pricing already has: groups already carry an
+`io_pricing` JSONB override column (edited on each group's own Custom Pricing tab) that
+lets one group's price differ from the catalog default without touching every other
+group. The rate used for auto-calculating Goal should follow the exact same pattern —
+catalog default CPM/CPC unless a specific group has its own override set, same UI
+convention Claire and the AMs already know from pricing. This makes Goal fully
+automatic end to end: spend (from the order) ÷ rate (catalog default, or that group's
+override if one exists) — no per-campaign manual input needed after all.
 
 **Still open / needs Claire or the strategists' input before any of this gets built:**
-- The CPC-range question just above.
 - Does the strategist portal need to reproduce the twice-weekly manual platform-report
   paste step, or is automating that pull itself part of what "next stage" means?
 - Confirmation still pending: do strategists need to see the IO directly, or just the
