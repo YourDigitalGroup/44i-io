@@ -1309,6 +1309,25 @@ adding Optimize Log entries retroactively, and whether they ever need to compare
 months side by side. None of this is decided yet — purely added to the discussion doc
 for the strategist conversation, same as everything else in this section.
 
+**Gross Budget vs. In-Platform Budget split added 2026-07-18 (same day).** Claire
+clarified the single "Budget" column in the mockup needs to be two real columns,
+matching the original spreadsheet's actual F/G columns that got collapsed into one
+during the first mockup draft: **Gross Budget** (what the client pays) and
+**In-Platform Budget** (what actually gets spent with the ad platform, after agency
+margin). Updated the mockup's column order to Gross Budget → In-Platform Budget →
+Actual Spend → Goal → Actual Perf.
+
+**Real open question this surfaces, not yet decided:** Gross Budget is what's on the
+IO (the client's payment), so it can auto-populate the same way the rest of the order
+data does. In-Platform Budget is NOT something the IO records — it depends on the
+agency's margin arrangement for that client — so it's marked strategist-entered
+(manual) in the mockup, not automatic. This directly affects the earlier "Goal
+calculates itself automatically" plan: if Goal should be based on what's actually
+spent with the platform (In-Platform Budget) rather than what the client pays (Gross
+Budget), Goal can't be 100% automatic end-to-end after all — it would need In-Platform
+Budget entered first, then calculate from that. Flagged clearly in the mockup's plan
+card and added as a new question under Pacing & Goals rather than assumed either way.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
