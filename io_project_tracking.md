@@ -1386,6 +1386,35 @@ than guessing:**
 No schema or formula work has started — this needs real answers first, same
 discipline as everything else parked in this section.
 
+**Claire's answers, 2026-07-18 (same day):**
+1. **YDA = Group Cut %** — the white-label group's own cut, separate from 44i's cut.
+   So there are two cuts to account for: the Group's cut (YDA) and 44i's cut (44i Cut
+   %/$$), both presumably coming off Default Retail/Gross before arriving at the actual
+   in-platform media spend.
+2. **Fixed Cut vs. percentage cut interaction — still not resolved.** Claire isn't
+   sure herself and said this may need research on her end before it's answered.
+   **This is the one remaining blocker on the actual formula** — everything else below
+   is confirmed, but this piece specifically needs to come back from her before real
+   schema/formula work can start.
+3. **Item = the same as this project's `services` catalog rows**, confirmed — one
+   accounting map row per service. Very likely means this data becomes new columns on
+   the existing `services` table (or a table keyed 1:1 to it), not a new parallel
+   catalog — same "don't duplicate what already exists" principle used everywhere else
+   in this project.
+4. **Spend % confirmed** as the percentage of Gross that becomes actual in-platform
+   media spend.
+5. **One universal formula**, not split by CPM-priced vs. percentage-priced items —
+   simplifies the eventual calculation meaningfully.
+6. **Group-negotiated rates do exist** — confirms an override layer is needed. Still
+   to be confirmed: whether that's the same `io_pricing`-style override mechanism
+   already built for Custom Pricing, or a separate one specific to the accounting map
+   (not yet asked — worth clarifying once the fixed-cut question above comes back, so
+   both remaining questions can be resolved together rather than piecemeal).
+
+Still blocked on: the Fixed Cut/percentage-cut interaction (Claire researching), and
+whether group overrides reuse `io_pricing` or need their own mechanism. No formula,
+schema, or build work should start until both are answered.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
