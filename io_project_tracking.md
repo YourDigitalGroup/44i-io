@@ -1275,6 +1275,24 @@ a concept only — nothing built, meant to gather feedback before any build star
   strategists: whether pacing should weigh Actual Spend, Actual Performance, or both,
   and whether a tactic's platform ever changes mid-flight or is set once and left alone.
 
+**Mockup revised again 2026-07-18 (same day) — layout/grouping corrections:**
+- **Budget/Actual Spend and Goal/Actual Perf. now sit adjacent** — Claire wants the two
+  spend figures next to each other and the two performance figures next to each other,
+  so they're easy to compare side by side, instead of the original interleaved order
+  (Budget, Goal, Actual Spend, Actual Perf.). New column order: Client, Tactic,
+  Platform, Flight, Budget, Actual Spend, Goal, Actual Perf., Pacing, Optimize Log,
+  Notes.
+- **Rows grouped visually by Group** — matches how the rest of the platform already
+  organizes everything (Groups is the top-level entity everywhere else in this app).
+  The mockup now shows a group-header row above each cluster of that group's campaigns,
+  instead of repeating the group name in every row's client cell.
+- **Start/End dates added back as a "Flight" column** — Claire confirmed these are
+  needed; they'd been described in the plan text ("flight dates populate from the
+  order") but weren't actually shown in the visual table until now.
+- Added a new "Rows grouped by Group" plan card explaining the grouping choice.
+- Structural check: tag-balance verified (table/thead/tbody/tr/td/th/div/section counts
+  all matched) before republishing.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
