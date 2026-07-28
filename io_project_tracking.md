@@ -1074,6 +1074,69 @@ isn't known until the quote, so timing matters. _Awaiting AM._
 
 ---
 
+## STRATEGIST PORTAL — SCOPING NOTES (started 2026-07-18, no build yet)
+
+Started while Claire has a little usage left this month but is blocked on AM testing
+for the rest of the platform. Deliberately kept to planning/documentation only — no
+code, no schema changes — since what strategists actually need is real business-logic
+scope, same "park it, don't guess" rule as everything else undecided in this doc.
+
+**Claire's answers so far:**
+- She has an existing pacing template the strategists already use twice a week (shared
+  and analyzed below) — a real starting point instead of guessing at fields.
+- Strategist work corresponds to items ordered on the IO. Not yet confirmed whether
+  strategists need to see the IO itself directly — she's confirming.
+- One shared portal for all strategists (not one portal per strategist) — but each
+  strategist's items are separated/scoped within it, the same reasoning as AM
+  assignment: if someone's out, another strategist can easily pick up their work.
+- Some fields need to be strategist-editable; others should populate automatically
+  (not yet mapped which is which — see template analysis below for a concrete guess).
+
+**Pacing template analysis (`Pacing_Draft.xlsx`, shared 2026-07-18, data stripped but
+formulas intact):**
+
+Five tabs: `Layout` (the actual working dashboard) plus four raw-data tabs, one per ad
+platform — `Google Ads`, `Simpli.fi`, `Facebook Ads`, `The TradeDesk`. Claire pulls
+reports from each platform twice a week and pastes them into their matching tab as
+plain data (no formulas in those four tabs at all) — this is the manual step she
+described.
+
+`Layout` has one row per campaign/tactic and two kinds of columns:
+- **Manually entered per row** (columns A–O): Group, Client, Campaign, Tactic,
+  Platform, Gross Budget, In-Platform Budget, Goal (stored as a text range like
+  "1000-1500", averaged by a formula elsewhere — confirm this is impressions or clicks
+  goal), Start Date, End Date, Optimize (purpose not yet clear — need to ask), Notes.
+- **Auto-calculated** (columns H, J, K, and P onward): Actual Spend and Actual Clicks/
+  Impr. are pulled via a big IF/IFS keyed on the Platform column, which routes to a
+  VLOOKUP against whichever of the four platform tabs matches, joined on Campaign
+  name. MTD Pacing is the real "pacing" number: `(actual metric / average of the Goal
+  range) ÷ (days elapsed in the campaign's active window / total days in that window)`
+  — i.e., are we tracking ahead of, on, or behind where we should be given how much of
+  the flight has run so far.
+
+**What this suggests for schema shape (not yet built, just the shape it implies):**
+- A per-campaign-line table keyed to (probably) the client + a specific ordered IO
+  service — this is likely where "corresponds to items ordered on the IO" plugs in:
+  Group/Client/Platform/Tactic/dates could very plausibly auto-populate FROM the
+  matching order line rather than being re-typed, with Gross/In-Platform Budget, Goal,
+  Optimize, and Notes being the strategist-entered/editable part. This lines up with
+  Claire's "some fields auto, some editable" answer above, but needs her confirmation
+  on exactly which fields map to which before building anything.
+- The platform-report pasting (twice weekly) is a separate concern from the campaign-
+  line data — whether that manual paste step stays exactly as-is (someone pastes into a
+  table) or eventually connects to real ad-platform APIs is a much bigger, separate
+  decision — not assumed one way or the other here.
+
+**Still open / needs Claire or the strategists' input before any of this gets built:**
+- Does "Optimize" mean a status flag, a free-text action note, or something else?
+- Is "Goal" always an impressions/clicks range, or does it vary by platform/tactic?
+- Does the strategist portal need to reproduce the twice-weekly manual paste step, or
+  is automating that report-pull itself part of what "next stage" means?
+- Confirmation still pending: do strategists need to see the IO directly, or just the
+  order-line data that feeds their pacing view?
+
+---
+
 ## OPEN QUESTIONS FOR THE AM
 
 - **TLP 15+ intake timing — RESOLVED/MOOT 2026-07-15.** Originally: fill structured
