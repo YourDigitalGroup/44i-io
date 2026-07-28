@@ -897,6 +897,54 @@ repo): adds `admin_users.active`, updates `admin_get_staff` to return it, and ad
 new `admin_save_user` RPC (insert-or-update, password-hashed, `v_role = 'super'`-gated,
 uses the same safe `case when p_data ? 'x'` pattern as every other admin_save_* RPC).
 
+**Strategist scaffold + Strategist/Accounting roles — BUILT 2026-07-18.** Claire has
+usage left this month but is blocked on the AM-testing side, so asked to get a head
+start on the strategist build — confirmed with her this means foundation only (data
+model + empty page skeleton), not any actual strategist features or permission-gating,
+since what strategists/accounting should see or do is real business-logic scope that's
+explicitly parked pending its own review (per CLAUDE.md's non-negotiable rule on this).
+Two pieces:
+1. Added `strategist`/`accounting` as selectable roles in the Users tab's role dropdown
+   (previously only Account Manager/Super Admin) and extended `renderAdminUsersList`'s
+   role-label map to match.
+2. New `strategist/index.html` — an empty, login-gated placeholder page ("Coming
+   Soon"), sharing `shared.js`/`shared.css` exactly the way CLAUDE.md's architecture
+   note already anticipated. Its login modal accepts `strategist` or `super` role
+   accounts only (super included so James/Jon can log in and see it as it's built).
+
+**Bug found and fixed in the same pass: login was hardcoded to 5 names.** Building the
+strategist login surfaced a real gap in the *existing* `/admin` login: the name picker
+was populated from a hardcoded JS object (`ADMIN_USERS = {James, Jon, Carol, Peggy,
+Shania}`), and `checkAdminPw()` required a name to exist in that object even when the
+server-side `admin_login` RPC succeeded — meaning anyone added through the Users tab
+built earlier this session (a new AM, or now a strategist/accounting user) could never
+actually log in until someone also hand-edited that object and the `<select>` markup.
+Fixed by replacing it with `LOGIN_ROSTER`, populated from a new public, no-password
+`get_login_roster` RPC (same "derive the picker from the table" pattern as the AE/
+Client pickers) — a new user now shows up and can log in immediately after being
+created in the Users tab, no code change required. Also added a deliberate rejection:
+if `admin_login` succeeds but the account's role is `strategist` or `accounting`,
+`/admin` now shows "This account isn't set up for the admin portal" instead of letting
+them in — those roles have no tabs scoped to what they should actually see here, so
+succeeding a password check alone shouldn't grant full admin access.
+
+Verified via Playwright headless-browser simulation against mocked `sb()`/`admin_login`
+responses: (a) the roster loads and populates the `<select>` correctly; (b) an AM
+(Carol) still logs into `/admin` successfully; (c) a strategist account is correctly
+turned away from `/admin` with the new message; (d) on the new strategist page, the
+name picker is filtered to strategist/super only client-side, and even if an AM's name
+is forced into the picker, the server-side role check still rejects them; (e) a
+strategist account successfully reaches the placeholder landing page. Structural
+syntax scan (no errors) run on both files.
+
+SQL to run (not yet executed by Claire): adds the new `get_login_roster()` function —
+see `login-roster-2026-07-18.sql`, given inline in chat.
+
+Deliberately NOT built yet (same reasoning as the Users-tab role dropdown restriction):
+any actual strategist/accounting permission-gating, what tabs/data they should see, or
+real features on the strategist page. This stays a "Coming Soon" shell until that scope
+is decided.
+
 ---
 
 ## STATUS SUMMARY

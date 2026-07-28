@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>44i Strategist Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../shared.css"/>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+
+<!-- STRATEGIST PANEL — scaffold only (2026-07-18). No real strategist features yet;
+     this is just the same login-gated shell pattern as /admin, sharing shared.js/
+     shared.css per the plan in CLAUDE.md ("Future /strategist/accounting role-based
+     views are expected to land as their own paths the same way"). What strategists
+     actually need to see/do is intentionally NOT decided here — that's real business-
+     logic scope waiting on its own review, same as everything else parked in
+     io_project_tracking.md. -->
+<div id="page-strategist" style="display:none">
+  <div class="card" style="max-width:640px;margin:60px auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
+      <div id="strategist-user-badge" style="font-size:12px;color:var(--muted)"></div>
+      <button onclick="strategistLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✕ Close</button>
+    </div>
+    <div style="padding:60px 30px;text-align:center">
+      <div style="font-size:32px;margin-bottom:12px">🚧</div>
+      <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Portal — Coming Soon</h3>
+      <p style="font-size:13px;color:var(--muted)">This is a placeholder landing page. Login works — the actual strategist<br/>tools will be built here once that scope is defined.</p>
+    </div>
+  </div>
+</div>
+
+<!-- STRATEGIST LOGIN MODAL — same shape as /admin's, scoped to strategist/super roles
+     only (super included so James/Jon can log in to test this as it's built, per the
+     existing "James stays a super admin for now" arrangement). -->
+<div id="strategist-login-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
+    <div style="font-size:32px;margin-bottom:12px">🔒</div>
+    <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Access</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
+    <select id="strategist-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
+      <option value="">— Select your name —</option>
+    </select>
+    <input type="password" id="strategist-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkStrategistPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
+    <div id="strategist-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
+    <div style="display:flex;gap:9px">
+      <button onclick="checkStrategistPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
+    </div>
+  </div>
+</div>
+
+<script src="../shared.js"></script>
+<script>
+// Same "don't hardcode a roster" pattern as /admin's login (see that file's 2026-07-18
+// note on LOGIN_ROSTER) — populated from the shared get_login_roster RPC, filtered
+// client-side to the roles that belong on this specific portal.
+let currentStrategistUser = null; // {name, email, role, pw}
+
+async function loadStrategistRoster() {
+  const sel = document.getElementById('strategist-name-select');
+  let roster = [];
+  try {
+    roster = await sb('rpc/get_login_roster', { method: 'POST', body: JSON.stringify({}) }) || [];
+  } catch(e) {
+    console.warn('Could not load login roster:', e.message);
+  }
+  const eligible = roster.filter(u => u.role === 'strategist' || u.role === 'super');
+  sel.innerHTML = '<option value="">— Select your name —</option>' +
+    eligible.map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
+}
+
+function promptStrategistLogin() {
+  document.getElementById('strategist-login-modal').style.display = 'flex';
+  document.getElementById('strategist-name-select').value = '';
+  document.getElementById('strategist-pw-input').value = '';
+  document.getElementById('strategist-pw-error').style.display = 'none';
+}
+
+async function checkStrategistPw() {
+  const name = document.getElementById('strategist-name-select').value;
+  const pw = document.getElementById('strategist-pw-input').value;
+  const errEl = document.getElementById('strategist-pw-error');
+  if (!name) {
+    errEl.textContent = 'Please select your name.';
+    errEl.style.display = 'block';
+    return;
+  }
+  let ok = false, role = null, email = '';
+  try {
+    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
+    const row = Array.isArray(res) ? res[0] : res;
+    if (row && row.role) { ok = true; role = row.role; email = row.email || ''; }
+  } catch(e) {
+    errEl.textContent = 'Could not reach the login service. Check your connection and try again.';
+    errEl.style.display = 'block';
+    document.getElementById('strategist-pw-input').value = '';
+    return;
+  }
+  if (ok && role !== 'strategist' && role !== 'super') {
+    errEl.textContent = 'This account isn\'t set up for the Strategist portal.';
+    errEl.style.display = 'block';
+    document.getElementById('strategist-pw-input').value = '';
+    return;
+  }
+  if (ok) {
+    currentStrategistUser = { name, email, role, pw };
+    document.getElementById('strategist-login-modal').style.display = 'none';
+    showStrategistPanel(true);
+  } else {
+    errEl.textContent = 'Incorrect password. Please try again.';
+    errEl.style.display = 'block';
+    document.getElementById('strategist-pw-input').value = '';
+  }
+}
+
+function showStrategistPanel(show) {
+  document.getElementById('page-strategist').style.display = show ? 'block' : 'none';
+  if (show && currentStrategistUser) {
+    const badge = document.getElementById('strategist-user-badge');
+    const roleLabel = currentStrategistUser.role === 'super' ? 'Super Admin' : 'Strategist';
+    badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#8B5CF6"></span><strong style="color:var(--text)">${esc(currentStrategistUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
+  }
+}
+
+function strategistLogout() {
+  currentStrategistUser = null;
+  showStrategistPanel(false);
+  promptStrategistLogin();
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadStrategistRoster();
+  promptStrategistLogin();
+});
+</script>
+</body>
+</html>
