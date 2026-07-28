@@ -916,6 +916,8 @@
               <select id="admin-user-role" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
                 <option value="am">Account Manager</option>
                 <option value="super">Super Admin</option>
+                <option value="strategist">Strategist</option>
+                <option value="accounting">Accounting</option>
               </select>
             </div>
           </div>
@@ -959,11 +961,6 @@
     <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
     <select id="admin-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
       <option value="">— Select your name —</option>
-      <option value="James">James</option>
-      <option value="Jon">Jon</option>
-      <option value="Carol">Carol</option>
-      <option value="Peggy">Peggy</option>
-      <option value="Shania">Shania</option>
     </select>
     <input type="password" id="admin-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkAdminPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
     <div id="admin-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
@@ -995,13 +992,32 @@
 // is also the one currently open in the public form — meaningless with
 // no public form present, so it's dropped rather than stubbed out.
 
-const ADMIN_USERS = {
-  'James':  { role:'super' },
-  'Jon':    { role:'super' },
-  'Carol':  { role:'am' },
-  'Peggy':  { role:'am' },
-  'Shania': { role:'am' },
-};
+// ADMIN_USERS — REMOVED (2026-07-18). Was a hardcoded name→role map the login name-
+// picker was built from — meant only as the picker's option list (the actual password
+// check always went through the admin_login RPC below). But it silently gated login
+// entirely: checkAdminPw() required `ADMIN_USERS[name]` to be truthy even when the RPC
+// itself succeeded, so a user added through the new Users tab (Strategist/Accounting/
+// a new AM) could never log in until someone also hand-edited this object and the
+// `<select>` markup. Replaced by LOGIN_ROSTER, loaded from the new public
+// `get_login_roster` RPC (same "don't hardcode a roster, derive it from the table"
+// pattern as everything else in this project) — a brand-new user shows up in the
+// picker and can log in immediately, no code change needed.
+let LOGIN_ROSTER = [];
+
+async function loadLoginRoster() {
+  const sel = document.getElementById('admin-name-select');
+  try {
+    LOGIN_ROSTER = await sb('rpc/get_login_roster', { method: 'POST', body: JSON.stringify({}) }) || [];
+  } catch(e) {
+    console.warn('Could not load login roster:', e.message);
+    LOGIN_ROSTER = [];
+  }
+  if (sel) {
+    sel.innerHTML = '<option value="">— Select your name —</option>' +
+      LOGIN_ROSTER.map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
+  }
+}
+
 const ADMIN_ORG = '44i Digital';
 let currentAdminUser = null; // {name, email, role, pw} when logged in (pw kept in memory for server RPC calls)
 
@@ -1028,9 +1044,8 @@ async function checkAdminPw() {
     errEl.style.display = 'block';
     return;
   }
-  const user = ADMIN_USERS[name];
   let ok = false;
-  let role = user?.role || null;
+  let role = null;
   let emailFromRpc = '';
 
   // Server-side validation ONLY — the admin_login RPC validates the password against
@@ -1058,7 +1073,18 @@ async function checkAdminPw() {
     return;
   }
 
-  if (ok && user) {
+  // Strategist/Accounting accounts exist for their own upcoming portals, not this one —
+  // this admin portal only makes sense for AM/Super tiers today (Strategist/Accounting
+  // have no tabs here scoped to what they should actually see). Reject them here rather
+  // than silently granting full admin access just because the password matched.
+  if (ok && (role === 'strategist' || role === 'accounting')) {
+    errEl.textContent = 'This account isn\'t set up for the admin portal — check with a super admin for the right link.';
+    errEl.style.display = 'block';
+    document.getElementById('admin-pw-input').value = '';
+    return;
+  }
+
+  if (ok) {
     // Email comes from the RPC (admin_users table). Empty string is a safe fallback if a
     // not-yet-updated RPC doesn't return it — only the admin badge shows email, nothing
     // functional depends on it.
@@ -2735,7 +2761,7 @@ function renderAdminUsersList() {
     const inactive = u.active === false;
     const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
-    const roleLabel = u.role === 'super' ? 'Super Admin' : (u.role === 'am' ? 'Account Manager' : esc(u.role));
+    const roleLabel = { super: 'Super Admin', am: 'Account Manager', strategist: 'Strategist', accounting: 'Accounting' }[u.role] || esc(u.role);
     const editBtn = `<button onclick="adminEditUser('${esc(u.name)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`;
     const deactivateBtn = `<button onclick="adminToggleUserActive('${esc(u.name)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
@@ -4655,6 +4681,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('[Catalog] Load failed:', e.message);
     showToast('Could not load the service catalog: ' + e.message, 'error');
   }
+  await loadLoginRoster();
   // No public form / no gear icon on this page — go straight to the login prompt.
   promptAdmin();
 });
