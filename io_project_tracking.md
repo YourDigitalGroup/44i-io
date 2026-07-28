@@ -1415,6 +1415,16 @@ Still blocked on: the Fixed Cut/percentage-cut interaction (Claire researching),
 whether group overrides reuse `io_pricing` or need their own mechanism. No formula,
 schema, or build work should start until both are answered.
 
+**Mockup cleaned up 2026-07-18 (same day) to match.** The accounting-map details
+above got resolved directly between Claire and me, not through the strategist team —
+so the mockup's "Accounting map" question group (what it contains, where it lives, who
+maintains it) no longer belonged in a doc meant for strategists to answer. Removed
+that question group entirely, and updated the "In-Platform Budget calculates itself
+too" plan card to describe what's now actually confirmed (Group cut, 44i cut, tied to
+the existing services catalog) instead of listing it as an unresolved unknown — the
+one still-open piece (fixed vs. percentage cut interaction) is now framed as an
+internal detail being confirmed, not a question for the strategist team.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
