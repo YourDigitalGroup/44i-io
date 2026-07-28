@@ -1328,6 +1328,36 @@ Budget), Goal can't be 100% automatic end-to-end after all — it would need In-
 Budget entered first, then calculate from that. Flagged clearly in the mockup's plan
 card and added as a new question under Pacing & Goals rather than assumed either way.
 
+**Two more additions, same day (2026-07-18):**
+
+1. **In-Platform Budget should auto-calculate from an "accounting map."** Claire
+   resolved the Gross-vs-In-Platform Goal question from the entry above: Goal should
+   be based on In-Platform Budget, and In-Platform Budget itself should be calculated
+   automatically from Gross Budget via a new reference source she called "the
+   accounting map" that this project will also need to build/reference — not something
+   a strategist manually enters after all. Updated the mockup's In-Platform Budget
+   column to auto (was manual), and the plan card now describes it as automatic
+   pending the accounting map's real shape. **Nothing about the accounting map's
+   actual structure is known yet** — added as its own new question group: what it
+   contains (a margin % per client? per platform? per tier?), where it currently lives
+   (a spreadsheet, the accounting software, somewhere else), and who maintains it. This
+   needs real answers before any schema work can start — deliberately not guessed at.
+
+2. **Click-through detail view + live campaign link.** Claire asked whether
+   strategists could click a client/tactic row to see more granular platform-report
+   detail (to help pinpoint exactly what needs attention) and potentially a link to the
+   live campaign in the actual ad platform, once the API/automation work is in place.
+   Answered yes — added to the mockup as an expanded detail panel below a selected row
+   (Harbor & Vine used as the example), showing an ad-group-level breakdown pulled from
+   the same platform-report data already powering Actual Spend/Performance, plus a
+   "View in Simpli.fi ↗" link. Framed honestly: until platform APIs are connected, this
+   would be a plain reference link a strategist keeps updated by hand, becoming a real
+   deep link only once that automation phase lands — not promising live-linking before
+   the API work it depends on exists. Added a new question group asking what specific
+   detail would actually help them (beyond the illustrative ad-group breakdown), and
+   whether a manually-kept reference link is worth having on its own before the real
+   API-based version exists.
+
 ---
 
 ## OPEN QUESTIONS FOR THE AM
