@@ -1074,6 +1074,128 @@ isn't known until the quote, so timing matters. _Awaiting AM._
 
 ---
 
+## STRATEGIST PORTAL — SCOPING NOTES (started 2026-07-18, no build yet)
+
+Started while Claire has a little usage left this month but is blocked on AM testing
+for the rest of the platform. Deliberately kept to planning/documentation only — no
+code, no schema changes — since what strategists actually need is real business-logic
+scope, same "park it, don't guess" rule as everything else undecided in this doc.
+
+**Claire's answers so far:**
+- She has an existing pacing template the strategists already use twice a week (shared
+  and analyzed below) — a real starting point instead of guessing at fields.
+- Strategist work corresponds to items ordered on the IO. Not yet confirmed whether
+  strategists need to see the IO itself directly — she's confirming.
+- One shared portal for all strategists (not one portal per strategist) — but each
+  strategist's items are separated/scoped within it, the same reasoning as AM
+  assignment: if someone's out, another strategist can easily pick up their work.
+- Some fields need to be strategist-editable; others should populate automatically
+  (not yet mapped which is which — see template analysis below for a concrete guess).
+
+**Pacing template analysis (`Pacing_Draft.xlsx`, shared 2026-07-18, data stripped but
+formulas intact):**
+
+Five tabs: `Layout` (the actual working dashboard) plus four raw-data tabs, one per ad
+platform — `Google Ads`, `Simpli.fi`, `Facebook Ads`, `The TradeDesk`. Claire pulls
+reports from each platform twice a week and pastes them into their matching tab as
+plain data (no formulas in those four tabs at all) — this is the manual step she
+described.
+
+`Layout` has one row per campaign/tactic and two kinds of columns:
+- **Manually entered per row** (columns A–O): Group, Client, Campaign, Tactic,
+  Platform, Gross Budget, In-Platform Budget, Goal (stored as a text range like
+  "1000-1500", averaged by a formula elsewhere — confirm this is impressions or clicks
+  goal), Start Date, End Date, Optimize (purpose not yet clear — need to ask), Notes.
+- **Auto-calculated** (columns H, J, K, and P onward): Actual Spend and Actual Clicks/
+  Impr. are pulled via a big IF/IFS keyed on the Platform column, which routes to a
+  VLOOKUP against whichever of the four platform tabs matches, joined on Campaign
+  name. MTD Pacing is the real "pacing" number: `(actual metric / average of the Goal
+  range) ÷ (days elapsed in the campaign's active window / total days in that window)`
+  — i.e., are we tracking ahead of, on, or behind where we should be given how much of
+  the flight has run so far.
+
+**What this suggests for schema shape (not yet built, just the shape it implies):**
+- A per-campaign-line table keyed to (probably) the client + a specific ordered IO
+  service — this is likely where "corresponds to items ordered on the IO" plugs in:
+  Group/Client/Platform/Tactic/dates could very plausibly auto-populate FROM the
+  matching order line rather than being re-typed, with Gross/In-Platform Budget, Goal,
+  Optimize, and Notes being the strategist-entered/editable part. This lines up with
+  Claire's "some fields auto, some editable" answer above, but needs her confirmation
+  on exactly which fields map to which before building anything.
+- The platform-report pasting (twice weekly) is a separate concern from the campaign-
+  line data — whether that manual paste step stays exactly as-is (someone pastes into a
+  table) or eventually connects to real ad-platform APIs is a much bigger, separate
+  decision — not assumed one way or the other here.
+
+**Claire's answers, round 2 (2026-07-18):**
+- **Optimize** = a log entry: a date plus what the strategist did (an optimization
+  action taken on that date) — not a single status flag. Implies this is really a
+  one-to-many history (multiple dated entries over a campaign's life), not a single
+  editable field like Notes — worth designing as its own small table
+  (`pacing_optimizations` or similar: campaign line id, date, note) rather than one
+  text column, once this gets built.
+- **Goal** is impressions- and clicks-based for SEM specifically (confirms it varies —
+  other platforms/tactics may use a different metric; not yet asked one-by-one).
+- **Goals should be calculated automatically from the IO submission's budget and
+  CPM/CPC** — not manually typed. Claire explicitly wants this automatic if possible.
+
+**Checked feasibility of the auto-Goal idea against the real order data (read-only
+check, no changes):** this is genuinely buildable. `index.html`'s `submitIO()` already
+stores a `line_items` JSON array per order (`orders.line_items`), and each spend-priced
+line item already carries the client's monthly `spend` dollar amount alongside its
+`service_id`. That `service_id` resolves to the catalog's rate — `retail_cpm` for CPM-
+priced services, or the `sem-bp` CPC range ("$4–$12") for SEM specifically. So `Goal`
+could genuinely be derived as `spend ÷ CPM × 1000` (impressions) or `spend ÷ CPC`
+(clicks), with no new manual entry needed, confirming Claire's "automatic if possible"
+is realistic — not a promise made without checking.
+
+**CPC-range question — RESOLVED 2026-07-18.** Claire confirmed some groups' actual
+negotiated rate/split differs slightly from the catalog default, and asked for the
+same mechanism the Suggested Map/Custom Pricing already has: groups already carry an
+`io_pricing` JSONB override column (edited on each group's own Custom Pricing tab) that
+lets one group's price differ from the catalog default without touching every other
+group. The rate used for auto-calculating Goal should follow the exact same pattern —
+catalog default CPM/CPC unless a specific group has its own override set, same UI
+convention Claire and the AMs already know from pricing. This makes Goal fully
+automatic end to end: spend (from the order) ÷ rate (catalog default, or that group's
+override if one exists) — no per-campaign manual input needed after all.
+
+**Claire's answers, round 3 (2026-07-18):**
+- **Platform-report pulling should be automated** — not a reproduction of the manual
+  twice-weekly paste step. This is a real scope increase from "build a dashboard over
+  existing data" to "integrate with each ad platform's own reporting API (Google Ads,
+  Simpli.fi, Facebook Ads, The Trade Desk)" — each is its own OAuth/API-credential
+  setup, its own rate limits, and needs some kind of scheduled pull (a cron-style job,
+  not something that happens live in a page load). Meaningfully bigger than anything
+  built so far in this project — flagging that clearly rather than treating it as a
+  small add-on.
+- **IO visibility**: still waiting on her confirmation — no answer yet.
+- **Goal metric confirmed**: non-SEM platforms/tactics use **impressions**; SEM
+  specifically uses **clicks**. (Resolves the last open question on what Goal means.)
+
+**New consideration Claire raised: reporting overlap with Google Data Studio /
+TapClicks.** 44i currently uses both for client-facing reporting. Worth asking before
+any automation work starts: **does TapClicks already aggregate pulls from these same
+ad platforms** (Google Ads, Simpli.fi, Facebook Ads, The Trade Desk)? If so, pulling
+FROM TapClicks's own API/export (one integration) could replace building and
+maintaining four separate direct ad-platform integrations — meaningfully less work and
+fewer things that can break. This needs Claire (or whoever owns the TapClicks
+relationship) to check what TapClicks actually exposes before deciding which way to
+build the automation. Not assumed either way — just flagging the option since it could
+change the entire shape of this piece.
+
+**Still open / needs Claire's input before any of this gets built:**
+- Does TapClicks already aggregate this data in a way this platform could pull from,
+  or does automation mean direct integrations with all four ad platforms?
+- IO visibility for strategists — still waiting on confirmation.
+- Scope/sequencing: platform-report automation is a substantially bigger lift than the
+  Layout-equivalent dashboard itself (which is mostly "derive from data already in
+  Supabase," this project's usual pattern) — worth deciding whether the dashboard ships
+  first with the existing manual paste step, and automation comes as its own later
+  phase, rather than treating both as one project.
+
+---
+
 ## OPEN QUESTIONS FOR THE AM
 
 - **TLP 15+ intake timing — RESOLVED/MOOT 2026-07-15.** Originally: fill structured
