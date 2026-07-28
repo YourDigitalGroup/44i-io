@@ -2978,3 +2978,27 @@ built — see "CURRENT OUTSTANDING ITEMS" above for the specific open questions 
   volume, connections nowhere near the pool limit — see the 2026-07-16 Supabase-metrics
   check in this doc), so nothing here is urgent, but it's worth checking as a habit on
   every new feature rather than only after traffic grows and it becomes a real problem.
+
+## 2026-07-18 — AM Trello handle/calendar edits not showing up on Group editor (FIXED)
+
+**Symptom (Claire):** added Trello handles and calendar links for AMs in the new Users
+tab, but they didn't show up when picking that AM on a group.
+
+**Root cause:** `ensureStaffRosterLoaded()` (built alongside the AM picker) caches
+`ALL_STAFF` once per page load — `if (ALL_STAFF.length) return;` — and never refetches
+after that. If the Groups tab's AM picker had already been opened once earlier in the
+same browser session (caching the roster as it was then), any edit made afterward in
+the Users tab wouldn't be reflected until the whole page was reloaded. The Users tab
+itself saved correctly; the picker was just reading a stale in-memory copy.
+
+**Fix:** `adminSaveUser()` and `adminToggleUserActive()` both now reset `ALL_STAFF = []`
+right after a successful save, so the next time `ensureStaffRosterLoaded()` runs (next
+time a group's New/Edit form opens) it fetches fresh data instead of returning early on
+the stale cache.
+
+**Verified:** Playwright simulation — loaded a mock staff roster, applied the AM pick
+(empty Trello/calendar, as before any edit), then simulated saving new Trello/calendar
+values through `adminSaveUser()`, then re-ran the AM-picker lookup. Before the fix this
+would have kept returning the old blank values; after the fix, the second lookup
+correctly returns the newly-saved Trello handle and calendar URL. Structural syntax
+check also passed.
