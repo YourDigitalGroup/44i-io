@@ -1184,9 +1184,28 @@ relationship) to check what TapClicks actually exposes before deciding which way
 build the automation. Not assumed either way — just flagging the option since it could
 change the entire shape of this piece.
 
+**TapClicks/Data Studio split clarified (2026-07-18):** it's not one-or-the-other —
+44i uses TapClicks specifically for Simpli.fi reporting, because their Google
+connection to it keeps having its token expire; the majority of everything else stays
+in Google Data Studio since TapClicks costs more to run broadly. So this isn't "one
+aggregator covers everything" — it's a mixed setup, per platform, largely for
+reliability/cost reasons rather than data availability.
+
+**Real risk this surfaces, not yet answered:** if Simpli.fi's OAuth token expiring is
+a property of *Simpli.fi's own API* (not something specific to how Google Data Studio
+happens to implement its connector), a direct Simpli.fi integration built for this
+platform could hit the exact same expiring-token problem — meaning TapClicks might be
+the more reliable path for Simpli.fi specifically, even though it's the pricier option
+generally. Needs Claire (or whoever manages the TapClicks/Simpli.fi relationship) to
+confirm whether the token issue is Data-Studio-specific or inherent to Simpli.fi's API
+before deciding how to pull Simpli.fi data for this platform.
+
 **Still open / needs Claire's input before any of this gets built:**
-- Does TapClicks already aggregate this data in a way this platform could pull from,
-  or does automation mean direct integrations with all four ad platforms?
+- Is Simpli.fi's expiring-token issue specific to Google Data Studio's connector, or
+  a property of Simpli.fi's API generally (determines whether a direct integration
+  would hit the same wall TapClicks was brought in to solve)?
+- For the other three platforms (Google Ads, Facebook Ads, The Trade Desk) — direct
+  integration, or is there a reason to route any of those through TapClicks too?
 - IO visibility for strategists — still waiting on confirmation.
 - Scope/sequencing: platform-report automation is a substantially bigger lift than the
   Layout-equivalent dashboard itself (which is mostly "derive from data already in
