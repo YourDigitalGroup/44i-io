@@ -1998,7 +1998,14 @@ function applyGroupBranding(group) {
   // non-competing backgrounds instead, which works correctly regardless of either color.
   if (group.logo_url) {
     logo.src = group.logo_url;
-    if (chip) chip.style.display = 'inline-flex';
+    if (chip) {
+      chip.style.display = 'inline-flex';
+      // Some logos use white/light lettering that vanishes on the chip's default
+      // near-white background (found live 2026-07-18 — Mavrik Media Group, Online
+      // Visibility Pros) — logo_dark_bg lets that one group's chip flip to a dark
+      // background instead, without affecting every other group's normal white chip.
+      chip.style.background = group.logo_dark_bg ? '#1A2332' : 'rgba(255,255,255,.95)';
+    }
   } else {
     if (chip) chip.style.display = 'none';
   }
