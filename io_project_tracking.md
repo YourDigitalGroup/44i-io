@@ -3053,4 +3053,69 @@ alter table groups add column if not exists logo_dark_bg boolean not null defaul
 Also need to add `logo_dark_bg = case when p_data ? 'logo_dark_bg' then (p_data->>'logo_dark_bg')::boolean else logo_dark_bg end` to `admin_save_group`'s UPDATE branch (same safe pattern the rest of that function already uses, fixed during the earlier admin-RPC audit) — asked Claire to run
 `select pg_get_functiondef('public.admin_save_group'::regproc);` and share the result,
 since editing that function blind (without seeing its current real body) risks
-breaking one of its other fields' safe-update logic.
+breaking one of its other fields' safe-update logic. **Received and patched** —
+`logo-dark-bg-2026-07-18.sql` given inline, adds the column plus a `CREATE OR REPLACE`
+of the exact function Claire pasted with only the two `logo_dark_bg` lines added,
+nothing else touched.
+
+**Investigated further — root cause confirmed as browser caching of external files,
+not a code or data bug.** Ran the actual `logo_url` values for all 11 named groups:
+every one is a distinct, correct URL pointing to that business's own WordPress site —
+no duplicate/copy-paste mistakes in the data. Also confirmed the wrong logo does NOT
+correct itself after waiting (rules out ordinary network loading lag). Conclusion:
+these are all externally-hosted files this app doesn't control — if a business
+replaces the file at that same URL later, browsers that already cached the old bytes
+for that exact URL (common for WordPress media uploads, which often don't set
+aggressive re-validation headers) will keep serving the stale version indefinitely,
+regardless of what the live file actually is now. Confirmed by Claire's report exactly
+matching this pattern.
+
+**Solution — house logos in Supabase Storage instead of linking to external
+files, BUILT 2026-07-18.** Claire's own suggestion, and the right fix: since we now
+own the actual file bytes, and every upload gets a genuinely new, unique filename
+(timestamp + random suffix), there's nothing for a browser to have stale-cached the
+way it could with a reused external URL. Replaces the old plain "Logo URL" text input
+in the Group editor with:
+- A real file picker (`accept="image/png,image/jpeg,image/svg+xml,image/gif"`),
+  client-side validated for type and size (2MB max) before ever attempting a network
+  call.
+- A small preview thumbnail once uploaded (or already set, for existing groups).
+- A "Remove" button that clears the logo entirely.
+- Upload happens immediately on file selection (`adminUploadGroupLogo()`), via a
+  direct `fetch()` POST to the Supabase Storage REST API (new `group-logos` bucket) —
+  the resulting public URL gets written into the same hidden `logo_url` field the rest
+  of the form already saves, so `admin_save_group` and everything downstream in
+  `index.html` (`applyGroupBranding()`) needed ZERO changes — `logo_url` is still just
+  a plain URL column, only where it points and how it's populated changed.
+- Existing groups' current external `logo_url` values are left untouched and still
+  display fine (the display code has never cared where the URL points) — this only
+  affects logos uploaded from now on. Migrating an existing group off its external URL
+  is as simple as picking a new file for it whenever convenient; nothing forces an
+  immediate re-upload of all 11+ groups.
+
+**Verified via Playwright simulation** against a mocked `fetch()`: an unsupported file
+type is rejected client-side with no network call; an oversized file (>2MB) is
+likewise rejected with no network call; a valid PNG upload produces a correctly-shaped
+unique public URL, shows the preview, and displays a "click Save Group to apply"
+status message; clearing resets the hidden field and hides the preview. Structural
+syntax check passed.
+
+**Honest, disclosed security trade-off — flagged directly in the SQL, not
+glossed over:** unlike every `admin_save_*` RPC (which validates the caller's password
+server-side inside the function), a Supabase Storage bucket policy has no way to see
+this app's own password check — there's no real Supabase Auth session in this app to
+require instead. The upload policy is therefore public at the storage-policy level;
+the real safeguard is the bucket's own file-size (2MB) and MIME-type (image only)
+limits, which prevent anything but a small image file from landing there, not a true
+per-request authentication check. This is the same level of exposure the public anon
+key already has everywhere else in this app (it's embedded in every page's own JS
+source, not a secret) — not a new or larger gap than what already exists, but worth
+being explicit about rather than implying storage uploads are as strongly gated as the
+RPCs are. If this ever becomes a real concern, the fix would be routing uploads
+through a new `claude-proxy` Edge Function action that checks the password server-side
+first, the same pattern the Trello actions already use — not attempted here to avoid
+scope creep on what was asked for.
+
+**SQL to run (not yet executed by Claire):** `group-logo-storage-2026-07-18.sql` —
+creates the `group-logos` bucket (public read, 2MB/image-only limits) and its
+read/insert/update policies. Given inline in chat, not committed to the repo.
