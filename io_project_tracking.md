@@ -3002,3 +3002,55 @@ values through `adminSaveUser()`, then re-ran the AM-picker lookup. Before the f
 would have kept returning the old blank values; after the fix, the second lookup
 correctly returns the newly-saved Trello handle and calendar URL. Structural syntax
 check also passed.
+
+## 2026-07-18 — Wrong group logo showing via dev picker; logo chip dark-background option
+
+**Reported:** switching between groups via the public form's dev group dropdown (no
+page reload) sometimes showed the wrong logo — "whatever the last logo was" — for
+ESPN Arkansas, Galaxy Media Interactive, Kensington Digital Media, Ohana Digital (no
+logo at all), P5 Digital, Paradise Digital, Paragon Marketing, Piedmont Digital Group,
+and SAGE Media.
+
+**Investigated:** `DEV_GROUPS` (the dev picker's data source) is fetched fresh from the
+real `groups` table at page load (`select=*`), and `applyDevGroup()` → `applyGroupBranding()`
+reassigns `logo.src` directly from that fetched group object on every switch — no
+caching layer sits between the picker and the real data, unlike the AM-roster bug
+fixed earlier today. That rules out a code-side caching bug. **Most likely
+explanation: the actual `logo_url` values stored for these groups are wrong** (very
+possibly several groups accidentally sharing the same URL from a copy/paste mistake
+when they were set up). Gave Claire `logo-check-2026-07-18.sql` to run — selects each
+affected group's stored `logo_url`, plus a broader query finding any two groups
+anywhere that share an identical `logo_url`. Awaiting results before concluding
+anything further; no code changes made for this part, since the code path checks out.
+
+**Separate, confirmed issue: white-lettered logos invisible on the chip.** Mavrik
+Media Group and Online Visibility Pros' logos have white/light lettering, which
+disappears against the logo chip's fixed near-white background — a real design gap,
+not a bug (the fix for the wrong-logo issue above wouldn't touch this). Asked Claire
+how to fix it; she chose a **per-group dark-background toggle** over reusing the
+group's brand color or requesting new logo files, since it's the most surgical fix
+(doesn't touch groups that don't need it, doesn't risk still clashing depending on
+brand color chosen).
+
+**Built:** new `logo_dark_bg` boolean on `groups` (SQL below). Admin Group editor gets
+a checkbox right under Logo URL: "Logo needs a dark background — for white/light
+lettering," wired into `adminNewGroup()` (resets unchecked), `adminEditGroup()`
+(populates from `g.logo_dark_bg`), and the save payload. `index.html`'s
+`applyGroupBranding()` now sets the logo chip's background to a dark near-black
+(`#1A2332`) when `logo_dark_bg` is true, the existing near-white otherwise — untouched
+for every group that doesn't set the flag.
+
+**Verified:** Playwright simulation calling `applyGroupBranding()` with
+`logo_dark_bg: false` then `true` — chip background correctly switches between
+`rgba(255,255,255,.95)` and the dark color, and the logo `src` itself still updates
+correctly either way. Structural syntax check passed on both `index.html` and
+`admin/index.html`.
+
+**SQL still needed (not yet run):**
+```sql
+alter table groups add column if not exists logo_dark_bg boolean not null default false;
+```
+Also need to add `logo_dark_bg = case when p_data ? 'logo_dark_bg' then (p_data->>'logo_dark_bg')::boolean else logo_dark_bg end` to `admin_save_group`'s UPDATE branch (same safe pattern the rest of that function already uses, fixed during the earlier admin-RPC audit) — asked Claire to run
+`select pg_get_functiondef('public.admin_save_group'::regproc);` and share the result,
+since editing that function blind (without seeing its current real body) risks
+breaking one of its other fields' safe-update logic.

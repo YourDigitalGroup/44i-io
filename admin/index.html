@@ -112,7 +112,14 @@
               <div><label class="lbl">Brand Color 2 <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— secondary/background</span></label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="admin-color2" value="#1C9BD7" style="width:48px;height:38px;padding:2px;border-radius:7px;border:1px solid var(--border);cursor:pointer"/><input type="text" id="admin-color2-hex" placeholder="#1C9BD7" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="document.getElementById('admin-color2').value=this.value"/></div></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-              <div><label class="lbl">Logo URL</label><input type="text" id="admin-logo" placeholder="https://..." style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
+              <div>
+                <label class="lbl">Logo URL</label>
+                <input type="text" id="admin-logo" placeholder="https://..." style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;margin-bottom:6px"/>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer">
+                  <input type="checkbox" id="admin-logo-dark-bg" style="cursor:pointer"/>
+                  Logo needs a dark background <span style="color:var(--muted);opacity:.8">— for white/light lettering</span>
+                </label>
+              </div>
               <div><label class="lbl">Trello Board ID</label><input type="text" id="admin-trello" placeholder="Board ID" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -4498,6 +4505,7 @@ async function adminNewGroup() {
   document.getElementById('admin-color2').value = '#1C9BD7';
   document.getElementById('admin-color2-hex').value = '#1C9BD7';
   document.getElementById('admin-has-koc').value = 'true';
+  document.getElementById('admin-logo-dark-bg').checked = false;
   const sf = document.getElementById('admin-slug'); if(sf) { sf.dataset.manuallyEdited=''; }
   const sp = document.getElementById('slug-preview'); if(sp) sp.textContent = '...';
   const sw = document.getElementById('admin-slug-warn'); if(sw) sw.style.display = 'none';
@@ -4533,6 +4541,7 @@ async function adminEditGroup(id) {
   document.getElementById('admin-color2').value = g.brand_color2 || '#1C9BD7';
   document.getElementById('admin-color2-hex').value = g.brand_color2 || '';
   document.getElementById('admin-logo').value = g.logo_url || '';
+  document.getElementById('admin-logo-dark-bg').checked = !!g.logo_dark_bg;
   document.getElementById('admin-trello').value = g.trello_board_id || '';
   document.getElementById('admin-io-recipient').value = g.io_recipient || '';
   document.getElementById('admin-has-koc').value = g.has_koc ? 'true' : 'false';
@@ -4571,6 +4580,7 @@ async function adminSaveGroup() {
     brand_color: document.getElementById('admin-color').value,
     brand_color2: document.getElementById('admin-color2-hex').value.trim() || null,
     logo_url: document.getElementById('admin-logo').value.trim(),
+    logo_dark_bg: document.getElementById('admin-logo-dark-bg').checked,
     trello_board_id: document.getElementById('admin-trello').value.trim(),
     io_recipient: document.getElementById('admin-io-recipient').value.trim() || null,
     has_koc: document.getElementById('admin-has-koc').value === 'true',
