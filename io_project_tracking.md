@@ -3260,3 +3260,37 @@ version, this new one safely tightens it back up.
   it's deployed separately from this git repo).
 - `group-logo-storage-2026-07-18-v2.sql` — run this instead of (or after) the original
   storage setup script.
+
+**Both deployed and verified working same day** — Claire had forgotten this branch
+wasn't merged to `main` (only pushes to `main` trigger the deploy per this project's
+GitHub Action), which is why the first live test still showed the old
+`"Upload failed (400)"` error format (matches the pre-Edge-Function code, not the new
+one) — merging resolved it immediately.
+
+## 2026-07-18 — User editor: generic labels, Calendar URL is AM-only
+
+Claire noticed the Users tab (built earlier this session) read as "geared toward AM"
+even though it now covers every role — every new user got a Calendar URL field
+regardless of role, and both it and Trello Handle were still labeled with an "AM"
+prefix left over from when this editor only managed AMs.
+
+**Fixed:**
+- Relabeled "AM Trello Handle" → "Trello Handle" (generic — any role plausibly has a
+  Trello presence for board tagging, no reason to restrict this one).
+- "AM Calendar URL" → "Calendar URL — for KOC scheduling, AMs only", and the field
+  itself is now hidden entirely unless the selected Role is Account Manager. New
+  `adminUserRoleChanged()` toggles it live on the Role dropdown's `onchange`, and is
+  also called once from both `adminNewUser()`/`adminEditUser()` so the field's
+  visibility always matches whichever role is currently selected, not just whatever
+  role the form happened to open with.
+- Save payload now sends `am_calendar_url: null` for every non-AM role rather than
+  whatever the (now-hidden) field still holds — switching an existing AM to another
+  role correctly clears their stale calendar link instead of leaving it sitting unused
+  in the data.
+
+**Verified via Playwright:** a new user defaults to AM with the calendar field
+visible; switching the role dropdown to Strategist hides it live; editing an existing
+AM shows their calendar value intact; editing an existing Strategist keeps it hidden;
+and switching an existing AM (with a calendar link already set) to Strategist and
+saving sends `am_calendar_url: null` while leaving their Trello handle untouched.
+Structural syntax check passed.
