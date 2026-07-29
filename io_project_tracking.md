@@ -3173,9 +3173,90 @@ silently attempting an insecure-looking (if currently inert) direct write/read.
 the important one, closes a real live leak. Given inline in chat, not committed to the
 repo.
 
-**Not yet done / worth a future look:** the exact root cause of why `ae` behaved
-differently from the other 4 tables under identical RLS settings was not pinned down
-(would need `relowner`/`relforcerowsecurity` comparison across all 5) — not blocking
-since `force row level security` closes the hole regardless of cause, but worth
-understanding if a similar table gets added later without going through the same
-review.
+**ROOT CAUSE FOUND AND FIXED — 2026-07-18 (same day).** `force row level security`
+alone did NOT stop the leak — Claire re-tested from a fresh Incognito window with HTTP
+caching explicitly disabled (`cache: 'no-store'`) and still got all 304 rows back,
+which ruled out both the earlier caching theory and confirmed something more
+fundamental was wrong, not something already fixed. Traced through several
+possibilities that all checked out clean (role-level `BYPASSRLS` on `anon` — false;
+wrong Supabase project — confirmed correct project; `ae` being a view rather than a
+real table — confirmed `relkind = 'r'`, a genuine table) before finding the real
+answer: a policy named **"Public can read ae"** existed — `SELECT`, `roles: {public}`,
+`qual: true` — explicitly granting every role unrestricted read access. This is very
+likely a leftover from Supabase's own "Enable read access for all users" template,
+which the dashboard offers as a one-click suggestion the first time RLS gets turned on
+for a new table — someone most likely accepted that suggestion when `ae` was first
+created, months before this review. This explains why `FORCE ROW LEVEL SECURITY`
+didn't help: that setting only matters when there's NO policy granting access at all;
+an explicit permissive policy always wins regardless. It also explains why the
+original "zero policies on all 5 tables" audit read as clean — that policy either
+wasn't caught cleanly in how the combined multi-table result was read at the time, or
+this was simply missed reading two result sets pasted together — either way, checking
+the single table directly (`select * from pg_policies where tablename = 'ae'`) is what
+finally surfaced it unambiguously.
+
+**Actual fix:** `drop policy "Public can read ae" on ae;` — confirmed by Claire
+re-running the exact same Incognito/no-store fetch test one more time: now returns
+`[]`. The `FORCE ROW LEVEL SECURITY` setting and the two new RPCs
+(`get_group_aes`/`admin_get_aes`) from earlier in this entry are still correct and
+still needed — nothing about them was wrong, they just weren't sufficient on their
+own while this explicit permissive policy also existed.
+
+**Lesson for future review:** when auditing RLS on a specific table, check
+`pg_policies` filtered to JUST that table directly and read the result before moving
+on to broader theories (ownership, role bypass, caching) — a multi-table combined
+query result is easy to misread, and the actual policy list is the first and most
+direct thing to verify, not something to arrive at last after several other
+hypotheses.
+
+## 2026-07-18 — Logo upload moved behind a password-gated Edge Function
+
+Follow-up to the group-logo-upload feature built earlier the same day, which had a
+disclosed but real gap: uploads went straight to Supabase Storage using the anon key,
+gated only by the bucket's file-size/type limits, not a real password check (unlike
+every `admin_save_*` RPC). Claire asked to close this properly rather than leave it,
+same day as the `ae` leak fix — good timing to fix both storage-related gaps together.
+
+**Built:** a new `upload_group_logo` target added to the `claude-proxy` Edge Function
+(the same one already used for every Trello action). Diffed line-by-line against the
+exact current source Claire pasted first — confirmed the only change is the new target
+block plus one header comment; nothing else touched. The new target:
+1. Validates the admin's password server-side via the SAME `admin_login` RPC every
+   other admin action already trusts (no new hashing logic duplicated — reuses the
+   single source of truth for what a valid login looks like).
+2. Re-checks file type (image/png, image/jpeg, image/svg+xml, image/gif) and size
+   (2MB max) server-side — not just trusting the browser's own check.
+3. Uploads using `SUPABASE_SERVICE_ROLE_KEY` (provided automatically to every Supabase
+   Edge Function, no new secret needed) — Storage always allows the service role
+   through regardless of bucket policy, so the bucket itself needs NO public write
+   policy anymore at all.
+4. Returns the resulting public URL, same shape as before.
+
+`admin/index.html`'s `adminUploadGroupLogo()` now calls this Edge Function target via
+the existing `PROXY` endpoint (same calling convention as every Trello action already
+uses) instead of POSTing to Storage directly — sends the file as base64 (new
+`fileToBase64()` helper) alongside the admin's name/password. Client-side type/size
+checks stay in place too, as a fast fail before ever hitting the network — the
+server-side check is the real gate, but there's no reason to make someone wait on a
+round trip just to find out their file was the wrong type.
+
+**Verified via Playwright:** correct credentials + a valid PNG → correct
+`target`/`p_name`/`p_pw`/`filename`/`mime_type`/`base64` sent to the proxy, response
+URL correctly sets the hidden field and preview; wrong password → error surfaced,
+nothing saved; an unsupported file type is still rejected client-side with zero
+network calls, exactly as before. Structural syntax check passed.
+
+**Storage policy simplified as a result:** `group-logo-storage-2026-07-18-v2.sql`
+replaces the original bucket-setup script — drops the two public write policies
+entirely (no longer needed or wanted, since the Edge Function bypasses them via the
+service role key regardless) and keeps only public SELECT, so the public IO form can
+still display a group's logo with no login. If Claire already ran the original
+version, this new one safely tightens it back up.
+
+**SQL to run (not yet executed by Claire):**
+- `claude-proxy-index.ts` — the full updated Edge Function source, paste into the
+  Supabase dashboard (Edge Functions → claude-proxy) and redeploy. Given inline in
+  chat, not committed to the repo (matches how this file has always been handled —
+  it's deployed separately from this git repo).
+- `group-logo-storage-2026-07-18-v2.sql` — run this instead of (or after) the original
+  storage setup script.
