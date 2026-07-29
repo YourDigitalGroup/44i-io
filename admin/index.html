@@ -113,8 +113,18 @@
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Logo URL</label>
-                <input type="text" id="admin-logo" placeholder="https://..." style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;margin-bottom:6px"/>
+                <label class="lbl">Logo <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— PNG, JPG, SVG, or GIF, up to 2MB</span></label>
+                <input type="hidden" id="admin-logo"/>
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                  <div id="admin-logo-preview-wrap" style="display:none;width:44px;height:44px;border-radius:8px;border:1px solid var(--border);background:#FAFCFE;align-items:center;justify-content:center;flex:none;overflow:hidden">
+                    <img id="admin-logo-preview" style="max-width:100%;max-height:100%"/>
+                  </div>
+                  <div style="flex:1">
+                    <input type="file" id="admin-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/gif" onchange="adminUploadGroupLogo(this.files[0])" style="width:100%;font-size:12px"/>
+                    <div id="admin-logo-status" style="font-size:11px;color:var(--muted);margin-top:3px"></div>
+                  </div>
+                  <button type="button" onclick="adminClearGroupLogo()" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);color:var(--muted);font-size:11px;cursor:pointer;white-space:nowrap">Remove</button>
+                </div>
                 <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer">
                   <input type="checkbox" id="admin-logo-dark-bg" style="cursor:pointer"/>
                   Logo needs a dark background <span style="color:var(--muted);opacity:.8">— for white/light lettering</span>
@@ -4492,6 +4502,81 @@ function applyAmPick(name) {
   document.getElementById('admin-am-trello').value = a.am_trello_handle || '';
 }
 
+// ── GROUP LOGO UPLOAD (2026-07-18) ──────────────────────────────
+// Replaces the old plain "Logo URL" text field, which just linked out to wherever a
+// group's own website happened to host their logo — Claire found several groups
+// showing the wrong (or a stale, previously-uploaded) logo while clicking through the
+// dev group picker, traced to the browser caching those external, third-party-hosted
+// files rather than anything wrong in this app's own code. Uploading straight into our
+// own Supabase Storage bucket fixes this at the root: every upload gets a unique
+// filename (timestamp + random suffix), so a NEW logo is always a genuinely NEW URL —
+// there's nothing for a browser to have stale-cached, unlike overwriting the same
+// external file in place. `logo_url` itself is unchanged — it's still just a plain URL
+// column; this only changes where that URL points and how it gets set.
+const GROUP_LOGO_BUCKET = 'group-logos';
+const GROUP_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+const GROUP_LOGO_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/gif'];
+
+function setGroupLogoPreview(url) {
+  document.getElementById('admin-logo').value = url || '';
+  const wrap = document.getElementById('admin-logo-preview-wrap');
+  const img = document.getElementById('admin-logo-preview');
+  if (url) {
+    img.src = url;
+    wrap.style.display = 'flex';
+  } else {
+    img.src = '';
+    wrap.style.display = 'none';
+  }
+}
+
+async function adminUploadGroupLogo(file) {
+  const statusEl = document.getElementById('admin-logo-status');
+  if (!file) return;
+  if (!GROUP_LOGO_ALLOWED_TYPES.includes(file.type)) {
+    statusEl.textContent = 'Unsupported file type — use PNG, JPG, SVG, or GIF.';
+    statusEl.style.color = '#DC2626';
+    document.getElementById('admin-logo-file').value = '';
+    return;
+  }
+  if (file.size > GROUP_LOGO_MAX_BYTES) {
+    statusEl.textContent = 'File is too large — 2MB max.';
+    statusEl.style.color = '#DC2626';
+    document.getElementById('admin-logo-file').value = '';
+    return;
+  }
+  statusEl.textContent = 'Uploading…';
+  statusEl.style.color = 'var(--muted)';
+  try {
+    const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'png';
+    const path = `logo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${GROUP_LOGO_BUCKET}/${path}`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': file.type
+      },
+      body: file
+    });
+    if (!res.ok) throw new Error('Upload failed (' + res.status + ')');
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${GROUP_LOGO_BUCKET}/${path}`;
+    setGroupLogoPreview(publicUrl);
+    statusEl.textContent = 'Uploaded ✓ — click Save Group to apply.';
+    statusEl.style.color = '#166534';
+  } catch (e) {
+    statusEl.textContent = 'Error uploading: ' + e.message;
+    statusEl.style.color = '#DC2626';
+    document.getElementById('admin-logo-file').value = '';
+  }
+}
+
+function adminClearGroupLogo() {
+  setGroupLogoPreview('');
+  document.getElementById('admin-logo-file').value = '';
+  document.getElementById('admin-logo-status').textContent = '';
+}
+
 async function adminNewGroup() {
   document.getElementById('admin-form-title').textContent = 'New Group';
   document.getElementById('admin-group-id').value = '';
@@ -4506,6 +4591,9 @@ async function adminNewGroup() {
   document.getElementById('admin-color2-hex').value = '#1C9BD7';
   document.getElementById('admin-has-koc').value = 'true';
   document.getElementById('admin-logo-dark-bg').checked = false;
+  setGroupLogoPreview('');
+  document.getElementById('admin-logo-file').value = '';
+  document.getElementById('admin-logo-status').textContent = '';
   const sf = document.getElementById('admin-slug'); if(sf) { sf.dataset.manuallyEdited=''; }
   const sp = document.getElementById('slug-preview'); if(sp) sp.textContent = '...';
   const sw = document.getElementById('admin-slug-warn'); if(sw) sw.style.display = 'none';
@@ -4540,7 +4628,9 @@ async function adminEditGroup(id) {
   document.getElementById('admin-color-hex').value = g.brand_color || '#1C9BD7';
   document.getElementById('admin-color2').value = g.brand_color2 || '#1C9BD7';
   document.getElementById('admin-color2-hex').value = g.brand_color2 || '';
-  document.getElementById('admin-logo').value = g.logo_url || '';
+  setGroupLogoPreview(g.logo_url || '');
+  document.getElementById('admin-logo-file').value = '';
+  document.getElementById('admin-logo-status').textContent = '';
   document.getElementById('admin-logo-dark-bg').checked = !!g.logo_dark_bg;
   document.getElementById('admin-trello').value = g.trello_board_id || '';
   document.getElementById('admin-io-recipient').value = g.io_recipient || '';
