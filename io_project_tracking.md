@@ -3119,3 +3119,63 @@ scope creep on what was asked for.
 **SQL to run (not yet executed by Claire):** `group-logo-storage-2026-07-18.sql` —
 creates the `group-logos` bucket (public read, 2MB/image-only limits) and its
 read/insert/update policies. Given inline in chat, not committed to the repo.
+
+## 2026-07-18 — Security review: CONFIRMED live data leak on `ae`, plus cleanup
+
+Claire asked whether the logo-upload security trade-off above pointed to other gaps
+worth checking. It did — a real, live, exploitable one, found and closed same day.
+
+**Audit approach:** ran `pg_policies` and `pg_class.relrowsecurity` against `orders`,
+`groups`, `ae`, `clients`, `admin_users`. All five have RLS *enabled* but *zero
+policies* defined. In Postgres, that combination is supposed to mean "deny everyone by
+default" (RLS enabled + no policies = no rows visible to any non-owner role) — verified
+this held for `orders` (a live anonymous REST request via the browser console, using
+only the app's own already-public anon key, returned `[]`) but did NOT hold for `ae`:
+the same kind of anonymous request returned **all 304 rows** — every AE's name, email,
+and Trello handle across every single group, with zero authentication. Root cause not
+fully diagnosed (most likely a table-ownership/bypass difference from how `ae` was
+originally created vs. the others — Postgres RLS doesn't apply to a table's owner
+unless `FORCE ROW LEVEL SECURITY` is also set), but `alter table ae force row level
+security` closes it regardless of the precise mechanism.
+
+**Fixed:** `lock-down-ae-2026-07-18.sql` — forces RLS on `ae`, and adds two narrow
+RPCs so the app's two legitimate `ae`-reading features keep working once direct access
+is closed (same "add a scoped RPC instead of leaving a table open" pattern already
+used for `clients` after ITS leak was closed 2026-07-13):
+- `get_group_aes(p_group_id)` — public, no password, returns id/name/trello_handle/
+  email for one group's active AEs only. Powers the public form's own AE picker
+  (`loadAeRoster()` in `index.html`), which previously read the raw table directly
+  with no scoping at all.
+- `admin_get_aes(p_name, p_pw)` — password-gated, returns every AE across every group
+  (id/name/trello_handle/email/group_id/active) — the admin AE tab manages the whole
+  roster, so intentionally not scoped to one group, mirroring `admin_get_orders`'
+  shape.
+
+Both call sites updated (`loadAeRoster()` in `index.html`, `loadAdminAes()` in
+`admin/index.html`) to call these RPCs instead of the raw table. Verified via
+Playwright: `loadAeRoster('group-abc')` calls `rpc/get_group_aes` with the correct
+`p_group_id` body and `applyAePick()` correctly resolves name/Trello/email from the
+response; `loadAdminAes()` calls `rpc/admin_get_aes` and populates `ALL_AES` correctly
+from its response. Structural syntax check passed on both files.
+
+**Also cleaned up, same pass:** `admin_get_orders`/`admin_save_group`/
+`admin_save_group`-toggle each had a "defensive fallback" that fell straight through
+to a direct, unauthenticated REST read/write on `orders`/`groups` if the real
+password-gated RPC ever errored. The live test above confirms `orders` and `groups`
+are both correctly locked down (zero policies, not force-bypassed like `ae` was), so
+these fallbacks could never actually have worked — but they were misleading to read as
+though a real safety net existed, and represented exactly the pattern that caused the
+`ae` leak if a table's policy were ever misconfigured. Removed all three fallbacks;
+each function now just surfaces the RPC's error directly if it fails, rather than
+silently attempting an insecure-looking (if currently inert) direct write/read.
+
+**SQL to run (not yet executed by Claire):** `lock-down-ae-2026-07-18.sql` — this is
+the important one, closes a real live leak. Given inline in chat, not committed to the
+repo.
+
+**Not yet done / worth a future look:** the exact root cause of why `ae` behaved
+differently from the other 4 tables under identical RLS settings was not pinned down
+(would need `relowner`/`relforcerowsecurity` comparison across all 5) — not blocking
+since `force row level security` closes the hole regardless of cause, but worth
+understanding if a similar table gets added later without going through the same
+review.

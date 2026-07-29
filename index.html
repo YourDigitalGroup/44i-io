@@ -905,7 +905,14 @@ async function loadAeRoster(groupId) {
   const sel = document.getElementById('ae-picker');
   if (!groupId) { wrap.style.display = 'none'; AE_ROSTER = []; return; }
   try {
-    AE_ROSTER = await sb('ae?group_id=eq.' + groupId + '&active=eq.true&order=name&select=*') || [];
+    // get_group_aes() (2026-07-18) — `ae` no longer grants any direct public read (a
+    // raw `ae?select=*` returned every group's roster with no scoping at all, found
+    // live). Same trust level/shape as get_group_clients: public, no password, scoped
+    // to one group.
+    AE_ROSTER = await sb('rpc/get_group_aes', {
+      method: 'POST',
+      body: JSON.stringify({ p_group_id: groupId })
+    }) || [];
   } catch(e) {
     console.warn('Could not load AE roster:', e.message);
     AE_ROSTER = [];

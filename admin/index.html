@@ -2591,7 +2591,14 @@ async function loadAdminAes() {
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
   try {
     if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
-    ALL_AES = await sb('ae?order=name&select=*') || [];
+    // admin_get_aes() (2026-07-18) — `ae` no longer grants any direct public read (see
+    // get_group_aes' own comment in index.html for what was found). This admin tab
+    // manages every group's roster, so it's password-gated rather than group-scoped,
+    // same shape as admin_get_orders.
+    ALL_AES = await sb('rpc/admin_get_aes', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
     populateAeFilterGroupDropdown();
     renderAdminAeList();
   } catch(e) {
@@ -4106,42 +4113,19 @@ async function loadAdminOrders() {
       allGroups = await sb('groups?order=name&select=*') || [];
     }
 
-    let loaded = null;
-    // 1) Primary: server-side admin_get_orders RPC (LIVE) — validates the admin password
-    //    and applies AM scoping in the database.
-    try {
-      loaded = await sb('rpc/admin_get_orders', {
-        method: 'POST',
-        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_days: 90 })
-      });
-      if (Array.isArray(loaded)) {
-        loaded.forEach(o => { o._client_name = o._client_name || '(unknown)'; });
-      } else { loaded = null; }
-    } catch(e) { loaded = null; }
-
-    // 2) Defensive fallback: direct REST reads, used only if the RPC call above errored.
-    if (!loaded) {
-      const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
-      loaded = await sb('orders?order=created_at.desc&created_at=gte.' + ninetyDaysAgo + '&select=*') || [];
-      const clientIds = [...new Set(loaded.map(o => o.client_id).filter(Boolean))];
-      let clientMap = {};
-      if (clientIds.length) {
-        try {
-          // get_client_names() (2026-07-13) — narrow RPC returning only id+name, since
-          // `clients` no longer grants any direct public read (it held real customer
-          // contact info under a leftover wide-open policy — closed off entirely).
-          const clients = await sb('rpc/get_client_names', {
-            method: 'POST',
-            body: JSON.stringify({ p_ids: clientIds })
-          });
-          (clients || []).forEach(c => { clientMap[c.id] = c.name; });
-        } catch(e) { /* tolerable — fall back to '(unknown)' */ }
-      }
-      loaded.forEach(o => { o._client_name = clientMap[o.client_id] || '(unknown)'; });
-      // No role-based scoping here (2026-07-17, per Claire — "AM's should be able to
-      // see all orders, in case someone is out"): every admin, AM or super, sees every
-      // order. Matches admin_get_orders itself, which no longer restricts by role either.
-    }
+    // Server-side admin_get_orders RPC — validates the admin password and applies AM
+    // scoping in the database. A previous version of this function fell back to a
+    // direct `orders?select=*` REST read if this RPC ever errored — removed 2026-07-18
+    // during a security review: `orders` correctly has no public read policy (verified
+    // live — an anonymous request returns zero rows), so that fallback could never
+    // actually have worked, and kept it read as though a real safety net existed. If
+    // the RPC fails now, the error just surfaces below instead of silently attempting
+    // an insecure-looking (if inert) direct read.
+    const loaded = await sb('rpc/admin_get_orders', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_days: 90 })
+    }) || [];
+    loaded.forEach(o => { o._client_name = o._client_name || '(unknown)'; });
     allOrders = loaded;
     // Populate group filter
     const groupSelect = document.getElementById('orders-filter-group');
@@ -4682,30 +4666,23 @@ async function adminSaveGroup() {
   }
 
   try {
-    // Primary: server-side admin_save_group RPC (LIVE). Validates the admin password in
-    // the database and enforces the AM pricing restriction server-side (an AM can't write
-    // io_pricing even with curl). The direct PATCH/POST below is a fallback if it errors.
-    let savedViaRpc = false;
-    try {
-      await sb('rpc/admin_save_group', {
-        method: 'POST',
-        body: JSON.stringify({
-          p_name: currentAdminUser?.name || '',
-          p_pw: currentAdminUser?.pw || '',
-          p_group_id: id || null,
-          p_data: payload
-        })
-      });
-      savedViaRpc = true;
-    } catch(e) { /* RPC errored — fall through to the direct write below */ }
-
-    if (!savedViaRpc) {
-      if (id) {
-        await sb('groups?id=eq.' + id, {method:'PATCH', body:JSON.stringify(payload), prefer:'return=representation'});
-      } else {
-        await sb('groups', {method:'POST', body:JSON.stringify(payload)});
-      }
-    }
+    // Server-side admin_save_group RPC. Validates the admin password in the database
+    // and enforces the AM pricing restriction server-side (an AM can't write io_pricing
+    // even with curl). A previous version of this function fell back to a direct
+    // PATCH/POST on `groups` if this RPC ever errored — removed 2026-07-18 during a
+    // security review: that fallback would have completely bypassed the password check
+    // if `groups`' table policy were ever misconfigured to allow it. `groups` correctly
+    // has no public write policy today (verified live), so it could never actually have
+    // worked, but it's not a pattern worth keeping around even as dead code.
+    await sb('rpc/admin_save_group', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_group_id: id || null,
+        p_data: payload
+      })
+    });
     // NOTE: index.html's version of this function also live-applies pricing to the
     // currently-open group via applyCustomPricing() when editing the active group from
     // inside the combined page. That only makes sense embedded in the public form (which
@@ -4719,9 +4696,10 @@ async function adminSaveGroup() {
 }
 
 // Deactivate/Reactivate (2026-07-17, per Claire) — soft-deactivate, never a hard
-// delete (see the comment in renderAdminGroups for why). Same RPC-with-fallback
-// resilience as adminSaveGroup itself, minimal payload only ({active: makeActive}),
-// same pattern as adminToggleAeActive.
+// delete (see the comment in renderAdminGroups for why), minimal payload only
+// ({active: makeActive}), same pattern as adminToggleAeActive. No direct-write
+// fallback (see adminSaveGroup's own comment on why that pattern was removed
+// 2026-07-18).
 async function adminToggleGroupActive(id, makeActive) {
   if (currentAdminUser?.role === 'am') {
     showToast('Deactivating a group is restricted to super admins', 'error');
@@ -4734,23 +4712,15 @@ async function adminToggleGroupActive(id, makeActive) {
     : '';
   if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} "${g.name}"?${warnText}`)) return;
   try {
-    let savedViaRpc = false;
-    try {
-      await sb('rpc/admin_save_group', {
-        method: 'POST',
-        body: JSON.stringify({
-          p_name: currentAdminUser?.name || '',
-          p_pw: currentAdminUser?.pw || '',
-          p_group_id: id,
-          p_data: { active: makeActive }
-        })
-      });
-      savedViaRpc = true;
-    } catch(e) { /* RPC errored — fall through to the direct write below */ }
-
-    if (!savedViaRpc) {
-      await sb('groups?id=eq.' + id, {method:'PATCH', body:JSON.stringify({active: makeActive}), prefer:'return=representation'});
-    }
+    await sb('rpc/admin_save_group', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_group_id: id,
+        p_data: { active: makeActive }
+      })
+    });
     showToast(`Group ${makeActive ? 'reactivated' : 'deactivated'}!`);
     loadAdminGroups();
   } catch(e) {
