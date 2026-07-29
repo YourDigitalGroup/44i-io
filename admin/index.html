@@ -4497,7 +4497,6 @@ function applyAmPick(name) {
 // there's nothing for a browser to have stale-cached, unlike overwriting the same
 // external file in place. `logo_url` itself is unchanged — it's still just a plain URL
 // column; this only changes where that URL points and how it gets set.
-const GROUP_LOGO_BUCKET = 'group-logos';
 const GROUP_LOGO_MAX_BYTES = 2 * 1024 * 1024;
 const GROUP_LOGO_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/gif'];
 
@@ -4532,20 +4531,28 @@ async function adminUploadGroupLogo(file) {
   statusEl.textContent = 'Uploading…';
   statusEl.style.color = 'var(--muted)';
   try {
-    const ext = file.name.includes('.') ? file.name.split('.').pop().toLowerCase() : 'png';
-    const path = `logo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${GROUP_LOGO_BUCKET}/${path}`, {
+    // Uploads go through claude-proxy's upload_group_logo target (2026-07-18) rather
+    // than straight to Storage with the anon key — that would have needed the bucket's
+    // write policy to be public (gated only by file-size/type, not a real password
+    // check). The Edge Function validates the admin password server-side first (same
+    // admin_login RPC every other admin action trusts), then uploads using the service
+    // role key, which Storage always allows regardless of bucket policy.
+    const base64 = await fileToBase64(file);
+    const res = await fetch(PROXY, {
       method: 'POST',
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: 'Bearer ' + SUPABASE_KEY,
-        'Content-Type': file.type
-      },
-      body: file
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({
+        target: 'upload_group_logo',
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        filename: file.name,
+        mime_type: file.type,
+        base64
+      })
     });
-    if (!res.ok) throw new Error('Upload failed (' + res.status + ')');
-    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${GROUP_LOGO_BUCKET}/${path}`;
-    setGroupLogoPreview(publicUrl);
+    const data = await res.json();
+    if (!res.ok || !data.url) throw new Error(data.error || 'Upload failed');
+    setGroupLogoPreview(data.url);
     statusEl.textContent = 'Uploaded ✓ — click Save Group to apply.';
     statusEl.style.color = '#166534';
   } catch (e) {
@@ -4553,6 +4560,18 @@ async function adminUploadGroupLogo(file) {
     statusEl.style.color = '#DC2626';
     document.getElementById('admin-logo-file').value = '';
   }
+}
+
+// Reads a File as base64 (stripping the "data:...;base64," prefix FileReader adds) —
+// needed since claude-proxy (like every other upload target it already has) takes raw
+// base64 in the JSON body rather than a multipart file upload.
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function adminClearGroupLogo() {
