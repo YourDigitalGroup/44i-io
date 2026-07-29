@@ -3173,9 +3173,38 @@ silently attempting an insecure-looking (if currently inert) direct write/read.
 the important one, closes a real live leak. Given inline in chat, not committed to the
 repo.
 
-**Not yet done / worth a future look:** the exact root cause of why `ae` behaved
-differently from the other 4 tables under identical RLS settings was not pinned down
-(would need `relowner`/`relforcerowsecurity` comparison across all 5) — not blocking
-since `force row level security` closes the hole regardless of cause, but worth
-understanding if a similar table gets added later without going through the same
-review.
+**ROOT CAUSE FOUND AND FIXED — 2026-07-18 (same day).** `force row level security`
+alone did NOT stop the leak — Claire re-tested from a fresh Incognito window with HTTP
+caching explicitly disabled (`cache: 'no-store'`) and still got all 304 rows back,
+which ruled out both the earlier caching theory and confirmed something more
+fundamental was wrong, not something already fixed. Traced through several
+possibilities that all checked out clean (role-level `BYPASSRLS` on `anon` — false;
+wrong Supabase project — confirmed correct project; `ae` being a view rather than a
+real table — confirmed `relkind = 'r'`, a genuine table) before finding the real
+answer: a policy named **"Public can read ae"** existed — `SELECT`, `roles: {public}`,
+`qual: true` — explicitly granting every role unrestricted read access. This is very
+likely a leftover from Supabase's own "Enable read access for all users" template,
+which the dashboard offers as a one-click suggestion the first time RLS gets turned on
+for a new table — someone most likely accepted that suggestion when `ae` was first
+created, months before this review. This explains why `FORCE ROW LEVEL SECURITY`
+didn't help: that setting only matters when there's NO policy granting access at all;
+an explicit permissive policy always wins regardless. It also explains why the
+original "zero policies on all 5 tables" audit read as clean — that policy either
+wasn't caught cleanly in how the combined multi-table result was read at the time, or
+this was simply missed reading two result sets pasted together — either way, checking
+the single table directly (`select * from pg_policies where tablename = 'ae'`) is what
+finally surfaced it unambiguously.
+
+**Actual fix:** `drop policy "Public can read ae" on ae;` — confirmed by Claire
+re-running the exact same Incognito/no-store fetch test one more time: now returns
+`[]`. The `FORCE ROW LEVEL SECURITY` setting and the two new RPCs
+(`get_group_aes`/`admin_get_aes`) from earlier in this entry are still correct and
+still needed — nothing about them was wrong, they just weren't sufficient on their
+own while this explicit permissive policy also existed.
+
+**Lesson for future review:** when auditing RLS on a specific table, check
+`pg_policies` filtered to JUST that table directly and read the result before moving
+on to broader theories (ownership, role bypass, caching) — a multi-table combined
+query result is easy to misread, and the actual policy list is the first and most
+direct thing to verify, not something to arrive at last after several other
+hypotheses.
