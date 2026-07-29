@@ -930,7 +930,7 @@
             </div>
             <div>
               <label class="lbl">Role</label>
-              <select id="admin-user-role" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+              <select id="admin-user-role" onchange="adminUserRoleChanged()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
                 <option value="am">Account Manager</option>
                 <option value="super">Super Admin</option>
                 <option value="strategist">Strategist</option>
@@ -944,13 +944,13 @@
               <input type="email" id="admin-user-email" placeholder="name@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">AM Trello Handle</label>
+              <label class="lbl">Trello Handle</label>
               <input type="text" id="admin-user-trello" placeholder="@handle" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-            <div>
-              <label class="lbl">AM Calendar URL <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for KOC scheduling</span></label>
+            <div id="admin-user-calendar-wrap">
+              <label class="lbl">Calendar URL <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for KOC scheduling, AMs only</span></label>
               <input type="text" id="admin-user-calendar" placeholder="https://calendar.app.google/..." style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
@@ -2800,6 +2800,17 @@ function renderAdminUsersList() {
   el.innerHTML = html;
 }
 
+// Calendar URL is an AM-only concept (used for KOC scheduling) — hidden entirely for
+// every other role rather than shown-but-irrelevant to Strategist/Accounting/Super
+// Admin, per Claire (2026-07-18): the User editor had read as "geared toward AM" even
+// though it now covers every role. Called on role-select change and once from both
+// adminNewUser()/adminEditUser() so the field's visibility always matches whatever
+// role is currently selected, not just the one the form opened with.
+function adminUserRoleChanged() {
+  const isAm = document.getElementById('admin-user-role').value === 'am';
+  document.getElementById('admin-user-calendar-wrap').style.display = isAm ? 'block' : 'none';
+}
+
 function adminNewUser() {
   document.getElementById('admin-user-form-title').textContent = 'New User';
   document.getElementById('admin-user-original-name').value = '';
@@ -2810,6 +2821,7 @@ function adminNewUser() {
   document.getElementById('admin-user-calendar').value = '';
   document.getElementById('admin-user-password').value = '';
   document.getElementById('admin-user-password-label').innerHTML = 'Password';
+  adminUserRoleChanged();
   document.getElementById('admin-user-form').style.display = 'block';
   document.getElementById('admin-user-form').scrollIntoView({behavior:'smooth'});
 }
@@ -2827,6 +2839,7 @@ function adminEditUser(name) {
   document.getElementById('admin-user-password').value = '';
   document.getElementById('admin-user-password-label').innerHTML =
     'New Password <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— leave blank to keep current password</span>';
+  adminUserRoleChanged();
   document.getElementById('admin-user-form').style.display = 'block';
   document.getElementById('admin-user-form').scrollIntoView({behavior:'smooth'});
 }
@@ -2851,7 +2864,10 @@ async function adminSaveUser() {
     name, role,
     email: email || null,
     am_trello_handle: trelloHandle || null,
-    am_calendar_url: calendarUrl || null
+    // Calendar URL is AM-only — sending null for every other role means switching a
+    // user OFF Account Manager clears out any stale link left over from when they
+    // were one, rather than silently keeping it around unused.
+    am_calendar_url: role === 'am' ? (calendarUrl || null) : null
   };
   if (password) payload.new_password = password;
   try {
