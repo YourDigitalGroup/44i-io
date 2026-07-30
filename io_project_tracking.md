@@ -3466,3 +3466,15 @@ which is about what's been tried once a campaign is already running.
   show at a glance which ones are actually blocked vs. just newly arrived.
 
 Verified tag-balanced (including the new `textarea` elements) before republishing.
+
+**"Flag an issue" removed same day — replaced with Save Draft.** Claire clarified the
+strategist team already uses Trello to communicate IO issues, so a separate in-app
+flagging system isn't needed — removed the "Flag an issue" button, its reveal panel,
+and the related open question about routing entirely. In its place: a **Save Draft**
+action, for the exact "waiting on creative/video assets" case Setup Notes already
+covers — it keeps whatever's been reviewed/entered so far (overrides, Platform, Setup
+Notes) without activating the campaign, rather than forcing an all-or-nothing
+Confirm & Activate. Added a new open question about whether a saved Draft needs to
+notify anyone once whatever it was waiting on actually comes in, or whether a
+strategist just checks back on it themselves. Verified tag-balanced before
+republishing.
