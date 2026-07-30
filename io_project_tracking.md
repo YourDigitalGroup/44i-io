@@ -3689,3 +3689,42 @@ the save payload no longer includes `spend_pct` at all.
 
 **Still to do**: run the new SQL, then merge this branch to `main` again before Claire
 can see any of today's Accounting Map changes live.
+
+## 2026-07-30 — Accounting Map: Setup Fee Split (SEM Business Pro's $200 fee)
+
+Claire asked how to add the 44i/Group split on a service's auto-add setup fee — SEM
+Business Pro already charges $200 when a campaign is under $1,000/mo (existing
+`auto_add_setup_fee`/`setup_fee`/`setup_fee_threshold` mechanism on `services`, built
+2026-07-17), and that $200 also splits between 44i and the Group. Asked whether the
+split matches SEM's regular 44i Cut % or is its own ratio — confirmed by Claire: **50/50,
+a different ratio than SEM's regular accounting-map split** — so this needed its own
+field rather than reusing `fortyfouri_cut_pct`.
+
+**Built:**
+- New `accounting_map.setup_fee_cut_pct` column (SQL given inline, not committed —
+  `accounting-map-setup-fee-split-2026-07-30.sql` in scratchpad). Same
+  derived-vs-stored principle as the rest of this table: only the split PERCENTAGE is
+  stored — the $200 itself, and the threshold that triggers it, already live on
+  `services` and are never duplicated here.
+- Edit form: a new "Setup Fee Split" block that only appears for a service where
+  `auto_add_setup_fee && setup_fee != null && setup_fee_threshold != null` — the exact
+  same three-field check `getSetupFeeInfo()` already uses on the public form, so it's
+  structurally impossible for this block to show on a service where a setup fee
+  wouldn't actually apply. Shows the fee amount/threshold as a note, an editable "44i's
+  % of the Setup Fee" input, and a live "$X to 44i / $Y to Group" preview
+  (`updateAccountingSetupFeePreview()`).
+- List: new "Setup Fee Split" column — computed $ split for services with the field
+  set, "$X fee — split not set" for services with a setup fee but no split entered yet,
+  "—" for services with no setup fee at all.
+
+**Verified via Playwright**, including the one failure mode that actually mattered
+here — accidentally reusing the service's own `fortyfouri_cut_pct` instead of the new
+field. Test used a SEM-analog service with a regular cut of 30% and a setup-fee split
+of 50%, deliberately different numbers: confirmed the list shows the correct
+$100.00/$100.00 (50% of $200) and explicitly checked the wrong-field value
+($60.00/$140.00, what 30% would have produced) is NOT present. Also confirmed the
+block correctly shows/hides itself across three cases (has a real setup fee; has none
+at all; accounting-map row doesn't exist yet), and that the save payload round-trips
+`setup_fee_cut_pct` correctly alongside the service's unrelated regular cut.
+
+**Still to do**: run the SQL, then merge to `main`.
