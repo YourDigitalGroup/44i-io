@@ -74,6 +74,7 @@
         <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
           <button id="tab-btn-info" onclick="adminTab('info')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Group Info</button>
           <button id="tab-btn-pricing" onclick="adminTab('pricing')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Custom Pricing</button>
+          <button id="tab-btn-accounting-override" onclick="adminTab('accounting-override')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Accounting Overrides</button>
         </div>
 
         <div style="padding:20px">
@@ -153,6 +154,17 @@
             <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override default prices for this group. Leave a field blank to use the standard rate. Programmatic ad products and SEM are fixed and not shown here.</p>
             <div id="pricing-fields"></div>
             <p style="font-size:10px;color:var(--muted);margin-top:12px">Prices shown to clients on the IO form will reflect these overrides. All other groups remain at standard rates.</p>
+          </div>
+
+          <!-- TAB: Accounting Overrides (2026-07-30) — same shape as Custom Pricing above,
+               but for the Accounting Map's own fields rather than client-facing price.
+               Deliberately its own tab, not merged into Custom Pricing — per Claire, this
+               is internal margin data, a completely different concern from what a client
+               is billed. Restricted to super admins, same guard as Custom Pricing. -->
+          <div id="tab-accounting-override" style="display:none">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Fixed Cut $, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. Only services with a real Accounting Map entry are shown — a CPM-adjustment modifier (like Offline Visits Tracking) auto-derives its figures from its own base tactic and has nothing here to override.</p>
+            <div id="accounting-override-fields"></div>
+            <p style="font-size:10px;color:var(--muted);margin-top:12px">Internal only — never shown to clients or on the printed IO. Affects only how this group's real margin is calculated, not anything on the public form.</p>
           </div>
 
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
@@ -1289,19 +1301,32 @@ function rebuildPriceableServices() {
 }
 
 // ── ADMIN TAB SWITCHER ────────────────────────────────────────
-function adminTab(tab) {
-  // AM-tier users cannot view or adjust custom pricing
-  if (tab === 'pricing' && currentAdminUser?.role === 'am') {
-    showToast('Custom pricing can only be changed by a super admin', 'error');
+async function adminTab(tab) {
+  // AM-tier users cannot view or adjust custom pricing or accounting overrides — both
+  // are super-admin-only, same restriction as the base Custom Pricing/Accounting Map
+  // screens themselves.
+  if ((tab === 'pricing' || tab === 'accounting-override') && currentAdminUser?.role === 'am') {
+    showToast(tab === 'pricing' ? 'Custom pricing can only be changed by a super admin' : 'Accounting overrides can only be changed by a super admin', 'error');
     return;
   }
   document.getElementById('tab-info').style.display     = tab==='info'    ? 'block' : 'none';
   document.getElementById('tab-pricing').style.display  = tab==='pricing' ? 'block' : 'none';
+  document.getElementById('tab-accounting-override').style.display = tab==='accounting-override' ? 'block' : 'none';
   document.getElementById('tab-btn-info').style.borderBottomColor    = tab==='info'    ? 'var(--accent)' : 'transparent';
   document.getElementById('tab-btn-pricing').style.borderBottomColor = tab==='pricing' ? 'var(--accent)' : 'transparent';
+  document.getElementById('tab-btn-accounting-override').style.borderBottomColor = tab==='accounting-override' ? 'var(--accent)' : 'transparent';
   document.getElementById('tab-btn-info').style.color    = tab==='info'    ? 'var(--accent)' : 'var(--muted)';
   document.getElementById('tab-btn-pricing').style.color = tab==='pricing' ? 'var(--accent)' : 'var(--muted)';
+  document.getElementById('tab-btn-accounting-override').style.color = tab==='accounting-override' ? 'var(--accent)' : 'var(--muted)';
   if (tab === 'pricing') renderPricingFields();
+  if (tab === 'accounting-override') {
+    // Accounting Overrides needs the same base Accounting Map data the Accounting Map
+    // tab itself uses (ALL_ACCOUNTING_MAP/allServicesMap) — load it lazily here too,
+    // same pattern as ensureStaffRosterLoaded(), rather than forcing every Group-editor
+    // open to pay for it up front.
+    if (!ALL_ACCOUNTING_MAP.length) await loadAdminAccountingMap();
+    renderAccountingOverrideFields();
+  }
 }
 
 // ── PRICING FIELDS BUILDER ────────────────────────────────────
@@ -1366,6 +1391,91 @@ function onPriceInput(serviceId, val) {
     input.title = isOverridden ? `Custom price for this group (standard is $${CATALOG_ROWS[serviceId]?.default_price})` : '';
   }
   if (dollarSign) dollarSign.style.color = isOverridden ? 'var(--accent)' : 'var(--muted)';
+}
+
+// ── ACCOUNTING OVERRIDES (per-group, 2026-07-30) ────────────────
+// Same shape as Custom Pricing above (a sparse override object keyed by service_id,
+// stored directly on the group), but one level deeper — each service can override any
+// combination of the Accounting Map's own fields, not just a single price. Deliberately
+// a separate mechanism, not folded into currentPricingOverrides/io_pricing — per
+// Claire, this is internal margin data, a different concern entirely from client price.
+let currentAccountingOverrides = {};
+const ACCOUNTING_OVERRIDE_FIELDS = [
+  { key: 'fortyfouri_cut_pct', label: '44i Cut %', suffix: '%' },
+  { key: 'fortyfouri_fixed_cut', label: 'Fixed Cut $', suffix: '' },
+  { key: 'budgeted_spend_pct', label: 'Budgeted Spend %', suffix: '%' },
+];
+
+function renderAccountingOverrideFields() {
+  const container = document.getElementById('accounting-override-fields');
+  if (!container) return;
+  const mapById = {};
+  ALL_ACCOUNTING_MAP.forEach(a => { mapById[a.service_id] = a; });
+  // Only services with a REAL Accounting Map entry have anything to override — a
+  // CPM-adjustment modifier (Offline Visits Tracking, etc.) auto-derives its figures
+  // from its own sibling tactic and has no base entry of its own to override here.
+  const sectionOrderIndex = {};
+  SECTIONS.forEach((sec, i) => { sectionOrderIndex[sec.id] = sec.sort_order ?? i; });
+  const rows = allServicesMap
+    .filter(s => s.active !== false && !s.is_cpm_adjustment && mapById[s.id])
+    .sort((a,b) => ((sectionOrderIndex[a.section] ?? Infinity) - (sectionOrderIndex[b.section] ?? Infinity)) || (a.sort_order||0)-(b.sort_order||0));
+  if (!rows.length) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:12px">No services have an Accounting Map entry yet — set those up first in the Accounting Map tab, then group-level overrides can be added here.</p>';
+    return;
+  }
+  let html = '';
+  rows.forEach(s => {
+    const base = mapById[s.id];
+    const override = currentAccountingOverrides[s.id] || {};
+    const hasSetupFee = s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null;
+    const fields = hasSetupFee
+      ? [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }]
+      : ACCOUNTING_OVERRIDE_FIELDS;
+    html += `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--border)">
+      <label style="font-size:11.5px;color:var(--text);min-width:220px;line-height:1.4">${esc(s.accounting_label || s.label)}<div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(s.id)}</div></label>`;
+    fields.forEach(f => {
+      const val = override[f.key];
+      const isOverridden = val !== undefined;
+      const liveDefault = base?.[f.key] ?? '—';
+      html += `<div style="display:flex;flex-direction:column;gap:2px">
+        <span style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">${f.label}</span>
+        <div style="display:flex;align-items:center;gap:3px">
+          <input type="number" step="0.01"
+            id="acct-override-${s.id}-${f.key}"
+            value="${isOverridden ? val : ''}"
+            placeholder="${liveDefault}"
+            title="${isOverridden ? 'Custom for this group (standard is ' + liveDefault + f.suffix + ')' : ''}"
+            style="width:64px;padding:5px 6px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
+            oninput="onAccountingOverrideInput('${s.id}', '${f.key}', this.value)"/>
+          <span style="font-size:10px;color:var(--muted);min-width:10px">${f.suffix}</span>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+}
+
+function onAccountingOverrideInput(serviceId, field, val) {
+  const isOverridden = val !== '' && val !== null && !isNaN(parseFloat(val));
+  if (!currentAccountingOverrides[serviceId]) currentAccountingOverrides[serviceId] = {};
+  if (!isOverridden) {
+    delete currentAccountingOverrides[serviceId][field];
+    // Clean up the per-service object entirely once it has no overrides left, so a
+    // save doesn't persist a stray `{}` for a service the admin touched and then
+    // cleared — keeps the stored JSON exactly as sparse as what's actually overridden.
+    if (Object.keys(currentAccountingOverrides[serviceId]).length === 0) {
+      delete currentAccountingOverrides[serviceId];
+    }
+  } else {
+    currentAccountingOverrides[serviceId][field] = parseFloat(val);
+  }
+  // Toggle the highlight live, matching renderAccountingOverrideFields()'s own
+  // initial-render styling — same reasoning as onPriceInput()'s identical pattern.
+  const input = document.getElementById(`acct-override-${serviceId}-${field}`);
+  if (input) {
+    input.style.cssText += ';' + (isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE);
+  }
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────
@@ -5078,8 +5188,11 @@ async function adminNewGroup() {
   const sp = document.getElementById('slug-preview'); if(sp) sp.textContent = '...';
   const sw = document.getElementById('admin-slug-warn'); if(sw) sw.style.display = 'none';
   currentPricingOverrides = {};
+  currentAccountingOverrides = {};
   const pricingTabBtn = document.getElementById('tab-btn-pricing');
   if (pricingTabBtn) pricingTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+  const acctOverrideTabBtn = document.getElementById('tab-btn-accounting-override');
+  if (acctOverrideTabBtn) acctOverrideTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(null);
   adminTab('info');
@@ -5123,8 +5236,18 @@ async function adminEditGroup(id) {
       Object.assign(currentPricingOverrides, p);
     } catch(e) {}
   }
+  // Load existing accounting overrides — same parse-defensively pattern as io_pricing.
+  currentAccountingOverrides = {};
+  if (g.accounting_overrides) {
+    try {
+      const a = typeof g.accounting_overrides === 'string' ? JSON.parse(g.accounting_overrides) : g.accounting_overrides;
+      Object.assign(currentAccountingOverrides, a);
+    } catch(e) {}
+  }
   const pricingTabBtn2 = document.getElementById('tab-btn-pricing');
   if (pricingTabBtn2) pricingTabBtn2.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+  const acctOverrideTabBtn2 = document.getElementById('tab-btn-accounting-override');
+  if (acctOverrideTabBtn2) acctOverrideTabBtn2.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
   adminTab('info');
   document.getElementById('admin-group-form').style.display = 'block';
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
@@ -5159,6 +5282,9 @@ async function adminSaveGroup() {
   // so a PATCH never overwrites the group's existing overrides.
   if (currentAdminUser?.role !== 'am') {
     payload.io_pricing = Object.keys(currentPricingOverrides).length > 0 ? currentPricingOverrides : null;
+    // Same reasoning as io_pricing above — omit entirely for AM-tier so a save from an
+    // AM login (Group Info only) can never clobber a super-admin-set accounting override.
+    payload.accounting_overrides = Object.keys(currentAccountingOverrides).length > 0 ? currentAccountingOverrides : null;
   }
 
   try {
