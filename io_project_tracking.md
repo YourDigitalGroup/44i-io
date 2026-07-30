@@ -3294,3 +3294,56 @@ AM shows their calendar value intact; editing an existing Strategist keeps it hi
 and switching an existing AM (with a calendar link already set) to Strategist and
 saving sends `am_calendar_url: null` while leaving their Trello handle untouched.
 Structural syntax check passed.
+
+## 2026-07-18 — Strategist team's first-round feedback on the mockup
+
+Claire held the first real meeting with the strategist team, walking them through the
+mockup/plan doc. Their read: "on the right track," plus five pieces of new feedback,
+folded into the mockup the same day.
+
+1. **Overrides in case an IO is filled out incorrectly, verify an IO before its
+   campaign lines get created — Claire flagged this one herself as (Pending).**
+   Genuinely undecided territory — not designed around yet, just captured as its own
+   plan card explicitly marked "Pending — not yet decided," plus a new question group
+   asking for a real example of an IO gone wrong, whether verification should block
+   line creation or just flag a correction afterward, and whether an override should
+   replace the original IO value or keep it visible for reference. Deliberately not
+   guessed at further than that.
+2. **Different budgets per month.** A single ongoing campaign's Gross/In-Platform
+   Budget isn't necessarily one flat number for the whole flight — it can change month
+   to month. Ties directly into the month picker already in the mockup (whichever
+   month you're viewing should show that month's actual budget). Added as its own plan
+   card, tagged "Confirmed needed, shape still being worked out" — and a new question
+   about where a mid-flight budget change actually originates (a new/updated IO, or
+   something entered directly) before this can go further.
+3. **Campaign status — Pending / Active / Paused / Complete.** New `status-pill`
+   component, deliberately a different color language from the pacing pills (accent
+   blue for Active, amber for Paused, muted grey for Pending, accent2 teal for
+   Complete) so status and pacing are never visually confused — one is where a
+   campaign is in its life, the other is how it's performing while it runs. Added a
+   new Status column (first, right after Client) and one new example row (Meridian
+   Dental, Pending — ordered on the IO but flight hasn't started, shown with dashes
+   for every actual/pacing figure that doesn't apply yet) so all four states are
+   represented across the mockup's rows.
+4. **MTD pacing for spend.** The very first template analysis, back at the start of
+   this whole scoping effort, already noted the original spreadsheet had a "Month To
+   Date Budget Pacing" column separate from performance pacing — that distinction got
+   flattened into one pacing figure in earlier mockup drafts. Restored as its own
+   **Spend Pacing** column, same 3-band color logic, placed right after Actual Spend
+   (paired, matching Claire's earlier "keep related figures adjacent" feedback), with
+   Perf. Pacing renamed from the old plain "Pacing" for symmetry. Harbor & Vine's row
+   now deliberately shows the two pacing figures disagreeing (135% spend pacing vs.
+   78% performance pacing) as a concrete illustration of exactly why tracking them
+   separately matters — spending ahead of schedule without matching results is a
+   different problem than under-spending.
+5. **A way to import current campaigns.** Existing campaigns already running before
+   this portal exists won't have gone through the "auto-populate from the IO" path.
+   Added as a plan card explicitly mirroring the Client/AE import pattern already
+   built elsewhere in this platform: review-before-import, nothing auto-created. New
+   question group asks how much history needs to come in with an imported campaign,
+   and roughly how many campaigns this would need to cover at once.
+
+Table now has 14 columns (Client, Status, Tactic, Platform, Flight, Gross Budget,
+In-Platform Budget, Actual Spend, Spend Pacing, Goal, Actual Perf., Perf. Pacing,
+Optimize Log, Notes) — verified tag-balanced (table/tr/td/th/div/section/ul/li/span/p
+counts all matched) before republishing. Still a concept only, no build started.
