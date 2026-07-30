@@ -4174,3 +4174,10 @@ from impressions, exact metric not yet specified).
 
 Verified tag-balanced (Python regex tag-stack check, matching this doc's established
 verification method for this artifact) before republishing.
+
+**Same day, follow-up: SEM's goal metric confirmed as Clicks.** Closes one of the two
+still-open items above — the mockup's "Goal calculates itself" plan card had already
+shown "clicks (SEM only)" as a working assumption before this was actually confirmed;
+updated its tag from "Automatic" to "Automatic, both metrics confirmed" and reworded
+the card so it no longer reads as an assumption. Only Platform's mid-campaign
+editability remains open. Verified tag-balanced before republishing.
