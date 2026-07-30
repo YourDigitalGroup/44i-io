@@ -3811,3 +3811,53 @@ explicit case to each function's fallback chain:
 Verified via simulation of both functions' branching logic side by side for Offline
 Visits Tracking (now shows the explicit no-charge note in both places) and `yttv-addl`
 (completely unaffected, still shows its normal $15/mo).
+
+**Same day, follow-up: Accounting Map for `*-offline` rows — combined-CPM approach,
+plus an internal-only label override.** Claire asked how the Accounting Map should
+handle the `*-offline` modifier services now that they don't produce a separate
+billed line item. Since the Accounting Map's CPM columns already just read whatever's
+in `services.retail_cpm` regardless of `pricing_mode`, the simplest fix needed no new
+mechanism at all: give each `*-offline` service its own `retail_cpm` set to the
+**combined** value (base tactic's CPM + $2), and its own Accounting Map entry using
+the *same* 44i Cut %/Budgeted Spend % as its base tactic — confirmed earlier this
+session that those percentages never differed from the "w/Visits" spreadsheet rows,
+only the CPM did. That makes `td-offline`'s own Accounting Map row effectively
+represent the "w/Visits" scenario from Claire's spreadsheet, `td-geo`'s stays the
+"without" scenario — same two-row structure, using the existing modifier row instead
+of a new duplicate SKU. Pure data entry through the Services/Accounting Map tabs that
+already exist — no schema or code change needed for that part.
+
+Claire then asked for one more thing: she doesn't want this to change how the service
+*looks* to clients/AEs — the real, client-facing Label needs to stay "Offline Visits
+Tracking" everywhere else (live IO form, Trello, print), but the Accounting Map screen
+itself should be able to show something clearer (e.g. "Targeted Display —
+Geo-Targeting (w/ Visits, combined CPM)") so it's not confusing that this modifier row
+now effectively represents a specific tactic's combined CPM.
+
+Added a new `services.accounting_label` column (optional, nullable) — an
+internal-only override used ONLY by the Accounting Map tab's list and edit-form
+title, falling back to the real `label` when unset. New "Accounting Map Label" field
+added to the Service editor, directly under the real Label field, with an explicit
+note that it's internal-only and never client-facing. Deliberately did NOT touch
+`index.html`'s public form, Trello card building, or print IO — none of them read
+this new field, so the client-facing label is structurally guaranteed to stay
+untouched no matter what's typed into this override.
+
+Verified via Playwright: a `td-offline`-analog row with `accounting_label` set shows
+the override in both the Accounting Map list and the edit-form title, and the real
+label ("Targeted Display — Offline Visits Tracking") does NOT appear anywhere in the
+Accounting Map screen; confirmed a row with no override correctly falls back to its
+real label in both places.
+
+**Still to do**: SQL for `accounting_label` (below) plus the earlier
+`is_cpm_adjustment` SQL, then merge to `main`. Data entry itself (combined CPMs +
+percentages + accounting labels for all 10 `*-offline` rows) is Claire's to do
+through the admin UI once it's live.
+
+```sql
+alter table services add column if not exists accounting_label text;
+
+-- add to admin_save_service's INSERT column list/VALUES and the UPDATE SET clause,
+-- same case-when-present pattern as unit_label/fee_note/etc.:
+--   accounting_label = case when p_data ? 'accounting_label' then p_data->>'accounting_label' else accounting_label end
+```

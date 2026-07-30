@@ -383,6 +383,10 @@
                 <input type="text" id="admin-svc-label" placeholder="e.g. Business Pro" oninput="autoServiceId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
+            <div style="margin-bottom:12px">
+              <label class="lbl">Accounting Map Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; internal-only, shown ONLY in the Accounting Map tab. Leave blank to just use Label above. Never shown to clients/AEs.</span></label>
+              <input type="text" id="admin-svc-accounting-label" placeholder="e.g. Targeted Display — Geo-Targeting (w/ Visits, combined CPM)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl">Section</label>
@@ -3103,8 +3107,13 @@ function renderAdminAccountingList() {
       }
     }
     const editBtn = `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`;
+    // Accounting Map Label — internal-only override, e.g. so an "Offline Visits
+    // Tracking" modifier row can read as "Targeted Display — Geo-Targeting (w/ Visits,
+    // combined CPM)" here without touching the client/AE-facing Label used everywhere
+    // else (live IO form, Trello, print). Falls back to the real label when unset.
+    const displayLabel = s.accounting_label || s.label;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
-      <td style="padding:8px 10px">${esc(s.label)}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
+      <td style="padding:8px 10px">${esc(displayLabel)}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
       <td style="padding:8px 10px">${defaultRetail != null ? '$' + defaultRetail.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
       <td style="padding:8px 10px">${cutPctDisplay != null ? cutPctDisplay + '%' : '—'}</td>
@@ -3148,7 +3157,7 @@ function adminEditAccounting(serviceId) {
   const s = allServicesMap.find(x => x.id === serviceId);
   if (!s) return;
   const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId);
-  document.getElementById('admin-accounting-form-title').textContent = 'Accounting Map — ' + s.label;
+  document.getElementById('admin-accounting-form-title').textContent = 'Accounting Map — ' + (s.accounting_label || s.label);
   document.getElementById('admin-accounting-service-id').value = serviceId;
   document.getElementById('admin-accounting-default-retail-display').value = s.default_price != null ? '$' + Number(s.default_price).toFixed(2) : '— (not set on this service)';
   document.getElementById('admin-accounting-retail-cpm-display').value = s.retail_cpm != null ? '$' + Number(s.retail_cpm).toFixed(2) : '— (not set on this service)';
@@ -4149,7 +4158,7 @@ function adminNewService() {
   document.getElementById('admin-service-form-subtitle').textContent =
     'Restricted to sections already converted to dynamic rows — see note below.';
   document.getElementById('admin-svc-original-id').value = '';
-  ['admin-svc-id','admin-svc-label','admin-svc-sort','admin-svc-price',
+  ['admin-svc-id','admin-svc-label','admin-svc-accounting-label','admin-svc-sort','admin-svc-price',
    'admin-svc-modifier','admin-svc-cpm',
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
    'admin-svc-spend-min','admin-svc-trello-template-ref'].forEach(id => {
@@ -4200,6 +4209,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-id').disabled = true; // id is the key everything else references — immutable after creation
   document.getElementById('admin-svc-id').dataset.manuallyEdited = '1'; // FIXED (2026-07-14, found live): without this, autoServiceId() (bound to the Label field's oninput) silently regenerated this disabled-but-still-live ID field to match whatever new label was typed, on every keystroke. That regenerated id — not the service's real one — was what got sent as p_service_id on Save, matching zero rows in the UPDATE (no error raised on a 0-row update), so the label (and nothing else, since a same-session edit to other fields still carried the correct original id right up until the label was touched) silently failed to persist despite the success toast. Same fix already applied to the Sections editor's analogous bug — never carried over here.
   document.getElementById('admin-svc-label').value = s.label || '';
+  document.getElementById('admin-svc-accounting-label').value = s.accounting_label || '';
   document.getElementById('admin-svc-sort').value = s.sort_order ?? '';
   document.getElementById('admin-svc-pricing-mode').value = s.pricing_mode || 'flat';
   document.getElementById('admin-svc-price').value = s.default_price ?? '';
@@ -4334,6 +4344,7 @@ async function adminSaveService() {
 
   const payload = {
     label: label,
+    accounting_label: document.getElementById('admin-svc-accounting-label').value.trim() || null,
     section: document.getElementById('admin-svc-section').value,
     pricing_mode: document.getElementById('admin-svc-pricing-mode').value,
     default_price: priceVal === '' ? null : parseFloat(priceVal),
