@@ -3294,3 +3294,288 @@ AM shows their calendar value intact; editing an existing Strategist keeps it hi
 and switching an existing AM (with a calendar link already set) to Strategist and
 saving sends `am_calendar_url: null` while leaving their Trello handle untouched.
 Structural syntax check passed.
+
+## 2026-07-18 — Strategist team's first-round feedback on the mockup
+
+Claire held the first real meeting with the strategist team, walking them through the
+mockup/plan doc. Their read: "on the right track," plus five pieces of new feedback,
+folded into the mockup the same day.
+
+1. **Overrides in case an IO is filled out incorrectly, verify an IO before its
+   campaign lines get created — Claire flagged this one herself as (Pending).**
+   Genuinely undecided territory — not designed around yet, just captured as its own
+   plan card explicitly marked "Pending — not yet decided," plus a new question group
+   asking for a real example of an IO gone wrong, whether verification should block
+   line creation or just flag a correction afterward, and whether an override should
+   replace the original IO value or keep it visible for reference. Deliberately not
+   guessed at further than that.
+2. **Different budgets per month.** A single ongoing campaign's Gross/In-Platform
+   Budget isn't necessarily one flat number for the whole flight — it can change month
+   to month. Ties directly into the month picker already in the mockup (whichever
+   month you're viewing should show that month's actual budget). Added as its own plan
+   card, tagged "Confirmed needed, shape still being worked out" — and a new question
+   about where a mid-flight budget change actually originates (a new/updated IO, or
+   something entered directly) before this can go further.
+3. **Campaign status — Pending / Active / Paused / Complete.** New `status-pill`
+   component, deliberately a different color language from the pacing pills (accent
+   blue for Active, amber for Paused, muted grey for Pending, accent2 teal for
+   Complete) so status and pacing are never visually confused — one is where a
+   campaign is in its life, the other is how it's performing while it runs. Added a
+   new Status column (first, right after Client) and one new example row (Meridian
+   Dental, Pending — ordered on the IO but flight hasn't started, shown with dashes
+   for every actual/pacing figure that doesn't apply yet) so all four states are
+   represented across the mockup's rows.
+4. **MTD pacing for spend.** The very first template analysis, back at the start of
+   this whole scoping effort, already noted the original spreadsheet had a "Month To
+   Date Budget Pacing" column separate from performance pacing — that distinction got
+   flattened into one pacing figure in earlier mockup drafts. Restored as its own
+   **Spend Pacing** column, same 3-band color logic, placed right after Actual Spend
+   (paired, matching Claire's earlier "keep related figures adjacent" feedback), with
+   Perf. Pacing renamed from the old plain "Pacing" for symmetry. Harbor & Vine's row
+   now deliberately shows the two pacing figures disagreeing (135% spend pacing vs.
+   78% performance pacing) as a concrete illustration of exactly why tracking them
+   separately matters — spending ahead of schedule without matching results is a
+   different problem than under-spending.
+5. **A way to import current campaigns.** Existing campaigns already running before
+   this portal exists won't have gone through the "auto-populate from the IO" path.
+   Added as a plan card explicitly mirroring the Client/AE import pattern already
+   built elsewhere in this platform: review-before-import, nothing auto-created. New
+   question group asks how much history needs to come in with an imported campaign,
+   and roughly how many campaigns this would need to cover at once.
+
+Table now has 14 columns (Client, Status, Tactic, Platform, Flight, Gross Budget,
+In-Platform Budget, Actual Spend, Spend Pacing, Goal, Actual Perf., Perf. Pacing,
+Optimize Log, Notes) — verified tag-balanced (table/tr/td/th/div/section/ul/li/span/p
+counts all matched) before republishing. Still a concept only, no build started.
+
+## 2026-07-18 — Budget-per-month decided (v1: manual); accounting map partly solved;
+## Campaign Setup workflow + status tabs resolve the "Pending" override item
+
+**Budget-per-month — DECIDED.** Confirmed with Claire: today, when a client's budget
+varies by month, that only exists as free text in the IO's Notes field — not
+structured data, so the portal can't reliably auto-populate it (parsing arbitrary
+sentences for dollar amounts is fragile and will eventually misread something).
+Decision: **v1 is manual entry** — a strategist types in each month's actual budget in
+the portal, same trust level as the Platform field already has. A structured version
+on the IO form itself (an AE fills in a real month → budget breakdown instead of
+writing it in Notes) is a real v2 candidate, explicitly deferred until the team is
+comfortable with the online IO process as it stands today — not attempted now.
+
+**Accounting map — partly solved with real numbers.** Claire shared an actual sample
+(fake-data-free real numbers, no client names). Verified two facts by checking the
+arithmetic directly against every row:
+- **`44i Cut $` = `Default Retail` × `44i Cut %`** — holds exactly, every row.
+- **`YDA` (Group Cut %) + `44i Cut %` = 100%** — every single row, no exceptions.
+- Therefore: **`44i Fixed Cut = 0` means "use the percentage calculation" (dynamic —
+  recalculates if Retail changes); a nonzero `44i Fixed Cut` means that flat dollar
+  amount is used instead of the percentage, and stays fixed even if Retail later
+  changes.** This directly answers the original blocking question from the earlier
+  entry.
+- **Still unresolved:** the sample had zero rows with `Retail CPM`/`44i CPM`/
+  `Platform CPM` filled in, and — despite `YDA + 44i Cut % = 100%` holding even on rows
+  that DO have a `(Of Gross) Budgeted Spend %` value (2.20%, 17.86%, 39.20%, etc.) —
+  that percentage clearly isn't simply "what's left after the two cuts," since the two
+  cuts already account for 100% of Retail on those rows too. What that percentage (and
+  the CPM columns) actually represent for real media-buying items is still not known.
+  Asked Claire for a sample row with the CPM columns populated to close this out
+  completely — not guessed at further than the two confirmed facts above.
+
+**Campaign Setup workflow + status tabs — Claire's proposal, resolves the earlier
+"Pending — not yet decided" override/verify item.** Every IO lands in a **Campaign
+Setup** queue first, not straight onto the pacing list — the strategist gets notified,
+reviews what came from the IO, corrects anything wrong, picks the Platform, then
+confirms — which is what actually creates the campaign and moves it to Active. This
+gives Status a real starting point instead of just being a label: **Pending IS the
+Campaign Setup queue**, not a status a campaign passes through unattended. Claire also
+proposed organizing the whole dashboard into **tabs by status** (Campaign Setup /
+Active / Paused / Complete) instead of one flat table with a Status column to scan —
+a strategist's default view becomes just what needs attention now.
+
+Added to the mockup: a status-tab bar (with counts) above the dashboard, and a new
+Campaign Setup review panel for the Meridian Dental example (shows the IO-sourced
+fields, an empty Platform picker to fill in, "Confirm & Activate" / "Flag an issue"
+actions) — replacing the earlier flat Pending row in the main table, since Pending
+campaigns now live in their own queue, not mixed into the pacing list. Added an inline
+note clarifying that a real app would show one tab's content at a time; this mockup
+stacks Campaign Setup and the pacing table together on one page just to show both at
+once. Updated/replaced the affected open questions: dropped the now-resolved
+"verify-before-or-after" question, added new ones about who sees a "Flag an issue"
+click, whether IO-sourced fields can still be corrected after a campaign goes Active,
+and whether manual monthly budget entries need any sign-off.
+
+Verified tag-balanced (table/tr/td/th/div/section/ul/li/span/p/button counts all
+matched) before republishing. Still a concept only — no schema or build work started.
+
+## 2026-07-18 — Accounting map fully resolved; Campaign Setup gets inline overrides + monthly budget entry
+
+**Accounting map — FULLY RESOLVED.** Claire shared a second sample with the CPM
+columns actually populated. Checked the arithmetic across 10 more real rows:
+**`Platform CPM = Retail CPM × (Of Gross) Budgeted Spend %`**, exact match every row
+(e.g. Retail CPM 46.5, Budgeted Spend % 48.39% → Platform CPM 22.5, confirmed to the
+cent). This resolves the whole question more simply than expected: **In-Platform
+Budget = Gross Budget × Budgeted Spend %**, looked up per Item against the services
+catalog — nothing else from the accounting map is actually needed for this
+calculation. The Group Cut/44i Cut/YDA/Fixed Cut columns turn out to be a *separate*
+concern — 44i's and the Group's own internal revenue-share split — not something the
+strategist portal needs to touch at all, since the portal only ever cares what
+actually gets spent with the ad platform. This closes out every open question from
+the earlier accounting-map entries; no more diagnosis needed there.
+
+**Campaign Setup — inline overrides + monthly budget entry, per Claire's design
+question.** Asked: could "Flag an issue" instead be empty override cells next to each
+IO-sourced field, plus a way to indicate a campaign's budget varies by month right
+there in the same screen? Yes to both — built into the mockup:
+- Every IO-sourced field (Client, Tactic, Flight, Gross Budget, In-Platform Budget) now
+  shows the IO's original value with an empty override input directly beneath it —
+  blank means "this is correct," filled in means "the IO had this wrong." Resolves the
+  earlier open question about whether an override should replace the original value or
+  keep it visible for reference — the answer built into the design is: both, always,
+  side by side.
+- A "Budget is different by month for this campaign" checkbox reveals a simple
+  month-by-month Gross/In-Platform entry list right in the same Campaign Setup screen
+  — matches the earlier "manual for v1" decision on monthly budgets, and puts that
+  entry exactly where a strategist is already reviewing the IO instead of somewhere
+  separate to find later.
+
+Verified tag-balanced (including the new `input`/`label` elements) before
+republishing. Still a concept only — no schema or build work started, but the
+accounting-map math is now settled enough that the actual In-Platform Budget formula
+could be built with confidence whenever this moves forward.
+
+**Confirmed same day: the Group Cut/44i Cut/YDA/Fixed Cut columns ARE still needed —
+just for a later, separate part of the build (the accounting side), not this one.**
+Doesn't change anything about the strategist portal itself, but worth remembering this
+data isn't dead weight — it'll matter once that phase starts.
+
+**"Flag an issue" behavior + Setup Notes — added to the mockup.** Claire asked what
+actually happens when a strategist clicks "Flag an issue," and separately asked for a
+notes field in Campaign Setup for whatever a campaign is waiting on before it can go
+live (creative, video assets, client sign-off, etc.) — distinct from the Optimize Log,
+which is about what's been tried once a campaign is already running.
+- **Flag an issue — proposed default**, not yet confirmed by Claire: clicking it
+  reveals a text box to describe the problem, which notifies the AM tied to that
+  group, and the campaign stays in Campaign Setup marked **Flagged** rather than
+  disappearing or blocking silently. Added to the mockup with this framing explicitly
+  labeled as a proposal, and kept the open question (does the AE need to be looped in
+  too, not just the AM) rather than asserting this as decided.
+- **Setup Notes** — a plain textarea added to the Campaign Setup panel, with a
+  realistic example ("Waiting on creative from the client... checked in with AE
+  7/22, no ETA yet"), explicitly distinguished from the Optimize Log in both the
+  mockup's own copy and the plan card describing it. New question added: would a
+  plain notes field be enough, or is there value in Pending campaigns being able to
+  show at a glance which ones are actually blocked vs. just newly arrived.
+
+Verified tag-balanced (including the new `textarea` elements) before republishing.
+
+**"Flag an issue" removed same day — replaced with Save Draft.** Claire clarified the
+strategist team already uses Trello to communicate IO issues, so a separate in-app
+flagging system isn't needed — removed the "Flag an issue" button, its reveal panel,
+and the related open question about routing entirely. In its place: a **Save Draft**
+action, for the exact "waiting on creative/video assets" case Setup Notes already
+covers — it keeps whatever's been reviewed/entered so far (overrides, Platform, Setup
+Notes) without activating the campaign, rather than forcing an all-or-nothing
+Confirm & Activate. Added a new open question about whether a saved Draft needs to
+notify anyone once whatever it was waiting on actually comes in, or whether a
+strategist just checks back on it themselves. Verified tag-balanced before
+republishing.
+
+**Confirmed same day: monthly In-Platform Budget auto-calculates too — not typed in
+per month.** Claire confirmed the monthly budget entry should follow the same formula
+already established for the campaign overall (Gross Budget × that tactic's Budgeted
+Spend %), not have In-Platform typed in separately each month. Fixed the mockup's
+monthly budget grid, which had shown both Gross and In-Platform as editable inputs —
+inconsistent with the rest of the mockup, where In-Platform is already
+auto-calculated. In-Platform inputs in the monthly grid are now shown disabled/
+computed (dashed border, monospace, "not-allowed" cursor — same visual language as
+other computed fields), with only Gross Budget actually editable per month. Verified
+tag-balanced before republishing.
+
+## 2026-07-18 (cont'd) — Accounting Map: real build, first slice of the framework
+
+After the mockup's math confirmed exactly what the strategist portal actually needs
+(`In-Platform Budget = Gross Budget × Budgeted Spend %`, looked up per service), Claire
+confirmed the architecture for building this for real: the Accounting/Spend Map lives
+in the **admin portal**, matching the existing catalog-editor pattern, and the
+strategist portal (and a future accounting portal) will each reference only the fields
+they need from it. Per-group overrides are confirmed as needed eventually, but deferred
+— they'll land later as their own new section on Group settings, not merged into the
+existing Custom Pricing/`io_pricing` mechanism.
+
+Four clarifying questions asked and answered before building:
+1. Default Retail should match services pricing including group overrides — confirmed.
+2. Group Cut % (YDA) is always `100 − 44i Cut %` — confirmed as a real rule, not
+   coincidence.
+3. `spend_pct` is specific to the programmatic Audio/Video services — confirmed
+   connection; exact formula/usage deliberately left unresolved until those services'
+   entries actually get built (not guessed at).
+4. Claire asked for one more piece: if a new service is added in the Services tab, a
+   prompt should immediately offer to set up its Accounting Map entry, so new services
+   can't silently launch without one.
+
+**What was built** — new `accounting_map` table, one row per service (`service_id`
+FK to `services`, `on delete cascade`):
+- `fortyfouri_cut_pct`, `fortyfouri_fixed_cut` (default 0 — 0/null means "use the
+  percentage," a nonzero value overrides with a flat dollar cut instead — confirmed
+  against two real spreadsheet samples), `budgeted_spend_pct` (the one field the
+  strategist portal actually needs), `spend_pct` (Audio/Video-specific, meaning TBD),
+  `updated_at`.
+- Deliberately does **not** store Default Retail, Retail CPM, Group Cut %/YDA, 44i Cut
+  $, or Platform CPM — every one of those is cheaply derivable from stored fields
+  (`services.default_price`/`services.retail_cpm` plus the two percentages above), so
+  storing them separately would just be a second copy that could drift. Same
+  derived-vs-stored principle used everywhere else in this catalog.
+- RLS: enabled **and forced**, zero policies — applying the exact lesson learned from
+  the `ae` table leak earlier this session (an explicit permissive policy is what
+  actually causes a leak; forced RLS with no policies at all is what actually closes
+  one). All access goes through two new password-gated RPCs:
+  `admin_get_accounting_map` and `admin_save_accounting_map` (upsert by `service_id`,
+  same safe `case when p_data ? 'field'` partial-update pattern as `admin_save_service`).
+  Both are **super-admin only** — this is real margin data, same sensitivity tier as
+  Legal Text/Notification Settings.
+- SQL given to Claire inline in chat (not committed to the repo, per this project's
+  standing convention) — table + RLS + both RPCs, plus a verify query.
+
+**Admin UI** — new "Accounting Map" tab (super-admin only, same restriction pattern as
+the Users tab), with a missing-entry count badge on the tab button itself (mirrors the
+existing pattern elsewhere in the nav). The list shows every active service with a
+red "MISSING" badge and a "Set Up" button (vs. "Edit") for any service with no
+`accounting_map` row yet — makes an incomplete catalog visible at a glance instead of
+silently defaulting to zero. The edit form shows a live "Group's cut (YDA): X%" preview
+as 44i Cut % is typed, computed client-side, so nothing about the 100%-total rule is
+hidden or has to be done by hand.
+
+**New-service prompt** — `adminSaveService()`'s success path now calls
+`promptNewServiceAccountingSetup(id)` whenever `isNew` is true: a confirm dialog
+("...before it's ready for real use. Set that up now?") that, if accepted, switches to
+the Accounting Map tab and opens that exact service's edit form pre-selected. Declining
+leaves the service saved but flagged MISSING in the Accounting Map list, so it's never
+silently lost track of.
+
+**Verified via simulation** (per this project's standing testing discipline — this
+can't be confirmed in a live browser from here):
+- Structural check: extracted the file's script block, ran it through `new Function()`
+  — no syntax errors.
+- Playwright, mocked `sb()`/DOM (globals set as bare assignments inside
+  `page.evaluate()` after the real script loads — reassigning `window.currentAdminUser`
+  does NOT work here since it's declared `let` at top level, a separate lexical binding
+  from the `window` object; this bit the very first test run and was fixed by assigning
+  the bare identifier instead, consistent with this session's recurring lesson about
+  test-mock globals):
+  - `loadAdminAccountingMap()` loads and merges services + accounting_map rows
+    correctly; missing-badge count correctly excludes inactive services and correctly
+    counts only services with no row (1 of 2 active services in the test data).
+  - `adminEditAccounting()` populates the form correctly both for a service with an
+    existing row and one with none (blank fields, "Set Up" case); YDA preview computes
+    `100 − cut%` correctly (30% cut → "70%").
+  - `adminSaveAccountingMap()` builds and sends the correct RPC payload, including
+    `p_name`/`p_pw` from `currentAdminUser`.
+  - `promptNewServiceAccountingSetup()` correctly switches to the Accounting Map tab
+    and opens the new service's edit form after confirmation.
+
+**Not yet built, deliberately out of scope for this slice**: per-group accounting
+overrides (Group settings, later); the actual Campaign Setup/pacing dashboard build
+(this piece was chosen as a smaller, foundational slice specifically to build and
+verify before tackling that larger piece); the exact Spend %/Audio-Video formula.
+
+**Still to do**: this branch needs merging to `main` again before Claire can test the
+new tab live, same as the earlier logo-upload deploy mix-up.
