@@ -3021,6 +3021,17 @@ function updateAccountingMissingBadge() {
   }
 }
 
+// Rounds a percentage to at most 2 decimal places without padding whole numbers with
+// trailing zeros (30 stays "30", 12.5 stays "12.5"). Needed because YDA is always
+// `100 - cut%`, which in floating-point arithmetic can land on something like
+// 26.879999999999995 for a cut of 73.12 — found live by Claire on a real 73.12/26.88
+// split. Math.round() on the shifted value snaps it back to the intended 2-decimal
+// figure instead of just truncating/re-displaying the float artifact.
+function fmtPct(n) {
+  if (n == null || isNaN(n)) return null;
+  return Math.round(Number(n) * 100) / 100;
+}
+
 function renderAdminAccountingList() {
   const el = document.getElementById('admin-accounting-table');
   const mapById = {};
@@ -3059,7 +3070,7 @@ function renderAdminAccountingList() {
     const defaultRetail = s.default_price != null ? Number(s.default_price) : null;
     const retailCpm = s.retail_cpm != null ? Number(s.retail_cpm) : null;
     const cutPct = a?.fortyfouri_cut_pct;
-    const ydaPct = cutPct != null ? (100 - Number(cutPct)) : null;
+    const ydaPct = cutPct != null ? fmtPct(100 - Number(cutPct)) : null;
     // 44i Cut $, 44i CPM, and Platform CPM are always derived live from Default
     // Retail / Retail CPM × the stored percentages — never stored themselves, so they
     // can't drift if the underlying service price/CPM changes in the Services tab.
@@ -3069,19 +3080,22 @@ function renderAdminAccountingList() {
     const cutDollar = fixedCut > 0 ? fixedCut : ((defaultRetail != null && cutPct != null) ? (defaultRetail * Number(cutPct) / 100) : null);
     const cutCpm = (retailCpm != null && cutPct != null) ? (retailCpm * Number(cutPct) / 100) : null;
     const budgetedPct = a?.budgeted_spend_pct;
+    const budgetedPctDisplay = fmtPct(budgetedPct);
+    const spendPctDisplay = fmtPct(a?.spend_pct);
+    const cutPctDisplay = fmtPct(cutPct);
     const platformCpm = (retailCpm != null && budgetedPct != null) ? (retailCpm * Number(budgetedPct) / 100) : null;
     const editBtn = `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
       <td style="padding:8px 10px">${esc(s.label)}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
       <td style="padding:8px 10px">${defaultRetail != null ? '$' + defaultRetail.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
-      <td style="padding:8px 10px">${cutPct != null ? cutPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${cutPctDisplay != null ? cutPctDisplay + '%' : '—'}</td>
       <td style="padding:8px 10px">${cutDollar != null ? '$' + cutDollar.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${budgetedPct != null ? budgetedPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${budgetedPctDisplay != null ? budgetedPctDisplay + '%' : '—'}</td>
       <td style="padding:8px 10px">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${platformCpm != null ? '$' + platformCpm.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${a?.spend_pct != null ? a.spend_pct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${spendPctDisplay != null ? spendPctDisplay + '%' : '—'}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}</td>
     </tr>`;
   });
@@ -3092,7 +3106,7 @@ function renderAdminAccountingList() {
 function updateAccountingYdaPreview() {
   const cutVal = parseFloat(document.getElementById('admin-accounting-cut-pct').value);
   const preview = document.getElementById('admin-accounting-yda-preview');
-  preview.textContent = 'Group\'s cut (YDA): ' + (isNaN(cutVal) ? '—' : (100 - cutVal) + '%');
+  preview.textContent = 'Group\'s cut (YDA): ' + (isNaN(cutVal) ? '—' : fmtPct(100 - cutVal) + '%');
 }
 
 function adminEditAccounting(serviceId) {
