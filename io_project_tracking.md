@@ -4070,3 +4070,107 @@ intended.
 **Still to do**: merge to `main`. The very next deploy after that will produce a fresh
 cache-busted URL, which should resolve `lt-offline`'s stale display immediately without
 needing to identify or manually purge whatever's actually caching it.
+
+## 2026-07-30 (cont'd) — Strategist Portal: full team Q&A back from the questions doc
+
+Claire sent back answers to all 15 open questions from the Strategist Portal concept
+doc/mockup (the questions themselves were shared with the strategist team earlier this
+session as a printable list alongside the mockup). Recorded verbatim by topic, since
+several directly change what the mockup should show:
+
+**Pacing & Goals**
+1. Thresholds (≥90% green / 70–89.99% yellow / ≤69.99% red) stay as-is for now —
+   confirmed adjustable later, not locked in permanently.
+2. Pacing is based on **both** Spend and Goal together, not either alone — confirms the
+   mockup's existing two-separate-pills design (Spend Pacing + Perf. Pacing shown side
+   by side) is the right shape, not a single combined pacing number.
+3. Platform **usually** stays fixed for a campaign's whole run, but strategists DO
+   change it mid-campaign sometimes if there's an issue — this means Platform can't be
+   a Campaign-Setup-only field; it needs to stay editable once a campaign is Active
+   too, not just during setup review. **Not yet reflected in the mockup — flagged
+   below.**
+4. Every non-SEM platform uses an **impressions** goal; SEM is the one exception (not
+   yet specified what SEM's goal metric should be instead — parked, not guessed at).
+
+**Campaign Detail & Live Links**
+5. Root-causing an underperforming campaign needs checking multiple things directly
+   in-platform — "too many variables" for the portal to diagnose on its own. Confirms
+   the portal's job is surfacing pacing/metrics and getting a strategist to the
+   platform quickly (via the link below), not attempting in-app root-cause analysis.
+6. A plain, strategist-maintained reference link to the specific campaign (not a true
+   API deep link) is still worth having now, ahead of any platform API integration —
+   "might save a little bit of time." **Already in the mockup** — the "View in
+   [Platform] ↗" link was built this exact way in an earlier round; this confirms it
+   was the right call.
+
+**Optimize Log**
+7. Every optimization/change/refinement should be logged, not just meaningful ones —
+   confirms "log everything" as the real intent.
+8. Optimize Log entries should be **editable/removable** after saving, in case
+   something was logged incorrectly — the mockup's Optimize Log needs edit/delete
+   controls, not an append-only history. **Not yet in the mockup — flagged below.**
+
+**Day-to-Day Use**
+9. Metrics checked daily beyond pacing: **Clicks, Impressions, CTR, Conversions**
+   (called "weighted actions" in Simpli.fi specifically — worth using their own
+   terminology if a Simpli.fi row/column ever needs it), and **Total Visits**. **Not
+   yet in the mockup's campaign detail panel — flagged below.**
+10. Strategists want the ability to **separate** their own campaigns from a colleague's,
+    while still having day-to-day access to everyone's, not just when covering someone.
+    **Already in the mockup** — the "My Campaigns / All Strategists" scope toggle at
+    the top of the dashboard was built this exact way in an earlier round; this
+    confirms it was the right shape.
+
+**Reporting Automation**
+11. Priority order for automatic platform pull-in: **Facebook → Simpli.fi → Google →
+    The Trade Desk → StackAdapt** (StackAdapt is a fifth platform not in the original
+    question list — now confirmed as part of the real platform set).
+12. No other recurring reports come to mind beyond pacing right now — open for later,
+    not something to design toward yet.
+
+**Historical Data**
+13. Historical review is rare in practice (usually only for billing questions or
+    genuine historical lookups) — but when needed, it can go back a long way; Claire's
+    own legacy worksheet goes back to **2019**. Confirms deep history matters as an
+    occasionally-needed archive, not a frequently-browsed feature — informs it as a
+    lookup/reference need, not something requiring fast, polished UI.
+14. A closed month should stay **editable**, not locked read-only — same reasoning as
+    #8 (an Optimize Log entry might need correcting after the fact). The mockup should
+    NOT treat a past month as a frozen record.
+15. Side-by-side month comparison is rarely needed — one month at a time is sufficient
+    for the normal case. Confirms the mockup's single-month view is the right default;
+    a comparison view isn't worth building.
+
+**Mockup updated same day.** Two of the answers (#6's campaign link, #10's my-campaigns
+scope toggle) turned out to already be exactly what the mockup built in an earlier
+round — checked the actual file before assuming they were gaps, rather than trusting my
+first-pass read of the Q&A alone. Actual changes made:
+- Optimize Log entries now show Edit/Delete controls per entry, with a note that every
+  change gets logged, not just meaningful ones.
+- Added a "This week's numbers" quick-glance metrics row to the campaign detail panel —
+  Clicks, Impressions, CTR, Conversions, Total Visits (noting Simpli.fi's own "Weighted
+  Actions" terminology for conversions on that platform).
+- Updated the "Report pulling is phase two" plan card with the confirmed priority order
+  (Facebook → Simpli.fi → Google Ads → The Trade Desk → StackAdapt) and added StackAdapt
+  to the platform list.
+- Added a note to the pacing legend that thresholds are confirmed as-is for now,
+  adjustable later.
+- Updated the "History is a month picker" plan card to confirm months stay editable
+  (not locked) and that deep history is an occasional-lookup need, not a routine one.
+- Removed the six now-answered question groups from the "Questions" section (Pacing &
+  Goals, Campaign Detail & Live Links, Optimize Log, Day-to-Day Use, Reporting
+  Automation, Historical Data) and replaced them with a new "Answered by the strategist
+  team" section summarizing what came back; the four groups NOT part of this round
+  (Campaign Status, Budgets That Vary By Month, Importing Existing Campaigns, Campaign
+  Setup & Overrides) remain as open questions, unchanged.
+- Added an explicit "still open" note directly on the Platform plan card, since #3
+  surfaced a real design gap (mid-campaign Platform changes) rather than confirming
+  something already built.
+
+**Still open, not guessed at**: Platform's mid-campaign editability (a real workflow
+change, not just a display tweak — needs to decide where/how a strategist would change
+it once a campaign is already Active) and SEM's own goal metric (confirmed different
+from impressions, exact metric not yet specified).
+
+Verified tag-balanced (Python regex tag-stack check, matching this doc's established
+verification method for this artifact) before republishing.
