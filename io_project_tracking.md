@@ -3478,3 +3478,14 @@ Confirm & Activate. Added a new open question about whether a saved Draft needs 
 notify anyone once whatever it was waiting on actually comes in, or whether a
 strategist just checks back on it themselves. Verified tag-balanced before
 republishing.
+
+**Confirmed same day: monthly In-Platform Budget auto-calculates too — not typed in
+per month.** Claire confirmed the monthly budget entry should follow the same formula
+already established for the campaign overall (Gross Budget × that tactic's Budgeted
+Spend %), not have In-Platform typed in separately each month. Fixed the mockup's
+monthly budget grid, which had shown both Gross and In-Platform as editable inputs —
+inconsistent with the rest of the mockup, where In-Platform is already
+auto-calculated. In-Platform inputs in the monthly grid are now shown disabled/
+computed (dashed border, monospace, "not-allowed" cursor — same visual language as
+other computed fields), with only Gross Budget actually editable per month. Verified
+tag-balanced before republishing.
