@@ -3579,3 +3579,42 @@ verify before tackling that larger piece); the exact Spend %/Audio-Video formula
 
 **Still to do**: this branch needs merging to `main` again before Claire can test the
 new tab live, same as the earlier logo-upload deploy mix-up.
+
+**Same day, follow-up: added the missing reference columns to the list view.** Claire
+flagged that Retail CPM, 44i CPM, Platform CPM, and Spend % weren't visible in the
+Accounting Map list — Spend % was already a stored/editable field but only showing up
+in the edit form, and the three CPM figures hadn't been surfaced anywhere despite
+matching her real spreadsheet layout. Added all four as columns in
+`renderAdminAccountingList()`:
+- **Retail CPM** — read from `services.retail_cpm` directly (not accounting_map).
+- **44i CPM** = Retail CPM × 44i Cut % — computed live in the render function, never
+  stored, so it can't go stale if Retail CPM changes in the Services tab.
+- **Platform CPM** = Retail CPM × Budgeted Spend % — same derived-live approach.
+- **Spend %** — the already-stored, already-editable field, just added to the list
+  table so it's visible without opening Edit.
+
+Updated the section's description text to explain the three CPM columns are shown for
+reference only (computed, not editable there). Re-verified via Playwright: extended
+the mock service data with `retail_cpm` and confirmed all four new columns render the
+correct values, including a spot-check against the exact real numbers already verified
+earlier this session (Retail CPM 46.5 × Budgeted Spend % 48.39% → Platform CPM $22.50,
+matches to the cent).
+
+**Same day, second follow-up: Retail CPM added to the edit form itself, not just the
+list.** Claire asked for it as a visual reference while editing a single service's
+entry — added a disabled, dashed-border input (same visual language already used for
+other computed/read-only fields in this file) showing Retail CPM straight from
+`services.retail_cpm`, right above the editable fields. Shows "— (not set on this
+service)" for services with no Retail CPM entered yet. Re-verified via Playwright for
+both a mapped and an unmapped service.
+
+**Same day, third follow-up: list order now matches the Services tab.** The Accounting
+Map list was sorting sections alphabetically by section id, while the Services tab
+(and the live public form) order sections by `SECTIONS.sort_order` — the two lists
+could show services in a different order for the same data. Fixed
+`renderAdminAccountingList()` to build the same `sectionOrderIndex` from `SECTIONS`
+that the Services tab already uses, so both lists present services in the identical
+order. Verified via Playwright with a deliberately alphabetical-order-defying test
+case (a "video" section with `sort_order: 2` and a "seo" section with `sort_order: 1`)
+confirming the SEO row renders before the Video row despite "seo" sorting after
+"video" alphabetically.
