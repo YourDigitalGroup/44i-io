@@ -4921,6 +4921,12 @@ function showToast(msg, type='success') {
 // One services-table row → a SERVICE_DATA entry. Reverses the migration
 // translations (default_price+billing_type → fee/recurring; modifier/cpm
 // shape preserved so existing reader code behaves identically).
+//
+// NOTE: this page (index.html) does NOT load shared.js — it's a fully independent
+// copy, along with priceAndFrequency() below. shared.js's copies (used by the admin
+// portal and strategist page) must be kept in sync by hand whenever either changes —
+// found live 2026-07-30 when an is_cpm_adjustment fix applied only here left the admin
+// Services tab still showing "Add-on, Monthly" instead of "No Charge".
 function rowToServiceData(r) {
   const out = { label: r.label, section: r.section };
   if (r.billing_type === 'one_time') {
@@ -5044,6 +5050,9 @@ function qtyOptionLabel(hours) {
   return `${h} hr${h === 1 ? '' : 's'}`;
 }
 
+// NOTE: this is an independent copy from shared.js's priceAndFrequency() (used by the
+// admin portal and strategist page) — this page doesn't load shared.js. Keep both in
+// sync by hand; see the note on rowToServiceData() above for why that matters.
 function priceAndFrequency(r) {
   if (!r) return { fee: '—', freq: '' };
   if (r.pricing_mode === 'spend') {

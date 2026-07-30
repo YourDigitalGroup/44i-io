@@ -3941,3 +3941,42 @@ Platform CPM, no MISSING badge), a four-candidate section (`td-geo/site/dynamic/
 kind of cross-contamination bug this design is meant to prevent), and a no-candidate
 section (`lonely-offline`, confirmed the original manual cut%/budgeted%/Edit-button
 flow still works untouched).
+
+## 2026-07-30 (cont'd) — Real bug: admin Services tab still showed "Add-on, Monthly"
+
+Claire caught this live: the Services tab still showed "Add-on, Monthly" for Offline
+Visits Tracking, even though the public IO form correctly showed "No Charge." Root
+cause, found by tracing `fmtFrequency()` → `priceAndFrequency()` in the admin Services
+tab: `shared.js` has its own copy of `priceAndFrequency()`/`rowToServiceData()`,
+explicitly documented there as "the SAME function in both places so the two views can
+never say two different things" — but `index.html` has ANOTHER, fully independent
+copy of both functions, and every fix applied earlier today only touched `index.html`'s
+copy. The admin Services tab reads `shared.js`'s copy directly, which never got the
+`is_cpm_adjustment` fix — a real duplicated-logic drift, exactly the failure mode this
+project's CLAUDE.md explicitly warns about.
+
+**First attempt was wrong and reverted the same session**: assumed `index.html` loads
+`shared.js` and its own local functions were shadowing it — deleted the local copies
+entirely, intending to rely solely on `shared.js`. Checked before trusting that
+assumption... too late, had already made the edit — caught immediately that
+`index.html` has **no `<script src="shared.js">` at all**; it's a genuinely
+independent, hand-maintained copy of everything (`esc`, `loadCatalog`, `CATALOG_ROWS`,
+etc.), not an import. Deleting the functions would have broken the live public form
+entirely (`ReferenceError`). Reverted immediately, confirmed via `git diff` that the
+revert restored the exact original function bodies (only added explanatory comments).
+
+**Actual fix**: brought `shared.js`'s `rowToServiceData()` and `priceAndFrequency()`
+up to date with `index.html`'s already-correct versions — the `is_cpm_adjustment`
+handling, AND a separate, older, pre-existing drift in `rowToServiceData()`'s QUR
+check (`shared.js` still had the unconditional 2026-07-07 version; `index.html` had
+the 2026-07-10 `priceableMode` fix) that had nothing to do with today's work but was
+found while comparing the two copies side by side. Left both files' functions as
+separate copies (matching the actual architecture) with an explicit comment on each
+noting the other file's copy must be updated by hand alongside it.
+
+**Verified via Playwright** using the real `admin/index.html` script + real
+`shared.js` together (not a mock): confirmed `priceAndFrequency()` now returns
+`{fee: "+$2 CPM", freq: "No Charge"}` for Offline Visits Tracking exactly as the
+Services tab would render it, while `yttv-addl` is unaffected (`{fee: "+$15", freq:
+"Add-on, Monthly"}`). Also re-ran the full Accounting Map test suite against the
+updated `shared.js` to confirm nothing else regressed.

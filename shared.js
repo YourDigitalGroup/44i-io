@@ -81,13 +81,39 @@ function rowToServiceData(r) {
   // a clear "Quote Upon Request" note instead of a bare, confusing $0/blank for w-custom,
   // em-bp-30kp, tlp-custom. Doesn't touch the totals math at all — a QUR item still
   // correctly contributes $0 to the running total until it's actually priced.
-  out.is_qur = r.default_price == null;
+  // FIXED (2026-07-10, found live by Claire): only flat/per_unit services actually use
+  // default_price as their real price field — spend items (rate lives in retail_cpm) and
+  // modifier items (rate lives in modifier_amount) ALWAYS have a null default_price BY
+  // DESIGN, so an unconditional check here flags every spend/modifier service as QUR,
+  // replacing its real computed dollar amount with "Quote Upon Request" on the Review
+  // page and — more seriously — on the printed IO itself.
+  const priceableMode = (r.pricing_mode || 'flat') === 'flat' || (r.pricing_mode || 'flat') === 'per_unit';
+  out.is_qur = priceableMode && r.default_price == null;
   if (r.workflow) out.workflow = r.workflow;
   // Modifier items (offline tracking, etc.) are a straight MONTHLY add-on to the total —
   // not a CPM-rate adjustment, and not something requiring its own separate spend entry.
   if (r.pricing_mode === 'modifier' && r.modifier_amount != null) {
-    if (r.billing_type === 'one_time') { out.fee = Number(r.modifier_amount); out.recurring = null; }
-    else { out.recurring = Number(r.modifier_amount); }
+    // is_cpm_adjustment modifiers (Offline Visits Tracking, confirmed by Claire/
+    // leadership 2026-07-30) deliberately get NO fee/recurring assignment — out.fee and
+    // out.recurring stay at their 0 initialization above. The client's spend input is
+    // unaffected; the $ amount only changes the CPM basis used for internal
+    // accounting/margin tracking (see the Accounting Map), not what the client is
+    // actually billed.
+    if (r.is_cpm_adjustment) {
+      // Flagged separately from fee/recurring (which stay 0) so buildReview()/
+      // buildIoDocumentHtml() can show an explicit "No Charge" note instead of falling
+      // through to their generic empty-price cases ("—"/"TBD") — "TBD" specifically
+      // would read like an unfinished price on the actual printed/signed IO, not an
+      // intentionally-free item.
+      out.is_cpm_adjustment = true;
+      out.cpm_adjustment_amt = Number(r.modifier_amount);
+    } else {
+      // All current billed modifier items are monthly, riding alongside an ongoing ad
+      // campaign — but respect billing_type rather than hardcode that assumption, so
+      // this stays correct if a one-time modifier is ever created later.
+      if (r.billing_type === 'one_time') { out.fee = Number(r.modifier_amount); out.recurring = null; }
+      else { out.recurring = Number(r.modifier_amount); }
+    }
   } else if (r.retail_cpm != null) {
     out.cpm = Number(r.retail_cpm);
   } else if (r.id === 'sem-bp') {
@@ -119,6 +145,14 @@ function priceAndFrequency(r) {
     return { fee: r.retail_cpm != null ? `$${r.retail_cpm} CPM` : '—', freq: 'Monthly' };
   }
   if (r.pricing_mode === 'modifier') {
+    // is_cpm_adjustment (Offline Visits Tracking, confirmed by Claire/leadership
+    // 2026-07-30): NOT billed to the client at all — the $ amount only raises the CPM
+    // basis used for internal accounting/margin tracking. Displayed to look like the
+    // "$X CPM" wording spend items use above, rather than the billed "+$X" add-on
+    // wording below, so it's clear at a glance this isn't adding to the client's total.
+    if (r.is_cpm_adjustment) {
+      return { fee: r.modifier_amount != null ? `+$${r.modifier_amount} CPM` : '—', freq: 'No Charge' };
+    }
     const modFee = r.modifier_amount != null ? `+$${r.modifier_amount}` : '—';
     let modFreq = 'Add-on';
     if (r.billing_type === 'monthly')      modFreq = 'Add-on, Monthly';
