@@ -3347,3 +3347,61 @@ Table now has 14 columns (Client, Status, Tactic, Platform, Flight, Gross Budget
 In-Platform Budget, Actual Spend, Spend Pacing, Goal, Actual Perf., Perf. Pacing,
 Optimize Log, Notes) — verified tag-balanced (table/tr/td/th/div/section/ul/li/span/p
 counts all matched) before republishing. Still a concept only, no build started.
+
+## 2026-07-18 — Budget-per-month decided (v1: manual); accounting map partly solved;
+## Campaign Setup workflow + status tabs resolve the "Pending" override item
+
+**Budget-per-month — DECIDED.** Confirmed with Claire: today, when a client's budget
+varies by month, that only exists as free text in the IO's Notes field — not
+structured data, so the portal can't reliably auto-populate it (parsing arbitrary
+sentences for dollar amounts is fragile and will eventually misread something).
+Decision: **v1 is manual entry** — a strategist types in each month's actual budget in
+the portal, same trust level as the Platform field already has. A structured version
+on the IO form itself (an AE fills in a real month → budget breakdown instead of
+writing it in Notes) is a real v2 candidate, explicitly deferred until the team is
+comfortable with the online IO process as it stands today — not attempted now.
+
+**Accounting map — partly solved with real numbers.** Claire shared an actual sample
+(fake-data-free real numbers, no client names). Verified two facts by checking the
+arithmetic directly against every row:
+- **`44i Cut $` = `Default Retail` × `44i Cut %`** — holds exactly, every row.
+- **`YDA` (Group Cut %) + `44i Cut %` = 100%** — every single row, no exceptions.
+- Therefore: **`44i Fixed Cut = 0` means "use the percentage calculation" (dynamic —
+  recalculates if Retail changes); a nonzero `44i Fixed Cut` means that flat dollar
+  amount is used instead of the percentage, and stays fixed even if Retail later
+  changes.** This directly answers the original blocking question from the earlier
+  entry.
+- **Still unresolved:** the sample had zero rows with `Retail CPM`/`44i CPM`/
+  `Platform CPM` filled in, and — despite `YDA + 44i Cut % = 100%` holding even on rows
+  that DO have a `(Of Gross) Budgeted Spend %` value (2.20%, 17.86%, 39.20%, etc.) —
+  that percentage clearly isn't simply "what's left after the two cuts," since the two
+  cuts already account for 100% of Retail on those rows too. What that percentage (and
+  the CPM columns) actually represent for real media-buying items is still not known.
+  Asked Claire for a sample row with the CPM columns populated to close this out
+  completely — not guessed at further than the two confirmed facts above.
+
+**Campaign Setup workflow + status tabs — Claire's proposal, resolves the earlier
+"Pending — not yet decided" override/verify item.** Every IO lands in a **Campaign
+Setup** queue first, not straight onto the pacing list — the strategist gets notified,
+reviews what came from the IO, corrects anything wrong, picks the Platform, then
+confirms — which is what actually creates the campaign and moves it to Active. This
+gives Status a real starting point instead of just being a label: **Pending IS the
+Campaign Setup queue**, not a status a campaign passes through unattended. Claire also
+proposed organizing the whole dashboard into **tabs by status** (Campaign Setup /
+Active / Paused / Complete) instead of one flat table with a Status column to scan —
+a strategist's default view becomes just what needs attention now.
+
+Added to the mockup: a status-tab bar (with counts) above the dashboard, and a new
+Campaign Setup review panel for the Meridian Dental example (shows the IO-sourced
+fields, an empty Platform picker to fill in, "Confirm & Activate" / "Flag an issue"
+actions) — replacing the earlier flat Pending row in the main table, since Pending
+campaigns now live in their own queue, not mixed into the pacing list. Added an inline
+note clarifying that a real app would show one tab's content at a time; this mockup
+stacks Campaign Setup and the pacing table together on one page just to show both at
+once. Updated/replaced the affected open questions: dropped the now-resolved
+"verify-before-or-after" question, added new ones about who sees a "Flag an issue"
+click, whether IO-sourced fields can still be corrected after a campaign goes Active,
+and whether manual monthly budget entries need any sign-off.
+
+Verified tag-balanced (table/tr/td/th/div/section/ul/li/span/p/button counts all
+matched) before republishing. Still a concept only — no schema or build work started.
