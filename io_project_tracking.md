@@ -3405,3 +3405,39 @@ and whether manual monthly budget entries need any sign-off.
 
 Verified tag-balanced (table/tr/td/th/div/section/ul/li/span/p/button counts all
 matched) before republishing. Still a concept only — no schema or build work started.
+
+## 2026-07-18 — Accounting map fully resolved; Campaign Setup gets inline overrides + monthly budget entry
+
+**Accounting map — FULLY RESOLVED.** Claire shared a second sample with the CPM
+columns actually populated. Checked the arithmetic across 10 more real rows:
+**`Platform CPM = Retail CPM × (Of Gross) Budgeted Spend %`**, exact match every row
+(e.g. Retail CPM 46.5, Budgeted Spend % 48.39% → Platform CPM 22.5, confirmed to the
+cent). This resolves the whole question more simply than expected: **In-Platform
+Budget = Gross Budget × Budgeted Spend %**, looked up per Item against the services
+catalog — nothing else from the accounting map is actually needed for this
+calculation. The Group Cut/44i Cut/YDA/Fixed Cut columns turn out to be a *separate*
+concern — 44i's and the Group's own internal revenue-share split — not something the
+strategist portal needs to touch at all, since the portal only ever cares what
+actually gets spent with the ad platform. This closes out every open question from
+the earlier accounting-map entries; no more diagnosis needed there.
+
+**Campaign Setup — inline overrides + monthly budget entry, per Claire's design
+question.** Asked: could "Flag an issue" instead be empty override cells next to each
+IO-sourced field, plus a way to indicate a campaign's budget varies by month right
+there in the same screen? Yes to both — built into the mockup:
+- Every IO-sourced field (Client, Tactic, Flight, Gross Budget, In-Platform Budget) now
+  shows the IO's original value with an empty override input directly beneath it —
+  blank means "this is correct," filled in means "the IO had this wrong." Resolves the
+  earlier open question about whether an override should replace the original value or
+  keep it visible for reference — the answer built into the design is: both, always,
+  side by side.
+- A "Budget is different by month for this campaign" checkbox reveals a simple
+  month-by-month Gross/In-Platform entry list right in the same Campaign Setup screen
+  — matches the earlier "manual for v1" decision on monthly budgets, and puts that
+  entry exactly where a strategist is already reviewing the IO instead of somewhere
+  separate to find later.
+
+Verified tag-balanced (including the new `input`/`label` elements) before
+republishing. Still a concept only — no schema or build work started, but the
+accounting-map math is now settled enough that the actual In-Platform Budget formula
+could be built with confidence whenever this moves forward.
