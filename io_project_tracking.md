@@ -3441,3 +3441,28 @@ Verified tag-balanced (including the new `input`/`label` elements) before
 republishing. Still a concept only — no schema or build work started, but the
 accounting-map math is now settled enough that the actual In-Platform Budget formula
 could be built with confidence whenever this moves forward.
+
+**Confirmed same day: the Group Cut/44i Cut/YDA/Fixed Cut columns ARE still needed —
+just for a later, separate part of the build (the accounting side), not this one.**
+Doesn't change anything about the strategist portal itself, but worth remembering this
+data isn't dead weight — it'll matter once that phase starts.
+
+**"Flag an issue" behavior + Setup Notes — added to the mockup.** Claire asked what
+actually happens when a strategist clicks "Flag an issue," and separately asked for a
+notes field in Campaign Setup for whatever a campaign is waiting on before it can go
+live (creative, video assets, client sign-off, etc.) — distinct from the Optimize Log,
+which is about what's been tried once a campaign is already running.
+- **Flag an issue — proposed default**, not yet confirmed by Claire: clicking it
+  reveals a text box to describe the problem, which notifies the AM tied to that
+  group, and the campaign stays in Campaign Setup marked **Flagged** rather than
+  disappearing or blocking silently. Added to the mockup with this framing explicitly
+  labeled as a proposal, and kept the open question (does the AE need to be looped in
+  too, not just the AM) rather than asserting this as decided.
+- **Setup Notes** — a plain textarea added to the Campaign Setup panel, with a
+  realistic example ("Waiting on creative from the client... checked in with AE
+  7/22, no ETA yet"), explicitly distinguished from the Optimize Log in both the
+  mockup's own copy and the plan card describing it. New question added: would a
+  plain notes field be enough, or is there value in Pending campaigns being able to
+  show at a glance which ones are actually blocked vs. just newly arrived.
+
+Verified tag-balanced (including the new `textarea` elements) before republishing.
