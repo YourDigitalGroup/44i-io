@@ -17,6 +17,20 @@ jobs:
         run: |
           TIMESTAMP=$(date +%s)
           sed -i "s|</head>|<meta name=\"build-ts\" content=\"$TIMESTAMP\">\n</head>|" index.html
+          # Cache-bust shared.js/shared.css on every deploy — found live 2026-07-30:
+          # the FTP upload itself succeeds (confirmed in this workflow's own logs), but
+          # a caching layer in front of io.yourdigitalgroupresources.com (CDN or the
+          # host's own server-side cache) can keep serving an old shared.js indefinitely
+          # regardless of how many times a user hard-refreshes their OWN browser — a
+          # hard refresh only clears the browser's cache, not a CDN/edge cache sitting
+          # between it and the origin. A fresh ?v=<timestamp> query string on every
+          # deploy makes each deploy's URL for these files genuinely new, so neither the
+          # browser nor any upstream cache has a reason to serve a stale copy.
+          # index.html doesn't load shared.js/shared.css at all (confirmed 2026-07-30 —
+          # it's a fully independent, self-contained page), so only these two pages need it.
+          for f in admin/index.html strategist/index.html; do
+            sed -i "s|shared\.js\"|shared.js?v=$TIMESTAMP\"|; s|shared\.css\"|shared.css?v=$TIMESTAMP\"|" "$f"
+          done
 
       - name: Deploy to io.yourdigitalgroupresources.com
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5

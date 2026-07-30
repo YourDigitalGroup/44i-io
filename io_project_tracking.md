@@ -4025,3 +4025,48 @@ the overrides win outright, confirmed the wrong auto-derived numbers do NOT appe
 anywhere, confirmed the Edit/Override button text matches whether an entry exists, and
 confirmed `nd-offline` (no override) is unaffected by any of this and still
 auto-derives correctly.
+
+## 2026-07-30 (cont'd) — Real deploy issue: stale `shared.js` served after a good deploy
+
+Claire reported `lt-offline` still showing "Add-on, Monthly" on the live admin
+Services tab after confirming BOTH the SQL was run AND the branch was merged. Rather
+than guess further, checked the actual GitHub state directly:
+- `shared.js` on `main` at the latest merge commit (`19125a33d4`) DOES contain the
+  `is_cpm_adjustment` fix — confirmed by fetching the file from GitHub directly.
+- The `lt-offline` row in the live database DOES have `is_cpm_adjustment = true` —
+  confirmed by a direct query Claire ran.
+- The "Deploy to io subdomain" GitHub Action for that exact commit completed with
+  `success`, and its own job log explicitly shows `replacing "shared.js"` as a real,
+  successful FTP upload to the server.
+
+So the code is right, the data is right, and the deploy genuinely put the right file
+on the server — yet the live URL (`io.yourdigitalgroupresources.com/shared.js`),
+checked directly and searched for `is_cpm_adjustment`, came back "not found," even
+after Claire tried multiple hard refreshes. That combination only makes sense as a
+caching layer sitting BETWEEN the browser and the origin server (a CDN, or the host's
+own server-side cache) — a hard refresh only clears the browser's own cache, it can't
+reach past an upstream cache serving stale content on its own schedule.
+
+Notable: the deploy workflow already stamps a `build-ts` meta tag into `index.html` on
+every deploy — a sign this exact class of caching problem has been hit before, just
+never extended to cover `shared.js`/`shared.css`.
+
+**Fix**: extended `.github/workflows/deploy.yml`'s existing timestamp-injection step
+to also append a `?v=<timestamp>` query string to every `shared.js`/`shared.css`
+reference in `admin/index.html` and `strategist/index.html` (via `sed`, same pattern
+already used for the `build-ts` meta tag) — `index.html` doesn't load either file at
+all (confirmed earlier today — it's fully self-contained), so only these two pages
+need it. Every deploy now produces a genuinely new URL for these files that no
+existing cache — browser or upstream — has ever seen, forcing a real fetch from origin
+regardless of what any CDN/server-side cache is currently holding. This fixes the
+class of bug, not just today's instance: no future deploy can get stuck behind a stale
+cached copy of either shared file again.
+
+Verified the `sed` substitution directly against a copy of the real `admin/index.html`
+— confirms `<script src="../shared.js">` → `<script
+src="../shared.js?v=1234567890">` and the equivalent for `shared.css`, exactly as
+intended.
+
+**Still to do**: merge to `main`. The very next deploy after that will produce a fresh
+cache-busted URL, which should resolve `lt-offline`'s stale display immediately without
+needing to identify or manually purge whatever's actually caching it.
