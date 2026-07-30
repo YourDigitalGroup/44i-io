@@ -3489,3 +3489,93 @@ auto-calculated. In-Platform inputs in the monthly grid are now shown disabled/
 computed (dashed border, monospace, "not-allowed" cursor — same visual language as
 other computed fields), with only Gross Budget actually editable per month. Verified
 tag-balanced before republishing.
+
+## 2026-07-18 (cont'd) — Accounting Map: real build, first slice of the framework
+
+After the mockup's math confirmed exactly what the strategist portal actually needs
+(`In-Platform Budget = Gross Budget × Budgeted Spend %`, looked up per service), Claire
+confirmed the architecture for building this for real: the Accounting/Spend Map lives
+in the **admin portal**, matching the existing catalog-editor pattern, and the
+strategist portal (and a future accounting portal) will each reference only the fields
+they need from it. Per-group overrides are confirmed as needed eventually, but deferred
+— they'll land later as their own new section on Group settings, not merged into the
+existing Custom Pricing/`io_pricing` mechanism.
+
+Four clarifying questions asked and answered before building:
+1. Default Retail should match services pricing including group overrides — confirmed.
+2. Group Cut % (YDA) is always `100 − 44i Cut %` — confirmed as a real rule, not
+   coincidence.
+3. `spend_pct` is specific to the programmatic Audio/Video services — confirmed
+   connection; exact formula/usage deliberately left unresolved until those services'
+   entries actually get built (not guessed at).
+4. Claire asked for one more piece: if a new service is added in the Services tab, a
+   prompt should immediately offer to set up its Accounting Map entry, so new services
+   can't silently launch without one.
+
+**What was built** — new `accounting_map` table, one row per service (`service_id`
+FK to `services`, `on delete cascade`):
+- `fortyfouri_cut_pct`, `fortyfouri_fixed_cut` (default 0 — 0/null means "use the
+  percentage," a nonzero value overrides with a flat dollar cut instead — confirmed
+  against two real spreadsheet samples), `budgeted_spend_pct` (the one field the
+  strategist portal actually needs), `spend_pct` (Audio/Video-specific, meaning TBD),
+  `updated_at`.
+- Deliberately does **not** store Default Retail, Retail CPM, Group Cut %/YDA, 44i Cut
+  $, or Platform CPM — every one of those is cheaply derivable from stored fields
+  (`services.default_price`/`services.retail_cpm` plus the two percentages above), so
+  storing them separately would just be a second copy that could drift. Same
+  derived-vs-stored principle used everywhere else in this catalog.
+- RLS: enabled **and forced**, zero policies — applying the exact lesson learned from
+  the `ae` table leak earlier this session (an explicit permissive policy is what
+  actually causes a leak; forced RLS with no policies at all is what actually closes
+  one). All access goes through two new password-gated RPCs:
+  `admin_get_accounting_map` and `admin_save_accounting_map` (upsert by `service_id`,
+  same safe `case when p_data ? 'field'` partial-update pattern as `admin_save_service`).
+  Both are **super-admin only** — this is real margin data, same sensitivity tier as
+  Legal Text/Notification Settings.
+- SQL given to Claire inline in chat (not committed to the repo, per this project's
+  standing convention) — table + RLS + both RPCs, plus a verify query.
+
+**Admin UI** — new "Accounting Map" tab (super-admin only, same restriction pattern as
+the Users tab), with a missing-entry count badge on the tab button itself (mirrors the
+existing pattern elsewhere in the nav). The list shows every active service with a
+red "MISSING" badge and a "Set Up" button (vs. "Edit") for any service with no
+`accounting_map` row yet — makes an incomplete catalog visible at a glance instead of
+silently defaulting to zero. The edit form shows a live "Group's cut (YDA): X%" preview
+as 44i Cut % is typed, computed client-side, so nothing about the 100%-total rule is
+hidden or has to be done by hand.
+
+**New-service prompt** — `adminSaveService()`'s success path now calls
+`promptNewServiceAccountingSetup(id)` whenever `isNew` is true: a confirm dialog
+("...before it's ready for real use. Set that up now?") that, if accepted, switches to
+the Accounting Map tab and opens that exact service's edit form pre-selected. Declining
+leaves the service saved but flagged MISSING in the Accounting Map list, so it's never
+silently lost track of.
+
+**Verified via simulation** (per this project's standing testing discipline — this
+can't be confirmed in a live browser from here):
+- Structural check: extracted the file's script block, ran it through `new Function()`
+  — no syntax errors.
+- Playwright, mocked `sb()`/DOM (globals set as bare assignments inside
+  `page.evaluate()` after the real script loads — reassigning `window.currentAdminUser`
+  does NOT work here since it's declared `let` at top level, a separate lexical binding
+  from the `window` object; this bit the very first test run and was fixed by assigning
+  the bare identifier instead, consistent with this session's recurring lesson about
+  test-mock globals):
+  - `loadAdminAccountingMap()` loads and merges services + accounting_map rows
+    correctly; missing-badge count correctly excludes inactive services and correctly
+    counts only services with no row (1 of 2 active services in the test data).
+  - `adminEditAccounting()` populates the form correctly both for a service with an
+    existing row and one with none (blank fields, "Set Up" case); YDA preview computes
+    `100 − cut%` correctly (30% cut → "70%").
+  - `adminSaveAccountingMap()` builds and sends the correct RPC payload, including
+    `p_name`/`p_pw` from `currentAdminUser`.
+  - `promptNewServiceAccountingSetup()` correctly switches to the Accounting Map tab
+    and opens the new service's edit form after confirmation.
+
+**Not yet built, deliberately out of scope for this slice**: per-group accounting
+overrides (Group settings, later); the actual Campaign Setup/pacing dashboard build
+(this piece was chosen as a smaller, foundational slice specifically to build and
+verify before tackling that larger piece); the exact Spend %/Audio-Video formula.
+
+**Still to do**: this branch needs merging to `main` again before Claire can test the
+new tab live, same as the earlier logo-upload deploy mix-up.

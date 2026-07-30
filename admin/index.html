@@ -46,6 +46,7 @@
       <button id="section-tab-notifications" onclick="adminSection('notifications')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Notifications</button>
       <button id="section-tab-reconcile" onclick="adminSection('reconcile')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Reconcile Lists</button>
       <button id="section-tab-users" onclick="adminSection('users')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Users</button>
+      <button id="section-tab-accounting" onclick="adminSection('accounting')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Accounting Map<span id="accounting-missing-badge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:10px"></span></button>
     </div>
 
     <div style="padding:20px">
@@ -967,6 +968,46 @@
         <div id="admin-users-table" style="order:3"></div>
       </div><!-- /section-users -->
 
+      <!-- ── SECTION: Accounting Map (margin/spend-allocation data, super-admin only) ── -->
+      <div id="section-accounting" style="display:none;flex-direction:column">
+        <div style="order:1;margin-bottom:14px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Accounting Map</p>
+          <p style="font-size:11px;color:var(--muted)">One row per service — 44i's cut, and the % of Gross that actually becomes in-platform ad spend. Restricted to super admins. Default Retail and Retail CPM aren't shown here — they always come straight from the Services tab (and any group's own Custom Pricing override), so there's never a second number to keep in sync.</p>
+        </div>
+
+        <div id="admin-accounting-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-accounting-form-title">Accounting Map — Service</p>
+          <input type="hidden" id="admin-accounting-service-id"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">44i Cut % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Group's cut (YDA) is always 100% minus this</span></label>
+              <input type="number" step="0.01" id="admin-accounting-cut-pct" placeholder="e.g. 45" oninput="updateAccountingYdaPreview()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <p id="admin-accounting-yda-preview" style="font-size:11px;color:var(--muted);margin-top:4px">Group's cut (YDA): —</p>
+            </div>
+            <div>
+              <label class="lbl">44i Fixed Cut $ <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— 0 = use the percentage above instead</span></label>
+              <input type="number" step="0.01" id="admin-accounting-fixed-cut" placeholder="0" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">(Of Gross) Budgeted Spend % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— drives In-Platform Budget</span></label>
+              <input type="number" step="0.01" id="admin-accounting-budgeted-spend" placeholder="e.g. 25" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Spend % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Audio/Video programmatic services only</span></label>
+              <input type="number" step="0.01" id="admin-accounting-spend-pct" placeholder="—" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onclick="adminSaveAccountingMap()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+            <button onclick="adminCancelAccountingEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-accounting-table" style="order:3"></div>
+      </div><!-- /section-accounting -->
+
     </div>
   </div>
 </div>
@@ -1327,16 +1368,16 @@ function showAdmin(show) {
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
-  // Eleven sections: groups | orders | clients | map | sections | intake | ae | legal | notifications | reconcile | users
-  const sections = ['groups','orders','clients','map','sections','intake','ae','legal','notifications','reconcile','users'];
+  // Twelve sections: groups | orders | clients | map | sections | intake | ae | legal | notifications | reconcile | users | accounting
+  const sections = ['groups','orders','clients','map','sections','intake','ae','legal','notifications','reconcile','users','accounting'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
-    // 'groups', 'clients', and 'users' need display:flex specifically — all three use
-    // flex `order` on their edit form so it renders above the list regardless of DOM
-    // source order (see their markup). Setting plain 'block' here would silently
-    // cancel that ordering the moment this tab is shown, which is exactly what was
-    // happening before this was special-cased for 'groups'.
-    if (panel) panel.style.display = s !== section ? 'none' : ((s === 'groups' || s === 'clients' || s === 'users') ? 'flex' : 'block');
+    // 'groups', 'clients', 'users', and 'accounting' need display:flex specifically —
+    // all four use flex `order` on their edit form so it renders above the list
+    // regardless of DOM source order (see their markup). Setting plain 'block' here
+    // would silently cancel that ordering the moment this tab is shown, which is
+    // exactly what was happening before this was special-cased for 'groups'.
+    if (panel) panel.style.display = s !== section ? 'none' : ((s === 'groups' || s === 'clients' || s === 'users' || s === 'accounting') ? 'flex' : 'block');
     const tab = document.getElementById('section-tab-' + s);
     if (tab) {
       tab.style.borderBottomColor = (s === section) ? 'var(--accent)' : 'transparent';
@@ -1424,6 +1465,17 @@ function adminSection(section) {
         '<p style="color:#991B1B;font-size:12px">User management is restricted to super admins.</p>';
     } else {
       loadAdminUsers();
+    }
+  } else if (section === 'accounting') {
+    // Super-admin only — real margin/spend-allocation data, same restriction level as
+    // the Users tab itself.
+    const isAm = currentAdminUser?.role === 'am';
+    if (isAm) {
+      document.getElementById('admin-accounting-form').style.display = 'none';
+      document.getElementById('admin-accounting-table').innerHTML =
+        '<p style="color:#991B1B;font-size:12px">The Accounting Map is restricted to super admins.</p>';
+    } else {
+      loadAdminAccountingMap();
     }
   }
 }
@@ -2916,6 +2968,154 @@ async function adminToggleUserActive(name, makeActive) {
   }
 }
 
+// ── ACCOUNTING MAP (2026-07-18) ──────────────────────────────────
+// One row per service — 44i's cut and the % of Gross that becomes real in-platform ad
+// spend. Deliberately does NOT store Default Retail or Retail CPM (those live on
+// `services` already, including any group's own Custom Pricing override — see the SQL
+// comment for why duplicating them here would risk drift) or the Group's cut/YDA
+// (always 100 - fortyfouri_cut_pct, confirmed a real rule by Claire, not stored
+// separately for the same reason).
+let ALL_ACCOUNTING_MAP = []; // rows that actually have an entry
+const ACCOUNTING_SPEND_PCT_SECTIONS = ['audio', 'video']; // best-known scope for Spend %, per Claire (2026-07-18) — refine when those services' entries actually get built
+
+async function loadAdminAccountingMap() {
+  const el = document.getElementById('admin-accounting-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    if (!allServicesMap.length) allServicesMap = await sb('services?order=section,sort_order&select=*') || [];
+    ALL_ACCOUNTING_MAP = await sb('rpc/admin_get_accounting_map', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+    renderAdminAccountingList();
+    updateAccountingMissingBadge();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading the accounting map: ${esc(e.message)}</p>`;
+  }
+}
+
+// Shown on the tab itself so a missing entry is visible without having to open the
+// tab first — this is the "safeguard" half of Claire's request (2026-07-18): a new
+// service should be noticeable if nobody's filled in its accounting data yet, not
+// just a one-time prompt easily dismissed and forgotten.
+function updateAccountingMissingBadge() {
+  const badge = document.getElementById('accounting-missing-badge');
+  if (!badge) return;
+  const mappedIds = new Set(ALL_ACCOUNTING_MAP.map(a => a.service_id));
+  const missing = allServicesMap.filter(s => s.active !== false && !mappedIds.has(s.id)).length;
+  if (missing > 0) {
+    badge.textContent = missing;
+    badge.style.display = 'inline-block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderAdminAccountingList() {
+  const el = document.getElementById('admin-accounting-table');
+  const mapById = {};
+  ALL_ACCOUNTING_MAP.forEach(a => { mapById[a.service_id] = a; });
+  const rows = allServicesMap.filter(s => s.active !== false).sort((a,b) => (a.section||'').localeCompare(b.section||'') || (a.sort_order||0)-(b.sort_order||0));
+  if (!rows.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No active services yet.</p>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut %</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group Cut % (YDA)</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Fixed Cut $</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Budgeted Spend %</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  rows.forEach(s => {
+    const a = mapById[s.id];
+    const missing = !a;
+    const rowStyle = missing ? 'background:#FFFBEB' : '';
+    const missingBadge = missing ? ' <span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">MISSING</span>' : '';
+    const cutPct = a?.fortyfouri_cut_pct;
+    const ydaPct = cutPct != null ? (100 - Number(cutPct)) : null;
+    const editBtn = `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`;
+    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      <td style="padding:8px 10px">${esc(s.label)}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
+      <td style="padding:8px 10px">${cutPct != null ? cutPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${a?.fortyfouri_fixed_cut ? '$' + a.fortyfouri_fixed_cut : '—'}</td>
+      <td style="padding:8px 10px">${a?.budgeted_spend_pct != null ? a.budgeted_spend_pct + '%' : '—'}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function updateAccountingYdaPreview() {
+  const cutVal = parseFloat(document.getElementById('admin-accounting-cut-pct').value);
+  const preview = document.getElementById('admin-accounting-yda-preview');
+  preview.textContent = 'Group\'s cut (YDA): ' + (isNaN(cutVal) ? '—' : (100 - cutVal) + '%');
+}
+
+function adminEditAccounting(serviceId) {
+  const s = allServicesMap.find(x => x.id === serviceId);
+  if (!s) return;
+  const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId);
+  document.getElementById('admin-accounting-form-title').textContent = 'Accounting Map — ' + s.label;
+  document.getElementById('admin-accounting-service-id').value = serviceId;
+  document.getElementById('admin-accounting-cut-pct').value = a?.fortyfouri_cut_pct ?? '';
+  document.getElementById('admin-accounting-fixed-cut').value = a?.fortyfouri_fixed_cut ?? '';
+  document.getElementById('admin-accounting-budgeted-spend').value = a?.budgeted_spend_pct ?? '';
+  document.getElementById('admin-accounting-spend-pct').value = a?.spend_pct ?? '';
+  updateAccountingYdaPreview();
+  document.getElementById('admin-accounting-form').style.display = 'block';
+  document.getElementById('admin-accounting-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelAccountingEdit() {
+  document.getElementById('admin-accounting-form').style.display = 'none';
+}
+
+async function adminSaveAccountingMap() {
+  const serviceId = document.getElementById('admin-accounting-service-id').value;
+  if (!serviceId) { showToast('No service selected', 'error'); return; }
+  const cutVal = document.getElementById('admin-accounting-cut-pct').value;
+  const fixedVal = document.getElementById('admin-accounting-fixed-cut').value;
+  const budgetedVal = document.getElementById('admin-accounting-budgeted-spend').value;
+  const spendPctVal = document.getElementById('admin-accounting-spend-pct').value;
+
+  const payload = {
+    fortyfouri_cut_pct: cutVal === '' ? null : parseFloat(cutVal),
+    fortyfouri_fixed_cut: fixedVal === '' ? 0 : parseFloat(fixedVal),
+    budgeted_spend_pct: budgetedVal === '' ? null : parseFloat(budgetedVal),
+    spend_pct: spendPctVal === '' ? null : parseFloat(spendPctVal)
+  };
+  try {
+    await sb('rpc/admin_save_accounting_map', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_service_id: serviceId,
+        p_data: payload
+      })
+    });
+    showToast('Accounting map saved!');
+    document.getElementById('admin-accounting-form').style.display = 'none';
+    await loadAdminAccountingMap();
+  } catch(e) {
+    showToast('Error saving accounting map: ' + e.message, 'error');
+  }
+}
+
+// Claire's safeguard (2026-07-18): a new service should never silently end up with no
+// accounting data — offered right at creation time, on top of the persistent
+// MISSING badge/count in the Accounting Map tab itself.
+function promptNewServiceAccountingSetup(serviceId) {
+  if (!confirm('This new service needs an Accounting Map entry (44i\'s cut and how much of it becomes real ad spend) before it\'s ready for real use. Set that up now?')) return;
+  adminSection('accounting');
+  loadAdminAccountingMap().then(() => adminEditAccounting(serviceId));
+}
+
 // ── IMPORT AES FROM TRELLO BOARD MEMBERS (2026-07-18) ───────────
 // Same review-before-create spirit as the Client import, but scans a board's MEMBERS
 // (trello_get_board_members, already built for AM/AE card assignment) instead of its
@@ -4078,6 +4278,7 @@ async function adminSaveService() {
     // database but not move in the Custom Pricing list on screen.
     await loadCatalog();
     rebuildPriceableServices();
+    if (isNew) promptNewServiceAccountingSetup(id);
   } catch(e) {
     showToast('Error saving service: ' + e.message, 'error');
   }
