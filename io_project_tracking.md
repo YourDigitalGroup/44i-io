@@ -4181,3 +4181,58 @@ shown "clicks (SEM only)" as a working assumption before this was actually confi
 updated its tag from "Automatic" to "Automatic, both metrics confirmed" and reworded
 the card so it no longer reads as an assumption. Only Platform's mid-campaign
 editability remains open. Verified tag-balanced before republishing.
+
+## 2026-07-30 (cont'd) — Per-Group Accounting Overrides (the "later" item, picked up)
+
+While waiting on the rest of the strategist portal answers, Claire asked to build the
+per-group accounting overrides deferred earlier this session ("we will need to be able
+to do some overrides per group... add that to Group settings later, as a new separate
+section"). Confirmed scope before building: all four Accounting Map fields are
+overridable per service (44i Cut %, Fixed Cut $, Budgeted Spend %, Setup Fee Split %),
+not just some of them.
+
+**Architecture**: exactly the same shape as the existing Custom Pricing mechanism
+(`groups.io_pricing`) — a sparse JSON override object stored directly on the group,
+edited in its own tab within the Group editor — just one level deeper, since each
+service can override up to four fields instead of a single price. New
+`groups.accounting_overrides` column: `{ "<service_id>": { "fortyfouri_cut_pct"?,
+"fortyfouri_fixed_cut"?, "budgeted_spend_pct"?, "setup_fee_cut_pct"? } }`, only
+including whichever fields are actually overridden — matches `io_pricing`'s own
+sparse-storage convention exactly.
+
+**Built**:
+- New "Accounting Overrides" tab in the Group editor, alongside Group Info/Custom
+  Pricing — same super-admin-only restriction as both Custom Pricing and the base
+  Accounting Map (an AM login can't see or edit this tab at all).
+- Only services with a REAL Accounting Map entry are shown — a CPM-adjustment modifier
+  (Offline Visits Tracking, etc.) has nothing of its own to override (it auto-derives
+  from its sibling tactic), so it's excluded entirely; same for any service that simply
+  doesn't have an Accounting Map entry set up yet.
+- Setup Fee Split % only shows for a service that actually has `auto_add_setup_fee`
+  configured (same conditional-field pattern as the base Accounting Map edit form) —
+  SEM Business Pro shows it, a normal spend-priced service doesn't.
+- Placeholder text on each override input shows the group's live standard value (e.g.
+  "45" for 44i Cut %), so it's clear at a glance what's being overridden FROM, same UX
+  as Custom Pricing's placeholder showing the standard price.
+- `accounting_overrides` is only sent in the save payload for a super-admin session —
+  identical guard to `io_pricing`, so a save from an AM-tier login (which can only ever
+  touch Group Info) can never accidentally clobber an existing override.
+
+**Verified via Playwright** against the real page script + `shared.js`: confirmed
+services with a real entry show up, the CPM-adjustment modifier and a
+no-entry service are both correctly excluded, the Setup Fee Split field only appears
+for SEM (not a plain spend service), the placeholder shows the correct base default,
+and the override add/clear/payload cycle all work — clearing an override cleans up the
+per-service object entirely rather than leaving a stray `{}`.
+
+**Still to do**: `alter table groups add column if not exists accounting_overrides
+jsonb;`, plus adding the field to `admin_save_group`'s column list — waiting on Claire
+to paste that RPC's current `pg_get_functiondef()` output, same reasoning as the
+`admin_save_service` RPC earlier this session (safer than guessing at its other
+existing fields). Then merge to `main`.
+
+**Not yet built, deliberately out of scope**: actually READING/applying these
+overrides anywhere downstream (e.g. a future strategist portal's real margin
+calculations) — that doesn't exist yet since the strategist portal itself is still just
+a concept mockup. This is purely the data-entry mechanism, matching how Custom Pricing
+was originally built before anything downstream consumed `io_pricing`.
