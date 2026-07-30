@@ -3728,3 +3728,11 @@ at all; accounting-map row doesn't exist yet), and that the save payload round-t
 `setup_fee_cut_pct` correctly alongside the service's unrelated regular cut.
 
 **Still to do**: run the SQL, then merge to `main`.
+
+**Parked, not yet scoped:** Claire mentioned some services get paid through a
+different system entirely when they're monthly recurring revenue — hasn't decided
+yet which services or what that should mean for the Accounting Map (e.g. whether they
+should be exempt from the "MISSING" badge, since they're not really tracked through
+this table's mechanics in the first place). Explicitly NOT related to the strategist
+portal work — don't fold this into that scope. No action until Claire has more to
+share.
