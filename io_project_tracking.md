@@ -3980,3 +3980,48 @@ noting the other file's copy must be updated by hand alongside it.
 Services tab would render it, while `yttv-addl` is unaffected (`{fee: "+$15", freq:
 "Add-on, Monthly"}`). Also re-ran the full Accounting Map test suite against the
 updated `shared.js` to confirm nothing else regressed.
+
+## 2026-07-30 (cont'd) — Accounting Map: manual override + Service editor layout fix
+
+Claire reported two things in one message: she needs to be able to edit the
+CPM-adjustment auto-derivation (confirmed: "some of them differ with offline
+tracking" — the simple "base tactic's CPM + modifier's dollar amount" formula doesn't
+hold for every real case), and a layout bug — "everything moved over... a lot of dead
+space" — in the Service editor.
+
+**Layout bug, found and fixed.** The new "Show as a CPM adjustment" checkbox (added
+earlier today) lived inside `admin-svc-modifier-wrap`, one of three columns in a
+`grid-template-columns: 1fr 1fr 1fr` row. Its long description sentence wrapped across
+many lines, stretching that whole grid row's height — and since Pricing Mode: Modifier
+hides BOTH sibling columns (Unit, Retail CPM) via `display:none`, the row was left with
+one very tall populated column and two large blank dead-space columns beside it, with
+the populated column sitting in the visually "moved over" middle position. Moved the
+checkbox out of the grid entirely into its own full-width row below — confirmed via
+Playwright against the REAL page markup (not a reconstructed mock) that the checkbox
+row's parent element is no longer the same grid div as `admin-svc-unit-wrap`.
+
+**Manual override, added.** Two independent overrides, each optional, for a
+single-candidate CPM-adjustment service (e.g. `nd-offline`/`nd-geo`):
+- **Retail CPM**: the Service editor's Retail CPM field (previously shown only for
+  Spend pricing) now also appears when "Show as a CPM adjustment" is checked — set it
+  directly to override the Accounting Map's auto-computed combined CPM entirely.
+  Doubles as the fix for the layout bug's field (moved to its own visibility rule,
+  `updateCpmWrapVisibility()`, since Spend-pricing and CPM-adjustment are two
+  independent reasons for the same field to show).
+- **44i Cut %/Budgeted Spend %/Fixed Cut $**: the modifier's own `accounting_map` entry
+  (already the correct schema — every service can have one) now wins over the base
+  tactic's percentages when present. The list's Edit button reads "Override" when no
+  entry exists yet (nothing to edit, but clicking creates one) vs. "Edit" once one does.
+
+For the multi-candidate case (`td`/`lt`/`stv`), each reference row's "Reference only"
+label was replaced with a real Edit button pointed at that specific candidate tactic's
+OWN entry (e.g. "Edit td-site") — fixing one pairing's percentages just means fixing
+that tactic's real row, which was already editable elsewhere in the same list.
+
+**Verified via Playwright**: added an `nv-offline`/`nv-geo` case with BOTH overrides
+set to deliberately different numbers than what auto-derivation would produce (retail
+CPM 99 vs. auto 32; cut%/budgeted% 60%/70% vs. `nv-geo`'s own 45%/26.67%) — confirmed
+the overrides win outright, confirmed the wrong auto-derived numbers do NOT appear
+anywhere, confirmed the Edit/Override button text matches whether an entry exists, and
+confirmed `nd-offline` (no override) is unaffected by any of this and still
+auto-derives correctly.

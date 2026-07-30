@@ -439,15 +439,22 @@
               <div id="admin-svc-modifier-wrap">
                 <label class="lbl">Modifier Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Modifier</span></label>
                 <input type="number" step="0.01" id="admin-svc-modifier" placeholder="e.g. 2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
-                <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--text);cursor:pointer">
-                  <input type="checkbox" id="admin-svc-cpm-adjustment"/>
-                  Show as a CPM adjustment (e.g. "+$2 CPM"), not a billed add-on — Offline Visits Tracking (2026-07-30, per Claire/leadership): the client isn't charged this amount; it only affects the real CPM used for accounting/margin purposes. The Accounting Map automatically figures out which tactic(s) this combines with — no manual link needed here.
-                </label>
               </div>
               <div id="admin-svc-cpm-wrap">
-                <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Spend</span></label>
+                <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— required if Pricing Mode is Spend; optional override for a CPM-adjustment Modifier (leave blank to auto-compute from the tactic it combines with)</span></label>
                 <input type="number" step="0.01" id="admin-svc-cpm" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
+            </div>
+            <!-- Own full-width row, not a 3rd grid column — a long checkbox label inside
+                 a 1fr-of-3 column stretched that whole grid row's height while the OTHER
+                 two columns sat empty beside it (Pricing Mode: Modifier hides both Unit
+                 and Retail CPM), producing a large dead-space block Claire flagged live
+                 2026-07-30. Full width avoids that entirely. -->
+            <div id="admin-svc-cpm-adjustment-wrap" style="margin-bottom:12px">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer">
+                <input type="checkbox" id="admin-svc-cpm-adjustment" onchange="updateCpmWrapVisibility(true)"/>
+                Show as a CPM adjustment (e.g. "+$2 CPM"), not a billed add-on — Offline Visits Tracking (2026-07-30, per Claire/leadership): the client isn't charged this amount; it only affects the real CPM used for accounting/margin purposes. The Accounting Map automatically figures out which tactic(s) this combines with, using the Retail CPM above as an override if set, or auto-computed otherwise.
+              </label>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
@@ -3132,23 +3139,38 @@ function renderAdminAccountingList() {
       const modAmt = s.modifier_amount != null ? Number(s.modifier_amount) : null;
 
       if (candidates.length === 1) {
-        // Unambiguous — auto-derive everything from the one sibling tactic. Never
-        // "MISSING": there's nothing to manually set up here.
+        // Unambiguous default: auto-derive from the one sibling tactic. But some
+        // offline-tracking modifiers' real combined figures don't match the simple
+        // "base tactic's CPM + this modifier's dollar amount" formula (confirmed by
+        // Claire 2026-07-30 — "some of them differ with offline tracking") — so this
+        // is editable, not fixed. Two independent overrides, each optional:
+        //   - Retail CPM: set directly on the MODIFIER's own Services-tab row (s.retail_cpm)
+        //     to replace the auto-computed combined CPM entirely.
+        //   - 44i Cut %/Budgeted Spend %/Fixed Cut $: the modifier's OWN accounting_map
+        //     entry (`a`), same as any other service — present only once someone clicks
+        //     Edit and saves it, wins over the base tactic's percentages when present.
         const base = candidates[0];
         const baseA = mapById[base.id];
-        const combinedCpm = (base.retail_cpm != null && modAmt != null) ? Number(base.retail_cpm) + modAmt : null;
+        const autoCombinedCpm = (base.retail_cpm != null && modAmt != null) ? Number(base.retail_cpm) + modAmt : null;
+        const retailCpmOverridden = s.retail_cpm != null;
+        const combinedCpm = retailCpmOverridden ? Number(s.retail_cpm) : autoCombinedCpm;
+        const pctOverridden = !!a;
         html += renderAccountingMapRow({
           id: s.id, displayLabel, indent: false,
           defaultRetail: null, retailCpm: combinedCpm,
-          cutPct: baseA?.fortyfouri_cut_pct, fixedCut: 0, budgetedPct: baseA?.budgeted_spend_pct,
+          cutPct: pctOverridden ? a.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
+          fixedCut: pctOverridden ? a.fortyfouri_fixed_cut : 0,
+          budgetedPct: pctOverridden ? a.budgeted_spend_pct : baseA?.budgeted_spend_pct,
           setupFeeSplitDisplay: null, missing: false,
-          editBtnHtml: `<span style="font-size:11px;color:var(--muted)">Auto (from ${esc(base.label)})</span>`,
-          note: `auto-derived from ${base.id}`,
+          editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${pctOverridden ? 'Edit' : 'Override'}</button>`,
+          note: (retailCpmOverridden ? 'CPM overridden' : `CPM auto from ${base.id}`) + (pctOverridden ? ', %s overridden' : `, %s from ${base.id}`),
         });
       } else if (candidates.length > 1) {
         // Ambiguous — no single number is correct, so the modifier's own row carries no
         // CPM figures of its own; one reference row per tactic it could actually be
-        // paired with follows immediately after.
+        // paired with follows immediately after, each linking to THAT tactic's own real
+        // Edit form (same one already used for its non-offline row elsewhere in this
+        // list) — fixing a specific pairing's %s means fixing that tactic's own entry.
         html += renderAccountingMapRow({
           id: s.id, displayLabel, indent: false,
           defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null,
@@ -3164,8 +3186,8 @@ function renderAdminAccountingList() {
             defaultRetail: null, retailCpm: combinedCpm,
             cutPct: baseA?.fortyfouri_cut_pct, fixedCut: 0, budgetedPct: baseA?.budgeted_spend_pct,
             setupFeeSplitDisplay: null, missing: false,
-            editBtnHtml: `<span style="font-size:11px;color:var(--muted)">Reference only</span>`,
-            note: 'auto-derived combined-CPM reference',
+            editBtnHtml: `<button onclick="adminEditAccounting('${esc(base.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">Edit ${esc(base.id)}</button>`,
+            note: `auto-derived combined-CPM reference — Edit changes ${base.id}'s own entry`,
           });
         });
       } else {
@@ -4167,10 +4189,12 @@ function onServiceSectionChange() {
 // begin with, and clearing it when the admin actively switches mode (not when merely
 // opening an existing service for edit, since that shouldn't erase real saved data
 // before Save is even clicked).
+// admin-svc-cpm-wrap is NOT in this list — it has two different reasons to show
+// (Spend pricing's real rate, OR a Modifier's optional CPM-adjustment override) that
+// don't fit this array's one-mode-per-field shape. See updateCpmWrapVisibility().
 const PRICING_MODE_FIELDS = [
   { wrap: 'admin-svc-unit-wrap', input: 'admin-svc-unit', mode: 'per_unit' },
   { wrap: 'admin-svc-modifier-wrap', input: 'admin-svc-modifier', mode: 'modifier' },
-  { wrap: 'admin-svc-cpm-wrap', input: 'admin-svc-cpm', mode: 'spend' },
   { wrap: 'admin-svc-spendmin-wrap', input: 'admin-svc-spend-min', mode: 'spend' },
 ];
 function onPricingModeChange(fromUserAction) {
@@ -4184,10 +4208,31 @@ function onPricingModeChange(fromUserAction) {
       if (input) input.value = '';
     }
   });
-  // CPM Adjustment checkbox only ever makes sense for Modifier — clear it on an active
-  // switch away from that mode, same reasoning as the fields above.
+  // CPM Adjustment checkbox only ever makes sense for Modifier — hide its whole row and
+  // clear it on an active switch away from that mode, same reasoning as the fields above.
+  const cpmAdjustmentWrap = document.getElementById('admin-svc-cpm-adjustment-wrap');
+  if (cpmAdjustmentWrap) cpmAdjustmentWrap.style.display = mode === 'modifier' ? '' : 'none';
   if (mode !== 'modifier' && fromUserAction) {
     document.getElementById('admin-svc-cpm-adjustment').checked = false;
+  }
+  updateCpmWrapVisibility(fromUserAction);
+}
+
+// Retail CPM has two independent reasons to be visible: Spend pricing (its real rate)
+// or a Modifier flagged as a CPM adjustment (an optional manual override of the
+// Accounting Map's auto-computed combined CPM — added 2026-07-30 per Claire: some
+// offline-tracking modifiers' real combined CPM doesn't match the simple "base tactic's
+// CPM + this modifier's dollar amount" formula, so this gives her somewhere to type the
+// real number directly instead). Called both from onPricingModeChange() and from the
+// checkbox's own onchange, since either one can change whether this should show.
+function updateCpmWrapVisibility(fromUserAction) {
+  const mode = document.getElementById('admin-svc-pricing-mode').value;
+  const isCpmAdjustment = document.getElementById('admin-svc-cpm-adjustment').checked;
+  const show = mode === 'spend' || (mode === 'modifier' && isCpmAdjustment);
+  const wrap = document.getElementById('admin-svc-cpm-wrap');
+  if (wrap) wrap.style.display = show ? '' : 'none';
+  if (!show && fromUserAction) {
+    document.getElementById('admin-svc-cpm').value = '';
   }
 }
 
