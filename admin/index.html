@@ -440,14 +440,9 @@
                 <label class="lbl">Modifier Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Modifier</span></label>
                 <input type="number" step="0.01" id="admin-svc-modifier" placeholder="e.g. 2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--text);cursor:pointer">
-                  <input type="checkbox" id="admin-svc-cpm-adjustment" onchange="onCpmAdjustmentChange()"/>
-                  Show as a CPM adjustment (e.g. "+$2 CPM"), not a billed add-on — Offline Visits Tracking (2026-07-30, per Claire/leadership): the client isn't charged this amount; it only affects the real CPM used for accounting/margin purposes.
+                  <input type="checkbox" id="admin-svc-cpm-adjustment"/>
+                  Show as a CPM adjustment (e.g. "+$2 CPM"), not a billed add-on — Offline Visits Tracking (2026-07-30, per Claire/leadership): the client isn't charged this amount; it only affects the real CPM used for accounting/margin purposes. The Accounting Map automatically figures out which tactic(s) this combines with — no manual link needed here.
                 </label>
-                <div id="admin-svc-cpm-adjustment-base-wrap" style="display:none;margin-top:8px">
-                  <label class="lbl">Base Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the tactic this is the combined-CPM ("w/ Visits") version of, e.g. td-geo</span></label>
-                  <input type="text" id="admin-svc-cpm-adjustment-base" placeholder="e.g. td-geo" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
-                  <p style="font-size:10px;color:var(--muted);margin-top:4px">Groups this row directly under its base tactic in the Accounting Map list, same paired layout as the original spreadsheet.</p>
-                </div>
               </div>
               <div id="admin-svc-cpm-wrap">
                 <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Spend</span></label>
@@ -3024,7 +3019,13 @@ function updateAccountingMissingBadge() {
   const badge = document.getElementById('accounting-missing-badge');
   if (!badge) return;
   const mappedIds = new Set(ALL_ACCOUNTING_MAP.map(a => a.service_id));
-  const missing = allServicesMap.filter(s => s.active !== false && !mappedIds.has(s.id)).length;
+  // CPM-adjustment services (e.g. Offline Visits Tracking) never need their own
+  // accounting_map row — a single-candidate one auto-derives its combined CPM from its
+  // one sibling spend tactic, and a multi-candidate one shows a reference row per
+  // possible tactic instead. Neither case is ever something to "set up," so excluded
+  // from the missing count (renderAdminAccountingList() never shows MISSING for these
+  // either — this just keeps the badge count consistent with that).
+  const missing = allServicesMap.filter(s => s.active !== false && !s.is_cpm_adjustment && !mappedIds.has(s.id)).length;
   if (missing > 0) {
     badge.textContent = missing;
     badge.style.display = 'inline-block';
@@ -3044,6 +3045,35 @@ function fmtPct(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
+// Builds one <tr> for the Accounting Map list — shared by real service rows and the
+// synthetic reference rows a multi-candidate CPM-adjustment modifier generates below,
+// so both use identical derivation math and never drift apart.
+function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retailCpm, cutPct, fixedCut, budgetedPct, setupFeeSplitDisplay, missing, editBtnHtml, note }) {
+  const ydaPct = cutPct != null ? fmtPct(100 - Number(cutPct)) : null;
+  const cutDollar = (fixedCut && Number(fixedCut) > 0) ? Number(fixedCut)
+    : ((defaultRetail != null && cutPct != null) ? (defaultRetail * Number(cutPct) / 100) : null);
+  const cutCpm = (retailCpm != null && cutPct != null) ? (retailCpm * Number(cutPct) / 100) : null;
+  const budgetedPctDisplay = fmtPct(budgetedPct);
+  const cutPctDisplay = fmtPct(cutPct);
+  const platformCpm = (retailCpm != null && budgetedPct != null) ? (retailCpm * Number(budgetedPct) / 100) : null;
+  const rowStyle = missing ? 'background:#FFFBEB' : (indent ? 'background:#F8FAFC' : '');
+  const missingBadge = missing ? ' <span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">MISSING</span>' : '';
+  const labelCell = indent ? `<span style="color:var(--muted)">↳</span> ${esc(displayLabel)}` : esc(displayLabel);
+  return `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      <td style="padding:8px 10px${indent ? ' 8px 24px' : ''}">${labelCell}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(id)}${note ? ' — ' + esc(note) : ''}</div></td>
+      <td style="padding:8px 10px">${defaultRetail != null ? '$' + defaultRetail.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${cutPctDisplay != null ? cutPctDisplay + '%' : '—'}</td>
+      <td style="padding:8px 10px">${cutDollar != null ? '$' + cutDollar.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${budgetedPctDisplay != null ? budgetedPctDisplay + '%' : '—'}</td>
+      <td style="padding:8px 10px">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${platformCpm != null ? '$' + platformCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${esc(setupFeeSplitDisplay || '—')}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtnHtml}</td>
+    </tr>`;
+}
+
 function renderAdminAccountingList() {
   const el = document.getElementById('admin-accounting-table');
   const mapById = {};
@@ -3060,25 +3090,20 @@ function renderAdminAccountingList() {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No active services yet.</p>';
     return;
   }
-  // Group a CPM-adjustment row (e.g. td-offline) directly under the base tactic it's
-  // linked to (e.g. td-geo) via cpm_adjustment_base_service_id, instead of wherever its
-  // own sort_order would otherwise place it — matches the paired base/"w-Visits" row
-  // layout from Claire's original spreadsheet. A link to a service not in this list
-  // (inactive, or the id was mistyped) is left in its normal sort position rather than
-  // silently dropped.
-  const idsInList = new Set(rows.map(s => s.id));
-  const childrenByBaseId = {};
-  rows.forEach(s => {
-    if (s.cpm_adjustment_base_service_id && idsInList.has(s.cpm_adjustment_base_service_id)) {
-      (childrenByBaseId[s.cpm_adjustment_base_service_id] = childrenByBaseId[s.cpm_adjustment_base_service_id] || []).push(s);
+  // Candidate base tactics for a CPM-adjustment modifier (e.g. td-offline) — every
+  // active spend-priced sibling in the SAME section. Derived live rather than a manual
+  // per-service link (tried and reverted 2026-07-30) — checked the real catalog data
+  // first: some sections have exactly one spend tactic (unambiguous — the combined CPM
+  // is simply that tactic's CPM + modifier_amount), while others (td/lt/stv) have
+  // several sharing one exclusivity_group — the client can only pick ONE per order, but
+  // WHICH one varies, so a single stored link would show a confidently wrong number
+  // whenever a different tactic was actually sold. Multi-candidate sections get one
+  // reference row per possible tactic instead of a single (possibly wrong) number.
+  const sectionSpendCandidates = {};
+  allServicesMap.forEach(o => {
+    if (o.active !== false && o.pricing_mode === 'spend') {
+      (sectionSpendCandidates[o.section] = sectionSpendCandidates[o.section] || []).push(o);
     }
-  });
-  const linkedChildIds = new Set(Object.values(childrenByBaseId).flat().map(s => s.id));
-  const orderedRows = [];
-  rows.forEach(s => {
-    if (linkedChildIds.has(s.id)) return; // placed alongside its base below instead
-    orderedRows.push(s);
-    (childrenByBaseId[s.id] || []).forEach(child => orderedRows.push(child));
   });
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
@@ -3094,27 +3119,74 @@ function renderAdminAccountingList() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Setup Fee Split</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
-  orderedRows.forEach(s => {
+  rows.forEach(s => {
     const a = mapById[s.id];
+    // Accounting Map Label — internal-only override, e.g. so an "Offline Visits
+    // Tracking" modifier row can read as "Targeted Display — Geo-Targeting (w/ Visits,
+    // combined CPM)" here without touching the client/AE-facing Label used everywhere
+    // else (live IO form, Trello, print). Falls back to the real label when unset.
+    const displayLabel = s.accounting_label || s.label;
+
+    if (s.is_cpm_adjustment) {
+      const candidates = (sectionSpendCandidates[s.section] || []).filter(c => c.id !== s.id);
+      const modAmt = s.modifier_amount != null ? Number(s.modifier_amount) : null;
+
+      if (candidates.length === 1) {
+        // Unambiguous — auto-derive everything from the one sibling tactic. Never
+        // "MISSING": there's nothing to manually set up here.
+        const base = candidates[0];
+        const baseA = mapById[base.id];
+        const combinedCpm = (base.retail_cpm != null && modAmt != null) ? Number(base.retail_cpm) + modAmt : null;
+        html += renderAccountingMapRow({
+          id: s.id, displayLabel, indent: false,
+          defaultRetail: null, retailCpm: combinedCpm,
+          cutPct: baseA?.fortyfouri_cut_pct, fixedCut: 0, budgetedPct: baseA?.budgeted_spend_pct,
+          setupFeeSplitDisplay: null, missing: false,
+          editBtnHtml: `<span style="font-size:11px;color:var(--muted)">Auto (from ${esc(base.label)})</span>`,
+          note: `auto-derived from ${base.id}`,
+        });
+      } else if (candidates.length > 1) {
+        // Ambiguous — no single number is correct, so the modifier's own row carries no
+        // CPM figures of its own; one reference row per tactic it could actually be
+        // paired with follows immediately after.
+        html += renderAccountingMapRow({
+          id: s.id, displayLabel, indent: false,
+          defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null,
+          setupFeeSplitDisplay: null, missing: false,
+          editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${candidates.length} tactics — see below</span>`,
+          note: `combines with ${candidates.length} different tactics depending on the order`,
+        });
+        candidates.forEach(base => {
+          const baseA = mapById[base.id];
+          const combinedCpm = (base.retail_cpm != null && modAmt != null) ? Number(base.retail_cpm) + modAmt : null;
+          html += renderAccountingMapRow({
+            id: base.id, displayLabel: `${base.accounting_label || base.label} (w/ ${displayLabel})`, indent: true,
+            defaultRetail: null, retailCpm: combinedCpm,
+            cutPct: baseA?.fortyfouri_cut_pct, fixedCut: 0, budgetedPct: baseA?.budgeted_spend_pct,
+            setupFeeSplitDisplay: null, missing: false,
+            editBtnHtml: `<span style="font-size:11px;color:var(--muted)">Reference only</span>`,
+            note: 'auto-derived combined-CPM reference',
+          });
+        });
+      } else {
+        // No spend-priced sibling found in this section at all (edge case — e.g. a
+        // future one-off modifier with nothing to derive from) — falls back to the
+        // original manual-entry behavior so this never becomes a dead end.
+        const missing = !a;
+        html += renderAccountingMapRow({
+          id: s.id, displayLabel, indent: false,
+          defaultRetail: s.default_price != null ? Number(s.default_price) : null,
+          retailCpm: s.retail_cpm != null ? Number(s.retail_cpm) : null,
+          cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct,
+          setupFeeSplitDisplay: null, missing,
+          editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`,
+        });
+      }
+      return;
+    }
+
+    // Regular (non-CPM-adjustment) service — unchanged from before.
     const missing = !a;
-    const rowStyle = missing ? 'background:#FFFBEB' : '';
-    const missingBadge = missing ? ' <span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">MISSING</span>' : '';
-    const defaultRetail = s.default_price != null ? Number(s.default_price) : null;
-    const retailCpm = s.retail_cpm != null ? Number(s.retail_cpm) : null;
-    const cutPct = a?.fortyfouri_cut_pct;
-    const ydaPct = cutPct != null ? fmtPct(100 - Number(cutPct)) : null;
-    // 44i Cut $, 44i CPM, and Platform CPM are always derived live from Default
-    // Retail / Retail CPM × the stored percentages — never stored themselves, so they
-    // can't drift if the underlying service price/CPM changes in the Services tab.
-    // A nonzero Fixed Cut $ overrides the % calculation for 44i Cut $ specifically
-    // (same rule as the edit form's "0 = use the percentage" note).
-    const fixedCut = a?.fortyfouri_fixed_cut ? Number(a.fortyfouri_fixed_cut) : 0;
-    const cutDollar = fixedCut > 0 ? fixedCut : ((defaultRetail != null && cutPct != null) ? (defaultRetail * Number(cutPct) / 100) : null);
-    const cutCpm = (retailCpm != null && cutPct != null) ? (retailCpm * Number(cutPct) / 100) : null;
-    const budgetedPct = a?.budgeted_spend_pct;
-    const budgetedPctDisplay = fmtPct(budgetedPct);
-    const cutPctDisplay = fmtPct(cutPct);
-    const platformCpm = (retailCpm != null && budgetedPct != null) ? (retailCpm * Number(budgetedPct) / 100) : null;
     // Setup Fee Split — only meaningful for a service with an auto-add setup fee
     // configured (e.g. SEM Business Pro's $200-under-$1,000 fee). The split % can
     // differ from this service's regular 44i Cut % above (SEM's is 50/50, confirmed
@@ -3131,29 +3203,14 @@ function renderAdminAccountingList() {
         setupFeeSplitDisplay = `$${setupFeeAmt.toFixed(2)} fee — split not set`;
       }
     }
-    const editBtn = `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`;
-    // Accounting Map Label — internal-only override, e.g. so an "Offline Visits
-    // Tracking" modifier row can read as "Targeted Display — Geo-Targeting (w/ Visits,
-    // combined CPM)" here without touching the client/AE-facing Label used everywhere
-    // else (live IO form, Trello, print). Falls back to the real label when unset.
-    const displayLabel = s.accounting_label || s.label;
-    const isLinkedChild = linkedChildIds.has(s.id);
-    const labelCell = isLinkedChild
-      ? `<span style="color:var(--muted)">↳</span> ${esc(displayLabel)}`
-      : esc(displayLabel);
-    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}${isLinkedChild ? ';background:#F8FAFC' : ''}">
-      <td style="padding:8px 10px${isLinkedChild ? ' 8px 24px' : ''}">${labelCell}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
-      <td style="padding:8px 10px">${defaultRetail != null ? '$' + defaultRetail.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
-      <td style="padding:8px 10px">${cutPctDisplay != null ? cutPctDisplay + '%' : '—'}</td>
-      <td style="padding:8px 10px">${cutDollar != null ? '$' + cutDollar.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${budgetedPctDisplay != null ? budgetedPctDisplay + '%' : '—'}</td>
-      <td style="padding:8px 10px">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${platformCpm != null ? '$' + platformCpm.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${esc(setupFeeSplitDisplay)}</td>
-      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}</td>
-    </tr>`;
+    html += renderAccountingMapRow({
+      id: s.id, displayLabel, indent: false,
+      defaultRetail: s.default_price != null ? Number(s.default_price) : null,
+      retailCpm: s.retail_cpm != null ? Number(s.retail_cpm) : null,
+      cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct,
+      setupFeeSplitDisplay, missing,
+      editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`,
+    });
   });
   html += `</tbody></table>`;
   el.innerHTML = html;
@@ -4127,24 +4184,11 @@ function onPricingModeChange(fromUserAction) {
       if (input) input.value = '';
     }
   });
-  // CPM Adjustment checkbox + its Base Service ID only ever make sense for Modifier —
-  // clear both on an active switch away from it, same reasoning as the fields above.
+  // CPM Adjustment checkbox only ever makes sense for Modifier — clear it on an active
+  // switch away from that mode, same reasoning as the fields above.
   if (mode !== 'modifier' && fromUserAction) {
     document.getElementById('admin-svc-cpm-adjustment').checked = false;
   }
-  onCpmAdjustmentChange();
-}
-
-// Shows/hides the "Base Service ID" field alongside the CPM Adjustment checkbox — only
-// meaningful once that checkbox is on, e.g. td-offline pointing back at td-geo as the
-// tactic it's the combined ("w/ Visits") CPM version of. Purely for grouping the
-// Accounting Map list (renderAdminAccountingList sorts a linked row right after its
-// base service) — doesn't affect the live IO form at all.
-function onCpmAdjustmentChange() {
-  const checked = document.getElementById('admin-svc-cpm-adjustment').checked;
-  const wrap = document.getElementById('admin-svc-cpm-adjustment-base-wrap');
-  if (wrap) wrap.style.display = checked ? 'block' : 'none';
-  if (!checked) document.getElementById('admin-svc-cpm-adjustment-base').value = '';
 }
 
 // ── SERVICE ID AUTO-GENERATION ─────────────────────────────────
@@ -4213,8 +4257,6 @@ function adminNewService() {
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
   document.getElementById('admin-svc-cpm-adjustment').checked = false;
-  document.getElementById('admin-svc-cpm-adjustment-base').value = '';
-  onCpmAdjustmentChange();
   document.getElementById('admin-svc-trello-template-type').value = 'list';
   document.getElementById('admin-svc-id').disabled = false;
   document.getElementById('admin-svc-id').dataset.manuallyEdited = ''; // fresh form → auto-generate again
@@ -4266,8 +4308,6 @@ function adminEditService(id) {
   document.getElementById('admin-svc-unit').value = s.unit_label || '';
   document.getElementById('admin-svc-modifier').value = s.modifier_amount ?? '';
   document.getElementById('admin-svc-cpm-adjustment').checked = !!s.is_cpm_adjustment;
-  document.getElementById('admin-svc-cpm-adjustment-base').value = s.cpm_adjustment_base_service_id || '';
-  onCpmAdjustmentChange();
   document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
   document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
   document.getElementById('admin-svc-trello-template-ref').value = s.trello_template_ref || '';
@@ -4346,7 +4386,6 @@ async function adminSaveService() {
   const unitLabelFinal = pricingModeVal === 'per_unit' ? (document.getElementById('admin-svc-unit').value || null) : null;
   const modifierAmountFinal = pricingModeVal === 'modifier' ? (modifierVal === '' ? null : parseFloat(modifierVal)) : null;
   const isCpmAdjustmentFinal = pricingModeVal === 'modifier' && document.getElementById('admin-svc-cpm-adjustment').checked;
-  const cpmAdjustmentBaseFinal = isCpmAdjustmentFinal ? (document.getElementById('admin-svc-cpm-adjustment-base').value.trim() || null) : null;
   const retailCpmFinal = pricingModeVal === 'spend' ? (cpmVal === '' ? null : parseFloat(cpmVal)) : null;
   const spendMinimumFinal = pricingModeVal === 'spend' ? (spendMinVal === '' ? null : parseFloat(spendMinVal)) : null;
 
@@ -4404,7 +4443,6 @@ async function adminSaveService() {
     unit_label: unitLabelFinal,
     modifier_amount: modifierAmountFinal,
     is_cpm_adjustment: isCpmAdjustmentFinal,
-    cpm_adjustment_base_service_id: cpmAdjustmentBaseFinal,
     retail_cpm: retailCpmFinal,
     koc_requirement: document.getElementById('admin-svc-koc').value,
     intake_form_id: document.getElementById('admin-svc-intake').value || null,

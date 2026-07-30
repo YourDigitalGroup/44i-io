@@ -3891,3 +3891,53 @@ Verified via Playwright with a deliberately adversarial sort_order (the linked
 `td-offline`-analog set to `sort_order: 5` — lower than everything, which would sort
 it FIRST without the fix) — confirmed it still renders immediately after its linked
 base and before the next normally-ordered row, and the "↳" indent is present.
+
+## 2026-07-30 (cont'd) — Accounting Map: rebuilt CPM-adjustment linking, real bug caught
+
+The manual `cpm_adjustment_base_service_id` link built minutes earlier turned out to
+be wrong for real cases. Claire asked directly: "what if it can modify a few different
+tactics in that section?" Rather than guess, asked her for a query joining every
+`*-offline` modifier against its section's other active services, including
+`exclusivity_group` — that one query settled it:
+
+- **7 sections have exactly ONE spend-priced tactic** (`mob`, `nd`, `nv`, `ottctv`,
+  `pa`, `pv`, `sda`) — unambiguous, the combined CPM can only ever mean one thing.
+- **3 sections have SEVERAL tactics sharing one `exclusivity_group`** (`td`: 4 tactics
+  on `td-tier`; `lt`: 3 on `lt-tier`; `stv`: 3 on `stv-tier`) — the client can only pick
+  ONE per real order, but WHICH one varies order to order. A single stored link (what
+  had just been built) would show a confidently WRONG number whenever a different
+  tactic than the linked one was actually sold — e.g. linking `td-offline` to `td-geo`
+  ($10→$12) would silently show $12 even for an order that actually paired it with
+  `td-custom` ($18→$20 is correct instead). This is exactly the kind of quiet,
+  plausible-looking wrong number this project's testing discipline exists to catch
+  before it reaches a real screen.
+
+**Rebuilt from scratch — auto-derivation instead of a manual link.** Removed the
+`cpm_adjustment_base_service_id` field entirely (Service editor UI, `onCpmAdjustmentChange()`,
+the save payload — column itself left in the DB, harmless/unused, not worth another
+migration to drop). `renderAdminAccountingList()` now computes candidate base tactics
+live for every `is_cpm_adjustment` service — every active `pricing_mode='spend'`
+sibling in the same section, no stored link needed:
+- **Exactly 1 candidate** → auto-derives the combined CPM (candidate's Retail CPM +
+  the modifier's dollar amount) and reads the candidate's OWN 44i Cut %/Budgeted
+  Spend % directly — the modifier needs NO accounting_map row of its own, and is
+  excluded from the missing-badge count entirely (nothing to "set up").
+- **Multiple candidates** → the modifier's own row carries no CPM figures (no single
+  answer would be correct); instead, one indented reference row per possible tactic
+  follows immediately after, each computed from THAT tactic's own Retail CPM and
+  percentages — e.g. `td-offline` now shows four rows: `td-geo (w/ ...)` → $12,
+  `td-site (w/ ...)` → $14, `td-dynamic (w/ ...)` → $17, `td-custom (w/ ...)` → $20.
+- **Zero candidates** (no spend sibling at all) → falls back to the original
+  manual-entry path unchanged, so a future one-off modifier never hits a dead end.
+
+Extracted a shared `renderAccountingMapRow()` helper so real rows and the synthetic
+multi-candidate reference rows use identical math — can't drift apart.
+
+**Verified via Playwright** with all three cases side by side: a single-candidate
+section (`nd-geo`/`nd-offline`, confirmed $16 combined CPM/$7.20 44i CPM/$4.00
+Platform CPM, no MISSING badge), a four-candidate section (`td-geo/site/dynamic/custom`
++ `td-offline`, confirmed all four correct combined CPMs present AND that
+`td-site`'s reference row uses ITS OWN 47.92% cut — not `td-geo`'s 47.5% — the exact
+kind of cross-contamination bug this design is meant to prevent), and a no-candidate
+section (`lonely-offline`, confirmed the original manual cut%/budgeted%/Edit-button
+flow still works untouched).
