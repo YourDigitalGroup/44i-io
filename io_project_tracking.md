@@ -3607,3 +3607,14 @@ other computed/read-only fields in this file) showing Retail CPM straight from
 `services.retail_cpm`, right above the editable fields. Shows "— (not set on this
 service)" for services with no Retail CPM entered yet. Re-verified via Playwright for
 both a mapped and an unmapped service.
+
+**Same day, third follow-up: list order now matches the Services tab.** The Accounting
+Map list was sorting sections alphabetically by section id, while the Services tab
+(and the live public form) order sections by `SECTIONS.sort_order` — the two lists
+could show services in a different order for the same data. Fixed
+`renderAdminAccountingList()` to build the same `sectionOrderIndex` from `SECTIONS`
+that the Services tab already uses, so both lists present services in the identical
+order. Verified via Playwright with a deliberately alphabetical-order-defying test
+case (a "video" section with `sort_order: 2` and a "seo" section with `sort_order: 1`)
+confirming the SEO row renders before the Video row despite "seo" sorting after
+"video" alphabetically.

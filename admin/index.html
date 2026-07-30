@@ -3019,7 +3019,14 @@ function renderAdminAccountingList() {
   const el = document.getElementById('admin-accounting-table');
   const mapById = {};
   ALL_ACCOUNTING_MAP.forEach(a => { mapById[a.service_id] = a; });
-  const rows = allServicesMap.filter(s => s.active !== false).sort((a,b) => (a.section||'').localeCompare(b.section||'') || (a.sort_order||0)-(b.sort_order||0));
+  // Same section ordering as the Services tab (SECTIONS.sort_order, not an
+  // alphabetical sort on the section id) so the two lists present services in a
+  // matching, predictable order rather than two different orderings of the same data.
+  const sectionOrderIndex = {};
+  SECTIONS.forEach((sec, i) => { sectionOrderIndex[sec.id] = sec.sort_order ?? i; });
+  const rows = allServicesMap.filter(s => s.active !== false).sort((a,b) =>
+    ((sectionOrderIndex[a.section] ?? Infinity) - (sectionOrderIndex[b.section] ?? Infinity)) ||
+    (a.sort_order||0)-(b.sort_order||0));
   if (!rows.length) {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No active services yet.</p>';
     return;
