@@ -440,9 +440,14 @@
                 <label class="lbl">Modifier Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Modifier</span></label>
                 <input type="number" step="0.01" id="admin-svc-modifier" placeholder="e.g. 2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 <label style="display:flex;align-items:center;gap:6px;margin-top:8px;font-size:12px;color:var(--text);cursor:pointer">
-                  <input type="checkbox" id="admin-svc-cpm-adjustment"/>
+                  <input type="checkbox" id="admin-svc-cpm-adjustment" onchange="onCpmAdjustmentChange()"/>
                   Show as a CPM adjustment (e.g. "+$2 CPM"), not a billed add-on — Offline Visits Tracking (2026-07-30, per Claire/leadership): the client isn't charged this amount; it only affects the real CPM used for accounting/margin purposes.
                 </label>
+                <div id="admin-svc-cpm-adjustment-base-wrap" style="display:none;margin-top:8px">
+                  <label class="lbl">Base Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the tactic this is the combined-CPM ("w/ Visits") version of, e.g. td-geo</span></label>
+                  <input type="text" id="admin-svc-cpm-adjustment-base" placeholder="e.g. td-geo" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
+                  <p style="font-size:10px;color:var(--muted);margin-top:4px">Groups this row directly under its base tactic in the Accounting Map list, same paired layout as the original spreadsheet.</p>
+                </div>
               </div>
               <div id="admin-svc-cpm-wrap">
                 <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Spend</span></label>
@@ -3055,6 +3060,26 @@ function renderAdminAccountingList() {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No active services yet.</p>';
     return;
   }
+  // Group a CPM-adjustment row (e.g. td-offline) directly under the base tactic it's
+  // linked to (e.g. td-geo) via cpm_adjustment_base_service_id, instead of wherever its
+  // own sort_order would otherwise place it — matches the paired base/"w-Visits" row
+  // layout from Claire's original spreadsheet. A link to a service not in this list
+  // (inactive, or the id was mistyped) is left in its normal sort position rather than
+  // silently dropped.
+  const idsInList = new Set(rows.map(s => s.id));
+  const childrenByBaseId = {};
+  rows.forEach(s => {
+    if (s.cpm_adjustment_base_service_id && idsInList.has(s.cpm_adjustment_base_service_id)) {
+      (childrenByBaseId[s.cpm_adjustment_base_service_id] = childrenByBaseId[s.cpm_adjustment_base_service_id] || []).push(s);
+    }
+  });
+  const linkedChildIds = new Set(Object.values(childrenByBaseId).flat().map(s => s.id));
+  const orderedRows = [];
+  rows.forEach(s => {
+    if (linkedChildIds.has(s.id)) return; // placed alongside its base below instead
+    orderedRows.push(s);
+    (childrenByBaseId[s.id] || []).forEach(child => orderedRows.push(child));
+  });
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
@@ -3069,7 +3094,7 @@ function renderAdminAccountingList() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Setup Fee Split</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
-  rows.forEach(s => {
+  orderedRows.forEach(s => {
     const a = mapById[s.id];
     const missing = !a;
     const rowStyle = missing ? 'background:#FFFBEB' : '';
@@ -3112,8 +3137,12 @@ function renderAdminAccountingList() {
     // combined CPM)" here without touching the client/AE-facing Label used everywhere
     // else (live IO form, Trello, print). Falls back to the real label when unset.
     const displayLabel = s.accounting_label || s.label;
-    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
-      <td style="padding:8px 10px">${esc(displayLabel)}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
+    const isLinkedChild = linkedChildIds.has(s.id);
+    const labelCell = isLinkedChild
+      ? `<span style="color:var(--muted)">↳</span> ${esc(displayLabel)}`
+      : esc(displayLabel);
+    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}${isLinkedChild ? ';background:#F8FAFC' : ''}">
+      <td style="padding:8px 10px${isLinkedChild ? ' 8px 24px' : ''}">${labelCell}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
       <td style="padding:8px 10px">${defaultRetail != null ? '$' + defaultRetail.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
       <td style="padding:8px 10px">${cutPctDisplay != null ? cutPctDisplay + '%' : '—'}</td>
@@ -4098,6 +4127,24 @@ function onPricingModeChange(fromUserAction) {
       if (input) input.value = '';
     }
   });
+  // CPM Adjustment checkbox + its Base Service ID only ever make sense for Modifier —
+  // clear both on an active switch away from it, same reasoning as the fields above.
+  if (mode !== 'modifier' && fromUserAction) {
+    document.getElementById('admin-svc-cpm-adjustment').checked = false;
+  }
+  onCpmAdjustmentChange();
+}
+
+// Shows/hides the "Base Service ID" field alongside the CPM Adjustment checkbox — only
+// meaningful once that checkbox is on, e.g. td-offline pointing back at td-geo as the
+// tactic it's the combined ("w/ Visits") CPM version of. Purely for grouping the
+// Accounting Map list (renderAdminAccountingList sorts a linked row right after its
+// base service) — doesn't affect the live IO form at all.
+function onCpmAdjustmentChange() {
+  const checked = document.getElementById('admin-svc-cpm-adjustment').checked;
+  const wrap = document.getElementById('admin-svc-cpm-adjustment-base-wrap');
+  if (wrap) wrap.style.display = checked ? 'block' : 'none';
+  if (!checked) document.getElementById('admin-svc-cpm-adjustment-base').value = '';
 }
 
 // ── SERVICE ID AUTO-GENERATION ─────────────────────────────────
@@ -4166,6 +4213,8 @@ function adminNewService() {
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
   document.getElementById('admin-svc-cpm-adjustment').checked = false;
+  document.getElementById('admin-svc-cpm-adjustment-base').value = '';
+  onCpmAdjustmentChange();
   document.getElementById('admin-svc-trello-template-type').value = 'list';
   document.getElementById('admin-svc-id').disabled = false;
   document.getElementById('admin-svc-id').dataset.manuallyEdited = ''; // fresh form → auto-generate again
@@ -4217,6 +4266,8 @@ function adminEditService(id) {
   document.getElementById('admin-svc-unit').value = s.unit_label || '';
   document.getElementById('admin-svc-modifier').value = s.modifier_amount ?? '';
   document.getElementById('admin-svc-cpm-adjustment').checked = !!s.is_cpm_adjustment;
+  document.getElementById('admin-svc-cpm-adjustment-base').value = s.cpm_adjustment_base_service_id || '';
+  onCpmAdjustmentChange();
   document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
   document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
   document.getElementById('admin-svc-trello-template-ref').value = s.trello_template_ref || '';
@@ -4295,6 +4346,7 @@ async function adminSaveService() {
   const unitLabelFinal = pricingModeVal === 'per_unit' ? (document.getElementById('admin-svc-unit').value || null) : null;
   const modifierAmountFinal = pricingModeVal === 'modifier' ? (modifierVal === '' ? null : parseFloat(modifierVal)) : null;
   const isCpmAdjustmentFinal = pricingModeVal === 'modifier' && document.getElementById('admin-svc-cpm-adjustment').checked;
+  const cpmAdjustmentBaseFinal = isCpmAdjustmentFinal ? (document.getElementById('admin-svc-cpm-adjustment-base').value.trim() || null) : null;
   const retailCpmFinal = pricingModeVal === 'spend' ? (cpmVal === '' ? null : parseFloat(cpmVal)) : null;
   const spendMinimumFinal = pricingModeVal === 'spend' ? (spendMinVal === '' ? null : parseFloat(spendMinVal)) : null;
 
@@ -4352,6 +4404,7 @@ async function adminSaveService() {
     unit_label: unitLabelFinal,
     modifier_amount: modifierAmountFinal,
     is_cpm_adjustment: isCpmAdjustmentFinal,
+    cpm_adjustment_base_service_id: cpmAdjustmentBaseFinal,
     retail_cpm: retailCpmFinal,
     koc_requirement: document.getElementById('admin-svc-koc').value,
     intake_form_id: document.getElementById('admin-svc-intake').value || null,

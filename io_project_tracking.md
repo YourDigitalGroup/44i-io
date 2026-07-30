@@ -3861,3 +3861,33 @@ alter table services add column if not exists accounting_label text;
 -- same case-when-present pattern as unit_label/fee_note/etc.:
 --   accounting_label = case when p_data ? 'accounting_label' then p_data->>'accounting_label' else accounting_label end
 ```
+
+**Same day, follow-up: confirmed the CPM-adjustment mechanism generalizes to any
+dollar amount** (Claire asked about a different, real $10 modifier needing the exact
+same treatment) — `is_cpm_adjustment`/`priceAndFrequency()`/`rowToServiceData()` all
+read `modifier_amount` generically, nothing is hardcoded to "$2." Confirmed no further
+code change is needed for that service — just check the same box on it once the SQL
+above is live.
+
+**Same day, follow-up: explicit base-tactic link + grouped display, matching the
+original spreadsheet's paired layout.** Claire confirmed she wants the Accounting Map
+to visually resemble her original screenshot — a base tactic row immediately followed
+by its "w/ Visits" row. Rather than relying on sort_order/naming convention alone
+(fragile — nothing enforces adjacency), added an explicit link:
+- New `services.cpm_adjustment_base_service_id` column (nullable, references
+  `services.id`) — only shown/editable in the Service editor once "Show as a CPM
+  adjustment" is checked (new `onCpmAdjustmentChange()` toggles the field, mirroring
+  `onPricingModeChange()`'s existing show/hide pattern). Free-typed id field, same
+  convention as `standalone_hosting_service_id`.
+- `renderAdminAccountingList()` now groups a linked row directly under its base
+  tactic regardless of its own `sort_order` — computed via a `childrenByBaseId` map
+  built after the normal section/sort_order sort, then re-spliced so each base row is
+  immediately followed by any rows linked to it. A link pointing to a service not in
+  the active list (typo, inactive) is left in its normal sort position rather than
+  silently dropped. Linked rows get a small "↳" indent + light background for visual
+  grouping.
+
+Verified via Playwright with a deliberately adversarial sort_order (the linked
+`td-offline`-analog set to `sort_order: 5` — lower than everything, which would sort
+it FIRST without the fix) — confirmed it still renders immediately after its linked
+base and before the next normally-ordered row, and the "↳" indent is present.
