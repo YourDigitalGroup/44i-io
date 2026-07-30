@@ -972,7 +972,7 @@
       <div id="section-accounting" style="display:none;flex-direction:column">
         <div style="order:1;margin-bottom:14px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Accounting Map</p>
-          <p style="font-size:11px;color:var(--muted)">One row per service — 44i's cut, and the % of Gross that actually becomes in-platform ad spend. Restricted to super admins. Default Retail and Retail CPM aren't shown here — they always come straight from the Services tab (and any group's own Custom Pricing override), so there's never a second number to keep in sync.</p>
+          <p style="font-size:11px;color:var(--muted)">One row per service — 44i's cut, and the % of Gross that actually becomes in-platform ad spend. Restricted to super admins. Retail CPM, 44i CPM, and Platform CPM are shown for reference but not editable here — they're always computed live from Retail CPM (Services tab) × the cut/spend percentages below, so there's never a second number to keep in sync.</p>
         </div>
 
         <div id="admin-accounting-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
@@ -3023,10 +3023,14 @@ function renderAdminAccountingList() {
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Retail CPM</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut %</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group Cut % (YDA)</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Fixed Cut $</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i CPM</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Budgeted Spend %</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Platform CPM</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Spend %</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
   rows.forEach(s => {
@@ -3034,15 +3038,26 @@ function renderAdminAccountingList() {
     const missing = !a;
     const rowStyle = missing ? 'background:#FFFBEB' : '';
     const missingBadge = missing ? ' <span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">MISSING</span>' : '';
+    const retailCpm = s.retail_cpm != null ? Number(s.retail_cpm) : null;
     const cutPct = a?.fortyfouri_cut_pct;
     const ydaPct = cutPct != null ? (100 - Number(cutPct)) : null;
+    // 44i CPM / Platform CPM are always derived live from Retail CPM × the stored
+    // percentages — never stored themselves, so they can't drift if Retail CPM changes
+    // in the Services tab. Only computable when both inputs exist.
+    const cutCpm = (retailCpm != null && cutPct != null) ? (retailCpm * Number(cutPct) / 100) : null;
+    const budgetedPct = a?.budgeted_spend_pct;
+    const platformCpm = (retailCpm != null && budgetedPct != null) ? (retailCpm * Number(budgetedPct) / 100) : null;
     const editBtn = `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
       <td style="padding:8px 10px">${esc(s.label)}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
+      <td style="padding:8px 10px">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${cutPct != null ? cutPct + '%' : '—'}</td>
       <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
       <td style="padding:8px 10px">${a?.fortyfouri_fixed_cut ? '$' + a.fortyfouri_fixed_cut : '—'}</td>
-      <td style="padding:8px 10px">${a?.budgeted_spend_pct != null ? a.budgeted_spend_pct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${budgetedPct != null ? budgetedPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${platformCpm != null ? '$' + platformCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${a?.spend_pct != null ? a.spend_pct + '%' : '—'}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}</td>
     </tr>`;
   });
