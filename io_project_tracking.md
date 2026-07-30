@@ -3788,3 +3788,26 @@ where pricing_mode = 'modifier' and label ilike '%offline%';` to flip the existi
 Claire to paste its current `pg_get_functiondef()` output so this can be added
 without guessing at (and risking breaking) its other ~20 existing fields. Then merge
 to `main`.
+
+**RPC received, full SQL given to Claire** (table column, updated `admin_save_service`
+with `is_cpm_adjustment` added exactly where `auto_add_setup_fee` sits — same
+`coalesce(..., existing_column)` boolean pattern, since the admin form always sends a
+real boolean rather than omitting the key — plus the one-time `update ... where
+pricing_mode = 'modifier' and label ilike '%offline%'` to flip the 10 existing
+services).
+
+**Same day, follow-up: fixed Review page and printed IO, which Claire asked about
+directly.** Checked before assuming — with fee/recurring both at 0 and no other
+fields set, the existing fallback logic in both `buildReview()` and
+`buildIoDocumentHtml()` would have shown this as a bare `—` on Review and, worse,
+**`TBD` on the actual printed/signed IO** — which reads exactly like an unfinished or
+missing price on a contract, not an intentionally free item. Fixed by having
+`rowToServiceData()` set `out.is_cpm_adjustment`/`out.cpm_adjustment_amt` (alongside
+the already-zeroed fee/recurring, so this doesn't touch any totals) and adding an
+explicit case to each function's fallback chain:
+- Review: **"No Charge — $2 CPM adjustment only"**
+- Printed IO: **"No Charge (+$2 CPM, internal use only)"**
+
+Verified via simulation of both functions' branching logic side by side for Offline
+Visits Tracking (now shows the explicit no-charge note in both places) and `yttv-addl`
+(completely unaffected, still shows its normal $15/mo).

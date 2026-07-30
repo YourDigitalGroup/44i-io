@@ -2747,6 +2747,8 @@ function buildReview() {
       amtDisplay = fmt(data.spend) + '/mo campaign';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
+    } else if (data.is_cpm_adjustment) {
+      amtDisplay = `<span style="color:var(--muted)">No Charge — $${data.cpm_adjustment_amt} CPM adjustment only</span>`;
     } else {
       amtDisplay = '—';
     }
@@ -4164,6 +4166,12 @@ function buildIoDocumentHtml() {
         amtCol = fmt(recurringTotal) + '/mo';
       } else if (data.spend > 0) {
         amtCol = fmt(data.spend) + '/mo campaign';
+      } else if (data.is_cpm_adjustment) {
+        // Explicit "No Charge" rather than falling through to "TBD" — this is a signed
+        // contract document, and "TBD" would read as an unfinished price, not an
+        // intentionally-free item (confirmed with Claire/leadership 2026-07-30: this
+        // never bills the client, it only adjusts the internal accounting CPM basis).
+        amtCol = `No Charge (+$${data.cpm_adjustment_amt} CPM, internal use only)`;
       } else {
         amtCol = 'TBD';
       }
@@ -4952,7 +4960,15 @@ function rowToServiceData(r) {
     // out.recurring stay at their 0 initialization above. The client's spend input is
     // unaffected; the $2 only changes the CPM basis used for internal accounting/margin
     // tracking (see the Accounting Map), not what the client is actually billed.
-    if (!r.is_cpm_adjustment) {
+    if (r.is_cpm_adjustment) {
+      // Flagged separately from fee/recurring (which stay 0) so buildReview()/
+      // buildIoDocumentHtml() can show an explicit "No Charge" note instead of falling
+      // through to their generic empty-price cases ("—"/"TBD") — "TBD" specifically
+      // would read like an unfinished price on the actual printed/signed IO, not an
+      // intentionally-free item.
+      out.is_cpm_adjustment = true;
+      out.cpm_adjustment_amt = Number(r.modifier_amount);
+    } else {
       // All current billed modifier items are monthly, riding alongside an ongoing ad
       // campaign — but respect billing_type rather than hardcode that assumption, so
       // this stays correct if a one-time modifier is ever created later.
