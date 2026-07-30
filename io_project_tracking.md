@@ -3642,3 +3642,15 @@ Verified via Playwright with a dedicated fixed-cut-override test case (a service
 both a 20% cut and a $150 fixed override) confirming 44i Cut $ shows the $150 override,
 not the $200 the percentage would have computed — along with all other columns/values
 re-confirmed correct in the new order.
+
+**Same day, fifth follow-up: floating-point display bug on YDA %.** Claire found a
+real service with a 73.12% / 26.88% split showing as "26.8799999999999995" in the
+list — `100 - 73.12` in JS floating-point arithmetic doesn't land exactly on 26.88.
+Added a small `fmtPct(n)` helper (`Math.round(n * 100) / 100`) and applied it to every
+percentage shown in the Accounting Map — YDA, 44i Cut %, Budgeted Spend %, Spend %, and
+the live YDA preview in the edit form — so all of them cap at 2 decimal places without
+padding whole numbers with unnecessary trailing zeros (30 still shows "30%", not
+"30.00%"). The dollar columns (44i Cut $, 44i/Platform CPM) were already safe since
+they use `.toFixed(2)`, which doesn't have this failure mode. Verified via Playwright
+reproducing Claire's exact 73.12/26.88 case in both the list and the live form
+preview — both now show a clean "26.88%".
