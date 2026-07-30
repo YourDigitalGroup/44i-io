@@ -3654,3 +3654,38 @@ padding whole numbers with unnecessary trailing zeros (30 still shows "30%", not
 they use `.toFixed(2)`, which doesn't have this failure mode. Verified via Playwright
 reproducing Claire's exact 73.12/26.88 case in both the list and the live form
 preview — both now show a clean "26.88%".
+
+**Same day, sixth follow-up: Spend % removed entirely — confirmed to be a duplicate,
+not a real field.** Claire flagged that some rows including "offline tracking"-style
+CPMs looked $2 higher than their base counterparts, sent real spreadsheet screenshots
+to check. Comparing "w/Visits" vs base rows across every tactic (Targeted Display,
+Location Targeting, OTT/CTV, etc.), the $2 Retail CPM difference was completely
+consistent on every row — a deliberate separate SKU baking the tracking cost into
+Retail CPM directly, not a bug, and not the `td-offline`/`sda-offline` flat-modifier
+mechanism this was first suspected to be. No code change from that part of the
+question.
+
+While reviewing those screenshots, Claire also asked about a "Spend %" column that
+looked like a duplicate. Checked directly against the real data, including
+Programmatic Audio/Video rows specifically (the one case Spend % was originally scoped
+to, per Claire's 2026-07-18 answer to clarifying question #3): **every single row's
+Spend % exactly equals its Budgeted Spend %** — 28.89/28.89, 25.71/25.71, 48.39/48.39,
+with zero exceptions across 20+ rows. Confirmed with Claire: the original `spend_pct`
+field was built on a misreading of the spreadsheet — it's not a distinct
+Audio/Video-specific value at all, just a mirrored duplicate. Removed it entirely, per
+Claire's explicit instruction ("Go ahead and remove it fully, UI and table column"):
+- Dropped the `admin-accounting-spend-pct` input from the edit form, the "Spend %"
+  column from the list, and the `ACCOUNTING_SPEND_PCT_SECTIONS` constant (unused once
+  the field itself was gone).
+- Removed `spend_pct` from both RPCs' payload/response shape.
+- SQL given to Claire inline in chat: `alter table accounting_map drop column if
+  exists spend_pct;` plus `create or replace` on both RPCs with the column removed
+  from their body.
+
+Verified via Playwright: re-ran the full load/edit/save flow with `spend_pct` gone from
+both the mock data and the DOM, confirming the list no longer renders a standalone
+"Spend %" header (while "Budgeted Spend %" — a different, real field — still does), and
+the save payload no longer includes `spend_pct` at all.
+
+**Still to do**: run the new SQL, then merge this branch to `main` again before Claire
+can see any of today's Accounting Map changes live.
