@@ -3941,3 +3941,87 @@ Platform CPM, no MISSING badge), a four-candidate section (`td-geo/site/dynamic/
 kind of cross-contamination bug this design is meant to prevent), and a no-candidate
 section (`lonely-offline`, confirmed the original manual cut%/budgeted%/Edit-button
 flow still works untouched).
+
+## 2026-07-30 (cont'd) — Real bug: admin Services tab still showed "Add-on, Monthly"
+
+Claire caught this live: the Services tab still showed "Add-on, Monthly" for Offline
+Visits Tracking, even though the public IO form correctly showed "No Charge." Root
+cause, found by tracing `fmtFrequency()` → `priceAndFrequency()` in the admin Services
+tab: `shared.js` has its own copy of `priceAndFrequency()`/`rowToServiceData()`,
+explicitly documented there as "the SAME function in both places so the two views can
+never say two different things" — but `index.html` has ANOTHER, fully independent
+copy of both functions, and every fix applied earlier today only touched `index.html`'s
+copy. The admin Services tab reads `shared.js`'s copy directly, which never got the
+`is_cpm_adjustment` fix — a real duplicated-logic drift, exactly the failure mode this
+project's CLAUDE.md explicitly warns about.
+
+**First attempt was wrong and reverted the same session**: assumed `index.html` loads
+`shared.js` and its own local functions were shadowing it — deleted the local copies
+entirely, intending to rely solely on `shared.js`. Checked before trusting that
+assumption... too late, had already made the edit — caught immediately that
+`index.html` has **no `<script src="shared.js">` at all**; it's a genuinely
+independent, hand-maintained copy of everything (`esc`, `loadCatalog`, `CATALOG_ROWS`,
+etc.), not an import. Deleting the functions would have broken the live public form
+entirely (`ReferenceError`). Reverted immediately, confirmed via `git diff` that the
+revert restored the exact original function bodies (only added explanatory comments).
+
+**Actual fix**: brought `shared.js`'s `rowToServiceData()` and `priceAndFrequency()`
+up to date with `index.html`'s already-correct versions — the `is_cpm_adjustment`
+handling, AND a separate, older, pre-existing drift in `rowToServiceData()`'s QUR
+check (`shared.js` still had the unconditional 2026-07-07 version; `index.html` had
+the 2026-07-10 `priceableMode` fix) that had nothing to do with today's work but was
+found while comparing the two copies side by side. Left both files' functions as
+separate copies (matching the actual architecture) with an explicit comment on each
+noting the other file's copy must be updated by hand alongside it.
+
+**Verified via Playwright** using the real `admin/index.html` script + real
+`shared.js` together (not a mock): confirmed `priceAndFrequency()` now returns
+`{fee: "+$2 CPM", freq: "No Charge"}` for Offline Visits Tracking exactly as the
+Services tab would render it, while `yttv-addl` is unaffected (`{fee: "+$15", freq:
+"Add-on, Monthly"}`). Also re-ran the full Accounting Map test suite against the
+updated `shared.js` to confirm nothing else regressed.
+
+## 2026-07-30 (cont'd) — Accounting Map: manual override + Service editor layout fix
+
+Claire reported two things in one message: she needs to be able to edit the
+CPM-adjustment auto-derivation (confirmed: "some of them differ with offline
+tracking" — the simple "base tactic's CPM + modifier's dollar amount" formula doesn't
+hold for every real case), and a layout bug — "everything moved over... a lot of dead
+space" — in the Service editor.
+
+**Layout bug, found and fixed.** The new "Show as a CPM adjustment" checkbox (added
+earlier today) lived inside `admin-svc-modifier-wrap`, one of three columns in a
+`grid-template-columns: 1fr 1fr 1fr` row. Its long description sentence wrapped across
+many lines, stretching that whole grid row's height — and since Pricing Mode: Modifier
+hides BOTH sibling columns (Unit, Retail CPM) via `display:none`, the row was left with
+one very tall populated column and two large blank dead-space columns beside it, with
+the populated column sitting in the visually "moved over" middle position. Moved the
+checkbox out of the grid entirely into its own full-width row below — confirmed via
+Playwright against the REAL page markup (not a reconstructed mock) that the checkbox
+row's parent element is no longer the same grid div as `admin-svc-unit-wrap`.
+
+**Manual override, added.** Two independent overrides, each optional, for a
+single-candidate CPM-adjustment service (e.g. `nd-offline`/`nd-geo`):
+- **Retail CPM**: the Service editor's Retail CPM field (previously shown only for
+  Spend pricing) now also appears when "Show as a CPM adjustment" is checked — set it
+  directly to override the Accounting Map's auto-computed combined CPM entirely.
+  Doubles as the fix for the layout bug's field (moved to its own visibility rule,
+  `updateCpmWrapVisibility()`, since Spend-pricing and CPM-adjustment are two
+  independent reasons for the same field to show).
+- **44i Cut %/Budgeted Spend %/Fixed Cut $**: the modifier's own `accounting_map` entry
+  (already the correct schema — every service can have one) now wins over the base
+  tactic's percentages when present. The list's Edit button reads "Override" when no
+  entry exists yet (nothing to edit, but clicking creates one) vs. "Edit" once one does.
+
+For the multi-candidate case (`td`/`lt`/`stv`), each reference row's "Reference only"
+label was replaced with a real Edit button pointed at that specific candidate tactic's
+OWN entry (e.g. "Edit td-site") — fixing one pairing's percentages just means fixing
+that tactic's real row, which was already editable elsewhere in the same list.
+
+**Verified via Playwright**: added an `nv-offline`/`nv-geo` case with BOTH overrides
+set to deliberately different numbers than what auto-derivation would produce (retail
+CPM 99 vs. auto 32; cut%/budgeted% 60%/70% vs. `nv-geo`'s own 45%/26.67%) — confirmed
+the overrides win outright, confirmed the wrong auto-derived numbers do NOT appear
+anywhere, confirmed the Edit/Override button text matches whether an entry exists, and
+confirmed `nd-offline` (no override) is unaffected by any of this and still
+auto-derives correctly.
