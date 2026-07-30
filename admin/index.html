@@ -1423,23 +1423,35 @@ function renderAccountingOverrideFields() {
     container.innerHTML = '<p style="color:var(--muted);font-size:12px">No services have an Accounting Map entry yet — set those up first in the Accounting Map tab, then group-level overrides can be added here.</p>';
     return;
   }
-  let html = '';
+  // A real <table> — not a flex-wrap row per service — so every service's four columns
+  // line up regardless of how long its own label is. Found live 2026-07-30 (Claire):
+  // the earlier flex layout let each row's field widths shift with its own content.
+  // Setup Fee Split % is always its own column (disabled/blank where a service has no
+  // auto-add setup fee) rather than appearing only on some rows, for the same reason —
+  // an appearing/disappearing column is exactly what broke alignment before.
+  const ALL_OVERRIDE_FIELDS = [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }];
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+      ${ALL_OVERRIDE_FIELDS.map(f => `<th style="padding:8px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${f.label}</th>`).join('')}
+    </tr></thead><tbody>`;
   rows.forEach(s => {
     const base = mapById[s.id];
     const override = currentAccountingOverrides[s.id] || {};
     const hasSetupFee = s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null;
-    const fields = hasSetupFee
-      ? [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }]
-      : ACCOUNTING_OVERRIDE_FIELDS;
-    html += `<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--border)">
-      <label style="font-size:11.5px;color:var(--text);min-width:220px;line-height:1.4">${esc(s.accounting_label || s.label)}<div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(s.id)}</div></label>`;
-    fields.forEach(f => {
+    html += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px 10px">${esc(s.accounting_label || s.label)}<div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(s.id)}</div></td>`;
+    ALL_OVERRIDE_FIELDS.forEach(f => {
+      const applicable = f.key !== 'setup_fee_cut_pct' || hasSetupFee;
+      if (!applicable) {
+        html += `<td style="padding:8px 10px;text-align:right;color:var(--muted)">—</td>`;
+        return;
+      }
       const val = override[f.key];
       const isOverridden = val !== undefined;
       const liveDefault = base?.[f.key] ?? '—';
-      html += `<div style="display:flex;flex-direction:column;gap:2px">
-        <span style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em">${f.label}</span>
-        <div style="display:flex;align-items:center;gap:3px">
+      html += `<td style="padding:8px 10px;text-align:right">
+        <div style="display:inline-flex;align-items:center;gap:3px">
           <input type="number" step="0.01"
             id="acct-override-${s.id}-${f.key}"
             value="${isOverridden ? val : ''}"
@@ -1449,10 +1461,11 @@ function renderAccountingOverrideFields() {
             oninput="onAccountingOverrideInput('${s.id}', '${f.key}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:10px">${f.suffix}</span>
         </div>
-      </div>`;
+      </td>`;
     });
-    html += `</div>`;
+    html += `</tr>`;
   });
+  html += `</tbody></table>`;
   container.innerHTML = html;
 }
 

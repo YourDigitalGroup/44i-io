@@ -4236,3 +4236,16 @@ overrides anywhere downstream (e.g. a future strategist portal's real margin
 calculations) — that doesn't exist yet since the strategist portal itself is still just
 a concept mockup. This is purely the data-entry mechanism, matching how Custom Pricing
 was originally built before anything downstream consumed `io_pricing`.
+
+**Same day, follow-up: real layout bug, found live.** Claire reported the columns
+didn't line up — "they are all based on the service title." Root cause: the first
+version used a flex-wrap row per service rather than a real `<table>`, so each row's
+field widths shifted with its own label length instead of forming fixed columns.
+Rebuilt as an actual table, with **Setup Fee Split % always its own column** (shown as
+a plain "—" for a service with no auto-add setup fee, an editable input where it
+applies) rather than a column that only appears on some rows — a disappearing/
+appearing column would have caused the exact same misalignment for a different reason.
+Verified via Playwright: confirmed it's a real `<table>`, confirmed the Setup Fee Split
+column exists with a real input on `svc-sem` and none on `svc-a` (which has no setup
+fee), and re-confirmed everything from the first build (exclusions, placeholders,
+override add/clear/payload cycle) still works unchanged.
