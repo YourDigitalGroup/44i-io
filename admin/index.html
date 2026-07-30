@@ -978,6 +978,10 @@
         <div id="admin-accounting-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-accounting-form-title">Accounting Map — Service</p>
           <input type="hidden" id="admin-accounting-service-id"/>
+          <div style="margin-bottom:12px">
+            <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
+            <input type="text" id="admin-accounting-retail-cpm-display" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px dashed var(--border);font-size:13px;font-family:monospace;color:var(--muted);background:var(--light);cursor:not-allowed"/>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl">44i Cut % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Group's cut (YDA) is always 100% minus this</span></label>
@@ -3077,6 +3081,7 @@ function adminEditAccounting(serviceId) {
   const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId);
   document.getElementById('admin-accounting-form-title').textContent = 'Accounting Map — ' + s.label;
   document.getElementById('admin-accounting-service-id').value = serviceId;
+  document.getElementById('admin-accounting-retail-cpm-display').value = s.retail_cpm != null ? '$' + Number(s.retail_cpm).toFixed(2) : '— (not set on this service)';
   document.getElementById('admin-accounting-cut-pct').value = a?.fortyfouri_cut_pct ?? '';
   document.getElementById('admin-accounting-fixed-cut').value = a?.fortyfouri_fixed_cut ?? '';
   document.getElementById('admin-accounting-budgeted-spend').value = a?.budgeted_spend_pct ?? '';

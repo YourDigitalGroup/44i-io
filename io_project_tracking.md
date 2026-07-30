@@ -3599,3 +3599,11 @@ the mock service data with `retail_cpm` and confirmed all four new columns rende
 correct values, including a spot-check against the exact real numbers already verified
 earlier this session (Retail CPM 46.5 × Budgeted Spend % 48.39% → Platform CPM $22.50,
 matches to the cent).
+
+**Same day, second follow-up: Retail CPM added to the edit form itself, not just the
+list.** Claire asked for it as a visual reference while editing a single service's
+entry — added a disabled, dashed-border input (same visual language already used for
+other computed/read-only fields in this file) showing Retail CPM straight from
+`services.retail_cpm`, right above the editable fields. Shows "— (not set on this
+service)" for services with no Retail CPM entered yet. Re-verified via Playwright for
+both a mapped and an unmapped service.
