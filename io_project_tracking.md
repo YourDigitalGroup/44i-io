@@ -3728,3 +3728,63 @@ at all; accounting-map row doesn't exist yet), and that the save payload round-t
 `setup_fee_cut_pct` correctly alongside the service's unrelated regular cut.
 
 **Still to do**: run the SQL, then merge to `main`.
+
+**Parked, not yet scoped:** Claire mentioned some services get paid through a
+different system entirely when they're monthly recurring revenue — hasn't decided
+yet which services or what that should mean for the Accounting Map (e.g. whether they
+should be exempt from the "MISSING" badge, since they're not really tracked through
+this table's mechanics in the first place). Explicitly NOT related to the strategist
+portal work — don't fold this into that scope. No action until Claire has more to
+share.
+
+## 2026-07-30 (cont'd) — Offline Visits Tracking: confirmed NOT billed, changed to a CPM display
+
+Resolution of the "held" offline-tracking question from earlier this session: Claire
+confirmed with her boss that the $2 for Offline Visits Tracking should change the CPM
+used for accounting purposes, and — critically — **clients are NOT billed an
+additional $2/month for it at all**. The client's spend input is unaffected either
+way. Claire then asked if it could "look like a CPM modifier" — i.e. display the same
+way spend items show their rate (`$X CPM`), not like a billed add-on.
+
+**The risk this had to avoid**: `*-offline` isn't the only `pricing_mode='modifier'`
+service — `yttv-addl` (YouTube TV — Addl. Targeting) is also a modifier and DOES need
+to keep billing normally (per the existing 2026-XX-XX note that its billing type was
+"never explicitly AM-confirmed" — not something to touch here). So the fix needed to
+be per-service, not a blanket change to how `pricing_mode='modifier'` behaves.
+
+**Built**, following the same "put per-service behavior in data, not hardcoded ids"
+principle as everything else in this catalog — new boolean column
+`services.is_cpm_adjustment`:
+- `rowToServiceData()` (`index.html`): a modifier service with `is_cpm_adjustment`
+  true now gets NO `fee`/`recurring` assignment at all — falls through to the 0
+  values already set at the top of the function, so it can never contribute to any
+  total (Review, printIO, Trello card cost) anywhere downstream. Confirmed `yttv-addl`
+  (a different modifier service) is completely unaffected by this change.
+- `priceAndFrequency()` (`index.html`): shows `+$2 CPM` / `No Charge` for
+  `is_cpm_adjustment` items — visually matching the "$X CPM" wording spend items use,
+  instead of the billed "+$X" wording other modifiers use — right in the checkbox row
+  an AE sees while building the IO.
+- Admin Service editor (`admin/index.html`): new checkbox next to Modifier Amount —
+  "Show as a CPM adjustment... not a billed add-on" — wired into
+  `adminNewService()`/`adminEditService()`/the save payload
+  (`is_cpm_adjustment: isCpmAdjustmentFinal`, only meaningful when Pricing Mode is
+  Modifier, same pattern as `modifier_amount`/`retail_cpm` themselves).
+
+**Verified**: extracted `rowToServiceData()`/`priceAndFrequency()` and ran both against
+a realistic Offline Visits Tracking row and `yttv-addl` side by side — confirmed
+Offline Visits Tracking now shows `+$2 CPM`/`No Charge` and contributes `$0` to both
+`fee` and `recurring`, while `yttv-addl` still correctly bills its $15/month with no
+change in behavior. Also confirmed the item still appears by label on Trello
+card/printIO line-item lists (`formatSiblingLineItems()` etc. only append a $ suffix
+when `fee`/`recurring` > 0 — the label itself is never dropped just because the
+amount is $0), so it doesn't silently disappear from the record even though it no
+longer bills anything.
+
+**Still to do**: `alter table services add column if not exists is_cpm_adjustment
+boolean not null default false;`, then `update services set is_cpm_adjustment = true
+where pricing_mode = 'modifier' and label ilike '%offline%';` to flip the existing
+10 offline-tracking services over. The `admin_save_service` RPC also needs
+`is_cpm_adjustment` added to its column list/case-when-present block — waiting on
+Claire to paste its current `pg_get_functiondef()` output so this can be added
+without guessing at (and risking breaking) its other ~20 existing fields. Then merge
+to `main`.

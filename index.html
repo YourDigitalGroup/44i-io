@@ -4947,11 +4947,18 @@ function rowToServiceData(r) {
   // `.recurring` generically for any selected item, so setting it directly here is the
   // entire fix; no changes needed to any of the three calculation functions themselves.
   if (r.pricing_mode === 'modifier' && r.modifier_amount != null) {
-    // All current modifier items (offline tracking, etc.) are monthly, riding alongside
-    // an ongoing ad campaign — but respect billing_type rather than hardcode that
-    // assumption, so this stays correct if a one-time modifier is ever created later.
-    if (r.billing_type === 'one_time') { out.fee = Number(r.modifier_amount); out.recurring = null; }
-    else { out.recurring = Number(r.modifier_amount); }
+    // is_cpm_adjustment modifiers (Offline Visits Tracking, confirmed by Claire/
+    // leadership 2026-07-30) deliberately get NO fee/recurring assignment — out.fee and
+    // out.recurring stay at their 0 initialization above. The client's spend input is
+    // unaffected; the $2 only changes the CPM basis used for internal accounting/margin
+    // tracking (see the Accounting Map), not what the client is actually billed.
+    if (!r.is_cpm_adjustment) {
+      // All current billed modifier items are monthly, riding alongside an ongoing ad
+      // campaign — but respect billing_type rather than hardcode that assumption, so
+      // this stays correct if a one-time modifier is ever created later.
+      if (r.billing_type === 'one_time') { out.fee = Number(r.modifier_amount); out.recurring = null; }
+      else { out.recurring = Number(r.modifier_amount); }
+    }
   } else if (r.retail_cpm != null) {
     out.cpm = Number(r.retail_cpm);
   } else if (r.id === 'sem-bp') {
@@ -5031,6 +5038,14 @@ function priceAndFrequency(r) {
     return { fee: r.retail_cpm != null ? `$${r.retail_cpm} CPM` : '—', freq: 'Monthly' };
   }
   if (r.pricing_mode === 'modifier') {
+    // is_cpm_adjustment (Offline Visits Tracking, confirmed by Claire/leadership
+    // 2026-07-30): NOT billed to the client at all — the $2 only raises the CPM basis
+    // used for internal accounting/margin tracking. Displayed to look like the "$X CPM"
+    // wording spend items use above, rather than the billed "+$X" add-on wording below,
+    // so an AE can see at a glance this isn't adding to the client's total.
+    if (r.is_cpm_adjustment) {
+      return { fee: r.modifier_amount != null ? `+$${r.modifier_amount} CPM` : '—', freq: 'No Charge' };
+    }
     // Claire's understanding (2026-07-07): these add-ons recur alongside their parent
     // campaign (e.g. +$2/mo offline tracking), not a one-time addition — so they get the
     // same cadence composition as everything else, rather than a bare unqualified
