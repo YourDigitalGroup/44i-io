@@ -978,9 +978,15 @@
         <div id="admin-accounting-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-accounting-form-title">Accounting Map — Service</p>
           <input type="hidden" id="admin-accounting-service-id"/>
-          <div style="margin-bottom:12px">
-            <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
-            <input type="text" id="admin-accounting-retail-cpm-display" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px dashed var(--border);font-size:13px;font-family:monospace;color:var(--muted);background:var(--light);cursor:not-allowed"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Default Retail <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
+              <input type="text" id="admin-accounting-default-retail-display" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px dashed var(--border);font-size:13px;font-family:monospace;color:var(--muted);background:var(--light);cursor:not-allowed"/>
+            </div>
+            <div>
+              <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
+              <input type="text" id="admin-accounting-retail-cpm-display" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px dashed var(--border);font-size:13px;font-family:monospace;color:var(--muted);background:var(--light);cursor:not-allowed"/>
+            </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
@@ -3034,12 +3040,13 @@ function renderAdminAccountingList() {
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Retail CPM</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Default Retail</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">YDA (Group Cut %)</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut %</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group Cut % (YDA)</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Fixed Cut $</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i CPM</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut $</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Budgeted Spend %</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Retail CPM</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i CPM</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Platform CPM</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Spend %</th>
       <th style="padding:9px 10px"></th>
@@ -3049,24 +3056,30 @@ function renderAdminAccountingList() {
     const missing = !a;
     const rowStyle = missing ? 'background:#FFFBEB' : '';
     const missingBadge = missing ? ' <span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">MISSING</span>' : '';
+    const defaultRetail = s.default_price != null ? Number(s.default_price) : null;
     const retailCpm = s.retail_cpm != null ? Number(s.retail_cpm) : null;
     const cutPct = a?.fortyfouri_cut_pct;
     const ydaPct = cutPct != null ? (100 - Number(cutPct)) : null;
-    // 44i CPM / Platform CPM are always derived live from Retail CPM × the stored
-    // percentages — never stored themselves, so they can't drift if Retail CPM changes
-    // in the Services tab. Only computable when both inputs exist.
+    // 44i Cut $, 44i CPM, and Platform CPM are always derived live from Default
+    // Retail / Retail CPM × the stored percentages — never stored themselves, so they
+    // can't drift if the underlying service price/CPM changes in the Services tab.
+    // A nonzero Fixed Cut $ overrides the % calculation for 44i Cut $ specifically
+    // (same rule as the edit form's "0 = use the percentage" note).
+    const fixedCut = a?.fortyfouri_fixed_cut ? Number(a.fortyfouri_fixed_cut) : 0;
+    const cutDollar = fixedCut > 0 ? fixedCut : ((defaultRetail != null && cutPct != null) ? (defaultRetail * Number(cutPct) / 100) : null);
     const cutCpm = (retailCpm != null && cutPct != null) ? (retailCpm * Number(cutPct) / 100) : null;
     const budgetedPct = a?.budgeted_spend_pct;
     const platformCpm = (retailCpm != null && budgetedPct != null) ? (retailCpm * Number(budgetedPct) / 100) : null;
     const editBtn = `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
       <td style="padding:8px 10px">${esc(s.label)}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(s.id)}</div></td>
-      <td style="padding:8px 10px">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${cutPct != null ? cutPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${defaultRetail != null ? '$' + defaultRetail.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
-      <td style="padding:8px 10px">${a?.fortyfouri_fixed_cut ? '$' + a.fortyfouri_fixed_cut : '—'}</td>
-      <td style="padding:8px 10px">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${cutPct != null ? cutPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${cutDollar != null ? '$' + cutDollar.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${budgetedPct != null ? budgetedPct + '%' : '—'}</td>
+      <td style="padding:8px 10px">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${platformCpm != null ? '$' + platformCpm.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${a?.spend_pct != null ? a.spend_pct + '%' : '—'}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}</td>
@@ -3088,6 +3101,7 @@ function adminEditAccounting(serviceId) {
   const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId);
   document.getElementById('admin-accounting-form-title').textContent = 'Accounting Map — ' + s.label;
   document.getElementById('admin-accounting-service-id').value = serviceId;
+  document.getElementById('admin-accounting-default-retail-display').value = s.default_price != null ? '$' + Number(s.default_price).toFixed(2) : '— (not set on this service)';
   document.getElementById('admin-accounting-retail-cpm-display').value = s.retail_cpm != null ? '$' + Number(s.retail_cpm).toFixed(2) : '— (not set on this service)';
   document.getElementById('admin-accounting-cut-pct').value = a?.fortyfouri_cut_pct ?? '';
   document.getElementById('admin-accounting-fixed-cut').value = a?.fortyfouri_fixed_cut ?? '';

@@ -3618,3 +3618,27 @@ order. Verified via Playwright with a deliberately alphabetical-order-defying te
 case (a "video" section with `sort_order: 2` and a "seo" section with `sort_order: 1`)
 confirming the SEO row renders before the Video row despite "seo" sorting after
 "video" alphabetically.
+
+**Same day, fourth follow-up: full column set/order to match Claire's real spreadsheet
+layout.** Claire specified the exact columns and order she wants:
+Default Retail → YDA (Group Cut %) → 44i Cut % → 44i Cut $ → Budgeted Spend % → Retail
+CPM → 44i CPM → Platform CPM → Spend %. Rebuilt `renderAdminAccountingList()`'s columns
+to match exactly:
+- **Default Retail** — added, read from `services.default_price` (same "matches
+  Services" sourcing as Retail CPM).
+- **44i Cut $** — added: Default Retail × 44i Cut %, computed live — UNLESS 44i Fixed
+  Cut $ is set to a nonzero value, in which case that flat override wins instead (same
+  rule already documented on the edit form's Fixed Cut $ field: "0 = use the
+  percentage"). This replaces the standalone "Fixed Cut $" column that was there
+  before — the override's effect is now visible directly in 44i Cut $ rather than as a
+  separate number readers had to reconcile themselves.
+- Reordered every column to match Claire's list exactly.
+- Also added a read-only **Default Retail** display to the edit form itself (same
+  disabled/dashed-border treatment as the existing read-only Retail CPM field), since
+  Claire's spec calls both of these out as "matches the Services" reference values —
+  consistent with Retail CPM already being shown there.
+
+Verified via Playwright with a dedicated fixed-cut-override test case (a service with
+both a 20% cut and a $150 fixed override) confirming 44i Cut $ shows the $150 override,
+not the $200 the percentage would have computed — along with all other columns/values
+re-confirmed correct in the new order.
