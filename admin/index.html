@@ -3207,7 +3207,7 @@ function fmtPct(n) {
 // Builds one <tr> for the Accounting Map list — shared by real service rows and the
 // synthetic reference rows a multi-candidate CPM-adjustment modifier generates below,
 // so both use identical derivation math and never drift apart.
-function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retailCpm, cutPct, fixedCut, budgetedPct, setupFeeSplitDisplay, missing, editBtnHtml, note }) {
+function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retailCpm, cutPct, fixedCut, budgetedPct, setupFeeSplitDisplay, missing, editBtnHtml, note, cpmAdjustment }) {
   const ydaPct = cutPct != null ? fmtPct(100 - Number(cutPct)) : null;
   const cutDollar = (fixedCut && Number(fixedCut) > 0) ? Number(fixedCut)
     : ((defaultRetail != null && cutPct != null) ? (defaultRetail * Number(cutPct) / 100) : null);
@@ -3215,7 +3215,12 @@ function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retai
   const budgetedPctDisplay = fmtPct(budgetedPct);
   const cutPctDisplay = fmtPct(cutPct);
   const platformCpm = (retailCpm != null && budgetedPct != null) ? (retailCpm * Number(budgetedPct) / 100) : null;
-  const rowStyle = missing ? 'background:#FFFBEB' : (indent ? 'background:#F8FAFC' : '');
+  // `cpmAdjustment` gets the same tinted background as an indented reference row, even
+  // when it isn't indented (a single-candidate modifier's own row, or a multi-candidate
+  // modifier's summary row) — Claire (2026-07-31): wanted every offline-tracking-style
+  // row visually uniform, not just the td/lt/stv multi-candidate ones that happened to
+  // already have it via the indent styling.
+  const rowStyle = missing ? 'background:#FFFBEB' : ((indent || cpmAdjustment) ? 'background:#F8FAFC' : '');
   const missingBadge = missing ? ' <span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">MISSING</span>' : '';
   const labelCell = indent ? `<span style="color:var(--muted)">↳</span> ${esc(displayLabel)}` : esc(displayLabel);
   return `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
@@ -3318,7 +3323,7 @@ function renderAdminAccountingList() {
         const combinedCpm = retailCpmOverridden ? Number(s.retail_cpm) : autoCombinedCpm;
         const pctOverridden = !!a;
         html += renderAccountingMapRow({
-          id: s.id, displayLabel, indent: false,
+          id: s.id, displayLabel, indent: false, cpmAdjustment: true,
           defaultRetail: null, retailCpm: combinedCpm,
           cutPct: pctOverridden ? a.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
           fixedCut: pctOverridden ? a.fortyfouri_fixed_cut : 0,
@@ -3341,7 +3346,7 @@ function renderAdminAccountingList() {
         // added specifically for this, distinct from that same tactic's plain (unpaired)
         // entry, which stays completely untouched by any of this.
         html += renderAccountingMapRow({
-          id: s.id, displayLabel, indent: false,
+          id: s.id, displayLabel, indent: false, cpmAdjustment: true,
           defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null,
           setupFeeSplitDisplay: null, missing: false,
           editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${candidates.length} tactics — each independently overridable below</span>`,
@@ -3353,7 +3358,7 @@ function renderAdminAccountingList() {
           const pctOverridden = !!pairA;
           const combinedCpm = (base.retail_cpm != null && modAmt != null) ? Number(base.retail_cpm) + modAmt : null;
           html += renderAccountingMapRow({
-            id: base.id, displayLabel: `${base.accounting_label || base.label} (w/ ${displayLabel})`, indent: true,
+            id: base.id, displayLabel: `${base.accounting_label || base.label} (w/ ${displayLabel})`, indent: true, cpmAdjustment: true,
             defaultRetail: null, retailCpm: combinedCpm,
             cutPct: pctOverridden ? pairA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
             fixedCut: pctOverridden ? pairA.fortyfouri_fixed_cut : 0,
@@ -3369,7 +3374,7 @@ function renderAdminAccountingList() {
         // original manual-entry behavior so this never becomes a dead end.
         const missing = !a;
         html += renderAccountingMapRow({
-          id: s.id, displayLabel, indent: false,
+          id: s.id, displayLabel, indent: false, cpmAdjustment: true,
           defaultRetail: s.default_price != null ? Number(s.default_price) : null,
           retailCpm: s.retail_cpm != null ? Number(s.retail_cpm) : null,
           cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct,

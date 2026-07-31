@@ -4389,3 +4389,32 @@ and regular-service code path working unchanged. `node --check` passes clean.
 
 **Still to do**: give Claire the new SQL to run (adds the column, replaces the PK, and
 updates both RPCs) before this branch is merged and any of it is usable live.
+
+**Same day, follow-up: visual consistency across ALL offline-tracking rows.** Claire:
+"Could we highlight the other offline tracking the same way as the targeted display
+and location targeting so it is uniform." The td/lt/stv multi-candidate rows already
+had a light grey background (`#F8FAFC`) on their "(w/ Offline Visits Tracking)"
+reference rows — a side effect of reusing the existing `indent` styling, not a
+deliberate "this is a CPM-adjustment row" treatment. Every OTHER `*-offline` modifier
+(the single-candidate ones like `nd-offline`, and the no-sibling fallback case like a
+hypothetical `lonely-offline`) rendered as a plain, unhighlighted row, so the list
+looked inconsistent — only some offline-tracking rows visually stood out.
+
+Added a new `cpmAdjustment` flag to `renderAccountingMapRow()`, applied to every row
+that's part of the CPM-adjustment mechanism (the single-candidate modifier's own row,
+the multi-candidate modifier's summary row AND all its per-tactic reference rows, and
+the no-candidate fallback row) — all now get the same `#F8FAFC` tint regardless of
+which of the three branches rendered them, independent of the `indent` flag (which
+still only controls the "↳" arrow/left-padding, used only by the multi-candidate
+reference rows). A row's `missing` (MISSING badge) styling still takes priority over
+this, unchanged.
+
+Verified via Playwright (`test-cpm-adjustment-highlight.js`) with three real shapes
+side by side — td/td-offline (multi-candidate), nd/nd-offline (single-candidate), and a
+no-sibling fallback case: confirmed all five offline-related rows (the multi-candidate
+summary row, both its reference rows, the single-candidate row, and the fallback row)
+share the same tinted background, while the plain, non-offline sibling rows (`td-geo`,
+`nd-geo`) explicitly do NOT get it — confirming this is additive to the CPM-adjustment
+rows specifically, not a blanket table-wide style change. Re-ran
+`test-accounting-map.js` and `test-multicandidate-pair-override.js` — both still pass
+unchanged. `node --check` passes clean.
