@@ -4435,3 +4435,56 @@ indented left-padding, while their plain sibling rows (`nd-geo`) still don't. Re
 `test-accounting-map.js`, `test-multicandidate-pair-override.js`, and
 `test-cpm-adjustment-highlight.js` — all still pass unchanged. `node --check` passes
 clean.
+
+**Same day, follow-up: "We need to add the offline rows to the accounting overrides
+in the group settings."** The Group-level Accounting Overrides tab
+(`renderAccountingOverrideFields()`) had always explicitly excluded every
+`is_cpm_adjustment` service — reasonable back when they had nothing of their own to
+override, but now stale: the Accounting Map tab itself has since grown real overridable
+figures for these rows (single-candidate auto-derivation overrides, and now per-pairing
+overrides for multi-candidate sections). A group needing a custom margin on, say, its
+own Offline Visits Tracking combo had no way to set that.
+
+Rewrote `renderAccountingOverrideFields()` to build a flat list of "rows" up front
+(rather than mapping 1:1 over services) so a CPM-adjustment modifier can contribute
+either one row or several:
+- **Single/no-candidate section** (e.g. `nd-offline`): one row, override key = the
+  modifier's own service id — same shape group overrides already use everywhere else.
+- **Multi-candidate section** (`td`/`lt`/`stv` — e.g. `td-offline`): one row PER
+  TACTIC it can pair with, override key = a composite `` `${tacticId}|${modifierId}` ``
+  (e.g. `td-geo|td-offline`) — the exact same pairing convention the Accounting Map's
+  own `accounting_map.pair_with_service_id` column now uses, so Geo-Targeting w/
+  Offline Tracking and Site-Targeting w/ Offline Tracking can be overridden completely
+  independently for this one group, matching the granularity already built into the
+  Accounting Map tab itself. Each row's live-default placeholder reflects whatever the
+  Accounting Map tab currently shows as the STANDARD figure for that exact pairing
+  (its own pairing override there if set, else the tactic's own plain entry) — the
+  group override always replaces that number, same "override replaces standard"
+  behavior as every other override mechanism in this project.
+- No new database column needed — `groups.accounting_overrides` is already a sparse
+  JSON object keyed by string, and a composite key with a `|` is just another string
+  key to it. `onAccountingOverrideInput()` needed no changes at all — it already only
+  ever treated its `serviceId` argument as an opaque object key/DOM-id suffix.
+- Fixed a latent bug this surfaced: `renderAdminGroups()`'s phantom-count guard on the
+  Accounting badge (skip counting a stray override for a since-deactivated service)
+  only checked `CATALOG_ROWS[key]` directly — a composite pairing key would never match
+  that lookup, so every real pairing override would have silently shown as "Standard."
+  Updated the guard to split on `|` and require BOTH halves still active when the key
+  is a pairing.
+- Updated the tab's description text to explain the new per-pairing row behavior
+  instead of the old (now-incorrect) "has nothing here to override" line.
+
+Verified via Playwright: rewrote `test-accounting-overrides.js` with three real
+shapes (regular services, a multi-candidate `td-geo`/`td-site`/`td-offline` set, a
+single-candidate `nd-geo`/`nd-offline` set) — confirmed the multi-candidate section
+produces one row per pairing (not one row for the modifier), each showing its OWN
+correct standard default (47.5%/47.92%); confirmed overriding `td-geo|td-offline`
+leaves `td-site`'s pairing showing its unaffected own default AND leaves `td-geo`'s
+own plain (non-offline) row completely untouched; confirmed the single-candidate
+row is keyed by the modifier's own id and shows the derived base default. New
+`test-groups-badge-pairing-key.js` confirms the Groups-list Accounting badge counts a
+real pairing override correctly and still shows "Standard" (not a phantom count) when
+either half of a pairing key refers to a deactivated service. Re-ran
+`test-accounting-map.js`, `test-multicandidate-pair-override.js`,
+`test-cpm-adjustment-highlight.js`, and `test-groups-accounting-badge.js` — all still
+pass unchanged. `node --check` passes clean.
