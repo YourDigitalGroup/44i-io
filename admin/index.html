@@ -162,7 +162,7 @@
                is internal margin data, a completely different concern from what a client
                is billed. Restricted to super admins, same guard as Custom Pricing. -->
           <div id="tab-accounting-override" style="display:none">
-            <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Fixed Cut $, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. Only services with a real Accounting Map entry are shown — a CPM-adjustment modifier (like Offline Visits Tracking) auto-derives its figures from its own base tactic and has nothing here to override.</p>
+            <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Fixed Cut $, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. A CPM-adjustment modifier (like Offline Visits Tracking) shows one row per tactic it can combine with, so each pairing (e.g. Geo-Targeting w/ Offline Tracking vs. Site-Targeting w/ Offline Tracking) can be overridden separately for this group.</p>
             <div id="accounting-override-fields"></div>
             <p style="font-size:10px;color:var(--muted);margin-top:12px">Internal only — never shown to clients or on the printed IO. Affects only how this group's real margin is calculated, not anything on the public form.</p>
           </div>
@@ -1429,15 +1429,101 @@ function renderAccountingOverrideFields() {
   const container = document.getElementById('accounting-override-fields');
   if (!container) return;
   const mapById = {};
-  ALL_ACCOUNTING_MAP.forEach(a => { mapById[a.service_id] = a; });
-  // Only services with a REAL Accounting Map entry have anything to override — a
-  // CPM-adjustment modifier (Offline Visits Tracking, etc.) auto-derives its figures
-  // from its own sibling tactic and has no base entry of its own to override here.
+  const mapByPair = {};
+  ALL_ACCOUNTING_MAP.forEach(a => {
+    const pairKey = a.pair_with_service_id || '';
+    if (pairKey === '') mapById[a.service_id] = a;
+    else mapByPair[a.service_id + '|' + pairKey] = a;
+  });
   const sectionOrderIndex = {};
   SECTIONS.forEach((sec, i) => { sectionOrderIndex[sec.id] = sec.sort_order ?? i; });
-  const rows = allServicesMap
-    .filter(s => s.active !== false && !s.is_cpm_adjustment && mapById[s.id])
+
+  // Candidate base tactics for a CPM-adjustment modifier — same derivation as
+  // renderAdminAccountingList()'s own sectionSpendCandidates. Recomputed here rather
+  // than shared, since the two tabs render independently off whatever ALL_ACCOUNTING_MAP
+  // snapshot is currently loaded.
+  const sectionSpendCandidates = {};
+  allServicesMap.forEach(o => {
+    if (o.active !== false && o.pricing_mode === 'spend') {
+      (sectionSpendCandidates[o.section] = sectionSpendCandidates[o.section] || []).push(o);
+    }
+  });
+
+  const activeServices = allServicesMap.filter(s => s.active !== false)
     .sort((a,b) => ((sectionOrderIndex[a.section] ?? Infinity) - (sectionOrderIndex[b.section] ?? Infinity)) || (a.sort_order||0)-(b.sort_order||0));
+
+  // A flat list of overridable "rows" — a regular service is one row keyed by its own
+  // id; a CPM-adjustment modifier (Offline Visits Tracking, etc.) is either ONE row
+  // (single/no-candidate section — one number to override) or one row PER PAIRING
+  // (multi-candidate sections like Targeted Display/Location Targeting, where the
+  // modifier combines with several mutually-exclusive tactics). Claire (2026-07-31):
+  // "We need to add the offline rows to the accounting overrides in the group
+  // settings" — given the same-day discovery that a single uniform override wasn't
+  // enough for the Accounting Map tab itself (Geo-Targeting w/ Offline Tracking needs
+  // to differ from Site-Targeting w/ Offline Tracking), the group-level version needs
+  // that exact same per-pairing granularity, not a coarser one. Each pairing gets its
+  // own override key `${tacticId}|${modifierId}` — same convention as
+  // accounting_map.pair_with_service_id — so a group's override here can never
+  // accidentally collide with that tactic's own PLAIN (non-offline) override.
+  const rows = [];
+  activeServices.forEach(s => {
+    if (s.is_cpm_adjustment) {
+      const candidates = (sectionSpendCandidates[s.section] || []).filter(c => c.id !== s.id);
+      const displayLabel = s.accounting_label || s.label;
+      if (candidates.length <= 1) {
+        const base = candidates[0];
+        const baseA = base ? mapById[base.id] : null;
+        const ownA = mapById[s.id];
+        const pctOverridden = !!ownA;
+        rows.push({
+          overrideKey: s.id,
+          displayLabel,
+          idNote: s.id,
+          hasSetupFee: false,
+          fields: {
+            fortyfouri_cut_pct: pctOverridden ? ownA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
+            fortyfouri_fixed_cut: pctOverridden ? ownA.fortyfouri_fixed_cut : 0,
+            budgeted_spend_pct: pctOverridden ? ownA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
+          },
+        });
+      } else {
+        candidates.forEach(base => {
+          const baseA = mapById[base.id];
+          const pairA = mapByPair[base.id + '|' + s.id];
+          const pctOverridden = !!pairA;
+          rows.push({
+            overrideKey: `${base.id}|${s.id}`,
+            displayLabel: `${base.accounting_label || base.label} (w/ ${displayLabel})`,
+            idNote: `${base.id} + ${s.id}`,
+            hasSetupFee: false,
+            fields: {
+              fortyfouri_cut_pct: pctOverridden ? pairA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
+              fortyfouri_fixed_cut: pctOverridden ? pairA.fortyfouri_fixed_cut : 0,
+              budgeted_spend_pct: pctOverridden ? pairA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
+            },
+          });
+        });
+      }
+      return;
+    }
+    // Regular service — unchanged: only services with a real Accounting Map entry of
+    // their own have anything to override.
+    const base = mapById[s.id];
+    if (!base) return;
+    rows.push({
+      overrideKey: s.id,
+      displayLabel: s.accounting_label || s.label,
+      idNote: s.id,
+      hasSetupFee: s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null,
+      fields: {
+        fortyfouri_cut_pct: base.fortyfouri_cut_pct,
+        fortyfouri_fixed_cut: base.fortyfouri_fixed_cut,
+        budgeted_spend_pct: base.budgeted_spend_pct,
+        setup_fee_cut_pct: base.setup_fee_cut_pct,
+      },
+    });
+  });
+
   if (!rows.length) {
     container.innerHTML = '<p style="color:var(--muted);font-size:12px">No services have an Accounting Map entry yet — set those up first in the Accounting Map tab, then group-level overrides can be added here.</p>';
     return;
@@ -1454,33 +1540,31 @@ function renderAccountingOverrideFields() {
       <th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
       ${ALL_OVERRIDE_FIELDS.map(f => `<th style="padding:8px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${f.label}</th>`).join('')}
     </tr></thead><tbody>`;
-  rows.forEach(s => {
-    const base = mapById[s.id];
-    const override = currentAccountingOverrides[s.id] || {};
-    const hasSetupFee = s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null;
-    // Row-level highlight if ANY of this service's fields are overridden, not per-field —
+  rows.forEach(row => {
+    const override = currentAccountingOverrides[row.overrideKey] || {};
+    // Row-level highlight if ANY of this row's fields are overridden, not per-field —
     // same "custom vs standard at a glance" treatment as renderPricingFields() above.
     const rowIsOverridden = Object.keys(override).length > 0;
-    html += `<tr id="acct-row-${s.id}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
-      <td style="padding:8px 10px">${esc(s.accounting_label || s.label)}<span id="acct-badge-${s.id}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(s.id)}</div></td>`;
+    html += `<tr id="acct-row-${esc(row.overrideKey)}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
+      <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(row.idNote)}</div></td>`;
     ALL_OVERRIDE_FIELDS.forEach(f => {
-      const applicable = f.key !== 'setup_fee_cut_pct' || hasSetupFee;
+      const applicable = f.key !== 'setup_fee_cut_pct' || row.hasSetupFee;
       if (!applicable) {
         html += `<td style="padding:8px 10px;text-align:right;color:var(--muted)">—</td>`;
         return;
       }
       const val = override[f.key];
       const isOverridden = val !== undefined;
-      const liveDefault = base?.[f.key] ?? '—';
+      const liveDefault = row.fields[f.key] ?? '—';
       html += `<td style="padding:8px 10px;text-align:right">
         <div style="display:inline-flex;align-items:center;gap:3px">
           <input type="number" step="0.01"
-            id="acct-override-${s.id}-${f.key}"
+            id="acct-override-${esc(row.overrideKey)}-${f.key}"
             value="${isOverridden ? val : ''}"
             placeholder="${liveDefault}"
             title="${isOverridden ? 'Custom for this group (standard is ' + liveDefault + f.suffix + ')' : ''}"
             style="width:64px;padding:5px 6px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
-            oninput="onAccountingOverrideInput('${s.id}', '${f.key}', this.value)"/>
+            oninput="onAccountingOverrideInput('${esc(row.overrideKey)}', '${f.key}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:10px">${f.suffix}</span>
         </div>
       </td>`;
@@ -1491,6 +1575,11 @@ function renderAccountingOverrideFields() {
   container.innerHTML = html;
 }
 
+// `serviceId` here is really "override key" — a plain service id for a regular
+// service, or a composite `${tacticId}|${modifierId}` for a multi-candidate
+// CPM-adjustment pairing row (see renderAccountingOverrideFields()) — but the function
+// itself doesn't need to know which, since it only ever uses it as an opaque object
+// key and DOM id suffix.
 function onAccountingOverrideInput(serviceId, field, val) {
   const isOverridden = val !== '' && val !== null && !isNaN(parseFloat(val));
   if (!currentAccountingOverrides[serviceId]) currentAccountingOverrides[serviceId] = {};
@@ -5069,9 +5158,18 @@ function renderAdminGroups() {
         : `<span style="font-size:10px;color:var(--muted)">Standard</span>`;
       // Same phantom-count guard as Pricing above (a deactivated service's stray
       // override key doesn't get cleared automatically) — filtered to services still
-      // present in CATALOG_ROWS.
+      // present in CATALOG_ROWS. A key can also be a composite `tacticId|modifierId`
+      // pairing override (2026-07-31, CPM-adjustment rows in Accounting Overrides) —
+      // valid only if BOTH halves are still active services, or a deactivated tactic's
+      // stray pairing override would keep counting here forever.
       const rawAcctOverrides = g.accounting_overrides ? (typeof g.accounting_overrides === 'string' ? JSON.parse(g.accounting_overrides) : g.accounting_overrides) : {};
-      const acctOverrideCount = Object.keys(rawAcctOverrides).filter(id => CATALOG_ROWS[id]).length;
+      const acctOverrideCount = Object.keys(rawAcctOverrides).filter(key => {
+        if (key.includes('|')) {
+          const [tacticId, modifierId] = key.split('|');
+          return CATALOG_ROWS[tacticId] && CATALOG_ROWS[modifierId];
+        }
+        return CATALOG_ROWS[key];
+      }).length;
       const acctBadge = acctOverrideCount > 0
         ? `<span style="font-size:10px;font-weight:600;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:12px">${acctOverrideCount} override${acctOverrideCount>1?'s':''}</span>`
         : `<span style="font-size:10px;color:var(--muted)">Standard</span>`;
