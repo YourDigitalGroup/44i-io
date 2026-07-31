@@ -4249,3 +4249,21 @@ Verified via Playwright: confirmed it's a real `<table>`, confirmed the Setup Fe
 column exists with a real input on `svc-sem` and none on `svc-a` (which has no setup
 fee), and re-confirmed everything from the first build (exclusions, placeholders,
 override add/clear/payload cycle) still works unchanged.
+
+**Same day, follow-up: Accounting badge added to the Groups list, matching Pricing.**
+Claire asked for the same at-a-glance treatment Custom Pricing already gets on the
+Groups list — an "N overrides"/"Standard" badge plus a quick-jump button straight to
+that group's Accounting Overrides tab. Added both, directly alongside the existing
+Pricing column/button:
+- New "Accounting" column showing the override count, using the exact same
+  phantom-count guard Pricing already has (a stray override key for a since-deactivated
+  service doesn't count, filtered against `CATALOG_ROWS`).
+- New "Accounting" quick-jump button next to the existing "Pricing" one, opening the
+  group editor and switching straight to the Accounting Overrides tab — same
+  `adminEditGroup(...); setTimeout(()=>adminTab(...), 200)` pattern Pricing's button
+  already uses, super-admin only.
+
+Verified via Playwright: confirmed the column header exists, a group with one override
+shows "1 override," a group with none shows "Standard," and — the actual point of
+reusing Pricing's guard — a group whose only override points at a deactivated service
+also correctly shows "Standard," not a phantom count.

@@ -4983,6 +4983,7 @@ function renderAdminGroups() {
       <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Slug</th>
       <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Account Manager</th>
       <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Pricing</th>
+      <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Accounting</th>
       <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Trello</th>
       <th style="padding:9px 12px"></th>
     </tr></thead>
@@ -4999,6 +5000,14 @@ function renderAdminGroups() {
       const overrideCount = Object.keys(rawPricing).filter(id => CATALOG_ROWS[id]).length;
       const pricingBadge = overrideCount > 0
         ? `<span style="font-size:10px;font-weight:600;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:12px">${overrideCount} override${overrideCount>1?'s':''}</span>`
+        : `<span style="font-size:10px;color:var(--muted)">Standard</span>`;
+      // Same phantom-count guard as Pricing above (a deactivated service's stray
+      // override key doesn't get cleared automatically) — filtered to services still
+      // present in CATALOG_ROWS.
+      const rawAcctOverrides = g.accounting_overrides ? (typeof g.accounting_overrides === 'string' ? JSON.parse(g.accounting_overrides) : g.accounting_overrides) : {};
+      const acctOverrideCount = Object.keys(rawAcctOverrides).filter(id => CATALOG_ROWS[id]).length;
+      const acctBadge = acctOverrideCount > 0
+        ? `<span style="font-size:10px;font-weight:600;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:12px">${acctOverrideCount} override${acctOverrideCount>1?'s':''}</span>`
         : `<span style="font-size:10px;color:var(--muted)">Standard</span>`;
       // Deactivate/Reactivate (2026-07-17, per Claire) — same soft-deactivate pattern
       // as Services/Sections/Intake Forms/AEs, not a hard delete: a group can be
@@ -5023,10 +5032,12 @@ function renderAdminGroups() {
         <td style="padding:10px 12px;color:var(--muted);font-family:monospace">${esc(g.io_slug||'—')}</td>
         <td style="padding:10px 12px;color:var(--muted)">${esc(g.am_name||'—')}<br><span style="font-size:11px">${esc(g.am_email||'')}</span></td>
         <td style="padding:10px 12px">${pricingBadge}</td>
+        <td style="padding:10px 12px">${acctBadge}</td>
         <td style="padding:10px 12px;color:var(--muted);font-size:11px;font-family:monospace">${g.trello_board_id ? esc(g.trello_board_id.slice(0,8))+'...' : '—'}</td>
         <td style="padding:10px 12px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
           <button onclick="adminEditGroup('${esc(g.id)}')" style="padding:5px 12px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12px;cursor:pointer;font-weight:600">Edit</button>
           ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}');setTimeout(()=>adminTab('pricing'),200)" style="padding:5px 12px;border-radius:6px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1d4ed8;font-size:12px;cursor:pointer;font-weight:600">Pricing</button>`}
+          ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}');setTimeout(()=>adminTab('accounting-override'),200)" style="padding:5px 12px;border-radius:6px;background:#EFF6FF;border:1px solid #BFDBFE;color:#1d4ed8;font-size:12px;cursor:pointer;font-weight:600">Accounting</button>`}
           ${deactivateBtn}
         </td>
       </tr>`;
