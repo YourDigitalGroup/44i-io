@@ -3317,17 +3317,27 @@ function renderAdminAccountingList() {
           note: (retailCpmOverridden ? 'CPM overridden' : `CPM auto from ${base.id}`) + (pctOverridden ? ', %s overridden' : `, %s from ${base.id}`),
         });
       } else if (candidates.length > 1) {
-        // Ambiguous — no single number is correct, so the modifier's own row carries no
-        // CPM figures of its own; one reference row per tactic it could actually be
-        // paired with follows immediately after, each linking to THAT tactic's own real
-        // Edit form (same one already used for its non-offline row elsewhere in this
-        // list) — fixing a specific pairing's %s means fixing that tactic's own entry.
+        // Ambiguous CPM — no single number is correct, so the modifier's own row never
+        // carries a CPM of its own; one reference row per tactic it could actually be
+        // paired with follows, each with ITS OWN combined CPM (base.retail_cpm + modAmt).
+        //
+        // %s (cut/budgeted), however, DO need a place to differ "with offline" vs
+        // "without" — found live 2026-07-31 (Claire): the base tactic's own row (its
+        // normal, non-offline entry) and every "(w/ Offline Visits Tracking)" reference
+        // row both used to read straight from `baseA`, the SAME accounting_map row —
+        // so editing either one moved both, with no way to make them independent. Fixed
+        // by giving the MODIFIER its own accounting_map entry (`a`, same mechanism the
+        // single-candidate branch above already uses) as an optional override: when
+        // present, it applies uniformly to every paired tactic's reference row (this is a
+        // property of "when offline tracking is added," not of which specific tactic),
+        // while each tactic's own un-adjusted row keeps reading its own entry, untouched.
+        const pctOverridden = !!a;
         html += renderAccountingMapRow({
           id: s.id, displayLabel, indent: false,
           defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null,
           setupFeeSplitDisplay: null, missing: false,
-          editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${candidates.length} tactics — see below</span>`,
-          note: `combines with ${candidates.length} different tactics depending on the order`,
+          editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${pctOverridden ? 'Edit' : 'Override'}</button>`,
+          note: `combines with ${candidates.length} different tactics depending on the order` + (pctOverridden ? ' — %s overridden below, applies to all pairings' : ' — %s follow each tactic\'s own entry unless overridden here'),
         });
         candidates.forEach(base => {
           const baseA = mapById[base.id];
@@ -3335,10 +3345,12 @@ function renderAdminAccountingList() {
           html += renderAccountingMapRow({
             id: base.id, displayLabel: `${base.accounting_label || base.label} (w/ ${displayLabel})`, indent: true,
             defaultRetail: null, retailCpm: combinedCpm,
-            cutPct: baseA?.fortyfouri_cut_pct, fixedCut: 0, budgetedPct: baseA?.budgeted_spend_pct,
+            cutPct: pctOverridden ? a.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
+            fixedCut: pctOverridden ? a.fortyfouri_fixed_cut : 0,
+            budgetedPct: pctOverridden ? a.budgeted_spend_pct : baseA?.budgeted_spend_pct,
             setupFeeSplitDisplay: null, missing: false,
-            editBtnHtml: `<button onclick="adminEditAccounting('${esc(base.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">Edit ${esc(base.id)}</button>`,
-            note: `auto-derived combined-CPM reference — Edit changes ${base.id}'s own entry`,
+            editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${pctOverridden ? 'overridden above' : `from ${base.id}`}</span>`,
+            note: pctOverridden ? `%s overridden on ${s.id} above (applies to all its pairings)` : `auto-derived — Edit ${base.id}'s own row below to change its (non-offline) %s`,
           });
         });
       } else {

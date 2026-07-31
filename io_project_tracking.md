@@ -4297,3 +4297,40 @@ confirmed clearing a row's only override un-highlights it live. Re-ran the exist
 `test-accounting-overrides.js`, `test-groups-accounting-badge.js`, and
 `test-accounting-map.js` — all still pass unchanged, confirming this was additive only.
 `node --check` on the extracted inline script also passes clean.
+
+## 2026-07-31 — Real bug: "with offline" and "without offline" %s were the same entry
+
+Claire: "Something is wrong with the targeted display and location targeting with
+offline visits. they stay the same, if I change the with offline visits, it also
+updates the without."
+
+Root cause, found by re-reading the multi-candidate branch of
+`renderAdminAccountingList()` built 2026-07-30 (the `td`/`lt`/`stv` sections, where one
+"Offline Visits Tracking" modifier can combine with several mutually-exclusive
+tactics): the "with offline" reference row for each tactic and that same tactic's own
+plain ("without offline") row were both reading `%`s from `baseA` — literally the SAME
+accounting_map database row. Worse, the modifier's own row had NO edit button at all
+("2 tactics — see below"), so there was no separate place to even attempt an override —
+editing "with" meant editing the base tactic's own entry directly, which is exactly the
+entry the "without" row also displays. They could never have been different.
+
+Fixed by giving the MODIFIER (e.g. `td-offline`) its own optional accounting_map
+override — same mechanism the single-candidate branch already had (a modifier's own
+`fortyfouri_cut_pct`/`fortyfouri_fixed_cut`/`budgeted_spend_pct` entry, present only once
+someone clicks "Override" and saves it):
+- Modifier's own row now has a real Edit/Override button (`adminEditAccounting`
+  pointed at the modifier's own id, e.g. `td-offline`), not a dead "see below" label.
+- When that override exists, EVERY "(w/ Offline Visits Tracking)" reference row uses it
+  uniformly, regardless of which tactic it's paired with — modeled as a property of
+  "when offline tracking is added" (matches the real-world case, not tactic-specific).
+- Each tactic's own plain row is completely unaffected — still reads its own
+  accounting_map entry, exactly as it did before offline tracking existed as a concept.
+
+Verified via Playwright (`test-multicandidate-override.js`) using td-geo/td-site (real
+section shape, two spend tactics sharing one modifier): before any override, both
+reference rows correctly show each tactic's OWN %s (47.5%/47.92%, not cross-
+contaminated); after adding an override on `td-offline` itself, both reference rows
+switch to the overridden 60%/90% uniformly, while `td-geo`'s and `td-site`'s own plain
+rows stay at their original, unmodified 47.5%/47.92% — confirming "with" and "without"
+are now independent. Re-ran `test-accounting-map.js` — still passes unchanged.
+`node --check` on the extracted inline script passes clean.
