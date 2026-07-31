@@ -4418,3 +4418,20 @@ share the same tinted background, while the plain, non-offline sibling rows (`td
 rows specifically, not a blanket table-wide style change. Re-ran
 `test-accounting-map.js` and `test-multicandidate-pair-override.js` — both still pass
 unchanged. `node --check` passes clean.
+
+**Same day, immediate follow-up: "Could we also add the arrow and indentation to make
+it fully match?"** The background tint above matched, but the multi-candidate
+reference rows also get the "↳" arrow and left-padding via the existing `indent` flag,
+which the single-candidate and no-candidate-fallback rows still didn't have. Switched
+those same three call sites from `indent: false` to `indent: true` (already had
+`cpmAdjustment: true` from the prior fix) — now every offline-tracking-related row uses
+`indent: true`, so the arrow/padding and the tinted background come from the exact
+same styling path across all three branches, not two different mechanisms that happen
+to look similar.
+
+Verified via Playwright: confirmed the single-candidate (`nd-offline`) and
+no-candidate-fallback (`lonely-offline`) rows now render the "↳" arrow and the
+indented left-padding, while their plain sibling rows (`nd-geo`) still don't. Re-ran
+`test-accounting-map.js`, `test-multicandidate-pair-override.js`, and
+`test-cpm-adjustment-highlight.js` — all still pass unchanged. `node --check` passes
+clean.

@@ -3323,7 +3323,7 @@ function renderAdminAccountingList() {
         const combinedCpm = retailCpmOverridden ? Number(s.retail_cpm) : autoCombinedCpm;
         const pctOverridden = !!a;
         html += renderAccountingMapRow({
-          id: s.id, displayLabel, indent: false, cpmAdjustment: true,
+          id: s.id, displayLabel, indent: true, cpmAdjustment: true,
           defaultRetail: null, retailCpm: combinedCpm,
           cutPct: pctOverridden ? a.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
           fixedCut: pctOverridden ? a.fortyfouri_fixed_cut : 0,
@@ -3346,7 +3346,7 @@ function renderAdminAccountingList() {
         // added specifically for this, distinct from that same tactic's plain (unpaired)
         // entry, which stays completely untouched by any of this.
         html += renderAccountingMapRow({
-          id: s.id, displayLabel, indent: false, cpmAdjustment: true,
+          id: s.id, displayLabel, indent: true, cpmAdjustment: true,
           defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null,
           setupFeeSplitDisplay: null, missing: false,
           editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${candidates.length} tactics — each independently overridable below</span>`,
@@ -3374,7 +3374,7 @@ function renderAdminAccountingList() {
         // original manual-entry behavior so this never becomes a dead end.
         const missing = !a;
         html += renderAccountingMapRow({
-          id: s.id, displayLabel, indent: false, cpmAdjustment: true,
+          id: s.id, displayLabel, indent: true, cpmAdjustment: true,
           defaultRetail: s.default_price != null ? Number(s.default_price) : null,
           retailCpm: s.retail_cpm != null ? Number(s.retail_cpm) : null,
           cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct,
