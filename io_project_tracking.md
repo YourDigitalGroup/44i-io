@@ -4334,3 +4334,58 @@ switch to the overridden 60%/90% uniformly, while `td-geo`'s and `td-site`'s own
 rows stay at their original, unmodified 47.5%/47.92% — confirming "with" and "without"
 are now independent. Re-ran `test-accounting-map.js` — still passes unchanged.
 `node --check` on the extracted inline script passes clean.
+
+**Same day, immediate follow-up: "I need to be able to override each separately, not
+all together."** The fix above still wasn't enough — Claire pointed out the "applies
+to all pairings" override was itself too coarse: Geo-Targeting w/ Offline Tracking and
+Site-Targeting w/ Offline Tracking can genuinely need DIFFERENT %s, not one shared
+number. A uniform per-modifier override can't express that; this needed real
+per-pairing storage.
+
+**Schema change**: added `accounting_map.pair_with_service_id text not null default
+''` (SQL: `accounting-map-pair-overrides-2026-07-31.sql`, given to Claire inline, not
+committed, per this project's standing convention). `''` is a real "no pairing"
+sentinel, not `null` — Postgres treats `null <> null` in a unique index, so `null`
+would have silently let duplicate plain rows through. The table's old one-row-per-
+`service_id` primary key was dropped and replaced with a composite
+`primary key (service_id, pair_with_service_id)`, so a tactic's plain entry
+(`pair_with_service_id = ''`) and any number of pairing-specific overrides
+(`pair_with_service_id = <modifier's id>`) can now coexist as separate rows under the
+same `service_id`. Both RPCs updated: `admin_get_accounting_map` now returns
+`pair_with_service_id`; `admin_save_accounting_map` gained an optional
+`p_pair_with_service_id` param (defaults to `''`, so every pre-existing call site that
+doesn't pass it keeps working exactly as before).
+
+**Admin UI**: replaced the uniform modifier-level override with one per pairing.
+- `renderAdminAccountingList()`: split the old single `mapById` lookup into `mapById`
+  (plain entries only, `pair_with_service_id === ''`) and a new `mapByPair` keyed by
+  `` `${tacticId}|${modifierId}` `` — mixing pairing rows into `mapById` would have
+  silently corrupted every OTHER lookup on the page that assumes one entry per service.
+- The modifier's own row (e.g. `td-offline`) no longer has an Edit button at all — it
+  never carried its own override anymore, so there's nothing there to edit.
+- Each "(w/ Offline Visits Tracking)" reference row now has its own Override/Edit
+  button, calling `adminEditAccounting(base.id, s.id)` — a new optional second
+  argument identifying which pairing is being edited.
+- `adminEditAccounting(serviceId, pairWithServiceId)`: looks up the entry matching
+  BOTH ids, shows "X (w/ Y)" in the form title when editing a pairing, and always hides
+  the Setup Fee Split block for a pairing (that's a property of the service's own setup
+  fee, never of a pairing with another service's modifier). New hidden
+  `admin-accounting-pair-with-id` field carries the pairing id through to save.
+- `adminSaveAccountingMap()` reads that hidden field and includes
+  `p_pair_with_service_id` in the RPC payload.
+
+Verified via Playwright (`test-multicandidate-pair-override.js`): gave `td-geo` a
+pairing-specific override (55%/88%) for its combo with `td-offline` while leaving
+`td-site` with none — confirmed `td-geo`'s reference row shows its own 55%/88%,
+`td-site`'s reference row correctly falls back to ITS OWN plain entry (47.92%/82%,
+completely unaffected by `td-geo`'s override), and both tactics' plain (non-offline)
+rows stay untouched either way. Also confirmed the edit form scopes correctly:
+opening `td-site`'s pairing shows a blank form (no override yet, correct "Override"
+button), and separately opening `td-geo`'s pairing shows its own 55/88, not blank and
+not `td-site`'s — proving the lookups are keyed correctly and don't cross-contaminate.
+Re-ran `test-accounting-map.js` (adding the new hidden field to its mock DOM) — still
+passes, confirming the default `''` pairing keeps every pre-existing single-candidate
+and regular-service code path working unchanged. `node --check` passes clean.
+
+**Still to do**: give Claire the new SQL to run (adds the column, replaces the PK, and
+updates both RPCs) before this branch is merged and any of it is usable live.

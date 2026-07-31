@@ -1005,6 +1005,7 @@
         <div id="admin-accounting-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-accounting-form-title">Accounting Map — Service</p>
           <input type="hidden" id="admin-accounting-service-id"/>
+          <input type="hidden" id="admin-accounting-pair-with-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl">Default Retail <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
@@ -3234,8 +3235,18 @@ function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retai
 
 function renderAdminAccountingList() {
   const el = document.getElementById('admin-accounting-table');
+  // mapById holds each service's own PLAIN entry only (pair_with_service_id === '') —
+  // a pairing-specific override (see below) is a SEPARATE row with the same service_id,
+  // so it must never overwrite the plain entry here or every non-paired lookup on this
+  // page (including this same service's own un-paired row elsewhere in the list) would
+  // silently start reading someone else's pairing override instead.
   const mapById = {};
-  ALL_ACCOUNTING_MAP.forEach(a => { mapById[a.service_id] = a; });
+  const mapByPair = {};
+  ALL_ACCOUNTING_MAP.forEach(a => {
+    const pairKey = a.pair_with_service_id || '';
+    if (pairKey === '') mapById[a.service_id] = a;
+    else mapByPair[a.service_id + '|' + pairKey] = a;
+  });
   // Same section ordering as the Services tab (SECTIONS.sort_order, not an
   // alphabetical sort on the section id) so the two lists present services in a
   // matching, predictable order rather than two different orderings of the same data.
@@ -3321,36 +3332,35 @@ function renderAdminAccountingList() {
         // carries a CPM of its own; one reference row per tactic it could actually be
         // paired with follows, each with ITS OWN combined CPM (base.retail_cpm + modAmt).
         //
-        // %s (cut/budgeted), however, DO need a place to differ "with offline" vs
-        // "without" — found live 2026-07-31 (Claire): the base tactic's own row (its
-        // normal, non-offline entry) and every "(w/ Offline Visits Tracking)" reference
-        // row both used to read straight from `baseA`, the SAME accounting_map row —
-        // so editing either one moved both, with no way to make them independent. Fixed
-        // by giving the MODIFIER its own accounting_map entry (`a`, same mechanism the
-        // single-candidate branch above already uses) as an optional override: when
-        // present, it applies uniformly to every paired tactic's reference row (this is a
-        // property of "when offline tracking is added," not of which specific tactic),
-        // while each tactic's own un-adjusted row keeps reading its own entry, untouched.
-        const pctOverridden = !!a;
+        // %s (cut/budgeted) are overridable per PAIRING, not per modifier — found live
+        // 2026-07-31 (Claire): a uniform "applies to all pairings" override (the first
+        // attempt at this fix) still wasn't enough — "I need to be able to override each
+        // separately, not all together." Each tactic's "(w/ Offline Visits Tracking)"
+        // row now has its own optional accounting_map entry, keyed by
+        // (service_id = the tactic, pair_with_service_id = the modifier) — a new column
+        // added specifically for this, distinct from that same tactic's plain (unpaired)
+        // entry, which stays completely untouched by any of this.
         html += renderAccountingMapRow({
           id: s.id, displayLabel, indent: false,
           defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null,
           setupFeeSplitDisplay: null, missing: false,
-          editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${pctOverridden ? 'Edit' : 'Override'}</button>`,
-          note: `combines with ${candidates.length} different tactics depending on the order` + (pctOverridden ? ' — %s overridden below, applies to all pairings' : ' — %s follow each tactic\'s own entry unless overridden here'),
+          editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${candidates.length} tactics — each independently overridable below</span>`,
+          note: `combines with ${candidates.length} different tactics depending on the order`,
         });
         candidates.forEach(base => {
           const baseA = mapById[base.id];
+          const pairA = mapByPair[base.id + '|' + s.id];
+          const pctOverridden = !!pairA;
           const combinedCpm = (base.retail_cpm != null && modAmt != null) ? Number(base.retail_cpm) + modAmt : null;
           html += renderAccountingMapRow({
             id: base.id, displayLabel: `${base.accounting_label || base.label} (w/ ${displayLabel})`, indent: true,
             defaultRetail: null, retailCpm: combinedCpm,
-            cutPct: pctOverridden ? a.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
-            fixedCut: pctOverridden ? a.fortyfouri_fixed_cut : 0,
-            budgetedPct: pctOverridden ? a.budgeted_spend_pct : baseA?.budgeted_spend_pct,
+            cutPct: pctOverridden ? pairA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
+            fixedCut: pctOverridden ? pairA.fortyfouri_fixed_cut : 0,
+            budgetedPct: pctOverridden ? pairA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
             setupFeeSplitDisplay: null, missing: false,
-            editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${pctOverridden ? 'overridden above' : `from ${base.id}`}</span>`,
-            note: pctOverridden ? `%s overridden on ${s.id} above (applies to all its pairings)` : `auto-derived — Edit ${base.id}'s own row below to change its (non-offline) %s`,
+            editBtnHtml: `<button onclick="adminEditAccounting('${esc(base.id)}','${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${pctOverridden ? 'Edit' : 'Override'}</button>`,
+            note: pctOverridden ? `%s overridden just for this pairing (${base.id} + ${s.id})` : `auto from ${base.id}'s own entry — Override to set different %s just for this pairing`,
           });
         });
       } else {
@@ -3424,24 +3434,33 @@ function updateAccountingSetupFeePreview() {
   preview.textContent = `Split: $${toFortyfouri.toFixed(2)} to 44i / $${toGroup.toFixed(2)} to Group`;
 }
 
-function adminEditAccounting(serviceId) {
+function adminEditAccounting(serviceId, pairWithServiceId) {
   const s = allServicesMap.find(x => x.id === serviceId);
   if (!s) return;
-  const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId);
-  document.getElementById('admin-accounting-form-title').textContent = 'Accounting Map — ' + (s.accounting_label || s.label);
+  // Pairing-specific override (2026-07-31, per Claire — see renderAdminAccountingList()'s
+  // multi-candidate branch): a tactic that shares its Offline Visits Tracking modifier
+  // with siblings (td/lt/stv sections) can have DIFFERENT %s depending on which pairing
+  // is being edited, not one number that applies to every pairing. `pairWithServiceId`
+  // set means "editing serviceId's entry specifically for when combined with this other
+  // service" — stored as its own row (same service_id, distinct pair_with_service_id),
+  // never touching serviceId's own plain (unpaired) entry.
+  const pairKey = pairWithServiceId || '';
+  const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId && (x.pair_with_service_id || '') === pairKey);
+  const pairService = pairKey ? allServicesMap.find(x => x.id === pairKey) : null;
+  document.getElementById('admin-accounting-form-title').textContent = 'Accounting Map — ' + (s.accounting_label || s.label) +
+    (pairService ? ` (w/ ${pairService.accounting_label || pairService.label})` : '');
   document.getElementById('admin-accounting-service-id').value = serviceId;
+  document.getElementById('admin-accounting-pair-with-id').value = pairKey;
   document.getElementById('admin-accounting-default-retail-display').value = s.default_price != null ? '$' + Number(s.default_price).toFixed(2) : '— (not set on this service)';
   document.getElementById('admin-accounting-retail-cpm-display').value = s.retail_cpm != null ? '$' + Number(s.retail_cpm).toFixed(2) : '— (not set on this service)';
   document.getElementById('admin-accounting-cut-pct').value = a?.fortyfouri_cut_pct ?? '';
   document.getElementById('admin-accounting-fixed-cut').value = a?.fortyfouri_fixed_cut ?? '';
   document.getElementById('admin-accounting-budgeted-spend').value = a?.budgeted_spend_pct ?? '';
   updateAccountingYdaPreview();
-  // Setup Fee Split only makes sense for a service that actually has an auto-add setup
-  // fee configured (e.g. SEM Business Pro's $200-under-$1,000 fee) — same
-  // auto_add_setup_fee/setup_fee/setup_fee_threshold trio the public form already uses
-  // in getSetupFeeInfo(), so this can never show for a service where it wouldn't apply.
+  // Setup Fee Split is a property of the service's own setup fee, never of a pairing
+  // with another service's modifier — always hidden while editing a pairing override.
   const setupFeeBlock = document.getElementById('admin-accounting-setup-fee-block');
-  const hasSetupFee = s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null;
+  const hasSetupFee = !pairKey && s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null;
   if (hasSetupFee) {
     ACCOUNTING_CURRENT_SETUP_FEE_AMT = Number(s.setup_fee);
     document.getElementById('admin-accounting-setup-fee-amount-note').textContent =
@@ -3465,6 +3484,7 @@ function adminCancelAccountingEdit() {
 async function adminSaveAccountingMap() {
   const serviceId = document.getElementById('admin-accounting-service-id').value;
   if (!serviceId) { showToast('No service selected', 'error'); return; }
+  const pairWithServiceId = document.getElementById('admin-accounting-pair-with-id').value || '';
   const cutVal = document.getElementById('admin-accounting-cut-pct').value;
   const fixedVal = document.getElementById('admin-accounting-fixed-cut').value;
   const budgetedVal = document.getElementById('admin-accounting-budgeted-spend').value;
@@ -3485,6 +3505,7 @@ async function adminSaveAccountingMap() {
         p_name: currentAdminUser?.name || '',
         p_pw: currentAdminUser?.pw || '',
         p_service_id: serviceId,
+        p_pair_with_service_id: pairWithServiceId,
         p_data: payload
       })
     });
