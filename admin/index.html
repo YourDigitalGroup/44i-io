@@ -1337,6 +1337,11 @@ let currentPricingOverrides = {};
 // a glance which prices are custom to this group vs. still standard.
 const OVERRIDE_INPUT_STYLE = 'border-color:var(--accent);background:var(--accent-dim,#EAF6FC);color:var(--accent);font-weight:600';
 const DEFAULT_INPUT_STYLE = 'border-color:var(--border);background:#fff;color:var(--text);font-weight:400';
+// Row-level equivalents — same "custom vs standard" language, applied to the whole row
+// (Custom Pricing) or table row (Accounting Overrides) rather than just one input, so a
+// long list can be scanned for overrides at a glance instead of reading every field.
+const OVERRIDE_ROW_STYLE = 'background:var(--accent-dim,#EAF6FC)';
+const CUSTOM_BADGE = '<span style="margin-left:6px;padding:1px 6px;border-radius:4px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;vertical-align:middle">Custom</span>';
 
 function renderPricingFields() {
   const container = document.getElementById('pricing-fields');
@@ -1353,8 +1358,13 @@ function renderPricingFields() {
       // CATALOG_ROWS on every load) — no removed-service fallback needed anymore.
       const liveDefault = CATALOG_ROWS[item.id]?.default_price;
       const fieldType = item.field === 'recurring' ? '/mo' : '';
-      html += `<div style="display:flex;align-items:center;gap:14px;max-width:420px">
-        <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4;min-width:0">${item.label}</label>
+      // Row-level highlight, not just the input's own border — found live 2026-07-30
+      // (Claire): scanning a long service list to spot the handful of overrides by
+      // border color alone is easy to miss; a tinted row background is much easier to
+      // scan for. Same OVERRIDE_ROW_STYLE/CUSTOM_BADGE used by the Accounting Overrides
+      // table below, for one consistent visual language across both tabs.
+      html += `<div id="price-row-${item.id}" style="display:flex;align-items:center;gap:14px;max-width:420px;padding:4px 8px;border-radius:6px;margin:-4px -8px;${isOverridden ? OVERRIDE_ROW_STYLE : ''}">
+        <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4;min-width:0">${item.label}${isOverridden ? CUSTOM_BADGE : ''}</label>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
           <span style="font-size:11px;color:${isOverridden ? 'var(--accent)' : 'var(--muted)'}">$</span>
           <input type="number" min="0" step="0.01"
@@ -1391,6 +1401,14 @@ function onPriceInput(serviceId, val) {
     input.title = isOverridden ? `Custom price for this group (standard is $${CATALOG_ROWS[serviceId]?.default_price})` : '';
   }
   if (dollarSign) dollarSign.style.color = isOverridden ? 'var(--accent)' : 'var(--muted)';
+  const row = document.getElementById('price-row-' + serviceId);
+  const label = row?.querySelector('label');
+  if (row) row.style.background = isOverridden ? 'var(--accent-dim,#EAF6FC)' : '';
+  if (label) {
+    const existingBadge = label.querySelector('span');
+    if (isOverridden && !existingBadge) label.insertAdjacentHTML('beforeend', CUSTOM_BADGE);
+    else if (!isOverridden && existingBadge) existingBadge.remove();
+  }
 }
 
 // ── ACCOUNTING OVERRIDES (per-group, 2026-07-30) ────────────────
@@ -1439,8 +1457,11 @@ function renderAccountingOverrideFields() {
     const base = mapById[s.id];
     const override = currentAccountingOverrides[s.id] || {};
     const hasSetupFee = s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null;
-    html += `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:8px 10px">${esc(s.accounting_label || s.label)}<div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(s.id)}</div></td>`;
+    // Row-level highlight if ANY of this service's fields are overridden, not per-field —
+    // same "custom vs standard at a glance" treatment as renderPricingFields() above.
+    const rowIsOverridden = Object.keys(override).length > 0;
+    html += `<tr id="acct-row-${s.id}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
+      <td style="padding:8px 10px">${esc(s.accounting_label || s.label)}<span id="acct-badge-${s.id}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(s.id)}</div></td>`;
     ALL_OVERRIDE_FIELDS.forEach(f => {
       const applicable = f.key !== 'setup_fee_cut_pct' || hasSetupFee;
       if (!applicable) {
@@ -1489,6 +1510,13 @@ function onAccountingOverrideInput(serviceId, field, val) {
   if (input) {
     input.style.cssText += ';' + (isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE);
   }
+  // Row-level highlight is based on whether the SERVICE has any override left, not just
+  // this one field — a row stays highlighted if a different field on it is still custom.
+  const rowIsOverridden = !!currentAccountingOverrides[serviceId] && Object.keys(currentAccountingOverrides[serviceId]).length > 0;
+  const row = document.getElementById('acct-row-' + serviceId);
+  const badge = document.getElementById('acct-badge-' + serviceId);
+  if (row) row.style.background = rowIsOverridden ? 'var(--accent-dim,#EAF6FC)' : '';
+  if (badge) badge.style.display = rowIsOverridden ? 'inline' : 'none';
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────

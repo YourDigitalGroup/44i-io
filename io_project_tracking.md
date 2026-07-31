@@ -4267,3 +4267,33 @@ Verified via Playwright: confirmed the column header exists, a group with one ov
 shows "1 override," a group with none shows "Standard," and — the actual point of
 reusing Pricing's guard — a group whose only override points at a deactivated service
 also correctly shows "Standard," not a phantom count.
+
+**Same day, follow-up: row-level highlighting for overridden values.** Claire: "Can we
+have a way to highlight what values have be overridden in the pricing and accounting so
+it is easy to identify what is different from the standard." The existing per-input
+border color (`OVERRIDE_INPUT_STYLE`) technically already showed this, but only if you
+looked closely at each field's border — easy to miss scanning a long list.
+
+Added a row-level treatment on top, applied to both tabs:
+- New `OVERRIDE_ROW_STYLE` (tinted row background) and `CUSTOM_BADGE` (a small "Custom"
+  pill) constants, defined once next to the existing `OVERRIDE_INPUT_STYLE`/
+  `DEFAULT_INPUT_STYLE`, reused by both tabs for one consistent visual language.
+- **Custom Pricing tab** (`renderPricingFields()`): each service's row div now gets the
+  tinted background and a "Custom" badge next to its label whenever that service has a
+  price override. `onPriceInput()` toggles both live as the admin types/clears a value,
+  matching the initial-render styling exactly (no flash difference between a page-load
+  override and one just typed in).
+- **Accounting Overrides tab** (`renderAccountingOverrideFields()`): highlight is
+  row-level based on whether the SERVICE has *any* overridden field, not per-field —
+  a row stays highlighted if one field is cleared but another on the same row is still
+  custom. Gave each `<tr>` an id (`acct-row-<id>`) and the badge its own toggleable span
+  (`acct-badge-<id>`) so `onAccountingOverrideInput()` can flip both live without
+  re-rendering the whole table.
+
+Verified via Playwright (`test-override-highlight.js`): on both tabs, confirmed an
+overridden row is highlighted+badged on initial render and a standard row isn't;
+confirmed typing a new override into a previously-standard row highlights it live;
+confirmed clearing a row's only override un-highlights it live. Re-ran the existing
+`test-accounting-overrides.js`, `test-groups-accounting-badge.js`, and
+`test-accounting-map.js` — all still pass unchanged, confirming this was additive only.
+`node --check` on the extracted inline script also passes clean.
