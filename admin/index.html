@@ -31,7 +31,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
-        <a id="admin-strategist-portal-link" href="../strategist/index.html" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Strategist Portal →</a>
+        <a id="admin-strategist-portal-link" href="../strategist/index.html" onclick="strategistPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Strategist Portal →</a>
         <button onclick="adminLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
       </div>
     </div>
@@ -5563,6 +5563,19 @@ async function adminToggleGroupActive(id, makeActive) {
 
 
 // ── PRINT IO ───────────────────────────────────────────────────
+
+// Stashes the already-authenticated name/password into sessionStorage right before
+// following the "Go to Strategist Portal" link (2026-08-04, per Claire: having to
+// log in again there was real friction). strategist/index.html reads this ONCE on
+// load and clears it immediately either way — same plaintext-in-memory trust model
+// this whole app already uses (no tokens/cookies anywhere in this project), just
+// carried across the one page hop instead of lost to it. The link's normal href
+// navigation still happens after this — nothing here blocks or redirects the click.
+function strategistPortalHandoff() {
+  if (!currentAdminUser) return;
+  sessionStorage.setItem('strategist_handoff_name', currentAdminUser.name);
+  sessionStorage.setItem('strategist_handoff_pw', currentAdminUser.pw);
+}
 
 // ── LOGOUT (standalone-admin addition — see note 2 above) ──────────
 function adminLogout() {

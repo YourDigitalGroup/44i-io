@@ -4856,3 +4856,59 @@ reusing existing tables/RPCs).
 
 **Still to do**: Claire runs `strategist-portal-v1-part3-2026-08-04.sql`, then this
 branch merges to `main`.
+
+**Same day, follow-up: `admin_users_role_check` constraint blocked the first real
+strategist account.** Adding Carol L. as a strategist failed live with a Postgres
+check-constraint error (`23514`). Asked for the constraint definition rather than
+guessing at its name — `admin_users_role_check: CHECK (role = ANY (ARRAY['super',
+'am']))` — confirming the DB-level constraint was never updated when `strategist`/
+`accounting` became real roles the app code already treats as valid (login,
+`get_login_roster`, this whole Strategist Portal build). Fixed with:
+```sql
+alter table admin_users drop constraint admin_users_role_check;
+alter table admin_users add constraint admin_users_role_check
+  check (role = any (array['super'::text, 'am'::text, 'strategist'::text, 'accounting'::text]));
+```
+Confirmed working — Claire added all 5 strategist accounts successfully afterward.
+
+**Same day, follow-up: silent handoff from `/admin`'s strategist-portal link, and a
+scoping clarification.**
+
+Claire: "When I click the strategist link from the admin portal I have to log in
+again." Root cause: `/admin` and `/strategist` are two fully independent pages —
+credentials live only in an in-memory JS variable per page (`currentAdminUser`/
+`currentStrategistUser`), no shared session/cookie/token anywhere in this project,
+so navigating between them always lost that state and started fresh.
+
+Fixed with a one-time `sessionStorage` handoff, not a shared auth system (too big a
+change for what's actually needed here): clicking the link stashes the already-
+authenticated name+password into `sessionStorage` right before the normal navigation
+happens; `/strategist` reads it ONCE on load and clears it immediately either way
+(success or failure) so it can never be replayed by revisiting the page later in the
+same tab. Same plaintext-in-memory trust model this whole app already runs on (no
+tokens anywhere) — this just carries that same value across the one page hop instead
+of losing it. Refactored `checkStrategistPw()`'s actual login check into a reusable
+`attemptStrategistLogin(name, pw)` so both the modal's submit button and the silent
+handoff path share the exact same validation, not two copies that could drift.
+
+Verified via Playwright (`test-strategist-handoff.js`, navigated to the real
+`file://` page since `sessionStorage` throws on the opaque origin `page.setContent()`
+gives): confirmed a valid handed-off credential logs in silently and sets
+`currentStrategistUser` correctly; confirmed the stashed values are cleared
+immediately after being read; confirmed calling it again afterward (simulating
+revisiting the page) finds nothing and correctly returns false rather than replaying
+the old login; confirmed a bad/stale handed-off credential fails gracefully (no
+crash, no session set, storage still cleared); confirmed calling it with nothing
+stashed at all just returns false. Re-ran every other strategist/admin Playwright
+test — all still pass unchanged.
+
+**Clarification, no code change**: "If I upload the platform reports in my profile
+or a strategist's profile it will be used for all strategists campaigns correct?"
+Confirmed yes — campaign data has never been scoped by which login is active. "My
+Campaigns" is purely a client-side VIEW filter (hides other strategists' rows from
+your own screen); it was never an access restriction. Any valid login — Claire's own
+`super`, or any individual strategist's — reads and writes the exact same shared
+`campaign_lines`/`campaign_months`/`campaign_optimize_log` rows, matched by client/
+tactic/platform-campaign-name, not by who happens to be logged in. This was the
+intentional design from the original mockup (one shared portal) — confirmed as still
+correct, not a gap needing a fix.

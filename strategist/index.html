@@ -117,40 +117,41 @@ function promptStrategistLogin() {
   document.getElementById('strategist-pw-error').style.display = 'none';
 }
 
+// Pulled out of checkStrategistPw() (2026-08-04) so the same real login check can
+// also be used by the silent admin->strategist handoff below, not just the modal's
+// own submit button. Returns {ok, role, email} on success or {ok:false, error} —
+// never throws, so both callers can just check `.ok`.
+async function attemptStrategistLogin(name, pw) {
+  if (!name) return { ok: false, error: 'Please select your name.' };
+  let row;
+  try {
+    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
+    row = Array.isArray(res) ? res[0] : res;
+  } catch(e) {
+    return { ok: false, error: 'Could not reach the login service. Check your connection and try again.' };
+  }
+  if (!row || !row.role) return { ok: false, error: 'Incorrect password. Please try again.' };
+  if (row.role !== 'strategist' && row.role !== 'super') {
+    return { ok: false, error: 'This account isn\'t set up for the Strategist portal.' };
+  }
+  return { ok: true, role: row.role, email: row.email || '' };
+}
+
 async function checkStrategistPw() {
   const name = document.getElementById('strategist-name-select').value;
   const pw = document.getElementById('strategist-pw-input').value;
   const errEl = document.getElementById('strategist-pw-error');
-  if (!name) {
-    errEl.textContent = 'Please select your name.';
-    errEl.style.display = 'block';
-    return;
-  }
-  let ok = false, role = null, email = '';
-  try {
-    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
-    const row = Array.isArray(res) ? res[0] : res;
-    if (row && row.role) { ok = true; role = row.role; email = row.email || ''; }
-  } catch(e) {
-    errEl.textContent = 'Could not reach the login service. Check your connection and try again.';
-    errEl.style.display = 'block';
-    document.getElementById('strategist-pw-input').value = '';
-    return;
-  }
-  if (ok && role !== 'strategist' && role !== 'super') {
-    errEl.textContent = 'This account isn\'t set up for the Strategist portal.';
-    errEl.style.display = 'block';
-    document.getElementById('strategist-pw-input').value = '';
-    return;
-  }
-  if (ok) {
-    currentStrategistUser = { name, email, role, pw };
+  const result = await attemptStrategistLogin(name, pw);
+  if (result.ok) {
+    currentStrategistUser = { name, email: result.email, role: result.role, pw };
     document.getElementById('strategist-login-modal').style.display = 'none';
     showStrategistPanel(true);
   } else {
-    errEl.textContent = 'Incorrect password. Please try again.';
+    errEl.textContent = result.error;
     errEl.style.display = 'block';
     document.getElementById('strategist-pw-input').value = '';
+    if (result.error.includes('select your name')) return;
+    document.getElementById('strategist-pw-input').focus();
   }
 }
 
@@ -1092,8 +1093,30 @@ function strategistLogout() {
   promptStrategistLogin();
 }
 
+// Silent handoff from the admin portal's "Go to Strategist Portal" link (2026-08-04,
+// per Claire: "When I click the strategist link from the admin portal I have to log
+// in again"). admin/index.html stashes the already-authenticated name/password into
+// sessionStorage right before navigating; picked up here ONCE (cleared immediately,
+// whether it works or not) so it can never be replayed by, say, opening this page
+// again later in the same tab. Same plaintext-in-memory trust model this whole app
+// already uses everywhere (no tokens/cookies anywhere in this project) — sessionStorage
+// just carries that same value across the one page hop, cleared right after reading.
+async function tryStrategistHandoffLogin() {
+  const name = sessionStorage.getItem('strategist_handoff_name');
+  const pw = sessionStorage.getItem('strategist_handoff_pw');
+  sessionStorage.removeItem('strategist_handoff_name');
+  sessionStorage.removeItem('strategist_handoff_pw');
+  if (!name || !pw) return false;
+  const result = await attemptStrategistLogin(name, pw);
+  if (!result.ok) return false;
+  currentStrategistUser = { name, email: result.email, role: result.role, pw };
+  showStrategistPanel(true);
+  return true;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await loadStrategistRoster();
+  if (await tryStrategistHandoffLogin()) return;
   promptStrategistLogin();
 });
 </script>
