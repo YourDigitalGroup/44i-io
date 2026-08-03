@@ -4759,3 +4759,100 @@ file attachment) so nothing gets altered in transit. **Confirmed working** — C
 ran it successfully.
 
 **Still to do**: this branch merges to `main`.
+
+## 2026-08-04 (cont'd) — Six real-use requests, ahead of Claire's actual import pass
+
+Claire, before starting her real campaign import: "1. Paste Platform Report needs a
+way to do each individually because their formats are different (Simpli.fi/Google/
+Facebook/TradeDesk). 2. Is there a way we can do a mass import from a csv or google
+sheet? How can we update for different month budgets? 3. The Platform option should
+be a dropdown. 4. Can we add the link to the strategist page for a super admin as
+well? 5. For the groups can their headers match their group colors? 6. How do I
+assign a strategist to a group?"
+
+**1. Per-platform report matching.** Added a required Platform dropdown to "Paste
+Platform Report" — matching is now scoped to only that platform's own campaigns (a
+title that happens to collide across two platforms can never cross-contaminate).
+Rather than hardcode each platform's exact real column order (risky to get wrong,
+and it can change), the tool now reads whatever header row is actually in the pasted
+export and matches column NAMES against known synonyms (`spend`/`cost`/`amount
+spent`, `clicks`/`link clicks`, `impr`/`impressions`, `conversions`/`results`/
+`weighted actions`) — works with each platform's real export as-is, any column
+order, no reformatting. Falls back to the original fixed Spend/Clicks/Impressions
+order if no header row is detected.
+
+**2. Bulk CSV/Sheets import + multi-month budgets in one paste.** New "Bulk Import
+(CSV)" button — pastes a header row (Client, Tactic, Platform, Platform Campaign
+Name, Status, Flight Start, Flight End, Month, Gross Budget, any order) plus one row
+per campaign PER MONTH. Copying a range directly out of Google Sheets pastes as
+tab-separated text automatically, so this needed no real file-upload machinery —
+same paste-into-a-textarea pattern already used for the platform-report tool.
+- Rows are grouped by campaign identity (Client + Tactic + Platform + Platform
+  Campaign Name) so several months of the same campaign share one `campaign_lines`
+  row instead of creating duplicates.
+- **Re-running an import is safe** — matched against existing campaigns by
+  `platform_campaign_name` first (same lookup the report-matching tool uses); only
+  creates a new row if nothing matches yet. Directly answers "how can we update for
+  different month budgets" — add more rows with a later Month for the same campaign
+  identity and re-paste; existing months get upserted, new ones get added.
+- Client/Tactic names are resolved against real data (case-insensitive exact match)
+  — never guessed at. An unresolved name is reported back by row number rather than
+  silently skipped or imported against the wrong client.
+
+**3. Platform is now a dropdown everywhere it's entered** — "+ New Campaign",
+Campaign Setup, the main table's inline field, and the new report/bulk-import tools'
+platform pickers. Options: Google Ads, Facebook Ads, Simpli.fi, The Trade Desk,
+StackAdapt (the confirmed platform set), plus an "Other…" that reveals a text input
+so an existing custom value already saved on a campaign is never silently dropped
+just because it isn't in that list.
+
+**4. Strategist portal link now shows for `super` too**, not just `strategist` — one
+condition change in `showAdmin()`.
+
+**5. Group header rows in the main table now use each group's own `brand_color`**
+(the same color already shown as that group's dot on the admin Groups list) instead
+of one flat blue for every group. `strategist_get_campaign_lines` now also returns
+`group_color`; a new `strategistContrastTextColor()` picks readable near-black or
+near-white text against whatever arbitrary color a group has, using the same
+relative-luminance approach browsers/design tools use for contrast — so a light
+brand color never renders unreadable light-on-light text. Falls back to the existing
+default blue for a group with no `brand_color` set.
+
+**6. "How do I assign a strategist to a group?"** — answered, not built: there is no
+group-level assignment today. The only assignment that exists is per-CAMPAIGN
+(`campaign_lines.assigned_strategist`), set automatically to whoever confirms
+Campaign Setup or runs a manual/bulk import — this is intentional, matching the
+mockup's own confirmed design (a shared portal, campaigns claimed individually, not
+pre-assigned by group). Flagged to Claire as a real open question rather than
+building a new group-level default-assignment mechanism she didn't explicitly ask
+for — genuinely her call whether that's wanted.
+
+**New SQL**: `strategist-portal-v1-part3-2026-08-04.sql` — `strategist_get_campaign_lines`
+updated to also return `group_color`. No other schema change needed for this round
+(the platform dropdown/bulk import/per-platform matching are all client-side only,
+reusing existing tables/RPCs).
+
+**Verified via Playwright**:
+- `test-strategist-paste-report.js` (updated): confirmed header-synonym detection
+  correctly maps `Impr./Cost/Clicks` (deliberately reordered from the internal field
+  order) to the right metrics; confirmed a title that matches on the WRONG platform
+  is never touched by a report scoped to a different platform.
+- `test-strategist-bulk-import.js` (new): confirmed re-importing a campaign that
+  already exists (matched by `platform_campaign_name`) reuses it and never creates a
+  duplicate; confirmed two Month rows for the same campaign both save correctly
+  against the same line; confirmed an unresolved client name is reported back by
+  name, not silently skipped; confirmed a genuinely new campaign is created with the
+  correct client/service/platform/assigned-strategist fields.
+- `test-strategist-group-color.js` (new): confirmed `strategistContrastTextColor()`
+  picks white text on a dark background and dark text on a light one, with a safe
+  fallback for a missing or malformed color; confirmed the main table's group-band
+  rows use each group's own color, falling back to the default blue when a group has
+  none.
+- `test-admin-strategist-access.js` (updated): re-confirmed the strategist-in-admin
+  restriction from the previous round, plus the new super-sees-the-link-too behavior.
+- Re-ran `test-strategist-dashboard.js` and `test-strategist-import.js` — both still
+  pass unchanged. `node --check` passes clean on both `strategist/index.html` and
+  `admin/index.html`.
+
+**Still to do**: Claire runs `strategist-portal-v1-part3-2026-08-04.sql`, then this
+branch merges to `main`.
