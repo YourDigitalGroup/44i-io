@@ -4488,3 +4488,123 @@ either half of a pairing key refers to a deactivated service. Re-ran
 `test-accounting-map.js`, `test-multicandidate-pair-override.js`,
 `test-cpm-adjustment-highlight.js`, and `test-groups-accounting-badge.js` — all still
 pass unchanged. `node --check` passes clean.
+
+## 2026-08-03 — Strategist Portal v1: real framework built, replacing the mockup
+
+Claire: "I think we are good for version 1... I think we have done a good job on the
+front end to get a good mockup before we even started" — confirming the go-ahead
+recommended earlier this session (build the real framework now so the strategist team
+can give feedback by using it, instead of reacting to a static mockup). Entered plan
+mode given the size (new tables, a trigger, seven new RPCs, and the actual dashboard
+UI) — full plan approved and saved at the session's plan-file path before building.
+
+**Scope, matching every decision already confirmed in the mockup/Q&A rounds**: rows
+auto-populate from real orders, In-Platform Budget and Goal auto-calculate, the 3-band
+pacing formula/thresholds match the real spreadsheet rule, Optimize Log is an
+editable dated history, Campaign Setup is a Pending queue with inline IO-value
+overrides + monthly budget entry, status tabs (Campaign Setup/Active/Paused/Complete),
+and a My Campaigns/All Strategists scope toggle. Explicitly NOT built — confirmed as
+their own later phases: platform-report API automation, the ad-group/keyword
+breakdown detail, and importing pre-existing campaigns.
+
+**Database** (SQL given to Claire inline, not committed —
+`strategist-portal-v1-2026-08-03.sql` in scratchpad):
+- Three new tables, RLS enabled AND forced, zero policies — same pattern as every
+  other sensitive table this project (`orders`/`accounting_map`/`ae`):
+  - `campaign_lines` — one row per qualifying order line item. Carries `platform`
+    (editable at ANY status — resolves the one open item the strategist team
+    surfaced: Platform sometimes changes mid-campaign), `platform_url` (plain
+    strategist-maintained reference link), flight dates, `status`,
+    `assigned_strategist`, `setup_notes`, `budget_varies_by_month`, and
+    `goal_override` (manual Goal entry — see SEM gap below).
+  - `campaign_months` — one row per campaign per month it's been active, carrying
+    BOTH that month's budget AND that month's actuals (`actual_spend`,
+    `actual_clicks`, `actual_impressions`, `actual_conversions`,
+    `actual_total_visits`). Deliberately one table, not two — the month-picker's
+    "history accumulates automatically" needs past months' actuals to exist
+    somewhere, not just past months' budgets. CTR is always derived
+    (`clicks ÷ impressions`), never stored.
+  - `campaign_optimize_log` — one dated entry per optimization, editable/deletable.
+- A trigger, not client-side code in `submitIO()`: `create_campaign_lines_from_order()`
+  fires `AFTER INSERT ON orders`, loops the new order's `line_items`, and creates a
+  `campaign_lines` row (+ its first `campaign_months` row) for every line item with
+  `spend > 0` — the exact same signal `rowToServiceData()`/`priceAndFrequency()`
+  already use to mean "a real media-buy tactic." A `pricing_mode='modifier'` add-on
+  like Offline Visits Tracking always has `spend: 0`, so it correctly never spawns a
+  campaign line. More robust than adding a step to the public form's already-long
+  submission flow — this can't be skipped by a client-side hiccup.
+- Seven new RPCs, same `p_name`/`p_pw` → `admin_users` password-check pattern as every
+  other RPC in this project, gated to `role in ('strategist','super')`:
+  `strategist_get_campaign_lines`, `strategist_get_campaign_months`,
+  `strategist_get_optimize_log`, `strategist_get_budgeted_spend_rates`,
+  `strategist_save_campaign_line`, `strategist_save_campaign_month`,
+  `strategist_save_optimize_log`, `strategist_delete_optimize_log`.
+- **Least-privilege boundary, per the mockup's own confirmed design**:
+  `strategist_get_budgeted_spend_rates` returns ONLY Budgeted Spend % (base
+  `accounting_map` rate + any per-group override) — never 44i Cut %, Fixed Cut $, or
+  Setup Fee Split, which stay restricted to the super-admin-only
+  `admin_get_accounting_map`. The mockup's own plan card said it explicitly: "the
+  Group Cut/44i Cut/YDA/Fixed Cut columns... are a separate concern, not something the
+  strategist portal needs to touch at all." In-Platform Budget = Gross Budget ×
+  effective Budgeted Spend % (group override if set, else the base rate) — computed
+  live client-side, never stored, same derived-vs-stored principle as Retail CPM/44i
+  CPM/Platform CPM elsewhere in this project. Retail CPM itself needed no new RPC —
+  it's read straight off the already-anon-readable `services` table via the existing
+  `loadCatalog()` in `shared.js`.
+- **Known, flagged gap (not guessed at): SEM's Goal.** `services` only stores a
+  hardcoded CPC *range* string (`"$4-$12"`) for `sem-bp`, not a single rate, so an
+  automatic clicks-goal number isn't actually computable today despite the mockup's
+  copy implying it is. v1 falls back to `campaign_lines.goal_override` (manual entry,
+  same trust level Platform/monthly budgets already have) until a real single CPC
+  rate is decided.
+- **Resolves the standing "should strategist access be scoped?" open question**
+  (flagged unresolved earlier this session) — the mockup itself already designed the
+  answer: `assigned_strategist` (set on Campaign Setup confirm, reassignable) plus a
+  client-side My Campaigns/All Strategists toggle. No new access-control table, no
+  per-row RLS scoping — matches the existing precedent that role-tier gates access,
+  not individual rows (the one-time AM-to-group scoping on `admin_get_orders` was
+  deliberately removed earlier this project).
+
+**Frontend** — extended `/home/user/44i-io/strategist/index.html`'s existing scaffold
+in place (login already worked; already in `deploy.yml`'s cache-bust list, so zero
+deploy-workflow changes needed). Replaced the "🚧 Coming Soon" placeholder with the
+real dashboard: month picker + scope toggle, status tabs with live counts, a Campaign
+Setup review panel per pending line (IO-sourced fields, Platform picker, "budget
+varies by month" checkbox revealing a month-by-month entry list, Setup Notes,
+Confirm & Activate / Save Draft), the main pacing table grouped by Group (matching
+the mockup's group-banding), and a row-click detail panel (this month's quick-glance
+metrics, Optimize Log with Edit/Delete, the platform reference link).
+
+Split data-fetching (`fetchStrategistData()`) from initial dashboard load
+(`loadStrategistDashboard()`, which additionally resets the viewed month to the
+current one) — found and fixed during this build, before it ever shipped: every save
+handler originally called the load function directly, which would have silently
+reset a strategist back to the current month every time they edited anything while
+reviewing a past month.
+
+**Verified via Playwright** (`test-strategist-dashboard.js`), using realistic
+multi-campaign data across two strategists and three campaigns: confirmed
+`computeInPlatformBudget()` correctly applies a group's Budgeted Spend % override;
+confirmed `computeGoal()` auto-calculates impressions correctly for a CPM tactic,
+uses the manual `goal_override` for SEM, and correctly returns "needs manual entry"
+when no override is set yet; confirmed the 3-band pacing thresholds classify
+103%/78%/52% as good/warn/risk exactly as specified; confirmed `monthRowFor()`
+correctly carries a flat-budget campaign's last known Gross Budget forward into two
+consecutive unentered months, while a campaign WITH an explicit month row for the
+requested month uses that row exactly, not a carried value; confirmed My
+Campaigns/All Strategists + status-tab filtering combine correctly across
+4 scope×tab combinations (including that an unassigned Pending line is correctly
+invisible under "My Campaigns" until claimed); confirmed the main table renders
+correct group-banding and both real client rows, and the Campaign Setup panel
+renders with a working-looking Confirm & Activate/Save Draft pair. `node --check` on
+the extracted script passes clean.
+
+**Honest limitation, same as every other SQL change this session**: the trigger
+itself can't be run against a real Postgres instance from here — verified only by
+hand-tracing its logic against the JS test's own realistic `line_items` shape, not by
+actually executing it. Real end-to-end verification needs Claire to run the SQL, then
+submit one real test IO and watch a `campaign_lines` row (and its first
+`campaign_months` row) appear automatically.
+
+**Still to do**: Claire runs the SQL (tables + trigger + RPCs), then this branch
+merges to `main` before the strategist team can start using this for real feedback.

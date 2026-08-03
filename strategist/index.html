@@ -19,15 +19,37 @@
      logic scope waiting on its own review, same as everything else parked in
      io_project_tracking.md. -->
 <div id="page-strategist" style="display:none">
-  <div class="card" style="max-width:640px;margin:60px auto">
+  <div class="card" style="max-width:1500px;margin:24px auto;padding-bottom:20px">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="strategist-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <button onclick="strategistLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✕ Close</button>
     </div>
-    <div style="padding:60px 30px;text-align:center">
-      <div style="font-size:32px;margin-bottom:12px">🚧</div>
-      <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Portal — Coming Soon</h3>
-      <p style="font-size:13px;color:var(--muted)">This is a placeholder landing page. Login works — the actual strategist<br/>tools will be built here once that scope is defined.</p>
+
+    <div style="padding:16px 20px 0">
+      <!-- Top bar: month picker + My Campaigns/All Strategists scope toggle -->
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button onclick="strategistShiftMonth(-1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">‹</button>
+          <span id="strategist-month-label" style="font-size:13px;font-weight:700;color:var(--text);min-width:110px;text-align:center"></span>
+          <button onclick="strategistShiftMonth(1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">›</button>
+        </div>
+        <div style="display:flex;gap:6px;font-size:12px">
+          <span id="strategist-scope-mine" onclick="strategistSetScope('mine')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">My Campaigns</span>
+          <span id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">All Strategists</span>
+        </div>
+      </div>
+
+      <!-- Status tabs -->
+      <div id="strategist-status-tabs" style="display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:16px"></div>
+
+      <!-- Campaign Setup review panel (only rendered when the Campaign Setup tab is active) -->
+      <div id="strategist-setup-panel"></div>
+
+      <!-- Main pacing table -->
+      <div id="strategist-table-wrap" style="overflow-x:auto"></div>
+
+      <!-- Row detail panel -->
+      <div id="strategist-detail-panel" style="margin-top:16px"></div>
     </div>
   </div>
 </div>
@@ -121,7 +143,425 @@ function showStrategistPanel(show) {
     const badge = document.getElementById('strategist-user-badge');
     const roleLabel = currentStrategistUser.role === 'super' ? 'Super Admin' : 'Strategist';
     badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#8B5CF6"></span><strong style="color:var(--text)">${esc(currentStrategistUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
+    loadStrategistDashboard();
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// STRATEGIST DASHBOARD (2026-08-03) — v1 framework replacing the concept mockup.
+// Every mechanic below matches a decision already confirmed with Claire/the
+// strategist team (see io_project_tracking.md's STRATEGIST PORTAL section and
+// this session's implementation plan). Not built here, deliberately: platform-
+// report API automation, ad-group/keyword breakdown detail, and importing
+// pre-existing campaigns — all confirmed as their own later phases.
+// ══════════════════════════════════════════════════════════════════════════
+
+let ALL_CAMPAIGN_LINES = [];
+let ALL_CAMPAIGN_MONTHS = [];
+let ALL_OPTIMIZE_LOG = [];
+let BUDGETED_SPEND_RATES = { base: {}, group: {} }; // service_id -> pct, and group_id|service_id -> pct
+let strategistScope = 'mine';               // 'mine' | 'all'
+let strategistStatusTab = 'pending';        // pending | active | paused | complete
+let strategistCurrentMonth = null;          // Date, always day 1
+let strategistSelectedLineId = null;
+
+const PACING_THRESHOLDS = { good: 90, warn: 70 }; // >=90 good, 70-89.99 warn, <70 risk — Claire's confirmed spreadsheet rule
+
+function strategistMonthKey(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+function strategistMonthLabel(d) {
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+function strategistShiftMonth(delta) {
+  strategistCurrentMonth.setMonth(strategistCurrentMonth.getMonth() + delta);
+  renderStrategistDashboard();
+}
+function strategistSetScope(scope) {
+  strategistScope = scope;
+  renderStrategistDashboard();
+}
+function strategistSetStatusTab(tab) {
+  strategistStatusTab = tab;
+  strategistSelectedLineId = null;
+  renderStrategistDashboard();
+}
+
+// Fetches the four datasets fresh, WITHOUT touching any view state (current month,
+// scope, status tab, selected row) — used both by the initial load and by every save
+// handler afterward. Kept separate from loadStrategistDashboard() below on purpose:
+// re-fetching after saving one field shouldn't reset which month a strategist happens
+// to be looking at.
+async function fetchStrategistData() {
+  if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
+  const [lines, months, log, rates] = await Promise.all([
+    sb('rpc/strategist_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sb('rpc/strategist_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sb('rpc/strategist_get_optimize_log', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sb('rpc/strategist_get_budgeted_spend_rates', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+  ]);
+  ALL_CAMPAIGN_LINES = lines || [];
+  ALL_CAMPAIGN_MONTHS = months || [];
+  ALL_OPTIMIZE_LOG = log || [];
+  BUDGETED_SPEND_RATES = { base: {}, group: {} };
+  (rates || []).forEach(r => {
+    if (r.scope === 'base') BUDGETED_SPEND_RATES.base[r.service_id] = r.budgeted_spend_pct;
+    else BUDGETED_SPEND_RATES.group[r.group_id + '|' + r.service_id] = r.budgeted_spend_pct;
+  });
+}
+
+async function loadStrategistDashboard() {
+  strategistCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  try {
+    await fetchStrategistData();
+  } catch(e) {
+    showToast('Error loading dashboard: ' + e.message, 'error');
+    return;
+  }
+  renderStrategistDashboard();
+}
+
+// Effective Budgeted Spend % for a service, honoring a group-specific override —
+// same resolution order as the admin Accounting Overrides tab (group override wins,
+// else the base accounting_map rate). Never exposes 44i Cut %/Fixed Cut/Setup Fee
+// Split — this dashboard only ever needs Budgeted Spend %.
+function effectiveBudgetedSpendPct(serviceId, groupId) {
+  const groupKey = groupId + '|' + serviceId;
+  if (BUDGETED_SPEND_RATES.group[groupKey] != null) return Number(BUDGETED_SPEND_RATES.group[groupKey]);
+  return BUDGETED_SPEND_RATES.base[serviceId] != null ? Number(BUDGETED_SPEND_RATES.base[serviceId]) : null;
+}
+
+// In-Platform Budget is always computed live, never stored — same derived-vs-stored
+// principle as Retail CPM/44i CPM/Platform CPM elsewhere in this project.
+function computeInPlatformBudget(grossBudget, serviceId, groupId) {
+  if (grossBudget == null) return null;
+  const pct = effectiveBudgetedSpendPct(serviceId, groupId);
+  return pct != null ? Number(grossBudget) * pct / 100 : null;
+}
+
+// Goal: impressions for every platform except SEM (Goal = In-Platform Budget ÷ Retail
+// CPM × 1000). SEM is a known v1 gap — the catalog only stores a CPC RANGE string
+// ("$4-$12"), not a single rate, so an automatic clicks number isn't actually
+// computable yet; falls back to campaign_lines.goal_override (manual entry, same
+// trust level as Platform/monthly budgets) until a real single CPC rate is decided.
+function computeGoal(line, inPlatformBudget) {
+  const row = CATALOG_ROWS[line.service_id];
+  if (line.service_id === 'sem-bp' || !row || row.retail_cpm == null) {
+    return line.goal_override != null ? { value: Number(line.goal_override), unit: 'clicks', manual: true } : { value: null, unit: 'clicks', manual: true };
+  }
+  if (inPlatformBudget == null) return { value: null, unit: 'impr.', manual: false };
+  return { value: (inPlatformBudget / Number(row.retail_cpm)) * 1000, unit: 'impr.', manual: false };
+}
+
+function pacingPct(actual, goal) {
+  if (actual == null || goal == null || goal === 0) return null;
+  return (Number(actual) / Number(goal)) * 100;
+}
+function pacingClass(pct) {
+  if (pct == null) return '';
+  if (pct >= PACING_THRESHOLDS.good) return 'good';
+  if (pct >= PACING_THRESHOLDS.warn) return 'warn';
+  return 'risk';
+}
+function pacingPillHtml(pct) {
+  if (pct == null) return '<span style="color:var(--muted);font-size:11px">—</span>';
+  const cls = pacingClass(pct);
+  const colors = { good: ['#DDF2DE', '#2E7D42'], warn: ['#FBF3C7', '#8A6D12'], risk: ['#FBDBD6', '#A23B2E'] }[cls];
+  return `<span style="display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;background:${colors[0]};color:${colors[1]}">${Math.round(pct)}%</span>`;
+}
+
+// Finds this line's row for a specific month, carrying the prior month's Gross Budget
+// forward when the campaign's budget doesn't vary month to month and no explicit row
+// exists yet for the requested month — so a flat-budget campaign never needs its
+// number re-entered every month, only a genuinely-varying one does.
+function monthRowFor(lineId, monthDate) {
+  const key = strategistMonthKey(monthDate);
+  const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
+  const exact = rows.find(m => strategistMonthKey(new Date(m.month + 'T00:00:00')) === key);
+  if (exact) return exact;
+  const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
+  if (line && line.budget_varies_by_month) return null;
+  // Carry forward the most recent PRIOR month's gross_budget as a synthetic row.
+  const prior = rows.filter(m => m.month < monthDate.toISOString().slice(0,10)).pop();
+  return prior ? { ...prior, month: monthDate.toISOString().slice(0,10), _carried: true } : null;
+}
+
+function visibleCampaignLines() {
+  return ALL_CAMPAIGN_LINES.filter(l => {
+    if (l.status !== strategistStatusTab) return false;
+    if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return false;
+    return true;
+  });
+}
+
+function renderStrategistDashboard() {
+  document.getElementById('strategist-month-label').textContent = strategistMonthLabel(strategistCurrentMonth);
+  document.getElementById('strategist-scope-mine').style.background = strategistScope === 'mine' ? 'var(--accent)' : 'var(--light)';
+  document.getElementById('strategist-scope-mine').style.color = strategistScope === 'mine' ? '#fff' : 'var(--text)';
+  document.getElementById('strategist-scope-all').style.background = strategistScope === 'all' ? 'var(--accent)' : 'var(--light)';
+  document.getElementById('strategist-scope-all').style.color = strategistScope === 'all' ? '#fff' : 'var(--text)';
+
+  const counts = { pending: 0, active: 0, paused: 0, complete: 0 };
+  ALL_CAMPAIGN_LINES.forEach(l => {
+    if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return;
+    if (counts[l.status] != null) counts[l.status]++;
+  });
+  const tabs = [
+    ['pending', 'Campaign Setup'], ['active', 'Active'], ['paused', 'Paused'], ['complete', 'Complete']
+  ];
+  document.getElementById('strategist-status-tabs').innerHTML = tabs.map(([key, label]) => {
+    const active = strategistStatusTab === key;
+    return `<button onclick="strategistSetStatusTab('${key}')" style="font:inherit;font-size:12.5px;font-weight:600;color:${active ? 'var(--text)' : 'var(--muted)'};background:none;border:none;border-bottom:2px solid ${active ? 'var(--accent)' : 'transparent'};padding:9px 2px;cursor:pointer">${label} <span style="font-family:monospace;font-size:11px">${counts[key]}</span></button>`;
+  }).join('');
+
+  const lines = visibleCampaignLines();
+  document.getElementById('strategist-setup-panel').innerHTML = strategistStatusTab === 'pending' ? renderSetupPanels(lines) : '';
+  document.getElementById('strategist-table-wrap').innerHTML = strategistStatusTab === 'pending' ? '' : renderMainTable(lines);
+  renderStrategistDetailPanel();
+}
+
+// ── CAMPAIGN SETUP (Pending queue) ───────────────────────────────
+function renderSetupPanels(lines) {
+  if (!lines.length) return '<p style="color:var(--muted);font-size:13px;padding:20px 0">No campaigns waiting on setup.</p>';
+  return lines.map(l => {
+    const client = l.client_name || '(unknown client)';
+    const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
+    const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
+    const monthRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month));
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#FAFCFE">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <strong style="font-size:13.5px">Campaign Setup — ${esc(client)} / ${esc(l.tactic_label || l.service_id)}</strong>
+        <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:20px;background:var(--light);color:var(--muted)">Pending</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px;font-size:12px">
+        <div><label class="lbl">Client</label><div>${esc(client)}</div></div>
+        <div><label class="lbl">Tactic</label><div>${esc(l.tactic_label || l.service_id)}</div></div>
+        <div><label class="lbl">Flight</label><div>${esc(l.flight_start || '—')} – ${esc(l.flight_end || '—')}</div></div>
+        <div><label class="lbl">Gross Budget</label><div>$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo</div></div>
+        <div><label class="lbl">In-Platform Budget</label><div>${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</div></div>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="lbl">Platform</label>
+        <input id="setup-platform-${l.id}" value="${esc(l.platform || '')}" placeholder="e.g. Google Ads" style="width:220px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
+      </div>
+      <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;margin-bottom:8px">
+        <input type="checkbox" id="setup-varies-${l.id}" ${l.budget_varies_by_month ? 'checked' : ''} onchange="strategistToggleVaries('${l.id}', this.checked)"/> Budget is different by month for this campaign
+      </label>
+      <div id="setup-months-${l.id}" style="${l.budget_varies_by_month ? '' : 'display:none'};border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;background:#fff">
+        ${monthRows.map(m => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 0">
+          <span style="width:90px;color:var(--muted);font-weight:600">${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}</span>
+          <input type="number" value="${m.gross_budget ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {gross_budget: this.value})" style="width:110px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+          <span style="font-size:10px;color:var(--muted)">Gross</span>
+        </div>`).join('') || '<span style="font-size:11px;color:var(--muted)">No months entered yet.</span>'}
+        <button onclick="strategistAddSetupMonth('${l.id}')" style="margin-top:6px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);font-size:11px;cursor:pointer">+ Add month</button>
+      </div>
+      <label class="lbl">Setup Notes</label>
+      <textarea id="setup-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px;margin-bottom:12px" placeholder="What's this waiting on before it can go live?">${esc(l.setup_notes || '')}</textarea>
+      <div style="display:flex;gap:10px">
+        <button onclick="strategistConfirmActivate('${l.id}')" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm &amp; Activate</button>
+        <button onclick="strategistSaveDraft('${l.id}')" style="padding:8px 16px;border-radius:7px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Save Draft</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function strategistToggleVaries(lineId, checked) {
+  document.getElementById('setup-months-' + lineId).style.display = checked ? '' : 'none';
+  strategistSaveLine(lineId, { budget_varies_by_month: checked }, false);
+}
+
+async function strategistAddSetupMonth(lineId) {
+  const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
+  const last = rows[rows.length - 1];
+  const next = last ? new Date(last.month + 'T00:00:00') : new Date();
+  next.setMonth(next.getMonth() + 1);
+  await strategistSaveMonth(lineId, next.toISOString().slice(0,10), { gross_budget: last ? last.gross_budget : null });
+}
+
+async function strategistSaveMonth(lineId, monthStr, data) {
+  try {
+    await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+      p_campaign_line_id: lineId, p_month: monthStr,
+      p_data: Object.fromEntries(Object.entries(data).map(([k,v]) => [k, v === '' ? null : v]))
+    }) });
+    await fetchStrategistData();
+    renderStrategistDashboard();
+  } catch(e) { showToast('Error saving month: ' + e.message, 'error'); }
+}
+
+async function strategistSaveLine(lineId, data, reload) {
+  try {
+    await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: lineId, p_data: data
+    }) });
+    if (reload !== false) { await fetchStrategistData(); renderStrategistDashboard(); }
+    else showToast('Saved');
+  } catch(e) { showToast('Error saving: ' + e.message, 'error'); }
+}
+
+async function strategistConfirmActivate(lineId) {
+  const platform = document.getElementById('setup-platform-' + lineId).value.trim();
+  const notes = document.getElementById('setup-notes-' + lineId).value.trim();
+  if (!platform) { showToast('Pick a platform before activating.', 'error'); return; }
+  await strategistSaveLine(lineId, {
+    platform, setup_notes: notes || null, status: 'active', assigned_strategist: currentStrategistUser.name
+  });
+  showToast('Campaign activated!');
+}
+
+async function strategistSaveDraft(lineId) {
+  const platform = document.getElementById('setup-platform-' + lineId).value.trim();
+  const notes = document.getElementById('setup-notes-' + lineId).value.trim();
+  await strategistSaveLine(lineId, { platform: platform || null, setup_notes: notes || null });
+  showToast('Draft saved');
+}
+
+// ── MAIN PACING TABLE ────────────────────────────────────────────
+function renderMainTable(lines) {
+  if (!lines.length) return '<p style="color:var(--muted);font-size:13px;padding:20px 0">No campaigns in this tab.</p>';
+  const byGroup = {};
+  lines.forEach(l => { (byGroup[l.group_name || '(no group)'] = byGroup[l.group_name || '(no group)'] || []).push(l); });
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1400px">
+    <thead><tr style="background:var(--light)">
+      ${['Client','Tactic','Platform','Flight','Gross Budget','In-Platform Budget','Actual Spend','Spend Pacing','Goal','Actual Perf.','Perf. Pacing','Optimize Log','Notes'].map(h =>
+        `<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${h}</th>`).join('')}
+    </tr></thead><tbody>`;
+
+  Object.keys(byGroup).forEach(groupName => {
+    html += `<tr style="background:#EFF6FF"><td colspan="13" style="padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--accent)">${esc(groupName)}</td></tr>`;
+    byGroup[groupName].forEach(l => {
+      const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
+      const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
+      const goal = computeGoal(l, inPlatform);
+      const spendPacing = pacingPct(monthRow.actual_spend, inPlatform);
+      const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
+      const perfPacing = pacingPct(actualPerf, goal.value);
+      const logCount = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id).length;
+      const selected = strategistSelectedLineId === l.id;
+      html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
+        <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
+        <td style="padding:9px 10px">${esc(l.tactic_label || l.service_id)}</td>
+        <td style="padding:9px 10px"><input value="${esc(l.platform || '')}" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="width:110px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11.5px"/></td>
+        <td style="padding:9px 10px;white-space:nowrap">${esc(l.flight_start || '—')} – ${esc(l.flight_end || '—')}</td>
+        <td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
+        <td style="padding:9px 10px">${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</td>
+        <td style="padding:9px 10px">${monthRow.actual_spend != null ? '$' + Number(monthRow.actual_spend).toLocaleString() : '—'}</td>
+        <td style="padding:9px 10px">${pacingPillHtml(spendPacing)}</td>
+        <td style="padding:9px 10px">${goal.value != null ? Math.round(goal.value).toLocaleString() + ' ' + goal.unit : (goal.manual ? '— (enter manually)' : '—')}</td>
+        <td style="padding:9px 10px">${actualPerf != null ? Number(actualPerf).toLocaleString() + ' ' + goal.unit : '—'}</td>
+        <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>
+        <td style="padding:9px 10px">${logCount} ${logCount === 1 ? 'entry' : 'entries'}</td>
+        <td style="padding:9px 10px;color:var(--muted);max-width:160px">${esc(l.setup_notes || '—')}</td>
+      </tr>`;
+    });
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function strategistSelectLine(lineId) {
+  strategistSelectedLineId = strategistSelectedLineId === lineId ? null : lineId;
+  renderStrategistDashboard();
+}
+
+// ── ROW DETAIL PANEL ──────────────────────────────────────────────
+function renderStrategistDetailPanel() {
+  const panel = document.getElementById('strategist-detail-panel');
+  if (!strategistSelectedLineId) { panel.innerHTML = ''; return; }
+  const l = ALL_CAMPAIGN_LINES.find(x => x.id === strategistSelectedLineId);
+  if (!l) { panel.innerHTML = ''; return; }
+  const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
+  const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
+  const ctr = (monthRow.actual_clicks != null && monthRow.actual_impressions) ? (monthRow.actual_clicks / monthRow.actual_impressions * 100) : null;
+
+  panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;background:#fff">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
+      <strong style="font-size:13px">${esc(l.client_name || '(unknown)')} / ${esc(l.tactic_label || l.service_id)}</strong>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
+        ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
+      </div>
+    </div>
+
+    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">This month's numbers</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      ${[['Clicks','actual_clicks'],['Impressions','actual_impressions'],['Conversions','actual_conversions'],['Total Visits','actual_total_visits']].map(([label, field]) => `
+        <div style="padding:8px 12px;border-radius:8px;background:var(--light);border:1px solid var(--border);min-width:100px">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:3px">${label}</div>
+          <input type="number" value="${monthRow[field] ?? ''}" onchange="strategistSaveMonth('${l.id}', '${strategistCurrentMonth.toISOString().slice(0,10)}', {${field}: this.value})" style="width:80px;padding:3px 5px;border:none;background:transparent;font-family:monospace;font-size:14px;font-weight:700"/>
+        </div>`).join('')}
+      <div style="padding:8px 12px;border-radius:8px;background:var(--light);border:1px solid var(--border);min-width:100px">
+        <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:3px">CTR</div>
+        <div style="font-family:monospace;font-size:14px;font-weight:700">${ctr != null ? ctr.toFixed(2) + '%' : '—'}</div>
+      </div>
+    </div>
+
+    ${l.service_id === 'sem-bp' || !CATALOG_ROWS[l.service_id]?.retail_cpm ? `
+    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Goal (manual — no single rate on file yet)</p>
+    <input type="number" value="${l.goal_override ?? ''}" onchange="strategistSaveLine('${l.id}', {goal_override: this.value}, false)" placeholder="Clicks goal" style="width:120px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:16px"/>
+    ` : ''}
+
+    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Optimize log</p>
+    ${log.map(o => `<div style="display:flex;align-items:flex-start;gap:14px;padding:8px 0;border-top:1px solid var(--border)">
+      <span style="font-family:monospace;font-size:11px;color:var(--muted);width:80px;flex:none">${esc(o.entry_date)}</span>
+      <span style="font-size:12.5px;flex:1">${esc(o.note)}</span>
+      <span style="flex:none;display:flex;gap:8px">
+        <a onclick="strategistEditLogEntry('${l.id}','${o.id}')" style="font-size:11px;font-weight:600;color:var(--accent);cursor:pointer">Edit</a>
+        <a onclick="strategistDeleteLogEntry('${o.id}')" style="font-size:11px;font-weight:600;color:#EF4444;cursor:pointer">Delete</a>
+      </span>
+    </div>`).join('') || '<p style="font-size:12px;color:var(--muted)">No entries yet.</p>'}
+
+    <div id="log-entry-form-${l.id}" style="margin-top:12px;display:flex;gap:8px;align-items:flex-end">
+      <div>
+        <label class="lbl">Date</label>
+        <input type="date" id="log-date-${l.id}" value="${new Date().toISOString().slice(0,10)}" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+      </div>
+      <div style="flex:1">
+        <label class="lbl">What was changed</label>
+        <input type="text" id="log-note-${l.id}" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+      </div>
+      <input type="hidden" id="log-edit-id-${l.id}"/>
+      <button onclick="strategistSaveLogEntry('${l.id}')" style="padding:7px 14px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Add</button>
+    </div>
+  </div>`;
+}
+
+function strategistEditLogEntry(lineId, logId) {
+  const entry = ALL_OPTIMIZE_LOG.find(o => o.id === logId);
+  if (!entry) return;
+  document.getElementById('log-date-' + lineId).value = entry.entry_date;
+  document.getElementById('log-note-' + lineId).value = entry.note;
+  document.getElementById('log-edit-id-' + lineId).value = entry.id;
+}
+
+async function strategistSaveLogEntry(lineId) {
+  const date = document.getElementById('log-date-' + lineId).value;
+  const note = document.getElementById('log-note-' + lineId).value.trim();
+  const editId = document.getElementById('log-edit-id-' + lineId).value || null;
+  if (!note) { showToast('Enter what was changed.', 'error'); return; }
+  try {
+    await sb('rpc/strategist_save_optimize_log', { method: 'POST', body: JSON.stringify({
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+      p_id: editId, p_campaign_line_id: lineId, p_entry_date: date, p_note: note
+    }) });
+    await fetchStrategistData();
+    strategistSelectedLineId = lineId;
+    renderStrategistDashboard();
+    showToast('Optimize log saved');
+  } catch(e) { showToast('Error saving log entry: ' + e.message, 'error'); }
+}
+
+async function strategistDeleteLogEntry(logId) {
+  try {
+    await sb('rpc/strategist_delete_optimize_log', { method: 'POST', body: JSON.stringify({
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: logId
+    }) });
+    await fetchStrategistData();
+    renderStrategistDashboard();
+    showToast('Entry deleted');
+  } catch(e) { showToast('Error deleting entry: ' + e.message, 'error'); }
 }
 
 function strategistLogout() {
