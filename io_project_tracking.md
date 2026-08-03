@@ -4959,3 +4959,46 @@ Verified via Playwright:
   passes clean on both files.
 
 No SQL changes for any of this — all three are frontend-only.
+
+**Same day, follow-up: In-Platform Budget override, for verifying the auto-calc
+math.** Claire: "we will also need to be able to override the in platform spend
+while we confirm all of our logic is working correctly." Same "override always
+wins" pattern just built for Goal, applied one level down — In-Platform Budget is
+itself a per-MONTH figure (like Gross Budget), so the override lives on
+`campaign_months.in_platform_override`, not on `campaign_lines` like `goal_override`.
+
+- New `effectiveInPlatformBudget(monthRow, serviceId, groupId)` wraps
+  `computeInPlatformBudget()`: returns the override when set, else the normal
+  Gross × Budgeted Spend % calculation, else null. All three call sites that used to
+  call `computeInPlatformBudget()` directly on a month row (Campaign Setup, the main
+  table, the detail panel) now go through this instead — one place, not three
+  copies that could drift.
+- Added to the detail panel's Monthly History editor (not the Setup panel — this is
+  specifically for ongoing verification of existing campaigns, not first entry): an
+  In-Platform input next to Gross Budget for each month, placeholder showing what
+  the real auto-calculated value is for reference, accent-highlighted border when an
+  override is actually set (same visual language as every other override in this
+  app).
+- **Goal recalculates off the overridden In-Platform value, not the raw
+  auto-calculated one** — confirmed deliberately, since In-Platform Budget feeds
+  directly into the Goal formula; overriding one without the other flowing through
+  would have made the override pointless for actually checking whether the whole
+  chain of math is right.
+
+**New SQL** (`strategist-portal-v1-part4-2026-08-04.sql`): `alter table
+campaign_months add column if not exists in_platform_override numeric;`, plus
+`strategist_get_campaign_months`/`strategist_save_campaign_month` updated to
+read/write it — same pattern as every other column added this way.
+
+Verified via Playwright (`test-strategist-inplatform-override.js`): confirmed an
+override wins over a real auto-calculated value; confirmed it's the only way to get
+a number at all when there's no Gross Budget entered; confirmed a null month row
+returns null rather than throwing; confirmed Goal correctly reflects the OVERRIDDEN
+In-Platform value (1500) rather than the un-overridden auto value (2000) it would
+otherwise have calculated to; confirmed the detail panel shows the real auto value
+as a placeholder for a month with no override, and the stored override value (with
+the accent-highlighted border) for a month that has one. Re-ran every other
+strategist Playwright test — all still pass unchanged. `node --check` passes clean.
+
+**Still to do**: Claire runs `strategist-portal-v1-part4-2026-08-04.sql`, then this
+branch merges to `main`.

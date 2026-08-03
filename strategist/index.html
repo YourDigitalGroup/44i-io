@@ -718,6 +718,19 @@ function computeInPlatformBudget(grossBudget, serviceId, groupId) {
   return pct != null ? Number(grossBudget) * pct / 100 : null;
 }
 
+// campaign_months.in_platform_override — an explicit override always wins over the
+// computed value, same "override wins" pattern as Goal (2026-08-04, per Claire:
+// "we will also need to be able to override the in platform spend while we confirm
+// all of our logic is working correctly"). Per-MONTH, not per-campaign, since
+// In-Platform Budget (like Gross Budget) is itself a per-month figure — lives on
+// campaign_months, not campaign_lines. Every call site that used to call
+// computeInPlatformBudget() directly on a monthRow now goes through this instead.
+function effectiveInPlatformBudget(monthRow, serviceId, groupId) {
+  if (!monthRow) return null;
+  if (monthRow.in_platform_override != null) return Number(monthRow.in_platform_override);
+  return computeInPlatformBudget(monthRow.gross_budget, serviceId, groupId);
+}
+
 // Goal: impressions for every platform except SEM (Goal = In-Platform Budget ÷ Retail
 // CPM × 1000). SEM is a known v1 gap — the catalog only stores a CPC RANGE string
 // ("$4-$12"), not a single rate, so an automatic clicks number isn't actually
@@ -811,7 +824,7 @@ function renderSetupPanels(lines) {
   return lines.map(l => {
     const client = l.client_name || '(unknown client)';
     const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
-    const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
+    const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
     const monthRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month));
     return `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#FAFCFE">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -960,7 +973,7 @@ function renderMainTable(lines) {
     html += `<tr style="background:${esc(bg)}"><td colspan="13" style="padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:${fg}">${esc(groupName)}</td></tr>`;
     byGroup[groupName].rows.forEach(l => {
       const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
-      const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
+      const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
       const goal = computeGoal(l, inPlatform);
       const spendPacing = pacingPct(monthRow.actual_spend, inPlatform);
       const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
@@ -1009,7 +1022,7 @@ function renderStrategistDetailPanel() {
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
   const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
   const ctr = (monthRow.actual_clicks != null && monthRow.actual_impressions) ? (monthRow.actual_clicks / monthRow.actual_impressions * 100) : null;
-  const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
+  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
   const goal = computeGoal(l, inPlatform);
   // What Goal would auto-calculate to WITHOUT the override, shown as a reference —
   // helps tell "there's nothing to auto-calculate from" apart from "there IS a real
@@ -1039,16 +1052,21 @@ function renderStrategistDetailPanel() {
       </div>
     </div>
 
-    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Monthly history</p>
+    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 4px">Monthly history</p>
+    <p style="font-size:10.5px;color:var(--muted);margin:0 0 8px">In-Platform is normally computed automatically (Gross × Budgeted Spend %) — the override next to it is there while we're confirming that math is right; leave it blank once it's trusted.</p>
     <div style="border:1px solid var(--border);border-radius:8px;padding:4px 12px;margin-bottom:16px;background:var(--light)">
-      ${ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month)).map(m => `
+      ${ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month)).map(m => {
+        const autoInPlatform = computeInPlatformBudget(m.gross_budget, l.service_id, l.group_id);
+        return `
         <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--border)">
           <span style="width:90px;color:var(--muted);font-weight:600">${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}</span>
           <input type="number" value="${m.gross_budget ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {gross_budget: this.value})" placeholder="Gross" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <input type="number" value="${m.in_platform_override ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {in_platform_override: this.value})" placeholder="${autoInPlatform != null ? 'Auto: ' + Math.round(autoInPlatform) : 'In-Platform override'}" title="${m.in_platform_override != null ? 'Overridden — auto-calculated value is ' + (autoInPlatform != null ? '$' + Math.round(autoInPlatform) : 'unavailable') : ''}" style="width:${autoInPlatform != null ? '110px' : '130px'};padding:5px 6px;border-radius:6px;border:1px ${m.in_platform_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
           <input type="number" value="${m.actual_spend ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_spend: this.value})" placeholder="Actual spend" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
           <input type="number" value="${m.actual_clicks ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_clicks: this.value})" placeholder="Clicks" style="width:75px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
           <input type="number" value="${m.actual_impressions ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_impressions: this.value})" placeholder="Impr." style="width:85px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
-        </div>`).join('') || '<p style="font-size:11px;color:var(--muted);padding:6px 0">No months on record yet.</p>'}
+        </div>`;
+      }).join('') || '<p style="font-size:11px;color:var(--muted);padding:6px 0">No months on record yet.</p>'}
       <button onclick="strategistAddHistoryMonth('${l.id}')" style="margin:8px 0;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">+ Add a past month</button>
     </div>
 
