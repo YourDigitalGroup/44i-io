@@ -5289,3 +5289,63 @@ those two are unaffected by this change. Confirmed also via
 'accounting_map'` (Claire ran this) that `accounting_map` had no `platform_cpm`
 column before this change — the pre-existing "Platform CPM" she'd seen in the list
 view was the old derived display value, not a real stored column.
+
+## 2026-08-05 (cont'd) — Architecture confirmed correct via a real media plan; SQL run + merged
+
+Claire pushed back twice more before running the SQL, both worth recording since they
+were reasonable readings of ambiguous evidence, not confusion:
+
+1. She'd checked Platform CPM against her "current revenue spreadsheet" and it
+   matched — turned out this was checking the OLD derived value against a reference
+   that used the same formula, a tautology, not independent confirmation. Resolved by
+   pulling real data directly from Supabase (a read-only diagnostic query joining
+   `campaign_lines`/`clients`/`groups`/`accounting_map`) for all four real campaigns:
+   **none of the four groups (Galaxy, Kensington Digital Media, SagamoreHill Digital,
+   and the arbitrary-test-only Prairie Flower row) had a group-level override at all**,
+   and the base % differed from the real spreadsheet-confirmed % in all three real
+   cases (Galaxy 20% vs real 15%, Kensington 28.89% vs real 26.0%, SagamoreHill 21.67%
+   vs real 19.47%) — confirming the base rates themselves need auditing, not just
+   missing overrides. Since Platform CPM = Retail CPM × the correct %, for these three
+   the real Platform CPM is directly computable with no further digging: Galaxy/td-geo
+   $1.50, Kensington/pa-geo $11.70, SagamoreHill/sma-fb $2.92.
+2. She shared a full pre-campaign media plan (not a pacing sheet) with THREE CPM
+   columns per tactic (44i CPM / Kingfish CPM / Wholesale CPM). Working the actual
+   numbers backward confirmed: Est Total Impressions = Budget ÷ Kingfish CPM × 1000
+   (NOT ÷ 44i CPM), and 44i Billing = Impressions × Wholesale CPM ÷ 1000 — Claire
+   confirmed this formula directly. This is an exact structural match to what was
+   already rebuilt: Kingfish CPM ≡ our Retail CPM (drives Goal), Wholesale CPM ≡ our
+   new Platform CPM (drives In-Platform Budget), confirming the architecture is right.
+   The catalog's stored `retail_cpm` for td-geo ($10) didn't match this real plan's
+   Kingfish CPM ($15) though — flagged that Retail CPM itself may need the same kind
+   of per-service audit Platform CPM needs, and possibly a group-level override
+   mechanism of its own eventually (parked, not built — no evidence yet that it's
+   needed beyond this one data point).
+
+Also clarified for Claire, since it came up twice: Platform CPM and Retail CPM are
+NOT interchangeable — Retail CPM alone can only ever reconstruct the original Gross
+Budget, never the actual platform spend; both numbers are genuinely required for the
+two different outputs (Goal vs. In-Platform Budget). Confirmed she can defer entering
+Platform CPM (will show blank until entered, not wrong) while she works on other
+priorities first.
+
+**SQL run and branch merged as of this session.**
+
+**Real bug found immediately during her first post-merge test:** clearing a Goal
+override (deleting the value, saving blank) threw `Supabase error 400: {"code":
+"22P02", "message":"invalid input syntax for type numeric: \"\""}`. Root cause:
+`strategistSaveLine()` sent the raw form value straight through — an empty input's
+`this.value` is `''`, and `strategist_save_campaign_line`'s SQL casts
+`(p_data->>'goal_override')::numeric` directly, which Postgres rejects for an empty
+string. `strategistSaveMonth()` already handled this correctly (converts `''` to
+`null` before sending); `strategistSaveLine()` never got the same treatment since it
+was written earlier and only started handling numeric fields once Goal override was
+added later. Fixed by adding the identical `Object.entries(...).map(([k,v]) => v ===
+'' ? null : v)` conversion to `strategistSaveLine()`. No SQL change needed — this was
+frontend-only, the RPC's cast logic is correct once it actually receives `null`
+instead of `''`.
+
+Verified via Playwright (new `test-strategist-clear-override.js`): confirmed clearing
+an override now sends `null`, never `''`; confirmed a real value still passes through
+unmodified; confirmed a string field (platform) is unaffected by the conversion.
+Re-ran goal-override, goal-override-refresh, pause-flight, import, and dashboard
+tests — all still pass unchanged. `node --check` passes clean.

@@ -997,8 +997,9 @@ async function strategistSaveMonth(lineId, monthStr, data) {
 
 async function strategistSaveLine(lineId, data, reload) {
   try {
+    const cleanData = Object.fromEntries(Object.entries(data).map(([k,v]) => [k, v === '' ? null : v]));
     await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
-      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: lineId, p_data: data
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: lineId, p_data: cleanData
     }) });
     if (reload !== false) { await fetchStrategistData(); renderStrategistDashboard(); }
     else showToast('Saved');
