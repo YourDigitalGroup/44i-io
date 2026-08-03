@@ -5060,3 +5060,36 @@ search restores the full list. Re-ran `test-strategist-import.js` — still pass
 unchanged. `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-05 — Real bug found while answering a clarifying question
+
+Claire: "To test previous month data if I paste a report for the previous month it
+will update those numbers?" Checking the actual `monthRowFor()` logic to answer
+precisely surfaced a real gap rather than a purely hypothetical one: pasting a
+report (or using "+ Add a past month") for a month that never had its own Gross
+Budget entered creates a `campaign_months` row with real actuals but
+`gross_budget: null`. Because `monthRowFor()` returned that exact row as-is whenever
+one existed, In-Platform Budget for that specific month would have silently gone
+blank — the row's own null `gross_budget` won outright over carrying forward from
+an earlier month, even for a flat-budget campaign that should never need re-entering
+the same number every month.
+
+Fixed: `monthRowFor()` now checks, for an exact row with `gross_budget == null` on a
+campaign that doesn't vary by month, whether an earlier month has a real budget to
+carry forward — if so, merges that carried budget into the row while keeping ALL of
+that row's own real actuals (spend/clicks/impressions/conversions/total visits)
+untouched. A campaign that genuinely DOES vary by month is deliberately excluded
+from this — no budget is ever assumed for it, exactly as before.
+
+Verified via Playwright (`test-strategist-past-month-report.js`): confirmed a
+report-created June row (real actuals, no budget of its own) correctly carries
+forward May's $2,500 budget while keeping June's own actual spend/clicks intact;
+confirmed In-Platform Budget for June still computes correctly off the carried
+budget (not null); confirmed a campaign that DOES vary by month never carries
+forward, keeping its report-created row's null budget exactly as entered; confirmed
+a month with its own real budget (not report-created) is returned completely
+unmodified. Re-ran every other strategist Playwright test (dashboard, import, paste
+report, bulk import, group color, goal override, in-platform override, client
+search) — all still pass unchanged. `node --check` passes clean.
+
+No SQL for this one — frontend only.

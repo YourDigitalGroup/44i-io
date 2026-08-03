@@ -804,11 +804,27 @@ function monthRowFor(lineId, monthDate) {
   const key = strategistMonthKey(monthDate);
   const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
   const exact = rows.find(m => strategistMonthKey(new Date(m.month + 'T00:00:00')) === key);
-  if (exact) return exact;
   const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
+  const priorRow = () => rows.filter(m => m.month < monthDate.toISOString().slice(0,10)).pop();
+
+  if (exact) {
+    // Pasting a platform report (or adding a past month manually) can create/update
+    // a month's ACTUALS before that month ever got a real Gross Budget entered —
+    // found live 2026-08-05, checking Claire's own question about testing a past
+    // month. Without this, that exact row's own gross_budget (null) would win over
+    // carry-forward entirely, silently blanking In-Platform Budget for a month that
+    // otherwise has real numbers on it. If the campaign doesn't vary month to month,
+    // still carry the budget forward from the most recent PRIOR month while keeping
+    // this row's own real actuals.
+    if (exact.gross_budget == null && line && !line.budget_varies_by_month) {
+      const prior = priorRow();
+      if (prior) return { ...exact, gross_budget: prior.gross_budget, _carried: true };
+    }
+    return exact;
+  }
   if (line && line.budget_varies_by_month) return null;
   // Carry forward the most recent PRIOR month's gross_budget as a synthetic row.
-  const prior = rows.filter(m => m.month < monthDate.toISOString().slice(0,10)).pop();
+  const prior = priorRow();
   return prior ? { ...prior, month: monthDate.toISOString().slice(0,10), _carried: true } : null;
 }
 
