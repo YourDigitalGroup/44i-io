@@ -5132,4 +5132,74 @@ confirming with her team which model is actually correct before more real IOs
 come in. If the Platform-CPM model turns out to be the real one, this system needs
 a new input (Platform CPM per service/group) alongside or instead of the current
 flat Budgeted Spend % override — a schema question, not just a data-entry fix.
+
+## 2026-08-05 (cont'd) — Pause/Resume control + readable flight dates
+
+Two more from real usage. First: "how can I mark a campaign as paused?" — there was
+genuinely no way to do this once a campaign left the pending queue. Status was only
+ever set on initial import/activation; nothing in the main table or detail panel
+could change it afterward, even though the status tabs (Campaign Setup/Active/
+Paused/Complete) already existed and fully expected a campaign to be able to move
+between them.
+
+Fixed: added a Status dropdown (Active/Paused/Complete) to the top of the detail
+panel, saving via the same `strategistSaveLine()` path (with its default reload/
+re-render, per the Goal-override fix earlier today) so switching it immediately
+moves the campaign to the matching tab. Use case Claire described — flighted June
+through September but skipping August — is handled by pausing before August and
+switching back to Active once the campaign resumes; the campaign's own flight
+dates (June–September) stay untouched, since those describe the IO's contracted
+range, not month-to-month on/off state.
+
+Second: "could we look at a different way to show the flight dates, right now it
+looks like a bunch of numbers." Flight dates were rendering as raw ISO strings
+(`2026-06-01 – 2026-09-30`) straight from the database. Added
+`strategistFormatFlightRange()`, which renders each side as `Jun 1, 2026` via
+`toLocaleDateString`, applied to both the main table's Flight column and the
+Campaign Setup panel's Flight field. A campaign missing one side (no end date yet)
+still shows `—` for that side rather than breaking the format.
+
+Verified via Playwright (new `test-strategist-pause-flight.js`): confirmed the
+main table shows the readable date format and never the raw ISO string; confirmed
+switching the Status dropdown to Paused saves correctly, updates local data,
+removes the campaign from the Active tab's table while the detail panel (keyed on
+selected id, not tab) stays visible and its own dropdown reflects Paused; confirmed
+switching to the Paused tab shows the campaign there; confirmed switching back to
+Active resumes it correctly. Re-ran `test-strategist-dashboard.js` and
+`test-strategist-import.js` — both still pass unchanged. `node --check` passes
+clean.
+
+No SQL for this one — frontend only.
 Parked pending that confirmation.
+
+## 2026-08-05 (cont'd) — Real bug: campaigns showed in months outside their own flight
+
+Claire: "I noticed that this first campaign that I added shows up in months that it
+is not active... it started in June but shows in April and ends in November but
+shows in December." Checked `visibleCampaignLines()` and confirmed: it never
+consulted `flight_start`/`flight_end` at all. The main table showed every
+active/paused/complete campaign regardless of which month the top-bar month
+picker was set to — flight dates were purely a display field, not something that
+actually gated visibility.
+
+Fixed: added `strategistLineActiveInMonth(line, monthDate)`, comparing the
+selected month against `flight_start`/`flight_end` (inclusive on both ends, using
+the same month-key comparison as the carry-forward logic). Applied it in
+`visibleCampaignLines()` and in the tab-count logic in `renderStrategistDashboard()`
+so the counts next to each tab stay consistent with what's actually shown.
+Deliberately excluded the **pending** tab from this filter — Campaign Setup is a
+to-do queue, not a monthly performance view; a campaign flighted to start next
+month still needs its setup done now, so hiding it there would be actively harmful.
+A campaign with no flight dates set at all is never filtered (no constraint to
+apply).
+
+Verified via Playwright (new `test-strategist-flight-month-filter.js`): a campaign
+flighted June–November 2026 is hidden in April (before start) and December (after
+end), and shown in June and November themselves (both flight-range endpoints
+inclusive); a campaign with no flight dates is always shown; a pending setup task
+flighted to start months in the future still shows in the Campaign Setup queue
+regardless of the month picker. Re-ran `test-strategist-dashboard.js`,
+`test-strategist-import.js`, and `test-strategist-pause-flight.js` — all still pass
+unchanged. `node --check` passes clean.
+
+No SQL for this one — frontend only.

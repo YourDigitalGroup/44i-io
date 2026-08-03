@@ -253,6 +253,15 @@ function strategistShiftMonth(delta) {
   strategistCurrentMonth.setMonth(strategistCurrentMonth.getMonth() + delta);
   renderStrategistDashboard();
 }
+function strategistFormatFlightDate(dateStr) {
+  if (!dateStr) return null;
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function strategistFormatFlightRange(start, end) {
+  const s = strategistFormatFlightDate(start), e = strategistFormatFlightDate(end);
+  if (!s && !e) return '—';
+  return `${s || '—'} – ${e || '—'}`;
+}
 function strategistSetScope(scope) {
   strategistScope = scope;
   renderStrategistDashboard();
@@ -828,10 +837,21 @@ function monthRowFor(lineId, monthDate) {
   return prior ? { ...prior, month: monthDate.toISOString().slice(0,10), _carried: true } : null;
 }
 
+function strategistLineActiveInMonth(line, monthDate) {
+  const monthKey = strategistMonthKey(monthDate);
+  if (line.flight_start && monthKey < strategistMonthKey(new Date(line.flight_start + 'T00:00:00'))) return false;
+  if (line.flight_end && monthKey > strategistMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
+  return true;
+}
+
 function visibleCampaignLines() {
   return ALL_CAMPAIGN_LINES.filter(l => {
     if (l.status !== strategistStatusTab) return false;
     if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return false;
+    // Pending is a setup to-do queue, not a monthly performance view -- a campaign
+    // flighted to start next month still needs its setup done now, so it stays
+    // visible regardless of the month picker.
+    if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return false;
     return true;
   });
 }
@@ -846,6 +866,7 @@ function renderStrategistDashboard() {
   const counts = { pending: 0, active: 0, paused: 0, complete: 0 };
   ALL_CAMPAIGN_LINES.forEach(l => {
     if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return;
+    if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return;
     if (counts[l.status] != null) counts[l.status]++;
   });
   const tabs = [
@@ -878,7 +899,7 @@ function renderSetupPanels(lines) {
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px;font-size:12px">
         <div><label class="lbl">Client</label><div>${esc(client)}</div></div>
         <div><label class="lbl">Tactic</label><div>${esc(l.tactic_label || l.service_id)}</div></div>
-        <div><label class="lbl">Flight</label><div>${esc(l.flight_start || '—')} – ${esc(l.flight_end || '—')}</div></div>
+        <div><label class="lbl">Flight</label><div>${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</div></div>
         <div><label class="lbl">Gross Budget</label><div>$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo</div></div>
         <div><label class="lbl">In-Platform Budget</label><div>${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</div></div>
       </div>
@@ -1035,7 +1056,7 @@ function renderMainTable(lines) {
           </select>
           <input type="text" value="${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? esc(l.platform) : ''}" placeholder="Platform" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="display:${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'inline-block' : 'none'};width:90px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px;margin-top:2px"/>
         </td>
-        <td style="padding:9px 10px;white-space:nowrap">${esc(l.flight_start || '—')} – ${esc(l.flight_end || '—')}</td>
+        <td style="padding:9px 10px;white-space:nowrap">${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</td>
         <td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${monthRow.actual_spend != null ? '$' + Number(monthRow.actual_spend).toLocaleString() : '—'}</td>
@@ -1081,6 +1102,16 @@ function renderStrategistDetailPanel() {
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
       </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <label class="lbl" style="margin:0">Status</label>
+      <select onchange="strategistSaveLine('${l.id}', {status: this.value})" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;font-weight:600">
+        <option value="active" ${l.status === 'active' ? 'selected' : ''}>Active</option>
+        <option value="paused" ${l.status === 'paused' ? 'selected' : ''}>Paused</option>
+        <option value="complete" ${l.status === 'complete' ? 'selected' : ''}>Complete</option>
+      </select>
+      <span style="font-size:11px;color:var(--muted)">Pausing moves this campaign to the Paused tab; switch it back to Active to pick up where you left off.</span>
     </div>
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">This month's numbers</p>
