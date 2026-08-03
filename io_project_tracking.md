@@ -5002,3 +5002,41 @@ strategist Playwright test — all still pass unchanged. `node --check` passes c
 
 **Still to do**: Claire runs `strategist-portal-v1-part4-2026-08-04.sql`, then this
 branch merges to `main`.
+
+**Same day, follow-up: SQL bookkeeping + two more real-use questions.**
+
+**"How many SQLs do I need to run?"** — fair question after four separate partial
+patches in one day. Confirmed which had actually been run (the original tables/
+trigger/RPCs, and the client-picker update) vs. which were only ever sent but never
+explicitly confirmed (the group-color update, the In-Platform override update).
+Combined the two unconfirmed ones into a single
+`strategist-portal-v1-remaining-2026-08-04.sql` — safe to run even if part of it
+turns out to already be applied, since it's entirely `create or replace`/
+`add column if not exists`, nothing destructive.
+
+**"For the bulk import do we need to include the group or will it match based on
+what is already in the system, what happens if there is one that doesn't match?"**
+Answered, no code change needed — this was already the built behavior: Group is
+NEVER typed in. Each row only needs a Client name; `resolveBulkClient()` looks that
+client up in the real system and pulls its `group_id` from there automatically
+(every client already belongs to exactly one group). If a Client or Tactic name
+doesn't match anything real, that one row is skipped and reported back by row
+number in the results panel (`"Row 4: no client matches "..."`) — never guessed at,
+and never blocks the rest of the import; every other row that DOES resolve still
+goes through.
+
+**"For the paste platform report I think we need a way to indicate what the date
+range is for the report so it applies to the correct month."** Real gap: the tool
+silently used whichever month happened to be selected in the top bar — nothing
+stopped a report from landing on the wrong month if that hadn't been switched
+first. Added an explicit Month field directly inside the paste-report form itself
+(defaults to the top bar's current month, but is fully independent of it and never
+changes the top bar) — required before matching can run, same as picking a
+Platform already is.
+
+Verified via Playwright (extended `test-strategist-paste-report.js`): confirmed
+setting the report's month field to August while the top bar still shows July
+correctly saves against August, and leaves the top bar's own month completely
+unaffected; confirmed a blank report-month field is rejected before any save is
+attempted, same as a missing Platform already was. Re-ran every other strategist
+Playwright test — all still pass unchanged. `node --check` passes clean.

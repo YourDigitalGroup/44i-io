@@ -406,11 +406,18 @@ function strategistOpenPasteReportForm() {
   if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
 
   el.style.display = 'block';
+  const defaultMonthValue = strategistCurrentMonth.getFullYear() + '-' + String(strategistCurrentMonth.getMonth() + 1).padStart(2, '0');
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
-    <strong style="font-size:13px;display:block;margin-bottom:6px">Paste a platform report for ${esc(strategistMonthLabel(strategistCurrentMonth))}</strong>
-    <div style="margin-bottom:10px">
-      <label class="lbl">Platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only campaigns set to this platform will be matched</span></label>
-      ${strategistPlatformSelectHtml('paste-report-platform', '', '200px')}
+    <strong style="font-size:13px;display:block;margin-bottom:6px">Paste a platform report</strong>
+    <div style="display:flex;gap:16px;margin-bottom:10px">
+      <div>
+        <label class="lbl">Report month <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which month this report's numbers apply to, NOT the month you're currently viewing</span></label>
+        <input type="month" id="paste-report-month" value="${defaultMonthValue}" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+      <div>
+        <label class="lbl">Platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only campaigns set to this platform will be matched</span></label>
+        ${strategistPlatformSelectHtml('paste-report-platform', '', '200px')}
+      </div>
     </div>
     <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Paste the report's own export exactly as copied, header row included (Campaign Name, Spend/Cost, Clicks, Impressions, Conversions — in whatever order that platform actually uses; column NAMES are matched automatically). One campaign per line, tab- or comma-separated. Only campaigns whose "exact campaign title in the ad platform" (set on the campaign itself) matches a row will update — anything that doesn't match gets listed below.</p>
     <textarea id="paste-report-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Campaign	Cost	Clicks	Impr.
@@ -452,6 +459,8 @@ async function strategistMatchPastedReport() {
   if (!raw.trim()) { showToast('Paste a report first.', 'error'); return; }
   const platform = strategistReadPlatformValue('paste-report-platform');
   if (!platform) { showToast('Pick which platform this report is from.', 'error'); return; }
+  const reportMonthValue = document.getElementById('paste-report-month').value; // "YYYY-MM"
+  if (!reportMonthValue) { showToast('Pick which month this report is for.', 'error'); return; }
 
   let rows = parsePastedReportRows(raw);
   const columnMap = detectReportColumnMap(rows[0]);
@@ -468,7 +477,11 @@ async function strategistMatchPastedReport() {
     if (l.platform_campaign_name && l.platform === platform) byTitle[l.platform_campaign_name.trim().toLowerCase()] = l;
   });
 
-  const monthStr = strategistCurrentMonth.toISOString().slice(0,10);
+  // The report's OWN chosen month, not whatever month happens to be selected in the
+  // top bar (2026-08-04, per Claire: "we need a way to indicate what the date range
+  // is for the report so it applies to the correct month") -- avoids silently filing
+  // a report against the wrong month just because the top bar wasn't switched first.
+  const monthStr = reportMonthValue + '-01';
   const matched = [], unmatched = [];
   for (const cols of rows) {
     const title = (cols[0] || '').trim();
