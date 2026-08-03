@@ -5273,3 +5273,19 @@ for every service currently in use — nothing computes correctly until those ar
 populated. Until then, In-Platform Budget/Goal will show blank ("no rate on file")
 for any service without a Platform CPM set, same as the old "no Budgeted Spend %"
 gap behaved.
+
+**Follow-up same day:** Claire pointed out the Accounting Map tab's own header text
+still said "Retail CPM, 44i CPM, and Platform CPM are shown for reference but not
+editable here... so there's never a second number to keep in sync" — accurate for
+Retail CPM/44i CPM, but now WRONG for Platform CPM specifically, which this change
+made a real editable input for the first time. That header text reflected a
+deliberate earlier design decision (avoid a second number to keep in sync) that this
+change intentionally reverses for Platform CPM only, once real spreadsheet
+comparisons showed the derived approximation didn't hold up. Updated the header copy
+to say Platform CPM is a real entered rate now, confirmed 2026-08-05, while leaving
+the "computed, not editable" language for Retail CPM/44i CPM exactly as it was —
+those two are unaffected by this change. Confirmed also via
+`select column_name, data_type from information_schema.columns where table_name =
+'accounting_map'` (Claire ran this) that `accounting_map` had no `platform_cpm`
+column before this change — the pre-existing "Platform CPM" she'd seen in the list
+view was the old derived display value, not a real stored column.
