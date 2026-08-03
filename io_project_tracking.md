@@ -5040,3 +5040,23 @@ correctly saves against August, and leaves the top bar's own month completely
 unaffected; confirmed a blank report-month field is rejected before any save is
 attempted, same as a missing Platform already was. Re-ran every other strategist
 Playwright test — all still pass unchanged. `node --check` passes clean.
+
+**Same day, follow-up: search bar for the "+ New Campaign" Client picker.** Claire:
+"that list is really long." Added a plain search text input directly above the
+Client `<select>`, filtering its options live as you type (case-insensitive
+substring match on client name) — kept simple rather than swapping to a full
+combobox widget for one field. If the currently-selected client still matches the
+new search text, the selection stays; if it no longer matches, it's cleared rather
+than silently left selected on a client that's not even visible in the (now
+filtered) list anymore.
+
+Verified via Playwright (`test-strategist-client-search.js`): confirmed the full
+list shows initially; confirmed a search matches multiple clients sharing a
+substring ("ridge" matching both "Ridgeline Dental" and "Ridgemont Roofing") while
+excluding a non-matching one; confirmed narrowing further to a unique term leaves
+exactly one real option; confirmed a selection is preserved when a new search still
+matches it, and cleared when a new search excludes it; confirmed clearing the
+search restores the full list. Re-ran `test-strategist-import.js` — still passes
+unchanged. `node --check` passes clean.
+
+No SQL for this one — frontend only.

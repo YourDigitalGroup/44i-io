@@ -284,7 +284,8 @@ function strategistOpenImportForm() {
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
       <div>
         <label class="lbl">Client</label>
-        <select id="import-client" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+        <input type="text" id="import-client-search" oninput="strategistFilterClientOptions()" placeholder="Search clients…" style="width:100%;padding:6px 8px;border-radius:6px 6px 0 0;border:1px solid var(--border);border-bottom:none;font-size:12px"/>
+        <select id="import-client" style="width:100%;padding:7px 8px;border-radius:0 0 6px 6px;border:1px solid var(--border);font-size:12.5px">
           <option value="">— Select —</option>
           ${ALL_STRATEGIST_CLIENTS.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('')}
         </select>
@@ -331,6 +332,20 @@ function strategistOpenImportForm() {
       <button onclick="strategistOpenImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
     </div>
   </div>`;
+}
+
+// Filters the Client <select>'s options live as you type (2026-08-04, per Claire —
+// "that list is really long"), rather than swapping to a whole separate combobox
+// widget for one field. Keeps the current selection if it still matches after
+// filtering, so typing to double-check a name doesn't lose what's already picked.
+function strategistFilterClientOptions() {
+  const search = document.getElementById('import-client-search').value.trim().toLowerCase();
+  const sel = document.getElementById('import-client');
+  const currentValue = sel.value;
+  const filtered = search ? ALL_STRATEGIST_CLIENTS.filter(c => c.name.toLowerCase().includes(search)) : ALL_STRATEGIST_CLIENTS;
+  sel.innerHTML = '<option value="">— Select —</option>' +
+    filtered.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
+  if (filtered.some(c => c.id === currentValue)) sel.value = currentValue;
 }
 
 async function strategistSubmitImport() {
