@@ -37,6 +37,7 @@
           <span id="strategist-scope-mine" onclick="strategistSetScope('mine')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">My Campaigns</span>
           <span id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">All Strategists</span>
           <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
+          <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
         </div>
       </div>
 
@@ -44,6 +45,11 @@
            old IO system, ordered before this platform existed, so they don't have to
            wait on the order-insert trigger to show up here. -->
       <div id="strategist-import-form" style="display:none"></div>
+
+      <!-- Bulk "paste a platform report" matcher -- updates many campaigns' current-
+           month actuals at once, matched by campaign title, instead of opening each
+           campaign one at a time. -->
+      <div id="strategist-paste-report-form" style="display:none"></div>
 
       <!-- Status tabs -->
       <div id="strategist-status-tabs" style="display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:16px"></div>
@@ -251,6 +257,10 @@ function strategistOpenImportForm() {
         <label class="lbl">Current Gross Budget</label>
         <input type="number" id="import-gross-budget" placeholder="$/mo" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
+      <div style="grid-column:span 2">
+        <label class="lbl">Exact campaign title in the ad platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— used to match this campaign when you paste a platform report below</span></label>
+        <input id="import-platform-campaign-name" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
     </div>
     <p style="font-size:11px;color:var(--muted);margin:0 0 12px">This creates the campaign as of the current month. Once it's in the list, click into it to add any past months' budgets/actuals you want on record — as far back as makes sense for this one.</p>
     <div style="display:flex;gap:10px">
@@ -272,6 +282,7 @@ async function strategistSubmitImport() {
   const flightStart = document.getElementById('import-flight-start').value || null;
   const flightEnd = document.getElementById('import-flight-end').value || null;
   const grossBudget = document.getElementById('import-gross-budget').value;
+  const platformCampaignName = document.getElementById('import-platform-campaign-name').value.trim();
 
   if (!clientId || !serviceId) { showToast('Pick a client and a tactic.', 'error'); return; }
 
@@ -280,7 +291,8 @@ async function strategistSubmitImport() {
       p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: null,
       p_data: {
         client_id: clientId, group_id: groupId, service_id: serviceId, tactic_label: serviceLabel,
-        platform: platform || null, flight_start: flightStart, flight_end: flightEnd,
+        platform: platform || null, platform_campaign_name: platformCampaignName || null,
+        flight_start: flightStart, flight_end: flightEnd,
         status, assigned_strategist: currentStrategistUser.name
       }
     }) });
@@ -298,6 +310,89 @@ async function strategistSubmitImport() {
     renderStrategistDashboard();
     showToast('Campaign imported!');
   } catch(e) { showToast('Error importing campaign: ' + e.message, 'error'); }
+}
+
+// ── "PASTE PLATFORM REPORT" BULK MATCH (2026-08-04) ──────────────
+// Claire: "Having to go into each campaign is not realistic. Right now my spreadsheet
+// looks for the unique campaign title to pull the necessary information." Her real
+// workflow pastes an entire platform export at once and matches EVERY row to the right
+// campaign by its title (a VLOOKUP against the Layout tab) — not one campaign at a
+// time. This mirrors that exact mechanic: paste a block of rows (Campaign Name, Spend,
+// Clicks, Impressions — tab- or comma-separated, one campaign per line, matching the
+// generic shape every platform's export ultimately reduces to for this dashboard's
+// purposes), match each row's title against campaign_lines.platform_campaign_name
+// (case/whitespace-insensitive), and update the CURRENT month's actuals for every
+// match in one pass — no need to click into each row individually.
+function strategistOpenPasteReportForm() {
+  const el = document.getElementById('strategist-paste-report-form');
+  const isOpen = el.style.display !== 'none';
+  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  el.style.display = 'block';
+  el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
+    <strong style="font-size:13px;display:block;margin-bottom:6px">Paste a platform report for ${esc(strategistMonthLabel(strategistCurrentMonth))}</strong>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">One campaign per line, columns in this order: <strong>Campaign Name, Spend, Clicks, Impressions</strong> — tab- or comma-separated, the same way you'd copy it straight out of a spreadsheet. Only campaigns whose "exact campaign title in the ad platform" (set on the campaign itself) matches a row here will update — anything that doesn't match gets listed below so nothing silently gets skipped.</p>
+    <textarea id="paste-report-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Ridgeline Dental - SEM - July	1540	350	92000
+Northside Auto - Prospecting	560	0	150000"></textarea>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <button onclick="strategistMatchPastedReport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Match &amp; Update</button>
+      <button onclick="strategistOpenPasteReportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+    </div>
+    <div id="paste-report-results"></div>
+  </div>`;
+}
+
+function parsePastedReportRows(text) {
+  return text.trim().split(/\r?\n/).filter(line => line.trim()).map(line =>
+    (line.includes('\t') ? line.split('\t') : line.split(',')).map(c => c.trim())
+  );
+}
+
+async function strategistMatchPastedReport() {
+  const raw = document.getElementById('paste-report-text').value;
+  if (!raw.trim()) { showToast('Paste a report first.', 'error'); return; }
+  let rows = parsePastedReportRows(raw);
+  // Skip a header row if its Spend column isn't actually a number (e.g. "Campaign Name, Spend, Clicks, Impressions").
+  if (rows.length && isNaN(parseFloat(rows[0][1]))) rows = rows.slice(1);
+
+  const byTitle = {};
+  ALL_CAMPAIGN_LINES.forEach(l => {
+    if (l.platform_campaign_name) byTitle[l.platform_campaign_name.trim().toLowerCase()] = l;
+  });
+
+  const monthStr = strategistCurrentMonth.toISOString().slice(0,10);
+  const matched = [], unmatched = [];
+  for (const cols of rows) {
+    const title = (cols[0] || '').trim();
+    if (!title) continue;
+    const line = byTitle[title.toLowerCase()];
+    if (!line) { unmatched.push(title); continue; }
+    const data = {};
+    if (cols[1] !== undefined && cols[1] !== '') data.actual_spend = cols[1];
+    if (cols[2] !== undefined && cols[2] !== '') data.actual_clicks = cols[2];
+    if (cols[3] !== undefined && cols[3] !== '') data.actual_impressions = cols[3];
+    try {
+      await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_campaign_line_id: line.id, p_month: monthStr, p_data: data
+      }) });
+      matched.push(`${line.client_name || ''} / ${line.tactic_label || line.service_id}`.trim());
+    } catch(e) {
+      unmatched.push(title + ' (save failed: ' + e.message + ')');
+    }
+  }
+
+  await fetchStrategistData();
+  renderStrategistDashboard();
+
+  const resultsEl = document.getElementById('paste-report-results');
+  if (resultsEl) {
+    resultsEl.innerHTML = `
+      <p style="font-size:12px;color:#166534;font-weight:600;margin:0 0 4px">${matched.length} campaign${matched.length === 1 ? '' : 's'} updated${matched.length ? ': ' + matched.map(esc).join(', ') : ''}</p>
+      ${unmatched.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:0">${unmatched.length} row${unmatched.length === 1 ? '' : 's'} didn't match any campaign — check the exact title on the campaign itself: ${unmatched.map(esc).join(', ')}</p>` : ''}
+    `;
+  }
+  showToast(matched.length ? `${matched.length} campaign(s) updated` : 'No matches found');
 }
 
 // Fetches the four datasets fresh, WITHOUT touching any view state (current month,
@@ -455,9 +550,15 @@ function renderSetupPanels(lines) {
         <div><label class="lbl">Gross Budget</label><div>$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo</div></div>
         <div><label class="lbl">In-Platform Budget</label><div>${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</div></div>
       </div>
-      <div style="margin-bottom:12px">
-        <label class="lbl">Platform</label>
-        <input id="setup-platform-${l.id}" value="${esc(l.platform || '')}" placeholder="e.g. Google Ads" style="width:220px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
+      <div style="display:flex;gap:16px;margin-bottom:12px">
+        <div>
+          <label class="lbl">Platform</label>
+          <input id="setup-platform-${l.id}" value="${esc(l.platform || '')}" placeholder="e.g. Google Ads" style="width:220px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
+        </div>
+        <div>
+          <label class="lbl">Exact campaign title in the ad platform</label>
+          <input id="setup-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Used to match a pasted report" style="width:260px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
+        </div>
       </div>
       <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;margin-bottom:8px">
         <input type="checkbox" id="setup-varies-${l.id}" ${l.budget_varies_by_month ? 'checked' : ''} onchange="strategistToggleVaries('${l.id}', this.checked)"/> Budget is different by month for this campaign
@@ -531,18 +632,21 @@ async function strategistSaveLine(lineId, data, reload) {
 
 async function strategistConfirmActivate(lineId) {
   const platform = document.getElementById('setup-platform-' + lineId).value.trim();
+  const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   if (!platform) { showToast('Pick a platform before activating.', 'error'); return; }
   await strategistSaveLine(lineId, {
-    platform, setup_notes: notes || null, status: 'active', assigned_strategist: currentStrategistUser.name
+    platform, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null,
+    status: 'active', assigned_strategist: currentStrategistUser.name
   });
   showToast('Campaign activated!');
 }
 
 async function strategistSaveDraft(lineId) {
   const platform = document.getElementById('setup-platform-' + lineId).value.trim();
+  const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
-  await strategistSaveLine(lineId, { platform: platform || null, setup_notes: notes || null });
+  await strategistSaveLine(lineId, { platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null });
   showToast('Draft saved');
 }
 
@@ -609,6 +713,7 @@ function renderStrategistDetailPanel() {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
       <strong style="font-size:13px">${esc(l.client_name || '(unknown)')} / ${esc(l.tactic_label || l.service_id)}</strong>
       <div style="display:flex;align-items:center;gap:8px">
+        <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSaveLine('${l.id}', {platform_campaign_name: this.value}, false)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
       </div>

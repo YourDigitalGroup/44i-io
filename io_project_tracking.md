@@ -4665,3 +4665,97 @@ month input is rejected client-side without ever calling the server. Re-ran
 **Still open, not guessed at**: exactly how much history to bring in per imported
 campaign, and how many campaigns this covers in total — Claire's own call per
 campaign as she imports them; the tool doesn't require an answer up front.
+
+## 2026-08-04 — Strategist access in /admin, and real platform-report matching
+
+**"If a strategist logs in from the admin portal will they be taken to the
+strategist page?"** No — `/admin` outright rejected a `strategist`-role login with a
+plain error message and no link anywhere to the actual portal. Asked what should
+happen; Claire's answer changed mid-message from "redirect them" to the real
+decision: **strategists should still be able to log into `/admin` and see Orders**
+(same visibility they already have), just restricted to that one tab, with a link
+back to their own portal for everything else — not an automatic redirect.
+
+**Built**:
+- `checkAdminPw()`: only `role === 'accounting'` is rejected now; `strategist` logs in
+  normally.
+- `showAdmin()`: a strategist login hides every nav tab except Orders (Groups,
+  Clients, Services, Sections, Intake Forms, AEs, Legal Text, Notifications,
+  Reconcile Lists, Users, Accounting Map — all real margin/catalog/account data
+  outside what their portal needs), defaults straight to the Orders tab instead of
+  Groups, and shows a new "Go to Strategist Portal →" link in the header (hidden for
+  every other role). Nothing about Orders' own behavior changed — `admin_get_orders`
+  already returns every order to any valid admin regardless of role, so a strategist
+  sees the exact same Orders list an AM does.
+- **Caveat flagged to Claire, not silently assumed away**: `admin_get_orders`'s own
+  SQL isn't in this repo, so it's possible (not confirmed) that function has its own
+  role check limiting it to `'am'`/`'super'` specifically — if so, a strategist would
+  still see an empty/error Orders tab despite now being let into `/admin` at all, and
+  that RPC's own role list would need extending too.
+
+Verified via Playwright (`test-admin-strategist-access.js`): confirmed a strategist
+login now succeeds and lands in the Orders tab with Groups/Accounting Map tabs
+hidden and the portal link visible; confirmed accounting is still rejected exactly
+as before; confirmed a super-admin login is completely unaffected (still defaults to
+Groups, still sees every tab, portal link stays hidden). Re-ran every existing admin
+Playwright test (`test-accounting-map.js`, `test-multicandidate-pair-override.js`,
+`test-cpm-adjustment-highlight.js`, `test-groups-accounting-badge.js`,
+`test-accounting-overrides.js`) — all still pass unchanged.
+
+**"How can I upload the reports from the platforms and how is the system matching
+them?" / "Having to go into each campaign is not realistic — my spreadsheet looks
+for the unique campaign title."** The per-row detail-panel entry built the day
+before was a real regression from how Claire's actual spreadsheet works: she pastes
+an entire platform export at once, and a VLOOKUP matches every row to the right
+Layout row by campaign title — not one campaign clicked open at a time.
+
+**Built a bulk match, not a redesign of the whole reporting model**: a new "Paste
+Platform Report" button pastes a block of rows (Campaign Name, Spend, Clicks,
+Impressions — tab- or comma-separated, the same shape any platform's export reduces
+to for this dashboard) and matches every row against a new
+`campaign_lines.platform_campaign_name` field (the literal title as it appears in
+the ad platform) — updating the current month's actuals for every match in one
+pass, reporting back which campaigns updated and which pasted titles didn't match
+anything (never silently dropped). `platform_campaign_name` is set once per campaign
+— added as a field on the "+ New Campaign" import form, the Campaign Setup panel,
+and the row detail panel (editable any time, same as Platform).
+
+**Deliberately NOT built**: any per-platform column-format handling (Simpli.fi/
+Google/Facebook/Trade Desk/StackAdapt each export slightly different column names
+and orders) — that's exactly the problem the confirmed later automation phase needs
+to solve properly. This is a generic 4-column paste that Claire arranges the
+platform's real export into, same manual step she already does today, just typed
+here instead of into a spreadsheet tab.
+
+**New SQL** (`strategist-portal-v1-part2-2026-08-04.sql`, given to Claire — also
+resends the `strategist_get_clients` RPC and the create-path in
+`strategist_save_campaign_line` from the previous message, which turned out to
+never actually have been run, causing a live 404 on the import form):
+- `alter table campaign_lines add column if not exists platform_campaign_name text;`
+- `strategist_get_campaign_lines`/`strategist_save_campaign_line` updated to
+  read/write the new field.
+
+Verified via Playwright (`test-strategist-paste-report.js`): confirmed a pasted
+report with a header row, two titles that match real campaigns, and one that
+doesn't, correctly sends exactly two `strategist_save_campaign_month` calls with the
+right fields (a blank Impressions cell is never sent as an empty-string override —
+left out of the payload entirely so it can't accidentally clear a real number);
+confirmed a campaign with no `platform_campaign_name` set never matches, even
+though nothing else changed about it; confirmed matching is case/whitespace-
+insensitive; confirmed the results panel lists both matched campaigns and the
+unmatched title by name. Re-ran `test-strategist-dashboard.js` and
+`test-strategist-import.js` — both still pass unchanged. `node --check` passes
+clean on both `strategist/index.html` and `admin/index.html`.
+
+**Follow-up: SQL editor error running the file as-given.** Claire hit
+`ERROR: 42P13: no language specified` running the original version of this file.
+Root cause: all three `create or replace function` statements reused the SAME
+dollar-quote tag (`$function$`), which can confuse a SQL editor's statement-boundary
+parsing across multiple functions run as one script — the parser can merge parts of
+two functions together and lose the `language plpgsql` clause in the process. Fixed
+by giving each function its OWN unique tag (`$get_clients$`/`$get_lines$`/
+`$save_line$`) and also sending the SQL as plain text directly in chat (not just a
+file attachment) so nothing gets altered in transit. **Confirmed working** — Claire
+ran it successfully.
+
+**Still to do**: this branch merges to `main`.
