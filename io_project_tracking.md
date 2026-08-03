@@ -4856,3 +4856,187 @@ reusing existing tables/RPCs).
 
 **Still to do**: Claire runs `strategist-portal-v1-part3-2026-08-04.sql`, then this
 branch merges to `main`.
+
+**Same day, follow-up: `admin_users_role_check` constraint blocked the first real
+strategist account.** Adding Carol L. as a strategist failed live with a Postgres
+check-constraint error (`23514`). Asked for the constraint definition rather than
+guessing at its name — `admin_users_role_check: CHECK (role = ANY (ARRAY['super',
+'am']))` — confirming the DB-level constraint was never updated when `strategist`/
+`accounting` became real roles the app code already treats as valid (login,
+`get_login_roster`, this whole Strategist Portal build). Fixed with:
+```sql
+alter table admin_users drop constraint admin_users_role_check;
+alter table admin_users add constraint admin_users_role_check
+  check (role = any (array['super'::text, 'am'::text, 'strategist'::text, 'accounting'::text]));
+```
+Confirmed working — Claire added all 5 strategist accounts successfully afterward.
+
+**Same day, follow-up: silent handoff from `/admin`'s strategist-portal link, and a
+scoping clarification.**
+
+Claire: "When I click the strategist link from the admin portal I have to log in
+again." Root cause: `/admin` and `/strategist` are two fully independent pages —
+credentials live only in an in-memory JS variable per page (`currentAdminUser`/
+`currentStrategistUser`), no shared session/cookie/token anywhere in this project,
+so navigating between them always lost that state and started fresh.
+
+Fixed with a one-time `sessionStorage` handoff, not a shared auth system (too big a
+change for what's actually needed here): clicking the link stashes the already-
+authenticated name+password into `sessionStorage` right before the normal navigation
+happens; `/strategist` reads it ONCE on load and clears it immediately either way
+(success or failure) so it can never be replayed by revisiting the page later in the
+same tab. Same plaintext-in-memory trust model this whole app already runs on (no
+tokens anywhere) — this just carries that same value across the one page hop instead
+of losing it. Refactored `checkStrategistPw()`'s actual login check into a reusable
+`attemptStrategistLogin(name, pw)` so both the modal's submit button and the silent
+handoff path share the exact same validation, not two copies that could drift.
+
+Verified via Playwright (`test-strategist-handoff.js`, navigated to the real
+`file://` page since `sessionStorage` throws on the opaque origin `page.setContent()`
+gives): confirmed a valid handed-off credential logs in silently and sets
+`currentStrategistUser` correctly; confirmed the stashed values are cleared
+immediately after being read; confirmed calling it again afterward (simulating
+revisiting the page) finds nothing and correctly returns false rather than replaying
+the old login; confirmed a bad/stale handed-off credential fails gracefully (no
+crash, no session set, storage still cleared); confirmed calling it with nothing
+stashed at all just returns false. Re-ran every other strategist/admin Playwright
+test — all still pass unchanged.
+
+**Clarification, no code change**: "If I upload the platform reports in my profile
+or a strategist's profile it will be used for all strategists campaigns correct?"
+Confirmed yes — campaign data has never been scoped by which login is active. "My
+Campaigns" is purely a client-side VIEW filter (hides other strategists' rows from
+your own screen); it was never an access restriction. Any valid login — Claire's own
+`super`, or any individual strategist's — reads and writes the exact same shared
+`campaign_lines`/`campaign_months`/`campaign_optimize_log` rows, matched by client/
+tactic/platform-campaign-name, not by who happens to be logged in. This was the
+intentional design from the original mockup (one shared portal) — confirmed as still
+correct, not a gap needing a fix.
+
+**Same day, follow-up: reciprocal admin link, Logout label, and a general Goal
+override.**
+
+1. **"Can we add a link in the strategist page to go back to the admin?"** Built the
+   exact reverse of the admin->strategist handoff from earlier today —
+   `adminPortalHandoff()` stashes the strategist session into `sessionStorage` before
+   navigating; `admin/index.html` gained a matching `tryAdminHandoffLogin()` (checked
+   in `DOMContentLoaded` before falling through to the login prompt) and
+   `attemptAdminLogin()` (the actual login check, pulled out of `checkAdminPw()` the
+   same way `attemptStrategistLogin()` already was, so the modal and the silent
+   handoff share one implementation). Shown for both `strategist` and `super` — both
+   can log into `/admin` now.
+2. **"Update the logout button on the strategist page to say Logout instead of
+   Close"** — done, matches `/admin`'s wording exactly.
+3. **"When I bulk import, since I am not adding the in-platform spend a goal will
+   there be a way for me to override it if it is not correct?"** Real gap: the
+   `goal_override` field already existed but `computeGoal()` only ever consulted it
+   for SEM (or any tactic with no `retail_cpm` on file) — a normal impressions-based
+   tactic imported without a Gross Budget had literally no way to set a Goal at all,
+   and even WITH a budget, a wrong auto-calculated number couldn't be corrected.
+   Fixed: an explicit override now always wins, for every tactic, regardless of
+   whether an auto-calculated number is also available. The detail panel's Goal
+   input is no longer conditional on tactic type — it's always shown, with the
+   placeholder displaying what the real auto-calculated value would be (so it's
+   obvious at a glance whether you're overriding a real number or filling a genuine
+   gap) or a plain note that there's nothing to auto-calculate from yet.
+
+Verified via Playwright:
+- `test-admin-handoff.js` (new): confirmed a strategist's own credentials work via
+  the reciprocal handoff and land them on the same Orders-only restricted view a
+  normal strategist login gets; confirmed replay fails; confirmed `accounting` is
+  still rejected through the handoff path exactly as through a normal login.
+- `test-strategist-goal-override.js` (new): confirmed an override always wins over a
+  real auto-calculated value, not just when no auto value exists; confirmed a
+  tactic with genuinely nothing to calculate from (no budget entered) still works
+  once an override is set; confirmed SEM's existing manual-required behavior is
+  unchanged; confirmed the detail panel's override input is present for a normal
+  (non-SEM) tactic now, with its placeholder showing the real auto-calculated
+  reference value.
+- Re-ran every other strategist/admin Playwright test — all still pass unchanged
+  (one apparent hang on a full back-to-back run turned out to be `chromium` resource
+  contention from launching 9 browsers in a tight loop, not a real regression —
+  confirmed by re-running that one test alone immediately afterward). `node --check`
+  passes clean on both files.
+
+No SQL changes for any of this — all three are frontend-only.
+
+**Same day, follow-up: In-Platform Budget override, for verifying the auto-calc
+math.** Claire: "we will also need to be able to override the in platform spend
+while we confirm all of our logic is working correctly." Same "override always
+wins" pattern just built for Goal, applied one level down — In-Platform Budget is
+itself a per-MONTH figure (like Gross Budget), so the override lives on
+`campaign_months.in_platform_override`, not on `campaign_lines` like `goal_override`.
+
+- New `effectiveInPlatformBudget(monthRow, serviceId, groupId)` wraps
+  `computeInPlatformBudget()`: returns the override when set, else the normal
+  Gross × Budgeted Spend % calculation, else null. All three call sites that used to
+  call `computeInPlatformBudget()` directly on a month row (Campaign Setup, the main
+  table, the detail panel) now go through this instead — one place, not three
+  copies that could drift.
+- Added to the detail panel's Monthly History editor (not the Setup panel — this is
+  specifically for ongoing verification of existing campaigns, not first entry): an
+  In-Platform input next to Gross Budget for each month, placeholder showing what
+  the real auto-calculated value is for reference, accent-highlighted border when an
+  override is actually set (same visual language as every other override in this
+  app).
+- **Goal recalculates off the overridden In-Platform value, not the raw
+  auto-calculated one** — confirmed deliberately, since In-Platform Budget feeds
+  directly into the Goal formula; overriding one without the other flowing through
+  would have made the override pointless for actually checking whether the whole
+  chain of math is right.
+
+**New SQL** (`strategist-portal-v1-part4-2026-08-04.sql`): `alter table
+campaign_months add column if not exists in_platform_override numeric;`, plus
+`strategist_get_campaign_months`/`strategist_save_campaign_month` updated to
+read/write it — same pattern as every other column added this way.
+
+Verified via Playwright (`test-strategist-inplatform-override.js`): confirmed an
+override wins over a real auto-calculated value; confirmed it's the only way to get
+a number at all when there's no Gross Budget entered; confirmed a null month row
+returns null rather than throwing; confirmed Goal correctly reflects the OVERRIDDEN
+In-Platform value (1500) rather than the un-overridden auto value (2000) it would
+otherwise have calculated to; confirmed the detail panel shows the real auto value
+as a placeholder for a month with no override, and the stored override value (with
+the accent-highlighted border) for a month that has one. Re-ran every other
+strategist Playwright test — all still pass unchanged. `node --check` passes clean.
+
+**Still to do**: Claire runs `strategist-portal-v1-part4-2026-08-04.sql`, then this
+branch merges to `main`.
+
+**Same day, follow-up: SQL bookkeeping + two more real-use questions.**
+
+**"How many SQLs do I need to run?"** — fair question after four separate partial
+patches in one day. Confirmed which had actually been run (the original tables/
+trigger/RPCs, and the client-picker update) vs. which were only ever sent but never
+explicitly confirmed (the group-color update, the In-Platform override update).
+Combined the two unconfirmed ones into a single
+`strategist-portal-v1-remaining-2026-08-04.sql` — safe to run even if part of it
+turns out to already be applied, since it's entirely `create or replace`/
+`add column if not exists`, nothing destructive.
+
+**"For the bulk import do we need to include the group or will it match based on
+what is already in the system, what happens if there is one that doesn't match?"**
+Answered, no code change needed — this was already the built behavior: Group is
+NEVER typed in. Each row only needs a Client name; `resolveBulkClient()` looks that
+client up in the real system and pulls its `group_id` from there automatically
+(every client already belongs to exactly one group). If a Client or Tactic name
+doesn't match anything real, that one row is skipped and reported back by row
+number in the results panel (`"Row 4: no client matches "..."`) — never guessed at,
+and never blocks the rest of the import; every other row that DOES resolve still
+goes through.
+
+**"For the paste platform report I think we need a way to indicate what the date
+range is for the report so it applies to the correct month."** Real gap: the tool
+silently used whichever month happened to be selected in the top bar — nothing
+stopped a report from landing on the wrong month if that hadn't been switched
+first. Added an explicit Month field directly inside the paste-report form itself
+(defaults to the top bar's current month, but is fully independent of it and never
+changes the top bar) — required before matching can run, same as picking a
+Platform already is.
+
+Verified via Playwright (extended `test-strategist-paste-report.js`): confirmed
+setting the report's month field to August while the top bar still shows July
+correctly saves against August, and leaves the top bar's own month completely
+unaffected; confirmed a blank report-month field is rejected before any save is
+attempted, same as a missing Platform already was. Re-ran every other strategist
+Playwright test — all still pass unchanged. `node --check` passes clean.

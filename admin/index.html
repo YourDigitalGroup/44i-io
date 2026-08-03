@@ -31,7 +31,7 @@
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
-        <a id="admin-strategist-portal-link" href="../strategist/index.html" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Strategist Portal →</a>
+        <a id="admin-strategist-portal-link" href="../strategist/index.html" onclick="strategistPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Strategist Portal →</a>
         <button onclick="adminLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
       </div>
     </div>
@@ -1134,69 +1134,59 @@ function closeAdminLogin() {
   document.getElementById('admin-login-modal').style.display = 'none';
 }
 
+// Pulled out of checkAdminPw() (2026-08-04) so the same real login check can also be
+// used by the silent strategist->admin handoff below, not just the modal's own submit
+// button — same refactor already applied to the strategist portal's own login.
+async function attemptAdminLogin(name, pw) {
+  if (!name) return { ok: false, error: 'Please select your name.' };
+  let row;
+  try {
+    row = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
+    row = Array.isArray(row) ? row[0] : row;
+  } catch(e) {
+    return { ok: false, error: 'Could not reach the login service. Check your connection and try again.' };
+  }
+  if (!row || !row.role) return { ok: false, error: 'Incorrect password. Please try again.' };
+  if (row.role === 'accounting') {
+    return { ok: false, error: 'This account isn\'t set up for the admin portal — check with a super admin for the right link.' };
+  }
+  return { ok: true, role: row.role, email: row.email || '' };
+}
+
+// Silent handoff from the strategist portal's "Go to Admin" link (2026-08-04, per
+// Claire, symmetric with the admin->strategist handoff built the same day) — reads
+// the one-time sessionStorage handoff ONCE and clears it immediately either way.
+async function tryAdminHandoffLogin() {
+  let name, pw;
+  try {
+    name = sessionStorage.getItem('admin_handoff_name');
+    pw = sessionStorage.getItem('admin_handoff_pw');
+    sessionStorage.removeItem('admin_handoff_name');
+    sessionStorage.removeItem('admin_handoff_pw');
+  } catch(e) { return false; }
+  if (!name || !pw) return false;
+  const result = await attemptAdminLogin(name, pw);
+  if (!result.ok) return false;
+  currentAdminUser = { name, email: result.email, role: result.role, pw };
+  closeAdminLogin();
+  showAdmin(true);
+  return true;
+}
+
 async function checkAdminPw() {
   const name = document.getElementById('admin-name-select').value;
   const pw = document.getElementById('admin-pw-input').value;
   const errEl = document.getElementById('admin-pw-error');
-  if (!name) {
-    errEl.textContent = 'Please select your name.';
-    errEl.style.display = 'block';
-    return;
-  }
-  let ok = false;
-  let role = null;
-  let emailFromRpc = '';
-
-  // Server-side validation ONLY — the admin_login RPC validates the password against
-  // the admin_users table in Supabase and returns the role (and email). There is no
-  // local fallback: if the RPC is unreachable, login is unavailable (the public IO form
-  // is unaffected).
-  try {
-    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
-    const row = Array.isArray(res) ? res[0] : res; // tolerate array or object return
-    if (row && row.role) {
-      ok = true;
-      role = row.role;
-      emailFromRpc = row.email || '';
-    } else {
-      ok = false;
-    }
-  } catch(e) {
-    // Could not reach the login service — distinct message so it's not mistaken for a
-    // wrong password.
-    console.warn('admin_login unreachable:', e.message);
-    errEl.textContent = 'Could not reach the login service. Check your connection and try again.';
-    errEl.style.display = 'block';
-    document.getElementById('admin-pw-input').value = '';
-    document.getElementById('admin-pw-input').focus();
-    return;
-  }
-
-  // Accounting has its own upcoming portal, not this one — reject here rather than
-  // silently granting full admin access just because the password matched.
-  // Strategist is different (2026-08-04, per Claire): they already have real reason to
-  // be here — they can see Orders today the same way an AM can — so a strategist login
-  // is now ALLOWED into /admin, just restricted to the Orders tab only (see
-  // showAdmin()/adminSection() below), with a link back to their own portal for
-  // everything else.
-  if (ok && role === 'accounting') {
-    errEl.textContent = 'This account isn\'t set up for the admin portal — check with a super admin for the right link.';
-    errEl.style.display = 'block';
-    document.getElementById('admin-pw-input').value = '';
-    return;
-  }
-
-  if (ok) {
-    // Email comes from the RPC (admin_users table). Empty string is a safe fallback if a
-    // not-yet-updated RPC doesn't return it — only the admin badge shows email, nothing
-    // functional depends on it.
-    currentAdminUser = { name, email: emailFromRpc, role, pw };
+  const result = await attemptAdminLogin(name, pw);
+  if (result.ok) {
+    currentAdminUser = { name, email: result.email, role: result.role, pw };
     closeAdminLogin();
     showAdmin(true);
   } else {
-    errEl.textContent = 'Incorrect password. Please try again.';
+    errEl.textContent = result.error;
     errEl.style.display = 'block';
     document.getElementById('admin-pw-input').value = '';
+    if (result.error.includes('select your name')) return;
     document.getElementById('admin-pw-input').focus();
   }
 }
@@ -5564,6 +5554,21 @@ async function adminToggleGroupActive(id, makeActive) {
 
 // ── PRINT IO ───────────────────────────────────────────────────
 
+// Stashes the already-authenticated name/password into sessionStorage right before
+// following the "Go to Strategist Portal" link (2026-08-04, per Claire: having to
+// log in again there was real friction). strategist/index.html reads this ONCE on
+// load and clears it immediately either way — same plaintext-in-memory trust model
+// this whole app already uses (no tokens/cookies anywhere in this project), just
+// carried across the one page hop instead of lost to it. The link's normal href
+// navigation still happens after this — nothing here blocks or redirects the click.
+function strategistPortalHandoff() {
+  if (!currentAdminUser) return;
+  try {
+    sessionStorage.setItem('strategist_handoff_name', currentAdminUser.name);
+    sessionStorage.setItem('strategist_handoff_pw', currentAdminUser.pw);
+  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
+}
+
 // ── LOGOUT (standalone-admin addition — see note 2 above) ──────────
 function adminLogout() {
   currentAdminUser = null;
@@ -5591,6 +5596,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     showToast('Could not load the service catalog: ' + e.message, 'error');
   }
   await loadLoginRoster();
+  if (await tryAdminHandoffLogin()) return;
   // No public form / no gear icon on this page — go straight to the login prompt.
   promptAdmin();
 });

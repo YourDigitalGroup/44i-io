@@ -22,7 +22,10 @@
   <div class="card" style="max-width:1500px;margin:24px auto;padding-bottom:20px">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="strategist-user-badge" style="font-size:12px;color:var(--muted)"></div>
-      <button onclick="strategistLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✕ Close</button>
+      <div style="display:flex;align-items:center;gap:10px">
+        <a id="strategist-admin-portal-link" href="../admin/index.html" onclick="adminPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Admin →</a>
+        <button onclick="strategistLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
+      </div>
     </div>
 
     <div style="padding:16px 20px 0">
@@ -117,40 +120,41 @@ function promptStrategistLogin() {
   document.getElementById('strategist-pw-error').style.display = 'none';
 }
 
+// Pulled out of checkStrategistPw() (2026-08-04) so the same real login check can
+// also be used by the silent admin->strategist handoff below, not just the modal's
+// own submit button. Returns {ok, role, email} on success or {ok:false, error} —
+// never throws, so both callers can just check `.ok`.
+async function attemptStrategistLogin(name, pw) {
+  if (!name) return { ok: false, error: 'Please select your name.' };
+  let row;
+  try {
+    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
+    row = Array.isArray(res) ? res[0] : res;
+  } catch(e) {
+    return { ok: false, error: 'Could not reach the login service. Check your connection and try again.' };
+  }
+  if (!row || !row.role) return { ok: false, error: 'Incorrect password. Please try again.' };
+  if (row.role !== 'strategist' && row.role !== 'super') {
+    return { ok: false, error: 'This account isn\'t set up for the Strategist portal.' };
+  }
+  return { ok: true, role: row.role, email: row.email || '' };
+}
+
 async function checkStrategistPw() {
   const name = document.getElementById('strategist-name-select').value;
   const pw = document.getElementById('strategist-pw-input').value;
   const errEl = document.getElementById('strategist-pw-error');
-  if (!name) {
-    errEl.textContent = 'Please select your name.';
-    errEl.style.display = 'block';
-    return;
-  }
-  let ok = false, role = null, email = '';
-  try {
-    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
-    const row = Array.isArray(res) ? res[0] : res;
-    if (row && row.role) { ok = true; role = row.role; email = row.email || ''; }
-  } catch(e) {
-    errEl.textContent = 'Could not reach the login service. Check your connection and try again.';
-    errEl.style.display = 'block';
-    document.getElementById('strategist-pw-input').value = '';
-    return;
-  }
-  if (ok && role !== 'strategist' && role !== 'super') {
-    errEl.textContent = 'This account isn\'t set up for the Strategist portal.';
-    errEl.style.display = 'block';
-    document.getElementById('strategist-pw-input').value = '';
-    return;
-  }
-  if (ok) {
-    currentStrategistUser = { name, email, role, pw };
+  const result = await attemptStrategistLogin(name, pw);
+  if (result.ok) {
+    currentStrategistUser = { name, email: result.email, role: result.role, pw };
     document.getElementById('strategist-login-modal').style.display = 'none';
     showStrategistPanel(true);
   } else {
-    errEl.textContent = 'Incorrect password. Please try again.';
+    errEl.textContent = result.error;
     errEl.style.display = 'block';
     document.getElementById('strategist-pw-input').value = '';
+    if (result.error.includes('select your name')) return;
+    document.getElementById('strategist-pw-input').focus();
   }
 }
 
@@ -160,8 +164,24 @@ function showStrategistPanel(show) {
     const badge = document.getElementById('strategist-user-badge');
     const roleLabel = currentStrategistUser.role === 'super' ? 'Super Admin' : 'Strategist';
     badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#8B5CF6"></span><strong style="color:var(--text)">${esc(currentStrategistUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
+    // Both strategist and super can log into /admin now (2026-08-04) — a strategist
+    // sees Orders there, a super sees everything — so this link makes sense either way.
+    const adminLink = document.getElementById('strategist-admin-portal-link');
+    if (adminLink) adminLink.style.display = 'inline';
     loadStrategistDashboard();
   }
+}
+
+// Reciprocal handoff to admin/index.html's own tryAdminHandoffLogin() (2026-08-04,
+// per Claire, symmetric with the admin->strategist handoff built earlier the same
+// day) — same one-time sessionStorage pattern, cleared on the other side right after
+// being read, whether it works or not.
+function adminPortalHandoff() {
+  if (!currentStrategistUser) return;
+  try {
+    sessionStorage.setItem('admin_handoff_name', currentStrategistUser.name);
+    sessionStorage.setItem('admin_handoff_pw', currentStrategistUser.pw);
+  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -386,11 +406,18 @@ function strategistOpenPasteReportForm() {
   if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
 
   el.style.display = 'block';
+  const defaultMonthValue = strategistCurrentMonth.getFullYear() + '-' + String(strategistCurrentMonth.getMonth() + 1).padStart(2, '0');
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
-    <strong style="font-size:13px;display:block;margin-bottom:6px">Paste a platform report for ${esc(strategistMonthLabel(strategistCurrentMonth))}</strong>
-    <div style="margin-bottom:10px">
-      <label class="lbl">Platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only campaigns set to this platform will be matched</span></label>
-      ${strategistPlatformSelectHtml('paste-report-platform', '', '200px')}
+    <strong style="font-size:13px;display:block;margin-bottom:6px">Paste a platform report</strong>
+    <div style="display:flex;gap:16px;margin-bottom:10px">
+      <div>
+        <label class="lbl">Report month <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which month this report's numbers apply to, NOT the month you're currently viewing</span></label>
+        <input type="month" id="paste-report-month" value="${defaultMonthValue}" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+      <div>
+        <label class="lbl">Platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only campaigns set to this platform will be matched</span></label>
+        ${strategistPlatformSelectHtml('paste-report-platform', '', '200px')}
+      </div>
     </div>
     <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Paste the report's own export exactly as copied, header row included (Campaign Name, Spend/Cost, Clicks, Impressions, Conversions — in whatever order that platform actually uses; column NAMES are matched automatically). One campaign per line, tab- or comma-separated. Only campaigns whose "exact campaign title in the ad platform" (set on the campaign itself) matches a row will update — anything that doesn't match gets listed below.</p>
     <textarea id="paste-report-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Campaign	Cost	Clicks	Impr.
@@ -432,6 +459,8 @@ async function strategistMatchPastedReport() {
   if (!raw.trim()) { showToast('Paste a report first.', 'error'); return; }
   const platform = strategistReadPlatformValue('paste-report-platform');
   if (!platform) { showToast('Pick which platform this report is from.', 'error'); return; }
+  const reportMonthValue = document.getElementById('paste-report-month').value; // "YYYY-MM"
+  if (!reportMonthValue) { showToast('Pick which month this report is for.', 'error'); return; }
 
   let rows = parsePastedReportRows(raw);
   const columnMap = detectReportColumnMap(rows[0]);
@@ -448,7 +477,11 @@ async function strategistMatchPastedReport() {
     if (l.platform_campaign_name && l.platform === platform) byTitle[l.platform_campaign_name.trim().toLowerCase()] = l;
   });
 
-  const monthStr = strategistCurrentMonth.toISOString().slice(0,10);
+  // The report's OWN chosen month, not whatever month happens to be selected in the
+  // top bar (2026-08-04, per Claire: "we need a way to indicate what the date range
+  // is for the report so it applies to the correct month") -- avoids silently filing
+  // a report against the wrong month just because the top bar wasn't switched first.
+  const monthStr = reportMonthValue + '-01';
   const matched = [], unmatched = [];
   for (const cols of rows) {
     const title = (cols[0] || '').trim();
@@ -698,18 +731,37 @@ function computeInPlatformBudget(grossBudget, serviceId, groupId) {
   return pct != null ? Number(grossBudget) * pct / 100 : null;
 }
 
+// campaign_months.in_platform_override — an explicit override always wins over the
+// computed value, same "override wins" pattern as Goal (2026-08-04, per Claire:
+// "we will also need to be able to override the in platform spend while we confirm
+// all of our logic is working correctly"). Per-MONTH, not per-campaign, since
+// In-Platform Budget (like Gross Budget) is itself a per-month figure — lives on
+// campaign_months, not campaign_lines. Every call site that used to call
+// computeInPlatformBudget() directly on a monthRow now goes through this instead.
+function effectiveInPlatformBudget(monthRow, serviceId, groupId) {
+  if (!monthRow) return null;
+  if (monthRow.in_platform_override != null) return Number(monthRow.in_platform_override);
+  return computeInPlatformBudget(monthRow.gross_budget, serviceId, groupId);
+}
+
 // Goal: impressions for every platform except SEM (Goal = In-Platform Budget ÷ Retail
 // CPM × 1000). SEM is a known v1 gap — the catalog only stores a CPC RANGE string
 // ("$4-$12"), not a single rate, so an automatic clicks number isn't actually
 // computable yet; falls back to campaign_lines.goal_override (manual entry, same
 // trust level as Platform/monthly budgets) until a real single CPC rate is decided.
+// goal_override is a general escape hatch, not just SEM's -- found live 2026-08-04,
+// per Claire: a bulk-imported campaign that skips entering In-Platform spend (or
+// whose auto-calculated Goal is simply wrong for some other reason) still needs a
+// way to correct it, same as SEM already had. An explicit override always wins,
+// regardless of whether an auto-calculated number is also available.
 function computeGoal(line, inPlatformBudget) {
   const row = CATALOG_ROWS[line.service_id];
-  if (line.service_id === 'sem-bp' || !row || row.retail_cpm == null) {
-    return line.goal_override != null ? { value: Number(line.goal_override), unit: 'clicks', manual: true } : { value: null, unit: 'clicks', manual: true };
-  }
-  if (inPlatformBudget == null) return { value: null, unit: 'impr.', manual: false };
-  return { value: (inPlatformBudget / Number(row.retail_cpm)) * 1000, unit: 'impr.', manual: false };
+  const isClicksBased = line.service_id === 'sem-bp' || !row || row.retail_cpm == null;
+  const unit = isClicksBased ? 'clicks' : 'impr.';
+  if (line.goal_override != null) return { value: Number(line.goal_override), unit, manual: true, overridden: true };
+  if (isClicksBased) return { value: null, unit, manual: true };
+  if (inPlatformBudget == null) return { value: null, unit, manual: false };
+  return { value: (inPlatformBudget / Number(row.retail_cpm)) * 1000, unit, manual: false };
 }
 
 function pacingPct(actual, goal) {
@@ -785,7 +837,7 @@ function renderSetupPanels(lines) {
   return lines.map(l => {
     const client = l.client_name || '(unknown client)';
     const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
-    const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
+    const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
     const monthRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month));
     return `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#FAFCFE">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -934,7 +986,7 @@ function renderMainTable(lines) {
     html += `<tr style="background:${esc(bg)}"><td colspan="13" style="padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:${fg}">${esc(groupName)}</td></tr>`;
     byGroup[groupName].rows.forEach(l => {
       const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
-      const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
+      const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
       const goal = computeGoal(l, inPlatform);
       const spendPacing = pacingPct(monthRow.actual_spend, inPlatform);
       const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
@@ -983,6 +1035,12 @@ function renderStrategistDetailPanel() {
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
   const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
   const ctr = (monthRow.actual_clicks != null && monthRow.actual_impressions) ? (monthRow.actual_clicks / monthRow.actual_impressions * 100) : null;
+  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
+  const goal = computeGoal(l, inPlatform);
+  // What Goal would auto-calculate to WITHOUT the override, shown as a reference —
+  // helps tell "there's nothing to auto-calculate from" apart from "there IS a real
+  // number, I'm just choosing to override it."
+  const autoGoal = computeGoal({ ...l, goal_override: null }, inPlatform);
 
   panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;background:#fff">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
@@ -1007,23 +1065,26 @@ function renderStrategistDetailPanel() {
       </div>
     </div>
 
-    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Monthly history</p>
+    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 4px">Monthly history</p>
+    <p style="font-size:10.5px;color:var(--muted);margin:0 0 8px">In-Platform is normally computed automatically (Gross × Budgeted Spend %) — the override next to it is there while we're confirming that math is right; leave it blank once it's trusted.</p>
     <div style="border:1px solid var(--border);border-radius:8px;padding:4px 12px;margin-bottom:16px;background:var(--light)">
-      ${ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month)).map(m => `
+      ${ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month)).map(m => {
+        const autoInPlatform = computeInPlatformBudget(m.gross_budget, l.service_id, l.group_id);
+        return `
         <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--border)">
           <span style="width:90px;color:var(--muted);font-weight:600">${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}</span>
           <input type="number" value="${m.gross_budget ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {gross_budget: this.value})" placeholder="Gross" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <input type="number" value="${m.in_platform_override ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {in_platform_override: this.value})" placeholder="${autoInPlatform != null ? 'Auto: ' + Math.round(autoInPlatform) : 'In-Platform override'}" title="${m.in_platform_override != null ? 'Overridden — auto-calculated value is ' + (autoInPlatform != null ? '$' + Math.round(autoInPlatform) : 'unavailable') : ''}" style="width:${autoInPlatform != null ? '110px' : '130px'};padding:5px 6px;border-radius:6px;border:1px ${m.in_platform_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
           <input type="number" value="${m.actual_spend ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_spend: this.value})" placeholder="Actual spend" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
           <input type="number" value="${m.actual_clicks ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_clicks: this.value})" placeholder="Clicks" style="width:75px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
           <input type="number" value="${m.actual_impressions ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_impressions: this.value})" placeholder="Impr." style="width:85px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
-        </div>`).join('') || '<p style="font-size:11px;color:var(--muted);padding:6px 0">No months on record yet.</p>'}
+        </div>`;
+      }).join('') || '<p style="font-size:11px;color:var(--muted);padding:6px 0">No months on record yet.</p>'}
       <button onclick="strategistAddHistoryMonth('${l.id}')" style="margin:8px 0;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">+ Add a past month</button>
     </div>
 
-    ${l.service_id === 'sem-bp' || !CATALOG_ROWS[l.service_id]?.retail_cpm ? `
-    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Goal (manual — no single rate on file yet)</p>
-    <input type="number" value="${l.goal_override ?? ''}" onchange="strategistSaveLine('${l.id}', {goal_override: this.value}, false)" placeholder="Clicks goal" style="width:120px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:16px"/>
-    ` : ''}
+    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Goal override <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— ${autoGoal.value != null ? `leave blank to use the auto-calculated ${Math.round(autoGoal.value).toLocaleString()} ${autoGoal.unit}` : `required — nothing to auto-calculate from yet (no In-Platform spend entered, or no rate on file)`}</span></p>
+    <input type="number" value="${l.goal_override ?? ''}" onchange="strategistSaveLine('${l.id}', {goal_override: this.value}, false)" placeholder="${autoGoal.value != null ? Math.round(autoGoal.value) : (goal.unit === 'clicks' ? 'Clicks goal' : 'Impressions goal')}" style="width:140px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:16px"/>
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Optimize log</p>
     ${log.map(o => `<div style="display:flex;align-items:flex-start;gap:14px;padding:8px 0;border-top:1px solid var(--border)">
@@ -1092,8 +1153,33 @@ function strategistLogout() {
   promptStrategistLogin();
 }
 
+// Silent handoff from the admin portal's "Go to Strategist Portal" link (2026-08-04,
+// per Claire: "When I click the strategist link from the admin portal I have to log
+// in again"). admin/index.html stashes the already-authenticated name/password into
+// sessionStorage right before navigating; picked up here ONCE (cleared immediately,
+// whether it works or not) so it can never be replayed by, say, opening this page
+// again later in the same tab. Same plaintext-in-memory trust model this whole app
+// already uses everywhere (no tokens/cookies anywhere in this project) — sessionStorage
+// just carries that same value across the one page hop, cleared right after reading.
+async function tryStrategistHandoffLogin() {
+  let name, pw;
+  try {
+    name = sessionStorage.getItem('strategist_handoff_name');
+    pw = sessionStorage.getItem('strategist_handoff_pw');
+    sessionStorage.removeItem('strategist_handoff_name');
+    sessionStorage.removeItem('strategist_handoff_pw');
+  } catch(e) { return false; } // e.g. sessionStorage blocked entirely (privacy mode, unusual origin)
+  if (!name || !pw) return false;
+  const result = await attemptStrategistLogin(name, pw);
+  if (!result.ok) return false;
+  currentStrategistUser = { name, email: result.email, role: result.role, pw };
+  showStrategistPanel(true);
+  return true;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await loadStrategistRoster();
+  if (await tryStrategistHandoffLogin()) return;
   promptStrategistLogin();
 });
 </script>
