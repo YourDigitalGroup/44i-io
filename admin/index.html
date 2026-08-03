@@ -1638,8 +1638,11 @@ function showAdmin(show) {
     // what their own portal needs. Shows a direct link back to their own portal instead
     // of leaving them stuck looking at a single-tab admin view with no way out.
     const isStrategist = currentAdminUser?.role === 'strategist';
+    // Shown for strategist (their only way back to the rest of their portal) AND
+    // super (2026-08-04, per Claire — supers test/use both portals, so it should be
+    // one click away, not just for the restricted-view role).
     const strategistLink = document.getElementById('admin-strategist-portal-link');
-    if (strategistLink) strategistLink.style.display = isStrategist ? 'inline' : 'none';
+    if (strategistLink) strategistLink.style.display = (isStrategist || currentAdminUser?.role === 'super') ? 'inline' : 'none';
     ['groups','clients','map','sections','intake','ae','legal','notifications','reconcile','users','accounting'].forEach(s => {
       const tab = document.getElementById('section-tab-' + s);
       if (tab) tab.style.display = isStrategist ? 'none' : '';

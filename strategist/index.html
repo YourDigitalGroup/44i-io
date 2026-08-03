@@ -38,6 +38,7 @@
           <span id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">All Strategists</span>
           <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
           <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
+          <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
         </div>
       </div>
 
@@ -50,6 +51,10 @@
            month actuals at once, matched by campaign title, instead of opening each
            campaign one at a time. -->
       <div id="strategist-paste-report-form" style="display:none"></div>
+
+      <!-- Bulk CSV/Sheets import -- many campaigns (and each one's month-by-month
+           budgets) in one paste, instead of the "+ New Campaign" form one at a time. -->
+      <div id="strategist-bulk-import-form" style="display:none"></div>
 
       <!-- Status tabs -->
       <div id="strategist-status-tabs" style="display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:16px"></div>
@@ -180,6 +185,44 @@ let strategistSelectedLineId = null;
 
 const PACING_THRESHOLDS = { good: 90, warn: 70 }; // >=90 good, 70-89.99 warn, <70 risk — Claire's confirmed spreadsheet rule
 
+// The real platform set confirmed for this project (report-automation priority order:
+// Facebook → Simpli.fi → Google Ads → The Trade Desk → StackAdapt). A dropdown instead
+// of free text (2026-08-04, per Claire) — but "Other…" keeps this from being a hard
+// wall if a campaign genuinely runs somewhere else.
+const PLATFORM_OPTIONS = ['Google Ads', 'Facebook Ads', 'Simpli.fi', 'The Trade Desk', 'StackAdapt'];
+
+// Renders a platform <select> + a hidden "Other" text input that reveals itself when
+// either "Other…" is picked or the current value isn't one of the known platforms (so
+// an existing custom value already saved on a campaign is never silently dropped).
+// `baseId` becomes both the select's id and, with "-other" appended, the fallback
+// text input's id — strategistReadPlatformValue(baseId) below resolves whichever one
+// is actually in effect.
+function strategistPlatformSelectHtml(baseId, currentValue, selectWidth) {
+  const isKnown = PLATFORM_OPTIONS.includes(currentValue);
+  const isOther = currentValue && !isKnown;
+  return `<select id="${baseId}" onchange="strategistPlatformSelectChanged('${baseId}')" style="width:${selectWidth};padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+    <option value="">— Select —</option>
+    ${PLATFORM_OPTIONS.map(p => `<option value="${esc(p)}" ${p === currentValue ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+    <option value="__other__" ${isOther ? 'selected' : ''}>Other…</option>
+  </select>
+  <input type="text" id="${baseId}-other" value="${isOther ? esc(currentValue) : ''}" placeholder="Platform name" style="display:${isOther ? 'inline-block' : 'none'};width:120px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-left:6px"/>`;
+}
+
+function strategistPlatformSelectChanged(baseId) {
+  const sel = document.getElementById(baseId);
+  const other = document.getElementById(baseId + '-other');
+  if (!sel || !other) return;
+  other.style.display = sel.value === '__other__' ? 'inline-block' : 'none';
+  if (sel.value === '__other__') other.focus();
+}
+
+function strategistReadPlatformValue(baseId) {
+  const sel = document.getElementById(baseId);
+  if (!sel) return '';
+  if (sel.value === '__other__') return (document.getElementById(baseId + '-other')?.value || '').trim();
+  return sel.value;
+}
+
 function strategistMonthKey(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
@@ -235,7 +278,7 @@ function strategistOpenImportForm() {
       </div>
       <div>
         <label class="lbl">Platform</label>
-        <input id="import-platform" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+        ${strategistPlatformSelectHtml('import-platform', '', '100%')}
       </div>
       <div>
         <label class="lbl">Status</label>
@@ -277,7 +320,7 @@ async function strategistSubmitImport() {
   const serviceSel = document.getElementById('import-service');
   const serviceId = serviceSel.value;
   const serviceLabel = serviceSel.selectedOptions[0]?.textContent || '';
-  const platform = document.getElementById('import-platform').value.trim();
+  const platform = strategistReadPlatformValue('import-platform');
   const status = document.getElementById('import-status').value;
   const flightStart = document.getElementById('import-flight-start').value || null;
   const flightEnd = document.getElementById('import-flight-end').value || null;
@@ -323,6 +366,20 @@ async function strategistSubmitImport() {
 // purposes), match each row's title against campaign_lines.platform_campaign_name
 // (case/whitespace-insensitive), and update the CURRENT month's actuals for every
 // match in one pass — no need to click into each row individually.
+// Per-platform header synonyms (2026-08-04, per Claire: "I will need a way to do
+// each individually because their formats are different. Simpli.fi. Google.
+// Facebook. The TradeDesk"). Rather than hardcode each platform's EXACT real export
+// column order (risky to get wrong, and it can change), this reads whatever header
+// row is actually pasted and matches each column NAME against known synonyms —
+// works with the real export as-is, no manual reformatting, regardless of which
+// platform or which order that platform happens to put its columns in.
+const REPORT_COLUMN_SYNONYMS = {
+  actual_spend: ['spend', 'cost', 'amount spent', 'cost ($)'],
+  actual_clicks: ['clicks', 'link clicks'],
+  actual_impressions: ['impr', 'impressions', 'impr.'],
+  actual_conversions: ['conversions', 'results', 'weighted actions'],
+};
+
 function strategistOpenPasteReportForm() {
   const el = document.getElementById('strategist-paste-report-form');
   const isOpen = el.style.display !== 'none';
@@ -331,8 +388,13 @@ function strategistOpenPasteReportForm() {
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Paste a platform report for ${esc(strategistMonthLabel(strategistCurrentMonth))}</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">One campaign per line, columns in this order: <strong>Campaign Name, Spend, Clicks, Impressions</strong> — tab- or comma-separated, the same way you'd copy it straight out of a spreadsheet. Only campaigns whose "exact campaign title in the ad platform" (set on the campaign itself) matches a row here will update — anything that doesn't match gets listed below so nothing silently gets skipped.</p>
-    <textarea id="paste-report-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Ridgeline Dental - SEM - July	1540	350	92000
+    <div style="margin-bottom:10px">
+      <label class="lbl">Platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only campaigns set to this platform will be matched</span></label>
+      ${strategistPlatformSelectHtml('paste-report-platform', '', '200px')}
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Paste the report's own export exactly as copied, header row included (Campaign Name, Spend/Cost, Clicks, Impressions, Conversions — in whatever order that platform actually uses; column NAMES are matched automatically). One campaign per line, tab- or comma-separated. Only campaigns whose "exact campaign title in the ad platform" (set on the campaign itself) matches a row will update — anything that doesn't match gets listed below.</p>
+    <textarea id="paste-report-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Campaign	Cost	Clicks	Impr.
+Ridgeline Dental - SEM - July	1540	350	92000
 Northside Auto - Prospecting	560	0	150000"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:10px">
       <button onclick="strategistMatchPastedReport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Match &amp; Update</button>
@@ -348,16 +410,42 @@ function parsePastedReportRows(text) {
   );
 }
 
+// Maps a header row's column names to the metric fields they represent, using
+// REPORT_COLUMN_SYNONYMS above. Returns null if the first row doesn't look like a
+// header at all (its 2nd column parses as a real number) — falls back to the
+// original fixed Spend/Clicks/Impressions column order in that case.
+function detectReportColumnMap(headerRow) {
+  if (!headerRow || headerRow.length < 2 || !isNaN(parseFloat(headerRow[1]))) return null;
+  const map = {};
+  headerRow.forEach((label, i) => {
+    if (i === 0) return; // column 0 is always the campaign title
+    const lower = label.toLowerCase();
+    for (const [field, synonyms] of Object.entries(REPORT_COLUMN_SYNONYMS)) {
+      if (synonyms.some(s => lower.includes(s))) { map[field] = i; break; }
+    }
+  });
+  return map;
+}
+
 async function strategistMatchPastedReport() {
   const raw = document.getElementById('paste-report-text').value;
   if (!raw.trim()) { showToast('Paste a report first.', 'error'); return; }
-  let rows = parsePastedReportRows(raw);
-  // Skip a header row if its Spend column isn't actually a number (e.g. "Campaign Name, Spend, Clicks, Impressions").
-  if (rows.length && isNaN(parseFloat(rows[0][1]))) rows = rows.slice(1);
+  const platform = strategistReadPlatformValue('paste-report-platform');
+  if (!platform) { showToast('Pick which platform this report is from.', 'error'); return; }
 
+  let rows = parsePastedReportRows(raw);
+  const columnMap = detectReportColumnMap(rows[0]);
+  // A real header row (matched above) never itself represents a campaign -- drop it.
+  if (columnMap) rows = rows.slice(1);
+  // No header detected -- fall back to the original fixed order.
+  const fallbackMap = { actual_spend: 1, actual_clicks: 2, actual_impressions: 3 };
+  const effectiveMap = columnMap && Object.keys(columnMap).length ? columnMap : fallbackMap;
+
+  // Only match against THIS platform's own campaigns -- a title that happens to
+  // match on the wrong platform would silently overwrite the wrong campaign's numbers.
   const byTitle = {};
   ALL_CAMPAIGN_LINES.forEach(l => {
-    if (l.platform_campaign_name) byTitle[l.platform_campaign_name.trim().toLowerCase()] = l;
+    if (l.platform_campaign_name && l.platform === platform) byTitle[l.platform_campaign_name.trim().toLowerCase()] = l;
   });
 
   const monthStr = strategistCurrentMonth.toISOString().slice(0,10);
@@ -368,9 +456,9 @@ async function strategistMatchPastedReport() {
     const line = byTitle[title.toLowerCase()];
     if (!line) { unmatched.push(title); continue; }
     const data = {};
-    if (cols[1] !== undefined && cols[1] !== '') data.actual_spend = cols[1];
-    if (cols[2] !== undefined && cols[2] !== '') data.actual_clicks = cols[2];
-    if (cols[3] !== undefined && cols[3] !== '') data.actual_impressions = cols[3];
+    Object.entries(effectiveMap).forEach(([field, idx]) => {
+      if (cols[idx] !== undefined && cols[idx] !== '') data[field] = cols[idx];
+    });
     try {
       await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
         p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
@@ -389,10 +477,171 @@ async function strategistMatchPastedReport() {
   if (resultsEl) {
     resultsEl.innerHTML = `
       <p style="font-size:12px;color:#166534;font-weight:600;margin:0 0 4px">${matched.length} campaign${matched.length === 1 ? '' : 's'} updated${matched.length ? ': ' + matched.map(esc).join(', ') : ''}</p>
-      ${unmatched.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:0">${unmatched.length} row${unmatched.length === 1 ? '' : 's'} didn't match any campaign — check the exact title on the campaign itself: ${unmatched.map(esc).join(', ')}</p>` : ''}
+      ${unmatched.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:0">${unmatched.length} row${unmatched.length === 1 ? '' : 's'} didn't match any ${esc(platform)} campaign — check the exact title on the campaign itself: ${unmatched.map(esc).join(', ')}</p>` : ''}
     `;
   }
   showToast(matched.length ? `${matched.length} campaign(s) updated` : 'No matches found');
+}
+
+// ── BULK IMPORT (CSV / GOOGLE SHEETS) ────────────────────────────
+// Claire: "Is there a way we can do a mass import from a csv or google sheet? How can
+// we update for different month budgets?" One paste covers MANY campaigns AND each
+// one's month-by-month budget history in a single pass — a real spreadsheet range
+// copied straight out of Google Sheets pastes as tab-separated text, so this needs no
+// actual file upload, just the same paste-into-a-textarea pattern already used above.
+// One row per CAMPAIGN-MONTH — the same campaign (matched by Client+Tactic+Platform+
+// Platform Campaign Name) can appear on several rows, one per month, which is exactly
+// how several months of budget history get set in one go.
+const BULK_IMPORT_COLUMNS = [
+  { key: 'client', names: ['client'] },
+  { key: 'tactic', names: ['tactic', 'service'] },
+  { key: 'platform', names: ['platform'] },
+  { key: 'platform_campaign_name', names: ['platform campaign name', 'campaign name', 'campaign title'] },
+  { key: 'status', names: ['status'] },
+  { key: 'flight_start', names: ['flight start', 'start date'] },
+  { key: 'flight_end', names: ['flight end', 'end date'] },
+  { key: 'month', names: ['month'] },
+  { key: 'gross_budget', names: ['gross budget', 'budget'] },
+];
+
+function strategistOpenBulkImportForm() {
+  const el = document.getElementById('strategist-bulk-import-form');
+  const isOpen = el.style.display !== 'none';
+  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  el.style.display = 'block';
+  el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
+    <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import campaigns (paste from a CSV or a Google Sheets range)</strong>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Status, Flight Start, Flight End, Month, Gross Budget</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. Dates as YYYY-MM-DD, Month as YYYY-MM.</p>
+    <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Status	Flight Start	Flight End	Month	Gross Budget
+Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July	active	2026-07-01	2026-07-31	2026-07	1500
+Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July	active	2026-07-01	2026-07-31	2026-08	2000"></textarea>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <button onclick="strategistRunBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Import</button>
+      <button onclick="strategistOpenBulkImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+    </div>
+    <div id="bulk-import-results"></div>
+  </div>`;
+}
+
+function normalizeHeaderName(s) {
+  return s.trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+}
+
+// Resolves a typed Client/Tactic cell against real data -- exact, case-insensitive.
+// Returns null (not a guess) if nothing matches, so an unresolved row is reported
+// back rather than silently imported against the wrong client or tactic.
+function resolveBulkClient(name) {
+  const norm = (name || '').trim().toLowerCase();
+  return ALL_STRATEGIST_CLIENTS.find(c => c.name.trim().toLowerCase() === norm) || null;
+}
+function resolveBulkService(name) {
+  const norm = (name || '').trim().toLowerCase();
+  if (CATALOG_ROWS[name]) return CATALOG_ROWS[name]; // literal service_id typed directly
+  return Object.values(CATALOG_ROWS).find(r => r.pricing_mode === 'spend' &&
+    ((r.accounting_label || r.label || '').trim().toLowerCase() === norm)) || null;
+}
+
+async function strategistRunBulkImport() {
+  const raw = document.getElementById('bulk-import-text').value;
+  if (!raw.trim()) { showToast('Paste something first.', 'error'); return; }
+  const rows = parsePastedReportRows(raw);
+  if (rows.length < 2) { showToast('Need a header row plus at least one data row.', 'error'); return; }
+
+  const header = rows[0].map(normalizeHeaderName);
+  const colIndex = {};
+  BULK_IMPORT_COLUMNS.forEach(({ key, names }) => {
+    const idx = header.findIndex(h => names.includes(h));
+    if (idx !== -1) colIndex[key] = idx;
+  });
+  const missingRequired = ['client', 'tactic'].filter(k => colIndex[k] === undefined);
+  if (missingRequired.length) {
+    showToast('Header row is missing required column(s): ' + missingRequired.join(', '), 'error');
+    return;
+  }
+
+  const errors = [];
+  // Group data rows by the campaign identity they belong to, so several months for
+  // the SAME campaign share one campaign_lines row instead of creating a duplicate
+  // per row.
+  const groups = new Map(); // identityKey -> { fields, monthRows: [] }
+  rows.slice(1).forEach((cols, i) => {
+    const rowNum = i + 2; // 1-based, header is row 1
+    const get = (key) => colIndex[key] !== undefined ? (cols[colIndex[key]] || '').trim() : '';
+    const clientName = get('client'), tacticName = get('tactic');
+    if (!clientName && !tacticName) return; // blank line
+    const client = resolveBulkClient(clientName);
+    const service = resolveBulkService(tacticName);
+    if (!client) { errors.push(`Row ${rowNum}: no client matches "${clientName}"`); return; }
+    if (!service) { errors.push(`Row ${rowNum}: no tactic matches "${tacticName}"`); return; }
+    const platform = get('platform');
+    const platformCampaignName = get('platform_campaign_name');
+    const identityKey = [client.id, service.id, platform, platformCampaignName].join('|');
+    if (!groups.has(identityKey)) {
+      groups.set(identityKey, {
+        client_id: client.id, group_id: client.group_id, service_id: service.id,
+        tactic_label: service.accounting_label || service.label, platform: platform || null,
+        platform_campaign_name: platformCampaignName || null,
+        status: get('status') || 'active', flight_start: get('flight_start') || null, flight_end: get('flight_end') || null,
+        monthRows: [],
+      });
+    }
+    const month = get('month'), grossBudget = get('gross_budget');
+    if (month) groups.get(identityKey).monthRows.push({ month, grossBudget, rowNum });
+  });
+
+  // Existing campaigns are matched the same way the paste-report tool does -- by
+  // platform_campaign_name -- so re-running an import (e.g. to add a newer month)
+  // updates the SAME campaign instead of creating a duplicate.
+  const existingByTitle = {};
+  ALL_CAMPAIGN_LINES.forEach(l => {
+    if (l.platform_campaign_name) existingByTitle[l.platform_campaign_name.trim().toLowerCase()] = l;
+  });
+
+  let createdCount = 0, matchedExistingCount = 0, monthsSavedCount = 0;
+  for (const g of groups.values()) {
+    let lineId = g.platform_campaign_name ? existingByTitle[g.platform_campaign_name.trim().toLowerCase()]?.id : null;
+    if (lineId) {
+      matchedExistingCount++;
+    } else {
+      try {
+        lineId = await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
+          p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: null,
+          p_data: {
+            client_id: g.client_id, group_id: g.group_id, service_id: g.service_id, tactic_label: g.tactic_label,
+            platform: g.platform, platform_campaign_name: g.platform_campaign_name,
+            flight_start: g.flight_start, flight_end: g.flight_end,
+            status: g.status, assigned_strategist: currentStrategistUser.name,
+          }
+        }) });
+        createdCount++;
+      } catch(e) { errors.push(`Couldn't create campaign for "${g.tactic_label}" (${g.platform_campaign_name || 'no title'}): ${e.message}`); continue; }
+    }
+    for (const mr of g.monthRows) {
+      const match = /^(\d{4})-(\d{2})$/.exec(mr.month);
+      if (!match) { errors.push(`Row ${mr.rowNum}: "${mr.month}" isn't a valid month (use YYYY-MM)`); continue; }
+      try {
+        await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+          p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+          p_campaign_line_id: lineId, p_month: `${match[1]}-${match[2]}-01`,
+          p_data: mr.grossBudget ? { gross_budget: mr.grossBudget } : {}
+        }) });
+        monthsSavedCount++;
+      } catch(e) { errors.push(`Row ${mr.rowNum}: couldn't save month: ${e.message}`); }
+    }
+  }
+
+  await fetchStrategistData();
+  renderStrategistDashboard();
+
+  const resultsEl = document.getElementById('bulk-import-results');
+  if (resultsEl) {
+    resultsEl.innerHTML = `
+      <p style="font-size:12px;color:#166534;font-weight:600;margin:0 0 4px">${createdCount} campaign(s) created, ${matchedExistingCount} matched to an existing campaign, ${monthsSavedCount} month(s) saved.</p>
+      ${errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 0">${errors.length} issue(s):</p><ul style="font-size:11.5px;color:#B91C1C;margin:4px 0 0;padding-left:18px">${errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+    `;
+  }
+  showToast(`Import done: ${createdCount} created, ${matchedExistingCount} matched, ${errors.length} issue(s)`);
 }
 
 // Fetches the four datasets fresh, WITHOUT touching any view state (current month,
@@ -553,7 +802,7 @@ function renderSetupPanels(lines) {
       <div style="display:flex;gap:16px;margin-bottom:12px">
         <div>
           <label class="lbl">Platform</label>
-          <input id="setup-platform-${l.id}" value="${esc(l.platform || '')}" placeholder="e.g. Google Ads" style="width:220px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
+          ${strategistPlatformSelectHtml('setup-platform-' + l.id, l.platform || '', '160px')}
         </div>
         <div>
           <label class="lbl">Exact campaign title in the ad platform</label>
@@ -631,7 +880,7 @@ async function strategistSaveLine(lineId, data, reload) {
 }
 
 async function strategistConfirmActivate(lineId) {
-  const platform = document.getElementById('setup-platform-' + lineId).value.trim();
+  const platform = strategistReadPlatformValue('setup-platform-' + lineId);
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   if (!platform) { showToast('Pick a platform before activating.', 'error'); return; }
@@ -643,7 +892,7 @@ async function strategistConfirmActivate(lineId) {
 }
 
 async function strategistSaveDraft(lineId) {
-  const platform = document.getElementById('setup-platform-' + lineId).value.trim();
+  const platform = strategistReadPlatformValue('setup-platform-' + lineId);
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   await strategistSaveLine(lineId, { platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null });
@@ -651,10 +900,24 @@ async function strategistSaveDraft(lineId) {
 }
 
 // ── MAIN PACING TABLE ────────────────────────────────────────────
+// Picks readable text (near-black or near-white) against an arbitrary hex background
+// — the same relative-luminance approach browsers/design tools use for contrast, so a
+// group's own brand color (which can be light or dark) never renders unreadable text.
+function strategistContrastTextColor(hex) {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return '#0E5D82';
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  const luminance = (0.299*r + 0.587*g + 0.114*b) / 255;
+  return luminance > 0.6 ? '#1F2937' : '#FFFFFF';
+}
+
 function renderMainTable(lines) {
   if (!lines.length) return '<p style="color:var(--muted);font-size:13px;padding:20px 0">No campaigns in this tab.</p>';
   const byGroup = {};
-  lines.forEach(l => { (byGroup[l.group_name || '(no group)'] = byGroup[l.group_name || '(no group)'] || []).push(l); });
+  lines.forEach(l => {
+    const key = l.group_name || '(no group)';
+    if (!byGroup[key]) byGroup[key] = { color: l.group_color, rows: [] };
+    byGroup[key].rows.push(l);
+  });
 
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1400px">
     <thead><tr style="background:var(--light)">
@@ -663,8 +926,13 @@ function renderMainTable(lines) {
     </tr></thead><tbody>`;
 
   Object.keys(byGroup).forEach(groupName => {
-    html += `<tr style="background:#EFF6FF"><td colspan="13" style="padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--accent)">${esc(groupName)}</td></tr>`;
-    byGroup[groupName].forEach(l => {
+    // Matches this group's own brand color (Groups tab, admin/index.html) rather than
+    // one flat color for every group (2026-08-04, per Claire) — falls back to the
+    // catalog's default accent if a group has no brand_color set.
+    const bg = byGroup[groupName].color || '#EFF6FF';
+    const fg = strategistContrastTextColor(bg);
+    html += `<tr style="background:${esc(bg)}"><td colspan="13" style="padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:${fg}">${esc(groupName)}</td></tr>`;
+    byGroup[groupName].rows.forEach(l => {
       const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
       const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
       const goal = computeGoal(l, inPlatform);
@@ -676,7 +944,14 @@ function renderMainTable(lines) {
       html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
         <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
         <td style="padding:9px 10px">${esc(l.tactic_label || l.service_id)}</td>
-        <td style="padding:9px 10px"><input value="${esc(l.platform || '')}" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="width:110px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11.5px"/></td>
+        <td style="padding:9px 10px" onclick="event.stopPropagation()">
+          <select onclick="event.stopPropagation()" onchange="if(this.value==='__other__'){this.nextElementSibling.style.display='inline-block';this.nextElementSibling.focus();}else{this.nextElementSibling.style.display='none';strategistSaveLine('${l.id}', {platform: this.value}, false);}" style="width:100px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px">
+            <option value="">— Select —</option>
+            ${PLATFORM_OPTIONS.map(p => `<option value="${esc(p)}" ${p === l.platform ? 'selected' : ''}>${esc(p)}</option>`).join('')}
+            <option value="__other__" ${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'selected' : ''}>Other…</option>
+          </select>
+          <input type="text" value="${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? esc(l.platform) : ''}" placeholder="Platform" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="display:${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'inline-block' : 'none'};width:90px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px;margin-top:2px"/>
+        </td>
         <td style="padding:9px 10px;white-space:nowrap">${esc(l.flight_start || '—')} – ${esc(l.flight_end || '—')}</td>
         <td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</td>
