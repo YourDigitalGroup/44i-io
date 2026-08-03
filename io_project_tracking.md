@@ -4608,3 +4608,60 @@ submit one real test IO and watch a `campaign_lines` row (and its first
 
 **Still to do**: Claire runs the SQL (tables + trigger + RPCs), then this branch
 merges to `main` before the strategist team can start using this for real feedback.
+
+**Same day, follow-up: real-life issues found getting it live.**
+- **Wrong URL path** — Claire hit the public form's own "🔒 Invalid Link" screen at
+  `io.yourdigitalgroupresources.com/strategist`. Traced to `index.html`'s `getSlug()`
+  reading the URL path itself as a group slug whenever the path resolves — same
+  reason `/admin` needs an explicit `/index.html` on this host (no directory-index
+  fallback configured). Not a bug in this build; Claire figured it out herself
+  (`/strategist/index.html`).
+- **Real RPC bug, found live**: `strategist_get_budgeted_spend_rates` failed with
+  `cannot call jsonb_each on a non-object` — at least one group's
+  `accounting_overrides` wasn't a clean JSON object (likely `null` or `[]` left over
+  from before that column held real data), and Postgres aborts the WHOLE query when
+  `jsonb_each()` hits a non-object row, not just that one group. Fixed by wrapping it
+  in a `case when jsonb_typeof(...) = 'object' then ... else '{}'::jsonb end` guard.
+  Gave Claire just the one corrected `create or replace function` to rerun, not the
+  whole script.
+
+**Same day, follow-up: "How can we upload current campaigns that were ordered
+through the old IO system while we wait for the new IO system to be used fully?"**
+This is exactly the mockup's "Importing existing campaigns" item, deliberately
+deferred until asked for explicitly (per the original v1 plan). The mockup itself
+left two questions unanswered — how much history a given campaign needs, and roughly
+how many campaigns this covers — rather than guess at either, built a mechanism that
+works regardless of the answer:
+- **New "+ New Campaign" button** on the dashboard's top bar, opening a manual entry
+  form (client picker, tactic picker — filtered to `pricing_mode: 'spend'` catalog
+  services only, Platform, Status, flight dates, current Gross Budget). Submitting
+  creates the `campaign_lines` row directly — skipping the Campaign Setup queue
+  entirely, since an imported campaign is already running — and its first
+  `campaign_months` row for the current month if a budget was entered.
+- **New RPC `strategist_get_clients`** — a narrow, non-sensitive client picker
+  (id/name/group only) for this form; the existing `admin_get_clients` returns much
+  more and isn't available to a strategist login.
+- **`strategist_save_campaign_line` now supports `p_id = null` meaning CREATE**, not
+  just update — inserts a new row directly from the manual form's fields instead of
+  only ever updating an existing one.
+- **Detail panel gained a "Monthly history" editor**, available on ANY campaign
+  regardless of status (not just the Campaign Setup queue's month-entry, which only
+  ever showed for pending lines) — lists every month on record with editable
+  budget/actuals, plus a "+ Add a past month" button (prompts for a specific
+  `YYYY-MM`, not just "the next month" like the ongoing-campaign version) so however
+  much history makes sense for a given imported campaign can be backfilled one month
+  at a time, without needing to decide a fixed depth up front.
+
+Verified via Playwright (`test-strategist-import.js`): confirmed the import form's
+tactic picker includes a real spend-priced service and excludes a flat-priced one;
+confirmed submitting the form sends the correct client/group/service/status/
+assigned-strategist payload and creates the first month's budget row targeting the
+newly-created line's real id (not a stale one); confirmed the detail panel's history
+editor shows an existing month and lets a specific past month (parsed from a
+`YYYY-MM` prompt) be added targeting the correct campaign line; confirmed invalid
+month input is rejected client-side without ever calling the server. Re-ran
+`test-strategist-dashboard.js` — still passes unchanged. `node --check` passes clean.
+
+**Still open, not guessed at**: exactly how much history to bring in per imported
+campaign, and how many campaigns this covers in total — Claire's own call per
+campaign as she imports them; the tool doesn't require an answer up front.
