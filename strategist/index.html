@@ -197,7 +197,7 @@ let ALL_CAMPAIGN_LINES = [];
 let ALL_CAMPAIGN_MONTHS = [];
 let ALL_OPTIMIZE_LOG = [];
 let ALL_STRATEGIST_CLIENTS = []; // {id, name, group_id, group_name} — for the "+ New Campaign" import picker
-let BUDGETED_SPEND_RATES = { base: {}, group: {} }; // service_id -> pct, and group_id|service_id -> pct
+let PLATFORM_CPM_RATES = { base: {}, group: {} }; // service_id -> $CPM, and group_id|service_id -> $CPM
 let strategistScope = 'mine';               // 'mine' | 'all'
 let strategistStatusTab = 'pending';        // pending | active | paused | complete
 let strategistCurrentMonth = null;          // Date, always day 1
@@ -719,10 +719,10 @@ async function fetchStrategistData() {
   ALL_CAMPAIGN_MONTHS = months || [];
   ALL_OPTIMIZE_LOG = log || [];
   ALL_STRATEGIST_CLIENTS = clients || [];
-  BUDGETED_SPEND_RATES = { base: {}, group: {} };
+  PLATFORM_CPM_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
-    if (r.scope === 'base') BUDGETED_SPEND_RATES.base[r.service_id] = r.budgeted_spend_pct;
-    else BUDGETED_SPEND_RATES.group[r.group_id + '|' + r.service_id] = r.budgeted_spend_pct;
+    if (r.scope === 'base') PLATFORM_CPM_RATES.base[r.service_id] = r.platform_cpm;
+    else PLATFORM_CPM_RATES.group[r.group_id + '|' + r.service_id] = r.platform_cpm;
   });
 }
 
@@ -737,22 +737,41 @@ async function loadStrategistDashboard() {
   renderStrategistDashboard();
 }
 
-// Effective Budgeted Spend % for a service, honoring a group-specific override —
-// same resolution order as the admin Accounting Overrides tab (group override wins,
-// else the base accounting_map rate). Never exposes 44i Cut %/Fixed Cut/Setup Fee
-// Split — this dashboard only ever needs Budgeted Spend %.
-function effectiveBudgetedSpendPct(serviceId, groupId) {
+// Effective Platform CPM for a service, honoring a group-specific override — same
+// resolution order as the admin Accounting Overrides tab (group override wins, else
+// the base accounting_map rate). Never exposes 44i Cut %/Fixed Cut/Setup Fee Split —
+// this dashboard only ever needs Platform CPM.
+function effectivePlatformCpm(serviceId, groupId) {
   const groupKey = groupId + '|' + serviceId;
-  if (BUDGETED_SPEND_RATES.group[groupKey] != null) return Number(BUDGETED_SPEND_RATES.group[groupKey]);
-  return BUDGETED_SPEND_RATES.base[serviceId] != null ? Number(BUDGETED_SPEND_RATES.base[serviceId]) : null;
+  if (PLATFORM_CPM_RATES.group[groupKey] != null) return Number(PLATFORM_CPM_RATES.group[groupKey]);
+  return PLATFORM_CPM_RATES.base[serviceId] != null ? Number(PLATFORM_CPM_RATES.base[serviceId]) : null;
 }
 
-// In-Platform Budget is always computed live, never stored — same derived-vs-stored
-// principle as Retail CPM/44i CPM/Platform CPM elsewhere in this project.
+// Budgeted Impressions = Gross Budget ÷ Retail CPM × 1000 -- what was actually sold
+// to the client, independent of platform cost efficiency. Confirmed against real
+// strategist spreadsheets 2026-08-05 (Galaxy, Prairie Flower Casino, Fisher & Son,
+// Auto Bank of KC) after Claire flagged In-Platform Budget/Goal numbers not matching
+// what strategists were using: every example traced back to a clean Retail CPM here,
+// while the old flat "Gross × Budgeted Spend %" model for In-Platform Budget produced
+// a non-round % every time -- confirming this, not that, is the real source of truth.
+// This is also now the direct basis for Goal (see computeGoal below) -- Goal never
+// derives from In-Platform Budget, since what's promised to the client doesn't move
+// just because the platform ends up more or less efficient than planned.
+function budgetedImpressions(grossBudget, serviceId) {
+  const row = CATALOG_ROWS[serviceId];
+  if (grossBudget == null || !row || row.retail_cpm == null) return null;
+  return (Number(grossBudget) / Number(row.retail_cpm)) * 1000;
+}
+
+// In-Platform Budget = Budgeted Impressions × Platform CPM ÷ 1000 -- always computed
+// live, never stored, same derived-vs-stored principle as everywhere else in this
+// project. Platform CPM is a real number entered per service/group (Admin →
+// Accounting Map / Accounting Overrides), not derived from a flat %.
 function computeInPlatformBudget(grossBudget, serviceId, groupId) {
-  if (grossBudget == null) return null;
-  const pct = effectiveBudgetedSpendPct(serviceId, groupId);
-  return pct != null ? Number(grossBudget) * pct / 100 : null;
+  const impressions = budgetedImpressions(grossBudget, serviceId);
+  const platformCpm = effectivePlatformCpm(serviceId, groupId);
+  if (impressions == null || platformCpm == null) return null;
+  return impressions * platformCpm / 1000;
 }
 
 // campaign_months.in_platform_override — an explicit override always wins over the
@@ -768,24 +787,27 @@ function effectiveInPlatformBudget(monthRow, serviceId, groupId) {
   return computeInPlatformBudget(monthRow.gross_budget, serviceId, groupId);
 }
 
-// Goal: impressions for every platform except SEM (Goal = In-Platform Budget ÷ Retail
-// CPM × 1000). SEM is a known v1 gap — the catalog only stores a CPC RANGE string
-// ("$4-$12"), not a single rate, so an automatic clicks number isn't actually
-// computable yet; falls back to campaign_lines.goal_override (manual entry, same
-// trust level as Platform/monthly budgets) until a real single CPC rate is decided.
-// goal_override is a general escape hatch, not just SEM's -- found live 2026-08-04,
-// per Claire: a bulk-imported campaign that skips entering In-Platform spend (or
-// whose auto-calculated Goal is simply wrong for some other reason) still needs a
-// way to correct it, same as SEM already had. An explicit override always wins,
-// regardless of whether an auto-calculated number is also available.
-function computeGoal(line, inPlatformBudget) {
+// Goal: impressions for every platform except SEM (Goal = Budgeted Impressions =
+// Gross Budget ÷ Retail CPM × 1000 -- see budgetedImpressions() above). Deliberately
+// NOT derived from In-Platform Budget (changed 2026-08-05, per Claire's real-campaign
+// testing): what's promised to the client is fixed by the Retail CPM they were sold
+// on, not by how efficiently the platform happens to deliver that spend. SEM is a
+// known v1 gap — the catalog only stores a CPC RANGE string ("$4-$12"), not a single
+// rate, so an automatic clicks number isn't actually computable yet; falls back to
+// campaign_lines.goal_override (manual entry, same trust level as Platform/monthly
+// budgets) until a real single CPC rate is decided. goal_override is a general escape
+// hatch, not just SEM's -- found live 2026-08-04, per Claire: a bulk-imported campaign
+// that skips entering In-Platform spend (or whose auto-calculated Goal is simply
+// wrong for some other reason) still needs a way to correct it, same as SEM already
+// had. An explicit override always wins, regardless of whether an auto-calculated
+// number is also available.
+function computeGoal(line, grossBudget) {
   const row = CATALOG_ROWS[line.service_id];
   const isClicksBased = line.service_id === 'sem-bp' || !row || row.retail_cpm == null;
   const unit = isClicksBased ? 'clicks' : 'impr.';
   if (line.goal_override != null) return { value: Number(line.goal_override), unit, manual: true, overridden: true };
   if (isClicksBased) return { value: null, unit, manual: true };
-  if (inPlatformBudget == null) return { value: null, unit, manual: false };
-  return { value: (inPlatformBudget / Number(row.retail_cpm)) * 1000, unit, manual: false };
+  return { value: budgetedImpressions(grossBudget, line.service_id), unit, manual: false };
 }
 
 function pacingPct(actual, goal) {
@@ -1039,7 +1061,7 @@ function renderMainTable(lines) {
     byGroup[groupName].rows.forEach(l => {
       const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
       const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
-      const goal = computeGoal(l, inPlatform);
+      const goal = computeGoal(l, monthRow.gross_budget);
       const spendPacing = pacingPct(monthRow.actual_spend, inPlatform);
       const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
       const perfPacing = pacingPct(actualPerf, goal.value);
@@ -1088,11 +1110,11 @@ function renderStrategistDetailPanel() {
   const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
   const ctr = (monthRow.actual_clicks != null && monthRow.actual_impressions) ? (monthRow.actual_clicks / monthRow.actual_impressions * 100) : null;
   const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
-  const goal = computeGoal(l, inPlatform);
+  const goal = computeGoal(l, monthRow.gross_budget);
   // What Goal would auto-calculate to WITHOUT the override, shown as a reference —
   // helps tell "there's nothing to auto-calculate from" apart from "there IS a real
   // number, I'm just choosing to override it."
-  const autoGoal = computeGoal({ ...l, goal_override: null }, inPlatform);
+  const autoGoal = computeGoal({ ...l, goal_override: null }, monthRow.gross_budget);
 
   panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;background:#fff">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">

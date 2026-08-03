@@ -5203,3 +5203,73 @@ regardless of the month picker. Re-ran `test-strategist-dashboard.js`,
 unchanged. `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-05 (cont'd) — Rebuilt In-Platform Budget/Goal on the real Platform CPM model
+
+Claire confirmed with her team ("I think we are good to change it to what we are
+seeing in the spreadsheet") after four independent real-campaign examples (Galaxy,
+Prairie Flower Casino, Fisher & Son, Auto Bank of KC) all traced back to the same
+structural mismatch flagged earlier today: the flat "Gross × Budgeted Spend %" model
+never matched how strategists actually price a campaign. Replaced it end to end with
+the two-CPM model confirmed against those spreadsheets:
+  - **Budgeted Impressions (Goal)** = Gross Budget ÷ Retail CPM × 1000 — what was sold
+    to the client, independent of platform delivery efficiency.
+  - **Budget in Platform (In-Platform Budget)** = Budgeted Impressions × Platform CPM
+    ÷ 1000 — Platform CPM is a real new number (base + per-group override, same
+    resolution order as Budgeted Spend % had), not derived from a %.
+
+**DB (`platform-cpm-2026-08-05.sql`, not yet run by Claire):** adds
+`accounting_map.platform_cpm`; extends `admin_get_accounting_map` /
+`admin_save_accounting_map` to read/write it; extends
+`strategist_get_budgeted_spend_rates` to also return `platform_cpm` per base/group
+row (group overrides need no schema change — they already live in
+`groups.accounting_overrides`, a generic jsonb blob). `budgeted_spend_pct` is left in
+place everywhere, not dropped — nothing required removing it, and Claire hasn't been
+asked whether to hide it from the Admin UI now that it's unused by this calc.
+
+**Admin UI (`admin/index.html`):** added an editable "Platform CPM" field next to
+"(Of Gross) Budgeted Spend %" in the Accounting Map form (now labeled legacy),
+wired through load/save; added `platform_cpm` to `ACCOUNTING_OVERRIDE_FIELDS` so
+it's overridable per group per service in the Groups → Accounting Overrides tab,
+same mechanism as 44i Cut %/Fixed Cut $. Also repurposed the Accounting Map list's
+existing "Platform CPM" column — it used to be a DISPLAY-ONLY value derived as
+`retailCpm × budgetedPct / 100` (an approximation, never a real input); it now shows
+the actual stored `platform_cpm` value directly, with the same auto-inherit-from-
+base-tactic behavior as every other CPM-adjustment-modifier field.
+
+**Strategist frontend (`strategist/index.html`):** `BUDGETED_SPEND_RATES`/
+`effectiveBudgetedSpendPct()` replaced with `PLATFORM_CPM_RATES`/
+`effectivePlatformCpm()`. New `budgetedImpressions(grossBudget, serviceId)` helper
+(Gross ÷ Retail CPM × 1000) is now the shared basis for BOTH `computeInPlatformBudget()`
+and `computeGoal()` — `computeGoal()`'s second argument changed meaning from
+"In-Platform Budget" to "Gross Budget" at all three call sites (main table, detail
+panel, detail panel's auto-reference calc), since Goal must never move just because
+an In-Platform override or a different Platform CPM changes what the platform
+actually costs.
+
+Verified via Playwright: reran and updated all 8 affected existing tests (dashboard,
+goal-override, in-platform-override, import, past-month-report, pause-flight,
+flight-month-filter, goal-override-refresh) to the new model — recalculated every
+expected numeric value by hand against the new formulas rather than just swapping
+variable names blind. `test-strategist-inplatform-override.js` specifically now
+asserts the INVERSE of what it asserted this morning: Goal must NOT move when only
+the In-Platform override changes (previously asserted the opposite, which was
+exactly the bug). Also repaired `test-accounting-map.js` (admin side) — its mock DOM
+was missing the new `admin-accounting-platform-cpm` input (crashed on
+`adminEditAccounting()`), and its two `platformCpm`-column assertions were checking
+the OLD derived-from-% formula; added explicit `platform_cpm` values to the relevant
+mock rows and updated those two assertions to check the real stored value. Two
+unrelated pre-existing assertions in that same file (`tdOfflineShowsMultiNote`,
+`tdOfflineRefHasRealEditButtons`) were already failing before this change — the real
+note/button text drifted from that test's expectations at some earlier point, not
+touched by this fix — flagging rather than silently leaving broken or fixing
+unprompted. All other tests (bulk import, paste report, group color, client search,
+handoff both directions, admin strategist access, accounting overrides, groups
+accounting badge) pass unchanged. `node --check` passes clean on both files.
+
+**Still needs from Claire:** run `platform-cpm-2026-08-05.sql`, then enter real
+Platform CPM values (Admin → Accounting Map, and per-group overrides where needed)
+for every service currently in use — nothing computes correctly until those are
+populated. Until then, In-Platform Budget/Goal will show blank ("no rate on file")
+for any service without a Platform CPM set, same as the old "no Budgeted Spend %"
+gap behaved.
