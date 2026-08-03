@@ -5171,3 +5171,35 @@ clean.
 
 No SQL for this one — frontend only.
 Parked pending that confirmation.
+
+## 2026-08-05 (cont'd) — Real bug: campaigns showed in months outside their own flight
+
+Claire: "I noticed that this first campaign that I added shows up in months that it
+is not active... it started in June but shows in April and ends in November but
+shows in December." Checked `visibleCampaignLines()` and confirmed: it never
+consulted `flight_start`/`flight_end` at all. The main table showed every
+active/paused/complete campaign regardless of which month the top-bar month
+picker was set to — flight dates were purely a display field, not something that
+actually gated visibility.
+
+Fixed: added `strategistLineActiveInMonth(line, monthDate)`, comparing the
+selected month against `flight_start`/`flight_end` (inclusive on both ends, using
+the same month-key comparison as the carry-forward logic). Applied it in
+`visibleCampaignLines()` and in the tab-count logic in `renderStrategistDashboard()`
+so the counts next to each tab stay consistent with what's actually shown.
+Deliberately excluded the **pending** tab from this filter — Campaign Setup is a
+to-do queue, not a monthly performance view; a campaign flighted to start next
+month still needs its setup done now, so hiding it there would be actively harmful.
+A campaign with no flight dates set at all is never filtered (no constraint to
+apply).
+
+Verified via Playwright (new `test-strategist-flight-month-filter.js`): a campaign
+flighted June–November 2026 is hidden in April (before start) and December (after
+end), and shown in June and November themselves (both flight-range endpoints
+inclusive); a campaign with no flight dates is always shown; a pending setup task
+flighted to start months in the future still shows in the Campaign Setup queue
+regardless of the month picker. Re-ran `test-strategist-dashboard.js`,
+`test-strategist-import.js`, and `test-strategist-pause-flight.js` — all still pass
+unchanged. `node --check` passes clean.
+
+No SQL for this one — frontend only.

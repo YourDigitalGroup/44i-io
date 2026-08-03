@@ -837,10 +837,21 @@ function monthRowFor(lineId, monthDate) {
   return prior ? { ...prior, month: monthDate.toISOString().slice(0,10), _carried: true } : null;
 }
 
+function strategistLineActiveInMonth(line, monthDate) {
+  const monthKey = strategistMonthKey(monthDate);
+  if (line.flight_start && monthKey < strategistMonthKey(new Date(line.flight_start + 'T00:00:00'))) return false;
+  if (line.flight_end && monthKey > strategistMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
+  return true;
+}
+
 function visibleCampaignLines() {
   return ALL_CAMPAIGN_LINES.filter(l => {
     if (l.status !== strategistStatusTab) return false;
     if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return false;
+    // Pending is a setup to-do queue, not a monthly performance view -- a campaign
+    // flighted to start next month still needs its setup done now, so it stays
+    // visible regardless of the month picker.
+    if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return false;
     return true;
   });
 }
@@ -855,6 +866,7 @@ function renderStrategistDashboard() {
   const counts = { pending: 0, active: 0, paused: 0, complete: 0 };
   ALL_CAMPAIGN_LINES.forEach(l => {
     if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return;
+    if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return;
     if (counts[l.status] != null) counts[l.status]++;
   });
   const tabs = [
