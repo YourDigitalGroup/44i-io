@@ -30,7 +30,10 @@
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
-      <button onclick="adminLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
+      <div style="display:flex;align-items:center;gap:10px">
+        <a id="admin-strategist-portal-link" href="../strategist/index.html" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Strategist Portal →</a>
+        <button onclick="adminLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
+      </div>
     </div>
 
     <!-- Top-level section tabs: Groups | Orders -->
@@ -1169,11 +1172,14 @@ async function checkAdminPw() {
     return;
   }
 
-  // Strategist/Accounting accounts exist for their own upcoming portals, not this one —
-  // this admin portal only makes sense for AM/Super tiers today (Strategist/Accounting
-  // have no tabs here scoped to what they should actually see). Reject them here rather
-  // than silently granting full admin access just because the password matched.
-  if (ok && (role === 'strategist' || role === 'accounting')) {
+  // Accounting has its own upcoming portal, not this one — reject here rather than
+  // silently granting full admin access just because the password matched.
+  // Strategist is different (2026-08-04, per Claire): they already have real reason to
+  // be here — they can see Orders today the same way an AM can — so a strategist login
+  // is now ALLOWED into /admin, just restricted to the Orders tab only (see
+  // showAdmin()/adminSection() below), with a link back to their own portal for
+  // everything else.
+  if (ok && role === 'accounting') {
     errEl.textContent = 'This account isn\'t set up for the admin portal — check with a super admin for the right link.';
     errEl.style.display = 'block';
     document.getElementById('admin-pw-input').value = '';
@@ -1620,13 +1626,26 @@ function showAdmin(show) {
   if (show) {
     // Render the user badge in the admin header
     const badge = document.getElementById('admin-user-badge');
+    const roleLabels = { super: 'Super Admin', am: 'Account Manager', strategist: 'Strategist' };
+    const dotColors = { super: '#10B981', am: '#3B82F6', strategist: '#8B5CF6' };
     if (badge && currentAdminUser) {
-      const roleLabel = currentAdminUser.role === 'super' ? 'Super Admin' : 'Account Manager';
-      const dotColor = currentAdminUser.role === 'super' ? '#10B981' : '#3B82F6';
+      const roleLabel = roleLabels[currentAdminUser.role] || currentAdminUser.role;
+      const dotColor = dotColors[currentAdminUser.role] || '#94A3B8';
       badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${dotColor}"></span><strong style="color:var(--text)">${esc(currentAdminUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
     }
-    // Default to Groups section
-    adminSection('groups');
+    // A strategist login can see Orders here (same visibility they already have) but
+    // nothing else — every other nav tab is real margin/catalog/account data outside
+    // what their own portal needs. Shows a direct link back to their own portal instead
+    // of leaving them stuck looking at a single-tab admin view with no way out.
+    const isStrategist = currentAdminUser?.role === 'strategist';
+    const strategistLink = document.getElementById('admin-strategist-portal-link');
+    if (strategistLink) strategistLink.style.display = isStrategist ? 'inline' : 'none';
+    ['groups','clients','map','sections','intake','ae','legal','notifications','reconcile','users','accounting'].forEach(s => {
+      const tab = document.getElementById('section-tab-' + s);
+      if (tab) tab.style.display = isStrategist ? 'none' : '';
+    });
+    // Default to Orders for a strategist (their only visible tab), Groups for everyone else
+    adminSection(isStrategist ? 'orders' : 'groups');
   } else {
     if (wrap) wrap.style.display = 'block';
   }
