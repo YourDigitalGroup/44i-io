@@ -1115,7 +1115,7 @@ function renderStrategistDetailPanel() {
     </div>
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Goal override <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— ${autoGoal.value != null ? `leave blank to use the auto-calculated ${Math.round(autoGoal.value).toLocaleString()} ${autoGoal.unit}` : `required — nothing to auto-calculate from yet (no In-Platform spend entered, or no rate on file)`}</span></p>
-    <input type="number" value="${l.goal_override ?? ''}" onchange="strategistSaveLine('${l.id}', {goal_override: this.value}, false)" placeholder="${autoGoal.value != null ? Math.round(autoGoal.value) : (goal.unit === 'clicks' ? 'Clicks goal' : 'Impressions goal')}" style="width:140px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:16px"/>
+    <input type="number" value="${l.goal_override ?? ''}" onchange="strategistSaveLine('${l.id}', {goal_override: this.value})" placeholder="${autoGoal.value != null ? Math.round(autoGoal.value) : (goal.unit === 'clicks' ? 'Clicks goal' : 'Impressions goal')}" style="width:140px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:16px"/>
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Optimize log</p>
     ${log.map(o => `<div style="display:flex;align-items:flex-start;gap:14px;padding:8px 0;border-top:1px solid var(--border)">

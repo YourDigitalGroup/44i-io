@@ -5093,3 +5093,43 @@ report, bulk import, group color, goal override, in-platform override, client
 search) — all still pass unchanged. `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-05 (cont'd) — Real bug: Goal override silently failed to update on screen
+
+Claire set up a real Galaxy Media Interactive campaign to test the override logic
+and reported: "I was able to override the in platform budget but I haven't been
+able to update the goal." The In-Platform override worked because its input calls
+`strategistSaveMonth()`, which always reloads data and re-renders after saving. The
+Goal override input instead called `strategistSaveLine(l.id, {goal_override:
+this.value}, false)` — that trailing `false` tells it to skip the reload/re-render
+and just show a toast. The save itself was reaching the database correctly; the
+Goal column in the main table and the detail panel's own input just never refreshed
+to reflect it, so it looked like nothing had happened.
+
+Fixed: dropped the `false` argument so the Goal override save uses the same
+default reload-and-re-render behavior as every other save on this page.
+
+Verified via Playwright (new `test-strategist-goal-override-refresh.js`): mocked
+`strategist_save_campaign_line` to actually apply the update (like the real
+backend would), typed a Goal override, confirmed the save call fires with the
+right value, confirmed the main table's Goal column immediately shows the
+overridden value instead of the stale auto-calculated one, and confirmed the
+detail panel's own input reflects the saved value after re-render. Re-ran all
+other strategist + admin-handoff Playwright tests (dashboard, import, paste
+report, bulk import, group color, goal override, in-platform override, client
+search, past-month carry-forward, both handoff directions, admin strategist
+access) — all still pass unchanged. `node --check` passes clean.
+
+No SQL for this one — frontend only.
+
+**Also flagged, not yet acted on:** while diagnosing an In-Platform Budget number
+that didn't match Galaxy's pacing spreadsheet, Claire shared a second internal
+spreadsheet showing their real calculation isn't "Gross Budget × a flat Budgeted
+Spend %" at all — it derives Budget in Platform from Budgeted Impressions (Gross ÷
+Retail CPM × 1000) × a separate Platform CPM, which lands on a different number
+than a flat % would whenever the two CPMs don't scale proportionally. Claire is
+confirming with her team which model is actually correct before more real IOs
+come in. If the Platform-CPM model turns out to be the real one, this system needs
+a new input (Platform CPM per service/group) alongside or instead of the current
+flat Budgeted Spend % override — a schema question, not just a data-entry fix.
+Parked pending that confirmation.
