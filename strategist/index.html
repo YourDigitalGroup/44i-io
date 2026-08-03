@@ -33,11 +33,17 @@
           <span id="strategist-month-label" style="font-size:13px;font-weight:700;color:var(--text);min-width:110px;text-align:center"></span>
           <button onclick="strategistShiftMonth(1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">›</button>
         </div>
-        <div style="display:flex;gap:6px;font-size:12px">
+        <div style="display:flex;gap:10px;align-items:center;font-size:12px">
           <span id="strategist-scope-mine" onclick="strategistSetScope('mine')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">My Campaigns</span>
           <span id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">All Strategists</span>
+          <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
         </div>
       </div>
+
+      <!-- Manual "+ New Campaign" import form -- for campaigns already running from the
+           old IO system, ordered before this platform existed, so they don't have to
+           wait on the order-insert trigger to show up here. -->
+      <div id="strategist-import-form" style="display:none"></div>
 
       <!-- Status tabs -->
       <div id="strategist-status-tabs" style="display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:16px"></div>
@@ -159,6 +165,7 @@ function showStrategistPanel(show) {
 let ALL_CAMPAIGN_LINES = [];
 let ALL_CAMPAIGN_MONTHS = [];
 let ALL_OPTIMIZE_LOG = [];
+let ALL_STRATEGIST_CLIENTS = []; // {id, name, group_id, group_name} — for the "+ New Campaign" import picker
 let BUDGETED_SPEND_RATES = { base: {}, group: {} }; // service_id -> pct, and group_id|service_id -> pct
 let strategistScope = 'mine';               // 'mine' | 'all'
 let strategistStatusTab = 'pending';        // pending | active | paused | complete
@@ -187,6 +194,112 @@ function strategistSetStatusTab(tab) {
   renderStrategistDashboard();
 }
 
+// ── "+ NEW CAMPAIGN" MANUAL IMPORT (2026-08-04) ──────────────────
+// For campaigns already running from the OLD IO system, ordered before this platform
+// existed, so they aren't sitting on an order for the create_campaign_lines_from_order
+// trigger to fan out from. Skips the Campaign Setup queue entirely — an imported
+// campaign is already running, so it's created straight into whichever status is
+// picked (Active by default). How much history to bring in per campaign is left
+// entirely up to whoever's importing it — this form creates the line, then the row
+// detail panel's month-by-month history editor (see below) can backfill as many past
+// months as make sense for that specific campaign, one at a time.
+function strategistOpenImportForm() {
+  const el = document.getElementById('strategist-import-form');
+  const isOpen = el.style.display !== 'none';
+  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  const spendServices = Object.values(CATALOG_ROWS).filter(r => r.pricing_mode === 'spend');
+  el.style.display = 'block';
+  el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
+    <strong style="font-size:13px;display:block;margin-bottom:10px">Import a campaign already running from the old IO system</strong>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
+      <div>
+        <label class="lbl">Client</label>
+        <select id="import-client" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+          <option value="">— Select —</option>
+          ${ALL_STRATEGIST_CLIENTS.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Tactic</label>
+        <select id="import-service" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+          <option value="">— Select —</option>
+          ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Platform</label>
+        <input id="import-platform" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+      <div>
+        <label class="lbl">Status</label>
+        <select id="import-status" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+          <option value="active" selected>Active</option>
+          <option value="paused">Paused</option>
+          <option value="complete">Complete</option>
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Flight Start</label>
+        <input type="date" id="import-flight-start" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+      <div>
+        <label class="lbl">Flight End</label>
+        <input type="date" id="import-flight-end" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+      <div>
+        <label class="lbl">Current Gross Budget</label>
+        <input type="number" id="import-gross-budget" placeholder="$/mo" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 12px">This creates the campaign as of the current month. Once it's in the list, click into it to add any past months' budgets/actuals you want on record — as far back as makes sense for this one.</p>
+    <div style="display:flex;gap:10px">
+      <button onclick="strategistSubmitImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Campaign</button>
+      <button onclick="strategistOpenImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+    </div>
+  </div>`;
+}
+
+async function strategistSubmitImport() {
+  const clientSel = document.getElementById('import-client');
+  const clientId = clientSel.value;
+  const groupId = clientSel.selectedOptions[0]?.dataset.groupId || null;
+  const serviceSel = document.getElementById('import-service');
+  const serviceId = serviceSel.value;
+  const serviceLabel = serviceSel.selectedOptions[0]?.textContent || '';
+  const platform = document.getElementById('import-platform').value.trim();
+  const status = document.getElementById('import-status').value;
+  const flightStart = document.getElementById('import-flight-start').value || null;
+  const flightEnd = document.getElementById('import-flight-end').value || null;
+  const grossBudget = document.getElementById('import-gross-budget').value;
+
+  if (!clientId || !serviceId) { showToast('Pick a client and a tactic.', 'error'); return; }
+
+  try {
+    const newId = await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: null,
+      p_data: {
+        client_id: clientId, group_id: groupId, service_id: serviceId, tactic_label: serviceLabel,
+        platform: platform || null, flight_start: flightStart, flight_end: flightEnd,
+        status, assigned_strategist: currentStrategistUser.name
+      }
+    }) });
+    if (grossBudget) {
+      await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_campaign_line_id: newId, p_month: new Date().toISOString().slice(0,10),
+        p_data: { gross_budget: grossBudget }
+      }) });
+    }
+    document.getElementById('strategist-import-form').style.display = 'none';
+    document.getElementById('strategist-import-form').innerHTML = '';
+    strategistStatusTab = status;
+    await fetchStrategistData();
+    renderStrategistDashboard();
+    showToast('Campaign imported!');
+  } catch(e) { showToast('Error importing campaign: ' + e.message, 'error'); }
+}
+
 // Fetches the four datasets fresh, WITHOUT touching any view state (current month,
 // scope, status tab, selected row) — used both by the initial load and by every save
 // handler afterward. Kept separate from loadStrategistDashboard() below on purpose:
@@ -194,15 +307,17 @@ function strategistSetStatusTab(tab) {
 // to be looking at.
 async function fetchStrategistData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
-  const [lines, months, log, rates] = await Promise.all([
+  const [lines, months, log, rates, clients] = await Promise.all([
     sb('rpc/strategist_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_optimize_log', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_budgeted_spend_rates', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sb('rpc/strategist_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
   ]);
   ALL_CAMPAIGN_LINES = lines || [];
   ALL_CAMPAIGN_MONTHS = months || [];
   ALL_OPTIMIZE_LOG = log || [];
+  ALL_STRATEGIST_CLIENTS = clients || [];
   BUDGETED_SPEND_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
     if (r.scope === 'base') BUDGETED_SPEND_RATES.base[r.service_id] = r.budgeted_spend_pct;
@@ -378,6 +493,20 @@ async function strategistAddSetupMonth(lineId) {
   await strategistSaveMonth(lineId, next.toISOString().slice(0,10), { gross_budget: last ? last.gross_budget : null });
 }
 
+// Backfilling a specific past month from the detail panel's history editor (2026-08-04)
+// — unlike strategistAddSetupMonth() above (which just adds "the next month" for an
+// ongoing campaign), an imported campaign needs to jump straight to a specific past
+// month, however far back makes sense for that one — no fixed amount of history is
+// assumed or required.
+async function strategistAddHistoryMonth(lineId) {
+  const input = prompt('Which month? (YYYY-MM)');
+  if (!input) return;
+  const match = /^(\d{4})-(\d{2})$/.exec(input.trim());
+  if (!match) { showToast('Enter a month as YYYY-MM, e.g. 2026-03', 'error'); return; }
+  const monthStr = `${match[1]}-${match[2]}-01`;
+  await strategistSaveMonth(lineId, monthStr, {});
+}
+
 async function strategistSaveMonth(lineId, monthStr, data) {
   try {
     await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
@@ -496,6 +625,19 @@ function renderStrategistDetailPanel() {
         <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:3px">CTR</div>
         <div style="font-family:monospace;font-size:14px;font-weight:700">${ctr != null ? ctr.toFixed(2) + '%' : '—'}</div>
       </div>
+    </div>
+
+    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Monthly history</p>
+    <div style="border:1px solid var(--border);border-radius:8px;padding:4px 12px;margin-bottom:16px;background:var(--light)">
+      ${ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month)).map(m => `
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--border)">
+          <span style="width:90px;color:var(--muted);font-weight:600">${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}</span>
+          <input type="number" value="${m.gross_budget ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {gross_budget: this.value})" placeholder="Gross" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <input type="number" value="${m.actual_spend ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_spend: this.value})" placeholder="Actual spend" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <input type="number" value="${m.actual_clicks ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_clicks: this.value})" placeholder="Clicks" style="width:75px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <input type="number" value="${m.actual_impressions ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_impressions: this.value})" placeholder="Impr." style="width:85px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+        </div>`).join('') || '<p style="font-size:11px;color:var(--muted);padding:6px 0">No months on record yet.</p>'}
+      <button onclick="strategistAddHistoryMonth('${l.id}')" style="margin:8px 0;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">+ Add a past month</button>
     </div>
 
     ${l.service_id === 'sem-bp' || !CATALOG_ROWS[l.service_id]?.retail_cpm ? `
