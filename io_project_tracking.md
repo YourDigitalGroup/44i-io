@@ -4912,3 +4912,50 @@ your own screen); it was never an access restriction. Any valid login — Claire
 tactic/platform-campaign-name, not by who happens to be logged in. This was the
 intentional design from the original mockup (one shared portal) — confirmed as still
 correct, not a gap needing a fix.
+
+**Same day, follow-up: reciprocal admin link, Logout label, and a general Goal
+override.**
+
+1. **"Can we add a link in the strategist page to go back to the admin?"** Built the
+   exact reverse of the admin->strategist handoff from earlier today —
+   `adminPortalHandoff()` stashes the strategist session into `sessionStorage` before
+   navigating; `admin/index.html` gained a matching `tryAdminHandoffLogin()` (checked
+   in `DOMContentLoaded` before falling through to the login prompt) and
+   `attemptAdminLogin()` (the actual login check, pulled out of `checkAdminPw()` the
+   same way `attemptStrategistLogin()` already was, so the modal and the silent
+   handoff share one implementation). Shown for both `strategist` and `super` — both
+   can log into `/admin` now.
+2. **"Update the logout button on the strategist page to say Logout instead of
+   Close"** — done, matches `/admin`'s wording exactly.
+3. **"When I bulk import, since I am not adding the in-platform spend a goal will
+   there be a way for me to override it if it is not correct?"** Real gap: the
+   `goal_override` field already existed but `computeGoal()` only ever consulted it
+   for SEM (or any tactic with no `retail_cpm` on file) — a normal impressions-based
+   tactic imported without a Gross Budget had literally no way to set a Goal at all,
+   and even WITH a budget, a wrong auto-calculated number couldn't be corrected.
+   Fixed: an explicit override now always wins, for every tactic, regardless of
+   whether an auto-calculated number is also available. The detail panel's Goal
+   input is no longer conditional on tactic type — it's always shown, with the
+   placeholder displaying what the real auto-calculated value would be (so it's
+   obvious at a glance whether you're overriding a real number or filling a genuine
+   gap) or a plain note that there's nothing to auto-calculate from yet.
+
+Verified via Playwright:
+- `test-admin-handoff.js` (new): confirmed a strategist's own credentials work via
+  the reciprocal handoff and land them on the same Orders-only restricted view a
+  normal strategist login gets; confirmed replay fails; confirmed `accounting` is
+  still rejected through the handoff path exactly as through a normal login.
+- `test-strategist-goal-override.js` (new): confirmed an override always wins over a
+  real auto-calculated value, not just when no auto value exists; confirmed a
+  tactic with genuinely nothing to calculate from (no budget entered) still works
+  once an override is set; confirmed SEM's existing manual-required behavior is
+  unchanged; confirmed the detail panel's override input is present for a normal
+  (non-SEM) tactic now, with its placeholder showing the real auto-calculated
+  reference value.
+- Re-ran every other strategist/admin Playwright test — all still pass unchanged
+  (one apparent hang on a full back-to-back run turned out to be `chromium` resource
+  contention from launching 9 browsers in a tight loop, not a real regression —
+  confirmed by re-running that one test alone immediately afterward). `node --check`
+  passes clean on both files.
+
+No SQL changes for any of this — all three are frontend-only.

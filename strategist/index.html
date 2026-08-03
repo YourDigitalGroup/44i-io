@@ -22,7 +22,10 @@
   <div class="card" style="max-width:1500px;margin:24px auto;padding-bottom:20px">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="strategist-user-badge" style="font-size:12px;color:var(--muted)"></div>
-      <button onclick="strategistLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">✕ Close</button>
+      <div style="display:flex;align-items:center;gap:10px">
+        <a id="strategist-admin-portal-link" href="../admin/index.html" onclick="adminPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Admin →</a>
+        <button onclick="strategistLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
+      </div>
     </div>
 
     <div style="padding:16px 20px 0">
@@ -161,8 +164,24 @@ function showStrategistPanel(show) {
     const badge = document.getElementById('strategist-user-badge');
     const roleLabel = currentStrategistUser.role === 'super' ? 'Super Admin' : 'Strategist';
     badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#8B5CF6"></span><strong style="color:var(--text)">${esc(currentStrategistUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
+    // Both strategist and super can log into /admin now (2026-08-04) — a strategist
+    // sees Orders there, a super sees everything — so this link makes sense either way.
+    const adminLink = document.getElementById('strategist-admin-portal-link');
+    if (adminLink) adminLink.style.display = 'inline';
     loadStrategistDashboard();
   }
+}
+
+// Reciprocal handoff to admin/index.html's own tryAdminHandoffLogin() (2026-08-04,
+// per Claire, symmetric with the admin->strategist handoff built earlier the same
+// day) — same one-time sessionStorage pattern, cleared on the other side right after
+// being read, whether it works or not.
+function adminPortalHandoff() {
+  if (!currentStrategistUser) return;
+  try {
+    sessionStorage.setItem('admin_handoff_name', currentStrategistUser.name);
+    sessionStorage.setItem('admin_handoff_pw', currentStrategistUser.pw);
+  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -704,13 +723,19 @@ function computeInPlatformBudget(grossBudget, serviceId, groupId) {
 // ("$4-$12"), not a single rate, so an automatic clicks number isn't actually
 // computable yet; falls back to campaign_lines.goal_override (manual entry, same
 // trust level as Platform/monthly budgets) until a real single CPC rate is decided.
+// goal_override is a general escape hatch, not just SEM's -- found live 2026-08-04,
+// per Claire: a bulk-imported campaign that skips entering In-Platform spend (or
+// whose auto-calculated Goal is simply wrong for some other reason) still needs a
+// way to correct it, same as SEM already had. An explicit override always wins,
+// regardless of whether an auto-calculated number is also available.
 function computeGoal(line, inPlatformBudget) {
   const row = CATALOG_ROWS[line.service_id];
-  if (line.service_id === 'sem-bp' || !row || row.retail_cpm == null) {
-    return line.goal_override != null ? { value: Number(line.goal_override), unit: 'clicks', manual: true } : { value: null, unit: 'clicks', manual: true };
-  }
-  if (inPlatformBudget == null) return { value: null, unit: 'impr.', manual: false };
-  return { value: (inPlatformBudget / Number(row.retail_cpm)) * 1000, unit: 'impr.', manual: false };
+  const isClicksBased = line.service_id === 'sem-bp' || !row || row.retail_cpm == null;
+  const unit = isClicksBased ? 'clicks' : 'impr.';
+  if (line.goal_override != null) return { value: Number(line.goal_override), unit, manual: true, overridden: true };
+  if (isClicksBased) return { value: null, unit, manual: true };
+  if (inPlatformBudget == null) return { value: null, unit, manual: false };
+  return { value: (inPlatformBudget / Number(row.retail_cpm)) * 1000, unit, manual: false };
 }
 
 function pacingPct(actual, goal) {
@@ -984,6 +1009,12 @@ function renderStrategistDetailPanel() {
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
   const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
   const ctr = (monthRow.actual_clicks != null && monthRow.actual_impressions) ? (monthRow.actual_clicks / monthRow.actual_impressions * 100) : null;
+  const inPlatform = computeInPlatformBudget(monthRow.gross_budget, l.service_id, l.group_id);
+  const goal = computeGoal(l, inPlatform);
+  // What Goal would auto-calculate to WITHOUT the override, shown as a reference —
+  // helps tell "there's nothing to auto-calculate from" apart from "there IS a real
+  // number, I'm just choosing to override it."
+  const autoGoal = computeGoal({ ...l, goal_override: null }, inPlatform);
 
   panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;background:#fff">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
@@ -1021,10 +1052,8 @@ function renderStrategistDetailPanel() {
       <button onclick="strategistAddHistoryMonth('${l.id}')" style="margin:8px 0;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">+ Add a past month</button>
     </div>
 
-    ${l.service_id === 'sem-bp' || !CATALOG_ROWS[l.service_id]?.retail_cpm ? `
-    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Goal (manual — no single rate on file yet)</p>
-    <input type="number" value="${l.goal_override ?? ''}" onchange="strategistSaveLine('${l.id}', {goal_override: this.value}, false)" placeholder="Clicks goal" style="width:120px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:16px"/>
-    ` : ''}
+    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Goal override <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— ${autoGoal.value != null ? `leave blank to use the auto-calculated ${Math.round(autoGoal.value).toLocaleString()} ${autoGoal.unit}` : `required — nothing to auto-calculate from yet (no In-Platform spend entered, or no rate on file)`}</span></p>
+    <input type="number" value="${l.goal_override ?? ''}" onchange="strategistSaveLine('${l.id}', {goal_override: this.value}, false)" placeholder="${autoGoal.value != null ? Math.round(autoGoal.value) : (goal.unit === 'clicks' ? 'Clicks goal' : 'Impressions goal')}" style="width:140px;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:16px"/>
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Optimize log</p>
     ${log.map(o => `<div style="display:flex;align-items:flex-start;gap:14px;padding:8px 0;border-top:1px solid var(--border)">
@@ -1102,10 +1131,13 @@ function strategistLogout() {
 // already uses everywhere (no tokens/cookies anywhere in this project) — sessionStorage
 // just carries that same value across the one page hop, cleared right after reading.
 async function tryStrategistHandoffLogin() {
-  const name = sessionStorage.getItem('strategist_handoff_name');
-  const pw = sessionStorage.getItem('strategist_handoff_pw');
-  sessionStorage.removeItem('strategist_handoff_name');
-  sessionStorage.removeItem('strategist_handoff_pw');
+  let name, pw;
+  try {
+    name = sessionStorage.getItem('strategist_handoff_name');
+    pw = sessionStorage.getItem('strategist_handoff_pw');
+    sessionStorage.removeItem('strategist_handoff_name');
+    sessionStorage.removeItem('strategist_handoff_pw');
+  } catch(e) { return false; } // e.g. sessionStorage blocked entirely (privacy mode, unusual origin)
   if (!name || !pw) return false;
   const result = await attemptStrategistLogin(name, pw);
   if (!result.ok) return false;
