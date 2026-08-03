@@ -1052,7 +1052,7 @@ function renderMainTable(lines) {
         `<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${h}</th>`).join('')}
     </tr></thead><tbody>`;
 
-  Object.keys(byGroup).forEach(groupName => {
+  Object.keys(byGroup).sort((a, b) => a.localeCompare(b)).forEach(groupName => {
     // Matches this group's own brand color (Groups tab, admin/index.html) rather than
     // one flat color for every group (2026-08-04, per Claire) — falls back to the
     // catalog's default accent if a group has no brand_color set.

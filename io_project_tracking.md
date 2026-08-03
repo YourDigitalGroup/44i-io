@@ -5349,3 +5349,46 @@ an override now sends `null`, never `''`; confirmed a real value still passes th
 unmodified; confirmed a string field (platform) is unaffected by the conversion.
 Re-ran goal-override, goal-override-refresh, pause-flight, import, and dashboard
 tests — all still pass unchanged. `node --check` passes clean.
+
+## 2026-08-05 (cont'd) — Platform CPM architecture double-confirmed; group sort
+
+More back-and-forth on Platform CPM before Claire settled it conclusively. She
+pointed out $4.75 (the real Wholesale CPM sourced from the flight media plan) was
+already sitting in the system as the existing "44i CPM" column (Retail CPM × 44i Cut
+%) — a fair challenge to whether the new Platform CPM field was actually necessary.
+Tested the hypothesis numerically: base 44i Cut % (47.5%) × $10 Retail CPM = $4.75,
+but using that as the In-Platform driver for Five Iron Golf gives $712.50, nowhere
+near the real confirmed $225 — so "44i CPM" and "Wholesale CPM" matching in this one
+instance was coincidental, not identity.
+
+Claire then pulled up her actual Galaxy CPM calculator spreadsheet's real formula:
+`=if(F6="Yes", B5-B5*F7, B12*B13/1000)` — the else-branch (no management-fee
+structure) is `Budgeted Impressions × Platform CPM ÷ 1000`, an EXACT match to
+`computeInPlatformBudget()`. Platform CPM is its own row in that sheet (1.80),
+completely separate from Retail CPM (10.00) and from anything cut-%-derived —
+conclusively confirms Platform CPM is a real, independently-tracked value, not
+derivable from existing fields. Architecture confirmed correct for the second time
+via two independent real documents (the Kingfish media plan, and now this Galaxy
+calculator's actual formula).
+
+One number still doesn't reconcile: this calculator says Galaxy/td-geo's Platform CPM
+is $1.80 (→ $270), but the confirmed real invoice figure was $225 (→ $1.50 back-
+calculated). Parked — asked Claire whether $1.80 is a stale/example value in that
+calculator or Galaxy's rate actually changed since. Not blocking; she can fill in
+whichever number is actually current once she confirms.
+
+Also flagged, not built (no evidence yet any group needs it): that same formula's
+IF-branch handles a completely different billing model — a flat Management Fee %
+of Retail Amount, for any group that doesn't use a Platform-CPM media spread at all.
+The Strategist Portal has no equivalent path for that today.
+
+**Group sort:** Claire asked for the main table's groups to display alphabetically —
+`renderMainTable()` grouped by first-seen order in the `lines` array, not sorted at
+all. Added `.sort((a,b) => a.localeCompare(b))` on the group-name keys before
+rendering. Verified via Playwright (new `test-strategist-group-alpha-sort.js`):
+three groups inserted in Zeta/Alpha/Mid order render as Alpha/Mid/Zeta. Re-ran
+`test-strategist-dashboard.js` — still passes unchanged (one flaky timeout on a
+back-to-back browser launch, passed clean on retry — known resource-contention
+quirk from this session, not a regression). `node --check` passes clean.
+
+No SQL for the group sort — frontend only.
