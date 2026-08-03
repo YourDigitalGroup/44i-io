@@ -1002,7 +1002,7 @@
       <div id="section-accounting" style="display:none;flex-direction:column">
         <div style="order:1;margin-bottom:14px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Accounting Map</p>
-          <p style="font-size:11px;color:var(--muted)">One row per service — 44i's cut, and the % of Gross that actually becomes in-platform ad spend. Restricted to super admins. Retail CPM, 44i CPM, and Platform CPM are shown for reference but not editable here — they're always computed live from Retail CPM (Services tab) × the cut/spend percentages below, so there's never a second number to keep in sync.</p>
+          <p style="font-size:11px;color:var(--muted)">One row per service — 44i's cut, and the rates that drive the Strategist Portal. Restricted to super admins. Retail CPM and 44i CPM are shown for reference but not editable here — they're always computed live from Retail CPM (Services tab) × the cut % below. Platform CPM is a real entered rate (below), not computed — confirmed 2026-08-05 that the old "Retail CPM × Budgeted Spend %" approximation didn't match how strategists actually price a campaign.</p>
         </div>
 
         <div id="admin-accounting-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
@@ -1030,9 +1030,15 @@
               <input type="number" step="0.01" id="admin-accounting-fixed-cut" placeholder="0" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
-          <div style="margin-bottom:12px">
-            <label class="lbl">(Of Gross) Budgeted Spend % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— drives In-Platform Budget</span></label>
-            <input type="number" step="0.01" id="admin-accounting-budgeted-spend" placeholder="e.g. 25" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Platform CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— drives In-Platform Budget/Goal in the Strategist Portal</span></label>
+              <input type="number" step="0.01" id="admin-accounting-platform-cpm" placeholder="e.g. 3.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">(Of Gross) Budgeted Spend % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— legacy, no longer used by the Strategist Portal</span></label>
+              <input type="number" step="0.01" id="admin-accounting-budgeted-spend" placeholder="e.g. 25" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
           </div>
           <div id="admin-accounting-setup-fee-block" style="display:none;margin-bottom:12px;padding:14px;background:#fff;border-radius:8px;border:1px solid var(--border)">
             <p style="font-size:11px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Setup Fee Split <span id="admin-accounting-setup-fee-amount-note" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></p>
@@ -1418,7 +1424,8 @@ let currentAccountingOverrides = {};
 const ACCOUNTING_OVERRIDE_FIELDS = [
   { key: 'fortyfouri_cut_pct', label: '44i Cut %', suffix: '%' },
   { key: 'fortyfouri_fixed_cut', label: 'Fixed Cut $', suffix: '' },
-  { key: 'budgeted_spend_pct', label: 'Budgeted Spend %', suffix: '%' },
+  { key: 'platform_cpm', label: 'Platform CPM', suffix: '' },
+  { key: 'budgeted_spend_pct', label: 'Budgeted Spend % (legacy)', suffix: '%' },
 ];
 
 function renderAccountingOverrideFields() {
@@ -1479,6 +1486,7 @@ function renderAccountingOverrideFields() {
           fields: {
             fortyfouri_cut_pct: pctOverridden ? ownA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
             fortyfouri_fixed_cut: pctOverridden ? ownA.fortyfouri_fixed_cut : 0,
+            platform_cpm: pctOverridden ? ownA.platform_cpm : baseA?.platform_cpm,
             budgeted_spend_pct: pctOverridden ? ownA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
           },
         });
@@ -1495,6 +1503,7 @@ function renderAccountingOverrideFields() {
             fields: {
               fortyfouri_cut_pct: pctOverridden ? pairA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
               fortyfouri_fixed_cut: pctOverridden ? pairA.fortyfouri_fixed_cut : 0,
+              platform_cpm: pctOverridden ? pairA.platform_cpm : baseA?.platform_cpm,
               budgeted_spend_pct: pctOverridden ? pairA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
             },
           });
@@ -1514,6 +1523,7 @@ function renderAccountingOverrideFields() {
       fields: {
         fortyfouri_cut_pct: base.fortyfouri_cut_pct,
         fortyfouri_fixed_cut: base.fortyfouri_fixed_cut,
+        platform_cpm: base.platform_cpm,
         budgeted_spend_pct: base.budgeted_spend_pct,
         setup_fee_cut_pct: base.setup_fee_cut_pct,
       },
@@ -3308,14 +3318,13 @@ function fmtPct(n) {
 // Builds one <tr> for the Accounting Map list — shared by real service rows and the
 // synthetic reference rows a multi-candidate CPM-adjustment modifier generates below,
 // so both use identical derivation math and never drift apart.
-function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retailCpm, cutPct, fixedCut, budgetedPct, setupFeeSplitDisplay, missing, editBtnHtml, note, cpmAdjustment }) {
+function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retailCpm, cutPct, fixedCut, budgetedPct, platformCpm, setupFeeSplitDisplay, missing, editBtnHtml, note, cpmAdjustment }) {
   const ydaPct = cutPct != null ? fmtPct(100 - Number(cutPct)) : null;
   const cutDollar = (fixedCut && Number(fixedCut) > 0) ? Number(fixedCut)
     : ((defaultRetail != null && cutPct != null) ? (defaultRetail * Number(cutPct) / 100) : null);
   const cutCpm = (retailCpm != null && cutPct != null) ? (retailCpm * Number(cutPct) / 100) : null;
   const budgetedPctDisplay = fmtPct(budgetedPct);
   const cutPctDisplay = fmtPct(cutPct);
-  const platformCpm = (retailCpm != null && budgetedPct != null) ? (retailCpm * Number(budgetedPct) / 100) : null;
   // `cpmAdjustment` gets the same tinted background as an indented reference row, even
   // when it isn't indented (a single-candidate modifier's own row, or a multi-candidate
   // modifier's summary row) — Claire (2026-07-31): wanted every offline-tracking-style
@@ -3333,7 +3342,7 @@ function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retai
       <td style="padding:8px 10px">${budgetedPctDisplay != null ? budgetedPctDisplay + '%' : '—'}</td>
       <td style="padding:8px 10px">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${platformCpm != null ? '$' + platformCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px">${platformCpm != null ? '$' + Number(platformCpm).toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${esc(setupFeeSplitDisplay || '—')}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtnHtml}</td>
     </tr>`;
@@ -3429,6 +3438,7 @@ function renderAdminAccountingList() {
           cutPct: pctOverridden ? a.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
           fixedCut: pctOverridden ? a.fortyfouri_fixed_cut : 0,
           budgetedPct: pctOverridden ? a.budgeted_spend_pct : baseA?.budgeted_spend_pct,
+          platformCpm: pctOverridden ? a.platform_cpm : baseA?.platform_cpm,
           setupFeeSplitDisplay: null, missing: false,
           editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${pctOverridden ? 'Edit' : 'Override'}</button>`,
           note: (retailCpmOverridden ? 'CPM overridden' : `CPM auto from ${base.id}`) + (pctOverridden ? ', %s overridden' : `, %s from ${base.id}`),
@@ -3448,7 +3458,7 @@ function renderAdminAccountingList() {
         // entry, which stays completely untouched by any of this.
         html += renderAccountingMapRow({
           id: s.id, displayLabel, indent: true, cpmAdjustment: true,
-          defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null,
+          defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null, platformCpm: null,
           setupFeeSplitDisplay: null, missing: false,
           editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${candidates.length} tactics — each independently overridable below</span>`,
           note: `combines with ${candidates.length} different tactics depending on the order`,
@@ -3464,6 +3474,7 @@ function renderAdminAccountingList() {
             cutPct: pctOverridden ? pairA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
             fixedCut: pctOverridden ? pairA.fortyfouri_fixed_cut : 0,
             budgetedPct: pctOverridden ? pairA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
+            platformCpm: pctOverridden ? pairA.platform_cpm : baseA?.platform_cpm,
             setupFeeSplitDisplay: null, missing: false,
             editBtnHtml: `<button onclick="adminEditAccounting('${esc(base.id)}','${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${pctOverridden ? 'Edit' : 'Override'}</button>`,
             note: pctOverridden ? `%s overridden just for this pairing (${base.id} + ${s.id})` : `auto from ${base.id}'s own entry — Override to set different %s just for this pairing`,
@@ -3478,7 +3489,7 @@ function renderAdminAccountingList() {
           id: s.id, displayLabel, indent: true, cpmAdjustment: true,
           defaultRetail: s.default_price != null ? Number(s.default_price) : null,
           retailCpm: s.retail_cpm != null ? Number(s.retail_cpm) : null,
-          cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct,
+          cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct, platformCpm: a?.platform_cpm,
           setupFeeSplitDisplay: null, missing,
           editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`,
         });
@@ -3508,7 +3519,7 @@ function renderAdminAccountingList() {
       id: s.id, displayLabel, indent: false,
       defaultRetail: s.default_price != null ? Number(s.default_price) : null,
       retailCpm: s.retail_cpm != null ? Number(s.retail_cpm) : null,
-      cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct,
+      cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct, platformCpm: a?.platform_cpm,
       setupFeeSplitDisplay, missing,
       editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`,
     });
@@ -3562,6 +3573,7 @@ function adminEditAccounting(serviceId, pairWithServiceId) {
   document.getElementById('admin-accounting-cut-pct').value = a?.fortyfouri_cut_pct ?? '';
   document.getElementById('admin-accounting-fixed-cut').value = a?.fortyfouri_fixed_cut ?? '';
   document.getElementById('admin-accounting-budgeted-spend').value = a?.budgeted_spend_pct ?? '';
+  document.getElementById('admin-accounting-platform-cpm').value = a?.platform_cpm ?? '';
   updateAccountingYdaPreview();
   // Setup Fee Split is a property of the service's own setup fee, never of a pairing
   // with another service's modifier — always hidden while editing a pairing override.
@@ -3594,6 +3606,7 @@ async function adminSaveAccountingMap() {
   const cutVal = document.getElementById('admin-accounting-cut-pct').value;
   const fixedVal = document.getElementById('admin-accounting-fixed-cut').value;
   const budgetedVal = document.getElementById('admin-accounting-budgeted-spend').value;
+  const platformCpmVal = document.getElementById('admin-accounting-platform-cpm').value;
   // Cleared to '' by adminEditAccounting() whenever the service has no setup fee
   // configured, so this naturally saves as null for services where it doesn't apply.
   const setupFeeCutVal = document.getElementById('admin-accounting-setup-fee-cut-pct').value;
@@ -3602,6 +3615,7 @@ async function adminSaveAccountingMap() {
     fortyfouri_cut_pct: cutVal === '' ? null : parseFloat(cutVal),
     fortyfouri_fixed_cut: fixedVal === '' ? 0 : parseFloat(fixedVal),
     budgeted_spend_pct: budgetedVal === '' ? null : parseFloat(budgetedVal),
+    platform_cpm: platformCpmVal === '' ? null : parseFloat(platformCpmVal),
     setup_fee_cut_pct: setupFeeCutVal === '' ? null : parseFloat(setupFeeCutVal)
   };
   try {
