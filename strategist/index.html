@@ -810,9 +810,50 @@ function computeGoal(line, grossBudget) {
   return { value: budgetedImpressions(grossBudget, line.service_id), unit, manual: false };
 }
 
-function pacingPct(actual, goal) {
+function strategistDaysBetweenInclusive(a, b) {
+  const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((utcB - utcA) / 86400000) + 1;
+}
+
+// The expected fraction of a month's flight window that should have delivered by
+// today -- confirmed against Claire's real spreadsheet formula 2026-08-06. The window
+// is the OVERLAP between the campaign's flight dates and the REAL current calendar
+// month (not the full flight, and not just the calendar month alone); "today" clamps
+// to the flight's own end date if the flight already finished mid-month.
+function strategistExpectedPacingFraction(flightStart, flightEnd, today) {
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const fs = flightStart ? new Date(flightStart + 'T00:00:00') : null;
+  const fe = flightEnd ? new Date(flightEnd + 'T00:00:00') : null;
+  const windowStart = fs && fs > monthStart ? fs : monthStart;
+  const windowEnd = fe && fe < monthEnd ? fe : monthEnd;
+  if (windowEnd < windowStart) return null; // flight doesn't overlap this month at all
+  const elapsedEnd = fe && fe < today ? fe : today;
+  if (elapsedEnd < windowStart) return 0;
+  const elapsedDays = strategistDaysBetweenInclusive(windowStart, elapsedEnd);
+  const totalDays = strategistDaysBetweenInclusive(windowStart, windowEnd);
+  return elapsedDays / totalDays;
+}
+
+// Spend/Perf Pacing -- confirmed against Claire's real spreadsheet formula
+// 2026-08-06: a COMPLETED past month shows a plain final Actual ÷ Goal (that month
+// already fully happened, nothing left to project); a month that hasn't started yet
+// shows nothing (no actuals to pace); the REAL CURRENT month prorates Goal down to
+// "what should have been spent by today," using the overlap between the campaign's
+// flight and this calendar month, exactly as in that formula. Deliberately anchored
+// to real today's date, not to whichever month is selected in the top-bar picker --
+// only WHICH branch applies (past/current/future) depends on the viewed month.
+function pacingPct(actual, goal, flightStart, flightEnd, viewedMonth) {
   if (actual == null || goal == null || goal === 0) return null;
-  return (Number(actual) / Number(goal)) * 100;
+  const now = new Date();
+  const viewedKey = strategistMonthKey(viewedMonth);
+  const nowKey = strategistMonthKey(now);
+  if (viewedKey < nowKey) return (Number(actual) / Number(goal)) * 100;
+  if (viewedKey > nowKey) return null;
+  const frac = strategistExpectedPacingFraction(flightStart, flightEnd, now);
+  if (frac == null || frac <= 0) return null;
+  return (Number(actual) / (Number(goal) * frac)) * 100;
 }
 function pacingClass(pct) {
   if (pct == null) return '';
@@ -1063,9 +1104,9 @@ function renderMainTable(lines) {
       const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
       const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
       const goal = computeGoal(l, monthRow.gross_budget);
-      const spendPacing = pacingPct(monthRow.actual_spend, inPlatform);
+      const spendPacing = pacingPct(monthRow.actual_spend, inPlatform, l.flight_start, l.flight_end, strategistCurrentMonth);
       const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
-      const perfPacing = pacingPct(actualPerf, goal.value);
+      const perfPacing = pacingPct(actualPerf, goal.value, l.flight_start, l.flight_end, strategistCurrentMonth);
       const logCount = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id).length;
       const selected = strategistSelectedLineId === l.id;
       html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">

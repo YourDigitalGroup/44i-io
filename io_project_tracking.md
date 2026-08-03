@@ -5392,3 +5392,72 @@ back-to-back browser launch, passed clean on retry — known resource-contention
 quirk from this session, not a regression). `node --check` passes clean.
 
 No SQL for the group sort — frontend only.
+
+## 2026-08-06 — Rebuilt Spend/Perf Pacing to match the real MTD Pacing formula
+
+Two more real gaps found live. First: two campaigns paste-matched correctly on
+Google Ads/Facebook Ads but not on Simpli.fi/The Trade Desk despite the data being
+right there. Likely cause (flagged to Claire, not yet independently confirmed): the
+paste-report matcher requires an EXACT string match between a campaign's stored
+`platform` and the report form's selected platform — if those two campaigns were
+entered via Bulk Import (CSV), whatever raw text was in that CSV's Platform column
+gets stored as-is, with no normalization against the canonical dropdown strings
+(`Google Ads`, `Facebook Ads`, `Simpli.fi`, `The Trade Desk`, `StackAdapt`). A CSV
+saying "Trade Desk" or "TradeDesk" instead of exactly "The Trade Desk" would silently
+never match. Asked Claire to check those specific campaigns' Platform field in the
+portal (does it show cleanly selected in the dropdown, or fall into the "Other…"
+free-text box with slightly different wording) before building a fix — no code
+changed yet, need to confirm the actual stored value first.
+
+Second, real: "the MTD Pacing formula... doesn't match what is in our current
+spreadsheet." `pacingPct()` was a flat `Actual ÷ Goal × 100` — no adjustment for how
+far through the month/flight you actually are. Claire shared her real spreadsheet
+formula:
+
+```
+=IF(OR(I64="", I64=0), "",
+  IF(MIN(M64, EOMONTH(TODAY(),0)) < MAX(L64, EOMONTH(TODAY(),-1)+1), "",
+    (J64/AVERAGE(SPLIT(I64,"-"))) /
+    (MAX(0, MIN(TODAY(), M64) - MAX(L64, EOMONTH(TODAY(),-1)+1) + 1) /
+     (MIN(M64, EOMONTH(TODAY(),0)) - MAX(L64, EOMONTH(TODAY(),-1)+1) + 1))
+  )
+```
+
+Worked through it precisely rather than guessing: the "window" is the OVERLAP between
+the campaign's flight dates (L64/M64) and the REAL current calendar month (not the
+full flight, not just the calendar month alone) — if there's no overlap, blank.
+Within that window: `Expected % = elapsed days ÷ total days`, and `Pacing = Actual ÷
+(Goal × Expected %)` — i.e., Goal gets scaled down to "what should have been spent by
+today," not compared against the full month's target. Confirmed two more behavioral
+specifics before writing code: a COMPLETED past month shows a plain unprorated
+Actual÷Goal (nothing left to project, "historical actuals" per Claire); a month that
+hasn't started yet shows nothing. Only the REAL CURRENT calendar month (regardless of
+which month is selected via the top-bar picker) gets the day-elapsed proration —
+this pacing figure is deliberately anchored to real `new Date()`, not to whatever
+month a strategist happens to be browsing.
+
+Implemented as two new helpers in `strategist/index.html`:
+`strategistDaysBetweenInclusive(a, b)` (UTC-based day count, DST-safe) and
+`strategistExpectedPacingFraction(flightStart, flightEnd, today)` (the overlap-window
+elapsed/total fraction). `pacingPct(actual, goal, flightStart, flightEnd,
+viewedMonth)` gained three new parameters and now branches on whether the viewed
+month is before/equal/after the real current month. Both call sites in
+`renderMainTable()` (Spend Pacing, Perf Pacing) updated to pass `l.flight_start`,
+`l.flight_end`, `strategistCurrentMonth`.
+
+Verified via Playwright (new `test-strategist-mtd-pacing.js`, all cases computed
+independently against real `new Date()` at test time rather than a hardcoded date,
+since the formula is deliberately anchored to real today): flight spanning the full
+current month with on-pace actuals lands at ~100%; a narrower flight window (starts/
+ends mid-month) uses only its own overlap days, not the full calendar month; no
+overlap between flight and current month returns null; a completed past month
+returns a plain unprorated ratio; a future month returns null; no flight dates at all
+still falls back to the full calendar month as the window. Re-ran every other
+strategist test (dashboard — updated its one direct `pacingPct()` call for the new
+signature, numeric result unchanged since that test's viewed month is a past month
+relative to real today; pause-flight, goal-override-refresh, group-alpha-sort,
+import, paste-report, bulk-import, past-month-report, client-search,
+flight-month-filter, clear-override, group-color) — all still pass unchanged.
+`node --check` passes clean.
+
+No SQL for this one — frontend only.
