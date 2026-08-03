@@ -4747,5 +4747,15 @@ unmatched title by name. Re-ran `test-strategist-dashboard.js` and
 `test-strategist-import.js` — both still pass unchanged. `node --check` passes
 clean on both `strategist/index.html` and `admin/index.html`.
 
-**Still to do**: Claire runs `strategist-portal-v1-part2-2026-08-04.sql`, then this
-branch merges to `main`.
+**Follow-up: SQL editor error running the file as-given.** Claire hit
+`ERROR: 42P13: no language specified` running the original version of this file.
+Root cause: all three `create or replace function` statements reused the SAME
+dollar-quote tag (`$function$`), which can confuse a SQL editor's statement-boundary
+parsing across multiple functions run as one script — the parser can merge parts of
+two functions together and lose the `language plpgsql` clause in the process. Fixed
+by giving each function its OWN unique tag (`$get_clients$`/`$get_lines$`/
+`$save_line$`) and also sending the SQL as plain text directly in chat (not just a
+file attachment) so nothing gets altered in transit. **Confirmed working** — Claire
+ran it successfully.
+
+**Still to do**: this branch merges to `main`.
