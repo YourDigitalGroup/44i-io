@@ -472,6 +472,12 @@ function detectReportColumnMap(headerRow) {
     if (i === 0) return; // column 0 is always the campaign title
     const lower = label.toLowerCase();
     for (const [field, synonyms] of Object.entries(REPORT_COLUMN_SYNONYMS)) {
+      // First matching column wins, not the last -- found live 2026-08-06 against a
+      // real Simpli.fi export: "Month To Date Spend", "Yesterday Spend", and
+      // "Yesterday Spend Percentage" all contain "spend", so the old code (which kept
+      // overwriting map[field] on every match) ended up pointing at the LAST column
+      // ("Yesterday Spend Percentage", a %) instead of the real MTD dollar figure.
+      if (map[field] !== undefined) continue;
       if (synonyms.some(s => lower.includes(s))) { map[field] = i; break; }
     }
   });

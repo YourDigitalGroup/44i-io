@@ -5461,3 +5461,44 @@ flight-month-filter, clear-override, group-color) — all still pass unchanged.
 `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — Real bug: paste-report column detection picked the LAST matching header, not the first
+
+Claire: Google Ads/Facebook Ads paste-report matching worked, but Simpli.fi and The
+Trade Desk didn't, "even though they were in the data." Checked whether it was a
+platform-string mismatch (confirmed no — she used the dropdown) and whether
+`platform_campaign_name` was set (confirmed yes, on both). Asked for the real header
+rows to check directly rather than keep guessing:
+
+Simpli.fi: `Campaign Name, Campaign Start Date, Campaign End Date, Month To Date
+Impressions, Yesterday Impression Percentage, Month To Date Spend, Month-To-Date
+Budget Pacing, Yesterday Spend, Yesterday Spend Percentage, Campaign To Date
+Impressions Pacing, Campaign To Date Budget Pacing`
+
+Found a real bug: `detectReportColumnMap()` looped through header columns and
+overwrote `map[field]` on every match, with no guard against re-assigning a field
+that already had a column — so whichever matching column appeared LAST in the row
+won, not the first. This Simpli.fi header has "spend" in three columns (Month To
+Date Spend / Yesterday Spend / Yesterday Spend Percentage) and "impr" in three
+(Month To Date Impressions / Yesterday Impression Percentage / Campaign To Date
+Impressions Pacing) — the code was picking "Yesterday Spend Percentage" and
+"Campaign To Date Impressions Pacing" (both PACING PERCENTAGES) instead of the real
+MTD dollar/count figures. The Trade Desk header (`Row Labels, Advertiser Cost (USD),
+Impressions`) has no such collision, so it was likely unaffected by this specific
+bug — asked Claire for a real data row from both reports to check whether a second,
+separate title-matching issue is also in play for Trade Desk specifically, still
+waiting on that.
+
+Fixed: added a guard (`if (map[field] !== undefined) continue;`) so the FIRST
+matching column wins, never overwritten by a later one — correctly picks up "Month
+To Date Impressions"/"Month To Date Spend" (the real base metrics, which come before
+their own derived pacing/percentage columns in this export's actual column order).
+
+Verified via Playwright (new `test-strategist-simplifi-column-collision.js`): the
+real Simpli.fi header maps Impressions/Spend to their correct MTD columns, not the
+pacing-percentage columns; a simple no-collision header (Google/Facebook-style)
+still works unchanged; Trade Desk's own header maps correctly with no change needed.
+Re-ran `test-strategist-paste-report.js` — still passes unchanged. `node --check`
+passes clean.
+
+No SQL for this one — frontend only.
