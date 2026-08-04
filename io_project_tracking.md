@@ -5664,3 +5664,40 @@ gets built. Recording the sketch so the next session doesn't start from zero:
 
 Do not start building any part of this without an explicit go-ahead — Claire's
 words were "I want to talk through it with the team before building."
+
+## 2026-08-06 (cont'd) — Group filter + narrower main table rows
+
+Back to the Strategist Portal while cancellation design sits with the team. Claire,
+looking ahead to a few hundred campaigns: rows are too thick, and asked for (1) a
+group filter and (2) narrower columns — text-wrapped flight dates and a 2-digit
+year.
+
+Added `strategistGroupFilter` (global, default `''` = all groups) and a new
+`<select id="strategist-group-filter">` next to the My Campaigns/All Strategists
+toggle. Its options are rebuilt on every `renderStrategistDashboard()` call from
+whatever group names currently exist in `ALL_CAMPAIGN_LINES` (alphabetical, same
+ordering as the table's own group bands) — not just built once — so a brand-new
+group shows up without a reload, and if the currently-selected group filter no
+longer matches any campaign (e.g. its only campaign got reassigned), it silently
+resets to "All Groups" rather than leaving the view stuck on an empty state.
+Applied the filter in both `visibleCampaignLines()` and the status-tab count logic,
+same pattern as the existing scope/month filters.
+
+`strategistFormatFlightDate()` switched from 4-digit to 2-digit year (`Jun 1, 26`
+instead of `Jun 1, 2026`). The main table's Flight column dropped its
+`white-space:nowrap` in favor of a `max-width:110px` so a long range wraps onto two
+lines instead of forcing the row wide. Also hardened the Notes column
+(`overflow-wrap:break-word`) since Claire flagged not being sure how it'd behave
+once real text lands in it — a long word with no natural break point now wraps
+inside its existing `max-width:160px` instead of stretching the row.
+
+Verified via Playwright (new `test-strategist-group-filter.js`): dropdown populates
+with every group alphabetically; filtering to one group hides every other group's
+campaigns entirely; clearing the filter restores everything; flight dates render
+with the 2-digit year; the filter resets to "All Groups" when its selected group
+disappears from the data rather than silently hiding everything forever. Updated
+`test-strategist-pause-flight.js`'s one assertion that checked the old 4-digit-year
+text. Re-ran dashboard, flight-month-filter, import, goal-override-refresh, and
+group-alpha-sort — all still pass unchanged. `node --check` passes clean.
+
+No SQL for this one — frontend only.
