@@ -216,6 +216,45 @@ const PACING_THRESHOLDS = { good: 90, warn: 70 }; // >=90 good, 70-89.99 warn, <
 // wall if a campaign genuinely runs somewhere else.
 const PLATFORM_OPTIONS = ['Google Ads', 'Facebook Ads', 'Simpli.fi', 'The Trade Desk', 'StackAdapt'];
 
+// "This month's numbers" tiles, one set per platform (2026-08-06, per Claire: "these
+// are the column headers that I currently have for each platform in my pacing
+// spreadsheet") -- each platform reports a genuinely different set of metrics, so
+// showing the same generic 4 tiles for every platform either hid real data (Simpli.fi's
+// pacing %s) or showed fields a platform never reports at all. Falls back to the
+// original generic set for StackAdapt/Other/no platform selected yet.
+const STRATEGIST_PLATFORM_METRIC_TILES = {
+  'Simpli.fi': [
+    ['actual_impressions', 'Month To Date Impr.'],
+    ['yesterday_impr_pct', 'Yesterday Impr. %'],
+    ['actual_spend', 'Month To Date Spend'],
+    ['mtd_budget_pacing_pct', 'Month To Date Budget Pacing'],
+    ['yesterday_spend', 'Yesterday Spend'],
+    ['yesterday_spend_pct', 'Yesterday Spend %'],
+    ['campaign_to_date_impr_pacing_pct', 'Campaign To Date Impr. Pacing'],
+    ['campaign_to_date_budget_pacing_pct', 'Campaign To Date Budget Pacing'],
+  ],
+  'Google Ads': [
+    ['actual_clicks', 'Clicks'],
+    ['actual_impressions', 'Impr.'],
+    ['ctr', 'CTR'],
+    ['avg_cpm', 'Avg. CPM'],
+    ['avg_cpc', 'Avg. CPC'],
+    ['actual_spend', 'Cost'],
+  ],
+  'Facebook Ads': [
+    ['actual_impressions', 'Impr.'],
+    ['actual_spend', 'Cost $'],
+  ],
+  'The Trade Desk': [
+    ['actual_impressions', 'Impr.'],
+    ['actual_spend', 'Cost $'],
+  ],
+};
+const STRATEGIST_DEFAULT_METRIC_TILES = [
+  ['actual_clicks', 'Clicks'], ['actual_impressions', 'Impressions'],
+  ['actual_conversions', 'Conversions'], ['actual_total_visits', 'Total Visits'],
+];
+
 // Renders a platform <select> + a hidden "Other" text input that reveals itself when
 // either "Other…" is picked or the current value isn't one of the known platforms (so
 // an existing custom value already saved on a campaign is never silently dropped).
@@ -429,11 +468,25 @@ async function strategistSubmitImport() {
 // row is actually pasted and matches each column NAME against known synonyms —
 // works with the real export as-is, no manual reformatting, regardless of which
 // platform or which order that platform happens to put its columns in.
+// Platform-specific metrics added 2026-08-06 (Claire: "all the data is included in
+// the reports that I import for each platform already") -- more specific synonyms
+// listed alongside the generic ones so a verbose header (Simpli.fi's own real
+// export has "spend"/"impr" appearing in several different columns) still resolves
+// to the RIGHT one; see detectReportColumnMap()'s longest-match-wins rule below.
 const REPORT_COLUMN_SYNONYMS = {
-  actual_spend: ['spend', 'cost', 'amount spent', 'cost ($)'],
+  actual_spend: ['month to date spend', 'spend', 'cost', 'amount spent', 'cost ($)'],
   actual_clicks: ['clicks', 'link clicks'],
-  actual_impressions: ['impr', 'impressions', 'impr.'],
+  actual_impressions: ['month to date impressions', 'impr', 'impressions', 'impr.'],
   actual_conversions: ['conversions', 'results', 'weighted actions'],
+  ctr: ['ctr'],
+  avg_cpm: ['avg. cpm', 'avg cpm'],
+  avg_cpc: ['avg. cpc', 'avg cpc'],
+  yesterday_spend_pct: ['yesterday spend percentage', 'yesterday spend %'],
+  yesterday_spend: ['yesterday spend'],
+  yesterday_impr_pct: ['yesterday impression percentage', 'yesterday impr. %', 'yesterday impr %'],
+  mtd_budget_pacing_pct: ['month-to-date budget pacing', 'month to date budget pacing'],
+  campaign_to_date_impr_pacing_pct: ['campaign to date impressions pacing', 'campaign to date impr. pacing'],
+  campaign_to_date_budget_pacing_pct: ['campaign to date budget pacing'],
 };
 
 function strategistOpenPasteReportForm() {
@@ -483,15 +536,23 @@ function detectReportColumnMap(headerRow) {
   headerRow.forEach((label, i) => {
     if (i === 0) return; // column 0 is always the campaign title
     const lower = label.toLowerCase();
+    // Two disambiguation rules, both found live against real exports 2026-08-06:
+    // (1) within THIS column, if more than one field's synonym matches its text
+    // (e.g. "Yesterday Spend Percentage" contains both "yesterday spend" and
+    // "yesterday spend percentage"), the LONGEST/most-specific synonym wins, not
+    // just whichever field happened to be checked first.
+    let bestField = null, bestSynonymLength = 0;
     for (const [field, synonyms] of Object.entries(REPORT_COLUMN_SYNONYMS)) {
-      // First matching column wins, not the last -- found live 2026-08-06 against a
-      // real Simpli.fi export: "Month To Date Spend", "Yesterday Spend", and
-      // "Yesterday Spend Percentage" all contain "spend", so the old code (which kept
-      // overwriting map[field] on every match) ended up pointing at the LAST column
-      // ("Yesterday Spend Percentage", a %) instead of the real MTD dollar figure.
-      if (map[field] !== undefined) continue;
-      if (synonyms.some(s => lower.includes(s))) { map[field] = i; break; }
+      for (const synonym of synonyms) {
+        if (lower.includes(synonym) && synonym.length > bestSynonymLength) {
+          bestField = field; bestSynonymLength = synonym.length;
+        }
+      }
     }
+    // (2) across columns, the FIRST matching column wins a field, not the last --
+    // "Month To Date Spend" must win over "Yesterday Spend" for actual_spend since
+    // it comes first in a real Simpli.fi export.
+    if (bestField && map[bestField] === undefined) map[bestField] = i;
   });
   return map;
 }
@@ -1250,7 +1311,6 @@ function renderStrategistDetailPanel() {
   if (!l) { panel.innerHTML = ''; return; }
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
   const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
-  const ctr = (monthRow.actual_clicks != null && monthRow.actual_impressions) ? (monthRow.actual_clicks / monthRow.actual_impressions * 100) : null;
   const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
   const goal = computeGoal(l, monthRow.gross_budget);
   // What Goal would auto-calculate to WITHOUT the override, shown as a reference —
@@ -1280,15 +1340,11 @@ function renderStrategistDetailPanel() {
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">This month's numbers</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
-      ${[['Clicks','actual_clicks'],['Impressions','actual_impressions'],['Conversions','actual_conversions'],['Total Visits','actual_total_visits']].map(([label, field]) => `
+      ${(STRATEGIST_PLATFORM_METRIC_TILES[l.platform] || STRATEGIST_DEFAULT_METRIC_TILES).map(([field, label]) => `
         <div style="padding:8px 12px;border-radius:8px;background:var(--light);border:1px solid var(--border);min-width:100px">
-          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:3px">${label}</div>
-          <input type="number" value="${monthRow[field] ?? ''}" onchange="strategistSaveMonth('${l.id}', '${strategistCurrentMonth.toISOString().slice(0,10)}', {${field}: this.value})" style="width:80px;padding:3px 5px;border:none;background:transparent;font-family:monospace;font-size:14px;font-weight:700"/>
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:3px">${esc(label)}</div>
+          <input type="number" step="any" value="${monthRow[field] ?? ''}" onchange="strategistSaveMonth('${l.id}', '${strategistCurrentMonth.toISOString().slice(0,10)}', {${field}: this.value})" style="width:90px;padding:3px 5px;border:none;background:transparent;font-family:monospace;font-size:14px;font-weight:700"/>
         </div>`).join('')}
-      <div style="padding:8px 12px;border-radius:8px;background:var(--light);border:1px solid var(--border);min-width:100px">
-        <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:3px">CTR</div>
-        <div style="font-family:monospace;font-size:14px;font-weight:700">${ctr != null ? ctr.toFixed(2) + '%' : '—'}</div>
-      </div>
     </div>
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 4px">Monthly history</p>

@@ -5783,3 +5783,64 @@ without the added mock line. Re-ran the full strategist suite (15 files) — all
 `node --check` passes clean.
 
 **Still needs from Claire:** run `platform-report-cache-2026-08-06.sql`.
+
+## 2026-08-06 (cont'd) — Platform-specific "This month's numbers" metric tiles
+
+Claire shared the exact column headers she tracks per platform in her own pacing
+spreadsheet (Simpli.fi: 8 fields including Yesterday Spend/Impr. %, MTD and
+Campaign-To-Date budget pacing; Google Ads: Clicks/Impr./CTR/Avg. CPM/Avg. CPC/Cost;
+Facebook Ads and The Trade Desk: just Impr./Cost $) and asked for the detail panel's
+generic 4-tile "This month's numbers" section to show each platform's real set
+instead. Confirmed first: "all the data is included in the reports that I import
+for each platform already" — these are real values already sitting in her pasted
+reports, not something the system needs to calculate (CTR/Avg CPM/Avg CPC are
+platform-reported directly, not client-side derived; the pacing %s are the
+platform's own numbers, not our Spend Pacing recomputed at a different scope).
+
+**New (`platform-metric-tiles-2026-08-06.sql`, not yet run):** 9 new columns on
+`campaign_months` (`ctr`, `avg_cpm`, `avg_cpc`, `yesterday_spend`,
+`yesterday_spend_pct`, `yesterday_impr_pct`, `mtd_budget_pacing_pct`,
+`campaign_to_date_impr_pacing_pct`, `campaign_to_date_budget_pacing_pct`), all
+nullable numeric — most platforms leave most of these null, only Simpli.fi uses all
+of them. Updated `strategist_get_campaign_months`/`strategist_save_campaign_month`
+to read/write them, same `case when p_data ? 'field'` pattern as every other
+column on that table.
+
+**`strategist/index.html`:**
+- `REPORT_COLUMN_SYNONYMS` extended with entries for all 9 new fields, using
+  specific multi-word phrases (`'month to date spend'`, `'yesterday spend
+  percentage'`, etc.) rather than the old single-word substrings, since Simpli.fi's
+  real header has "spend" and "impr" appearing in several columns at once.
+- `detectReportColumnMap()` gained a SECOND disambiguation rule on top of today's
+  earlier first-column-wins fix: within a single column, if multiple synonyms match
+  its text (e.g. "Yesterday Spend Percentage" contains both `'yesterday spend'` and
+  `'yesterday spend percentage'`), the LONGEST/most-specific one wins — otherwise a
+  short generic synonym could out-match a more specific one on the very column it
+  was meant to disambiguate.
+- New `STRATEGIST_PLATFORM_METRIC_TILES` (per-platform ordered field/label pairs)
+  and `STRATEGIST_DEFAULT_METRIC_TILES` (the original 4-tile fallback for
+  StackAdapt/Other/no platform yet). The detail panel's tile loop now picks
+  `STRATEGIST_PLATFORM_METRIC_TILES[l.platform] || STRATEGIST_DEFAULT_METRIC_TILES`
+  instead of a fixed hardcoded array. The old client-side CTR calculation
+  (`clicks ÷ impressions`) was removed entirely — Google Ads now reports CTR itself
+  as a raw pasted field, so there's no need to also compute a possibly-conflicting
+  version ourselves.
+- `strategistMatchPastedReport()` needed NO changes — its save loop was already
+  generic over whatever fields `effectiveMap` contains, so the 9 new fields flow
+  through automatically once they're detected in a header.
+
+Verified via Playwright (new `test-strategist-platform-metric-tiles.js`): re-ran
+Claire's real Simpli.fi header through `detectReportColumnMap()` and confirmed
+every one of the 8 fields resolves to its correct column despite heavy keyword
+overlap; confirmed Google Ads' and Facebook Ads'/Trade Desk's own real headers
+resolve correctly too; confirmed the detail panel shows all 8 Simpli.fi labels and
+real values for a Simpli.fi campaign, none of the generic labels; confirmed
+switching the same campaign's platform to Google Ads swaps the entire tile set
+(not just values) to Google Ads' own 6 fields; confirmed an unmapped platform
+(StackAdapt) falls back to the original generic 4 tiles. Re-ran paste-report,
+simpli.fi-column-collision, comma-dollar-numeric, report-cache, dashboard, import,
+bulk-import, goal-override-refresh, pause-flight, and group-filter — all still pass
+unchanged. `node --check` passes clean.
+
+**Still needs from Claire:** run `platform-report-cache-2026-08-06.sql` (from
+earlier today, if not done yet) AND `platform-metric-tiles-2026-08-06.sql`.
