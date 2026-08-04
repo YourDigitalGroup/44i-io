@@ -1126,10 +1126,19 @@ function renderMainTable(lines) {
     byGroup[key].rows.push(l);
   });
 
-  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1400px">
+  // Headers wrap onto two lines (2026-08-06, per Claire: forcing every header onto
+  // one line was the actual thing keeping columns wide, wider than the data inside
+  // them ever needed) -- a per-column max-width instead of the old white-space:nowrap.
+  const MAIN_TABLE_COLUMNS = [
+    ['Client', 130], ['Tactic', 150], ['Platform', 140], ['Flight', 95],
+    ['Gross Budget', 80], ['In-Platform Budget', 85], ['Actual Spend', 80],
+    ['Spend Pacing', 70], ['Goal', 75], ['Actual Perf.', 75], ['Perf. Pacing', 70],
+    ['Optimize Log', 75], ['Notes', 100],
+  ];
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1250px">
     <thead><tr style="background:var(--light)">
-      ${['Client','Tactic','Platform','Flight','Gross Budget','In-Platform Budget','Actual Spend','Spend Pacing','Goal','Actual Perf.','Perf. Pacing','Optimize Log','Notes'].map(h =>
-        `<th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${h}</th>`).join('')}
+      ${MAIN_TABLE_COLUMNS.map(([h, w]) =>
+        `<th style="padding:8px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;max-width:${w}px;vertical-align:bottom">${h}</th>`).join('')}
     </tr></thead><tbody>`;
 
   Object.keys(byGroup).sort((a, b) => a.localeCompare(b)).forEach(groupName => {
@@ -1152,12 +1161,12 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
         <td style="padding:9px 10px">${esc(l.tactic_label || l.service_id)}</td>
         <td style="padding:9px 10px" onclick="event.stopPropagation()">
-          <select onclick="event.stopPropagation()" onchange="if(this.value==='__other__'){this.nextElementSibling.style.display='inline-block';this.nextElementSibling.focus();}else{this.nextElementSibling.style.display='none';strategistSaveLine('${l.id}', {platform: this.value}, false);}" style="width:100px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px">
+          <select onclick="event.stopPropagation()" onchange="if(this.value==='__other__'){this.nextElementSibling.style.display='inline-block';this.nextElementSibling.focus();}else{this.nextElementSibling.style.display='none';strategistSaveLine('${l.id}', {platform: this.value}, false);}" style="width:100%;min-width:132px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px">
             <option value="">— Select —</option>
             ${PLATFORM_OPTIONS.map(p => `<option value="${esc(p)}" ${p === l.platform ? 'selected' : ''}>${esc(p)}</option>`).join('')}
             <option value="__other__" ${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'selected' : ''}>Other…</option>
           </select>
-          <input type="text" value="${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? esc(l.platform) : ''}" placeholder="Platform" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="display:${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'inline-block' : 'none'};width:90px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px;margin-top:2px"/>
+          <input type="text" value="${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? esc(l.platform) : ''}" placeholder="Platform" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="display:${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'inline-block' : 'none'};width:100%;min-width:132px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px;margin-top:2px"/>
         </td>
         <td style="padding:9px 10px;max-width:110px">${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</td>
         <td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>

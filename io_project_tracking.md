@@ -5701,3 +5701,36 @@ text. Re-ran dashboard, flight-month-filter, import, goal-override-refresh, and
 group-alpha-sort — all still pass unchanged. `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — Header wrapping + Platform dropdown width fix
+
+Claire, after seeing the narrower-row change live: still cramped, and "Facebook Ads"
+and "The Trade Desk" don't sit right in the dropdown. Two real issues, both visual:
+
+1. **Headers were the actual thing forcing columns wide.** They still had
+   `white-space:nowrap` from before this session's earlier change, so a header like
+   "IN-PLATFORM BUDGET" forced its whole column wider than the $ data inside it ever
+   needed, regardless of the `max-width` already put on the data cells. Replaced
+   with a `MAIN_TABLE_COLUMNS` array (label + explicit max-width per column) and let
+   headers wrap onto two lines — `vertical-align:bottom` keeps a 2-line header and a
+   1-line header lined up at the same baseline. Table's `min-width` dropped from
+   1400px to 1250px to match.
+2. **The inline Platform `<select>` was hard-set to `width:100px`**, too narrow for
+   "The Trade Desk" (14 characters) at 11px, causing the text to visually run into
+   the native dropdown arrow. Changed to `width:100%` (fills whatever the column
+   ends up being) with `min-width:132px` as a floor, same fix applied to the
+   "Other…" fallback text input beside it. Widened the Platform column's own header
+   max-width from 110 to 140 to match.
+
+Caught visually, not just via assertions — rendered the actual table with
+Playwright (real campaign data: Simpli.fi/Google Ads/The Trade Desk/Facebook Ads)
+and screenshotted it before and after, since this is exactly the kind of thing a
+passing test can miss (a test checking "does the text exist in the DOM" doesn't
+catch "is it visually clipped by a fixed-width select"). Confirmed the headers now
+wrap onto two lines and "The Trade Desk" renders in full, not clipped by the arrow.
+
+Re-ran dashboard, pause-flight, group-filter, group-alpha-sort, and group-color —
+all still pass unchanged (colspan="13" on the group-band row still matches the
+column count). `node --check` passes clean.
+
+No SQL for this one — frontend only.
