@@ -5502,3 +5502,48 @@ Re-ran `test-strategist-paste-report.js` — still passes unchanged. `node --che
 passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — The REAL root cause: comma/dollar-formatted numbers, not matching logic
+
+Kept digging after the column-fix didn't fully resolve it ("It is still not
+matching" — happened on both Simpli.fi and Trade Desk). Asked for a screenshot of an
+actual failed attempt rather than more description, and it revealed the real cause
+sitting in plain sight in the "didn't match" list's own text:
+
+`Audio_Fisher&SonWellDrilling_Kensington (save failed: Supabase error 400:
+{"code":"22P02"..."invalid input syntax for type numeric: \"1,291\""})`
+
+That title had ALREADY matched correctly — title matching, platform matching, and
+the column-detection fix from earlier today were all working exactly as intended.
+The row landed in "unmatched" because the SAVE itself failed: Trade Desk's real
+export formats Impressions with thousands-commas ("1,291", "4,623", "11,017"), and
+Simpli.fi's real export formats Spend with a dollar sign ("$1.81") — Postgres
+rejects both as invalid numeric literals. The code was sending whatever raw string
+sat in that pasted cell straight to `strategist_save_campaign_month` with zero
+cleanup — worked fine for Google/Facebook's plain-number exports, broke on the two
+platforms whose formatting includes $ or , by default.
+
+Also flagged, structurally interesting, not yet acted on: Trade Desk's export is a
+pivot-table style layout — an account-level "Row Labels" grouping row (e.g. "Baptist
+Memorial Hospital") sits directly above the real campaign line item ("Audio_
+Baptist_STMM") with identical totals when there's only one campaign underneath.
+Confirmed this isn't a bug — the matcher correctly tries every pasted row
+independently; the parent grouping row is expected to land in "unmatched" (nothing
+real to match), and only the real line-item row should ever match.
+
+Fixed in two places doing the same raw-string-to-numeric-RPC pattern: the paste-report
+matcher (`strategistMatchPastedReport()`) and Bulk Import's Gross Budget parsing
+(`strategistRunBulkImport()`) — both now strip `$` and `,` from any numeric field
+before it reaches the save call.
+
+Verified via Playwright (new `test-strategist-comma-dollar-numeric.js`), using
+Claire's own real Trade Desk row verbatim (`Audio_Fisher&SonWellDrilling_Kensington
+18.47 1,291`) and a Simpli.fi-style dollar-formatted Spend value: the mock RPC itself
+throws the real Postgres 22P02 error whenever it receives an unstripped $ or , (so
+the test proves the actual fix, not just a friendly mock); confirmed the save now
+succeeds with cleaned values (`18.47`, `1291`); confirmed the results panel shows a
+real match, never a "save failed" annotation. Re-ran `test-strategist-paste-report.js`
+and `test-strategist-bulk-import.js` — both still pass unchanged. `node --check`
+passes clean.
+
+No SQL for this one — frontend only.
