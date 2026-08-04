@@ -37,6 +37,9 @@
           <button onclick="strategistShiftMonth(1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">›</button>
         </div>
         <div style="display:flex;gap:10px;align-items:center;font-size:12px">
+          <select id="strategist-group-filter" onchange="strategistSetGroupFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
+            <option value="">All Groups</option>
+          </select>
           <span id="strategist-scope-mine" onclick="strategistSetScope('mine')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">My Campaigns</span>
           <span id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">All Strategists</span>
           <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
@@ -199,6 +202,7 @@ let ALL_OPTIMIZE_LOG = [];
 let ALL_STRATEGIST_CLIENTS = []; // {id, name, group_id, group_name} — for the "+ New Campaign" import picker
 let PLATFORM_CPM_RATES = { base: {}, group: {} }; // service_id -> $CPM, and group_id|service_id -> $CPM
 let strategistScope = 'mine';               // 'mine' | 'all'
+let strategistGroupFilter = '';              // '' = all groups, else a group_name
 let strategistStatusTab = 'pending';        // pending | active | paused | complete
 let strategistCurrentMonth = null;          // Date, always day 1
 let strategistSelectedLineId = null;
@@ -255,7 +259,9 @@ function strategistShiftMonth(delta) {
 }
 function strategistFormatFlightDate(dateStr) {
   if (!dateStr) return null;
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  // 2-digit year (2026-08-06, per Claire: rows are getting too tall once there are
+  // a few hundred campaigns) -- "Jun 1, 26" instead of "Jun 1, 2026".
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
 }
 function strategistFormatFlightRange(start, end) {
   const s = strategistFormatFlightDate(start), e = strategistFormatFlightDate(end);
@@ -264,6 +270,10 @@ function strategistFormatFlightRange(start, end) {
 }
 function strategistSetScope(scope) {
   strategistScope = scope;
+  renderStrategistDashboard();
+}
+function strategistSetGroupFilter(groupName) {
+  strategistGroupFilter = groupName;
   renderStrategistDashboard();
 }
 function strategistSetStatusTab(tab) {
@@ -924,6 +934,7 @@ function visibleCampaignLines() {
   return ALL_CAMPAIGN_LINES.filter(l => {
     if (l.status !== strategistStatusTab) return false;
     if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return false;
+    if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return false;
     // Pending is a setup to-do queue, not a monthly performance view -- a campaign
     // flighted to start next month still needs its setup done now, so it stays
     // visible regardless of the month picker.
@@ -942,9 +953,24 @@ function renderStrategistDashboard() {
   const counts = { pending: 0, active: 0, paused: 0, complete: 0 };
   ALL_CAMPAIGN_LINES.forEach(l => {
     if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return;
+    if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return;
     if (counts[l.status] != null) counts[l.status]++;
   });
+
+  // Populate the group filter's own options -- every group with at least one
+  // campaign, alphabetical, same ordering as the main table's own group bands.
+  // Rebuilt on every render (rather than once) so a brand-new group with its first
+  // campaign shows up here without a page reload; preserves the current selection
+  // if it's still valid, otherwise resets to "All Groups" instead of silently
+  // holding a filter value for a group that's no longer in view.
+  const groupFilterEl = document.getElementById('strategist-group-filter');
+  if (groupFilterEl) {
+    const groupNames = [...new Set(ALL_CAMPAIGN_LINES.map(l => l.group_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    if (strategistGroupFilter && !groupNames.includes(strategistGroupFilter)) strategistGroupFilter = '';
+    groupFilterEl.innerHTML = '<option value="">All Groups</option>' +
+      groupNames.map(g => `<option value="${esc(g)}" ${g === strategistGroupFilter ? 'selected' : ''}>${esc(g)}</option>`).join('');
+  }
   const tabs = [
     ['pending', 'Campaign Setup'], ['active', 'Active'], ['paused', 'Paused'], ['complete', 'Complete']
   ];
@@ -1133,7 +1159,7 @@ function renderMainTable(lines) {
           </select>
           <input type="text" value="${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? esc(l.platform) : ''}" placeholder="Platform" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="display:${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'inline-block' : 'none'};width:90px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px;margin-top:2px"/>
         </td>
-        <td style="padding:9px 10px;white-space:nowrap">${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</td>
+        <td style="padding:9px 10px;max-width:110px">${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</td>
         <td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${monthRow.actual_spend != null ? '$' + Number(monthRow.actual_spend).toLocaleString() : '—'}</td>
@@ -1142,7 +1168,7 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px">${actualPerf != null ? Number(actualPerf).toLocaleString() + ' ' + goal.unit : '—'}</td>
         <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>
         <td style="padding:9px 10px">${logCount} ${logCount === 1 ? 'entry' : 'entries'}</td>
-        <td style="padding:9px 10px;color:var(--muted);max-width:160px">${esc(l.setup_notes || '—')}</td>
+        <td style="padding:9px 10px;color:var(--muted);max-width:160px;overflow-wrap:break-word">${esc(l.setup_notes || '—')}</td>
       </tr>`;
     });
   });
