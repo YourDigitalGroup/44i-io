@@ -5734,3 +5734,52 @@ all still pass unchanged (colspan="13" on the group-band row still matches the
 column count). `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — Platform report cache: auto-fill actuals for a title added after the fact
+
+Claire: pastes a report twice a week (Mon/Thu), doesn't keep history, "just
+overwrite any time new data is added." A row that doesn't match an existing
+campaign is currently discarded entirely as "unmatched" — if that campaign gets
+added to the system afterward, its actuals sit blank until the next paste. Wanted
+the last paste retained so a newly-titled campaign picks up its numbers the moment
+it's given a matching title, not on the next twice-weekly cycle. Confirmed with her:
+no history needed, one slot per platform, always overwritten; "the autofill should
+start when there is a campaign title to reference."
+
+**New (`platform-report-cache-2026-08-06.sql`, not yet run):** `platform_report_cache`
+table (`platform` primary key, `report_month`, `rows` jsonb, `updated_at`) — RLS
+enabled+forced, zero policies, same pattern as every other table in this project.
+`strategist_save_platform_report_cache` (upsert on `platform`, wholesale replace) and
+`strategist_get_platform_report_cache` (returns all rows — small table, same
+all-rows-returned pattern as `ALL_ACCOUNTING_MAP`).
+
+**`strategist/index.html`:** `strategistMatchPastedReport()` now builds a cleaned
+`{title, data}` object for EVERY pasted row with a title — matched or not — and
+saves the whole set to the cache after the match pass (overwriting whatever was
+there for that platform before). New `PLATFORM_REPORT_CACHE` global, populated in
+`fetchStrategistData()`. New `strategistApplyCachedReportIfMatch(lineId)`: no-ops
+unless the line has both `platform` and `platform_campaign_name` set, then checks
+the cache for that platform for a matching title (case/whitespace-insensitive, same
+as the paste matcher itself) and applies it via `strategistSaveMonth()` if found.
+Wired into every place a title can newly exist: `strategistSubmitImport()`
+("+ New Campaign"), `strategistConfirmActivate()`/`strategistSaveDraft()` (Campaign
+Setup), and the detail panel's own title field — the last one needed a small
+`strategistSavePlatformCampaignName()` wrapper since that field previously saved
+with `reload:false` (no refetch), which would have checked the cache against the
+stale pre-edit title.
+
+Verified via Playwright (new `test-strategist-report-cache.js`): pasting a report
+with one matched and one not-yet-existing title caches BOTH (not just the matched
+one); the matched row still saves immediately as before; after a simulated refetch,
+adding the previously-unmatched campaign with the exact matching title auto-fills
+its actuals via `strategistApplyCachedReportIfMatch()` targeting the CACHED report's
+month; a title with no cache match is a silent no-op, not an error; a campaign on a
+different platform never matches an identical title, preserving the existing
+platform-isolation rule. Fixed 6 other test files whose `sb()` mocks didn't yet
+handle the new `strategist_get_platform_report_cache` call inside
+`fetchStrategistData()` (paste-report, import, bulk-import, comma-dollar-numeric,
+goal-override-refresh, pause-flight) — all were silently failing past that point
+without the added mock line. Re-ran the full strategist suite (15 files) — all pass.
+`node --check` passes clean.
+
+**Still needs from Claire:** run `platform-report-cache-2026-08-06.sql`.

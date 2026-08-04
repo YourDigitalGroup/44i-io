@@ -201,6 +201,7 @@ let ALL_CAMPAIGN_MONTHS = [];
 let ALL_OPTIMIZE_LOG = [];
 let ALL_STRATEGIST_CLIENTS = []; // {id, name, group_id, group_name} — for the "+ New Campaign" import picker
 let PLATFORM_CPM_RATES = { base: {}, group: {} }; // service_id -> $CPM, and group_id|service_id -> $CPM
+let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, data}] } -- last paste per platform, overwritten each time
 let strategistScope = 'mine';               // 'mine' | 'all'
 let strategistGroupFilter = '';              // '' = all groups, else a group_name
 let strategistStatusTab = 'pending';        // pending | active | paused | complete
@@ -404,6 +405,7 @@ async function strategistSubmitImport() {
     document.getElementById('strategist-import-form').innerHTML = '';
     strategistStatusTab = status;
     await fetchStrategistData();
+    await strategistApplyCachedReportIfMatch(newId);
     renderStrategistDashboard();
     showToast('Campaign imported!');
   } catch(e) { showToast('Error importing campaign: ' + e.message, 'error'); }
@@ -523,11 +525,16 @@ async function strategistMatchPastedReport() {
   // a report against the wrong month just because the top bar wasn't switched first.
   const monthStr = reportMonthValue + '-01';
   const matched = [], unmatched = [];
+  // Every row with a title gets cached, whether or not it matches an EXISTING
+  // campaign right now (2026-08-06, per Claire: "keeps the data until it is
+  // updated... the autofill should start when there is a campaign title to
+  // reference") -- a title that doesn't match anything today might belong to a
+  // campaign added tomorrow, and that campaign should pick up these actuals the
+  // moment it's given this same title, not wait for the next paste.
+  const cacheRows = [];
   for (const cols of rows) {
     const title = (cols[0] || '').trim();
     if (!title) continue;
-    const line = byTitle[title.toLowerCase()];
-    if (!line) { unmatched.push(title); continue; }
     const data = {};
     Object.entries(effectiveMap).forEach(([field, idx]) => {
       // Real exports use thousands-comma ("1,291") and dollar-sign ("$1.81")
@@ -535,6 +542,9 @@ async function strategistMatchPastedReport() {
       // live 2026-08-06 against real Trade Desk/Simpli.fi reports. Strip before saving.
       if (cols[idx] !== undefined && cols[idx] !== '') data[field] = cols[idx].replace(/[$,]/g, '').trim();
     });
+    cacheRows.push({ title, data });
+    const line = byTitle[title.toLowerCase()];
+    if (!line) { unmatched.push(title); continue; }
     try {
       await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
         p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
@@ -544,6 +554,18 @@ async function strategistMatchPastedReport() {
     } catch(e) {
       unmatched.push(title + ' (save failed: ' + e.message + ')');
     }
+  }
+
+  // Overwrite whatever was cached for this platform before -- Claire doesn't keep
+  // report history, just the latest paste per platform, same as her own workflow
+  // (pastes twice a week, never needs to look back further than that).
+  try {
+    await sb('rpc/strategist_save_platform_report_cache', { method: 'POST', body: JSON.stringify({
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+      p_platform: platform, p_month: monthStr, p_rows: cacheRows
+    }) });
+  } catch(e) {
+    console.warn('Could not cache platform report for auto-fill:', e.message);
   }
 
   await fetchStrategistData();
@@ -731,12 +753,13 @@ async function strategistRunBulkImport() {
 // to be looking at.
 async function fetchStrategistData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
-  const [lines, months, log, rates, clients] = await Promise.all([
+  const [lines, months, log, rates, clients, reportCache] = await Promise.all([
     sb('rpc/strategist_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_optimize_log', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_budgeted_spend_rates', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sb('rpc/strategist_get_platform_report_cache', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
   ]);
   ALL_CAMPAIGN_LINES = lines || [];
   ALL_CAMPAIGN_MONTHS = months || [];
@@ -747,6 +770,8 @@ async function fetchStrategistData() {
     if (r.scope === 'base') PLATFORM_CPM_RATES.base[r.service_id] = r.platform_cpm;
     else PLATFORM_CPM_RATES.group[r.group_id + '|' + r.service_id] = r.platform_cpm;
   });
+  PLATFORM_REPORT_CACHE = {};
+  (reportCache || []).forEach(r => { PLATFORM_REPORT_CACHE[r.platform] = { report_month: r.report_month, rows: r.rows || [] }; });
 }
 
 async function loadStrategistDashboard() {
@@ -1075,6 +1100,31 @@ async function strategistSaveMonth(lineId, monthStr, data) {
   } catch(e) { showToast('Error saving month: ' + e.message, 'error'); }
 }
 
+// Auto-fills a campaign's actuals from the last pasted platform report the moment it
+// has both a platform and an exact title to reference (2026-08-06, per Claire: "the
+// autofill should start when there is a campaign title to reference") -- rather than
+// waiting for her next twice-weekly paste. No-op if the platform has nothing cached,
+// or nothing in that cache matches this exact title yet.
+async function strategistApplyCachedReportIfMatch(lineId) {
+  const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
+  if (!line || !line.platform || !line.platform_campaign_name) return;
+  const cache = PLATFORM_REPORT_CACHE[line.platform];
+  if (!cache) return;
+  const wanted = line.platform_campaign_name.trim().toLowerCase();
+  const match = cache.rows.find(r => (r.title || '').trim().toLowerCase() === wanted);
+  if (!match) return;
+  await strategistSaveMonth(lineId, cache.report_month, match.data);
+}
+
+// The detail panel's title field used reload:false (a plain "Saved" toast, no
+// refetch) like the rest of that panel's minor fields -- switched to a dedicated
+// wrapper so ALL_CAMPAIGN_LINES actually reflects the new title before checking it
+// against the cache, instead of checking against the stale pre-edit value.
+async function strategistSavePlatformCampaignName(lineId, value) {
+  await strategistSaveLine(lineId, { platform_campaign_name: value });
+  await strategistApplyCachedReportIfMatch(lineId);
+}
+
 async function strategistSaveLine(lineId, data, reload) {
   try {
     const cleanData = Object.fromEntries(Object.entries(data).map(([k,v]) => [k, v === '' ? null : v]));
@@ -1095,6 +1145,7 @@ async function strategistConfirmActivate(lineId) {
     platform, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null,
     status: 'active', assigned_strategist: currentStrategistUser.name
   });
+  await strategistApplyCachedReportIfMatch(lineId);
   showToast('Campaign activated!');
 }
 
@@ -1103,6 +1154,7 @@ async function strategistSaveDraft(lineId) {
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   await strategistSaveLine(lineId, { platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null });
+  await strategistApplyCachedReportIfMatch(lineId);
   showToast('Draft saved');
 }
 
@@ -1210,7 +1262,7 @@ function renderStrategistDetailPanel() {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
       <strong style="font-size:13px">${esc(l.client_name || '(unknown)')} / ${esc(l.tactic_label || l.service_id)}</strong>
       <div style="display:flex;align-items:center;gap:8px">
-        <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSaveLine('${l.id}', {platform_campaign_name: this.value}, false)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
+        <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSavePlatformCampaignName('${l.id}', this.value)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
       </div>
