@@ -5547,3 +5547,74 @@ and `test-strategist-bulk-import.js` — both still pass unchanged. `node --chec
 passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — Training script accuracy review; PARKED: cancellations + edit-an-IO
+
+Claire's boss sent an AE training script (Insertion Orders process, Block 8 of 10)
+for review against the current live system, since a lot has changed since he was
+last in it. Full read-through against `index.html`, verified line by line rather
+than skimmed:
+
+**Confirmed accurate, often near-verbatim to the real form:** 3-step structure
+(Client Info/Services/Review & Submit), "I am" dropdown → Trello handle autofill,
+Returning/New Client dropdown, the duplicate-client-name lock warning (text is
+close to verbatim), new-client field list (business name/contact/phone/email/
+website/city-service area/business type, exact order), Campaign Length → auto End
+Date, Save Draft, the three running totals ("One-Time Total"/"Monthly Recurring"/
+"Services Selected", exact labels), Workflows Triggered panel, the Kick-Off Call
+two-step lock mechanism (date/time fields genuinely disabled until the AM calendar
+link is clicked), intake forms built into the form with a "Need AM Help" bypass and
+confirmed non-blocking (a blank intake never prevents submission), review screen,
+exactly 3 separate agreement checkboxes, signature Draw/Type tabs with the typed-
+name-is-a-legal-signature text, "Authorized By (Full Legal Name)"/"Title / Role"
+fields, group-specific unique link (not the resource site), automatic Trello card
+creation, client profiles in the admin portal.
+
+**Flagged as needing confirmation, not code changes:** (1) "everyone gets a copy
+automatically" — real mechanism (`groups.io_recipient` + global BCC list) but
+config-dependent, not hardcoded — Claire confirmed these were copied over from the
+existing system and should already be good, so this is resolved, not open; (2)
+whether website services are still actually configured to route intake to the AM
+today (the per-service mechanism enabling this exists and is admin-editable, just
+unverified against current live data); (3) "your account manager still reviews
+every order" overstates what the system does — there is no enforced approval gate
+anywhere, submission goes straight to Trello + notification with no pending-review
+state. That's either pure operational framing (fine) or worth softening in the
+script.
+
+**PARKED — cancellations + edit-a-submitted-IO, treated as ONE connected design
+question, not two:** the script's trainer notes assumed cancellations run through
+the same IO form (found zero evidence of any such path in the current build — the
+only cancellation-related content is the opposite, an explicit non-cancellable/
+non-refundable legal clause) and separately flagged that whether an AE can reopen a
+submitted IO is unconfirmed. Claire, on hearing this: cancellations need real
+design thought because they'd affect the Strategist Portal (campaign status/
+pacing) and BOTH accounting sides, not just the public form — and she suspects
+cancellations and edit-an-IO are the same underlying problem, not separate features,
+though possibly a bigger lift than either alone. Deliberately not scoped or built
+yet — revisit when she's ready to actually work through the design, not as a quick
+add-on to either the public form or the Strategist Portal.
+
+No SQL for this one — this was a review-only conversation, no code touched.
+
+## 2026-08-06 (cont'd) — Added Campaign Start Date + City/Service Area to Step 1 required fields
+
+Direct follow-up from the training-script review, which surfaced that Step 1 only
+actually required AE name, Business name, and Contact email — everything else,
+including Campaign Start Date and City/Service Area, could be left blank and the AE
+could still advance to Services. Claire: "We for sure need the campaign start date
+to be required as well as the city/service area."
+
+Added both to `validateStep1()`'s required list (`index.html`) — same mechanism as
+the existing three (red highlight, toast listing what's missing, scroll+focus first
+missing field). No new validation logic needed since the function already handles a
+list of `[fieldId, label]` pairs generically.
+
+Verified via Playwright (new `test-io-step1-required-fields.js`): all five required
+fields filled passes; missing Campaign Start Date alone blocks and highlights that
+field; missing City/Service Area alone blocks and highlights that field; the three
+pre-existing required fields (biz name, invalid email) still block exactly as
+before; fields that were never required (contact name/phone/website/business type)
+still don't block navigation when left blank. `node --check` passes clean.
+
+No SQL for this one — frontend only.
