@@ -5867,3 +5867,68 @@ comma-dollar-numeric, and report-cache — all still pass unchanged. `node --che
 passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — SEM Goal override: support a range, not just a single number
+
+Claire: "for the goal for SEM they will sometimes put a range not just a single
+number" — the CPC-based clicks estimate for SEM doesn't always resolve to one clean
+number. `goal_override` was a `numeric` column and its input was `type="number"`,
+so a value like "150-200" couldn't even be typed, let alone saved. Two real
+business-logic questions here, asked and confirmed rather than guessed at: (1) what
+should Perf. Pacing calculate against when the goal is a range → **midpoint** (e.g.
+"150-200" paces against 175); (2) does range support apply to every tactic's
+override or just SEM's → **SEM only**, every other tactic keeps a single-number
+override.
+
+**New (`sem-goal-range-2026-08-06.sql`, not yet run):** `campaign_lines.goal_override`
+changes type from `numeric` to `text` (existing single-number values cast over
+unchanged, no data loss). Left the exact edit to `strategist_save_campaign_line`
+as a one-line instruction rather than reproducing the whole function body from
+memory — this session doesn't have the live function definition on hand to safely
+rewrite it wholesale, only the fragment that casts `goal_override`; guessing the
+rest risked silently dropping or breaking an unrelated field. `strategist_get_
+campaign_lines` needs no change — it already passes `goal_override` through
+`jsonb_build_object` with no cast.
+
+**`strategist/index.html`:**
+- New `parseGoalOverride(raw, allowRange)`: recognizes a `low-high` pattern only
+  when `allowRange` is true (i.e. `service_id === 'sem-bp'`), returning `{value:
+  midpoint, isRange: true, display: "150–200"}`; otherwise parses a plain number,
+  returning `null` (not `NaN`) for anything unparseable so the UI shows "—" instead
+  of a broken number.
+- `computeGoal()` now calls `parseGoalOverride()` instead of `Number(line.
+  goal_override)` directly, and returns the new `isRange`/`display` fields alongside
+  the existing `value`/`unit`/`manual`/`overridden`. `value` stays the midpoint for
+  pacing math (unchanged call sites — `pacingPct()` still just takes `goal.value`);
+  `display` is the new field the UI renders instead of `Math.round(goal.value)`, so
+  a range shows as "150–200 clicks" in both the main table's Goal column and the
+  detail panel's auto-calculated reference text, not a rounded midpoint that would
+  misrepresent what was actually entered.
+- The Goal override `<input>` in the detail panel is `type="text"` for SEM
+  (`service_id === 'sem-bp'`) so the dash isn't blocked by the browser's native
+  number-input validation, and stays `type="number"` for every other tactic —
+  matching the SEM-only scope decision. Placeholder and helper text updated to hint
+  the range syntax only on SEM's input.
+
+Verified via Playwright (new `test-strategist-sem-goal-range.js`): a real SEM range
+("150-200") resolves to midpoint 175 for pacing math and displays "150–200 clicks"
+in the main table's Goal column (not "175 clicks"); a plain single-number SEM
+override still works exactly as before; SEM with no override still shows "enter
+manually"; feeding the same range syntax to a non-SEM impressions tactic does NOT
+turn into a range (falls through to `Number()`, which fails on "150-200" and
+correctly returns "needs manual entry" rather than silently treating it as a
+range); a non-SEM tactic's normal auto-calculation is unaffected; garbage input
+("abc") returns `null`, not `NaN`; Perf. Pacing against a 150-200 goal with 175
+actual clicks on a completed past month reads as exactly 100%, confirming the
+midpoint math; the detail panel's override input is `type="text"` for SEM and
+`type="number"` for a normal tactic. Re-ran the full strategist suite (22 files,
+including the two newest — platform-metric-tiles and percent-sign-numeric) — all
+still pass unchanged. `node --check` passes clean.
+
+**SQL run and confirmed:** Claire pasted the live `strategist_save_campaign_line`
+definition (this session didn't have it on hand — the right call per this
+project's "verify against the real file" rule, rather than guessing the whole
+function body from memory) so the one-line edit could be delivered as a single
+complete script instead of a fragment. Confirmed via her own query afterward —
+`goal_override` now holds `"150-200"` as text on both real SEM test rows, exactly
+as designed. Nothing further needed on this one.
