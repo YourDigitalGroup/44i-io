@@ -5618,3 +5618,49 @@ before; fields that were never required (contact name/phone/website/business typ
 still don't block navigation when left blank. `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — Cancellation design sketch (PARKED — talking through with team before build)
+
+Follow-up design conversation on the cancellation/edit-IO item parked earlier today.
+Talked through the shape with Claire; explicitly NOT approved to build yet — she
+wants to run this by the team, especially the accounting flow, before any of it
+gets built. Recording the sketch so the next session doesn't start from zero:
+
+- **Per-service, not per-order.** Confirmed: a client can drop one service off a
+  multi-service IO while keeping the rest. The cancellation record should key off
+  individual `campaign_lines` rows, not `orders` as a whole — `campaign_lines`
+  already stores `order_id`, so the link back to "which IO this came from" exists
+  for free, no new join mechanism needed.
+- **AEs have no login anywhere in this system** — worth remembering for this and
+  any future AE-facing idea: their only touchpoint is the public IO form itself, no
+  auth. A cancellation request mechanism has to either be a companion form living
+  on that same no-login surface, or route through an AM who already has real
+  access — there's no third option without adding AE accounts, which nobody has
+  asked for.
+- **Sketch of a companion form** (same no-login, per-group-link pattern as the IO
+  form itself): "I am" dropdown (same AE roster autofill) → existing Returning
+  Client lookup → a CHECKLIST of that client's currently-active `campaign_lines`
+  (not a single dropdown, to support partial cancellation) → effective
+  cancellation date (required) → reason (required/optional TBD) → submit triggers
+  the same "one action, everything downstream" philosophy as the real IO form: a
+  cancellation record per selected service, a Trello comment on the group's card
+  noting exactly what/when, an AM notification via the existing recipient-list
+  mechanism, and a confirmation screen.
+- **Nice tie-in, not yet decided:** the catalog already marks some services with a
+  minimum-commitment footnote (‡/◊/§ = 6/12/18-month non-cancellable). The
+  companion form could warn an AE trying to cancel one of those before term's up,
+  reusing existing catalog data rather than adding anything new.
+- **Real open question for the business side, explicitly Claire's own homework
+  item, not mine:** when a service is cancelled mid-month, does billing stop
+  immediately, run through the end of the current cycle, or get prorated to the
+  cancellation date? This decides whether the cancellation record just needs a
+  date or needs its own short calculation (similar in spirit to the existing
+  hosting-proration logic elsewhere in this system). Claire is asking her team.
+- Downstream systems this needs to update once built: Trello (comment/status on
+  the card), Strategist Portal (a new `campaign_lines.status` value, distinct from
+  "paused" since cancelled campaigns don't resume), and both accounting sides
+  (billing needs to stop at the right date on whichever side ends up owning that
+  calculation).
+
+Do not start building any part of this without an explicit go-ahead — Claire's
+words were "I want to talk through it with the team before building."
