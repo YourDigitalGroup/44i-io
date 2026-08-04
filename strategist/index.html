@@ -598,10 +598,11 @@ async function strategistMatchPastedReport() {
     if (!title) continue;
     const data = {};
     Object.entries(effectiveMap).forEach(([field, idx]) => {
-      // Real exports use thousands-comma ("1,291") and dollar-sign ("$1.81")
-      // formatting -- Postgres rejects both as invalid numeric syntax (22P02), found
-      // live 2026-08-06 against real Trade Desk/Simpli.fi reports. Strip before saving.
-      if (cols[idx] !== undefined && cols[idx] !== '') data[field] = cols[idx].replace(/[$,]/g, '').trim();
+      // Real exports use thousands-comma ("1,291"), dollar-sign ("$1.81"), and
+      // percent-sign ("10.2%", Google Ads' own CTR column) formatting -- Postgres
+      // rejects all three as invalid numeric syntax (22P02), found live 2026-08-06
+      // against real Trade Desk/Simpli.fi/Google Ads reports. Strip before saving.
+      if (cols[idx] !== undefined && cols[idx] !== '') data[field] = cols[idx].replace(/[$,%]/g, '').trim();
     });
     cacheRows.push({ title, data });
     const line = byTitle[title.toLowerCase()];

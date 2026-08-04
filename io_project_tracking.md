@@ -5844,3 +5844,26 @@ unchanged. `node --check` passes clean.
 
 **Still needs from Claire:** run `platform-report-cache-2026-08-06.sql` (from
 earlier today, if not done yet) AND `platform-metric-tiles-2026-08-06.sql`.
+
+## 2026-08-06 (cont'd) — Both SQL files run; real bug: % sign broke Google Ads paste
+
+Both SQL files confirmed run and the branch merged. Immediately after, pasting a
+real Google Ads report threw the same class of error as the earlier $/,-comma bug:
+`Supabase error 400: invalid input syntax for type numeric: "10.2%"`. Google Ads'
+own CTR column formats its value with a trailing `%` (e.g. "10.2%"), and the
+cleanup added earlier today only stripped `$` and `,`, never `%` — worked fine for
+every field until CTR itself became a real stored field this session.
+
+Fixed: added `%` to the same strip regex in `strategistMatchPastedReport()`
+(`replace(/[$,%]/g, '')`). Left Bulk Import's Gross Budget cleanup untouched — that
+field is always a dollar amount, never a percentage, no fix needed there.
+
+Verified via Playwright (new `test-strategist-percent-sign-numeric.js`) using
+Claire's exact real Google Ads row (`10.2%` CTR, `$12.40` Avg. CPM, `$1.10` Avg.
+CPC, `$150.00` Cost) — mock RPC reproduces the real Postgres rejection for any
+unstripped `$`, `,`, or `%` so the test proves the actual fix; confirmed the save
+now succeeds with all four fields cleaned correctly. Re-ran paste-report,
+comma-dollar-numeric, and report-cache — all still pass unchanged. `node --check`
+passes clean.
+
+No SQL for this one — frontend only.
