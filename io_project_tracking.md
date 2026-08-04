@@ -5925,5 +5925,10 @@ midpoint math; the detail panel's override input is `type="text"` for SEM and
 including the two newest — platform-metric-tiles and percent-sign-numeric) — all
 still pass unchanged. `node --check` passes clean.
 
-**Still needs from Claire:** run `sem-goal-range-2026-08-06.sql` (column type
-change + the one-line RPC edit described inside it).
+**SQL run and confirmed:** Claire pasted the live `strategist_save_campaign_line`
+definition (this session didn't have it on hand — the right call per this
+project's "verify against the real file" rule, rather than guessing the whole
+function body from memory) so the one-line edit could be delivered as a single
+complete script instead of a fragment. Confirmed via her own query afterward —
+`goal_override` now holds `"150-200"` as text on both real SEM test rows, exactly
+as designed. Nothing further needed on this one.
