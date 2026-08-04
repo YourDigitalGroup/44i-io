@@ -5596,3 +5596,25 @@ yet — revisit when she's ready to actually work through the design, not as a q
 add-on to either the public form or the Strategist Portal.
 
 No SQL for this one — this was a review-only conversation, no code touched.
+
+## 2026-08-06 (cont'd) — Added Campaign Start Date + City/Service Area to Step 1 required fields
+
+Direct follow-up from the training-script review, which surfaced that Step 1 only
+actually required AE name, Business name, and Contact email — everything else,
+including Campaign Start Date and City/Service Area, could be left blank and the AE
+could still advance to Services. Claire: "We for sure need the campaign start date
+to be required as well as the city/service area."
+
+Added both to `validateStep1()`'s required list (`index.html`) — same mechanism as
+the existing three (red highlight, toast listing what's missing, scroll+focus first
+missing field). No new validation logic needed since the function already handles a
+list of `[fieldId, label]` pairs generically.
+
+Verified via Playwright (new `test-io-step1-required-fields.js`): all five required
+fields filled passes; missing Campaign Start Date alone blocks and highlights that
+field; missing City/Service Area alone blocks and highlights that field; the three
+pre-existing required fields (biz name, invalid email) still block exactly as
+before; fields that were never required (contact name/phone/website/business type)
+still don't block navigation when left blank. `node --check` passes clean.
+
+No SQL for this one — frontend only.
