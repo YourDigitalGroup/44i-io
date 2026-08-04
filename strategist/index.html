@@ -520,7 +520,10 @@ async function strategistMatchPastedReport() {
     if (!line) { unmatched.push(title); continue; }
     const data = {};
     Object.entries(effectiveMap).forEach(([field, idx]) => {
-      if (cols[idx] !== undefined && cols[idx] !== '') data[field] = cols[idx];
+      // Real exports use thousands-comma ("1,291") and dollar-sign ("$1.81")
+      // formatting -- Postgres rejects both as invalid numeric syntax (22P02), found
+      // live 2026-08-06 against real Trade Desk/Simpli.fi reports. Strip before saving.
+      if (cols[idx] !== undefined && cols[idx] !== '') data[field] = cols[idx].replace(/[$,]/g, '').trim();
     });
     try {
       await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
@@ -649,7 +652,11 @@ async function strategistRunBulkImport() {
         monthRows: [],
       });
     }
-    const month = get('month'), grossBudget = get('gross_budget');
+    const month = get('month');
+    // Same fix as the paste-report tool (2026-08-06): a real spreadsheet's Gross
+    // Budget column can be "$1,500"-formatted -- strip $ and , before it ever reaches
+    // a numeric column, or the save throws Postgres error 22P02.
+    const grossBudget = get('gross_budget').replace(/[$,]/g, '').trim();
     if (month) groups.get(identityKey).monthRows.push({ month, grossBudget, rowNum });
   });
 
