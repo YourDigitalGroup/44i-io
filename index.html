@@ -1702,14 +1702,19 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
       // question optional in the admin editor just omits this class, no visual
       // change beyond dropping the asterisk.
       const fieldClass = `modal-field${field.optional ? '' : ' required'}`;
+      // Optional clarifying text under the question (2026-08-06, per Claire) --
+      // e.g. "(Answering FAQs, Scheduling appointments, ...)". Kept as its own
+      // property rather than baked into the label, so the admin editor's auto-
+      // generated key stays short and based on the real question text.
+      const descHtml = field.description ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(field.description)}</div>` : '';
 
       if (field.type === 'textarea') {
-        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label><textarea data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
+        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}<textarea data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
       } else if (field.type === 'radio') {
         const opts = field.options.map(o =>
           `<label><input type="radio" name="intake-${cfg.intake}-${field.key}" value="${o}" ${val===o?'checked':''}/> ${o}</label>`
         ).join('');
-        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}<div class="radio-group">${opts}</div></div>`;
       } else if (field.type === 'checkbox') {
         // Multi-select ("choose any that apply") -- stored as a readable comma-
         // joined string of the checked labels, same "readable string, not a raw
@@ -1719,7 +1724,7 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         const opts = field.options.map(o =>
           `<label><input type="checkbox" data-checkbox-key="${field.key}" data-form="${cfg.intake}" value="${o}" ${checkedList.includes(o)?'checked':''}/> ${o}</label>`
         ).join('');
-        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}<div class="radio-group">${opts}</div></div>`;
       } else if (field.type === 'select_fill_in') {
         // Select + fill-in: a single-choice question where ONE OR MORE of its own
         // options reveal an inline text fill-in when picked (e.g. picking
@@ -1734,7 +1739,7 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         const fillInVal = existing.fields?.[field.key + '_fill_in'] || '';
         const fillInVisible = (field.fillInOptions || []).includes(val);
         html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}>
-          <label>${field.label}</label><div class="radio-group">${opts}</div>
+          <label>${field.label}</label>${descHtml}<div class="radio-group">${opts}</div>
           <div data-fill-in-for="${esc(field.key)}" data-fill-in-form="${esc(cfg.intake)}" data-fill-in-triggers="${esc(JSON.stringify(field.fillInOptions || []))}" style="margin-top:8px;display:${fillInVisible ? '' : 'none'}">
             <label>${field.fillInLabel || 'Details'}</label>
             <input type="text" data-key="${field.key}_fill_in" data-form="${cfg.intake}" value="${fillInVal.replace(/"/g,'&quot;')}"/>
@@ -1748,11 +1753,11 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         const inputs = listVals.map((v, i) =>
           `<div><label style="font-size:10px;color:var(--muted);text-transform:none;font-weight:400">${i+1}</label><input type="text" data-list-key="${field.key}" data-list-index="${i}" data-form="${cfg.intake}" value="${v.replace(/"/g,'&quot;')}"/></div>`
         ).join('');
-        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label>
+        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px">${inputs}</div>
         </div>`;
       } else {
-        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><input type="${field.type}" data-key="${field.key}" data-form="${cfg.intake}" value="${(val||'').replace(/"/g,'&quot;')}"/></div>`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}<input type="${field.type}" data-key="${field.key}" data-form="${cfg.intake}" value="${(val||'').replace(/"/g,'&quot;')}"/></div>`;
       }
     });
     html += '</div></div>';

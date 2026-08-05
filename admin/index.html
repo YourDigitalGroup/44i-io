@@ -2861,6 +2861,15 @@ function intakeFieldMaxChange(sIdx, fIdx, val) {
 function intakeFieldOptionalChange(sIdx, fIdx, checked) {
   intakeFormDraft.sections[sIdx].fields[fIdx].optional = checked;
 }
+// Optional clarifying text shown under the question on the live form (2026-08-06,
+// per Claire) -- e.g. "(Answering FAQs, Scheduling appointments, ...)". Kept
+// separate from the label itself specifically so the auto-generated key stays
+// short and based on the actual question, not padded with example text baked
+// into the label -- exactly the "some of the automatic ones are pretty long"
+// problem from building the earlier form.
+function intakeFieldDescriptionChange(sIdx, fIdx, val) {
+  intakeFormDraft.sections[sIdx].fields[fIdx].description = val;
+}
 // showIf: lets ANY field only appear once another field elsewhere in the same form
 // has a specific value/option selected (e.g. "If Book an Appointment:" only
 // showing once that checkbox is checked) -- general-purpose, not tied to one type.
@@ -2927,6 +2936,9 @@ function renderIntakeFormEditor() {
             <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer">
               <input type="checkbox" ${field.optional ? 'checked' : ''} onchange="intakeFieldOptionalChange(${sIdx}, ${fIdx}, this.checked)"/> Optional (not required to mark the form Complete)
             </label>
+            <input type="text" placeholder="Description shown under the question (optional) — e.g. examples or clarifying text" value="${esc(field.description || '')}"
+              oninput="intakeFieldDescriptionChange(${sIdx}, ${fIdx}, this.value)"
+              style="width:100%;margin-top:6px;padding:6px 9px;border-radius:5px;border:1px solid var(--border);font-size:11.5px;color:var(--muted)"/>
 
             ${INTAKE_TYPES_WITH_OPTIONS.includes(field.type) ? `
             <div style="margin-top:8px">
@@ -3102,6 +3114,7 @@ async function adminSaveIntakeForm() {
         if (f.type === 'list') clean.max = f.max;
         if (f.showIf) clean.showIf = { key: f.showIf.key, includes: f.showIf.includes || '' };
         if (f.optional) clean.optional = true;
+        if (f.description) clean.description = f.description;
         return clean;
       }),
     })),
