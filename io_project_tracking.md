@@ -6184,3 +6184,102 @@ and does say "Add another month". Re-ran the full strategist suite (27 files) �
 all pass. `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — Three new Intake Form field types + general conditional visibility
+
+Claire, building a new intake form, shared two real screenshots as the concrete
+scenarios: an "Email Details" section needing "choose up to six" repeatable short
+answers, and a landing-page section needing a multi-select checkbox list plus a
+"choose one, and Calendly specifically reveals a Calendar Link fill-in" follow-up
+that only makes sense once "Book an Appointment" is checked above. Asked to build
+these as "a proper field type for any future scenarios," not one-off for this form.
+
+Three real ambiguities checked before building rather than guessed at (each
+genuinely had more than one reasonable answer): (1) does the fill-in box show
+always or only for specific option(s) → **only for specific option(s)** (Claire's
+Calendar Link only makes sense once Calendly, not Google Workspace, is picked);
+(2) should "If Book an Appointment:" be a one-off nesting or a general reusable
+"show this only if..." capability → **general capability**, confirmed as likely
+to recur; (3) is "select" a rename of the existing radio type or a real dropdown →
+**same as existing radio buttons**, no visual change needed there.
+
+**No SQL/schema change at all** — `intake_forms.definition` is already free-form
+JSONB, and `admin_save_intake_form`/`strategist_get_campaign_lines`-style RPCs
+already pass it through wholesale; the three new field types and `showIf` are
+just new properties inside that same JSON shape.
+
+**`admin/index.html` (Intake Forms editor):**
+- `INTAKE_FIELD_TYPES` gains `checkbox` (Multi-Select), `select_fill_in` (Select +
+  Fill-In), and `list` (List, capped at a configurable max); `radio`'s label
+  changed to "Select (Choose One)" (same value/behavior, clearer name only).
+- Per-field editor UI (`renderIntakeFormEditor()`) rewritten from a fixed 4-column
+  row into a card that shows type-specific config: an Options textarea for any of
+  the three option-based types (`INTAKE_TYPES_WITH_OPTIONS`); `select_fill_in`
+  additionally gets a "which option(s) reveal a fill-in" textarea + a fill-in
+  label input; `list` gets a max-entries number input. Every field, regardless of
+  type, gets a new "Only show if…" mini-config — a dropdown of every OTHER field
+  in the whole form (not just this section) plus a value picker (a `<select>` of
+  that field's own options if it has any, else a plain text input).
+- Validation extended: options-based types need ≥1 option; `select_fill_in`'s
+  fill-in options must each match a real option (typo-proofing); `list` needs a
+  positive max; a `showIf` must point at a field that still exists. **Key
+  uniqueness widened from per-section to whole-form** — `showIf` can reference a
+  field in a different section, so a duplicate key anywhere would make that
+  reference ambiguous at read time; this was a real, if narrow, gap the new
+  cross-section reference opened up.
+
+**`index.html` (public form's intake modals):**
+- `showFullIntakeForm()` renders all three new types: checkbox as a group of real
+  `<input type="checkbox">`s; `select_fill_in` as radios plus one inline fill-in
+  `<div>` that starts shown/hidden based on whether the CURRENTLY selected option
+  is in `fillInOptions`; `list` as `field.max` numbered text inputs in a 3-column
+  grid, parsed back out of its saved "1. X\n2. Y" string via new
+  `intakeParseListValue()`.
+- New general `showIf` mechanism: every field's wrapper gets `data-show-if-*`
+  attributes when it has one; initial visibility comes from `existing.fields` on
+  open, then a new delegated `oninput`/`onchange` handler on the modal body
+  (`intakeRefreshConditionalFields()`, wired via property assignment so re-opening
+  the modal overwrites rather than stacks the handler) recomputes every
+  conditional field's visibility LIVE against the form's current DOM state — not
+  just once on open — via `intakeReadLiveFieldValue()` (handles checkbox groups,
+  radio groups, list inputs, and plain inputs uniformly) and
+  `intakeConditionMetFromValue()` (checkbox values are comma-joined, so this does
+  a split-and-includes check that also happens to work as an exact-match for
+  single-value radio fields).
+- `saveIntakeForm()` updated to serialize all three types: checkbox → comma-joined
+  string of checked labels (same "readable string" convention as the existing TLP
+  grid's own serialization); `select_fill_in` → the chosen option plus a second
+  `{key}_fill_in` entry; `list` → a newline-joined "1. X\n2. Y" string.
+- **Completeness check now excludes fields hidden by an unmet `showIf`** — both in
+  `saveIntakeForm()` (drives the AE-facing "✓ Complete"/"⚠ Partial" status) and in
+  the Trello-card/PDF summary builder (`buildIntakeDesc()`) — a follow-up question
+  that was never applicable (e.g. "Book an Appointment" was never checked)
+  shouldn't count against completeness or read as "partially answered" on the
+  card. Also gave `list` values their own `<br>`-joined rendering in that same
+  Trello/PDF table (a raw `\n` doesn't break lines in HTML) — same treatment the
+  TLP grid's own multi-line values already get, just inline instead of a separate
+  sub-table.
+
+Verified via Playwright (two new files): `test-admin-intake-field-types.js` (10
+checks) — builds a form matching Claire's two real examples end-to-end through
+the actual editor functions, confirms all 4 new validation rules correctly block
+an invalid save without calling the server, and confirms a valid save's payload
+carries every new property correctly, with the UI-only `keyManuallyEdited` flag
+stripped. `test-intake-field-types.js` (18 checks) — confirms initial render of
+all three types; confirms the showIf field starts hidden and the fill-in starts
+hidden when their conditions aren't met yet; confirms checking "Book an
+Appointment" live-reveals the conditional field, and picking Calendly (not Google
+Workspace) live-reveals the fill-in; confirms `saveIntakeForm()` serializes all
+three types correctly; confirms RE-OPENING the modal with already-saved answers
+correctly restores checkbox/select_fill_in/list state AND shows the conditional
+field immediately (not hidden) since its condition is already met from saved
+data; confirms a hidden/inapplicable conditional field doesn't block "Complete"
+status. Re-ran the existing admin (8 files) and public-form (2 files) Playwright
+suites — all pass unchanged except one pre-existing failure in
+`test-multicandidate-override.js` confirmed via `git stash` to already fail
+identically BEFORE this session's changes (unrelated, not a regression — flagged
+honestly rather than silently claimed as pre-existing without checking). `node
+--check` passes clean on both `admin/index.html` and `index.html`.
+
+No SQL for this one — the JSONB `definition` column already supports arbitrary
+new field properties with zero migration.

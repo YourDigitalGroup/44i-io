@@ -1609,6 +1609,65 @@ function serializeTlpGrid(fields) {
   fields.tlp_page_count = String(many.length);
 }
 
+// Shared helpers for the three new intake field types (checkbox/select_fill_in/
+// list) and the general showIf conditional-visibility mechanism, added 2026-08-06
+// per Claire's real new-intake-form scenarios (multi-select landing-page actions,
+// a select+fill-in for calendar booking, and a "choose up to six" list).
+
+// checkbox values are stored as a comma-joined string of checked labels (same
+// "readable string" convention as everywhere else in this project); radio/
+// select_fill_in are a single string equal to the chosen option. Works for both:
+// an exact match covers radio, a split-and-includes covers checkbox.
+function intakeConditionMetFromValue(showIf, rawValue) {
+  if (!showIf || !showIf.key) return true;
+  const val = rawValue || '';
+  const items = val.split(',').map(s => s.trim()).filter(Boolean);
+  return items.includes(showIf.includes) || val.trim() === showIf.includes;
+}
+
+// A list field's saved value is "1. X\n2. Y\n3. Z" (see saveIntakeForm) --
+// reconstruct the per-slot values for re-rendering an already-saved answer.
+function intakeParseListValue(raw, max) {
+  const n = max || 0;
+  const lines = (raw || '').split('\n').map(l => l.replace(/^\d+\.\s*/, '').trim());
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(lines[i] || '');
+  return out;
+}
+
+// Reads a field's CURRENT live value straight from the DOM (not the saved
+// `existing.fields` snapshot) -- used to recompute showIf visibility as the form
+// is actually being filled in, not just on first open.
+function intakeReadLiveFieldValue(formKey, key) {
+  const checkboxes = document.querySelectorAll(`[data-checkbox-key="${key}"][data-form="${formKey}"]`);
+  if (checkboxes.length) return Array.from(checkboxes).filter(c => c.checked).map(c => c.value).join(', ');
+  const radios = document.querySelectorAll(`input[type="radio"][name="intake-${formKey}-${key}"]`);
+  if (radios.length) { const checked = Array.from(radios).find(r => r.checked); return checked ? checked.value : ''; }
+  const listInputs = document.querySelectorAll(`[data-list-key="${key}"][data-form="${formKey}"]`);
+  if (listInputs.length) return Array.from(listInputs).map(i => i.value.trim()).filter(Boolean).join(', ');
+  const el = document.querySelector(`[data-key="${key}"][data-form="${formKey}"]`);
+  return el ? (el.value || '') : '';
+}
+
+// Re-evaluates every conditional field's visibility (both the generic "Only show
+// if" wrapper and select_fill_in's own inline fill-in reveal) against the form's
+// CURRENT live state. Wired as a delegated input/change handler on the modal body
+// in showFullIntakeForm() below -- fires on every keystroke/click inside the
+// modal, not just once on open.
+function intakeRefreshConditionalFields(formKey) {
+  document.querySelectorAll(`[data-show-if-key][data-show-if-form="${formKey}"]`).forEach(wrap => {
+    const rawValue = intakeReadLiveFieldValue(formKey, wrap.dataset.showIfKey);
+    const visible = intakeConditionMetFromValue({ key: wrap.dataset.showIfKey, includes: wrap.dataset.showIfValue }, rawValue);
+    wrap.style.display = visible ? '' : 'none';
+  });
+  document.querySelectorAll(`[data-fill-in-for][data-fill-in-form="${formKey}"]`).forEach(el => {
+    const rawValue = intakeReadLiveFieldValue(formKey, el.dataset.fillInFor);
+    let triggers = [];
+    try { triggers = JSON.parse(el.dataset.fillInTriggers || '[]'); } catch(e) { triggers = []; }
+    el.style.display = triggers.includes(rawValue) ? '' : 'none';
+  });
+}
+
 function showFullIntakeForm(serviceId, cfg, formDef, existing) {
   const isKoc = cfg.koc === 'required';
   let html = '';
@@ -1627,15 +1686,67 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
     html += `<div class="modal-section"><div class="modal-section-title">${section.title}</div><div class="modal-grid">`;
     section.fields.forEach(field => {
       const val = existing.fields?.[field.key] || '';
+      // showIf (2026-08-06): any field can be shown only once another field in
+      // the SAME form has a specific value/option selected -- e.g. "If Book an
+      // Appointment:" only appearing once that checkbox is checked. Initial
+      // visibility comes from whatever's already saved; intakeRefreshConditionalFields()
+      // recomputes it live as the strategist/AE actually fills the form in.
+      const visible = intakeConditionMetFromValue(field.showIf, field.showIf ? (existing.fields?.[field.showIf.key] || '') : '');
+      const showIfAttrs = field.showIf
+        ? ` data-show-if-key="${esc(field.showIf.key)}" data-show-if-value="${esc(field.showIf.includes || '')}" data-show-if-form="${esc(cfg.intake)}"`
+        : '';
+      const wrapStyle = `display:${visible ? '' : 'none'}`;
+
       if (field.type === 'textarea') {
-        html += `<div class="modal-field" style="grid-column:1/-1"><label>${field.label}</label><textarea data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
+        html += `<div class="modal-field" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label><textarea data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
       } else if (field.type === 'radio') {
         const opts = field.options.map(o =>
           `<label><input type="radio" name="intake-${cfg.intake}-${field.key}" value="${o}" ${val===o?'checked':''}/> ${o}</label>`
         ).join('');
-        html += `<div class="modal-field"><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
+        html += `<div class="modal-field" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
+      } else if (field.type === 'checkbox') {
+        // Multi-select ("choose any that apply") -- stored as a readable comma-
+        // joined string of the checked labels, same "readable string, not a raw
+        // array" convention used everywhere else in this project (e.g. the TLP
+        // grid's own serialization).
+        const checkedList = val.split(',').map(s => s.trim()).filter(Boolean);
+        const opts = field.options.map(o =>
+          `<label><input type="checkbox" data-checkbox-key="${field.key}" data-form="${cfg.intake}" value="${o}" ${checkedList.includes(o)?'checked':''}/> ${o}</label>`
+        ).join('');
+        html += `<div class="modal-field" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
+      } else if (field.type === 'select_fill_in') {
+        // Select + fill-in: a single-choice question where ONE OR MORE of its own
+        // options reveal an inline text fill-in when picked (e.g. picking
+        // "Calendly" reveals a "Calendar Link" text box; "Google Workspace
+        // Account" does not). The fill-in's own visibility is driven by its own
+        // radio group, not the generic showIf mechanism above -- it's a fixed
+        // property of this field's own options, not a rule referencing another
+        // field entirely.
+        const opts = field.options.map(o =>
+          `<label><input type="radio" name="intake-${cfg.intake}-${field.key}" value="${o}" ${val===o?'checked':''}/> ${o}</label>`
+        ).join('');
+        const fillInVal = existing.fields?.[field.key + '_fill_in'] || '';
+        const fillInVisible = (field.fillInOptions || []).includes(val);
+        html += `<div class="modal-field" style="${wrapStyle}"${showIfAttrs}>
+          <label>${field.label}</label><div class="radio-group">${opts}</div>
+          <div data-fill-in-for="${esc(field.key)}" data-fill-in-form="${esc(cfg.intake)}" data-fill-in-triggers="${esc(JSON.stringify(field.fillInOptions || []))}" style="margin-top:8px;display:${fillInVisible ? '' : 'none'}">
+            <label>${field.fillInLabel || 'Details'}</label>
+            <input type="text" data-key="${field.key}_fill_in" data-form="${cfg.intake}" value="${fillInVal.replace(/"/g,'&quot;')}"/>
+          </div>
+        </div>`;
+      } else if (field.type === 'list') {
+        // Repeatable short-answer list, capped at field.max (e.g. "choose up to
+        // six products/services"). Stored as one readable numbered string in
+        // field.key, same convention as select_fill_in above and the TLP grid.
+        const listVals = intakeParseListValue(val, field.max);
+        const inputs = listVals.map((v, i) =>
+          `<div><label style="font-size:10px;color:var(--muted);text-transform:none;font-weight:400">${i+1}</label><input type="text" data-list-key="${field.key}" data-list-index="${i}" data-form="${cfg.intake}" value="${v.replace(/"/g,'&quot;')}"/></div>`
+        ).join('');
+        html += `<div class="modal-field" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px">${inputs}</div>
+        </div>`;
       } else {
-        html += `<div class="modal-field"><label>${field.label}</label><input type="${field.type}" data-key="${field.key}" data-form="${cfg.intake}" value="${(val||'').replace(/"/g,'&quot;')}"/></div>`;
+        html += `<div class="modal-field" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><input type="${field.type}" data-key="${field.key}" data-form="${cfg.intake}" value="${(val||'').replace(/"/g,'&quot;')}"/></div>`;
       }
     });
     html += '</div></div>';
@@ -1654,7 +1765,12 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
     html += renderTlpGrid(serviceId, existing);
   }
 
-  document.getElementById('intake-modal-body').innerHTML = html;
+  const modalBody = document.getElementById('intake-modal-body');
+  modalBody.innerHTML = html;
+  // Property assignment (not addEventListener) so a re-open of this same modal
+  // overwrites the previous handler instead of stacking a duplicate one every time.
+  modalBody.oninput = () => intakeRefreshConditionalFields(cfg.intake);
+  modalBody.onchange = () => intakeRefreshConditionalFields(cfg.intake);
   document.getElementById('intake-modal-footer-left').innerHTML = '';
   document.getElementById('intake-help-btn').style.display = '';
   document.getElementById('intake-save-btn').style.display = '';
@@ -1672,14 +1788,25 @@ function saveIntakeForm() {
   formDef.sections.forEach(section => {
     section.fields.forEach(field => {
       let val = '';
-      if (field.type === 'radio') {
+      if (field.type === 'radio' || field.type === 'select_fill_in') {
         const checked = document.querySelector(`input[name="intake-${formKey}-${field.key}"]:checked`);
         val = checked ? checked.value : '';
+      } else if (field.type === 'checkbox') {
+        const checked = document.querySelectorAll(`[data-checkbox-key="${field.key}"][data-form="${formKey}"]:checked`);
+        val = Array.from(checked).map(c => c.value).join(', ');
+      } else if (field.type === 'list') {
+        const inputs = document.querySelectorAll(`[data-list-key="${field.key}"][data-form="${formKey}"]`);
+        const vals = Array.from(inputs).map(i => i.value.trim()).filter(Boolean);
+        val = vals.map((v, i) => `${i+1}. ${v}`).join('\n');
       } else {
         const el = document.querySelector(`[data-key="${field.key}"][data-form="${formKey}"]`);
         val = el ? el.value.trim() : '';
       }
       fields[field.key] = val;
+      if (field.type === 'select_fill_in') {
+        const fillInEl = document.querySelector(`[data-key="${field.key}_fill_in"][data-form="${formKey}"]`);
+        fields[field.key + '_fill_in'] = fillInEl ? fillInEl.value.trim() : '';
+      }
     });
   });
 
@@ -1708,7 +1835,11 @@ function saveIntakeForm() {
   // Check if fully completed (all fields have values) or partial
   // tlp-custom (2026-07-14) now gets a real grid too — the "!TLP_CAPS[sid]" escape hatch
   // that used to let it skip the tlpGridFilled requirement no longer applies to it.
-  const allFields = formDef.sections.flatMap(s => s.fields);
+  // A field hidden by an unmet showIf (2026-08-06) isn't required for completeness
+  // -- e.g. the "If Book an Appointment" follow-up shouldn't block completion for
+  // a submission that never checked that box in the first place.
+  const allFields = formDef.sections.flatMap(s => s.fields)
+    .filter(f => intakeConditionMetFromValue(f.showIf, f.showIf ? fields[f.showIf.key] : ''));
   const filledCount = allFields.filter(f => fields[f.key]).length;
   const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !(TLP_CAPS[sid] || sid === 'tlp-custom') || tlpGridFilled);
 
@@ -3316,8 +3447,12 @@ async function submitIO() {
           const data = intakeData[formKey] || {};
           const fields = data.fields || {};
 
-          // Compute fill state
-          const allFields = formDef.sections.flatMap(s => s.fields);
+          // Compute fill state -- a field hidden by an unmet showIf (2026-08-06)
+          // isn't required, same reasoning as saveIntakeForm()'s own completeness
+          // check: an inapplicable follow-up question shouldn't read as "partially
+          // complete" on the Trello card just because it was never shown.
+          const allFields = formDef.sections.flatMap(s => s.fields)
+            .filter(f => intakeConditionMetFromValue(f.showIf, f.showIf ? fields[f.showIf.key] : ''));
           const filledCount = allFields.filter(f => fields[f.key]).length;
           const totalCount = allFields.length;
 
@@ -3358,9 +3493,13 @@ async function submitIO() {
           formDef.sections.forEach(section => {
             const rows = section.fields.map(field => {
               const val = fields[field.key] || '';
+              // A list field's value is "1. X\n2. Y" -- a literal \n renders as a
+              // run-on line inside HTML, so break it into <br>s here the same way
+              // the TLP grid gets its own dedicated multi-line table below.
+              const displayVal = field.type === 'list' && val ? val.split('\n').map(esc).join('<br>') : esc(val);
               return `<tr>
                 <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151;width:38%;vertical-align:top">${esc(field.label)}</td>
-                <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827;vertical-align:top">${val ? esc(val) : '<span style="color:#9CA3AF">—</span>'}</td>
+                <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827;vertical-align:top">${val ? displayVal : '<span style="color:#9CA3AF">—</span>'}</td>
               </tr>`;
             }).join('');
             sectionsHtml += `
