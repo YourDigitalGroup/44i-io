@@ -2586,15 +2586,26 @@ async function adminToggleSectionActive(id, makeActive) {
 let ALL_INTAKE_FORMS = [];
 let intakeFormDraft = null; // { sections: [{ title, fields: [{key,label,type,options}] }] }
 
+// 2026-08-06: three new types added per Claire, generalizing patterns that kept
+// coming up while building new intake forms rather than one-off special-casing
+// each time -- "select" (radio) already existed; "multi-select", "select + fill-
+// in", and "list" are new. Also added: `showIf` (any field type can be shown only
+// when another field in the SAME form has a given value/option selected -- e.g.
+// "If Book an Appointment:" only appearing once that checkbox is checked) --
+// confirmed as a general, reusable capability rather than a one-off for this form.
 const INTAKE_FIELD_TYPES = [
   { value: 'text', label: 'Text' },
   { value: 'textarea', label: 'Text Area' },
-  { value: 'radio', label: 'Radio (Choice)' },
+  { value: 'radio', label: 'Select (Choose One)' },
+  { value: 'checkbox', label: 'Multi-Select (Choose Any)' },
+  { value: 'select_fill_in', label: 'Select + Fill-In' },
+  { value: 'list', label: 'List (Multiple Short Answers)' },
   { value: 'email', label: 'Email' },
   { value: 'tel', label: 'Phone' },
   { value: 'date', label: 'Date' },
   { value: 'number', label: 'Number' },
 ];
+const INTAKE_TYPES_WITH_OPTIONS = ['radio', 'checkbox', 'select_fill_in'];
 
 async function loadAdminIntakeForms() {
   const el = document.getElementById('admin-intake-table');
@@ -2730,6 +2741,46 @@ function intakeFieldTypeChange(sIdx, fIdx, val) {
 function intakeFieldOptionsChange(sIdx, fIdx, val) {
   intakeFormDraft.sections[sIdx].fields[fIdx].options = val.split('\n').map(s => s.trim()).filter(Boolean);
 }
+// select_fill_in only: which of this field's own options reveal an inline text
+// fill-in when picked, and what that fill-in's own label is (e.g. "Calendar Link").
+function intakeFieldFillInOptionsChange(sIdx, fIdx, val) {
+  intakeFormDraft.sections[sIdx].fields[fIdx].fillInOptions = val.split('\n').map(s => s.trim()).filter(Boolean);
+}
+function intakeFieldFillInLabelChange(sIdx, fIdx, val) {
+  intakeFormDraft.sections[sIdx].fields[fIdx].fillInLabel = val;
+}
+// list only: how many repeatable short answers this question allows (e.g. 6 for
+// "choose up to six products/services").
+function intakeFieldMaxChange(sIdx, fIdx, val) {
+  intakeFormDraft.sections[sIdx].fields[fIdx].max = val ? parseInt(val, 10) : null;
+}
+// showIf: lets ANY field only appear once another field elsewhere in the same form
+// has a specific value/option selected (e.g. "If Book an Appointment:" only
+// showing once that checkbox is checked) -- general-purpose, not tied to one type.
+function intakeFieldShowIfKeyChange(sIdx, fIdx, val) {
+  const field = intakeFormDraft.sections[sIdx].fields[fIdx];
+  if (!val) { field.showIf = null; renderIntakeFormEditor(); return; }
+  field.showIf = { key: val, includes: field.showIf?.includes || '' };
+  renderIntakeFormEditor(); // the "equals/includes" input's own placeholder depends on the chosen source field's options
+}
+function intakeFieldShowIfValueChange(sIdx, fIdx, val) {
+  const field = intakeFormDraft.sections[sIdx].fields[fIdx];
+  if (!field.showIf) return;
+  field.showIf.includes = val;
+}
+// Every OTHER field in the whole form (not just this section) -- a showIf
+// condition can reference a checkbox defined earlier in a different section, same
+// as "If Book an Appointment:" referencing the landing-page-actions question above.
+function intakeAllOtherFields(excludeSIdx, excludeFIdx) {
+  const out = [];
+  intakeFormDraft.sections.forEach((s, sIdx) => {
+    s.fields.forEach((f, fIdx) => {
+      if (sIdx === excludeSIdx && fIdx === excludeFIdx) return;
+      if (f.key) out.push({ key: f.key, label: f.label || f.key, options: f.options || [] });
+    });
+  });
+  return out;
+}
 
 function renderIntakeFormEditor() {
   const el = document.getElementById('admin-intake-sections-editor');
@@ -2746,29 +2797,78 @@ function renderIntakeFormEditor() {
         <button type="button" onclick="intakeRemoveSection(${sIdx})" style="padding:6px 10px;border-radius:6px;border:1px solid #FECACA;background:#FEF2F2;color:#B91C1C;font-size:11px;font-weight:600;cursor:pointer">Remove Section</button>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${section.fields.map((field, fIdx) => `
-          <div style="display:grid;grid-template-columns:1fr 1fr 140px 32px;gap:8px;align-items:start;padding:8px;background:#F8FAFC;border-radius:6px">
-            <div>
+        ${section.fields.map((field, fIdx) => {
+          const otherFields = intakeAllOtherFields(sIdx, fIdx);
+          const showIfSource = field.showIf ? otherFields.find(f => f.key === field.showIf.key) : null;
+          return `
+          <div style="padding:8px;background:#F8FAFC;border-radius:6px">
+            <div style="display:grid;grid-template-columns:1fr 1fr 170px 32px;gap:8px;align-items:start">
               <input type="text" placeholder="Question label" value="${esc(field.label || '')}"
                 oninput="intakeFieldLabelChange(${sIdx}, ${fIdx}, this.value)"
                 style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px"/>
-            </div>
-            <div>
               <input type="text" data-field-key-input="${sIdx}-${fIdx}" placeholder="key" value="${esc(field.key || '')}"
                 oninput="intakeFieldKeyChange(${sIdx}, ${fIdx}, this.value)"
                 style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:11px;font-family:monospace;color:var(--muted)"/>
-              ${field.type === 'radio' ? `<textarea placeholder="One option per line" rows="2"
-                oninput="intakeFieldOptionsChange(${sIdx}, ${fIdx}, this.value)"
-                style="width:100%;margin-top:6px;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:11px">${esc((field.options||[]).join('\n'))}</textarea>` : ''}
-            </div>
-            <div>
               <select onchange="intakeFieldTypeChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px;background:#fff">
                 ${INTAKE_FIELD_TYPES.map(t => `<option value="${t.value}" ${field.type===t.value?'selected':''}>${t.label}</option>`).join('')}
               </select>
+              <button type="button" onclick="intakeRemoveField(${sIdx}, ${fIdx})" title="Remove question" style="padding:6px;border-radius:5px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:14px;cursor:pointer;line-height:1">✕</button>
             </div>
-            <button type="button" onclick="intakeRemoveField(${sIdx}, ${fIdx})" title="Remove question" style="padding:6px;border-radius:5px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:14px;cursor:pointer;line-height:1">✕</button>
+
+            ${INTAKE_TYPES_WITH_OPTIONS.includes(field.type) ? `
+            <div style="margin-top:8px">
+              <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Options (one per line)</label>
+              <textarea placeholder="One option per line" rows="3" oninput="intakeFieldOptionsChange(${sIdx}, ${fIdx}, this.value)"
+                style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:11px">${esc((field.options||[]).join('\n'))}</textarea>
+            </div>` : ''}
+
+            ${field.type === 'select_fill_in' ? `
+            <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div>
+                <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Option(s) that reveal a fill-in (must match an option above exactly, one per line)</label>
+                <textarea placeholder="e.g. Calendly" rows="2" oninput="intakeFieldFillInOptionsChange(${sIdx}, ${fIdx}, this.value)"
+                  style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:11px">${esc((field.fillInOptions||[]).join('\n'))}</textarea>
+              </div>
+              <div>
+                <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Fill-in field label</label>
+                <input type="text" placeholder="e.g. Calendar Link" value="${esc(field.fillInLabel || '')}"
+                  oninput="intakeFieldFillInLabelChange(${sIdx}, ${fIdx}, this.value)"
+                  style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px"/>
+              </div>
+            </div>` : ''}
+
+            ${field.type === 'list' ? `
+            <div style="margin-top:8px">
+              <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Max entries (e.g. 6 for "choose up to six")</label>
+              <input type="number" min="1" value="${field.max ?? ''}" oninput="intakeFieldMaxChange(${sIdx}, ${fIdx}, this.value)"
+                style="width:100px;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px"/>
+            </div>` : ''}
+
+            <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end">
+              <div>
+                <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Only show if…</label>
+                <select onchange="intakeFieldShowIfKeyChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px;background:#fff">
+                  <option value="">Always show</option>
+                  ${otherFields.map(f => `<option value="${esc(f.key)}" ${field.showIf?.key === f.key ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}
+                </select>
+              </div>
+              ${field.showIf ? (
+                showIfSource && showIfSource.options.length
+                  ? `<div>
+                      <select onchange="intakeFieldShowIfValueChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px;background:#fff">
+                        <option value="">— which option? —</option>
+                        ${showIfSource.options.map(o => `<option value="${esc(o)}" ${field.showIf.includes === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+                      </select>
+                    </div>`
+                  : `<div>
+                      <input type="text" placeholder="value that reveals this question" value="${esc(field.showIf.includes || '')}"
+                        oninput="intakeFieldShowIfValueChange(${sIdx}, ${fIdx}, this.value)"
+                        style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px"/>
+                    </div>`
+              ) : ''}
+            </div>
           </div>
-        `).join('') || '<p style="font-size:11px;color:var(--muted);font-style:italic">No questions in this section yet.</p>'}
+        `; }).join('') || '<p style="font-size:11px;color:var(--muted);font-style:italic">No questions in this section yet.</p>'}
       </div>
       <button type="button" onclick="intakeAddField(${sIdx})" style="margin-top:10px;padding:6px 12px;border-radius:6px;border:1px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--accent)">+ Add Question</button>
     </div>
@@ -2832,23 +2932,46 @@ async function adminSaveIntakeForm() {
     return;
   }
 
-  // Validate: every field needs a label + key, radio fields need at least one option,
-  // and keys must be unique WITHIN their own section (duplicate keys in the same
-  // section would silently overwrite each other's saved answers).
+  // Validate: every field needs a label + key; radio/checkbox/select_fill_in need
+  // at least one option; select_fill_in's fill-in options must each match a real
+  // option; list needs a positive max; showIf must point at a real field. Keys
+  // must now be unique across the WHOLE form, not just within one section (2026-
+  // 08-06: showIf can reference a field in a different section, so a duplicate key
+  // anywhere would make that reference ambiguous at read time).
+  const seenKeys = new Set();
   for (const section of intakeFormDraft.sections) {
-    const seenKeys = new Set();
     for (const field of section.fields) {
       if (!field.label || !field.key) {
         showToast('Every question needs both a label and a key — check "' + (section.title || 'Untitled section') + '"', 'error');
         return;
       }
       if (seenKeys.has(field.key)) {
-        showToast(`Duplicate question key "${field.key}" in "${section.title || 'Untitled section'}" — keys must be unique within a section`, 'error');
+        showToast(`Duplicate question key "${field.key}" — keys must be unique across the whole form`, 'error');
         return;
       }
       seenKeys.add(field.key);
-      if (field.type === 'radio' && !(field.options || []).length) {
-        showToast(`"${field.label}" is a Radio question but has no options — add at least one, one per line`, 'error');
+      if (INTAKE_TYPES_WITH_OPTIONS.includes(field.type) && !(field.options || []).length) {
+        showToast(`"${field.label}" needs at least one option, one per line`, 'error');
+        return;
+      }
+      if (field.type === 'select_fill_in') {
+        const bad = (field.fillInOptions || []).find(o => !(field.options || []).includes(o));
+        if (bad) { showToast(`"${field.label}"'s fill-in option "${bad}" doesn't match any of its own options`, 'error'); return; }
+      }
+      if (field.type === 'list' && !(field.max > 0)) {
+        showToast(`"${field.label}" is a List question but needs a max entries greater than 0`, 'error');
+        return;
+      }
+      if (field.showIf && !field.showIf.key) { field.showIf = null; } // cleared back to "Always show"
+    }
+  }
+  // showIf targets must exist somewhere in the form (a field removed after being
+  // referenced would otherwise leave a dangling, silently-never-true condition).
+  const allKeys = new Set([...seenKeys]);
+  for (const section of intakeFormDraft.sections) {
+    for (const field of section.fields) {
+      if (field.showIf && !allKeys.has(field.showIf.key)) {
+        showToast(`"${field.label}"'s "Only show if" points at a question that no longer exists — pick another or set it back to "Always show"`, 'error');
         return;
       }
     }
@@ -2861,7 +2984,10 @@ async function adminSaveIntakeForm() {
       title: s.title || '',
       fields: s.fields.map(f => {
         const clean = { key: f.key, label: f.label, type: f.type };
-        if (f.type === 'radio') clean.options = f.options || [];
+        if (INTAKE_TYPES_WITH_OPTIONS.includes(f.type)) clean.options = f.options || [];
+        if (f.type === 'select_fill_in') { clean.fillInOptions = f.fillInOptions || []; clean.fillInLabel = f.fillInLabel || ''; }
+        if (f.type === 'list') clean.max = f.max;
+        if (f.showIf) clean.showIf = { key: f.showIf.key, includes: f.showIf.includes || '' };
         return clean;
       }),
     })),
