@@ -5984,7 +5984,30 @@ real value; the import form's checkbox is actually read and sent through to the
 save call. Re-ran the full strategist suite (23 files) — all pass unchanged.
 `node --check` passes clean.
 
-**Still needs from Claire:** run `offline-visits-tactic-flag-2026-08-06.sql`
-(column + updated `strategist_save_campaign_line`), then run the
-`pg_get_functiondef` query for `strategist_get_campaign_lines` and paste the result
-back so the read-side follow-up script can be written.
+**SQL run.** `offline-visits-tactic-flag-2026-08-06.sql` run; Claire pasted back
+`strategist_get_campaign_lines`'s live definition, so the read-side follow-up
+(`offline-visits-get-lines-2026-08-06.sql`, adding `has_offline_visits` to its
+`jsonb_build_object`) was written from the real definition, same two-step process
+as `goal_override`, and run.
+
+**Real bug found during her live test:** unchecking the box in the detail panel
+showed a "Saved" toast but the tactic label never dropped the "+ Offline Visits
+Tracking" suffix. Root cause: the checkbox's `onchange` called `strategistSaveLine`
+with `reload:false` — correct for a plain text field (its own DOM value already
+shows what was typed, nothing else needs to change), but wrong here because the
+tactic label lives in OTHER places too (this same panel's own header, the main
+table's Tactic column) that only update on a full refetch+re-render. Fixed by
+dropping the third argument entirely — defaults to `reload:true`, same as the
+Status select right next to it, which already needed a full reload for its own
+reason (moving between status tabs).
+
+Verified via Playwright (updated `test-strategist-offline-visits-tactic.js`):
+reproduced Claire's exact scenario — a flagged campaign on screen, uncheck the box,
+mock the server round-trip succeeding — and confirmed the main table's Tactic
+column AND the detail panel's own header both drop the suffix afterward, not just
+that the save call fired with the right payload (the earlier version of this test
+only checked the latter, which is exactly how the bug shipped in the first place —
+a real callout to be honest about, not smooth over). Re-ran the full strategist
+suite (23 files) — all pass unchanged. `node --check` passes clean.
+
+Nothing further needed on this one.

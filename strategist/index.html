@@ -1367,7 +1367,7 @@ function renderStrategistDetailPanel() {
 
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-right:8px">
-        <input type="checkbox" ${l.has_offline_visits ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_offline_visits: this.checked}, false)"/> + Offline Visits Tracking
+        <input type="checkbox" ${l.has_offline_visits ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_offline_visits: this.checked})"/> + Offline Visits Tracking
       </label>
       <label class="lbl" style="margin:0">Status</label>
       <select onchange="strategistSaveLine('${l.id}', {status: this.value})" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;font-weight:600">
