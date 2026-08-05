@@ -6283,3 +6283,92 @@ honestly rather than silently claimed as pre-existing without checking). `node
 
 No SQL for this one — the JSONB `definition` column already supports arbitrary
 new field properties with zero migration.
+
+## 2026-08-06 (cont'd) — Intake questions can now be marked optional
+
+Claire, while building the new form: "Right now are all questions in an intake
+form always required? If yes, we need to be able to mark questions as optional."
+Confirmed: yes, every question previously counted toward "Complete" with no way
+to exempt one.
+
+**No SQL** — same as the other new intake properties, `optional` is just another
+key inside the existing JSONB `definition`.
+
+**`admin/index.html`:** every field row now has an "Optional (not required to
+mark the form Complete)" checkbox, regardless of type — new
+`intakeFieldOptionalChange()`. Saved only when true (`if (f.optional) clean.
+optional = true`), same minimal-payload convention as `showIf`.
+
+**`index.html`:** found and reused an existing-but-unwired `.modal-field.required`
+CSS class (already renders a red "*", already used on Step 1's own required
+fields like Business Name) — every dynamically-rendered intake field now gets
+that class UNLESS `field.optional` is true, so marking a question optional simply
+drops the asterisk rather than needing new styling. Both completeness
+calculations (`saveIntakeForm()`'s AE-facing status, and `buildIntakeDesc()`'s
+Trello/PDF summary banner) now filter out optional fields the same way they
+already filter out showIf-hidden fields — an optional question left blank never
+blocks "Complete" or counts against the "X of Y answered" total, whether or not
+it's actually filled in.
+
+Verified via Playwright (new `test-intake-optional-field.js`, 9 checks, run
+against both files): the Optional checkbox defaults unchecked, reflects state
+correctly, and only gets saved into the definition when actually checked; the
+public form gives the optional field's wrapper div the plain `modal-field` class
+(no asterisk) while the required one keeps `modal-field required`; a form
+missing only its optional answer still reads "Complete"; a form missing its
+required answer still reads incomplete even if the optional field WAS filled in
+— and confirmed that specific case correctly reads as "not started" rather than
+"partial," since partial/complete are now purely about required-field progress
+(a separate two-required-fields scenario confirms "partial" still fires normally
+once only SOME required fields are answered). Re-ran
+`test-admin-intake-field-types.js`, `test-intake-field-types.js`, and
+`test-io-step1-required-fields.js` — all pass unchanged. `node --check` passes
+clean on both files.
+
+## 2026-08-06 (cont'd) — Drag-to-reorder sections and questions in the Intake Forms editor
+
+Claire: "Can we also add a way to change the order of questions and sections in
+an intake form?" No SQL, no schema change — sections/fields are plain JS arrays
+inside `intakeFormDraft`, and array order IS the display order once saved into
+`definition`, so this is purely an in-memory splice + re-render, unlike the
+Sections tab's own drag-to-reorder (a real DB `sort_order` column persisted on
+every drop). Reused the same "⠿" grip-handle + native HTML5 drag-event pattern as
+that Sections tab and the Suggested Map's row reorder, for a consistent feel.
+
+**`admin/index.html`:**
+- Section cards get a drag handle next to the title input
+  (`intakeSectionDragStart/DragOver/DragLeave/Drop/DragEnd`); dropping splices
+  `intakeFormDraft.sections`.
+- Field rows get their own drag handle (`intakeFieldDragStart/DragOver/DragLeave/
+  Drop/DragEnd`) and can move two ways: reorder within their own section, OR drop
+  onto a DIFFERENT section entirely to move there — deliberately allowed rather
+  than restricted to same-section, since two sections ending up with near-
+  duplicate questions (the "If Book an Appointment:" pattern from earlier today)
+  is a real scenario where a question might just be filed under the wrong
+  section to start with.
+- Drop semantics: dropping onto a row inserts BEFORE that row (the border-top
+  highlight visually means "goes here, above this"), same as most sortable-list
+  UIs. Same-section moves adjust the target index by one when the source was
+  earlier in the array (removing it shifts everything after it down by one) —
+  cross-section moves don't need that adjustment since they're two independent
+  arrays.
+- Field drag/drop handlers call `e.stopPropagation()` — fields are nested inside
+  a section's own card, which ALSO listens for drop/dragover, so without this a
+  single drop on a field could fire both the field's AND the parent section's
+  handler.
+
+Verified via Playwright (new `test-intake-reorder.js`, 6 checks): called the drag
+handler functions directly with minimal fake event objects (real `DataTransfer`
+drag gestures aren't reliably simulatable via `dispatchEvent`, same limitation
+noted for other native-browser-interaction tests this session) rather than
+guessing — confirmed a same-section reorder lands in the exact position the
+"insert before target" semantic predicts (traced by hand first, not assumed);
+confirmed a cross-section move empties the source section and inserts correctly
+into the target; confirmed dropping an item onto its own original spot is a
+no-op; confirmed section reordering works the same way; confirmed the final
+saved payload's section order matches the reordered draft, with no leftover
+drag-tracking properties (`sIdx`/`fIdx`) polluting the saved field objects.
+Re-ran `test-admin-intake-field-types.js` and `test-intake-optional-field.js` —
+both pass unchanged. `node --check` passes clean.
+
+No SQL for this one — frontend only.

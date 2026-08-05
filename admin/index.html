@@ -2720,6 +2720,107 @@ function intakeRemoveField(sIdx, fIdx) {
   intakeFormDraft.sections[sIdx].fields.splice(fIdx, 1);
   renderIntakeFormEditor();
 }
+
+// ── DRAG-TO-REORDER (sections and questions) ─────────────────────
+// 2026-08-06, per Claire. Unlike the Sections tab's own drag-to-reorder (a real
+// DB `sort_order` column, persisted on every drop), sections/fields here are just
+// plain arrays inside `intakeFormDraft` — the array order IS the display order,
+// and it's only written back to Supabase whenever the whole form is Saved like
+// everything else in this editor. So a drop just splices the in-memory array and
+// re-renders; no RPC call, no loading state. Same "⠿" grip-handle + native HTML5
+// drag events pattern as the Sections tab and Suggested Map's row reorder, for a
+// consistent feel across the admin.
+let intakeSectionDragSourceIdx = null;
+let intakeSectionDragOverEl = null;
+function intakeSectionDragStart(e, sIdx) {
+  intakeSectionDragSourceIdx = sIdx;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(sIdx));
+  const card = e.target.closest('[data-intake-section]');
+  if (card) card.style.opacity = '0.4';
+}
+function intakeSectionDragEnd(e) {
+  const card = e.target.closest('[data-intake-section]');
+  if (card) card.style.opacity = '';
+  intakeClearSectionDragOverHighlight();
+  intakeSectionDragSourceIdx = null;
+}
+function intakeSectionDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const card = e.currentTarget;
+  if (intakeSectionDragOverEl && intakeSectionDragOverEl !== card) intakeClearSectionDragOverHighlight();
+  card.style.borderTop = '3px solid var(--accent)';
+  intakeSectionDragOverEl = card;
+}
+function intakeSectionDragLeave(e) {
+  if (e.currentTarget === intakeSectionDragOverEl) intakeClearSectionDragOverHighlight();
+}
+function intakeClearSectionDragOverHighlight() {
+  if (intakeSectionDragOverEl) { intakeSectionDragOverEl.style.borderTop = ''; intakeSectionDragOverEl = null; }
+}
+function intakeSectionDrop(e, targetIdx) {
+  e.preventDefault();
+  e.stopPropagation(); // a field row's own drop handler could otherwise ALSO fire (fields are nested inside a section's card)
+  intakeClearSectionDragOverHighlight();
+  if (intakeSectionDragSourceIdx == null || intakeSectionDragSourceIdx === targetIdx) { intakeSectionDragSourceIdx = null; return; }
+  const [moved] = intakeFormDraft.sections.splice(intakeSectionDragSourceIdx, 1);
+  intakeFormDraft.sections.splice(targetIdx, 0, moved);
+  intakeSectionDragSourceIdx = null;
+  renderIntakeFormEditor();
+}
+
+// Fields can be dragged to reorder within their own section, OR dropped onto a
+// DIFFERENT section entirely to move there — useful since two sections can end
+// up with near-duplicate questions (e.g. two "If Book an Appointment:" follow-
+// ups) and a question is sometimes just filed under the wrong section to start.
+let intakeFieldDragSource = null; // { sIdx, fIdx }
+let intakeFieldDragOverEl = null;
+function intakeFieldDragStart(e, sIdx, fIdx) {
+  intakeFieldDragSource = { sIdx, fIdx };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', `${sIdx}-${fIdx}`);
+  const card = e.target.closest('[data-intake-field]');
+  if (card) card.style.opacity = '0.4';
+}
+function intakeFieldDragEnd(e) {
+  const card = e.target.closest('[data-intake-field]');
+  if (card) card.style.opacity = '';
+  intakeClearFieldDragOverHighlight();
+  intakeFieldDragSource = null;
+}
+function intakeFieldDragOver(e) {
+  e.preventDefault();
+  e.stopPropagation(); // don't also trigger the parent section's dragover highlight
+  e.dataTransfer.dropEffect = 'move';
+  const card = e.currentTarget;
+  if (intakeFieldDragOverEl && intakeFieldDragOverEl !== card) intakeClearFieldDragOverHighlight();
+  card.style.borderTop = '3px solid var(--accent)';
+  intakeFieldDragOverEl = card;
+}
+function intakeFieldDragLeave(e) {
+  if (e.currentTarget === intakeFieldDragOverEl) intakeClearFieldDragOverHighlight();
+}
+function intakeClearFieldDragOverHighlight() {
+  if (intakeFieldDragOverEl) { intakeFieldDragOverEl.style.borderTop = ''; intakeFieldDragOverEl = null; }
+}
+function intakeFieldDrop(e, targetSIdx, targetFIdx) {
+  e.preventDefault();
+  e.stopPropagation(); // don't also trigger the parent section's own drop handler
+  intakeClearFieldDragOverHighlight();
+  if (!intakeFieldDragSource) return;
+  const { sIdx: sourceSIdx, fIdx: sourceFIdx } = intakeFieldDragSource;
+  intakeFieldDragSource = null;
+  if (sourceSIdx === targetSIdx && sourceFIdx === targetFIdx) return;
+  const sourceFields = intakeFormDraft.sections[sourceSIdx].fields;
+  const [moved] = sourceFields.splice(sourceFIdx, 1);
+  // Moving within the SAME section: removing the source item shifts every index
+  // after it down by one, so the target index needs the same adjustment.
+  let insertAt = targetFIdx;
+  if (sourceSIdx === targetSIdx && sourceFIdx < targetFIdx) insertAt -= 1;
+  intakeFormDraft.sections[targetSIdx].fields.splice(insertAt, 0, moved);
+  renderIntakeFormEditor();
+}
 function intakeFieldLabelChange(sIdx, fIdx, val) {
   const field = intakeFormDraft.sections[sIdx].fields[fIdx];
   field.label = val;
@@ -2753,6 +2854,12 @@ function intakeFieldFillInLabelChange(sIdx, fIdx, val) {
 // "choose up to six products/services").
 function intakeFieldMaxChange(sIdx, fIdx, val) {
   intakeFormDraft.sections[sIdx].fields[fIdx].max = val ? parseInt(val, 10) : null;
+}
+// Every question defaults to required (matches current behavior before this flag
+// existed); checking this excludes it from the "all questions answered = Complete"
+// count in both the AE-facing status badge and the Trello/PDF summary banner.
+function intakeFieldOptionalChange(sIdx, fIdx, checked) {
+  intakeFormDraft.sections[sIdx].fields[fIdx].optional = checked;
 }
 // showIf: lets ANY field only appear once another field elsewhere in the same form
 // has a specific value/option selected (e.g. "If Book an Appointment:" only
@@ -2789,8 +2896,9 @@ function renderIntakeFormEditor() {
     return;
   }
   el.innerHTML = intakeFormDraft.sections.map((section, sIdx) => `
-    <div style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+    <div data-intake-section="${sIdx}" ondragover="intakeSectionDragOver(event)" ondragleave="intakeSectionDragLeave(event)" ondrop="intakeSectionDrop(event, ${sIdx})" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+        <span draggable="true" ondragstart="intakeSectionDragStart(event, ${sIdx})" ondragend="intakeSectionDragEnd(event)" style="cursor:grab;color:var(--muted);font-size:16px;user-select:none" title="Drag to reorder this section">⠿</span>
         <input type="text" placeholder="Section title, e.g. Project Details" value="${esc(section.title || '')}"
           oninput="intakeSectionTitleChange(${sIdx}, this.value)"
           style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px;font-weight:600"/>
@@ -2801,8 +2909,9 @@ function renderIntakeFormEditor() {
           const otherFields = intakeAllOtherFields(sIdx, fIdx);
           const showIfSource = field.showIf ? otherFields.find(f => f.key === field.showIf.key) : null;
           return `
-          <div style="padding:8px;background:#F8FAFC;border-radius:6px">
-            <div style="display:grid;grid-template-columns:1fr 1fr 170px 32px;gap:8px;align-items:start">
+          <div data-intake-field="${sIdx}-${fIdx}" ondragover="intakeFieldDragOver(event)" ondragleave="intakeFieldDragLeave(event)" ondrop="intakeFieldDrop(event, ${sIdx}, ${fIdx})" style="padding:8px;background:#F8FAFC;border-radius:6px">
+            <div style="display:grid;grid-template-columns:24px 1fr 1fr 170px 32px;gap:8px;align-items:start">
+              <span draggable="true" ondragstart="intakeFieldDragStart(event, ${sIdx}, ${fIdx})" ondragend="intakeFieldDragEnd(event)" style="cursor:grab;color:var(--muted);font-size:16px;user-select:none;padding-top:6px" title="Drag to reorder or move to another section">⠿</span>
               <input type="text" placeholder="Question label" value="${esc(field.label || '')}"
                 oninput="intakeFieldLabelChange(${sIdx}, ${fIdx}, this.value)"
                 style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px"/>
@@ -2814,6 +2923,10 @@ function renderIntakeFormEditor() {
               </select>
               <button type="button" onclick="intakeRemoveField(${sIdx}, ${fIdx})" title="Remove question" style="padding:6px;border-radius:5px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:14px;cursor:pointer;line-height:1">✕</button>
             </div>
+
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer">
+              <input type="checkbox" ${field.optional ? 'checked' : ''} onchange="intakeFieldOptionalChange(${sIdx}, ${fIdx}, this.checked)"/> Optional (not required to mark the form Complete)
+            </label>
 
             ${INTAKE_TYPES_WITH_OPTIONS.includes(field.type) ? `
             <div style="margin-top:8px">
@@ -2988,6 +3101,7 @@ async function adminSaveIntakeForm() {
         if (f.type === 'select_fill_in') { clean.fillInOptions = f.fillInOptions || []; clean.fillInLabel = f.fillInLabel || ''; }
         if (f.type === 'list') clean.max = f.max;
         if (f.showIf) clean.showIf = { key: f.showIf.key, includes: f.showIf.includes || '' };
+        if (f.optional) clean.optional = true;
         return clean;
       }),
     })),
