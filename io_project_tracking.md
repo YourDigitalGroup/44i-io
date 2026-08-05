@@ -6075,4 +6075,67 @@ exercised the OLD signature/UI rather than leave them broken:
 `test-strategist-inplatform-override.js`. Re-ran the full strategist suite (24
 files) — all pass. `node --check` passes clean.
 
-**Still needs from Claire:** run `goal-override-per-month-2026-08-06.sql`.
+**SQL run and confirmed working.**
+
+## 2026-08-06 (cont'd) — Five real-use fixes from Claire's live testing
+
+Claire, testing the portal for real: "1. Could we add headers for those editable
+monthly fields so someone doesn't accidentally update the wrong cell. 2. For the
+flight dates depending on how long the second date is the year goes onto a third
+line. 3. For future months it is pulling the data from the reports for the current
+month. 4. When you click on a campaign it currently opens the editor at the bottom
+of the page that you have to scroll to, could we have it open directly underneath
+the campaign or have it work like the admin portal editors. 5. There also isn't an
+x or save button so... you have to click the campaign again to close the editor."
+
+**#3 was a real bug, not a UI request** — found reading `monthRowFor()`: the
+carry-forward branch for a month with no `campaign_months` row of its own spread
+the ENTIRE prior month's row (`{ ...prior, month: ..., _carried: true }`), not just
+`gross_budget` like its own comment said. So a future month with nothing entered
+yet displayed the CURRENT month's real actuals, `goal_override`, and every
+platform-metric-tile field as if they belonged to that future month — exactly what
+Claire saw. Fixed by building the synthetic row explicitly (`{ campaign_line_id,
+month, gross_budget: prior.gross_budget, _carried: true }`) instead of spreading.
+The `exact.gross_budget == null` carry-forward branch right above it was already
+narrow and correct — untouched.
+
+**#2:** `strategistFormatFlightDate()`'s 2-digit-year format (`"Jun 1, 26"`) uses
+regular spaces, so in a narrow Flight column the browser could wrap between ANY
+word — including inside a single date, pushing the year onto its own line. Fixed
+by replacing the spaces WITHIN one date with non-breaking spaces (` `) so
+each date is now one unbreakable unit; the space around the "–" between the two
+dates is untouched, so the range can still wrap there if it needs to.
+
+**#1:** Added a header row (Month / Gross / In-Platform / Goal / Actual Spend /
+Clicks / Impr.) above the Monthly history block's per-month input rows, same
+widths as the inputs below it, so it's clear which field is which without relying
+on placeholder text alone once a value is already typed in.
+
+**#4 and #5:** Rather than build a new inline-expand-under-the-row interaction,
+matched the exact pattern `admin/index.html` already uses for every one of its own
+edit forms (`scrollIntoView({behavior:'smooth'})` on open, plus a "✕ Close"
+button) — Claire's own message offered this as an equally acceptable alternative
+("...or have it work like the admin portal editors"), and it's an established,
+already-proven pattern in this codebase rather than a new one. Clicking a campaign
+row now smooth-scrolls the detail panel into view the moment it opens (not on
+close, and not when re-clicking the same row to close it the old way); a new "✕
+Close" button in the panel's header collapses it without needing to click the row
+again. Every field already saved on its own `onchange` before this — the button is
+purely about visibility/dismissal, not save behavior.
+
+Verified via Playwright (new `test-strategist-five-ux-fixes.js`, 14 checks): a
+future month with no row of its own carries forward ONLY `gross_budget`, never
+`actual_spend`/`actual_clicks`/`goal_override`/platform-metric fields; a single
+formatted date contains zero regular space characters and at least one
+non-breaking space; the range between two dates still has a regular (breakable)
+space; the Monthly history header row renders all seven labels; the Close button
+exists, is wired to `strategistCloseDetailPanel()`, and actually clears
+`strategistSelectedLineId` and empties the panel; selecting a row calls
+`scrollIntoView` on the detail panel, while re-clicking the same row to close it
+does NOT scroll. Two existing tests asserted on the OLD literal-space flight-date
+text (`test-strategist-group-filter.js`, `test-strategist-pause-flight.js`) —
+updated both to match with a whitespace-class regex instead of a literal string,
+same fix in both places. Re-ran the full strategist suite (25 files) — all pass.
+`node --check` passes clean.
+
+No SQL for this one — all five are frontend-only.

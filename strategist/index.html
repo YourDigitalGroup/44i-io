@@ -300,8 +300,12 @@ function strategistShiftMonth(delta) {
 function strategistFormatFlightDate(dateStr) {
   if (!dateStr) return null;
   // 2-digit year (2026-08-06, per Claire: rows are getting too tall once there are
-  // a few hundred campaigns) -- "Jun 1, 26" instead of "Jun 1, 2026".
-  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+  // a few hundred campaigns) -- "Jun 1, 26" instead of "Jun 1, 2026". Spaces within
+  // ONE date are non-breaking (found live the same day, per Claire: the year was
+  // wrapping onto its own third line whenever the second date was long) -- the
+  // narrow Flight column can still wrap the range between the two dates (at the
+  // "–"), it just can't wrap in the middle of a single date anymore.
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }).replace(/ /g, ' ');
 }
 function strategistFormatFlightRange(start, end) {
   const s = strategistFormatFlightDate(start), e = strategistFormatFlightDate(end);
@@ -1049,9 +1053,16 @@ function monthRowFor(lineId, monthDate) {
     return exact;
   }
   if (line && line.budget_varies_by_month) return null;
-  // Carry forward the most recent PRIOR month's gross_budget as a synthetic row.
+  // Carry forward the most recent PRIOR month's gross_budget as a synthetic row --
+  // ONLY gross_budget, never the whole row. Found live 2026-08-06, per Claire: a
+  // FUTURE month with no campaign_months row of its own was showing the prior
+  // (current) month's real actuals/pasted-report numbers as if they belonged to
+  // that future month -- spreading `...prior` here pulled in actual_spend,
+  // actual_clicks, every platform-metric-tile field, and goal_override right along
+  // with gross_budget, none of which should ever carry forward (a month with no
+  // real data on it should show nothing for those, not last month's numbers).
   const prior = priorRow();
-  return prior ? { ...prior, month: monthDate.toISOString().slice(0,10), _carried: true } : null;
+  return prior ? { campaign_line_id: lineId, month: monthDate.toISOString().slice(0,10), gross_budget: prior.gross_budget, _carried: true } : null;
 }
 
 function strategistLineActiveInMonth(line, monthDate) {
@@ -1344,7 +1355,22 @@ function renderMainTable(lines) {
 }
 
 function strategistSelectLine(lineId) {
-  strategistSelectedLineId = strategistSelectedLineId === lineId ? null : lineId;
+  const opening = strategistSelectedLineId !== lineId;
+  strategistSelectedLineId = opening ? lineId : null;
+  renderStrategistDashboard();
+  // Scroll to the panel on open (2026-08-06, per Claire: it rendered below the
+  // whole table, so opening it meant scrolling down to find it herself every
+  // time) -- same smooth-scroll-to-editor convention admin/index.html already
+  // uses for every one of its own edit forms.
+  if (opening) document.getElementById('strategist-detail-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Every field in the detail panel already saves on its own onchange -- this button
+// exists purely to collapse the panel back closed (2026-08-06, per Claire: without
+// it, the only way to close it was clicking the campaign row again, which wasn't
+// obvious since nothing in the panel itself hinted that was how to dismiss it).
+function strategistCloseDetailPanel() {
+  strategistSelectedLineId = null;
   renderStrategistDashboard();
 }
 
@@ -1366,6 +1392,7 @@ function renderStrategistDetailPanel() {
         <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSavePlatformCampaignName('${l.id}', this.value)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
+        <button onclick="strategistCloseDetailPanel()" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">✕ Close</button>
       </div>
     </div>
 
@@ -1394,6 +1421,15 @@ function renderStrategistDetailPanel() {
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 4px">Monthly history</p>
     <p style="font-size:10.5px;color:var(--muted);margin:0 0 8px">In-Platform and Goal are normally computed automatically from that month's Gross Budget — the override next to each is there for a specific month that needs to diverge from the plan; leave it blank to keep using the auto-calculated value.${l.service_id === 'sem-bp' ? ' A range like "150-200" is OK for SEM\'s Goal; pacing uses the midpoint.' : ''}</p>
     <div style="border:1px solid var(--border);border-radius:8px;padding:4px 12px;margin-bottom:16px;background:var(--light)">
+      <div style="display:flex;align-items:center;gap:8px;font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);padding:6px 0">
+        <span style="width:90px">Month</span>
+        <span style="width:90px">Gross</span>
+        <span style="width:130px">In-Platform</span>
+        <span style="width:130px">Goal</span>
+        <span style="width:90px">Actual Spend</span>
+        <span style="width:75px">Clicks</span>
+        <span style="width:85px">Impr.</span>
+      </div>
       ${ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month)).map(m => {
         const autoInPlatform = computeInPlatformBudget(m.gross_budget, l.service_id, l.group_id);
         const autoGoal = computeGoal(l, { ...m, goal_override: null });
