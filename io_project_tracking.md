@@ -6011,3 +6011,68 @@ a real callout to be honest about, not smooth over). Re-ran the full strategist
 suite (23 files) — all pass unchanged. `node --check` passes clean.
 
 Nothing further needed on this one.
+
+## 2026-08-06 (cont'd) — Goal override moves from per-campaign to per-month
+
+Claire: "we need to add the ability to change the impression goal per month."
+Design confirmed with her before building (Goal override was one value covering
+the whole campaign, every month — the SEM-range work earlier today hadn't changed
+that): "It should [be] Option B... so it is clear month by month what the
+strategists are planning to do. It can still do the auto calculation based on the
+gross budget but have it by month. So when a campaign is first ordered every month
+will be based off of the standard gross budget but then... the strategist can
+modify where needed." Also confirmed SEM's range syntax needs to work the same way
+per month ("so it is constant") — a SEM campaign can have a different clicks range
+in different months, not one range for its whole run.
+
+This is the SAME move In-Platform Budget already made (per-month override,
+`campaign_months.in_platform_override`, added earlier in this project) — Goal was
+the one derived figure still living at the wrong grain (campaign-level), now
+consistent with everything else that depends on a month's own Gross Budget.
+
+**New (`goal-override-per-month-2026-08-06.sql`, not yet run):**
+`campaign_months.goal_override text` (text, not numeric — same reason as the
+SEM-range work, so it can hold "150-200"). `strategist_get_campaign_months`/
+`strategist_save_campaign_month` updated to read/write it, written from the real
+`v4` definitions confirmed run earlier today (the platform-metric-tiles
+migration) — flagged plainly that this session doesn't have a just-pasted-back
+copy of those two functions the way the last two SQL requests got, so please
+sanity-check nothing else changed them since before running. `campaign_lines.
+goal_override` is no longer read or written by the app — left in place rather than
+dropped (still holds the two real SEM-range test values from earlier), safe to
+drop later if wanted, no rush.
+
+**`strategist/index.html`:**
+- `computeGoal(line, monthRow)` signature change — was `computeGoal(line,
+  grossBudget)` reading `line.goal_override`; now takes the whole `monthRow` and
+  reads `monthRow.goal_override` and `monthRow.gross_budget` from it. Every call
+  site already had `monthRow` in scope (main table, detail panel), so this was a
+  narrow, mechanical change, not a redesign of the calling code.
+- The standalone "Goal override" section in the detail panel (one input for the
+  whole campaign) is gone. The Monthly history block's per-month row — which
+  already had a Gross Budget input and an In-Platform override input — now also
+  has a Goal input, same visual treatment as In-Platform's (placeholder shows
+  "Auto: <calculated value>", border highlights when overridden). SEM's range
+  syntax (`type="text"`, "e.g. 150 or 150-200") applies per row exactly like it
+  did on the old campaign-level field.
+- `parseGoalOverride()` (the range-parsing helper) is unchanged — it already took
+  a raw value and an `allowRange` flag, so it didn't care whether that value came
+  from a campaign or a month.
+
+Verified via Playwright (new `test-strategist-goal-per-month.js`): two different
+months on the SAME campaign auto-calculate independently off their own Gross
+Budget (not carried over from each other); overriding one month doesn't leak into
+another month on the same campaign; a SEM campaign can have a different range in
+different months (150-200 in one, 300-400 in another); the Monthly history block
+renders one Goal input per month row, each showing its own real value; the old
+standalone campaign-level section is gone; a stale `goal_override` left on the
+campaign-line object is now simply ignored (confirms the new signature is what
+actually runs, not lingering old behavior). Updated three existing tests that
+exercised the OLD signature/UI rather than leave them broken:
+`test-strategist-goal-override.js`, `test-strategist-goal-override-refresh.js`
+(rewrote its mock to save through `strategist_save_campaign_month` instead of
+`_line`), `test-strategist-sem-goal-range.js`, and one assertion in
+`test-strategist-inplatform-override.js`. Re-ran the full strategist suite (24
+files) — all pass. `node --check` passes clean.
+
+**Still needs from Claire:** run `goal-override-per-month-2026-08-06.sql`.
