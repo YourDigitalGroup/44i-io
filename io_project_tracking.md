@@ -6372,3 +6372,47 @@ Re-ran `test-admin-intake-field-types.js` and `test-intake-optional-field.js` �
 both pass unchanged. `node --check` passes clean.
 
 No SQL for this one — frontend only.
+
+## 2026-08-06 (cont'd) — Optional per-question description text
+
+Claire asked whether adding an optional description under a question would be a
+good idea, for cases like "(Answering FAQs, Scheduling appointments, Providing
+customer support, Lead generation, etc.)" — confirmed yes and explained why: the
+example text was previously getting baked directly into the label itself (e.g.
+"What is the CTA? (i.e. 10% off...)"), and since the admin editor auto-generates
+each field's key from its whole label, that's exactly why some auto keys came out
+so long earlier today. A separate `description` property fixes the root cause,
+not just the symptom.
+
+**No SQL** — same as every other new intake field property today, `description`
+is just another key inside the existing JSONB `definition`.
+
+**`admin/index.html`:** every field row gets a new text input, "Description
+shown under the question (optional)", right under the Optional checkbox — new
+`intakeFieldDescriptionChange()`. Saved only when non-empty (`if (f.description)
+clean.description = f.description`), same minimal-payload convention as
+`showIf`/`optional`.
+
+**`index.html`:** `showFullIntakeForm()` renders the description as small muted
+text directly under the question label, for every field type — computed once
+per field as `descHtml` and spliced in right after each type's own `<label>
+${field.label}</label>`, careful not to touch the OTHER internal labels some
+types have (select_fill_in's fill-in label, list's per-slot number labels). Pure
+display text — never read by `saveIntakeForm()`, so it can't leak into a saved
+answer.
+
+Verified via Playwright (new `test-intake-description.js`, 8 checks): confirmed
+a long description text does NOT affect the auto-generated key (the actual
+underlying fix); confirmed the description is only included in the saved
+`definition` when non-empty; confirmed it renders after its own question's label
+specifically (not some other field's); confirmed a field with no description
+renders no extra `<div>` at all; confirmed a description containing `<script>`
+tags renders HTML-escaped, not executable — flagged and corrected one over-strict
+assertion in the same test (checking for a literal `&quot;` on innerHTML
+readback, which browsers legitimately re-serialize back to a plain `"` in text-
+node position since quotes only need escaping inside attribute values; the
+actual security-relevant escaping of angle brackets was intact all along).
+Confirmed the description never leaks into `saveIntakeForm()`'s saved fields.
+Re-ran `test-admin-intake-field-types.js`, `test-intake-optional-field.js`,
+`test-intake-reorder.js`, and `test-intake-field-types.js` — all pass unchanged.
+`node --check` passes clean on both files.
