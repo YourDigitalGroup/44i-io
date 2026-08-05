@@ -68,11 +68,14 @@
       <!-- Campaign Setup review panel (only rendered when the Campaign Setup tab is active) -->
       <div id="strategist-setup-panel"></div>
 
+      <!-- Row detail panel — lives ABOVE the table, same convention as every edit
+           form in admin/index.html (e.g. #admin-service-form sits above the
+           services list it edits, not below it) -- 2026-08-06, per Claire: "have
+           it work like the admin portal editors" rather than scroll-to-the-bottom. -->
+      <div id="strategist-detail-panel" style="margin-bottom:16px"></div>
+
       <!-- Main pacing table -->
       <div id="strategist-table-wrap" style="overflow-x:auto"></div>
-
-      <!-- Row detail panel -->
-      <div id="strategist-detail-panel" style="margin-top:16px"></div>
     </div>
   </div>
 </div>
@@ -1196,10 +1199,15 @@ async function strategistAddSetupMonth(lineId) {
 // ongoing campaign), an imported campaign needs to jump straight to a specific past
 // month, however far back makes sense for that one — no fixed amount of history is
 // assumed or required.
+// Renamed from "+ Add a past month" and moved off a raw prompt() (2026-08-06, per
+// Claire: it can add a future month too now, not just past, and typing "YYYY-MM"
+// into a browser prompt was clunky) -- a real <input type="month"> next to the
+// button is both a clearer affordance and lets the browser's own picker UI do the
+// work instead of asking the strategist to remember an exact text format.
 async function strategistAddHistoryMonth(lineId) {
-  const input = prompt('Which month? (YYYY-MM)');
-  if (!input) return;
-  const match = /^(\d{4})-(\d{2})$/.exec(input.trim());
+  const input = document.getElementById('add-month-' + lineId).value; // "YYYY-MM" from the native month picker
+  if (!input) { showToast('Pick a month first.', 'error'); return; }
+  const match = /^(\d{4})-(\d{2})$/.exec(input);
   if (!match) { showToast('Enter a month as YYYY-MM, e.g. 2026-03', 'error'); return; }
   const monthStr = `${match[1]}-${match[2]}-01`;
   await strategistSaveMonth(lineId, monthStr, {});
@@ -1444,7 +1452,10 @@ function renderStrategistDetailPanel() {
           <input type="number" value="${m.actual_impressions ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_impressions: this.value})" placeholder="Impr." style="width:85px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
         </div>`;
       }).join('') || '<p style="font-size:11px;color:var(--muted);padding:6px 0">No months on record yet.</p>'}
-      <button onclick="strategistAddHistoryMonth('${l.id}')" style="margin:8px 0;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">+ Add a past month</button>
+      <div style="display:flex;align-items:center;gap:8px;margin:8px 0">
+        <input type="month" id="add-month-${l.id}" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:11px"/>
+        <button onclick="strategistAddHistoryMonth('${l.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">+ Add another month</button>
+      </div>
     </div>
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Optimize log</p>

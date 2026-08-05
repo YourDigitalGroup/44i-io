@@ -6139,3 +6139,48 @@ same fix in both places. Re-ran the full strategist suite (25 files) — all pas
 `node --check` passes clean.
 
 No SQL for this one — all five are frontend-only.
+
+## 2026-08-06 (cont'd) — Detail panel moved above the table; "+ Add" month picker
+
+Claire, after using the scroll-to-open fix from the previous round: "can we have
+the editor at the top of the page to match the editors in the admin side?" — the
+scroll-to-open fix was a smaller step in the right direction, but she wanted the
+actual DOM position to match `admin/index.html`'s real convention: every admin
+edit form (`#admin-service-form`, `#admin-group-form`, etc.) sits physically ABOVE
+the list it edits, not below it. Moved `#strategist-detail-panel` above
+`#strategist-table-wrap` in the page markup (previously the panel was the LAST
+element on the page, after the whole table). The `scrollIntoView` call from the
+prior fix stays — harmless when the panel's already near the top, still useful if
+status tabs/setup panel push it down.
+
+Also, separately: "for the + add a past month, we will need to update that to say
++ add another month since it can add a future or past month... to have to click
+and then type out what month and year you want to add is a little clunky, don't
+you think?" Two real fixes: renamed the button, and replaced the `prompt()` text
+dialog (typing "YYYY-MM" blind) with an actual `<input type="month">` next to it —
+the browser's own native month/year picker, same category of fix as the Optimize Log's own date entry, which already uses
+`<input type="date">` rather than a text field.
+
+**Bigger question flagged, not built:** Claire also asked whether it'd be better
+to auto-generate every month across a campaign's flight dates instead of adding
+them one at a time, grouped by year for multi-year campaigns. Answered in chat
+rather than built silently — recommended AGAINST auto-generating for now: most
+months already get created automatically today via three other paths (the order
+trigger's first month, the twice-weekly platform-report auto-fill, and Bulk
+Import for multi-month setup) — this manual button is really only for the
+occasional backfill/ahead-of-schedule entry those three miss, not the primary way
+months get created. Pre-generating a full flight's worth of rows risks a pile of
+empty rows for long or open-ended contracts, and still needs SOME "add a month"
+path for a flight that gets extended later. Recommended keeping it manual with
+the improved picker for now, revisit if it's still clunky once she's used it.
+
+Verified via Playwright: new `test-strategist-panel-position.js` checks the REAL
+page markup's DOM order (not a synthetic re-built one, which would silently miss
+a markup-ordering bug like this) — confirms `#strategist-detail-panel` now
+precedes `#strategist-table-wrap`. Updated `test-strategist-import.js`'s
+month-adding checks off the removed `prompt()` mock onto the real `<input
+type="month">` element; confirmed the button no longer says "Add a past month"
+and does say "Add another month". Re-ran the full strategist suite (27 files) —
+all pass. `node --check` passes clean.
+
+No SQL for this one — frontend only.
