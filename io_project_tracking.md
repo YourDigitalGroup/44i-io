@@ -5932,3 +5932,59 @@ function body from memory) so the one-line edit could be delivered as a single
 complete script instead of a fragment. Confirmed via her own query afterward —
 `goal_override` now holds `"150-200"` as text on both real SEM test rows, exactly
 as designed. Nothing further needed on this one.
+
+## 2026-08-06 (cont'd) — Flag a tactic as sold with Offline Visits Tracking
+
+Claire: "We need to add the + offline visits to the tactic list as well." Two real
+ambiguities checked before building rather than guessed at: (1) which "tactic list"
+— confirmed it's the strategist portal's Tactic display (main table, Campaign
+Setup, detail panel), not some other screen; (2) how strategists flag it — checkbox
+next to Tactic at "+ New Campaign" import time, AND editable any time afterward
+from the row detail panel (not import-only).
+
+Offline Visits Tracking (`td-offline`/`sda-offline`/etc.) is a $0 `pricing_mode=
+'modifier'` add-on — per the existing trigger design, it never spawns its own
+`campaign_lines` row (no spend, nothing to buy media against). So this is tracked
+as a plain boolean on the BASE tactic's own row (`has_offline_visits`), not a
+second tactic — matches how the Accounting Map already displays "(w/ Offline
+Visits Tracking)" as a property of the paired tactic, not a standalone line.
+
+**New (`offline-visits-tactic-flag-2026-08-06.sql`, partially run):**
+`campaign_lines.has_offline_visits boolean not null default false`;
+`strategist_save_campaign_line` updated to read/write it in both the CREATE and
+UPDATE paths (same `case when p_data ? 'field'` pattern as `budget_varies_by_
+month`) — written using the REAL live function definition Claire pasted back for
+the previous SQL request, not reconstructed from memory. `strategist_get_
+campaign_lines` still needs the same field added to its `jsonb_build_object` — this
+session doesn't have ITS current live text on hand either, so the file asks Claire
+to run `select pg_get_functiondef('strategist_get_campaign_lines'::regproc)` and
+paste it back, same two-step pattern that worked for `goal_override`, rather than
+guess that function's body too.
+
+**`strategist/index.html`:**
+- New `strategistTacticDisplay(line)`: returns `tactic_label` (or `service_id` as
+  fallback) with `' + Offline Visits Tracking'` appended when `has_offline_visits`
+  is true. All four places that rendered a bare tactic label (main table, Campaign
+  Setup panel, detail panel header) now call this instead, so the suffix shows up
+  everywhere consistently from one function.
+- "+ New Campaign" import form: new checkbox next to the Tactic dropdown,
+  `import-has-offline-visits`, read in `strategistSubmitImport()` and sent as
+  `has_offline_visits` on the create payload.
+- Detail panel: new checkbox next to Status, checked/unchecked reflecting the
+  current value, saving via `strategistSaveLine(id, {has_offline_visits: this.
+  checked}, false)` — `false` (no reload) so flipping it doesn't lose the
+  strategist's place, same pattern as Platform's inline edit.
+
+Verified via Playwright (new `test-strategist-offline-visits-tactic.js`):
+`strategistTacticDisplay()` appends the suffix only when flagged, never mutates the
+raw label, and falls back to `service_id` when there's no `tactic_label`; the main
+table's Tactic column and the detail panel header both show the suffix for a
+flagged campaign; the detail panel's checkbox is checked/unchecked matching the
+real value; the import form's checkbox is actually read and sent through to the
+save call. Re-ran the full strategist suite (23 files) — all pass unchanged.
+`node --check` passes clean.
+
+**Still needs from Claire:** run `offline-visits-tactic-flag-2026-08-06.sql`
+(column + updated `strategist_save_campaign_line`), then run the
+`pg_get_functiondef` query for `strategist_get_campaign_lines` and paste the result
+back so the read-side follow-up script can be written.

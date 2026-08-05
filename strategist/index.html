@@ -355,6 +355,9 @@ function strategistOpenImportForm() {
           <option value="">— Select —</option>
           ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
         </select>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
+          <input type="checkbox" id="import-has-offline-visits"/> + Offline Visits Tracking
+        </label>
       </div>
       <div>
         <label class="lbl">Platform</label>
@@ -420,6 +423,7 @@ async function strategistSubmitImport() {
   const flightEnd = document.getElementById('import-flight-end').value || null;
   const grossBudget = document.getElementById('import-gross-budget').value;
   const platformCampaignName = document.getElementById('import-platform-campaign-name').value.trim();
+  const hasOfflineVisits = document.getElementById('import-has-offline-visits').checked;
 
   if (!clientId || !serviceId) { showToast('Pick a client and a tactic.', 'error'); return; }
 
@@ -430,7 +434,7 @@ async function strategistSubmitImport() {
         client_id: clientId, group_id: groupId, service_id: serviceId, tactic_label: serviceLabel,
         platform: platform || null, platform_campaign_name: platformCampaignName || null,
         flight_start: flightStart, flight_end: flightEnd,
-        status, assigned_strategist: currentStrategistUser.name
+        status, assigned_strategist: currentStrategistUser.name, has_offline_visits: hasOfflineVisits
       }
     }) });
     if (grossBudget) {
@@ -930,6 +934,17 @@ function parseGoalOverride(raw, allowRange) {
   return { value: num, isRange: false, display: Math.round(num).toLocaleString() };
 }
 
+// Offline Visits Tracking is a $0 modifier add-on -- never its own campaign_lines
+// row (no spend, nothing to buy media against), but a strategist still needs to see
+// at a glance that a tactic like Targeted Display was sold WITH it, same as the
+// Accounting Map already shows "(w/ Offline Visits Tracking)" pairings. Tracked as
+// a plain boolean on the base tactic's own campaign_lines row rather than parsing
+// it in/out of tactic_label text.
+function strategistTacticDisplay(line) {
+  const base = line.tactic_label || line.service_id;
+  return line.has_offline_visits ? base + ' + Offline Visits Tracking' : base;
+}
+
 function computeGoal(line, grossBudget) {
   const row = CATALOG_ROWS[line.service_id];
   const isClicksBased = line.service_id === 'sem-bp' || !row || row.retail_cpm == null;
@@ -1103,12 +1118,12 @@ function renderSetupPanels(lines) {
     const monthRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month));
     return `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#FAFCFE">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <strong style="font-size:13.5px">Campaign Setup — ${esc(client)} / ${esc(l.tactic_label || l.service_id)}</strong>
+        <strong style="font-size:13.5px">Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</strong>
         <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:20px;background:var(--light);color:var(--muted)">Pending</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px;font-size:12px">
         <div><label class="lbl">Client</label><div>${esc(client)}</div></div>
-        <div><label class="lbl">Tactic</label><div>${esc(l.tactic_label || l.service_id)}</div></div>
+        <div><label class="lbl">Tactic</label><div>${esc(strategistTacticDisplay(l))}</div></div>
         <div><label class="lbl">Flight</label><div>${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</div></div>
         <div><label class="lbl">Gross Budget</label><div>$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo</div></div>
         <div><label class="lbl">In-Platform Budget</label><div>${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</div></div>
@@ -1294,7 +1309,7 @@ function renderMainTable(lines) {
       const selected = strategistSelectedLineId === l.id;
       html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
         <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
-        <td style="padding:9px 10px">${esc(l.tactic_label || l.service_id)}</td>
+        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
         <td style="padding:9px 10px" onclick="event.stopPropagation()">
           <select onclick="event.stopPropagation()" onchange="if(this.value==='__other__'){this.nextElementSibling.style.display='inline-block';this.nextElementSibling.focus();}else{this.nextElementSibling.style.display='none';strategistSaveLine('${l.id}', {platform: this.value}, false);}" style="width:100%;min-width:132px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px">
             <option value="">— Select —</option>
@@ -1342,7 +1357,7 @@ function renderStrategistDetailPanel() {
 
   panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;background:#fff">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
-      <strong style="font-size:13px">${esc(l.client_name || '(unknown)')} / ${esc(l.tactic_label || l.service_id)}</strong>
+      <strong style="font-size:13px">${esc(l.client_name || '(unknown)')} / ${esc(strategistTacticDisplay(l))}</strong>
       <div style="display:flex;align-items:center;gap:8px">
         <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSavePlatformCampaignName('${l.id}', this.value)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
@@ -1351,6 +1366,9 @@ function renderStrategistDetailPanel() {
     </div>
 
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-right:8px">
+        <input type="checkbox" ${l.has_offline_visits ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_offline_visits: this.checked}, false)"/> + Offline Visits Tracking
+      </label>
       <label class="lbl" style="margin:0">Status</label>
       <select onchange="strategistSaveLine('${l.id}', {status: this.value})" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;font-weight:600">
         <option value="active" ${l.status === 'active' ? 'selected' : ''}>Active</option>
