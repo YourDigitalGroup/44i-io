@@ -1696,14 +1696,20 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         ? ` data-show-if-key="${esc(field.showIf.key)}" data-show-if-value="${esc(field.showIf.includes || '')}" data-show-if-form="${esc(cfg.intake)}"`
         : '';
       const wrapStyle = `display:${visible ? '' : 'none'}`;
+      // Every question defaults to required (a red "*" via the existing
+      // .modal-field.required CSS, already used on Step 1's own required fields
+      // but never wired into these dynamic intake fields until now) -- marking a
+      // question optional in the admin editor just omits this class, no visual
+      // change beyond dropping the asterisk.
+      const fieldClass = `modal-field${field.optional ? '' : ' required'}`;
 
       if (field.type === 'textarea') {
-        html += `<div class="modal-field" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label><textarea data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
+        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label><textarea data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
       } else if (field.type === 'radio') {
         const opts = field.options.map(o =>
           `<label><input type="radio" name="intake-${cfg.intake}-${field.key}" value="${o}" ${val===o?'checked':''}/> ${o}</label>`
         ).join('');
-        html += `<div class="modal-field" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
       } else if (field.type === 'checkbox') {
         // Multi-select ("choose any that apply") -- stored as a readable comma-
         // joined string of the checked labels, same "readable string, not a raw
@@ -1713,7 +1719,7 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         const opts = field.options.map(o =>
           `<label><input type="checkbox" data-checkbox-key="${field.key}" data-form="${cfg.intake}" value="${o}" ${checkedList.includes(o)?'checked':''}/> ${o}</label>`
         ).join('');
-        html += `<div class="modal-field" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><div class="radio-group">${opts}</div></div>`;
       } else if (field.type === 'select_fill_in') {
         // Select + fill-in: a single-choice question where ONE OR MORE of its own
         // options reveal an inline text fill-in when picked (e.g. picking
@@ -1727,7 +1733,7 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         ).join('');
         const fillInVal = existing.fields?.[field.key + '_fill_in'] || '';
         const fillInVisible = (field.fillInOptions || []).includes(val);
-        html += `<div class="modal-field" style="${wrapStyle}"${showIfAttrs}>
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}>
           <label>${field.label}</label><div class="radio-group">${opts}</div>
           <div data-fill-in-for="${esc(field.key)}" data-fill-in-form="${esc(cfg.intake)}" data-fill-in-triggers="${esc(JSON.stringify(field.fillInOptions || []))}" style="margin-top:8px;display:${fillInVisible ? '' : 'none'}">
             <label>${field.fillInLabel || 'Details'}</label>
@@ -1742,11 +1748,11 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         const inputs = listVals.map((v, i) =>
           `<div><label style="font-size:10px;color:var(--muted);text-transform:none;font-weight:400">${i+1}</label><input type="text" data-list-key="${field.key}" data-list-index="${i}" data-form="${cfg.intake}" value="${v.replace(/"/g,'&quot;')}"/></div>`
         ).join('');
-        html += `<div class="modal-field" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label>
+        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px">${inputs}</div>
         </div>`;
       } else {
-        html += `<div class="modal-field" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><input type="${field.type}" data-key="${field.key}" data-form="${cfg.intake}" value="${(val||'').replace(/"/g,'&quot;')}"/></div>`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label><input type="${field.type}" data-key="${field.key}" data-form="${cfg.intake}" value="${(val||'').replace(/"/g,'&quot;')}"/></div>`;
       }
     });
     html += '</div></div>';
@@ -1837,8 +1843,10 @@ function saveIntakeForm() {
   // that used to let it skip the tlpGridFilled requirement no longer applies to it.
   // A field hidden by an unmet showIf (2026-08-06) isn't required for completeness
   // -- e.g. the "If Book an Appointment" follow-up shouldn't block completion for
-  // a submission that never checked that box in the first place.
+  // a submission that never checked that box in the first place. A field marked
+  // optional (2026-08-06) never counts either, whether or not it's filled in.
   const allFields = formDef.sections.flatMap(s => s.fields)
+    .filter(f => !f.optional)
     .filter(f => intakeConditionMetFromValue(f.showIf, f.showIf ? fields[f.showIf.key] : ''));
   const filledCount = allFields.filter(f => fields[f.key]).length;
   const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !(TLP_CAPS[sid] || sid === 'tlp-custom') || tlpGridFilled);
@@ -3447,11 +3455,13 @@ async function submitIO() {
           const data = intakeData[formKey] || {};
           const fields = data.fields || {};
 
-          // Compute fill state -- a field hidden by an unmet showIf (2026-08-06)
-          // isn't required, same reasoning as saveIntakeForm()'s own completeness
-          // check: an inapplicable follow-up question shouldn't read as "partially
-          // complete" on the Trello card just because it was never shown.
+          // Compute fill state -- a field hidden by an unmet showIf, or marked
+          // optional (2026-08-06), isn't required, same reasoning as
+          // saveIntakeForm()'s own completeness check: an inapplicable follow-up
+          // or an intentionally-skippable question shouldn't read as "partially
+          // complete" on the Trello card.
           const allFields = formDef.sections.flatMap(s => s.fields)
+            .filter(f => !f.optional)
             .filter(f => intakeConditionMetFromValue(f.showIf, f.showIf ? fields[f.showIf.key] : ''));
           const filledCount = allFields.filter(f => fields[f.key]).length;
           const totalCount = allFields.length;

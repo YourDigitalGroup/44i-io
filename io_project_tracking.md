@@ -6283,3 +6283,44 @@ honestly rather than silently claimed as pre-existing without checking). `node
 
 No SQL for this one — the JSONB `definition` column already supports arbitrary
 new field properties with zero migration.
+
+## 2026-08-06 (cont'd) — Intake questions can now be marked optional
+
+Claire, while building the new form: "Right now are all questions in an intake
+form always required? If yes, we need to be able to mark questions as optional."
+Confirmed: yes, every question previously counted toward "Complete" with no way
+to exempt one.
+
+**No SQL** — same as the other new intake properties, `optional` is just another
+key inside the existing JSONB `definition`.
+
+**`admin/index.html`:** every field row now has an "Optional (not required to
+mark the form Complete)" checkbox, regardless of type — new
+`intakeFieldOptionalChange()`. Saved only when true (`if (f.optional) clean.
+optional = true`), same minimal-payload convention as `showIf`.
+
+**`index.html`:** found and reused an existing-but-unwired `.modal-field.required`
+CSS class (already renders a red "*", already used on Step 1's own required
+fields like Business Name) — every dynamically-rendered intake field now gets
+that class UNLESS `field.optional` is true, so marking a question optional simply
+drops the asterisk rather than needing new styling. Both completeness
+calculations (`saveIntakeForm()`'s AE-facing status, and `buildIntakeDesc()`'s
+Trello/PDF summary banner) now filter out optional fields the same way they
+already filter out showIf-hidden fields — an optional question left blank never
+blocks "Complete" or counts against the "X of Y answered" total, whether or not
+it's actually filled in.
+
+Verified via Playwright (new `test-intake-optional-field.js`, 9 checks, run
+against both files): the Optional checkbox defaults unchecked, reflects state
+correctly, and only gets saved into the definition when actually checked; the
+public form gives the optional field's wrapper div the plain `modal-field` class
+(no asterisk) while the required one keeps `modal-field required`; a form
+missing only its optional answer still reads "Complete"; a form missing its
+required answer still reads incomplete even if the optional field WAS filled in
+— and confirmed that specific case correctly reads as "not started" rather than
+"partial," since partial/complete are now purely about required-field progress
+(a separate two-required-fields scenario confirms "partial" still fires normally
+once only SOME required fields are answered). Re-ran
+`test-admin-intake-field-types.js`, `test-intake-field-types.js`, and
+`test-io-step1-required-fields.js` — all pass unchanged. `node --check` passes
+clean on both files.

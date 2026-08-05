@@ -2754,6 +2754,12 @@ function intakeFieldFillInLabelChange(sIdx, fIdx, val) {
 function intakeFieldMaxChange(sIdx, fIdx, val) {
   intakeFormDraft.sections[sIdx].fields[fIdx].max = val ? parseInt(val, 10) : null;
 }
+// Every question defaults to required (matches current behavior before this flag
+// existed); checking this excludes it from the "all questions answered = Complete"
+// count in both the AE-facing status badge and the Trello/PDF summary banner.
+function intakeFieldOptionalChange(sIdx, fIdx, checked) {
+  intakeFormDraft.sections[sIdx].fields[fIdx].optional = checked;
+}
 // showIf: lets ANY field only appear once another field elsewhere in the same form
 // has a specific value/option selected (e.g. "If Book an Appointment:" only
 // showing once that checkbox is checked) -- general-purpose, not tied to one type.
@@ -2814,6 +2820,10 @@ function renderIntakeFormEditor() {
               </select>
               <button type="button" onclick="intakeRemoveField(${sIdx}, ${fIdx})" title="Remove question" style="padding:6px;border-radius:5px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:14px;cursor:pointer;line-height:1">✕</button>
             </div>
+
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer">
+              <input type="checkbox" ${field.optional ? 'checked' : ''} onchange="intakeFieldOptionalChange(${sIdx}, ${fIdx}, this.checked)"/> Optional (not required to mark the form Complete)
+            </label>
 
             ${INTAKE_TYPES_WITH_OPTIONS.includes(field.type) ? `
             <div style="margin-top:8px">
@@ -2988,6 +2998,7 @@ async function adminSaveIntakeForm() {
         if (f.type === 'select_fill_in') { clean.fillInOptions = f.fillInOptions || []; clean.fillInLabel = f.fillInLabel || ''; }
         if (f.type === 'list') clean.max = f.max;
         if (f.showIf) clean.showIf = { key: f.showIf.key, includes: f.showIf.includes || '' };
+        if (f.optional) clean.optional = true;
         return clean;
       }),
     })),
