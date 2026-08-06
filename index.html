@@ -13,14 +13,14 @@
   --accent-dark:#1580B5;
   --accent2:#0F6E56;
   --warn:#F59E0B;
-  --bg:#F4F8FB;
+  --bg:#fff;
   --card:#fff;
   --border:#DDE8F0;
   --text:#1A2332;
   --muted:#5A6A7A;
   --light:#EBF4FB;
 }
-body{font-family:'Montserrat',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body{font-family:'Montserrat',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-variant-numeric:tabular-nums}
 input,select,textarea,button{font-family:inherit}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
 
@@ -46,8 +46,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .step-label{font-size:11px;font-weight:700;letter-spacing:.02em}
 
 /* Cards */
-.card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
-.card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);background:#FAFCFE}
+.card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05),0 10px 24px rgba(20,40,60,.06)}
+.card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);background:#F5F8FA}
 .card-head h3{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;letter-spacing:.01em}
 .card-head .badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--light);color:var(--muted)}
 .card-head .badge.active{background:#DCFCE7;color:#166534}

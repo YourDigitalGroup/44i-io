@@ -6815,3 +6815,50 @@ once the SQL above is live, please run one test IO for a client with an
 assigned digital and/or social strategist and confirm the right person is
 tagged on the matching tactic card(s) in Trello, alongside the AM/AE, and NOT
 on cards for a different discipline.
+
+## 2026-08-06 (cont'd) — Neutral chrome restyle to match the new 44idigital.com
+
+Claire's new company site launched, and asked to mirror its look across the
+internal tools. Built as concept mockups first (Artifacts, not real code) —
+navy/sky/sage palette pulled from a homepage screenshot, applied to the Admin,
+Strategist, and Accounting portals; iterated per feedback (white page
+background instead of the original pale-blue, sage given a real deliberate job
+— growth/target numbers specifically, mirroring how the real site only uses
+green for its own lift percentages — rather than a one-off accent; confirmed
+Montserrat stays as the typeface, just leaned harder into weight/spacing since
+it's already wired into every file and close enough to the site's own
+character). The 3 portal mockups are NOT wired into real code yet — Claire
+approved the direction but the actual portal HTML/CSS hasn't been touched
+(that's a separate task from what's below).
+
+**What DID ship to `index.html` today**: the public IO form's shared, non-
+group-branded chrome — background, card borders/shadow, digit alignment —
+mirroring the SAME polish pass, but deliberately leaving every group's own
+`brand_color`/logo untouched. Confirmed via a two-client mockup (two totally
+different accent colors, same neutral shell) that this doesn't touch the
+white-label branding layer at all, then shipped the real version:
+- `--bg` changed from `#F4F8FB` to `#fff` — true white page background.
+- `.card`'s shadow upgraded from a single flat `0 1px 4px rgba(0,0,0,.04)` to
+  a two-layer hairline+soft-shadow combo (`rgba(20,40,60,.05)`/`.06`), needed
+  specifically because cards and the page are now the same white — border/
+  shadow alone now do the separating work a tonal background used to.
+  `.card-head`'s tint nudged from `#FAFCFE` to `#F5F8FA` to match.
+  - Added `font-variant-numeric:tabular-nums` on `body` — keeps dollar
+    figures/dates aligned in columns (Selected Services Summary, totals bar),
+    same reasoning as the portal mockups.
+- Explicitly NOT touched: `--accent`/`--accent-rgb` and everything that reads
+  them (buttons, active step, header background) — those already come from
+  each group's own `brand_color` at runtime, which is the actual point of a
+  white-label form; recoloring them to 44i's own palette would work against
+  that, not with it.
+
+**Verified**: visual check via Playwright screenshot (Step 1 renders clean —
+white cards with visible borders/shadow, no contrast or clipping issues).
+Re-ran `test-io-step1-required-fields.js`, `test-per-tactic-dates-v2.js`,
+`test-ae-picker-market.js`, and `test-review-page-updates.js` — all pass
+unchanged, as expected for a CSS-only change with zero JS touched. `node
+--check` passes clean.
+
+**Not yet done**: actually wiring the Admin/Strategist/Accounting portal
+mockups into their real HTML/CSS — those are still concept-only, pending
+Claire's go-ahead to implement for real the way this form change just was.
