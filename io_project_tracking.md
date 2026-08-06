@@ -6862,3 +6862,54 @@ unchanged, as expected for a CSS-only change with zero JS touched. `node
 **Not yet done**: actually wiring the Admin/Strategist/Accounting portal
 mockups into their real HTML/CSS — those are still concept-only, pending
 Claire's go-ahead to implement for real the way this form change just was.
+
+## 2026-08-06 (cont'd) — Restyle shipped to Admin + Strategist; Accounting has no real code yet
+
+Claire asked to wire the approved mockup into the Admin and Strategist portals
+too. Both load `shared.css` (extracted 2026-07-08 specifically so they'd share
+one base stylesheet), so a single edit there covers both at once — the
+neutral-chrome piece (white `--bg`, layered `.card` shadow, `tabular-nums`)
+went in exactly like the IO form's own change just above.
+
+**Asked Claire one real fork before going further**: unlike the IO form, these
+two portals are 44i's own internal tools with no client-branding constraint —
+so should the actual accent color (buttons/active tab/focus outline, currently
+the older cyan `#1C9BD7`) also move to the new sky blue from the mockup, or
+stay chrome-only like the form? She chose **swap the accent too** — bigger
+visual change to two daily-use tools, but matches the full mockup she already
+approved rather than a half-measure.
+
+- `shared.css`'s `--accent`/`--accent-rgb`/`--accent-dark` changed to the new
+  sky blue (`#4C8FCB`/`76,143,203`/`#3A74AC`) — cascades through both files
+  since both lean almost entirely on `var(--accent)` for buttons/active
+  tabs/links/focus rings (confirmed via grep: 55 usages in `admin/index.html`,
+  22 in `strategist/index.html`) rather than hardcoded duplicates.
+- Found and fixed the one hardcoded exception: a literal `#1580B5` (old
+  `--accent-dark`) coloring the "One-Time" fee-type label in
+  `admin/index.html` — updated to `#3A74AC` to match.
+- **Deliberately left untouched**: the 10 occurrences of `#1C9BD7` inside the
+  admin Group editor's own Brand Color/Brand Color 2 picker defaults — those
+  are the SUGGESTED default color for a brand-new white-label GROUP being
+  created, not the admin portal's own chrome, so they're a client-branding
+  concern (same category as the IO form's own accent), not part of this
+  restyle.
+- **Deliberately did NOT invent new sage-accented UI** (the mockup's "↑34 vs.
+  last month" delta line, etc.) in the real Strategist portal — that would be
+  a new feature requiring real trend data the portal doesn't currently
+  compute, not a restyle. Pacing badges (`good`/`warn`/`risk`, hardcoded
+  hex, confirmed independent of `--accent`) are semantic and stayed
+  completely untouched either way, same reasoning as everywhere else this
+  session.
+
+**Accounting Portal**: there is no real `/accounting` page in this repo —
+it's only ever existed as a standalone concept mockup (scratchpad file, never
+committed). Nothing to restyle yet; if/when it gets built for real, it should
+just start from the current (now-updated) `shared.css` tokens rather than
+needing its own separate restyle pass later.
+
+**Verified**: `node --check` on both files. Visual check — a minimal page
+loading `shared.css` directly renders the new sky-blue button/white card
+correctly. Re-ran `test-admin-ae-market.js`, `test-admin-strategists.js`,
+`test-service-editor-layout.js`, `test-strategist-dashboard.js`, and
+`test-strategist-mtd-pacing.js` — all pass unchanged, as expected for a
+CSS-only, shared-stylesheet change with zero JS logic touched.
