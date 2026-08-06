@@ -3450,7 +3450,20 @@ async function submitIO() {
     // approach that couldn't tell an archived list from a genuinely new client.
     try {
       const result = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify({ p_payload: clientPayload }) });
-      if (result && result.id) client = { id: result.id, trello_list_id: result.trello_list_id || null };
+      if (result && result.id) {
+        client = {
+          id: result.id,
+          trello_list_id: result.trello_list_id || null,
+          // Assigned strategists (2026-08-06) — this client's own digital/social/web
+          // strategist Trello handles, resolved server-side by find_or_create_client's
+          // join against the strategists table. Only ever populated via a roster pick on
+          // the Client Profile editor — a client with nothing assigned just has these
+          // come back null, same "silently skip" behavior as AE/AM already have.
+          digitalStrategistTrello: result.digital_strategist_trello || '',
+          socialStrategistTrello: result.social_strategist_trello || '',
+          webStrategistTrello: result.web_strategist_trello || '',
+        };
+      }
     } catch(e) { console.warn('find_or_create_client failed — order will save without a linked client record:', e.message); }
 
     // 1b. Save order directly to Supabase
@@ -3505,12 +3518,38 @@ async function submitIO() {
         const aeTrello = document.getElementById('ae-trello').value.trim();
         const amTrello = selectedGroup.am_trello_handle || '';
 
+        // Assigned strategists (2026-08-06) — this client's own digital/social/web
+        // handles, resolved through the SAME board-member lookup as AM/AE below (one
+        // network call, not three extra ones), but kept OUT of amAeMemberIds — unlike
+        // AM/AE, a strategist should only land on the specific tactic cards for services
+        // carrying their discipline, not on every card (see memberIdsForLineItems()).
+        const disciplineHandles = {
+          digital: client?.digitalStrategistTrello || '',
+          social: client?.socialStrategistTrello || '',
+          web: client?.webStrategistTrello || '',
+        };
+
         // Real Trello card assignment for the AM/AE, resolved once per submission and
-        // reused on every card created below (2026-07-17, per Claire).
-        const amAeMemberMap = await findBoardMemberIds(selectedGroup.trello_board_id, [aeTrello, amTrello]);
-        const amAeMemberIds = [...new Set(amAeMemberMap.values())];
+        // reused on every card created below (2026-07-17, per Claire). Extended
+        // (2026-08-06) to resolve the strategist handles in the SAME lookup, without
+        // folding them into amAeMemberIds itself.
+        const allHandlesToResolve = [aeTrello, amTrello, ...Object.values(disciplineHandles)].filter(Boolean);
+        const memberMap = await findBoardMemberIds(selectedGroup.trello_board_id, allHandlesToResolve);
+        const resolveHandleMemberId = (handle) => handle ? (memberMap.get(handle.replace(/^@/, '').trim().toLowerCase()) || null) : null;
+        const amAeMemberIds = [...new Set([aeTrello, amTrello].map(resolveHandleMemberId).filter(Boolean))];
         if ((aeTrello || amTrello) && !amAeMemberIds.length) {
           console.warn('AM/AE Trello handle(s) set, but neither matched a member of this board — cards created without assignment. They likely need to be added as members of this Trello board first.');
+        }
+
+        // Given a set of line items (either the whole order, for the overview IO card,
+        // or just one tactic's — see finalizeTacticCard() below), returns amAeMemberIds
+        // PLUS whichever strategist(s) are assigned for the disciplines those specific
+        // line items' services carry (services.strategist_discipline). Silently omits
+        // anything unassigned/unresolved, same behavior as AM/AE above.
+        function memberIdsForLineItems(items) {
+          const disciplines = new Set(items.map(li => CATALOG_ROWS[li.service_id]?.strategist_discipline).filter(Boolean));
+          const strategistIds = [...disciplines].map(d => resolveHandleMemberId(disciplineHandles[d])).filter(Boolean);
+          return [...new Set([...amAeMemberIds, ...strategistIds])];
         }
 
         // ── Per-service Trello template routing (2026-07-13) ──
@@ -3896,7 +3935,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           addedCardNames.add(norm('IO'));
           console.log('Created IO card');
         }
-        await assignCardMembers(ioCardId, amAeMemberIds);
+        // Overview IO card covers the whole order — gets the UNION of every discipline
+        // represented across ALL selected line items, not just one tactic's.
+        await assignCardMembers(ioCardId, memberIdsForLineItems(lineItems));
 
         // Attach a dated PDF snapshot of THIS submission to the IO card (2026-07-14) —
         // the card's text description above only ever shows the LATEST IO (a returning
@@ -4036,7 +4077,11 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           }
           const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflows[wfIdx] && li.requires_koc);
           if (applyKoc && workflowNeedsKoc) await attachKocLabel(cardId, kocLabelId);
-          await assignCardMembers(cardId, amAeMemberIds);
+          // Only THIS tactic's own line items decide which strategist(s) get tagged here
+          // — see memberIdsForLineItems()'s own comment for why that's not just
+          // amAeMemberIds everywhere.
+          const tacticLineItems = lineItems.filter(li => li.workflow === originalWorkflows[wfIdx]);
+          await assignCardMembers(cardId, memberIdsForLineItems(tacticLineItems));
         }
 
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {

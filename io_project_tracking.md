@@ -6719,3 +6719,99 @@ assignment UI + new services column + submission-time card-tagging logic,
 similar scope to the AE roster feature) — writing a full plan via
 `EnterPlanMode` before touching any code, per this session's established
 convention for multi-file/schema-affecting changes.
+
+## 2026-08-06 (cont'd) — Digital/social/web strategists tagged on Trello cards by service
+
+Built the parked feature above, per the approved plan (saved at
+`/root/.claude/plans/zany-sleeping-lecun.md`). Mirrors two existing patterns
+almost directly: the AE roster (admin-managed people + a picker) and the
+AM/AE Trello-tagging pipeline (`findBoardMemberIds()`/`assignCardMembers()`).
+
+**New global "Strategists" roster** (`admin/index.html`) — its own tab (Name /
+Trello Handle / Email / Discipline / Active, same New/Edit/Deactivate flow as
+AEs), but NOT group-scoped like AEs — a digital/social/web strategist is an
+internal fulfillment role that can work across every white-label group.
+`loadAdminStrategists()` always refetches (tab needs current data);
+`ensureStrategistsLoaded()` is a separate lazy-load only used by the Client
+Profile editor (doesn't need to force a refetch every time it opens — same
+caching pattern `allGroups` already uses elsewhere).
+
+**Client Profile editor** (`admin/index.html`) gains three new dropdowns —
+Digital / Social / Web Strategist — each filtered to show only roster entries
+tagged with that discipline (`populateStrategistDropdown()`), so there's no way
+to accidentally assign a social strategist into the digital slot. Blank = none
+assigned, same as every other optional client field.
+
+**Service editor** (`admin/index.html`) gains one new "Strategist Discipline"
+dropdown (None/Digital/Social/Web) in the Behavior & Workflow section, right
+after Workflow — same plain-select pattern as KOC Requirement, no pick-or-
+create-new complexity needed since there are only 3 fixed values.
+
+**Public form** (`index.html`, `submitIO()`): `find_or_create_client`'s result
+now also carries the client's three assigned strategists' Trello handles
+(`digitalStrategistTrello`/etc. on the local `client` object) — resolved
+server-side via a join, so no second round-trip is needed client-side. The
+existing single `findBoardMemberIds()` lookup (previously just `[aeTrello,
+amTrello]`) now also resolves the three strategist handles in the SAME call —
+but critically, `amAeMemberIds` itself stays AE/AM-only; a new
+`memberIdsForLineItems(items)` helper takes a set of line items, collects
+whichever `strategist_discipline`(s) those specific items' services carry, and
+adds ONLY the matching strategist(s) on top of `amAeMemberIds`. Each tactic
+card (`finalizeTacticCard()`) now calls this with just its OWN workflow's line
+items (`lineItems.filter(li => li.workflow === originalWorkflows[wfIdx])` —
+the exact same filter idiom already used elsewhere in this function for KOC),
+so a client's digital strategist gets tagged on their SEO/SEM cards but not
+their social ads card, and vice versa. The overview IO card gets the union of
+every discipline represented across the WHOLE order (`memberIdsForLineItems
+(lineItems)`) — it's the one card covering everything, unlike a single tactic
+card. An unassigned or unresolved discipline silently contributes nothing,
+same "skip rather than fail" behavior AM/AE already had.
+
+**Verified via Playwright** (`test-strategist-card-assignment.js`,
+`test-admin-strategists.js`): the member-id logic gives the SEO tactic card
+(two services sharing one workflow, both tagged digital) exactly AE + the
+digital strategist, not the social one; the social tactic card gets AE +
+social only; a discipline with no assigned strategist falls back to just AE
+rather than erroring; the overview IO card gets the true union across every
+discipline actually represented in the order. Admin: the Strategists tab's
+list/create/edit/deactivate and discipline-tagging; the Client Profile
+editor's three dropdowns populate filtered by discipline, pre-select the
+client's actual assignment, save the right IDs (including explicitly saving
+`null` when nothing's assigned, not omitting the key); the Service editor's
+new dropdown round-trips. Re-ran `test-service-editor-layout.js` and
+`test-admin-ae-market.js` (both pass unchanged) and re-confirmed
+`test-multicandidate-override.js`'s pre-existing failures are unrelated (same
+finding as every prior check this session). `node --check` passes clean on
+both files.
+
+**Still needed from Claire before this is live — three live function
+definitions, same two-step process as every other RPC edit this session:**
+```sql
+select pg_get_functiondef('admin_get_clients'::regproc);
+select pg_get_functiondef('admin_save_client'::regproc);
+select pg_get_functiondef('admin_save_service'::regproc);
+select pg_get_functiondef('find_or_create_client'::regproc);
+```
+Also needs, run once (brand new, no live text to preserve):
+- `ALTER TABLE services ADD COLUMN strategist_discipline text CHECK (strategist_discipline IN ('digital','social','web'));`
+- A new `strategists` table (`id uuid pk, name text, trello_handle text, email
+  text, discipline text CHECK (discipline IN ('digital','social','web')),
+  active boolean DEFAULT true`).
+- Three new nullable FK columns on `clients`: `digital_strategist_id`,
+  `social_strategist_id`, `web_strategist_id`, each `references
+  strategists(id)`.
+- New `admin_get_strategists(p_name, p_pw)` / `admin_save_strategist(p_name,
+  p_pw, p_strategist_id, p_data)` RPCs, modeled directly on the existing
+  `admin_get_aes`/`admin_save_ae`.
+- `admin_get_clients`/`admin_save_client` need to read/write the 3 new FK
+  columns; `admin_save_service` needs to accept `strategist_discipline`;
+  `find_or_create_client`'s RETURNING needs
+  `digital_strategist_trello`/`social_strategist_trello`/
+  `web_strategist_trello`, joined from `strategists` via the client's assigned
+  FK columns.
+
+**Not yet verifiable without a live test IO:** real Trello card assignment —
+once the SQL above is live, please run one test IO for a client with an
+assigned digital and/or social strategist and confirm the right person is
+tagged on the matching tactic card(s) in Trello, alongside the AM/AE, and NOT
+on cards for a different discipline.
