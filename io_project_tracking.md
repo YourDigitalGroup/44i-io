@@ -6569,3 +6569,99 @@ trigger update (blocked on Claire pasting back the live function text above) —
 once that ships, please submit one real test IO with two tactics on different
 flight dates and confirm both `campaign_lines` rows come out with their OWN
 correct `flight_start`/`flight_end`, not the same shared range.
+
+**Follow-up SQL, run same day:** Claire pasted back the live text of
+`create_campaign_lines_from_order`, `admin_save_ae`, and `get_group_aes`, and ran
+all four statements (the `ALTER TABLE ae ADD COLUMN market text`, the trigger
+patch, and both RPC patches). `get_group_aes` needed `DROP FUNCTION` before
+`CREATE FUNCTION` since Postgres won't let `CREATE OR REPLACE` change a
+function's return columns (`ERROR 42P13`) — all four ran clean after that.
+Separately, the very first deploy after merging to `main` hit a **GitHub
+Actions runner-provisioning issue** (unrelated to this change): attempt 1 failed
+during "Set up job" after ~3 minutes, attempt 2 sat `queued` for ~15 minutes
+before GitHub auto-cancelled it, attempt 3 (after Claire re-ran it) went through
+cleanly in ~5 seconds once a runner picked it up — confirmed via the GitHub
+Actions API that every failure/stall was at the runner-provisioning step, before
+the repo was even checked out, so nothing about this change caused it.
+
+## 2026-08-06 (cont'd) — Three refinements to per-tactic dates + AE picker, same day
+
+Claire's live-testing feedback on the above, same day:
+
+**1. AE Market — now a real visible field, and the lock direction flips.**
+Previously `#ae-market` was a hidden field only ever set via the roster pick.
+Now it's a visible input right under AE Trello Handle, but runs the OPPOSITE
+lock direction from Name/Trello: disabled (placeholder "Select an AE above")
+until a real AE is picked, then becomes editable — since Market is that
+person's on-file reporting territory, there's nothing meaningful to type until
+a real AE is selected, but once one is, Claire may need to correct it for a
+one-off submission. Meanwhile **Trello Handle now locks alongside Name** (both
+disable) once a real AE is picked — previously only Name locked. All three are
+driven by the same `setAeNameLocked(locked)` function (kept its name to avoid
+touching its 3 call sites), which now toggles Name+Trello one way and Market
+the other.
+
+**2. Per-tactic dates: dropped Length, both Start and End are directly typed,
+in MM/DD/YY.** The 3-field row (Start/Length/End) was too cramped. Length is
+gone entirely — no derived End date anymore, the AE types both ends of the
+flight directly. Switched from native `<input type=date>` to a plain masked
+text input (mirrors `fmtPhone()`'s existing digit-mask pattern) for two
+reasons: a native date input can't display a 2-digit year, and the resulting
+box is meaningfully narrower, which was the actual point of the ask. New
+`parseMMDDYY()`/`formatISOToMMDDYY()` convert between the on-screen "09/15/26"
+text and the real ISO string stored in `selected[id].start_date`/`.end_date` —
+2-digit years always resolve to 20xx (no plausible 19xx campaign on this form).
+`updateTacticDate(input, id, which)` replaces the old `calcRowEndDate()` —
+masks-as-typed via `oninput`, auto-checks the row the moment a complete valid
+date lands (`autoCheckIfNeeded()`, same as Spend/Qty/Quoted Price), and writes
+straight into `selected[id]`. `syncRowInputs()`'s per-row date read is now a
+parse-through-`parseMMDDYY()` safety net that only overwrites when the field
+currently holds a FULLY valid date, so a mid-edit/incomplete value never nulls
+out an already-committed one. Draft load now writes back
+`formatISOToMMDDYY(data.start_date)` instead of the raw ISO string (the ISO
+string is still what's stored in the draft itself — only the on-screen
+restore changed). `resetForm()`'s old Length-`<select>` explicit-clear code was
+deleted (no Length field exists to clear); the Start/End text inputs need no
+equivalent since they're plain `type=text` and already caught by the existing
+generic text-input clearing loop. Every column-count edit from the original
+build (colgroup/thead in both `renderSectionCards()` branches and
+`renderMultiTableSection()`, the mobile `::before` labels, `renderPriceCells()`'s
+cell-exclusion list) got the matching one-column-fewer update.
+
+**Skipped, by explicit decision, not an oversight:** a soft warning if a
+tactic's date range doesn't meet "the minimum" — checked, and there's no
+per-service minimum-length field anywhere in the catalog today (not in the
+services table, not in the admin editor; the `*`/`**`/`‡`/`◊`/`§` commitment-
+length markers in the printed legal text are hardcoded footnote strings, not a
+real per-service number). Asked Claire via AskUserQuestion whether to add a new
+admin-editable "Minimum Months" field to support this or skip the warning for
+now — she chose skip. Revisit if/when there's an actual data source for what
+"the minimum" means per service.
+
+**3. Dates mark a tactic exactly like Spend already does.** Confirmed this was
+really asking for `autoCheckIfNeeded()` — already the case for Spend/Qty/Quoted
+Price — to also fire from date entry, which is exactly what
+`updateTacticDate()` does (see above): the row auto-checks the moment a
+complete date is typed into either Start or End, same as typing a spend amount
+already auto-checks a spend-priced row.
+
+**Verified via Playwright** (`test-date-redesign-ae-lock.js`,
+`test-per-tactic-dates-v2.js`): `parseMMDDYY()`/`formatISOToMMDDYY()` round-trip
+and reject invalid/incomplete input; no Length field exists on a rendered row;
+Start/End are real `type=text` inputs with the MM/DD/YY placeholder; typing a
+date masks it live, auto-checks the row, and stores the correct ISO value;
+partial/incomplete typing doesn't overwrite an already-committed date;
+`syncRowInputs()`'s safety net behaves the same way; the derived
+`campaign_start`/`campaign_end` summary still computes correctly as true
+min/max across multiple tactics with the new date fields; `renderPriceCells()`
+called twice doesn't delete the date cells or disturb the Notes cell; the Step
+2→3 missing-date gate still blocks correctly on a newly-added row. AE picker:
+Market starts disabled with the roster's real value filled in only after a
+pick, Trello now locks alongside Name, and switching back to "New AE" clears
+Market and re-disables it while unlocking Name/Trello. Re-ran
+`test-io-step1-required-fields.js`, `test-cpm-adjustment-highlight.js`,
+`test-override-highlight.js`, `test-services-freq.js`,
+`test-dated-card-range.js`, and `test-admin-ae-market.js` — all pass unchanged
+(the one pre-existing, previously-flagged `test-multicandidate-override.js`
+failure is unrelated to any of today's changes, confirmed again). `node --check`
+passes clean.
