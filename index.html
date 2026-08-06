@@ -73,7 +73,12 @@ textarea{resize:vertical;min-height:70px}
 .svc-table col.c-fee{width:96px}
 .svc-table col.c-freq{width:104px}
 .svc-table col.c-spend{width:120px}
+.svc-table col.c-start{width:118px}
+.svc-table col.c-length{width:92px}
+.svc-table col.c-end{width:100px}
 .svc-table col.c-notes{width:auto}
+.svc-table td.svc-start-cell,.svc-table td.svc-length-cell,.svc-table td.svc-end-cell{padding:6px 8px}
+.svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input,.svc-table td.svc-length-cell select{font-size:11px;padding:4px 6px}
 .svc-table td:nth-child(2){white-space:normal;word-break:normal;overflow-wrap:anywhere}
 .svc-table td.svc-freq{color:var(--muted);font-size:11.5px;text-align:right}
 .svc-table td.right{overflow:hidden;text-overflow:ellipsis;text-align:right;color:var(--muted)}
@@ -161,7 +166,10 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td.svc-fee::before,
   .svc-table td.svc-freq::before,
   .svc-table td:last-child::before,
-  .svc-table td.c-spend-cell::before {
+  .svc-table td.c-spend-cell::before,
+  .svc-table td.svc-start-cell::before,
+  .svc-table td.svc-length-cell::before,
+  .svc-table td.svc-end-cell::before {
     display: block;
     font-size: 9px; font-weight: 700; color: var(--muted);
     text-transform: uppercase; letter-spacing: .05em; margin-top: 6px; margin-bottom: 1px;
@@ -175,6 +183,16 @@ textarea{resize:vertical;min-height:70px}
   /* Spend cell (ad tables) — labelled + full-width input */
   .svc-table td.c-spend-cell::before { content: 'Spend'; }
   .svc-table td input[type=number] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left; }
+
+  /* Per-tactic flight dates (2026-08-06) — same labelled-stack pattern as Fee/Spend. */
+  .svc-table td.svc-start-cell::before { content: 'Start Date'; }
+  .svc-table td.svc-length-cell::before { content: 'Length'; }
+  .svc-table td.svc-end-cell::before { content: 'End Date'; }
+  .svc-table td.svc-start-cell input,
+  .svc-table td.svc-end-cell input,
+  .svc-table td.svc-length-cell select {
+    width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left;
+  }
 
   /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
      At 2-up, "Authorized By (Full Legal Name)" wraps to 2 lines while "Title / Role"
@@ -361,12 +379,14 @@ textarea{resize:vertical;min-height:70px}
           <div>
             <label class="lbl">Digital Account Executive</label>
             <input type="text" id="ae-name" placeholder="AE full name"/>
+            <p id="ae-name-locked-hint" style="display:none;margin-top:6px;font-size:11px;color:var(--muted)">🔒 Locked — switch back to "— New AE —" above to enter a different name.</p>
           </div>
           <div>
             <label class="lbl">AE Trello Handle <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— e.g. @johndoe</span></label>
             <input type="text" id="ae-trello" placeholder="@trellohandle"/>
           </div>
           <input type="hidden" id="ae-email"/>
+          <input type="hidden" id="ae-market"/>
         </div>
       </div>
     </div>
@@ -423,33 +443,16 @@ textarea{resize:vertical;min-height:70px}
 
     <div class="card">
       <div class="card-head"><h3>Campaign Dates</h3></div>
-      <div class="field-group cols3">
+      <!-- Campaign Start/Length/End moved to per-tactic fields on Step 2 (2026-08-06,
+           per the AM/Claire: clients often start different tactics at different
+           times within the same IO, so one shared date range no longer fit) — every
+           selected service on Step 2 gets its own Start/Length/End instead. IO Date
+           (the signing date, not a campaign date) and Campaign Notes stay here. -->
+      <div class="field-group">
         <div>
           <label class="lbl">IO Date</label>
           <input type="date" id="io-date"/>
         </div>
-        <div>
-          <label class="lbl">Campaign Start Date</label>
-          <input type="date" id="campaign-start" oninput="calcEndDate()"/>
-        </div>
-        <div>
-          <label class="lbl">Campaign Length</label>
-          <select id="campaign-length" onchange="calcEndDate()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px">
-            <option value="">Select...</option>
-            <option value="1">1 Month</option>
-            <option value="2">2 Months</option>
-            <option value="3">3 Months</option>
-            <option value="6">6 Months</option>
-            <option value="12">12 Months</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-group cols2" style="margin-top:-4px">
-        <div>
-          <label class="lbl">Campaign End Date <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(auto-calculated)</span></label>
-          <input type="date" id="campaign-end" style="background:#F9FAFB"/>
-        </div>
-        <div></div>
       </div>
       <div class="field-group">
         <div>
@@ -457,6 +460,15 @@ textarea{resize:vertical;min-height:70px}
           <textarea id="campaign-notes" rows="2" placeholder="Any notes about campaign dates, start conditions, or special scheduling..."></textarea>
         </div>
       </div>
+      <!-- Hidden derived summary (2026-08-06) — kept in sync by updateDerivedCampaignSummary()
+           from the per-tactic dates on Step 2, min(start_date)/max(end_date) across selected
+           line items. Every existing consumer (review recap, PDF, Trello card, draft
+           save/load, dev-skip prefill) keeps reading these three ids unchanged;
+           campaign-length is no longer meaningful per-order (tactics can differ), so it's
+           left blank rather than derived. -->
+      <input type="hidden" id="campaign-start"/>
+      <input type="hidden" id="campaign-end"/>
+      <input type="hidden" id="campaign-length"/>
     </div>
 
     <div class="btn-row">
@@ -900,9 +912,13 @@ async function loadLegalContent() {
 // and shows the picker only if that group actually has any AEs on file. Selecting a
 // name autofills both #ae-name and #ae-trello; the fields stay directly editable
 // either way, so an AE not yet in the roster can just type their info as before.
+let selectedAeId = null;
+
 async function loadAeRoster(groupId) {
   const wrap = document.getElementById('ae-picker-wrap');
   const sel = document.getElementById('ae-picker');
+  selectedAeId = null;
+  setAeNameLocked(false);
   if (!groupId) { wrap.style.display = 'none'; AE_ROSTER = []; return; }
   try {
     // get_group_aes() (2026-07-18) — `ae` no longer grants any direct public read (a
@@ -918,13 +934,38 @@ async function loadAeRoster(groupId) {
     AE_ROSTER = [];
   }
   if (!AE_ROSTER.length) { wrap.style.display = 'none'; return; }
-  sel.innerHTML = '<option value="">— Select your name —</option>' +
+  // "— New AE —" (2026-08-06, replaces "— Select your name —") — matches the Client
+  // picker's exact wording convention, now that picking a real name locks #ae-name
+  // the same way picking a real client locks #biz-name.
+  sel.innerHTML = '<option value="">— New AE —</option>' +
     AE_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  sel.value = '';
   wrap.style.display = 'block';
 }
 
+// Mirrors setBizNameLocked() — only the identity-matching field (#ae-name) locks;
+// Trello handle/email/market stay editable either way. No onBizNameEdited-equivalent
+// safety net here: unlike find_or_create_client, the AE roster is admin-managed only
+// and never auto-created from a submission by name match, so there's nothing for a
+// stray edit to corrupt — the disabled input alone is the whole protection needed.
+function setAeNameLocked(locked) {
+  const el = document.getElementById('ae-name');
+  const hint = document.getElementById('ae-name-locked-hint');
+  if (el) el.disabled = locked;
+  if (hint) hint.style.display = locked ? 'block' : 'none';
+}
+
 function applyAePick(id) {
-  if (!id) return;
+  selectedAeId = id || null;
+  if (!id) {
+    // Switched back to "— New AE —" — clear the fields so a previously-picked AE's
+    // info doesn't linger on what's now meant to be freehand entry.
+    ['ae-name', 'ae-trello', 'ae-email', 'ae-market'].forEach(fid => {
+      const el = document.getElementById(fid); if (el) el.value = '';
+    });
+    setAeNameLocked(false);
+    return;
+  }
   const a = AE_ROSTER.find(x => x.id === id);
   if (!a) return;
   document.getElementById('ae-name').value = a.name || '';
@@ -934,6 +975,10 @@ function applyAePick(id) {
   // no email on file, so this stays blank and Step 6's submission email just won't
   // include them, same as any other field it can't resolve.
   document.getElementById('ae-email').value = a.email || '';
+  // AE Market (2026-08-06) — used in the submission email instead of client City, same
+  // roster-only limitation as email above.
+  document.getElementById('ae-market').value = a.market || '';
+  setAeNameLocked(true);
 }
 
 // Client picker (2026-07-13) — replaces relying on exact-name matching to find a
@@ -2239,10 +2284,18 @@ function fmtPhone(input) {
   input.value = v;
 }
 
-// ── CAMPAIGN END DATE ──────────────────────────────────────────
-function calcEndDate() {
-  const start = document.getElementById('campaign-start').value;
-  const months = parseInt(document.getElementById('campaign-length').value);
+// ── PER-TACTIC CAMPAIGN END DATE ──────────────────────────────────
+// Replaces the old single-shared calcEndDate() (2026-08-06) — every selected
+// tactic now has its own Start/Length/End (see generateCatalogRowHtml()), so this
+// takes a service id and reads/writes that row's own three fields instead of one
+// shared Step-1 set. Math is unchanged from the original.
+function calcRowEndDate(id) {
+  const startEl = document.getElementById('svc-start-' + id);
+  const lengthEl = document.getElementById('svc-length-' + id);
+  const endEl = document.getElementById('svc-end-' + id);
+  if (!startEl || !lengthEl || !endEl) return;
+  const start = startEl.value;
+  const months = parseInt(lengthEl.value);
   if (!start || !months) return;
   // Anchor at local noon to dodge UTC timezone drift
   const d = /^\d{4}-\d{2}-\d{2}$/.test(start) ? new Date(start + 'T12:00:00') : new Date(start);
@@ -2253,7 +2306,7 @@ function calcEndDate() {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-  document.getElementById('campaign-end').value = `${yyyy}-${mm}-${dd}`;
+  endEl.value = `${yyyy}-${mm}-${dd}`;
 }
 
 // ── SECTION TOGGLE ────────────────────────────────────────────
@@ -2684,7 +2737,29 @@ function syncRowInputs() {
     }
     const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
+    // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now.
+    const startInput = document.getElementById('svc-start-' + id);
+    const endInput = document.getElementById('svc-end-' + id);
+    if (startInput) selected[id].start_date = startInput.value || null;
+    if (endInput) selected[id].end_date = endInput.value || null;
   });
+  updateDerivedCampaignSummary();
+}
+
+// ── DERIVED CAMPAIGN SUMMARY (order-wide) ──────────────────────
+// Now that dates live per-tactic, orders.campaign_start/end are computed as the
+// earliest start_date / latest end_date across all selected line items, and written
+// into the hidden #campaign-start/#campaign-end fields so every existing consumer
+// (review recap, PDF, Trello card, draft save/load, dev-skip prefill) keeps working
+// unchanged. campaign-length is left blank — per-tactic lengths can differ, so a
+// single order-wide "length" no longer means anything.
+function updateDerivedCampaignSummary() {
+  const starts = Object.values(selected).map(s => s.start_date).filter(Boolean);
+  const ends = Object.values(selected).map(s => s.end_date).filter(Boolean);
+  const startEl = document.getElementById('campaign-start');
+  const endEl = document.getElementById('campaign-end');
+  if (startEl) startEl.value = starts.length ? starts.sort()[0] : '';
+  if (endEl) endEl.value = ends.length ? ends.sort()[ends.length - 1] : '';
 }
 
 // ── STEP 1 VALIDATION ─────────────────────────────────────────
@@ -2694,7 +2769,6 @@ function validateStep1() {
     ['ae-name', 'Digital Account Executive name'],
     ['biz-name', 'Business name'],
     ['contact-email', 'Contact email'],
-    ['campaign-start', 'Campaign start date'],
     ['city', 'City / Service Area'],
   ];
   let firstMissing = null;
@@ -2806,7 +2880,24 @@ function goStep(n) {
       if (firstMissing) firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
       return; // Block navigation
     }
-    syncRowInputs(); // pull Notes + Spend inputs into selected{} for the summary
+    // Every selected tactic needs its own Start Date now (2026-08-06 — replaces the old
+    // single Step-1-wide required date). Sync first so selected[id].start_date reflects
+    // whatever's currently typed, then block on any selected row still missing one.
+    syncRowInputs();
+    document.querySelectorAll('.svc-start-cell input.spend-missing').forEach(el => el.classList.remove('spend-missing'));
+    const missingDates = Object.entries(selected).filter(([id, d]) => !d.start_date);
+    if (missingDates.length > 0) {
+      missingDates.forEach(([id]) => {
+        const startInput = document.getElementById('svc-start-' + id);
+        if (startInput) startInput.classList.add('spend-missing');
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const section = row?.closest('.card-body');
+        if (section) section.style.display = 'block';
+      });
+      const firstMissing = document.querySelector('.svc-start-cell input.spend-missing');
+      if (firstMissing) firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
+      return; // Block navigation
+    }
     buildReview();
     updateKocCard();
     updateIntakeStatusCard();
@@ -3214,6 +3305,12 @@ async function submitIO() {
         hosting_choice: hosting?.choice || null,
         hosting_package: hosting?.package || null,
         prorated_hosting_amt: hosting?.proratedAmt || null,
+        // Per-tactic flight dates (2026-08-06) — the strategist-portal trigger
+        // (create_campaign_lines_from_order) reads these per line item to seed each
+        // campaign_lines row's own flight_start/flight_end, instead of the old shared
+        // order-wide campaign_start/campaign_end.
+        start_date: data.start_date || null,
+        end_date: data.end_date || null,
       };
     });
 
@@ -3573,6 +3670,7 @@ async function submitIO() {
           if (li.recurring > 0) line += ` — $${li.recurring.toLocaleString()}/mo`;
           if (li.spend > 0) line += ` — $${li.spend.toLocaleString()}/mo spend`;
           if (li.prorated_hosting_amt) line += ` | Prorated: $${li.prorated_hosting_amt.toFixed(2)}`;
+          if (li.start_date || li.end_date) line += ` | Flight: ${li.start_date || '—'} to ${li.end_date || '—'}`;
           if (li.notes) line += `\n  Notes: ${li.notes}`;
           return line;
         }).join('\n');
@@ -3814,10 +3912,17 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             return r && r.workflow === originalWorkflow && r.always_new_card;
           });
         }
-        function formatCampaignDateRange() {
+        // Takes THIS workflow's own tactic dates (2026-08-06 — replaces the old
+        // shared order-wide campaign_start/campaign_end) — min start / max end across
+        // whichever selected line item(s) belong to originalWorkflow, so a dated card
+        // title reflects that tactic's actual flight instead of the whole order's.
+        function formatCampaignDateRange(originalWorkflow) {
           const parseLocal = s => s ? new Date(s + 'T12:00:00') : null; // avoid UTC day-shift
-          const start = parseLocal(document.getElementById('campaign-start')?.value);
-          const end = parseLocal(document.getElementById('campaign-end')?.value);
+          const ids = Object.keys(selected).filter(id => CATALOG_ROWS[id]?.workflow === originalWorkflow);
+          const starts = ids.map(id => selected[id].start_date).filter(Boolean).sort();
+          const ends = ids.map(id => selected[id].end_date).filter(Boolean).sort();
+          const start = parseLocal(starts[0]);
+          const end = parseLocal(ends[ends.length - 1]);
           const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
           if (start && end) {
             return (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear())
@@ -3828,7 +3933,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         }
         function datedCardSuffix(originalWorkflow) {
           if (!workflowWantsDatedCard(originalWorkflow)) return '';
-          const range = formatCampaignDateRange();
+          const range = formatCampaignDateRange(originalWorkflow);
           return range ? ' ' + range : '';
         }
 
@@ -4146,7 +4251,11 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // Notes" maps to Campaign Notes (confirmed by Claire — "that is what it has
         // been"), not Special Instructions. Dollar totals removed 2026-07-17, per Claire
         // ("we don't need the amounts from the IO in the email copy").
-        const marketVal = document.getElementById('city')?.value.trim();
+        // Market (2026-08-06, per Claire — "that is how we do reporting, not client
+        // city") — sourced from the AE roster's own market field, not the client's city.
+        // Only populated when the AE was picked from the roster (see applyAePick());
+        // an AE typed in freehand has no market on file, same limitation as ae-email.
+        const marketVal = document.getElementById('ae-market')?.value.trim();
         const overallNotesVal = document.getElementById('campaign-notes')?.value.trim();
         const emailHtml = `
           <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px">
@@ -4334,29 +4443,34 @@ function buildIoDocumentHtml() {
 
       const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
       const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' — ');
-      sectionRows += `<tr><td class="svc-name">${esc(data.label)}</td><td class="svc-amt">${amtCol}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
+      // Flight column (2026-08-06) — compact "8/15–1/10" per-tactic format, same idea
+      // as the strategist portal's own Flight column, now that dates live per row.
+      const flightDisplay = (data.start_date || data.end_date)
+        ? `${data.start_date ? new Date(data.start_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric'}) : '—'}–${data.end_date ? new Date(data.end_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric'}) : '—'}`
+        : '—';
+      sectionRows += `<tr><td class="svc-name">${esc(data.label)}</td><td class="svc-amt">${amtCol}</td><td class="svc-flight">${esc(flightDisplay)}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
 
       const h = hostingChoices[id];
       if (h?.choice === 'us' && h.proratedAmt) {
         oneTime += h.proratedAmt;
         sectionOneTime += h.proratedAmt;
-        sectionRows += `<tr class="prorate-row"><td class="svc-name">↳ Prorated hosting — starts ${h.startDate}</td><td class="svc-amt">$${h.proratedAmt.toFixed(2)}</td><td class="svc-notes">${h.days}-day build period from IO date</td></tr>`;
+        sectionRows += `<tr class="prorate-row"><td class="svc-name">↳ Prorated hosting — starts ${h.startDate}</td><td class="svc-amt">$${h.proratedAmt.toFixed(2)}</td><td></td><td class="svc-notes">${h.days}-day build period from IO date</td></tr>`;
       }
       const setupFeeInfo = getSetupFeeInfo(id, data.spend || 0);
       if (setupFeeInfo) {
         oneTime += setupFeeInfo.amount;
         sectionOneTime += setupFeeInfo.amount;
-        sectionRows += `<tr class="prorate-row"><td class="svc-name">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="svc-amt">${fmt(setupFeeInfo.amount)}</td><td class="svc-notes">Auto-applied — campaign spend is below the minimum</td></tr>`;
+        sectionRows += `<tr class="prorate-row"><td class="svc-name">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="svc-amt">${fmt(setupFeeInfo.amount)}</td><td></td><td class="svc-notes">Auto-applied — campaign spend is below the minimum</td></tr>`;
       }
     });
 
     // Section header + rows + subtotal
-    lineItemsHtml += `<tr class="section-row"><td colspan="3">${esc(secDef.label)}</td></tr>` + sectionRows;
+    lineItemsHtml += `<tr class="section-row"><td colspan="4">${esc(secDef.label)}</td></tr>` + sectionRows;
     if (sectionOneTime > 0 || sectionMonthly > 0) {
       const parts = [];
       if (sectionOneTime > 0) parts.push(fmt(sectionOneTime) + ' one-time');
       if (sectionMonthly > 0) parts.push(fmt(sectionMonthly) + '/mo');
-      lineItemsHtml += `<tr class="subtotal-row"><td>Subtotal</td><td class="svc-amt">${parts.join(' + ')}</td><td></td></tr>`;
+      lineItemsHtml += `<tr class="subtotal-row"><td>Subtotal</td><td class="svc-amt">${parts.join(' + ')}</td><td></td><td></td></tr>`;
     }
   });
 
@@ -4449,11 +4563,13 @@ function buildIoDocumentHtml() {
   table.services{width:100%;border-collapse:collapse;font-size:9.5pt}
   table.services thead tr{background:${color};color:#fff}
   table.services thead th{padding:7px 10px;text-align:left;font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
-  table.services thead th.amt{text-align:right;width:25%}
-  table.services thead th.notes{width:32%}
+  table.services thead th.amt{text-align:right;width:22%}
+  table.services thead th.flight{width:14%;white-space:nowrap}
+  table.services thead th.notes{width:28%}
   table.services tbody td{padding:6px 10px;border-bottom:1px solid #F1F3F5;vertical-align:top}
   table.services .svc-name{font-size:9.5pt;color:#111827}
   table.services .svc-amt{text-align:right;font-weight:600;font-size:9.5pt;color:#111827;white-space:nowrap}
+  table.services .svc-flight{font-size:8.5pt;color:#6B7280;white-space:nowrap}
   table.services .svc-notes{font-size:8.5pt;color:#6B7280;line-height:1.4}
   table.services .section-row td{background:#F3F4F6;font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};padding:6px 10px;border-top:1px solid #e5e7eb}
   table.services .subtotal-row td{background:#FAFBFC;font-size:9pt;font-weight:600;color:#374151;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;padding:5px 10px}
@@ -4559,11 +4675,12 @@ ${campNotes ? `<div class="campaign-notes-line"><strong>Campaign Notes:</strong>
     <tr>
       <th>Service</th>
       <th class="amt">Amount</th>
+      <th class="flight">Flight</th>
       <th class="notes">Notes</th>
     </tr>
   </thead>
   <tbody>
-    ${lineItemsHtml || '<tr><td colspan="3" style="text-align:center;padding:24px;color:#9CA3AF">No services selected</td></tr>'}
+    ${lineItemsHtml || '<tr><td colspan="4" style="text-align:center;padding:24px;color:#9CA3AF">No services selected</td></tr>'}
   </tbody>
 </table>
 
@@ -4817,6 +4934,7 @@ function writeDraft(draft) {
 }
 
 function saveDraft() {
+  syncRowInputs(); // pull per-row dates/Notes/Spend into selected{} + derived campaign summary before saving
   writeDraft(buildDraft());
   showToast('Draft saved!');
 }
@@ -4873,6 +4991,13 @@ function loadDraft() {
           selected[id] = data;
           row.classList.add('selected');
         }
+        // Restore this row's own flight dates (2026-08-06) — not covered by the generic
+        // spendValues/qtyValues restore blocks below since those target class-matched
+        // inputs by id, same pattern extended to the new per-row date fields.
+        const startInput = document.getElementById('svc-start-' + id);
+        const endInput = document.getElementById('svc-end-' + id);
+        if (startInput && data.start_date) startInput.value = data.start_date;
+        if (endInput && data.end_date) endInput.value = data.end_date;
       });
       if (d.spendValues) {
         Object.entries(d.spendValues).forEach(([id, val]) => {
@@ -4978,6 +5103,8 @@ function resetForm() {
   if (clientPicker) clientPicker.value = '';
   const aePicker = document.getElementById('ae-picker');
   if (aePicker) aePicker.value = '';
+  selectedAeId = null;
+  setAeNameLocked(false);
   window.__lastIoNumber = null; // clear so the next IO generates its own number
   kocCalendarOpened = false;
   currentIntakeServiceId = null;
@@ -5021,6 +5148,10 @@ function resetForm() {
   // above but never had its stale VALUE cleared.
   const campaignLength = document.getElementById('campaign-length');
   if (campaignLength) campaignLength.value = '';
+  // Per-row flight-length <select>s (2026-08-06) — same blind spot as campaign-length
+  // above; the date inputs get cleared by the generic input[type=date] loop, but a
+  // <select> isn't a "text input" and needs the same explicit reset.
+  document.querySelectorAll('select[id^="svc-length-"]').forEach(sel => sel.value = '');
   const kocTimeSel = document.getElementById('koc-time');
   if (kocTimeSel) kocTimeSel.value = '';
   document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
@@ -5315,11 +5446,23 @@ function generateCatalogRowHtml(r) {
   const spendCell = r.pricing_mode === 'spend'
     ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
     : '';
+  // Per-tactic flight dates (2026-08-06) — every row gets its own Start/Length/End now
+  // (replaces the old single Step-1-wide Campaign Dates card). Placed right before Notes
+  // so the Notes cell stays the LAST child, which renderPriceCells() relies on to find
+  // it (tds[tds.length-1]) — these three are excluded from that function's cell-clearing
+  // loop by class, same way the Spend cell is excluded by its input match.
+  const lengthOptions = [1,2,3,4,5,6,7,8,9,10,11,12]
+    .map(m => `<option value="${m}">${m} Month${m > 1 ? 's' : ''}</option>`).join('');
+  const dateCells = `
+      <td class="svc-start-cell"><input type="date" id="svc-start-${esc(r.id)}" onchange="calcRowEndDate('${esc(r.id)}')"/></td>
+      <td class="svc-length-cell"><select id="svc-length-${esc(r.id)}" onchange="calcRowEndDate('${esc(r.id)}')"><option value="">Select...</option>${lengthOptions}</select></td>
+      <td class="svc-end-cell"><input type="date" id="svc-end-${esc(r.id)}" readonly style="background:#F9FAFB"/></td>`;
   return `
     <tr data-id="${esc(r.id)}">
       <td><input type="checkbox" onchange="${onchange}"/></td>
       <td>${esc(r.label)}</td>
       ${spendCell}
+      ${dateCells}
       <td><input type="text" placeholder="Notes..."/></td>
     </tr>`;
 }
@@ -5384,8 +5527,8 @@ function renderMultiTableSection(sectionId) {
     // even meant. Caught live via screenshot showing the whole section at once — every
     // sub-table now gets its own headers, making each one self-contained and readable
     // on its own rather than depending on a DIFFERENT table further up the page.
-    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th></tr></thead>';
-    const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
+    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th class="right">Start</th><th class="right">Length</th><th class="right">End</th><th>Notes</th></tr></thead>';
+    const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-start"/><col class="c-length"/><col class="c-end"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
     return headerHtml + tableHtml;
   }).join('');
 }
@@ -5414,6 +5557,10 @@ function renderPriceCells() {
     // .quoted-price-field (2026-07-14) excluded for the identical reason — a QUR row's
     // own quoted-price input is also an input[type=number].
     const spendTd   = tds.find(td => td.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)'));
+    // Per-tactic date cells (2026-08-06) — identified by class, same exclusion mechanism
+    // as spendTd, so the removal loop below doesn't wipe out these three every re-render
+    // (this function also runs on dev-group switch, not just once at page load).
+    const dateCellClasses = ['svc-start-cell', 'svc-length-cell', 'svc-end-cell'];
 
     // Closes "label drift": refreshes the service name from the catalog's `label` field
     // for EVERY row, not just sections already converted to dynamic generation (alc/rep/
@@ -5436,7 +5583,9 @@ function renderPriceCells() {
 
     const { fee, freq } = priceAndFrequency(r);
 
-    tds.slice(2, tds.length - 1).forEach(td => { if (td !== spendTd) td.remove(); });
+    tds.slice(2, tds.length - 1).forEach(td => {
+      if (td !== spendTd && !dateCellClasses.some(c => td.classList.contains(c))) td.remove();
+    });
 
     const feeTd = document.createElement('td');
     feeTd.className = 'right svc-fee';
@@ -5633,12 +5782,14 @@ function renderSectionCards() {
     } else {
       const hasSpend = sectionHasSpend(sec.id);
       const shapeClass = hasSpend ? 'svc-table--spend' : 'svc-table--fee';
+      const dateCols = `<col class="c-start"/><col class="c-length"/><col class="c-end"/>`;
+      const dateThs = `<th class="right">Start</th><th class="right">Length</th><th class="right">End</th>`;
       const colgroup = hasSpend
-        ? `<col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-notes"/>`
-        : `<col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-notes"/>`;
+        ? `<col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/>${dateCols}<col class="c-notes"/>`
+        : `<col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/>${dateCols}<col class="c-notes"/>`;
       const thead = hasSpend
-        ? `<th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th>Notes</th>`
-        : `<th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th>Notes</th>`;
+        ? `<th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th>${dateThs}<th>Notes</th>`
+        : `<th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th>${dateThs}<th>Notes</th>`;
       body = `<table class="svc-table ${shapeClass}"><colgroup>${colgroup}</colgroup>
           <thead><tr>${thead}</tr></thead>
           <tbody id="tbody-${esc(sec.id)}">
