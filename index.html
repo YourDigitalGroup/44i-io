@@ -73,12 +73,11 @@ textarea{resize:vertical;min-height:70px}
 .svc-table col.c-fee{width:96px}
 .svc-table col.c-freq{width:104px}
 .svc-table col.c-spend{width:120px}
-.svc-table col.c-start{width:118px}
-.svc-table col.c-length{width:92px}
-.svc-table col.c-end{width:100px}
+.svc-table col.c-start{width:78px}
+.svc-table col.c-end{width:78px}
 .svc-table col.c-notes{width:auto}
-.svc-table td.svc-start-cell,.svc-table td.svc-length-cell,.svc-table td.svc-end-cell{padding:6px 8px}
-.svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input,.svc-table td.svc-length-cell select{font-size:11px;padding:4px 6px}
+.svc-table td.svc-start-cell,.svc-table td.svc-end-cell{padding:6px 6px}
+.svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input{font-size:11px;padding:4px 5px;text-align:center}
 .svc-table td:nth-child(2){white-space:normal;word-break:normal;overflow-wrap:anywhere}
 .svc-table td.svc-freq{color:var(--muted);font-size:11.5px;text-align:right}
 .svc-table td.right{overflow:hidden;text-overflow:ellipsis;text-align:right;color:var(--muted)}
@@ -168,7 +167,6 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td:last-child::before,
   .svc-table td.c-spend-cell::before,
   .svc-table td.svc-start-cell::before,
-  .svc-table td.svc-length-cell::before,
   .svc-table td.svc-end-cell::before {
     display: block;
     font-size: 9px; font-weight: 700; color: var(--muted);
@@ -184,13 +182,13 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td.c-spend-cell::before { content: 'Spend'; }
   .svc-table td input[type=number] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left; }
 
-  /* Per-tactic flight dates (2026-08-06) — same labelled-stack pattern as Fee/Spend. */
+  /* Per-tactic flight dates (2026-08-06) — same labelled-stack pattern as Fee/Spend.
+     Length dropped in favor of both dates being directly typed (see
+     updateTacticDate()) — no Length cell to label on mobile either. */
   .svc-table td.svc-start-cell::before { content: 'Start Date'; }
-  .svc-table td.svc-length-cell::before { content: 'Length'; }
   .svc-table td.svc-end-cell::before { content: 'End Date'; }
   .svc-table td.svc-start-cell input,
-  .svc-table td.svc-end-cell input,
-  .svc-table td.svc-length-cell select {
+  .svc-table td.svc-end-cell input {
     width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left;
   }
 
@@ -385,8 +383,16 @@ textarea{resize:vertical;min-height:70px}
             <label class="lbl">AE Trello Handle <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— e.g. @johndoe</span></label>
             <input type="text" id="ae-trello" placeholder="@trellohandle"/>
           </div>
+          <div>
+            <label class="lbl">Market</label>
+            <!-- Market (2026-08-06) — only meaningful for a real picked AE (it's their
+                 reporting territory on file, not something to invent for a freehand
+                 name), so it stays disabled until a roster pick fills it in — the
+                 inverse of the Name/Trello lock right above, both of which lock the
+                 OTHER direction once a real AE is picked. See setAeNameLocked(). -->
+            <input type="text" id="ae-market" placeholder="Select an AE above" disabled/>
+          </div>
           <input type="hidden" id="ae-email"/>
-          <input type="hidden" id="ae-market"/>
         </div>
       </div>
     </div>
@@ -943,15 +949,24 @@ async function loadAeRoster(groupId) {
   wrap.style.display = 'block';
 }
 
-// Mirrors setBizNameLocked() — only the identity-matching field (#ae-name) locks;
-// Trello handle/email/market stay editable either way. No onBizNameEdited-equivalent
-// safety net here: unlike find_or_create_client, the AE roster is admin-managed only
-// and never auto-created from a submission by name match, so there's nothing for a
-// stray edit to corrupt — the disabled input alone is the whole protection needed.
+// Mirrors setBizNameLocked() — Name AND Trello Handle (2026-08-06, widened from just
+// Name — per Claire, both identify the same real person once picked) lock once a real
+// AE is picked. Market runs the OPPOSITE direction: disabled until a real AE is picked
+// (it's that person's on-file reporting territory, not something to invent for a
+// freehand entry), then editable in case it needs a one-off correction for this
+// submission. Email stays hidden/uneditable either way (unchanged). No
+// onBizNameEdited-equivalent safety net here: unlike find_or_create_client, the AE
+// roster is admin-managed only and never auto-created from a submission by name match,
+// so there's nothing for a stray edit to corrupt — the disabled inputs alone are the
+// whole protection needed.
 function setAeNameLocked(locked) {
-  const el = document.getElementById('ae-name');
+  const nameEl = document.getElementById('ae-name');
+  const trelloEl = document.getElementById('ae-trello');
+  const marketEl = document.getElementById('ae-market');
   const hint = document.getElementById('ae-name-locked-hint');
-  if (el) el.disabled = locked;
+  if (nameEl) nameEl.disabled = locked;
+  if (trelloEl) trelloEl.disabled = locked;
+  if (marketEl) marketEl.disabled = !locked;
   if (hint) hint.style.display = locked ? 'block' : 'none';
 }
 
@@ -2284,29 +2299,44 @@ function fmtPhone(input) {
   input.value = v;
 }
 
-// ── PER-TACTIC CAMPAIGN END DATE ──────────────────────────────────
-// Replaces the old single-shared calcEndDate() (2026-08-06) — every selected
-// tactic now has its own Start/Length/End (see generateCatalogRowHtml()), so this
-// takes a service id and reads/writes that row's own three fields instead of one
-// shared Step-1 set. Math is unchanged from the original.
-function calcRowEndDate(id) {
-  const startEl = document.getElementById('svc-start-' + id);
-  const lengthEl = document.getElementById('svc-length-' + id);
-  const endEl = document.getElementById('svc-end-' + id);
-  if (!startEl || !lengthEl || !endEl) return;
-  const start = startEl.value;
-  const months = parseInt(lengthEl.value);
-  if (!start || !months) return;
-  // Anchor at local noon to dodge UTC timezone drift
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(start) ? new Date(start + 'T12:00:00') : new Date(start);
-  d.setMonth(d.getMonth() + months);
-  // Set to last day of previous month (so 6-month campaign starting Jan 1 ends Jun 30, not Jul 1)
-  d.setDate(d.getDate() - 1);
-  // Compose YYYY-MM-DD from local fields, not toISOString (which would drift again)
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  endEl.value = `${yyyy}-${mm}-${dd}`;
+// ── PER-TACTIC CAMPAIGN DATES (MM/DD/YY) ──────────────────────────
+// Replaces the old calcRowEndDate()/Length-select design (2026-08-06, per Claire —
+// the 3-field row was too cramped) — Start and End are now both typed directly, no
+// derived Length. Plain text inputs with a digit mask instead of native <input
+// type=date>, both because a native date input can't display a 2-digit year and
+// because the resulting box is narrower — every date is still stored internally as
+// a real ISO string (selected[id].start_date/end_date), only the ON-SCREEN
+// representation is MM/DD/YY. 2-digit year always resolves to 20xx — reasonable for
+// an IO form with no plausible 19xx campaign dates.
+function parseMMDDYY(str) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec((str || '').trim());
+  if (!m) return null;
+  const mm = parseInt(m[1], 10), dd = parseInt(m[2], 10);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  return `20${m[3]}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+}
+
+function formatISOToMMDDYY(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : '';
+}
+
+// Auto-inserts slashes as the AE types digits — same masking approach as fmtPhone().
+// Fires on every keystroke (oninput); only stores into selected[id] once a full valid
+// date is present, same "wait for a complete value" behavior updateSpend()/etc. rely
+// on their own onchange for (this uses oninput instead so the auto-check-the-row
+// behavior — see autoCheckIfNeeded() — kicks in the moment a real date lands, not only
+// on blur).
+function updateTacticDate(input, id, which) {
+  let v = input.value.replace(/\D/g, '').slice(0, 6);
+  if (v.length >= 5) v = v.slice(0,2) + '/' + v.slice(2,4) + '/' + v.slice(4);
+  else if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2);
+  input.value = v;
+  const iso = parseMMDDYY(v);
+  if (!iso) return;
+  autoCheckIfNeeded(id);
+  input.classList.remove('spend-missing');
+  if (selected[id]) selected[id][which] = iso;
 }
 
 // ── SECTION TOGGLE ────────────────────────────────────────────
@@ -2738,10 +2768,17 @@ function syncRowInputs() {
     const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
     // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now.
+    // updateTacticDate() already writes these into selected[id] live as the AE types a
+    // complete MM/DD/YY value, so this is a safety net (same role syncRowInputs()
+    // already plays for Notes/Spend) — only overwrites when the field currently holds
+    // a FULLY valid date, so a mid-edit/incomplete value here never nulls out an
+    // already-stored one.
     const startInput = document.getElementById('svc-start-' + id);
     const endInput = document.getElementById('svc-end-' + id);
-    if (startInput) selected[id].start_date = startInput.value || null;
-    if (endInput) selected[id].end_date = endInput.value || null;
+    const startIso = startInput ? parseMMDDYY(startInput.value) : null;
+    const endIso = endInput ? parseMMDDYY(endInput.value) : null;
+    if (startIso) selected[id].start_date = startIso;
+    if (endIso) selected[id].end_date = endIso;
   });
   updateDerivedCampaignSummary();
 }
@@ -4996,8 +5033,10 @@ function loadDraft() {
         // inputs by id, same pattern extended to the new per-row date fields.
         const startInput = document.getElementById('svc-start-' + id);
         const endInput = document.getElementById('svc-end-' + id);
-        if (startInput && data.start_date) startInput.value = data.start_date;
-        if (endInput && data.end_date) endInput.value = data.end_date;
+        // Stored as ISO in selected{}, displayed as MM/DD/YY — same split as
+        // updateTacticDate()/formatISOToMMDDYY() everywhere else.
+        if (startInput && data.start_date) startInput.value = formatISOToMMDDYY(data.start_date);
+        if (endInput && data.end_date) endInput.value = formatISOToMMDDYY(data.end_date);
       });
       if (d.spendValues) {
         Object.entries(d.spendValues).forEach(([id, val]) => {
@@ -5148,10 +5187,10 @@ function resetForm() {
   // above but never had its stale VALUE cleared.
   const campaignLength = document.getElementById('campaign-length');
   if (campaignLength) campaignLength.value = '';
-  // Per-row flight-length <select>s (2026-08-06) — same blind spot as campaign-length
-  // above; the date inputs get cleared by the generic input[type=date] loop, but a
-  // <select> isn't a "text input" and needs the same explicit reset.
-  document.querySelectorAll('select[id^="svc-length-"]').forEach(sel => sel.value = '');
+  // Per-row flight dates (svc-start-*/svc-end-*, 2026-08-06) are plain type=text inputs
+  // now (MM/DD/YY masked, not native <input type=date>) — already caught by the
+  // generic input[type=text] clause in the formPages loop above, no extra reset needed
+  // here (unlike the old Length <select>, which this block used to also clear).
   const kocTimeSel = document.getElementById('koc-time');
   if (kocTimeSel) kocTimeSel.value = '';
   document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
@@ -5446,17 +5485,22 @@ function generateCatalogRowHtml(r) {
   const spendCell = r.pricing_mode === 'spend'
     ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
     : '';
-  // Per-tactic flight dates (2026-08-06) — every row gets its own Start/Length/End now
-  // (replaces the old single Step-1-wide Campaign Dates card). Placed right before Notes
-  // so the Notes cell stays the LAST child, which renderPriceCells() relies on to find
-  // it (tds[tds.length-1]) — these three are excluded from that function's cell-clearing
+  // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now
+  // (replaces the old single Step-1-wide Campaign Dates card). Length dropped
+  // (2026-08-06, per Claire — it made the row too cramped) in favor of both dates
+  // being directly typed; MM/DD/YY (plain text + digit mask, not <input type=date>)
+  // instead of a native date picker, both because a 2-digit year isn't something a
+  // native date input can display and because the resulting box is narrower — same
+  // reasoning as the AE/Client picker's Trello-handle-style compact inputs elsewhere
+  // on this form. updateTacticDate() masks-as-typed and stores the parsed ISO value
+  // into selected[id] directly, mirroring Spend's live-onchange pattern (including
+  // auto-checking the row — see autoCheckIfNeeded()). Placed right before Notes so
+  // the Notes cell stays the LAST child, which renderPriceCells() relies on to find
+  // it (tds[tds.length-1]) — these two are excluded from that function's cell-clearing
   // loop by class, same way the Spend cell is excluded by its input match.
-  const lengthOptions = [1,2,3,4,5,6,7,8,9,10,11,12]
-    .map(m => `<option value="${m}">${m} Month${m > 1 ? 's' : ''}</option>`).join('');
   const dateCells = `
-      <td class="svc-start-cell"><input type="date" id="svc-start-${esc(r.id)}" onchange="calcRowEndDate('${esc(r.id)}')"/></td>
-      <td class="svc-length-cell"><select id="svc-length-${esc(r.id)}" onchange="calcRowEndDate('${esc(r.id)}')"><option value="">Select...</option>${lengthOptions}</select></td>
-      <td class="svc-end-cell"><input type="date" id="svc-end-${esc(r.id)}" readonly style="background:#F9FAFB"/></td>`;
+      <td class="svc-start-cell"><input type="text" inputmode="numeric" maxlength="8" placeholder="MM/DD/YY" id="svc-start-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','start_date')"/></td>
+      <td class="svc-end-cell"><input type="text" inputmode="numeric" maxlength="8" placeholder="MM/DD/YY" id="svc-end-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','end_date')"/></td>`;
   return `
     <tr data-id="${esc(r.id)}">
       <td><input type="checkbox" onchange="${onchange}"/></td>
@@ -5527,8 +5571,8 @@ function renderMultiTableSection(sectionId) {
     // even meant. Caught live via screenshot showing the whole section at once — every
     // sub-table now gets its own headers, making each one self-contained and readable
     // on its own rather than depending on a DIFFERENT table further up the page.
-    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th class="right">Start</th><th class="right">Length</th><th class="right">End</th><th>Notes</th></tr></thead>';
-    const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-start"/><col class="c-length"/><col class="c-end"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
+    const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th class="right">Start</th><th class="right">End</th><th>Notes</th></tr></thead>';
+    const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-start"/><col class="c-end"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
     return headerHtml + tableHtml;
   }).join('');
 }
@@ -5560,7 +5604,7 @@ function renderPriceCells() {
     // Per-tactic date cells (2026-08-06) — identified by class, same exclusion mechanism
     // as spendTd, so the removal loop below doesn't wipe out these three every re-render
     // (this function also runs on dev-group switch, not just once at page load).
-    const dateCellClasses = ['svc-start-cell', 'svc-length-cell', 'svc-end-cell'];
+    const dateCellClasses = ['svc-start-cell', 'svc-end-cell'];
 
     // Closes "label drift": refreshes the service name from the catalog's `label` field
     // for EVERY row, not just sections already converted to dynamic generation (alc/rep/
@@ -5782,8 +5826,8 @@ function renderSectionCards() {
     } else {
       const hasSpend = sectionHasSpend(sec.id);
       const shapeClass = hasSpend ? 'svc-table--spend' : 'svc-table--fee';
-      const dateCols = `<col class="c-start"/><col class="c-length"/><col class="c-end"/>`;
-      const dateThs = `<th class="right">Start</th><th class="right">Length</th><th class="right">End</th>`;
+      const dateCols = `<col class="c-start"/><col class="c-end"/>`;
+      const dateThs = `<th class="right">Start</th><th class="right">End</th>`;
       const colgroup = hasSpend
         ? `<col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/>${dateCols}<col class="c-notes"/>`
         : `<col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/>${dateCols}<col class="c-notes"/>`;
