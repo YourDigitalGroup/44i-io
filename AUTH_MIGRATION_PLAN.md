@@ -130,6 +130,38 @@ persisted login) rather than hand-rolling that logic.
   (`admin_save_client`, `strategist_save_campaign_line`) for once the pattern
   is well-proven.
 
+### Stage 2b — Centralize role-based UI gating (maintainability, not security)
+Separate concern from the rest of this plan, added at Claire's request since
+Stage 2 already means touching every RPC's role logic — a natural point to
+also clean up how the CLIENT reads that role. Not a security fix: the real
+enforcement already lives server-side in each RPC (confirmed during scoping —
+client-side role checks are cosmetic UI-hiding only), so this carries none of
+the risk the rest of this plan does and doesn't need to wait for any other
+stage to finish. Can be done anytime, including entirely independently of the
+Supabase Auth work if that ever stalls.
+
+- **The problem being fixed**: `currentAdminUser?.role === 'am'` (and similar)
+  is checked ~43 separate times throughout `admin/index.html`, inline at each
+  gated button/tab, rather than in one place. Nothing stops a future new
+  admin feature from forgetting to add its own check — the pattern only works
+  if every single new gate remembers to copy it correctly.
+- **The fix**: one small declarative permission map (e.g. `const
+  ROLE_PERMISSIONS = { newAeButton: ['super','am'], newServiceButton:
+  ['super'], legalTextSave: ['super'], ... }`) plus a single `canSee(feature)`
+  helper that reads it. Replace the ~43 inline `role === '...'` checks with
+  calls to `canSee('...')`. Adding a new gated feature becomes "add one line
+  to the map" instead of "remember to inline the right condition correctly."
+- Purely client-side, purely a refactor of existing behavior — every gate
+  should show/hide exactly the same as it does today, just from one source of
+  truth instead of 43 scattered ones. Verify with a pass through every
+  existing role (`super`/`am`/`strategist`/`accounting`) confirming nothing
+  that was visible/hidden before changed.
+- Natural side effect: once JWT-based sessions exist (post-Stage 1), the role
+  itself could come from a custom JWT claim instead of the looked-up
+  `admin_users.role` — the permission MAP doesn't care where the role string
+  comes from, so this cleanup and the auth migration proper compose cleanly
+  without depending on each other.
+
 ### Stage 3 — Live-test with real traffic, old path still the safety net
 - Roll the new login out for real day-to-day use — including live client work
   — while the legacy password path remains fully available as fallback for
@@ -162,9 +194,13 @@ persisted login) rather than hand-rolling that logic.
 
 ## What's safe to start now vs. what waits
 
-Stages 0–3 are additive and reversible — safe to start whenever there's
-bandwidth, including now. Stage 3 specifically doubles as live proof it works,
-using real ongoing work, without putting that work at risk. Stage 4 (the only
-stage that can actually break something, and only for the specific RPCs being
-migrated at that moment) should wait for a deliberately quiet window — not
-mid-month, not alongside other unrelated changes.
+Stages 0–3 (and 2b) are additive and reversible — safe to start whenever
+there's bandwidth, including now. Stage 2b specifically has no dependency on
+any other stage at all — it's a pure client-side refactor of existing
+behavior and could be done today, this week, or whenever, entirely
+independent of how the rest of the migration is paced. Stage 3 doubles as
+live proof the auth work itself works, using real ongoing work, without
+putting that work at risk. Stage 4 (the only stage that can actually break
+something, and only for the specific RPCs being migrated at that moment)
+should wait for a deliberately quiet window — not mid-month, not alongside
+other unrelated changes.
