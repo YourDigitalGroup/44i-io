@@ -21,12 +21,16 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root{
-  --accent:#1C9BD7;
-  --accent-rgb:28,155,215;
-  --accent-dark:#1580B5;
+  /* Sky blue (2026-08-06) — matches the new 44idigital.com's own accent, replacing the
+     older cyan. Admin/Strategist are 44i's own internal tools (unlike the public IO
+     form, which stays on each white-label group's own brand_color) — see
+     io_project_tracking.md for why the IO form's --accent was deliberately left alone. */
+  --accent:#4C8FCB;
+  --accent-rgb:76,143,203;
+  --accent-dark:#3A74AC;
   --accent2:#0F6E56;
   --warn:#F59E0B;
-  --bg:#F4F8FB;
+  --bg:#fff;
   --card:#fff;
   --border:#DDE8F0;
   --text:#1A2332;
@@ -34,12 +38,16 @@
   --light:#EBF4FB;
 }
 
-body{font-family:'Montserrat',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+body{font-family:'Montserrat',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-variant-numeric:tabular-nums}
 input,select,textarea,button{font-family:inherit}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
 
-/* Cards — the admin panel wraps its entire content in a single .card */
-.card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+/* Cards — the admin panel wraps its entire content in a single .card. Shadow
+   upgraded to a layered hairline+soft-shadow combo (2026-08-06, matching the public
+   IO form's same change) — needed now that --bg and --card are both white; a flat
+   low-opacity shadow alone doesn't separate a white card from a white page the way
+   it did against the old pale-blue background. */
+.card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05),0 10px 24px rgba(20,40,60,.06)}
 
 /* Field labels */
 label.lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
