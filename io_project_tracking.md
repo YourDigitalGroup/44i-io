@@ -6935,3 +6935,39 @@ same as before — only the disabled-state toggle came out.
 editable before a pick, after a pick, and after switching back to "New AE" —
 and added a case confirming a typed correction to Market survives after a
 real AE is already locked in. `node --check` passes clean.
+
+## 2026-08-06 (cont'd) — Real bug: admin_get_aes never learned about Market
+
+Claire reported editing an AE's Market in the admin portal, seeing the "AE
+updated!" toast, but the value not actually appearing to save — reopening Edit
+showed it blank again.
+
+**Root cause, my mistake**: the Market feature has three server-side moving
+parts — `admin_save_ae` (write, patched correctly), `get_group_aes` (read,
+used by the public IO form's AE picker, patched correctly), and
+`admin_get_aes` (read, used by the ADMIN PORTAL's own AE list/table). I only
+asked for and patched the first two — `admin_get_aes` was never touched, so
+it kept returning the pre-Market column set. The save was genuinely writing
+Market to the database the whole time; the admin table just couldn't display
+it back, because the function it calls to reload the list didn't know the
+column existed. This is exactly the kind of gap the two-step "get the live
+function text first" process exists to catch — I should have asked for all
+three functions up front instead of two, since I'd already changed the
+client-side code to expect Market from `admin_get_aes`'s response without
+confirming that function had been updated to actually provide it.
+
+**Fix**: added `'market', a.market` to `admin_get_aes`'s `jsonb_build_object`.
+No client-side/repo code change needed — `admin/index.html` already reads
+`a.market` from this RPC's response (that expectation was correct all along,
+just unfulfilled). Claire ran the patch; confirmed working.
+
+**Testing gap, noted honestly**: `test-admin-ae-market.js` (built earlier this
+session) mocked `ALL_AES` directly with a `market` field already present,
+rather than exercising a realistic `admin_get_aes` response shape — so it
+verified the DISPLAY logic correctly reads `a.market` when present, but
+couldn't have caught a read RPC that never returns that field in the first
+place. That gap is inherent to any Playwright test in this repo (they mock
+`sb()`, they can't verify what a LIVE Postgres function actually returns) —
+the real lesson is upstream of testing: always get and check the definitions
+of every function whose behavior a change depends on, not just the ones a
+task's most obvious next step touches.
