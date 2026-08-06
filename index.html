@@ -384,13 +384,14 @@ textarea{resize:vertical;min-height:70px}
             <input type="text" id="ae-trello" placeholder="@trellohandle"/>
           </div>
           <div>
-            <label class="lbl">Market</label>
-            <!-- Market (2026-08-06) — only meaningful for a real picked AE (it's their
-                 reporting territory on file, not something to invent for a freehand
-                 name), so it stays disabled until a roster pick fills it in — the
-                 inverse of the Name/Trello lock right above, both of which lock the
-                 OTHER direction once a real AE is picked. See setAeNameLocked(). -->
-            <input type="text" id="ae-market" placeholder="Select an AE above" disabled/>
+            <label class="lbl">Market <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— autofills when a roster AE is picked, but always editable in case it's missing or the AE's market has changed</span></label>
+            <!-- Market (2026-08-06, ALWAYS editable per Claire 2026-08-06 — an earlier
+                 version disabled this until a real AE was picked, but that meant there
+                 was no way to fill in a missing market for an existing AE, or correct
+                 one that changed, without going through the admin roster first. Stays
+                 unlocked regardless of pick state now, unlike Name/Trello which still
+                 lock on a real pick — see setAeNameLocked(). -->
+            <input type="text" id="ae-market" placeholder="e.g. Southeast"/>
           </div>
           <input type="hidden" id="ae-email"/>
         </div>
@@ -951,22 +952,20 @@ async function loadAeRoster(groupId) {
 
 // Mirrors setBizNameLocked() — Name AND Trello Handle (2026-08-06, widened from just
 // Name — per Claire, both identify the same real person once picked) lock once a real
-// AE is picked. Market runs the OPPOSITE direction: disabled until a real AE is picked
-// (it's that person's on-file reporting territory, not something to invent for a
-// freehand entry), then editable in case it needs a one-off correction for this
-// submission. Email stays hidden/uneditable either way (unchanged). No
-// onBizNameEdited-equivalent safety net here: unlike find_or_create_client, the AE
-// roster is admin-managed only and never auto-created from a submission by name match,
-// so there's nothing for a stray edit to corrupt — the disabled inputs alone are the
-// whole protection needed.
+// AE is picked. Market stays ALWAYS editable regardless of pick state (changed
+// 2026-08-06, same day — an earlier version disabled it until a real AE was picked,
+// but that left no way to fill in a missing market for an existing AE, or correct one
+// that's changed, without going through the admin roster first). Email stays hidden/
+// uneditable either way (unchanged). No onBizNameEdited-equivalent safety net here:
+// unlike find_or_create_client, the AE roster is admin-managed only and never
+// auto-created from a submission by name match, so there's nothing for a stray edit to
+// corrupt — the disabled inputs alone are the whole protection needed for Name/Trello.
 function setAeNameLocked(locked) {
   const nameEl = document.getElementById('ae-name');
   const trelloEl = document.getElementById('ae-trello');
-  const marketEl = document.getElementById('ae-market');
   const hint = document.getElementById('ae-name-locked-hint');
   if (nameEl) nameEl.disabled = locked;
   if (trelloEl) trelloEl.disabled = locked;
-  if (marketEl) marketEl.disabled = !locked;
   if (hint) hint.style.display = locked ? 'block' : 'none';
 }
 

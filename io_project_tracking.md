@@ -6913,3 +6913,25 @@ correctly. Re-ran `test-admin-ae-market.js`, `test-admin-strategists.js`,
 `test-service-editor-layout.js`, `test-strategist-dashboard.js`, and
 `test-strategist-mtd-pacing.js` — all pass unchanged, as expected for a
 CSS-only, shared-stylesheet change with zero JS logic touched.
+
+## 2026-08-06 (cont'd) — AE Market: real bug, was locked backwards
+
+Claire caught this live-testing the IO form: `#ae-market` disabled itself
+until a real AE was picked from the roster, then only became editable AFTER a
+pick — inverted from what's actually useful. That meant there was no way to
+fill in a market for an AE who doesn't have one on file yet, or correct one
+that's changed, without going through the admin roster first — exactly the
+kind of case the field exists for.
+
+**Fix**: Market is now always editable, full stop, regardless of pick state.
+Removed the `marketEl.disabled = !locked` line from `setAeNameLocked()` —
+Name and Trello Handle still lock on a real pick (unchanged, that part was
+correct), Market just no longer participates in the lock at all. Still
+autofills from the roster on pick and clears on switching to "— New AE —",
+same as before — only the disabled-state toggle came out.
+
+**Verified**: updated `test-date-redesign-ae-lock.js`'s AE-picker assertions
+(previously asserted the OLD, backwards behavior) to confirm Market stays
+editable before a pick, after a pick, and after switching back to "New AE" —
+and added a case confirming a typed correction to Market survives after a
+real AE is already locked in. `node --check` passes clean.
