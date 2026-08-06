@@ -6416,3 +6416,156 @@ Confirmed the description never leaks into `saveIntakeForm()`'s saved fields.
 Re-ran `test-admin-intake-field-types.js`, `test-intake-optional-field.js`,
 `test-intake-reorder.js`, and `test-intake-field-types.js` — all pass unchanged.
 `node --check` passes clean on both files.
+
+## 2026-08-06 (cont'd) — Per-tactic campaign dates, AE Market field, AE picker lock
+
+Three related IO-form changes confirmed with the AM, planned via ExitPlanMode and
+approved before starting.
+
+**1. Per-tactic campaign dates.** Previously Step 1 had ONE overall Campaign
+Start/Length/End, filled in before any tactic was even selected on Step 2, applied
+uniformly to the whole order. Per the AM: clients often start different tactics at
+different times within the same IO, so this no longer fit — confirmed with Claire
+to remove Step 1's dates entirely (no shared default) and give EVERY selected
+tactic its own Start/Length/End on Step 2, not just media-spend ones. This
+**supersedes** the "Added Campaign Start Date + City/Service Area to Step 1
+required fields" entry earlier today — Campaign Start Date is no longer a Step 1
+field at all.
+
+- `generateCatalogRowHtml()` (index.html) now emits three new cells per row —
+  `#svc-start-{id}` (date), `#svc-length-{id}` (1–12 month select), `#svc-end-{id}`
+  (readonly date) — for every service row across all 17 sections, placed right
+  before the Notes cell. `calcRowEndDate(id)` replaces the old single-shared
+  `calcEndDate()`, same month math, now parametrized per row.
+- This required updating the colgroup/thead in BOTH `renderSectionCards()`
+  branches (spend/no-spend) and `renderMultiTableSection()` (Video/Streaming
+  TV/Audio's multi-sub-table sections) to add 3 new columns, plus mobile CSS
+  labels (`::before` content: 'Start Date'/'Length'/'End Date') matching the
+  existing Fee/Frequency/Spend/Notes pattern.
+- `renderPriceCells()` rewrites each row's Fee/Frequency cells in place and runs
+  more than once (also on dev-group switch) — it clears everything between the
+  service cell and the last (Notes) cell except the Spend input, by identity.
+  The new date cells would have been silently deleted on every re-render without
+  explicitly excluding them by class (`svc-start-cell`/`svc-length-cell`/
+  `svc-end-cell`) the same way Spend is excluded — caught and fixed via a
+  Playwright check that calls `renderPriceCells()` twice and confirms the date
+  inputs and the Notes cell both survive.
+- `syncRowInputs()` now also reads each row's own start/end date into
+  `selected[id].start_date`/`.end_date`, then calls a new
+  `updateDerivedCampaignSummary()` which computes `campaign_start` = earliest
+  start_date and `campaign_end` = latest end_date across all selected line items,
+  writing them into hidden `#campaign-start`/`#campaign-end` inputs (kept in the
+  DOM specifically so). `campaign-length` is left permanently blank — per-tactic
+  lengths can differ, so a single order-wide "length" no longer means anything.
+  This was the deliberate design choice (over rewriting ~10 call sites
+  individually): every existing consumer — review recap, Trello card description,
+  printed PDF header, draft save/load, dev-skip reset — keeps reading those same
+  three ids with **zero changes to its own code**.
+- Two consumers DID need real changes, since a shared summary isn't right for
+  them: `formatCampaignDateRange(originalWorkflow)` now takes the workflow and
+  computes min/max dates from only THAT workflow's own selected line items
+  (previously read the shared Step-1 range) — so a dated Trello card title (e.g.
+  Event Targeting's "Jun 25 - 29 — Acme Corp") reflects that tactic's real flight,
+  not the whole order's. The printed IO PDF's services table gained a new
+  "Flight" column (compact "6/25–6/29" format, matching the strategist portal's
+  own Flight column style) — required updating the table's thead, every data-row
+  colspan/cell count, and the CSS column-width split.
+- Added a new required-field gate at the Step 2→3 transition (`goStep(3)`,
+  alongside the existing spend-minimum gate): every selected tactic must have its
+  own Start Date filled in, or navigation is blocked with the same
+  highlight-and-scroll-to-first-missing pattern the spend gate already uses.
+  `validateStep1()` no longer requires `campaign-start` (removed from its
+  required-fields array) since the field itself no longer exists on Step 1.
+- Draft save/load: `saveDraft()` now calls `syncRowInputs()` first so the derived
+  summary and per-row dates are current before writing; `loadDraft()` restores
+  each row's own start_date/end_date directly into `#svc-start-{id}`/
+  `#svc-end-{id}` from the saved `selected` object (the length `<select>` isn't
+  restored — cosmetic only, since the stored end_date is the actual source of
+  truth). `resetForm()` also now explicitly clears every `select[id^="svc-length-"]`
+  — a `<select>` isn't caught by the existing generic `input[type=...]` clearing
+  loop, same blind spot campaign-length itself had before a 2026-07-13 fix.
+- Line items now carry `start_date`/`end_date` (`submitIO()`'s `lineItems` map) —
+  this is the piece the strategist-portal trigger needs.
+
+  **Still needed from Claire, not yet done — the strategist-portal trigger MUST
+  be updated in lockstep or new orders will feed it null/wrong flight dates:**
+  `create_campaign_lines_from_order()` is confirmed live in production and
+  currently seeds each `campaign_lines` row's `flight_start`/`flight_end` from
+  `new.campaign_start`/`new.campaign_end` (the old order-wide fields). It needs to
+  read `(item->>'start_date')::date`/`(item->>'end_date')::date` from each line
+  item instead, and the paired `campaign_months` seed row needs the same swap for
+  its `date_trunc('month', ...)` calc. Per this session's established
+  two-step convention for editing a live function I don't have the current text
+  of: **please run `select pg_get_functiondef('create_campaign_lines_from_order'::regproc);`
+  and paste the result back** so the replacement can be written against what's
+  actually live today, not reconstructed from an earlier tracking-doc draft that
+  may not match after later patches. No migration needed for already-submitted
+  orders — this only changes how orders submitted AFTER the fix get seeded.
+  (Same amendment applies to the not-yet-built Accounting Portal's
+  `revenue_lines.service_start`/`service_end` — seed from the line item's own
+  dates too, once that trigger gets built.)
+
+**2. AE Market field, used in the email instead of client City.** The submission
+email already had a "Market" row, but it silently pulled from `#city` — the
+client's literal city, not the AE's reporting territory, found as a side effect
+of building this feature. Added a `#ae-market` hidden field, filled by
+`applyAePick()` from `a.market` the same way `#ae-email` already works (roster-
+pick only — an AE typed in freehand has no market on file, so the row just won't
+render). Swapped the email's `marketVal` source from `#city` to `#ae-market`.
+
+Admin side (`admin/index.html`): new "Market" text input in the AE editor form,
+new "Market" column in the AE roster table, `adminSaveAe()`'s payload now
+includes `market: market || null`, `adminNewAe()`/`adminEditAe()` clear/populate
+the field.
+
+**Still needed from Claire — new column + two RPC bodies I don't have the live
+text of:** a new `market text` column on the `ae` table, and matching updates to
+`admin_save_ae` (to accept/write `p_data.market`) and `get_group_aes` (to
+`select` and return it — `applyAePick()` reads `a.market` from whatever this RPC
+returns). Please paste back `select pg_get_functiondef('admin_save_ae'::regproc);`
+and `select pg_get_functiondef('get_group_aes'::regproc);` so these can be
+patched against what's actually live. Until then the new Market field/column in
+the UI is inert — it saves and reads `market` correctly in the JS, but the RPCs
+themselves will just ignore/never-return that key.
+
+**3. AE picker "(New AE)" + lock.** Mirrors the Client picker exactly: the blank
+option changed from "— Select your name —" to "— New AE —"; picking a real name
+now sets a new `selectedAeId` and calls `setAeNameLocked(true)`, which disables
+`#ae-name` (Trello handle/email/market stay editable either way, same principle
+as the Client lock); switching back to "— New AE —" clears
+name/trello/email/market and unlocks. Skipped the Client picker's
+`onBizNameEdited`-equivalent safety net on purpose — that exists specifically
+because `find_or_create_client` does server-side name-matching that a stray edit
+could corrupt into a duplicate client record; there's no AE equivalent (the AE
+roster is admin-managed only, never auto-created from a submission), so the
+disabled input alone is the whole protection needed. `resetForm()` now also
+resets `selectedAeId`/unlocks on "Submit Another IO", matching the existing
+Client-picker reset right next to it.
+
+**Verified via Playwright** (five new test files in scratchpad): per-row date
+fields render and sync into `selected[id]` correctly for two tactics with
+different dates on the same order; the derived campaign_start/end summary comes
+out as true min/max, campaign-length stays blank; `calcRowEndDate()`'s month
+math; `renderPriceCells()` called twice doesn't delete the date cells or disturb
+the Notes cell's position; `validateStep1()` no longer blocks on a missing
+campaign-start; the new Step 2→3 date-required gate blocks and then clears
+correctly; `submitIO()`'s line-item shape carries start_date/end_date (checked
+via source text — this function makes real network/Trello calls that can't run
+headless); `formatCampaignDateRange(workflow)` uses only that workflow's own
+tactics' dates and doesn't bleed in a second tactic's different dates on the
+same order; AE picker autofill including market, lock-on-pick, clear-and-unlock
+on "New AE"; admin AE editor's Market field save/populate/clear and the roster
+table's new column. Also re-ran `test-io-step1-required-fields.js` (its
+`missingCampaignStartBlocks`/`campaignStartHighlighted` checks now correctly
+read `false` — expected, since that requirement was intentionally removed today;
+every other check in that file — city, business name, email — still passes) and
+confirmed `test-multicandidate-override.js`'s existing failures are unrelated/
+pre-existing (unchanged whether today's edits are applied or not, matches the
+same finding logged earlier this session). `node --check` passes clean on both
+`index.html` and `admin/index.html`.
+
+**Not yet verifiable without a live test IO:** the actual strategist-portal
+trigger update (blocked on Claire pasting back the live function text above) —
+once that ships, please submit one real test IO with two tactics on different
+flight dates and confirm both `campaign_lines` rows come out with their OWN
+correct `flight_start`/`flight_end`, not the same shared range.
