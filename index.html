@@ -586,7 +586,7 @@ textarea{resize:vertical;min-height:70px}
       <div class="card-head"><h3>Selected Services Summary</h3></div>
       <div style="padding:0">
         <table class="summary-table" id="summary-table">
-          <thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Notes</th></tr></thead>
+          <thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead>
           <tbody id="summary-body"></tbody>
         </table>
       </div>
@@ -3029,25 +3029,32 @@ function buildReview() {
     // Hosting proration note
     const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
     const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' | ') || '—';
-    rows.push(`<tr><td>${esc(data.label)}</td><td>${feeDisplay}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
+    // Flight (2026-08-06) — this tactic's own Start/End, same compact MM/DD/YY the AE
+    // just typed on Step 2 (data.start_date/end_date are the stored ISO values;
+    // formatISOToMMDDYY() converts back for display, same helper the date inputs
+    // themselves use).
+    const flightDisplay = (data.start_date || data.end_date)
+      ? `${formatISOToMMDDYY(data.start_date) || '—'}–${formatISOToMMDDYY(data.end_date) || '—'}`
+      : '—';
+    rows.push(`<tr><td>${esc(data.label)}</td><td>${feeDisplay}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Add prorated hosting line if applicable
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
       const h = hostingChoices[id];
       oneTime += h.proratedAmt;
-      rows.push(`<tr style="background:#F0FDF4"><td style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td>—</td><td style="font-size:11px;color:#166534">${h.note}</td></tr>`);
+      rows.push(`<tr style="background:#F0FDF4"><td style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td>—</td><td>—</td><td style="font-size:11px;color:#166534">${h.note}</td></tr>`);
     }
     // Add auto setup-fee line if this service's spend is under its configured threshold
     const setupFeeInfo = getSetupFeeInfo(id, data.spend || 0);
     if (setupFeeInfo) {
       oneTime += setupFeeInfo.amount;
-      rows.push(`<tr style="background:#F0FDF4"><td style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td>—</td><td style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
+      rows.push(`<tr style="background:#F0FDF4"><td style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td>—</td><td>—</td><td style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
     }
   });
 
   document.getElementById('total-onetime').textContent = fmt(oneTime);
   document.getElementById('total-monthly').textContent = fmt(monthly) + '/mo';
   document.getElementById('total-items').textContent = count;
-  document.getElementById('summary-body').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">No services selected</td></tr>';
+  document.getElementById('summary-body').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">No services selected</td></tr>';
 
   // Workflows
   const chips = [...workflows].map(w => `<span class="chip green">${w}</span>`).join('');
@@ -3063,11 +3070,15 @@ function buildReview() {
     ['Phone', document.getElementById('contact-phone').value || '—'],
     ['City', document.getElementById('city').value || '—'],
     ['AE', document.getElementById('ae-name').value || '—'],
-    ['Campaign Notes', document.getElementById('campaign-notes').value || '—'],
+    // Additional Notes (2026-08-06, renamed from "Campaign Notes") — now sources
+    // Step 2's Special Instructions field instead of Step 1's own Campaign Notes
+    // textarea. Campaign Length/Start/End dropped from this recap entirely — they're
+    // per-tactic now (see the Selected Services Summary's new Flight column above),
+    // so a single order-wide value here no longer means anything. The Step 1
+    // Campaign Notes field itself is untouched — still shown separately in the
+    // Trello card description and printed IO, just no longer duplicated here.
+    ['Additional Notes', document.getElementById('special-instructions')?.value || '—'],
     ['KOC', [document.getElementById('koc-date').value, document.getElementById('koc-time').value].filter(Boolean).join(' at ') || '—'],
-    ['Campaign Length', (document.getElementById('campaign-length').value ? document.getElementById('campaign-length').value + ' Months' : '—')],
-    ['Campaign Start', document.getElementById('campaign-start').value || '—'],
-    ['Campaign End', document.getElementById('campaign-end').value || '—'],
   ];
   document.getElementById('client-recap').innerHTML = recap.map(([k,v]) =>
     `<div><span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${k}</span><p style="font-size:13px;margin-top:3px">${esc(v)}</p></div>`
@@ -3779,7 +3790,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           const allLists = await listsRes.json();
           if (!Array.isArray(allLists)) throw new Error('Could not fetch board lists');
 
-          const existingList = allLists.find(l => l.name.toLowerCase() === bizName.toLowerCase());
+          // Matches either the plain bizName (older lists, created before the AE suffix
+          // below existed) or "bizName - AE Name" (2026-08-06 onward) — broadened from an
+          // exact-equality match so a returning client whose stored trello_list_id was
+          // ever lost can still be found by name, not just newly-created ones.
+          const bizNameLower = bizName.toLowerCase();
+          const existingList = allLists.find(l => {
+            const n = l.name.toLowerCase();
+            return n === bizNameLower || n.startsWith(bizNameLower + ' - ');
+          });
           if (existingList) {
             clientList = existingList;
             console.log('Found existing list by name (no stored id yet):', clientList.name);
@@ -3791,10 +3810,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             const newListPos = sortedForNew.length >= 5
               ? (sortedForNew[3].pos + sortedForNew[4].pos) / 2
               : 'bottom';
+            // New list title includes the AE (2026-08-06, per Claire — "Client - AE Name")
+            // so the board shows who owns each client at a glance. Falls back to just
+            // bizName if no AE name was entered (shouldn't happen — AE name is a required
+            // Step 1 field — but this is display text, not worth throwing over).
+            const newListName = aeName ? `${bizName} - ${aeName}` : bizName;
             const newListRes = await fetch(PROXY, {
               method: 'POST',
               headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-              body: JSON.stringify({ target: 'trello_create_list', board_id: selectedGroup.trello_board_id, name: bizName, pos: newListPos })
+              body: JSON.stringify({ target: 'trello_create_list', board_id: selectedGroup.trello_board_id, name: newListName, pos: newListPos })
             });
             clientList = await newListRes.json();
             if (!clientList.id) throw new Error('Failed to create client list');

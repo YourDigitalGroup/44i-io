@@ -6665,3 +6665,57 @@ Market and re-disables it while unlocking Name/Trello. Re-ran
 (the one pre-existing, previously-flagged `test-multicandidate-override.js`
 failure is unrelated to any of today's changes, confirmed again). `node --check`
 passes clean.
+
+## 2026-08-06 (cont'd) — Review page cleanup + Trello list title now includes the AE
+
+Three more same-day requests from Claire's live testing:
+
+**1. Client Info Recap cleanup.** Removed the Campaign Length/Start/End rows
+entirely — now that dates are per-tactic (see above), a single order-wide value
+here doesn't mean anything, and the per-tactic dates already show in the
+Selected Services Summary (below). The recap's "Campaign Notes" row is renamed
+"Additional Notes" and now sources Step 2's Special Instructions field instead
+of Step 1's own Campaign Notes textarea — Special Instructions is the more
+relevant free text an AE actually fills in now. The Step 1 Campaign Notes field
+itself is untouched (still a real field, still shown separately in the Trello
+card description and printed IO) — only what the on-screen recap displays
+changed.
+
+**2. Selected Services Summary gets a Flight column.** New column between
+Recurring and Notes showing each tactic's own Start–End in the same compact
+MM/DD/YY the AE just typed on Step 2 (`formatISOToMMDDYY()`, same helper the
+date inputs themselves use) — "—" for anything with no dates yet (hosting
+proration/setup-fee sub-rows).
+
+**3. New client Trello lists now get "Client - AE Name" instead of just
+"Client".** Per Claire — the board should show at a glance who owns each
+client. Only applies to genuinely NEW lists; the returning-client lookup path
+(via the client's stored `trello_list_id`) is untouched. Widened the
+name-search FALLBACK match (used only when a client has no stored list id yet)
+from exact equality to also match `"bizName - "` as a prefix, so a returning
+client whose stored id was ever lost can still be found by name even though
+the list itself is no longer named exactly `bizName`.
+
+**Verified via Playwright** (`test-review-page-updates.js`): the recap no
+longer shows Campaign Length/Start/End; the "Additional Notes" row shows Step
+2's Special Instructions text, not Step 1's Campaign Notes text; the summary
+table's header includes "Flight" and a row with dates renders them in
+MM/DD/YY. Trello list-naming logic verified by reading the generated code
+directly (network calls aren't testable via Playwright) — confirmed
+`newListName` = `` `${bizName} - ${aeName}` `` for new lists, and the broadened
+fallback match checks both exact-equality and the `"bizName - "` prefix.
+`node --check` passes clean.
+
+**Parked, not yet built — needs a design decision, which is now made:**
+assigning digital/social/web strategists to tactic cards based on which
+service was sold. Asked Claire two clarifying questions before building
+anything: (1) team-level tag vs. a specific per-client-assigned person — she
+chose **per-client assigned strategist** (each client has its own designated
+digital/social/web strategist, not one fixed handle per discipline); (2) how a
+service maps to a discipline — she chose **a new per-service field**
+(Strategist Discipline: none/digital/social/web), not inferred from the
+existing Section. This is a bigger build (new strategist roster + per-client
+assignment UI + new services column + submission-time card-tagging logic,
+similar scope to the AE roster feature) — writing a full plan via
+`EnterPlanMode` before touching any code, per this session's established
+convention for multi-file/schema-affecting changes.
