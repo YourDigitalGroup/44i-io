@@ -45,6 +45,7 @@
       <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
       <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
       <button id="section-tab-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
+      <button id="section-tab-strategists" onclick="adminSection('strategists')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Strategists</button>
       <button id="section-tab-legal" onclick="adminSection('legal')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Legal Text</button>
       <button id="section-tab-notifications" onclick="adminSection('notifications')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Notifications</button>
       <button id="section-tab-reconcile" onclick="adminSection('reconcile')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Reconcile Lists</button>
@@ -311,6 +312,21 @@
               <input type="text" id="admin-client-biztype" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Digital Strategist</label>
+              <select id="admin-client-digital-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+            </div>
+            <div>
+              <label class="lbl">Social Strategist</label>
+              <select id="admin-client-social-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+            </div>
+            <div>
+              <label class="lbl">Web Strategist</label>
+              <select id="admin-client-web-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+            </div>
+          </div>
+          <p style="font-size:10px;color:var(--muted);margin-top:-6px;margin-bottom:16px">Whichever strategist is assigned here gets tagged on this client's Trello tactic cards, alongside the AM/AE, for any service carrying a matching Strategist Discipline. Manage the roster under the Strategists tab.</p>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
             <div>
               <label class="lbl">Trello List ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— manual override; leave as-is unless you know what you're changing</span></label>
@@ -550,6 +566,17 @@
                 <select id="admin-svc-workflow" onchange="onWorkflowChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-workflow-new" placeholder="e.g. Website" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently splitting one tactic into two.</p>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="lbl">Strategist Discipline <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which team owns fulfillment for this service. When sold, the client's assigned strategist for this discipline (set on their Client Profile) gets tagged on this tactic's Trello card alongside the AM/AE. Leave "None" if no strategist should be tagged.</span></label>
+                <select id="admin-svc-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                  <option value="">None</option>
+                  <option value="digital">Digital</option>
+                  <option value="social">Social</option>
+                  <option value="web">Web</option>
+                </select>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px">
@@ -811,6 +838,56 @@
 
         <div id="admin-ae-table"></div>
       </div><!-- /section-ae -->
+
+      <!-- ── SECTION: Strategists (digital/social/web roster, global — not group-scoped,
+           unlike AEs) — each client gets one of each discipline assigned on their Client
+           Profile; whichever strategist is assigned gets tagged on that client's Trello
+           tactic cards for services carrying that discipline (services.
+           strategist_discipline, set in the Service editor's Behavior & Workflow section). ── -->
+      <div id="section-strategists" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Strategists</p>
+            <p style="font-size:11px;color:var(--muted)">Digital/social/web fulfillment team, assigned per client on the Client Profile editor — tagged automatically on Trello tactic cards based on each service's Strategist Discipline.</p>
+          </div>
+          <button id="admin-new-strategist-btn" onclick="adminNewStrategist()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Strategist</button>
+        </div>
+
+        <div id="admin-strategist-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-strategist-form-title">New Strategist</p>
+          <input type="hidden" id="admin-strategist-original-id"/>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">Name</label>
+              <input type="text" id="admin-strategist-name" placeholder="e.g. Jordan Smith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Trello Handle</label>
+              <input type="text" id="admin-strategist-trello" placeholder="@jordansmith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+            <div>
+              <label class="lbl">Email</label>
+              <input type="email" id="admin-strategist-email" placeholder="jordan@agency.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">Discipline <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which of the three Client Profile dropdowns this person can be assigned to</span></label>
+              <select id="admin-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <option value="digital">Digital</option>
+                <option value="social">Social</option>
+                <option value="web">Web</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onclick="adminSaveStrategist()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Strategist</button>
+            <button onclick="adminCancelStrategistEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+          </div>
+        </div>
+
+        <div id="admin-strategist-table"></div>
+      </div><!-- /section-strategists -->
 
       <!-- ── SECTION: Legal Text (Agreement & Disclaimers, global — same for every group) ── -->
       <div id="section-legal" style="display:none">
@@ -1663,7 +1740,7 @@ function showAdmin(show) {
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
   // Twelve sections: groups | orders | clients | map | sections | intake | ae | legal | notifications | reconcile | users | accounting
-  const sections = ['groups','orders','clients','map','sections','intake','ae','legal','notifications','reconcile','users','accounting'];
+  const sections = ['groups','orders','clients','map','sections','intake','ae','strategists','legal','notifications','reconcile','users','accounting'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups', 'clients', 'users', and 'accounting' need display:flex specifically —
@@ -1712,6 +1789,10 @@ function adminSection(section) {
     // Orders/Clients: any admin can manage any group's AE roster, in case someone is
     // out), so the "+ New AE" button is no longer hidden for AM logins.
     loadAdminAes();
+  } else if (section === 'strategists') {
+    // Same "any admin can manage" access level as AEs/Clients — not group-scoped, so
+    // there's no group-based restriction to apply here either way.
+    loadAdminStrategists();
   } else if (section === 'legal') {
     // Legal text is super-admin only (same restriction level as pricing/services/
     // sections) — AM logins can view the current text but Save is disabled, matching
@@ -3350,6 +3431,167 @@ async function adminToggleAeActive(id, makeActive) {
   }
 }
 
+// ── STRATEGISTS (2026-08-06) ──────────────────────────────────
+// Global roster (NOT group-scoped, unlike AEs — a digital/social/web strategist is an
+// internal fulfillment role that works across every white-label group) — each client
+// gets one of each discipline assigned on their Client Profile (see
+// populateStrategistDropdown() near the Clients section), and submitIO() tags whichever
+// one is assigned on that client's Trello tactic cards for services carrying a matching
+// services.strategist_discipline.
+let ALL_STRATEGISTS = [];
+
+// Lazy-load, used by the Client Profile editor (which just needs the roster to populate
+// its 3 dropdowns and doesn't need to force a refetch every time it opens) — contrast
+// with loadAdminStrategists() below, which always refetches since the Strategists tab
+// itself needs to show current data.
+async function ensureStrategistsLoaded() {
+  if (ALL_STRATEGISTS.length) return;
+  try {
+    ALL_STRATEGISTS = await sb('rpc/admin_get_strategists', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+  } catch(e) {
+    console.warn('Could not load strategists roster:', e.message);
+  }
+}
+
+async function loadAdminStrategists() {
+  const el = document.getElementById('admin-strategist-table');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    ALL_STRATEGISTS = await sb('rpc/admin_get_strategists', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+    renderAdminStrategistList();
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading strategists: ${esc(e.message)}</p>`;
+  }
+}
+
+function renderAdminStrategistList() {
+  const el = document.getElementById('admin-strategist-table');
+  if (!ALL_STRATEGISTS.length) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No strategists yet.</p>`;
+    return;
+  }
+  const disciplineLabel = { digital: 'Digital', social: 'Social', web: 'Web' };
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello Handle</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Email</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Discipline</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  ALL_STRATEGISTS.forEach(s => {
+    const inactive = !s.active;
+    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const editBtn = `<button onclick="adminEditStrategist('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text);margin-right:4px">Edit</button>`;
+    const deactivateBtn = `<button onclick="adminToggleStrategistActive('${esc(s.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
+    html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
+      <td style="padding:8px 10px">${esc(s.name)}${inactiveBadge}</td>
+      <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(s.trello_handle || '—')}</td>
+      <td style="padding:8px 10px;font-size:11px">${esc(s.email || '—')}</td>
+      <td style="padding:8px 10px">${disciplineLabel[s.discipline] || '—'}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+}
+
+function adminNewStrategist() {
+  document.getElementById('admin-strategist-form-title').textContent = 'New Strategist';
+  document.getElementById('admin-strategist-original-id').value = '';
+  document.getElementById('admin-strategist-name').value = '';
+  document.getElementById('admin-strategist-trello').value = '';
+  document.getElementById('admin-strategist-email').value = '';
+  document.getElementById('admin-strategist-discipline').value = 'digital';
+  document.getElementById('admin-strategist-form').style.display = 'block';
+  document.getElementById('admin-strategist-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminEditStrategist(id) {
+  const s = ALL_STRATEGISTS.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('admin-strategist-form-title').textContent = 'Edit Strategist — ' + s.name;
+  document.getElementById('admin-strategist-original-id').value = s.id;
+  document.getElementById('admin-strategist-name').value = s.name || '';
+  document.getElementById('admin-strategist-trello').value = s.trello_handle || '';
+  document.getElementById('admin-strategist-email').value = s.email || '';
+  document.getElementById('admin-strategist-discipline').value = s.discipline || 'digital';
+  document.getElementById('admin-strategist-form').style.display = 'block';
+  document.getElementById('admin-strategist-form').scrollIntoView({behavior:'smooth'});
+}
+
+function adminCancelStrategistEdit() {
+  document.getElementById('admin-strategist-form').style.display = 'none';
+}
+
+async function adminSaveStrategist() {
+  const isNew = !document.getElementById('admin-strategist-original-id').value;
+  const name = document.getElementById('admin-strategist-name').value.trim();
+  const trelloHandle = document.getElementById('admin-strategist-trello').value.trim();
+  const email = document.getElementById('admin-strategist-email').value.trim();
+  const discipline = document.getElementById('admin-strategist-discipline').value;
+  if (!name) { showToast('Name is required', 'error'); return; }
+
+  const payload = { name, trello_handle: trelloHandle || null, email: email || null, discipline };
+  if (isNew) payload.active = true;
+  try {
+    await sb('rpc/admin_save_strategist', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_strategist_id: isNew ? null : document.getElementById('admin-strategist-original-id').value,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'Strategist created!' : 'Strategist updated!');
+    document.getElementById('admin-strategist-form').style.display = 'none';
+    await loadAdminStrategists();
+  } catch(e) {
+    showToast('Error saving strategist: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleStrategistActive(id, makeActive) {
+  const s = ALL_STRATEGISTS.find(x => x.id === id);
+  if (!s) return;
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${s.name}?`)) return;
+  try {
+    await sb('rpc/admin_save_strategist', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_strategist_id: id,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`Strategist ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadAdminStrategists();
+  } catch(e) {
+    showToast('Error updating strategist: ' + e.message, 'error');
+  }
+}
+
+// Populates one of the Client Profile editor's 3 strategist dropdowns, filtered to a
+// single discipline (so the "Digital Strategist" select only ever lists people tagged
+// digital, etc.) — see ensureStrategistsLoaded() above for the lazy-load this depends on.
+function populateStrategistDropdown(selectId, discipline, selectedId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const options = ALL_STRATEGISTS.filter(s => s.discipline === discipline && s.active !== false);
+  sel.innerHTML = '<option value="">— None —</option>' +
+    options.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+  sel.value = selectedId || '';
+}
+
 // ── USERS (admin_users login accounts, 2026-07-18) ──────────────
 // Manages the table admin logins are validated against — previously only editable via
 // raw SQL. Keyed by NAME (admin_users has no separate id exposed anywhere else in this
@@ -4379,7 +4621,7 @@ function renderAdminClients() {
   el.innerHTML = html;
 }
 
-function adminNewClient() {
+async function adminNewClient() {
   document.getElementById('admin-client-form-title').textContent = 'New Client';
   document.getElementById('admin-client-original-id').value = '';
   ['name','contact-name','contact-email','contact-phone','website','city','biztype','trello-list-id'].forEach(f => {
@@ -4387,11 +4629,15 @@ function adminNewClient() {
     if (el) el.value = '';
   });
   populateClientGroupDropdown('admin-client-group', null);
+  await ensureStrategistsLoaded();
+  populateStrategistDropdown('admin-client-digital-strategist', 'digital', null);
+  populateStrategistDropdown('admin-client-social-strategist', 'social', null);
+  populateStrategistDropdown('admin-client-web-strategist', 'web', null);
   document.getElementById('admin-client-form').style.display = 'block';
   document.getElementById('admin-client-form').scrollIntoView({behavior:'smooth'});
 }
 
-function adminEditClient(id) {
+async function adminEditClient(id) {
   const c = ALL_CLIENTS.find(x => x.id === id);
   if (!c) return;
   document.getElementById('admin-client-form-title').textContent = 'Edit Client — ' + c.name;
@@ -4405,6 +4651,10 @@ function adminEditClient(id) {
   document.getElementById('admin-client-biztype').value = c.business_type || '';
   document.getElementById('admin-client-trello-list-id').value = c.trello_list_id || '';
   populateClientGroupDropdown('admin-client-group', c.group_id);
+  await ensureStrategistsLoaded();
+  populateStrategistDropdown('admin-client-digital-strategist', 'digital', c.digital_strategist_id);
+  populateStrategistDropdown('admin-client-social-strategist', 'social', c.social_strategist_id);
+  populateStrategistDropdown('admin-client-web-strategist', 'web', c.web_strategist_id);
   document.getElementById('admin-client-form').style.display = 'block';
   document.getElementById('admin-client-form').scrollIntoView({behavior:'smooth'});
 }
@@ -4430,6 +4680,9 @@ async function adminSaveClient() {
     city: document.getElementById('admin-client-city').value.trim(),
     business_type: document.getElementById('admin-client-biztype').value.trim(),
     trello_list_id: document.getElementById('admin-client-trello-list-id').value.trim() || null,
+    digital_strategist_id: document.getElementById('admin-client-digital-strategist').value || null,
+    social_strategist_id: document.getElementById('admin-client-social-strategist').value || null,
+    web_strategist_id: document.getElementById('admin-client-web-strategist').value || null,
   };
   try {
     await sb('rpc/admin_save_client', {
@@ -4878,6 +5131,7 @@ function adminNewService() {
   document.getElementById('admin-svc-billing').value = 'one_time';
   document.getElementById('admin-svc-unit').value = '';
   document.getElementById('admin-svc-koc').value = 'none';
+  document.getElementById('admin-svc-strategist-discipline').value = '';
   document.getElementById('admin-svc-hosting-prompt').value = '';
   document.getElementById('admin-svc-standalone-hosting').value = '';
   document.getElementById('admin-svc-auto-select').value = '';
@@ -4923,6 +5177,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-cpm-adjustment').checked = !!s.is_cpm_adjustment;
   document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
   document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
+  document.getElementById('admin-svc-strategist-discipline').value = s.strategist_discipline || '';
   document.getElementById('admin-svc-trello-template-ref').value = s.trello_template_ref || '';
   document.getElementById('admin-svc-trello-template-type').value = s.trello_template_type || 'list';
   document.getElementById('admin-svc-auto-setup').value = s.auto_add_setup_fee ? 'true' : 'false';
@@ -5058,6 +5313,7 @@ async function adminSaveService() {
     is_cpm_adjustment: isCpmAdjustmentFinal,
     retail_cpm: retailCpmFinal,
     koc_requirement: document.getElementById('admin-svc-koc').value,
+    strategist_discipline: document.getElementById('admin-svc-strategist-discipline').value || null,
     intake_form_id: document.getElementById('admin-svc-intake').value || null,
     workflow: workflowVal,
     trello_template_ref: document.getElementById('admin-svc-trello-template-ref').value.trim() || null,
