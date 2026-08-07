@@ -7281,3 +7281,76 @@ long typed note wraps across several visible lines inside it. Re-ran
 `test-date-notes-fix.js` and `test-tactic-dates-fixes.js` — both still pass
 unchanged (their `.notes-field` selectors already worked generically across either
 tag).
+
+### 2026-08-07 (cont'd) — Five fixes from Claire's mobile pass, one also fixed on desktop
+
+Claire tested on her phone and sent screenshots of five separate issues. All in
+`index.html`.
+
+**1. Group & AE Info looked cramped on mobile.** Root cause: the "Group & Account
+Info" card used `field-group cols2` — a 2-column grid pairing the single Group
+field against a 4-field AE column. In CSS grid, each column's height is
+independent, so the short Group column left a large block of dead space beneath
+it while the AE column kept going below — that imbalance is real at ANY width, not
+just mobile, so removed `cols2` entirely rather than adding a mobile-only override
+(unlike the fixes below, which stay responsive-only). Now stacks Group above AE
+info unconditionally, same top-to-down flow the Client Information card below it
+already uses for its own single "Business Name" field above its balanced cols2
+pairs. While in there, added a genuine mobile-only stacking rule for the OTHER
+`cols2` pairs (Contact Name/Phone, Email/Website, City/Business Type) — those ARE
+balanced pairs and stay side-by-side on desktop, just cramped as half-width inputs
+on a phone.
+
+**2. The collapse/expand arrow looked like a play button.** It was the raw
+Unicode ▶/▼ characters — several mobile browsers substitute their own colorful
+"media" glyph for those specific code points instead of a plain triangle, which is
+exactly what Claire saw. Replaced with an inline SVG chevron (renders identically
+everywhere; no font/emoji substitution possible), rotated 90° via a new `.chevron`/
+`.chevron.expanded` CSS class instead of swapping characters — `toggleSection()`
+and the Step-1-reset code both updated from `chev.textContent = '▶'/'▼'` to
+`chev.classList.toggle('expanded', ...)`.
+
+**3. Review page's Selected Services Summary — Notes cut off on mobile.** Same root
+cause class as the earlier `svc-table` Notes fix, different table: `.summary-table`
+had no responsive handling at all, so the card's `overflow:hidden` silently clipped
+it on a narrow screen. Wrapped it in a new `.summary-table-scroll{overflow-x:auto}`
+div and gave the table a `min-width:560px` so columns stay readable instead of all
+5 getting squeezed illegibly thin — same horizontal-scroll-safety-net pattern used
+for the service tables.
+
+**4. Printed IO — long notes didn't wrap.** A plain table cell only wraps at
+existing whitespace; a long unbroken string (Claire's test text had no spaces at
+all) has nowhere to break, so it just overflowed the Notes column instead. Added
+`overflow-wrap:anywhere;word-break:break-word` to `table.services tbody td` (covers
+Notes and the service-name column, in case of an unusually long label too) — forces
+a break even with no natural whitespace to break at.
+
+**5. Printed IO still showed the old order-wide Campaign Details** (Start Date/End
+Date/Term), left over from before per-tactic dates existed. When per-tactic
+Start/End replaced the shared Campaign Dates card (2026-08-06), only the STEP 1 UI
+card was removed — the printed IO's own template was never updated to drop these
+three fields, so it kept showing the derived earliest-start/latest-end/blank-term
+values, redundant with (and potentially confusing against) each service's own real
+Flight column in the Services table below it. Removed Start Date/End Date/Term
+from the printed "Campaign Details" section entirely — Kick-Off Call stays (it's
+KOC scheduling, unrelated to flight dates). Removed the now-unused
+`campStart`/`campEnd`/`campLength` locals from `buildIoDocumentHtml()`; the
+underlying `#campaign-start`/`#campaign-end`/`#campaign-length` hidden fields
+themselves are untouched (still written by `updateDerivedCampaignSummary()` and
+still read by the Supabase order record/draft save-restore — this was a display-
+only removal, scoped to what actually prints).
+
+**Verified**: `node --check` passes. Re-ran every existing Playwright regression
+test from today's earlier fixes (`test-date-notes-fix.js`,
+`test-tactic-dates-fixes.js`, `test-notes-textarea-and-width.js`) — all still pass
+unchanged. New `test-mobile-and-print-fixes.js` (scratchpad-only): confirms the
+chevron renders as an SVG (no ▶/▼ glyph anywhere in its content) and that
+`toggleSection()` correctly adds/removes the `.expanded` class. Rendered the REAL
+Group & AE Info card markup with the page's actual CSS at a 390px mobile width and
+screenshotted it — visually confirms Group now sits cleanly stacked above AE info
+with no dead space. Items 3-5 (summary-table scroll, print-notes wrapping, removed
+campaign-details fields) are CSS/print-layout changes not independently
+screenshotted this round — reasoned through from the same root-cause pattern
+already confirmed working for the analogous `svc-table` fixes earlier today; worth
+Claire's own look on the next test IO to confirm print-specific rendering (browser
+print/PDF engines can differ slightly from on-screen rendering).
