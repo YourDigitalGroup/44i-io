@@ -73,11 +73,11 @@ textarea{resize:vertical;min-height:70px}
 .svc-table col.c-fee{width:96px}
 .svc-table col.c-freq{width:104px}
 .svc-table col.c-spend{width:120px}
-.svc-table col.c-start{width:78px}
-.svc-table col.c-end{width:78px}
+.svc-table col.c-start{width:118px}
+.svc-table col.c-end{width:118px}
 .svc-table col.c-notes{width:auto}
 .svc-table td.svc-start-cell,.svc-table td.svc-end-cell{padding:6px 6px}
-.svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input{font-size:11px;padding:4px 5px;text-align:center}
+.svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input{font-size:11px;padding:4px 5px;width:100%;box-sizing:border-box}
 .svc-table td:nth-child(2){white-space:normal;word-break:normal;overflow-wrap:anywhere}
 .svc-table td.svc-freq{color:var(--muted);font-size:11.5px;text-align:right}
 .svc-table td.right{overflow:hidden;text-overflow:ellipsis;text-align:right;color:var(--muted)}
@@ -190,6 +190,9 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td.svc-start-cell input,
   .svc-table td.svc-end-cell input {
     width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left;
+    /* Same iOS Safari native-date-chrome overflow fix as the Campaign Dates fields
+       below — without it these per-row date inputs overflow their card on phone too. */
+    -webkit-appearance: none; appearance: none; min-height: 40px;
   }
 
   /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
@@ -2298,44 +2301,26 @@ function fmtPhone(input) {
   input.value = v;
 }
 
-// ── PER-TACTIC CAMPAIGN DATES (MM/DD/YY) ──────────────────────────
+// ── PER-TACTIC CAMPAIGN DATES ──────────────────────────────────────
 // Replaces the old calcRowEndDate()/Length-select design (2026-08-06, per Claire —
-// the 3-field row was too cramped) — Start and End are now both typed directly, no
-// derived Length. Plain text inputs with a digit mask instead of native <input
-// type=date>, both because a native date input can't display a 2-digit year and
-// because the resulting box is narrower — every date is still stored internally as
-// a real ISO string (selected[id].start_date/end_date), only the ON-SCREEN
-// representation is MM/DD/YY. 2-digit year always resolves to 20xx — reasonable for
-// an IO form with no plausible 19xx campaign dates.
-function parseMMDDYY(str) {
-  const m = /^(\d{2})\/(\d{2})\/(\d{2})$/.exec((str || '').trim());
-  if (!m) return null;
-  const mm = parseInt(m[1], 10), dd = parseInt(m[2], 10);
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
-  return `20${m[3]}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
-}
-
+// the 3-field row was too cramped) — Start and End are now both picked directly, no
+// derived Length. Native <input type=date> (reverted 2026-08-07, per Claire, back
+// from a brief MM/DD/YY-masked-text-input attempt — the calendar picker is worth
+// more than the few extra pixels of column width). Every date is stored internally
+// as a real ISO string (selected[id].start_date/end_date) — same value the native
+// input already produces, so no separate parsing step is needed.
+// formatISOToMMDDYY() is kept for review/print display, where a compact "8/15/26"
+// reads better than the native input's own locale format.
 function formatISOToMMDDYY(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
   return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : '';
 }
 
-// Auto-inserts slashes as the AE types digits — same masking approach as fmtPhone().
-// Fires on every keystroke (oninput); only stores into selected[id] once a full valid
-// date is present, same "wait for a complete value" behavior updateSpend()/etc. rely
-// on their own onchange for (this uses oninput instead so the auto-check-the-row
-// behavior — see autoCheckIfNeeded() — kicks in the moment a real date lands, not only
-// on blur).
 function updateTacticDate(input, id, which) {
-  let v = input.value.replace(/\D/g, '').slice(0, 6);
-  if (v.length >= 5) v = v.slice(0,2) + '/' + v.slice(2,4) + '/' + v.slice(4);
-  else if (v.length >= 3) v = v.slice(0,2) + '/' + v.slice(2);
-  input.value = v;
-  const iso = parseMMDDYY(v);
-  if (!iso) return;
-  autoCheckIfNeeded(id);
+  const iso = input.value || null;
   input.classList.remove('spend-missing');
   if (selected[id]) selected[id][which] = iso;
+  if (iso) autoCheckIfNeeded(id);
 }
 
 // ── SECTION TOGGLE ────────────────────────────────────────────
@@ -2744,7 +2729,7 @@ function syncRowInputs() {
   Object.keys(selected).forEach(id => {
     const row = document.querySelector(`tr[data-id="${id}"]`);
     if (!row) return;
-    const noteInput = row.querySelector('input[type=text]');
+    const noteInput = row.querySelector('input[type=text].notes-field');
     if (noteInput) selected[id].notes = noteInput.value.trim();
     // Quantity has its own class so it's never mistaken for the ad-spend input below —
     // in practice a row is never both per-unit AND spend-priced (pricing_mode is a single
@@ -2774,10 +2759,8 @@ function syncRowInputs() {
     // already-stored one.
     const startInput = document.getElementById('svc-start-' + id);
     const endInput = document.getElementById('svc-end-' + id);
-    const startIso = startInput ? parseMMDDYY(startInput.value) : null;
-    const endIso = endInput ? parseMMDDYY(endInput.value) : null;
-    if (startIso) selected[id].start_date = startIso;
-    if (endIso) selected[id].end_date = endIso;
+    if (startInput && startInput.value) selected[id].start_date = startInput.value;
+    if (endInput && endInput.value) selected[id].end_date = endInput.value;
   });
   updateDerivedCampaignSummary();
 }
@@ -3033,7 +3016,7 @@ function buildReview() {
     // formatISOToMMDDYY() converts back for display, same helper the date inputs
     // themselves use).
     const flightDisplay = (data.start_date || data.end_date)
-      ? `${formatISOToMMDDYY(data.start_date) || '—'}–${formatISOToMMDDYY(data.end_date) || '—'}`
+      ? `${formatISOToMMDDYY(data.start_date) || '—'}–${data.end_date ? (formatISOToMMDDYY(data.end_date) || '—') : 'Ongoing'}`
       : '—';
     rows.push(`<tr><td>${esc(data.label)}</td><td>${feeDisplay}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Add prorated hosting line if applicable
@@ -3756,7 +3739,7 @@ async function submitIO() {
           if (li.recurring > 0) line += ` — $${li.recurring.toLocaleString()}/mo`;
           if (li.spend > 0) line += ` — $${li.spend.toLocaleString()}/mo spend`;
           if (li.prorated_hosting_amt) line += ` | Prorated: $${li.prorated_hosting_amt.toFixed(2)}`;
-          if (li.start_date || li.end_date) line += ` | Flight: ${li.start_date || '—'} to ${li.end_date || '—'}`;
+          if (li.start_date || li.end_date) line += ` | Flight: ${li.start_date || '—'} to ${li.end_date || 'Ongoing'}`;
           if (li.notes) line += `\n  Notes: ${li.notes}`;
           return line;
         }).join('\n');
@@ -4551,7 +4534,7 @@ function buildIoDocumentHtml() {
       // Flight column (2026-08-06) — compact "8/15–1/10" per-tactic format, same idea
       // as the strategist portal's own Flight column, now that dates live per row.
       const flightDisplay = (data.start_date || data.end_date)
-        ? `${data.start_date ? new Date(data.start_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric'}) : '—'}–${data.end_date ? new Date(data.end_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric'}) : '—'}`
+        ? `${data.start_date ? new Date(data.start_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric'}) : '—'}–${data.end_date ? new Date(data.end_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric'}) : 'Ongoing'}`
         : '—';
       sectionRows += `<tr><td class="svc-name">${esc(data.label)}</td><td class="svc-amt">${amtCol}</td><td class="svc-flight">${esc(flightDisplay)}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
 
@@ -5023,7 +5006,7 @@ function buildDraft() {
     const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     const qtyInput   = row.querySelector('.qty-field');
     const quotedInput = row.querySelector('input[type=number].quoted-price-field');
-    const noteInput  = row.querySelector('input[type=text]');
+    const noteInput  = row.querySelector('input[type=text].notes-field');
     if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
     if (qtyInput && qtyInput.value) draft.qtyValues[id] = qtyInput.value;
     if (quotedInput && quotedInput.value) draft.quotedValues[id] = quotedInput.value;
@@ -5101,10 +5084,9 @@ function loadDraft() {
         // inputs by id, same pattern extended to the new per-row date fields.
         const startInput = document.getElementById('svc-start-' + id);
         const endInput = document.getElementById('svc-end-' + id);
-        // Stored as ISO in selected{}, displayed as MM/DD/YY — same split as
-        // updateTacticDate()/formatISOToMMDDYY() everywhere else.
-        if (startInput && data.start_date) startInput.value = formatISOToMMDDYY(data.start_date);
-        if (endInput && data.end_date) endInput.value = formatISOToMMDDYY(data.end_date);
+        // Stored as ISO in selected{} — native <input type=date> takes that value directly.
+        if (startInput && data.start_date) startInput.value = data.start_date;
+        if (endInput && data.end_date) endInput.value = data.end_date;
       });
       if (d.spendValues) {
         Object.entries(d.spendValues).forEach(([id, val]) => {
@@ -5144,7 +5126,7 @@ function loadDraft() {
         Object.entries(d.noteValues).forEach(([id, val]) => {
           const row = document.querySelector(`tr[data-id="${id}"]`);
           if (!row) return;
-          const input = row.querySelector('input[type=text]');
+          const input = row.querySelector('input[type=text].notes-field');
           if (input) input.value = val;
         });
       }
@@ -5255,10 +5237,10 @@ function resetForm() {
   // above but never had its stale VALUE cleared.
   const campaignLength = document.getElementById('campaign-length');
   if (campaignLength) campaignLength.value = '';
-  // Per-row flight dates (svc-start-*/svc-end-*, 2026-08-06) are plain type=text inputs
-  // now (MM/DD/YY masked, not native <input type=date>) — already caught by the
-  // generic input[type=text] clause in the formPages loop above, no extra reset needed
-  // here (unlike the old Length <select>, which this block used to also clear).
+  // Per-row flight dates (svc-start-*/svc-end-*) are native <input type=date> —
+  // already caught by the generic input[type=date] clause in the formPages loop
+  // above, no extra reset needed here (unlike the old Length <select>, which this
+  // block used to also clear).
   const kocTimeSel = document.getElementById('koc-time');
   if (kocTimeSel) kocTimeSel.value = '';
   document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
@@ -5556,26 +5538,25 @@ function generateCatalogRowHtml(r) {
   // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now
   // (replaces the old single Step-1-wide Campaign Dates card). Length dropped
   // (2026-08-06, per Claire — it made the row too cramped) in favor of both dates
-  // being directly typed; MM/DD/YY (plain text + digit mask, not <input type=date>)
-  // instead of a native date picker, both because a 2-digit year isn't something a
-  // native date input can display and because the resulting box is narrower — same
-  // reasoning as the AE/Client picker's Trello-handle-style compact inputs elsewhere
-  // on this form. updateTacticDate() masks-as-typed and stores the parsed ISO value
-  // into selected[id] directly, mirroring Spend's live-onchange pattern (including
-  // auto-checking the row — see autoCheckIfNeeded()). Placed right before Notes so
-  // the Notes cell stays the LAST child, which renderPriceCells() relies on to find
-  // it (tds[tds.length-1]) — these two are excluded from that function's cell-clearing
-  // loop by class, same way the Spend cell is excluded by its input match.
+  // being picked directly. Native <input type=date> (reverted 2026-08-07, per
+  // Claire, from a brief MM/DD/YY-masked-text-input attempt — the calendar picker
+  // is worth more than the extra column width). updateTacticDate() stores the
+  // input's own ISO value into selected[id] directly, mirroring Spend's live-
+  // onchange pattern (including auto-checking the row — see autoCheckIfNeeded()).
+  // Placed right before Notes so the Notes cell stays the LAST child, which
+  // renderPriceCells() relies on to find it (tds[tds.length-1]) — these two are
+  // excluded from that function's cell-clearing loop by class, same way the Spend
+  // cell is excluded by its input match.
   const dateCells = `
-      <td class="svc-start-cell"><input type="text" inputmode="numeric" maxlength="8" placeholder="MM/DD/YY" id="svc-start-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','start_date')"/></td>
-      <td class="svc-end-cell"><input type="text" inputmode="numeric" maxlength="8" placeholder="MM/DD/YY" id="svc-end-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','end_date')"/></td>`;
+      <td class="svc-start-cell"><input type="date" id="svc-start-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','start_date')"/></td>
+      <td class="svc-end-cell"><input type="date" id="svc-end-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','end_date')"/></td>`;
   return `
     <tr data-id="${esc(r.id)}">
       <td><input type="checkbox" onchange="${onchange}"/></td>
       <td>${esc(r.label)}</td>
       ${spendCell}
       ${dateCells}
-      <td><input type="text" placeholder="Notes..."/></td>
+      <td><input type="text" class="notes-field" placeholder="Notes..."/></td>
     </tr>`;
 }
 

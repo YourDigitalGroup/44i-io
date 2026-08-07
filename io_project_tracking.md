@@ -7084,3 +7084,66 @@ Postgres via Playwright — once the SQL above is live, worth a quick real check
 set a group's Digital/Social/Web defaults, leave one client's overrides blank and
 give another client a real override, submit a test IO for each, and confirm the
 right person lands on the resulting Trello cards.
+
+### 2026-08-07 — Four follow-up fixes: Notes-shows-start-date bug, Group editor button color, calendar picker restored, "Ongoing" flight notation
+
+Four items Claire flagged after the strategist/AM work above, unrelated to that
+feature and to each other. All in `index.html`/`admin/index.html`, no schema
+changes.
+
+**1. Real bug: review page's Notes column showed the tactic's Start Date instead
+of actual notes.** Root cause: `syncRowInputs()` (`index.html`) pulls the per-row
+Notes value via `row.querySelector('input[type=text]')` — grabs the FIRST
+`input[type=text]` in the row. Earlier today's per-tactic date fields were changed
+to masked `type="text"` inputs (to support MM/DD/YY typing) and sit BEFORE the
+Notes input in the row's DOM order, so that selector started matching the Start
+Date box instead once those fields existed. The real Notes input had no
+distinguishing class, so nothing caught the collision. Fixed by giving the Notes
+input a `.notes-field` class and updating the selector everywhere it's read
+(`syncRowInputs()`, the draft-save/-restore pair in `writeDraft()`/`restoreDraft()`
+— same latent bug existed there too, just not yet noticed). Verified via a
+Playwright simulation (`test-date-notes-fix.js`): a row with a Start Date set and
+real notes typed now correctly reports the notes text, not the date.
+
+**2. Group editor's Pricing/Accounting quick-action buttons still showed the old
+bright blue.** Found via grep for hardcoded blue hex literals near Group-page
+markup: the Groups-list row actions used `#EFF6FF`/`#BFDBFE`/`#1d4ed8` (Tailwind
+blue) directly instead of the theme's `--accent` variable — missed in the earlier
+portal-restyle pass because that pass searched for the OLD accent's exact hex
+(`#1C9BD7`/`#1580B5`), not unrelated hardcoded blues that were never tied to the
+accent variable at all. Switched both buttons to
+`rgba(var(--accent-rgb),0.1)`/`rgba(var(--accent-rgb),0.35)`/`var(--accent-dark)`,
+matching the sky palette. (Confirmed out of scope: the Brand Color/Brand Color 2
+picker defaults, still `#1C9BD7` — that's the suggested default for a NEW group's
+own client branding, deliberately left alone per the earlier restyle session.)
+
+**3. Calendar picker restored for per-tactic Start/End dates.** Earlier today's
+MM/DD/YY-masked-text-input redesign (done at Claire's own request, to narrow the
+columns and drop the Length field) turned out to be a net loss for her — she
+asked to go back to picking from a calendar. Reverted `generateCatalogRowHtml()`'s
+date cells to native `<input type="date">`, simplified `updateTacticDate()` to
+read the input's own ISO value directly (no more `parseMMDDYY()` — removed, no
+longer used anywhere), and updated `syncRowInputs()`/draft-restore to match.
+Widened `col.c-start`/`col.c-end` from 78px to 118px so the native date box has
+room, and added the same iOS Safari native-date-chrome overflow fix
+(`-webkit-appearance:none`) already used elsewhere on the form to the mobile
+per-row date inputs, which hadn't needed it before since they were plain text
+inputs. `formatISOToMMDDYY()` is kept — still used for the compact MM/DD/YY
+display in the Selected Services Summary and printed IO, independent of what the
+input itself looks like.
+
+**4. "Ongoing" notation for a tactic with a Start Date but no End Date.** Previously
+showed a trailing "—" (e.g. "08/15/26–—"), easy to misread as a data-entry gap
+rather than an intentional no-end-date campaign. Changed to "Ongoing" (e.g.
+"08/15/26–Ongoing") in three places: the Selected Services Summary review table,
+the printed IO document's Flight column, and the Trello card description's
+per-line-item Flight text. Did not touch the Strategist Portal's own Flight
+column — out of scope for this request, flagging in case Claire wants the same
+treatment there too.
+
+**Verified**: `node --check` on both files. Playwright
+(`test-date-notes-fix.js`, new, scratchpad-only): Notes/Start-Date collision fixed,
+Start Date captured correctly with End Date left blank, and the Ongoing-notation
+string renders as expected. Group editor button color and calendar-picker/CSS
+changes are visual — not verifiable via simulation alone; worth a quick look at
+the live Group editor and Step 2 date pickers to confirm.
