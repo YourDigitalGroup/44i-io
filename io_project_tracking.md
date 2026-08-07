@@ -7504,3 +7504,47 @@ real CSS for both affected rows (Optional Content Support's per-unit preset
 dropdown, a QUR flat-rate row's Quote input) and screenshotted it
 (`screenshot-fee-column-fix.js`, scratchpad-only) — confirms "1 hr" now sits fully
 inside the Fee column and the Quote input shows a plain "$" with no "…" clipping.
+
+### 2026-08-07 (cont'd) — That fix overcorrected (too tiny) + the date-icon polish had zero real effect
+
+Claire's next look: no more clipping/overflow, but now both controls read as
+uncomfortably tiny, and — separately — the date-input polish from a few commits
+back looked completely unchanged.
+
+**Fee column too tight.** Shrinking `quoted-price-field`/the preset `<select>` to
+46px/44px did stop the overflow, but at font-size 9-10px they read as a cramped
+sliver next to the rest of the row. Rather than shrink further or accept the
+tininess, reallocated the column-width budget instead of just squeezing harder:
+`col.c-svc` trimmed 210px→190px (long service names already wrap onto a 2nd line
+via `overflow-wrap:anywhere` — losing 20px there is a much smaller readability
+cost than a cramped Fee column), `col.c-fee` widened 80px→100px — same total
+column-width budget as before, so Notes still stays reachable on the 8-column
+ad-spend tables, just redistributed. With ~76px usable now (vs. the too-tight
+56px), sized both controls back up to a comfortable size: `quoted-price-field`
+46px→60px (placeholder back to "Quote $", the shorter "$" no longer needed), the
+preset `<select>` 44px→58px (font-size back to 11px).
+
+**Date-input polish had no visible effect — real cross-browser bug, not a
+non-issue.** The earlier attempt styled `::-webkit-calendar-picker-indicator`
+(border-radius tweak + toned-down icon opacity) — that pseudo-element is
+Chromium-only; Firefox and Safari ignore it entirely, so if Claire was testing in
+either, the "fix" was genuinely invisible, not a subtle change she missed. Same
+underlying lesson as the `<select>` chevron fix earlier today: stop relying on
+native per-browser chrome for a look that needs to be consistent. Switched these
+date inputs to `appearance:none` plus a hand-drawn SVG calendar icon via
+background-image (identical to the flat-icon language already used for the
+select dropdowns) — renders exactly the same everywhere regardless of browser.
+The REAL native calendar-picker-indicator element is kept at `opacity:0` (not
+removed) so its clickable hotspot still opens the date picker on click/tap; only
+its visual is hidden, with the custom icon drawn in the same spot for looks.
+Applied consistently to both the desktop rule and the mobile stacked-card
+override (which previously reset `padding` without touching the new
+`background-image`, so widened its right-padding too, to keep the icon clear of
+the larger mobile font size).
+
+**Verified**: `node --check` passes. Re-ran every existing Playwright test — all
+still pass unchanged. Re-screenshotted the same Optional Content Support / Custom
+Site rows with the new sizing — both controls now read as normal, comfortable
+form fields instead of a tiny sliver, and the date inputs show a small flat
+calendar icon we drew ourselves rather than relying on the browser's own (and, in
+Firefox/Safari's case, ignoring our previous attempt to restyle it).
