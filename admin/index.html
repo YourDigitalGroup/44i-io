@@ -100,18 +100,53 @@
               </div>
             </div>
             <div style="margin-bottom:12px">
-              <label class="lbl">Account Manager <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— picks name, email, calendar link, and Trello handle together</span></label>
+              <!-- AM as a clean required dropdown (2026-08-07) — replaces the old
+                   "pick-or-type" combo (a picker sitting alongside 4 always-editable
+                   text inputs that were the real source of truth). An AM's info
+                   already lives on their own Users record (admin_users, role='am') —
+                   no reason to let it drift out of sync by retyping here. The 4
+                   fields below stay in the DOM (hidden), autofilled by
+                   applyAmPick(), so adminSaveGroup()'s payload-building code needs
+                   no changes at all. No free-text fallback, unlike the AE/Client
+                   pickers — an AM has to have a Users record to log into the admin
+                   portal at all, so there's no realistic "not in the list yet" case
+                   the way there is for AEs/clients. -->
+              <label class="lbl">Account Manager</label>
               <select id="admin-am-picker" onchange="applyAmPick(this.value)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
-                <option value="">— Select AM (or type below) —</option>
+                <option value="">— Select AM —</option>
               </select>
+              <p style="font-size:10px;color:var(--muted);margin-top:4px">Not listed? Add them under the Users tab first (role: Account Manager), then come back here.</p>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-              <div><label class="lbl">Account Manager Name</label><input type="text" id="admin-am-name" placeholder="Full name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
-              <div><label class="lbl">Account Manager Email</label><input type="email" id="admin-am-email" placeholder="am@email.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
+            <div style="display:none">
+              <input type="text" id="admin-am-name"/>
+              <input type="email" id="admin-am-email"/>
+              <input type="text" id="admin-am-calendar"/>
+              <input type="text" id="admin-am-trello"/>
             </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-              <div><label class="lbl">AM Calendar URL <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for KOC scheduling</span></label><input type="text" id="admin-am-calendar" placeholder="https://calendar.app.google/..." style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
-              <div><label class="lbl">AM Trello Handle <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for board tagging</span></label><input type="text" id="admin-am-trello" placeholder="@handle" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
+            <!-- Strategist defaults (2026-08-07) — every client in this group
+                 inherits these unless overridden on their own Client Profile (see
+                 the Clients section's 3 matching dropdowns). Digital is sourced from
+                 Users (admin_users, role='strategist' — the same people who log
+                 into the Strategist Portal), same pattern/reasoning as the AM picker
+                 right above — stored by NAME, not a picked id, matching how am_name
+                 already works (admin_users has no id exposed to the client at all).
+                 Social/Web are sourced from the Strategists roster tab instead,
+                 since those people have no login of their own. -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="lbl">Digital Strategist <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— default for every client in this group</span></label>
+                <select id="admin-group-digital-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                  <option value="">— None —</option>
+                </select>
+              </div>
+              <div>
+                <label class="lbl">Social Strategist</label>
+                <select id="admin-group-social-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              </div>
+              <div>
+                <label class="lbl">Web Strategist</label>
+                <select id="admin-group-web-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div><label class="lbl">Brand Color (Primary)</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="admin-color" value="#1C9BD7" style="width:48px;height:38px;padding:2px;border-radius:7px;border:1px solid var(--border);cursor:pointer"/><input type="text" id="admin-color-hex" placeholder="#1C9BD7" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="document.getElementById('admin-color').value=this.value"/></div></div>
@@ -279,7 +314,7 @@
             </div>
             <div>
               <label class="lbl">Group</label>
-              <select id="admin-client-group" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <select id="admin-client-group" onchange="refreshClientStrategistDefaults()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -314,19 +349,19 @@
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Digital Strategist</label>
+              <label class="lbl">Digital Strategist Override</label>
               <select id="admin-client-digital-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
             </div>
             <div>
-              <label class="lbl">Social Strategist</label>
+              <label class="lbl">Social Strategist Override</label>
               <select id="admin-client-social-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
             </div>
             <div>
-              <label class="lbl">Web Strategist</label>
+              <label class="lbl">Web Strategist Override</label>
               <select id="admin-client-web-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
             </div>
           </div>
-          <p style="font-size:10px;color:var(--muted);margin-top:-6px;margin-bottom:16px">Whichever strategist is assigned here gets tagged on this client's Trello tactic cards, alongside the AM/AE, for any service carrying a matching Strategist Discipline. Manage the roster under the Strategists tab.</p>
+          <p style="font-size:10px;color:var(--muted);margin-top:-6px;margin-bottom:16px">Every client inherits their group's strategist assignments by default (set on the Group editor) — only pick something here if THIS client specifically needs a different person. Whichever strategist ends up assigned (group default or this override) gets tagged on this client's Trello tactic cards, alongside the AM/AE, for any service carrying a matching Strategist Discipline.</p>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
             <div>
               <label class="lbl">Trello List ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— manual override; leave as-is unless you know what you're changing</span></label>
@@ -872,9 +907,8 @@
               <input type="email" id="admin-strategist-email" placeholder="jordan@agency.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Discipline <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which of the three Client Profile dropdowns this person can be assigned to</span></label>
+              <label class="lbl">Discipline <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Social or Web only; Digital strategists are added under Users instead (role: Strategist), since they log into the Strategist Portal and already have a full profile there</span></label>
               <select id="admin-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
-                <option value="digital">Digital</option>
                 <option value="social">Social</option>
                 <option value="web">Web</option>
               </select>
@@ -3509,7 +3543,7 @@ function adminNewStrategist() {
   document.getElementById('admin-strategist-name').value = '';
   document.getElementById('admin-strategist-trello').value = '';
   document.getElementById('admin-strategist-email').value = '';
-  document.getElementById('admin-strategist-discipline').value = 'digital';
+  document.getElementById('admin-strategist-discipline').value = 'social';
   document.getElementById('admin-strategist-form').style.display = 'block';
   document.getElementById('admin-strategist-form').scrollIntoView({behavior:'smooth'});
 }
@@ -3522,7 +3556,7 @@ function adminEditStrategist(id) {
   document.getElementById('admin-strategist-name').value = s.name || '';
   document.getElementById('admin-strategist-trello').value = s.trello_handle || '';
   document.getElementById('admin-strategist-email').value = s.email || '';
-  document.getElementById('admin-strategist-discipline').value = s.discipline || 'digital';
+  document.getElementById('admin-strategist-discipline').value = s.discipline || 'social';
   document.getElementById('admin-strategist-form').style.display = 'block';
   document.getElementById('admin-strategist-form').scrollIntoView({behavior:'smooth'});
 }
@@ -3583,13 +3617,39 @@ async function adminToggleStrategistActive(id, makeActive) {
 // Populates one of the Client Profile editor's 3 strategist dropdowns, filtered to a
 // single discipline (so the "Digital Strategist" select only ever lists people tagged
 // digital, etc.) — see ensureStrategistsLoaded() above for the lazy-load this depends on.
-function populateStrategistDropdown(selectId, discipline, selectedId) {
+// defaultLabel (2026-08-07, optional) — used by the Client editor's override
+// dropdowns to show "— Use Group Default (Name) —" instead of a plain "— None —"
+// when the client's own group already has someone assigned for this discipline.
+// The Group editor itself (no group-of-a-group to inherit from) just omits this
+// param and gets the plain "— None —" wording.
+function populateStrategistDropdown(selectId, discipline, selectedId, defaultLabel) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
   const options = ALL_STRATEGISTS.filter(s => s.discipline === discipline && s.active !== false);
-  sel.innerHTML = '<option value="">— None —</option>' +
+  const blankLabel = defaultLabel ? `— Use Group Default (${esc(defaultLabel)}) —` : '— None —';
+  sel.innerHTML = `<option value="">${blankLabel}</option>` +
     options.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
   sel.value = selectedId || '';
+}
+
+// Re-populates the Client editor's 3 override dropdowns' BLANK-option label whenever
+// the selected Group changes (2026-08-07) — the group's own strategist defaults are
+// what "— Use Group Default —" actually resolves to, so switching groups mid-edit
+// should update that wording immediately rather than showing a stale group's name.
+// Preserves whatever override (if any) is currently selected in each dropdown —
+// only the blank option's label and the underlying option lists are refreshed, not
+// the client's own chosen value.
+function refreshClientStrategistDefaults() {
+  const groupId = document.getElementById('admin-client-group')?.value;
+  const group = allGroups.find(g => g.id === groupId);
+  const socialDefaultName = group?.social_strategist_id ? (ALL_STRATEGISTS.find(s => s.id === group.social_strategist_id)?.name || null) : null;
+  const webDefaultName = group?.web_strategist_id ? (ALL_STRATEGISTS.find(s => s.id === group.web_strategist_id)?.name || null) : null;
+  const digitalSel = document.getElementById('admin-client-digital-strategist');
+  const socialSel = document.getElementById('admin-client-social-strategist');
+  const webSel = document.getElementById('admin-client-web-strategist');
+  populateDigitalStrategistDropdown('admin-client-digital-strategist', digitalSel?.value || null, group?.digital_strategist_name || null);
+  populateStrategistDropdown('admin-client-social-strategist', 'social', socialSel?.value || null, socialDefaultName);
+  populateStrategistDropdown('admin-client-web-strategist', 'web', webSel?.value || null, webDefaultName);
 }
 
 // ── USERS (admin_users login accounts, 2026-07-18) ──────────────
@@ -4629,10 +4689,9 @@ async function adminNewClient() {
     if (el) el.value = '';
   });
   populateClientGroupDropdown('admin-client-group', null);
+  await ensureStaffRosterLoaded();
   await ensureStrategistsLoaded();
-  populateStrategistDropdown('admin-client-digital-strategist', 'digital', null);
-  populateStrategistDropdown('admin-client-social-strategist', 'social', null);
-  populateStrategistDropdown('admin-client-web-strategist', 'web', null);
+  refreshClientStrategistDefaults();
   document.getElementById('admin-client-form').style.display = 'block';
   document.getElementById('admin-client-form').scrollIntoView({behavior:'smooth'});
 }
@@ -4651,10 +4710,14 @@ async function adminEditClient(id) {
   document.getElementById('admin-client-biztype').value = c.business_type || '';
   document.getElementById('admin-client-trello-list-id').value = c.trello_list_id || '';
   populateClientGroupDropdown('admin-client-group', c.group_id);
+  await ensureStaffRosterLoaded();
   await ensureStrategistsLoaded();
-  populateStrategistDropdown('admin-client-digital-strategist', 'digital', c.digital_strategist_id);
-  populateStrategistDropdown('admin-client-social-strategist', 'social', c.social_strategist_id);
-  populateStrategistDropdown('admin-client-web-strategist', 'web', c.web_strategist_id);
+  const group = allGroups.find(g => g.id === c.group_id);
+  const socialDefaultName = group?.social_strategist_id ? (ALL_STRATEGISTS.find(s => s.id === group.social_strategist_id)?.name || null) : null;
+  const webDefaultName = group?.web_strategist_id ? (ALL_STRATEGISTS.find(s => s.id === group.web_strategist_id)?.name || null) : null;
+  populateDigitalStrategistDropdown('admin-client-digital-strategist', c.digital_strategist_name || null, group?.digital_strategist_name || null);
+  populateStrategistDropdown('admin-client-social-strategist', 'social', c.social_strategist_id, socialDefaultName);
+  populateStrategistDropdown('admin-client-web-strategist', 'web', c.web_strategist_id, webDefaultName);
   document.getElementById('admin-client-form').style.display = 'block';
   document.getElementById('admin-client-form').scrollIntoView({behavior:'smooth'});
 }
@@ -4680,7 +4743,7 @@ async function adminSaveClient() {
     city: document.getElementById('admin-client-city').value.trim(),
     business_type: document.getElementById('admin-client-biztype').value.trim(),
     trello_list_id: document.getElementById('admin-client-trello-list-id').value.trim() || null,
-    digital_strategist_id: document.getElementById('admin-client-digital-strategist').value || null,
+    digital_strategist_name: document.getElementById('admin-client-digital-strategist').value || null,
     social_strategist_id: document.getElementById('admin-client-social-strategist').value || null,
     web_strategist_id: document.getElementById('admin-client-web-strategist').value || null,
   };
@@ -5792,7 +5855,7 @@ function populateAmPickerDropdown(selectedAmName) {
   // editing a group whose AM has since been deactivated doesn't silently blank it out.
   const ams = ALL_STAFF.filter(s => s.role === 'am' && (s.active !== false || (selectedAmName && s.name.toLowerCase() === selectedAmName.trim().toLowerCase())));
   const matched = selectedAmName ? ams.find(a => a.name.toLowerCase() === selectedAmName.trim().toLowerCase()) : null;
-  sel.innerHTML = '<option value="">— Select AM (or type below) —</option>' +
+  sel.innerHTML = '<option value="">— Select AM —</option>' +
     ams.map(a => `<option value="${esc(a.name)}">${esc(a.name)}${a.active === false ? ' (inactive)' : ''}</option>`).join('');
   sel.value = matched ? matched.name : '';
 }
@@ -5805,6 +5868,25 @@ function applyAmPick(name) {
   document.getElementById('admin-am-email').value = a.email || '';
   document.getElementById('admin-am-calendar').value = a.am_calendar_url || '';
   document.getElementById('admin-am-trello').value = a.am_trello_handle || '';
+}
+
+// Digital Strategist dropdown (2026-08-07) — same "sourced from Users, stored by
+// name" pattern as the AM picker right above (digital strategists are exactly the
+// people who log into the Strategist Portal, i.e. admin_users role='strategist').
+// Simpler than the AM picker: the dropdown's VALUE is the stored value directly (a
+// name), no separate autofill-into-hidden-fields step needed — this only ever
+// records WHO, not their contact info, which gets resolved live at submission time
+// instead (find_or_create_client's join), so there's nothing else to keep in sync.
+// defaultLabel (2026-08-07, optional) — same "Use Group Default" convention as
+// populateStrategistDropdown()'s own defaultLabel param, see its comment.
+function populateDigitalStrategistDropdown(selectId, selectedName, defaultLabel) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const people = ALL_STAFF.filter(s => s.role === 'strategist' && (s.active !== false || (selectedName && s.name.toLowerCase() === selectedName.trim().toLowerCase())));
+  const blankLabel = defaultLabel ? `— Use Group Default (${esc(defaultLabel)}) —` : '— None —';
+  sel.innerHTML = `<option value="">${blankLabel}</option>` +
+    people.map(s => `<option value="${esc(s.name)}">${esc(s.name)}${s.active === false ? ' (inactive)' : ''}</option>`).join('');
+  sel.value = selectedName || '';
 }
 
 // ── GROUP LOGO UPLOAD (2026-07-18) ──────────────────────────────
@@ -5929,6 +6011,10 @@ async function adminNewGroup() {
   if (acctOverrideTabBtn) acctOverrideTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(null);
+  populateDigitalStrategistDropdown('admin-group-digital-strategist', null);
+  await ensureStrategistsLoaded();
+  populateStrategistDropdown('admin-group-social-strategist', 'social', null);
+  populateStrategistDropdown('admin-group-web-strategist', 'web', null);
   adminTab('info');
   document.getElementById('admin-group-form').style.display = 'block';
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
@@ -5951,6 +6037,10 @@ async function adminEditGroup(id) {
   document.getElementById('admin-am-trello').value = g.am_trello_handle || '';
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(g.am_name || null);
+  populateDigitalStrategistDropdown('admin-group-digital-strategist', g.digital_strategist_name || null);
+  await ensureStrategistsLoaded();
+  populateStrategistDropdown('admin-group-social-strategist', 'social', g.social_strategist_id);
+  populateStrategistDropdown('admin-group-web-strategist', 'web', g.web_strategist_id);
   document.getElementById('admin-color').value = g.brand_color || '#1C9BD7';
   document.getElementById('admin-color-hex').value = g.brand_color || '#1C9BD7';
   document.getElementById('admin-color2').value = g.brand_color2 || '#1C9BD7';
@@ -6004,6 +6094,12 @@ async function adminSaveGroup() {
     am_email: document.getElementById('admin-am-email').value.trim(),
     am_calendar_url: document.getElementById('admin-am-calendar').value.trim() || null,
     am_trello_handle: document.getElementById('admin-am-trello').value.trim() || null,
+    // Strategist defaults for every client in this group (2026-08-07) — Digital by
+    // name (matches am_name's own convention — admin_users has no id exposed to the
+    // client), Social/Web by id (the strategists roster's real primary key).
+    digital_strategist_name: document.getElementById('admin-group-digital-strategist').value || null,
+    social_strategist_id: document.getElementById('admin-group-social-strategist').value || null,
+    web_strategist_id: document.getElementById('admin-group-web-strategist').value || null,
     brand_color: document.getElementById('admin-color').value,
     brand_color2: document.getElementById('admin-color2-hex').value.trim() || null,
     logo_url: document.getElementById('admin-logo').value.trim(),
