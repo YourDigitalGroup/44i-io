@@ -7353,4 +7353,68 @@ campaign-details fields) are CSS/print-layout changes not independently
 screenshotted this round — reasoned through from the same root-cause pattern
 already confirmed working for the analogous `svc-table` fixes earlier today; worth
 Claire's own look on the next test IO to confirm print-specific rendering (browser
+
+### 2026-08-07 (cont'd) — Printed IO's Additional Notes, dropdown affordance, review-page stacked cards on mobile, badge/chevron drift
+
+Four more follow-ups from the same mobile-testing round.
+
+**1. Printed IO's Campaign Details looked blank.** Now that Start/End/Term are gone
+(previous entry), the section could be nearly empty when there's no Kick-Off Call
+scheduled. The Additional Notes content (Step 2's Special Instructions field —
+renamed "Additional Notes" internally back on 2026-08-06, but the printed doc's box
+still said "Special Instructions") was already being printed, just much further
+down the document, disconnected from Campaign Details entirely. Moved that box up
+to render right inside Campaign Details (after Kick-Off Call/Campaign Notes) and
+relabeled it "Additional Notes" to match the internal naming — one move, no
+duplication, and it now fills the section instead of leaving it looking unfinished.
+
+**2. AE/Client dropdowns on mobile didn't look clickable.** Root cause: the
+2026-08-06 fix for native `<input type=date>` overflowing on iOS Safari (`.field-
+group input[type=date], .field-group select { appearance:none !important; ... }`)
+bundled `select` into the SAME rule as the date-input fix — stripping every
+select's native OS dropdown arrow on mobile too, so the "I am…" AE picker and the
+Client picker ended up looking identical to a plain text box with nothing
+signaling "click here, don't type." Rather than just restoring the (inconsistent-
+across-browsers) native arrow, gave every `<select>` on the form its own explicit
+chevron via a data-URI SVG background-image, applied globally (not mobile-only) —
+one consistent dropdown look everywhere instead of "whatever the browser draws."
+Excluded the tiny 64px inline quarter-hour-preset select (`select.qty-field`) from
+the new chevron/padding — it's a small utility control where the 32px chevron
+gutter would eat most of its width.
+
+**3. Review page's Selected Services Summary required horizontal scrolling on
+mobile.** Claire's read ("people won't think to scroll") is fair, especially since
+nothing on the page hints a scroll is needed. Gave `.summary-table` the SAME
+stacked-card mobile treatment `.svc-table` already has (Step 2's service tables) —
+added `rs-service`/`rs-fee`/`rs-recurring`/`rs-flight`/`rs-notes` classes to
+`buildReview()`'s row-generation (4 call sites: the main row, prorated-hosting
+line, and auto-setup-fee line all needed it), then a `@media (max-width:600px)`
+block converting each `<tr>` into a bordered card with labelled fields via
+`::before`, same mechanism as the existing service-table mobile CSS. No scrolling
+needed on a phone anymore — everything's just stacked and labelled.
+
+**4. Selected-count badge and chevron drifted between section cards.** Root
+cause: the badge used to live INSIDE `<h3>`, as a flex sibling of the section
+label and header note text. When a section's own label or note was long enough to
+wrap (Claire's screenshot: "Targeted Landing Pages" + "6 Month Min · 1 Design"),
+the badge visually ended up wherever that wrapped text happened to leave off —
+different for every card, since it depended on how much text wrapped. Restructured
+the header into two independent flex groups: `.card-head-text` (icon + label +
+note, free to wrap to however many lines it needs) on the left, and
+`.card-head-right` (badge + chevron, grouped together, `flex-shrink:0`, never
+wraps) on the right — so those two always land in exactly the same spot regardless
+of how much text is to their left.
+
+**Verified**: `node --check` passes. Re-ran every existing Playwright test from
+today (`test-date-notes-fix.js`, `test-tactic-dates-fixes.js`,
+`test-notes-textarea-and-width.js`, `test-mobile-and-print-fixes.js`) — all still
+pass unchanged. Rendered the REAL `renderSectionCards()` output with 3 sections of
+varying label/note length at 390px width and screenshotted it — confirms the badge
+and chevron now line up identically across all three regardless of how much the
+title/note wraps. Also screenshotted a real `<select>` with the page's actual CSS
+— confirms a clear, consistent chevron now shows. Items 1 and 3 (print Additional
+Notes placement, review-page stacked cards) are content/layout changes not
+independently screenshotted this round — verified by reading the generated markup
+directly rather than rendering it, since the underlying stacked-card CSS pattern
+was already screenshot-confirmed for `.svc-table` earlier today.
 print/PDF engines can differ slightly from on-screen rendering).

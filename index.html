@@ -47,9 +47,17 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 
 /* Cards */
 .card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05),0 10px 24px rgba(20,40,60,.06)}
-.card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);background:#F5F8FA}
-.card-head h3{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;letter-spacing:.01em}
-.card-head .badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--light);color:var(--muted)}
+.card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);background:#F5F8FA}
+.card-head h3{font-size:13px;font-weight:700;letter-spacing:.01em}
+/* Title + note (2026-08-07, see the JS-side comment above this markup for why) —
+   free to wrap to as many lines as the label/note text needs; min-width:0 lets it
+   actually shrink inside the flex row instead of forcing the row wider. */
+.card-head-text{min-width:0;display:flex;flex-direction:column;gap:2px}
+.card-head-note{font-size:11px;color:var(--muted);font-weight:400}
+/* Badge + chevron — grouped together, never wraps, always lands in the same spot
+   regardless of how much the title/note above take up. */
+.card-head-right{flex-shrink:0;display:flex;align-items:center;gap:10px}
+.card-head .badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--light);color:var(--muted);white-space:nowrap}
 .card-head .badge.active{background:#DCFCE7;color:#166534}
 /* Collapse/expand chevron (2026-08-07, replaces raw ▶/▼ Unicode — see toggleSection()
    for why: some mobile browsers substitute their own glyph for those characters,
@@ -68,6 +76,28 @@ input[type=text],input[type=email],input[type=tel],input[type=date],input[type=t
   width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff;color:var(--text)
 }
 textarea{resize:vertical;min-height:70px}
+/* FIXED (2026-08-07, per Claire on mobile — the AE/Client dropdowns didn't look
+   clickable): a later mobile-only fix for the native date-input overflow bug
+   (below, in the max-width:600px block) bundled `select` into the SAME
+   appearance:none rule meant for `input[type=date]` — stripping every select's
+   native OS dropdown arrow on mobile too, so the AE picker and Client picker ended
+   up looking identical to a plain text box with nothing to signal "click here"
+   instead of typing. Rather than just restoring the native arrow (which looks
+   different across every browser/OS and wasn't an obviously strong affordance to
+   begin with — this may have been marginal on desktop too), gave every select on
+   the form its own explicit, consistent chevron via background-image, at every
+   width, so there's exactly one dropdown appearance everywhere instead of
+   "whatever the browser happens to draw natively." */
+select{
+  appearance:none;-webkit-appearance:none;-moz-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;background-size:14px 14px;
+  padding-right:32px;cursor:pointer
+}
+/* The tiny inline quarter-hour-preset select (64px, its own compact inline styling)
+   is a small utility control, not a primary "pick from a list" field — the 32px
+   chevron gutter above would eat most of its width and overlap the option text. */
+select.qty-field{background-image:none;padding-right:3px}
 
 /* Service table */
 .svc-table{width:100%;border-collapse:collapse;table-layout:fixed}
@@ -237,6 +267,36 @@ textarea{resize:vertical;min-height:70px}
      the other fields' spacing instead. */
   .svc-table td.svc-modifier-date-cell { text-align: left !important; padding-top: 6px; }
 
+  /* Selected Services Summary (Review page) — same stacked-card treatment as
+     .svc-table above (2026-08-07, per Claire — "people won't think to scroll" is a
+     fair read of a plain horizontal-scroll table on a phone; a stacked card, same
+     pattern already used for the Step 2 service tables, needs no scrolling at all). */
+  .summary-table-scroll { overflow-x: visible; }
+  .summary-table { min-width: 0; table-layout: auto; }
+  .summary-table thead { display: none; }
+  .summary-table, .summary-table tbody, .summary-table tr, .summary-table td { display: block; width: 100%; }
+  .summary-table tr {
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    margin: 10px 8px;
+    padding: 10px 12px 12px;
+    background: #fff;
+  }
+  .summary-table td { border-bottom: none; padding: 3px 0; text-align: left; }
+  .summary-table td.rs-service { font-weight: 600; font-size: 13.5px; margin-bottom: 2px; }
+  .summary-table td.rs-fee::before,
+  .summary-table td.rs-recurring::before,
+  .summary-table td.rs-flight::before,
+  .summary-table td.rs-notes::before {
+    display: block;
+    font-size: 9px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .05em; margin-top: 6px; margin-bottom: 1px;
+  }
+  .summary-table td.rs-fee::before { content: 'Fee'; }
+  .summary-table td.rs-recurring::before { content: 'Recurring'; }
+  .summary-table td.rs-flight::before { content: 'Flight'; }
+  .summary-table td.rs-notes::before { content: 'Notes'; }
+
   /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
      At 2-up, "Authorized By (Full Legal Name)" wraps to 2 lines while "Title / Role"
      stays on 1 line — since the label sits above its input in normal flow, the taller
@@ -276,7 +336,6 @@ textarea{resize:vertical;min-height:70px}
      the global input style) — the date PICKER still opens on tap; only the resting look
      of the box changes, and it now matches the rest of the form's fields more closely. */
   .field-group input[type=date],
-  .field-group select,
   #page-3 div[style*="grid-template-columns:1fr 1fr 1fr;"] input[type=date] {
     -webkit-appearance: none !important;
     appearance: none !important;
@@ -287,6 +346,16 @@ textarea{resize:vertical;min-height:70px}
        thin — this held it steady at the same height a filled box naturally takes (matches
        the standard 13px font + 9px padding used everywhere else), so empty and filled
        look identical instead of the box visibly resizing once a date is picked. */
+    min-height: 40px !important;
+  }
+  /* `select` deliberately NOT included above (2026-08-07) — it has its own global
+     appearance:none + custom chevron now (see the base `select{...}` rule), so it
+     doesn't need or want the date-input-specific override; just the same width
+     containment so it doesn't overflow its column on a narrow screen. */
+  .field-group select {
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
     min-height: 40px !important;
   }
 }
@@ -3142,18 +3211,18 @@ function buildReview() {
     // formatISOToMMDDYY() converts back for display, same helper the date inputs
     // themselves use).
     const flightDisplay = flightDisplayFor(id, data, formatISOToMMDDYY);
-    rows.push(`<tr><td>${esc(data.label)}</td><td>${feeDisplay}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
+    rows.push(`<tr><td class="rs-service">${esc(data.label)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Add prorated hosting line if applicable
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
       const h = hostingChoices[id];
       oneTime += h.proratedAmt;
-      rows.push(`<tr style="background:#F0FDF4"><td style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td>—</td><td>—</td><td style="font-size:11px;color:#166534">${h.note}</td></tr>`);
+      rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td class="rs-fee" style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">${h.note}</td></tr>`);
     }
     // Add auto setup-fee line if this service's spend is under its configured threshold
     const setupFeeInfo = getSetupFeeInfo(id, data.spend || 0);
     if (setupFeeInfo) {
       oneTime += setupFeeInfo.amount;
-      rows.push(`<tr style="background:#F0FDF4"><td style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td>—</td><td>—</td><td style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
+      rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="rs-fee" style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
     }
   });
 
@@ -4886,6 +4955,7 @@ function buildIoDocumentHtml() {
   </div>
 </div>
 ${campNotes ? `<div class="campaign-notes-line"><strong>Campaign Notes:</strong> ${campNotes}</div>` : ''}
+${specialInstructions ? `<div class="special-box"><strong>Additional Notes</strong>${specialInstructions}</div>` : ''}
 
 <!-- Services -->
 <div class="section-title">Services &amp; Pricing</div>
@@ -4915,8 +4985,6 @@ ${campNotes ? `<div class="campaign-notes-line"><strong>Campaign Notes:</strong>
   </table>
 </div>
 ${monthly > 0 ? `<div class="first-month-note">Subsequent months: ${fmt(monthly)}/mo for the duration of the campaign term.</div>` : ''}
-
-${specialInstructions ? `<div class="special-box"><strong>Special Instructions</strong>${specialInstructions}</div>` : ''}
 
 <!-- Legal -->
 <div class="legal">
@@ -6030,8 +6098,18 @@ function renderSectionCards() {
   if (!container) return;
 
   container.innerHTML = SECTIONS.map(sec => {
+    // FIXED (2026-08-07, per Claire's screenshot — badge/chevron position drifted
+    // between cards): the badge used to live INSIDE <h3>, as a flex sibling of the
+    // label + note text. When a section's own label or note was long enough to wrap
+    // (e.g. "Targeted Landing Pages" + "6 Month Min · 1 Design"), the badge visually
+    // followed wherever that wrapped text left off — different for every card,
+    // depending on how much of the title/note happened to wrap. Split into two
+    // independent groups instead: title+note (free to wrap however long they are)
+    // in one column on the left, badge+chevron grouped together and never wrapping
+    // in a fixed column on the right — so those two always land in exactly the same
+    // place regardless of how much text is to their left.
     const headerNote = sec.header_note
-      ? `<span style="font-size:11px;color:var(--muted);font-weight:400">${esc(sec.header_note)}</span> `
+      ? `<div class="card-head-note">${esc(sec.header_note)}</div>`
       : '';
     let body;
     if (sectionIsMultiTable(sec.id)) {
@@ -6058,8 +6136,14 @@ function renderSectionCards() {
     }
     return `<div class="card">
       <div class="card-head" onclick="toggleSection('${esc(sec.id)}')">
-        <h3>${sec.icon ? esc(sec.icon) + ' ' : ''}${esc(sec.label)} ${headerNote}<span class="badge" id="badge-${esc(sec.id)}">0 selected</span></h3>
-        <span id="chevron-${esc(sec.id)}" class="chevron"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
+        <div class="card-head-text">
+          <h3>${sec.icon ? esc(sec.icon) + ' ' : ''}${esc(sec.label)}</h3>
+          ${headerNote}
+        </div>
+        <div class="card-head-right">
+          <span class="badge" id="badge-${esc(sec.id)}">0 selected</span>
+          <span id="chevron-${esc(sec.id)}" class="chevron"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
+        </div>
       </div>
       <div id="sec-${esc(sec.id)}" class="card-body" style="display:none">
         ${body}
