@@ -3760,10 +3760,22 @@ async function submitIO() {
         // Given a set of line items (either the whole order, for the overview IO card,
         // or just one tactic's — see finalizeTacticCard() below), returns amAeMemberIds
         // PLUS whichever strategist(s) are assigned for the disciplines those specific
-        // line items' services carry (services.strategist_discipline). Silently omits
+        // line items' services carry (services.strategist_disciplines). Silently omits
         // anything unassigned/unresolved, same behavior as AM/AE above.
+        //
+        // strategist_disciplines is a jsonb array (2026-08-07, replaces the old
+        // single-value strategist_discipline — per Claire, some services need more than
+        // one discipline tagged at once, e.g. SEO needs digital+social+web, Social Media
+        // Management Pro needs digital+social). Same jsonb-array-or-string guard already
+        // used for qty_preset_options elsewhere on this page, since Supabase can hand
+        // this back as either a real JS array or a JSON-encoded string.
+        function serviceDisciplines(r) {
+          if (!r?.strategist_disciplines) return [];
+          const arr = typeof r.strategist_disciplines === 'string' ? JSON.parse(r.strategist_disciplines) : r.strategist_disciplines;
+          return Array.isArray(arr) ? arr : [];
+        }
         function memberIdsForLineItems(items) {
-          const disciplines = new Set(items.map(li => CATALOG_ROWS[li.service_id]?.strategist_discipline).filter(Boolean));
+          const disciplines = new Set(items.flatMap(li => serviceDisciplines(CATALOG_ROWS[li.service_id])));
           const strategistIds = [...disciplines].map(d => resolveHandleMemberId(disciplineHandles[d])).filter(Boolean);
           return [...new Set([...amAeMemberIds, ...strategistIds])];
         }
