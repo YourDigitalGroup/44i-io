@@ -122,13 +122,20 @@ select.qty-field{background-image:none;padding-right:3px}
    80px column) — same total column-width budget as before (Notes stays reachable
    on the 8-column ad-spend tables), just reallocated from the roomier Service
    column (long names already wrap onto a 2nd line via overflow-wrap, so losing
-   20px there is a much smaller cost than a cramped, hard-to-read Fee column). */
-.svc-table col.c-svc{width:190px}
+   20px there is a much smaller cost than a cramped, hard-to-read Fee column).
+   c-svc trimmed again (170), c-spend trimmed (88), c-start/c-end widened back up
+   to 116px each (2026-08-07, per Claire — the year was getting clipped off
+   "mm/dd/yyyy" at 100px once the native calendar-icon reservation was reverted
+   below; native date inputs need real width to show the full placeholder, same
+   reason they were originally widened to 118px earlier today before this budget
+   got tightened) — total column-width budget is unchanged again, just
+   reallocated once more. */
+.svc-table col.c-svc{width:170px}
 .svc-table col.c-fee{width:100px}
 .svc-table col.c-freq{width:88px}
-.svc-table col.c-spend{width:100px}
-.svc-table col.c-start{width:100px}
-.svc-table col.c-end{width:100px}
+.svc-table col.c-spend{width:88px}
+.svc-table col.c-start{width:116px}
+.svc-table col.c-end{width:116px}
 .svc-table col.c-notes{width:auto;min-width:140px}
 /* Safety net for the fixed-width columns above ever not fitting (a very long
    service name section, a future extra column, a narrower browser chrome) — the
@@ -136,27 +143,23 @@ select.qty-field{background-image:none;padding-right:3px}
    clipping content past its edge the way it did before this fix. */
 .svc-table-scroll{overflow-x:auto}
 .svc-table td.svc-start-cell,.svc-table td.svc-end-cell{padding:6px 6px}
-/* FIXED (2026-08-07, per Claire — "the date pills look a little messy," still
-   unchanged after a first attempt that only tweaked border-radius and the native
-   calendar icon's opacity): that first pass relied on
-   ::-webkit-calendar-picker-indicator, which only Chromium-based browsers honor —
-   invisible in Firefox/Safari, which is very likely why it looked completely
-   unchanged. Same fix as the `select` chevron earlier today: stop relying on
-   native per-browser chrome entirely — appearance:none + our own drawn SVG
-   calendar icon renders identically everywhere. The REAL native indicator is kept
-   at opacity:0 (not display:none) so its clickable hotspot still opens the date
-   picker on click/tap; our drawn icon sits in the same right-edge spot purely for
-   the visual. */
+/* REVERTED (2026-08-07, found live via Claire — "I now lost the ability to
+   select a date, I have to type it in, and I don't see the year at all"):
+   the previous attempt here set appearance:none on the native <input type=date>
+   itself, not just a cosmetic pseudo-element, to draw a custom calendar icon —
+   but appearance:none on a DATE input (unlike a plain text/number input, or the
+   <select> chevron this was modeled on) is known to be unreliable across
+   browsers: it can disable the native picker's click-to-open behavior entirely
+   (forcing typing instead) and/or break the browser's own internal layout of the
+   mm/dd/yyyy sub-fields, which is exactly what happened here — the reserved
+   20px of icon padding on top of that broken internal layout squeezed the year
+   out of view. Reverted to plain native rendering (no appearance override, no
+   custom icon) — border-radius is the only safe cosmetic change kept. Width
+   widened above (c-start/c-end 100px->116px) so the full "mm/dd/yyyy" fits
+   without the icon-reservation hack. */
 .svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input{
-  font-size:11px;padding:4px 20px 4px 5px;width:100%;box-sizing:border-box;
-  border-radius:6px;color:var(--text);cursor:pointer;
-  appearance:none;-webkit-appearance:none;-moz-appearance:none;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='2'%3E%3C/rect%3E%3Cline x1='16' y1='2' x2='16' y2='6'%3E%3C/line%3E%3Cline x1='8' y1='2' x2='8' y2='6'%3E%3C/line%3E%3Cline x1='3' y1='10' x2='21' y2='10'%3E%3C/line%3E%3C/svg%3E");
-  background-repeat:no-repeat;background-position:right 4px center;background-size:12px 12px
-}
-.svc-table td.svc-start-cell input::-webkit-calendar-picker-indicator,
-.svc-table td.svc-end-cell input::-webkit-calendar-picker-indicator{
-  opacity:0;cursor:pointer
+  font-size:11px;padding:4px 5px;width:100%;box-sizing:border-box;
+  border-radius:6px;color:var(--text);cursor:pointer
 }
 .svc-table td:nth-child(2){white-space:normal;word-break:normal;overflow-wrap:anywhere}
 .svc-table td.svc-freq{color:var(--muted);font-size:11.5px;text-align:right}
@@ -279,15 +282,13 @@ select.qty-field{background-image:none;padding-right:3px}
   .svc-table td.svc-end-cell::before { content: 'End Date'; }
   .svc-table td.svc-start-cell input,
   .svc-table td.svc-end-cell input {
-    width: 100%; box-sizing: border-box; padding: 8px 26px 8px 10px; font-size: 13px; text-align: left;
+    width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left;
     /* Same iOS Safari native-date-chrome overflow fix as the Campaign Dates fields
        below — without it these per-row date inputs overflow their card on phone too.
-       Right padding widened to match the desktop rule's icon spacing (the custom
-       calendar icon's background-image carries over from that rule unchanged; only
-       sizing/padding differ here) so it doesn't sit on top of the larger mobile
-       font's text. */
+       (Reverted 2026-08-07: this had briefly gained extra right-padding/background
+       sizing for a custom calendar icon that's since been reverted entirely — see
+       the desktop rule's comment — so back to the original padding.) */
     -webkit-appearance: none; appearance: none; min-height: 40px;
-    background-position: right 8px center; background-size: 14px 14px;
   }
   /* One-time cost's End Date placeholder (2026-08-07) — a lone unlabeled "—" reads as
      an empty/broken field on the stacked mobile layout with nothing to explain it;

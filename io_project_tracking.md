@@ -7548,3 +7548,54 @@ Site rows with the new sizing — both controls now read as normal, comfortable
 form fields instead of a tiny sliver, and the date inputs show a small flat
 calendar icon we drew ourselves rather than relying on the browser's own (and, in
 Firefox/Safari's case, ignoring our previous attempt to restyle it).
+
+### 2026-08-07 (cont'd) — REVERTED the custom calendar icon: it broke the date picker itself
+
+Claire's very next message: "I now lost the ability to select a date and I have
+to type it in again, now I don't see the year at all." A real, immediate
+functional regression from the custom-icon change just above — not a cosmetic
+miss this time.
+
+**Root cause**: the previous fix set `appearance:none` directly on the native
+`<input type=date>` itself (modeled on the `<select>` chevron fix, which worked
+fine for a `<select>`). But a date input's internal rendering is far more complex
+than a select's — it has multiple sub-fields (month/day/year) plus a
+picker-trigger button, all part of the browser's own internal layout that
+`appearance:none` can disrupt unpredictably depending on the browser. Here it did
+two things at once: (1) broke the click-to-open behavior for the native
+date-picker popup, forcing Claire to type each sub-field by hand instead, and
+(2) disrupted the browser's own internal spacing enough that, combined with the
+20px of padding reserved for the custom icon, the year got squeezed out of the
+visible area entirely.
+
+**Fix**: reverted ALL of it — removed `appearance:none`/`-webkit-appearance:none`/
+`-moz-appearance:none`, the custom SVG background-image, and the
+`::-webkit-calendar-picker-indicator` opacity override, on both the desktop rule
+and the mobile stacked-card rule (which had also picked up the extra
+padding/background-size changes). Back to plain native date-input rendering —
+browser's own icon, browser's own click-to-open picker, browser's own internal
+mm/dd/yyyy layout — border-radius is the only cosmetic change kept, since that
+one's genuinely safe (doesn't touch the control's internal rendering). Widened
+`c-start`/`c-end` back up from 100px to 116px (matching the width that was
+already found to work earlier today, before this detour) so the full
+"mm/dd/yyyy" has real room regardless — reclaimed from `c-svc` (170px, further
+trimmed from the reallocation two commits ago) and `c-spend` (88px, plain
+"$ spend" doesn't need the full 100px) to keep the same total column-width
+budget, so Notes still stays reachable on the 8-column ad-spend tables.
+
+**Lesson, noted for future CSS-affordance fixes**: `appearance:none` is safe and
+predictable for simple controls (`<select>`, plain text/number inputs) where the
+control is basically "one box, maybe a small indicator" — it is NOT safe for
+`<input type=date>`, which has real internal sub-structure a browser manages
+itself. When a native control's OWN behavior (not just its paint) needs to keep
+working, don't override its rendering mode at all; find the affordance fix
+within the control's existing chrome instead (or accept the native look varies
+slightly per browser).
+
+**Verified**: `node --check` passes. Re-ran every existing Playwright test — all
+still pass unchanged. New scratchpad check
+(`screenshot-date-revert.js`) confirms via `getComputedStyle` that `appearance`
+is back to its native (non-`none`) value and no `background-image` remains on
+the date input, then screenshots the actual "Targeted Landing Pages" row —
+"mm/dd/yyyy" now shows in full with the browser's own native calendar icon, and
+the picker's click-to-open behavior is restored (native chrome, untouched).
