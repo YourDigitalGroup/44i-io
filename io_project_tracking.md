@@ -7222,3 +7222,62 @@ Claire's "getting really cramped" comment (item 3); flagged for her to take a
 fresh look now that it's fixed before considering any further padding/spacing
 changes, since those are better judged from the live page than reasoned about in
 the abstract.
+
+### 2026-08-07 (cont'd) — The "cramped" flag WAS the Notes column disappearing: fixed the real width overflow, plus Notes text now wraps
+
+Claire sent two screenshots proving the "look at the formatting" ask (previous
+entry) was actually two concrete, fixable bugs, not a vague styling request:
+
+**1. Notes column was completely invisible on the 8-column ad-spend tables**
+(Amazon Prime Ads, and by the same math Streaming TV/Video/Audio). Root cause: the
+page's outer `.wrap` is a HARD `max-width:900px` with `overflow:hidden` — not a
+"usually big enough" soft cap, an actual ceiling regardless of window size — so
+`.svc-table`'s fixed pixel columns have to fit inside ~852px of real usable width
+(900 minus `.wrap`'s own 24px×2 padding). Today's earlier calendar-picker change
+widened `c-start`/`c-end` from 78px to 118px each specifically to fit a native date
+box — an extra 80px that was enough on its own to push the 8-column tables (chk +
+service + fee + freq + spend + start + end = 864px BEFORE Notes gets anything) past
+that ceiling, squeezing Notes to ~0px and clipping it out of view entirely via the
+`overflow:hidden`. The narrower one-time-cost tables (7 columns, no Spend) stayed
+just under the line, which is why Claire's second screenshot (Website one-time
+rows) still showed a Notes column — just a very thin one.
+
+**Fix**: trimmed every fixed column width back down with real headroom to spare
+(chk 38→32, service 270→210, fee 96→80, freq 104→88, spend 120→100, start/end
+118→100 each) — frees up ~190px, comfortably fitting even the 8-column tables
+inside the 852px ceiling with `col.c-notes` given an explicit `min-width:140px` so
+it never gets squeezed to nothing again. Also wrapped every rendered `<table>` in a
+new `.svc-table-scroll{overflow-x:auto}` div (both `renderSectionCards()`'s single-
+table sections and `renderMultiTableSection()`'s per-subsection sub-tables) as a
+safety net — if some future combination of columns ever doesn't fit again, the
+table scrolls horizontally within its own box instead of silently clipping past the
+card's edge the way it did here. Disabled on the ≤600px mobile breakpoint
+(`overflow-x:visible`), which already reflows into stacked cards and doesn't need
+it.
+
+**2. Notes text didn't wrap — typing past the edge made it invisible**, a separate,
+simpler bug: the Notes field was a plain `<input type=text>`, and inputs never wrap
+by design regardless of width. Switched to `<textarea class="notes-field" rows="1"
+oninput="autoGrowNotesField(this)">` — a new `autoGrowNotesField()` helper resets
+height to `auto` then sets it to `scrollHeight`, so the box grows to fit whatever's
+typed (and shrinks back down if text is deleted) instead of scrolling internally or
+clipping. Updated every place that reads/writes this field by selector
+(`syncRowInputs()`, `buildDraft()`, `restoreDraft()` — all changed from
+`input[type=text].notes-field` to the tag-agnostic `.notes-field`, since the field
+is no longer guaranteed to be an `<input>`) and the "Start Over" reset loop already
+had a generic `textarea` clause, just needed to also reset the auto-grown height
+back to default on clear. Restyled to look identical to every other field on the
+form (border/padding/font/radius), with `resize:none` (auto-grow already handles
+sizing) and `overflow-y:hidden` (no flashing scrollbar mid-grow).
+
+**Verified**: `node --check` passes. Playwright
+(`test-notes-textarea-and-width.js`, new, scratchpad-only): confirmed the Notes
+field is now a `<textarea>` (not an `<input>`), confirmed its rendered bounding box
+sits fully on-screen (112px visible, vs. effectively 0 before this fix) for an
+8-column spend-table row, and confirmed typing a long note grows the box's height
+rather than overflowing invisibly. Screenshotted the fix with the page's real CSS
+(not committed) — visually confirms both: Notes is a real, usable column now, and a
+long typed note wraps across several visible lines inside it. Re-ran
+`test-date-notes-fix.js` and `test-tactic-dates-fixes.js` — both still pass
+unchanged (their `.notes-field` selectors already worked generically across either
+tag).
