@@ -7956,3 +7956,61 @@ row; confirms it's a no-op once 2+ real rows already exist. Re-ran
 `test-pending-scope-exemption.js` — still passes, no regression from the earlier
 fix in the same file.
 today). Items 4 and 5 not yet resolved.
+
+### 2026-08-07 (cont'd) — Super admins now default to "All Strategists" scope; PDF page breaks now avoid cutting through content
+
+**Super-admin default scope**: Claire noted a super admin logging into the Strategist
+Portal typically has no campaigns of their own, so landing on "My Campaigns" (the
+existing default for everyone) showed an empty dashboard. `showStrategistPanel(show)`
+now sets `strategistScope = 'all'` immediately whenever `currentStrategistUser.role
+=== 'super'`, right when the panel opens. Regular strategists are untouched — they
+still default to "My Campaigns" as before. Either role can still switch scope
+manually afterward; this only changes the initial landing state.
+
+**Verified**: `node --check` passes. New Playwright test
+(`test-super-default-scope.js`, scratchpad-only): a super-role user opening the panel
+with the module's default `strategistScope = 'mine'` ends up on `'all'`; a
+strategist-role user in the same situation stays on `'mine'`.
+
+**PDF page breaks cutting through content ("cut off at a weird spot")**: root cause
+found by reading the actual PDF pipeline rather than the print CSS — both
+`generateIntakePdfBlob()` and `generateIoPdfBlob()` render the document to one tall
+screenshot (`html2canvas`) and then slice it into fixed-height PDF pages
+(`jsPDF`) at blind, evenly-spaced pixel offsets. The existing `@page` /
+`page-break-inside: avoid` print CSS only governs the separate native
+`window.print()` path and was never consulted by this screenshot-and-slice code at
+all — so a table row, the signature block, or the footer could land straddling a
+page boundary with no way for the old loop to know.
+
+**Fix**: two new shared helpers. `computeUnsafeZonesMm(iframeDoc, imgWidthMm)` reads
+real `getBoundingClientRect()` positions (converted from CSS px to PDF mm via a
+scale-independent ratio, `imgWidthMm / iframeDoc.body.scrollWidth`) for every
+`tr`, `.section-row`, `.subtotal-row`, `.sig-section`, and `.doc-footer` element, and
+returns them sorted top-to-bottom. `paginateImageIntoPdf(pdf, imgData, imgWidth,
+imgHeight, unsafeZones)` replaces the old fixed-height slicing loop: at each page
+boundary, if the naive cut would land inside an unsafe zone, it nudges the cut up to
+that zone's top instead, paints over the resulting leftover sliver in white, and lets
+the next page redraw that content whole from the top — page *count* grows as needed,
+but every individual page stays the correct physical height (can't shrink one
+mid-document). Both `generateIntakePdfBlob()` and `generateIoPdfBlob()` now call
+these instead of their old manual `heightLeft` while-loops.
+
+**Verified**: confirmed via grep that `.section-row`, `.subtotal-row`, `.sig-section`,
+and `.doc-footer` genuinely exist in `buildIoDocumentHtml()`'s markup (`.legal` is
+deliberately excluded — its print CSS intentionally allows a break inside it).
+`node --check` passes. New Playwright test (`test-pdf-pagination.js`, scratchpad-only,
+7/7 passing): `computeUnsafeZonesMm()` finds and correctly sorts real DOM elements by
+position; a fake-jsPDF-object harness reconstructs each page's actual visible image
+range from its recorded `addImage`/`rect` calls and confirms no page's visible range
+ends inside an unsafe zone, that two separate zones straddling different page
+boundaries both get correctly nudged, that pages fully cover the source image with no
+gap, and that a zone taller than one whole page falls back to a naive cut rather than
+looping forever.
+
+**Accounting Portal confirmation (answered, no code change)**: Claire asked whether a
+Strategist Portal budget edit is noted to reflect into "the accounting portal." There
+is no such page in this codebase — only a never-committed scratchpad mockup was ever
+explored, and it was never built. This is distinct from the real, live Accounting Map
+(an admin-portal tab for margin/CPM/cut-% configuration per service) — that page
+doesn't show or receive spend/budget figures either. So today, a budget change made
+in the Strategist Portal has no accounting-side destination to flow into.
