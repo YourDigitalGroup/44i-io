@@ -7879,4 +7879,30 @@ NOT trigger it, and a defensive blank-name edge case doesn't either. Items 1 and
 committed and pushed (commit `71ecb79`). Item 3's RPC not yet run by Claire — feature
 incomplete until it is (same "client code ships ahead of the SQL, harmlessly inert
 until it's live" pattern used for the multi-discipline strategist work earlier
+today).
+
+**Item 5 resolved — not a bug, a Strategist Portal filtering gap.** The SEM line's
+own data was fine ($1,000/mo spend, correctly `> 0`) — Claire found it herself once
+she switched to "All Strategists." Real gap, though: the "Campaign Setup" (`pending`
+status) queue was already correctly exempted from the month picker (existing code,
+confirmed working — `l.status !== 'pending' && !strategistLineActiveInMonth(...)`,
+with its own comment explaining why) but was NOT exempted from the "My Campaigns" vs
+"All Strategists" scope toggle. A brand-new campaign line's `assigned_strategist`
+may not match whoever happens to be reviewing setups that day, so gating the shared
+setup to-do queue on personal assignment could hide new work from everyone until
+someone thinks to switch to "All Strategists" — exactly what happened here. Added
+the same `l.status !== 'pending' &&` exemption already used for the month filter to
+the scope filter too, in both `visibleCampaignLines()` (what actually renders) and
+the tab-count loop in `renderStrategistDashboard()` (so the "Campaign Setup" tab's
+own number badge doesn't undercount relative to what's actually visible once
+clicked into). The group filter is untouched — Claire didn't ask for that one, and
+staying within one white-label group's context still makes sense even for setup
+work.
+
+**Verified**: `node --check` on `strategist/index.html`. New Playwright test
+(`test-pending-scope-exemption.js`, scratchpad-only): a pending line assigned to a
+different strategist stays visible under "My Campaigns" scope (previously would
+have been hidden); an active line assigned to someone else is still correctly
+hidden under "My Campaigns" (unchanged); the same active line becomes visible under
+"All Strategists" (unchanged). Committed and pushed.
 today). Items 4 and 5 not yet resolved.

@@ -1078,11 +1078,15 @@ function strategistLineActiveInMonth(line, monthDate) {
 function visibleCampaignLines() {
   return ALL_CAMPAIGN_LINES.filter(l => {
     if (l.status !== strategistStatusTab) return false;
-    if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return false;
+    // Pending (Campaign Setup) is a shared to-do queue, not personal/monthly work in
+    // progress yet -- exempted from BOTH the "My Campaigns" scope (2026-08-07, per
+    // Claire, found live: a brand-new line's assigned_strategist may not match
+    // whoever happens to be reviewing setups, so gating on scope could hide new work
+    // from everyone until someone thinks to switch to "All Strategists") and the
+    // month picker (already exempted below, for the same "still needs doing now
+    // regardless of when it's flighted" reason).
+    if (l.status !== 'pending' && strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return false;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return false;
-    // Pending is a setup to-do queue, not a monthly performance view -- a campaign
-    // flighted to start next month still needs its setup done now, so it stays
-    // visible regardless of the month picker.
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return false;
     return true;
   });
@@ -1095,9 +1099,11 @@ function renderStrategistDashboard() {
   document.getElementById('strategist-scope-all').style.background = strategistScope === 'all' ? 'var(--accent)' : 'var(--light)';
   document.getElementById('strategist-scope-all').style.color = strategistScope === 'all' ? '#fff' : 'var(--text)';
 
+  // Same pending-status exemptions as visibleCampaignLines() below, so the tab's own
+  // count badge always matches what actually renders when you click into it.
   const counts = { pending: 0, active: 0, paused: 0, complete: 0 };
   ALL_CAMPAIGN_LINES.forEach(l => {
-    if (strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return;
+    if (l.status !== 'pending' && strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return;
     if (counts[l.status] != null) counts[l.status]++;
