@@ -5288,6 +5288,20 @@ function autoSaveDraft() {
 
 function loadDraft() {
   try {
+    // FIXED (2026-08-07, per Claire — a refresh on the dev/testing link kept
+    // bringing back old test data on Step 1): the dev picker link has no real
+    // io_slug, so getDraftKey() falls back to the same 'nogroup' slug every time,
+    // regardless of which fake group is picked — every dev-mode refresh shares
+    // ONE draft key, unlike a real client link where each group's own slug keeps
+    // drafts naturally separated. The per-tab-refresh-restores-a-draft behavior
+    // below is deliberate and wanted for a real client's in-progress form (see the
+    // comment on that path) — but the dev link is explicitly a testing tool, not
+    // an in-progress form anyone needs preserved, so always start clean there
+    // instead, clearing out whatever stale test data was left from last time.
+    if (isDevPreviewMode) {
+      localStorage.removeItem(getDraftKey());
+      return false;
+    }
     // Per-tab draft keys: a NEW tab has a fresh tab_id → no draft found → blank
     // form automatically. A REFRESH keeps the same tab_id → draft restores.
     const raw = localStorage.getItem(getDraftKey());
