@@ -7417,4 +7417,58 @@ Notes placement, review-page stacked cards) are content/layout changes not
 independently screenshotted this round — verified by reading the generated markup
 directly rather than rendering it, since the underlying stacked-card CSS pattern
 was already screenshot-confirmed for `.svc-table` earlier today.
+
+### 2026-08-07 (cont'd) — Four small tweaks from Claire's next look: a real CSS bug, print styling, and a reverted move
+
+**1. Real bug: the mobile-stacked Selected Services Summary was STILL scrollable,
+just showing blank space.** Root cause was a CSS source-order mistake, not a
+missing rule: the mobile media query's `.summary-table { min-width: 0 }` override
+(added earlier today) sits EARLIER in the stylesheet than the unconditional base
+rule `.summary-table { min-width: 560px }` (also added earlier today, for the
+desktop scroll-safety-net). Both rules have equal selector specificity — when
+that's the case, CSS resolves ties by whichever rule comes LATER in the file,
+regardless of whether it's wrapped in a media query. Since the base rule physically
+sits after the mobile override in the source, it was winning even on a phone,
+leaving the table (and the horizontal scroll region around it) 560px wide with
+nothing drawn past the actual ~390px of screen — exactly "scroll right, see blank."
+Fixed with `!important` on the mobile override, which wins regardless of source
+order — the same pattern already used for every other mobile-only override in this
+file (`.field-group.cols3`, `.field-group.cols2`, etc.), so this brings it in line
+with the established convention rather than introducing a new one.
+
+**2. Printed IO: Campaign Notes restyled to match Kick-Off Call, same line.**
+Was its own separate highlighted callout box below the Campaign Details row —
+Claire wanted it to read as a plain label/value field like Kick-Off Call, in the
+SAME row. Changed `campaign-row`'s grid from a lone 1-column div to
+`grid-template-columns:160px 1fr` with both fields as siblings; Campaign Notes now
+defaults to "—" when empty (matching Kick-Off Call's existing behavior) instead of
+disappearing entirely. Removed the now-unused `.campaign-notes-line` CSS (its only
+call site).
+
+**3. Printed IO: moved Additional Notes back to its original spot** (after Totals,
+right before the Legal/Terms section) — reverting this morning's move into Campaign
+Details, per Claire's follow-up call once she saw it in context. Kept the
+"Additional Notes" label (matches the internal naming used everywhere else since
+2026-08-06) rather than reverting back to "Special Instructions" — only the
+POSITION was asked to move back, not the wording.
+
+**4. Web form: per-tactic date pills looked "a little messy."** These only had
+width/padding/font-size set, falling back to the base input style's generic
+border-radius — reasonable on its own, but the browser's native calendar-icon
+button sat glued to the right edge with a slightly different visual weight than
+the flat Spend/Fee cells right next to it in the same row, which is what actually
+read as inconsistent. Gave the date inputs an explicit `border-radius:6px` to
+match every other field on the form, and toned down the native
+`::-webkit-calendar-picker-indicator`'s opacity (0.55) with a little left padding
+so it reads as a subtle icon rather than a separate glued-on button.
+
+**Verified**: `node --check` passes. Re-ran every existing Playwright test from
+today — all still pass unchanged. New scratchpad screenshot
+(`screenshot-summary-mobile.js`) at a 390px width confirms the Selected Services
+Summary now fits its card with no meaningful horizontal overflow (the previous
+560px-vs-356px gap is gone; the ~8px residual left is ordinary margin-box rounding,
+not a scrollable region). Items 2-4 (print Campaign Notes styling, Additional
+Notes position, date-pill polish) are markup/CSS changes verified by reading the
+generated template directly — no independent screenshot this round since none of
+the three touch any JS logic, only presentation of already-correct data.
 print/PDF engines can differ slightly from on-screen rendering).
