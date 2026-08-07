@@ -7636,3 +7636,90 @@ real client link (`isDevPreviewMode = false`) still restores a saved draft
 unchanged, while dev mode (`isDevPreviewMode = true`) does NOT restore the same
 stale draft and clears it from `localStorage` so it can't resurface on a later
 refresh either.
+
+### 2026-08-07 (cont'd) — Disambiguated reused service labels for Accounting Map + Strategist Portal; cancellations still PARKED
+
+Claire is removing the section-name prefix from several service labels in the
+catalog (e.g. "Location Targeting — Geofencing or 1st Party Addressable"
+becomes just "Geofencing or 1st Party Addressable", matching sibling services
+that never had a prefix). Confirmed via investigation (two Explore-agent passes)
+that this rename is safe everywhere services are actually identified — order
+submission, `campaign_lines`, and the Accounting Map are all `service_id`-keyed,
+never label-text-keyed, except one narrow Strategist Portal bulk-import paste
+fallback (`resolveBulkService()`) that matches typed/pasted text against the
+label — a saved import template using old wording would fail loud (no match),
+not silently mismatch.
+
+**The real finding, once we ran an actual catalog query**: several service
+*names* are already reused across multiple sections independent of Claire's
+current rename — "Business Pro" alone is the identical label on 12 completely
+different ad-channel services (Amazon Prime Ads, Hulu Ads, Local Listing
+Optimization, Mobile Audience Targeting, Netflix Ads, Reputation Management,
+SEM, Social Display Ads, Social Media Management, Social OTT/CTV, Website
+SEO/AEO, YouTube TV Ads), plus "Business Builder"/"Business Starter" (SEO + SM),
+a "Geotargeting, Keyword, Contextual, Category & Retargeting" name reused
+across 4 native/programmatic sections, and "Optional Content Support" reused
+across Website Monthly/One-Time. Both the Accounting Map (already flat-lists by
+section-sort-order, no section HEADER) and the Strategist Portal's tactic
+display would show these as identical-looking rows with nothing to tell them
+apart once a reader isn't looking at their exact table position.
+
+**Fix reuses an existing mechanism rather than building something new**:
+`services.accounting_label` already exists specifically as an internal-only
+override independent of the client-facing label, and the Accounting Map admin
+list already prefers it (`displayLabel = s.accounting_label || s.label`, no
+code change needed). Set `accounting_label` to a `"Section — Name"` format
+(Claire's choice, shortened where the literal concatenation read awkwardly —
+e.g. "Native Display — Geo/Keyword/Category Targeting" instead of the full
+name, "Website Monthly — Optional Content Support" instead of literally
+prepending the section's own already-dashed name) for 22 services total:
+Business Builder (`sm-bb`, `seo-bb`), Business Starter (`sm-bs`, `seo-bs`),
+Business Pro (`amz-bp`, `hulu-bp`, `llo-bp`, `mob-bp`, `netflix-bp`, `rep-bp`,
+`sem-bp`, `sda-bp`, `sm-bp`, `ottctv-bp`, `seo-bp`, `yttv-bp`), the Geotargeting
+group (`nd-geo`, `nv-geo`, `pa-geo`, `pv-geo`), and Optional Content Support
+(`wm-content`, `w-content`).
+
+**Offline Visits Tracking deliberately excluded** (10 sections also reuse this
+exact name) — Claire's correction: it's never its own billed line item, only a
+boolean flag (`has_offline_visits`) on the PARENT tactic's own `campaign_lines`
+row, with no charge of its own. Confirmed in code: it never creates its own
+`campaign_lines` row (the Strategist Portal shows it by appending "+ Offline
+Visits Tracking" to the base tactic's already-identified name via
+`strategistTacticDisplay()`), so there's no ambiguity risk worth the
+disambiguation — left as plain "Offline Visits Tracking" everywhere, no
+`accounting_label` set.
+
+**Also caught reading the live trigger**: `create_campaign_lines_from_order()`
+only creates a `campaign_lines` row when a line item's `spend` value is
+`> 0` — meaning flat-fee/recurring services (most of the SEO/Social Media/LLO/
+Reputation "Business Pro/Builder/Starter" tiers) never create a Strategist
+Portal row at all, regardless of any labeling work. Confirmed via a live count
+query before assuming the backfill below did anything meaningful: only
+`mob-bp` (1 row), `nd-geo` (1), `pa-geo` (2), and `sem-bp` (5) actually had
+existing `campaign_lines` rows — every other id's backfill statement was a
+harmless no-op (matched zero rows), not a failure.
+
+**What was run** (Claire, directly in Supabase SQL editor):
+1. `accounting-label-disambiguation-2026-08-07.sql` (scratchpad, not
+   committed) — sets `services.accounting_label` for all 22 ids, then a
+   one-time backfill of `campaign_lines.tactic_label` for the same 22 ids (9
+   rows actually existed and were updated, per the count above).
+2. `create-campaign-lines-trigger-patch-2026-08-07.sql` (scratchpad, not
+   committed) — patched `create_campaign_lines_from_order()` to look up
+   `coalesce(accounting_label, label)` live from `services` at insert time
+   (falling back to the order's own stored label if the service can't be
+   found), instead of only ever using the plain label baked into the order's
+   `line_items` JSON. `CREATE OR REPLACE`, same return shape as the original —
+   no `DROP FUNCTION` needed. This is what makes FUTURE signed IOs land in the
+   Strategist Portal already disambiguated, without any `index.html` change —
+   the public form never needed to know about `accounting_label` at all.
+
+No code in this repo changed — this was entirely a data + Supabase-function
+change, using mechanisms (`accounting_label`, the Accounting Map's existing
+preference for it) that already existed.
+
+**Cancellation design work — still PARKED, unchanged.** Claire confirmed she
+still needs to (1) talk it through with the team and (2) decide the mid-month
+billing-stop-timing question before any of it gets built. Nothing new to record
+there; see the 2026-08-06 "Cancellation design sketch" entry for the full
+sketch when this picks back up.
