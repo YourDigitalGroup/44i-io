@@ -66,22 +66,48 @@ textarea{resize:vertical;min-height:70px}
 /* Service table */
 .svc-table{width:100%;border-collapse:collapse;table-layout:fixed}
 /* Uniform column widths so every section lines up vertically. Columns:
-   checkbox · service · fee · frequency · [spend, ad tables only] · notes.
-   Long service names wrap within the Service column rather than stretching it. */
-.svc-table col.c-chk{width:38px}
-.svc-table col.c-svc{width:270px}
-.svc-table col.c-fee{width:96px}
-.svc-table col.c-freq{width:104px}
-.svc-table col.c-spend{width:120px}
-.svc-table col.c-start{width:118px}
-.svc-table col.c-end{width:118px}
-.svc-table col.c-notes{width:auto}
+   checkbox · service · fee · frequency · [spend, ad tables only] · start · end · notes.
+   Long service names wrap within the Service column rather than stretching it.
+   FIXED (2026-08-07, found live via a Claire screenshot — the Notes column was
+   fully invisible on the 8-column ad-spend tables, e.g. Amazon Prime Ads): the
+   parent .wrap is a hard max-width:900px with overflow:hidden (not a "usually big
+   enough" soft cap — it's the true ceiling regardless of window size), so these
+   fixed pixel widths have to actually fit inside ~852px of usable card width
+   (900 minus .wrap's own 24px×2 padding), not just "look fine on a wide monitor."
+   Today's earlier calendar-picker change widened c-start/c-end from 78px to 118px
+   each (+80px total) specifically to fit a native date box — enough on its own to
+   push the 8-column ad-spend tables past that ceiling, squeezing Notes to ~0px.
+   Trimmed every column back down with real headroom to spare, and added a
+   horizontal-scroll wrapper (.svc-table-scroll below) as a safety net so Notes
+   stays REACHABLE even in some future edge case, rather than silently clipped. */
+.svc-table col.c-chk{width:32px}
+.svc-table col.c-svc{width:210px}
+.svc-table col.c-fee{width:80px}
+.svc-table col.c-freq{width:88px}
+.svc-table col.c-spend{width:100px}
+.svc-table col.c-start{width:100px}
+.svc-table col.c-end{width:100px}
+.svc-table col.c-notes{width:auto;min-width:140px}
+/* Safety net for the fixed-width columns above ever not fitting (a very long
+   service name section, a future extra column, a narrower browser chrome) — the
+   table scrolls horizontally within its own box instead of the .card silently
+   clipping content past its edge the way it did before this fix. */
+.svc-table-scroll{overflow-x:auto}
 .svc-table td.svc-start-cell,.svc-table td.svc-end-cell{padding:6px 6px}
 .svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input{font-size:11px;padding:4px 5px;width:100%;box-sizing:border-box}
 .svc-table td:nth-child(2){white-space:normal;word-break:normal;overflow-wrap:anywhere}
 .svc-table td.svc-freq{color:var(--muted);font-size:11.5px;text-align:right}
 .svc-table td.right{overflow:hidden;text-overflow:ellipsis;text-align:right;color:var(--muted)}
-.svc-table td:last-child input[type=text]{width:100%;box-sizing:border-box}
+/* Notes textarea (2026-08-07, replaces a plain <input> — see autoGrowNotesField())
+   styled to look identical to every other field here, just able to grow with typed
+   content instead of hiding the overflow past its right edge. resize:none since
+   auto-grow already handles height; overflow-y:hidden avoids a flashing scrollbar
+   while the height transitions. */
+.svc-table td:last-child textarea.notes-field{
+  width:100%;box-sizing:border-box;display:block;resize:none;overflow-y:hidden;
+  font-family:inherit;font-size:12px;line-height:1.4;padding:4px 8px;
+  border:1px solid var(--border);border-radius:5px;min-height:26px
+}
 .svc-table th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;text-align:left;background:var(--light);border-bottom:1px solid var(--border)}
 .svc-table th.right{text-align:right}
 .svc-table td{padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;vertical-align:middle}
@@ -119,6 +145,7 @@ textarea{resize:vertical;min-height:70px}
    on the table's shape class (money / monthly / fee / spend) so a CPM is never
    mislabelled as a Fee. */
 @media (max-width: 600px) {
+  .svc-table-scroll { overflow-x: visible; }   /* stacked cards below don't need the scroll wrapper */
   .svc-table { table-layout: auto; }
   .svc-table colgroup, .svc-table col { display: none; }
   .svc-table thead { display: none; }                 /* column headers don't apply per-card */
@@ -176,7 +203,7 @@ textarea{resize:vertical;min-height:70px}
   .svc-table td.svc-fee::before  { content: 'Fee'; }
   .svc-table td.svc-freq::before { content: 'Frequency'; }
   .svc-table td:last-child::before { content: 'Notes'; }
-  .svc-table td:last-child input[type=text] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; }
+  .svc-table td:last-child textarea.notes-field { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; }
 
   /* Spend cell (ad tables) — labelled + full-width input */
   .svc-table td.c-spend-cell::before { content: 'Spend'; }
@@ -2310,6 +2337,17 @@ function fmtPhone(input) {
   input.value = v;
 }
 
+// Per-row Notes field (2026-08-07, per Claire — typed text overflowed past the box's
+// edge with no way to see the full note, since <input> never wraps). Switched to a
+// <textarea rows=1> that grows to fit its content: reset to 'auto' first so a
+// shrinking edit (e.g. deleting a line) can shrink the box back down, not just grow.
+// Called on typing AND on draft-restore (restoreDraft() sets a value programmatically,
+// which doesn't fire oninput on its own).
+function autoGrowNotesField(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
 // ── PER-TACTIC CAMPAIGN DATES ──────────────────────────────────────
 // Replaces the old calcRowEndDate()/Length-select design (2026-08-06, per Claire —
 // the 3-field row was too cramped) — Start and End are now both picked directly, no
@@ -2771,7 +2809,7 @@ function syncRowInputs() {
   Object.keys(selected).forEach(id => {
     const row = document.querySelector(`tr[data-id="${id}"]`);
     if (!row) return;
-    const noteInput = row.querySelector('input[type=text].notes-field');
+    const noteInput = row.querySelector('.notes-field');
     if (noteInput) selected[id].notes = noteInput.value.trim();
     // Quantity has its own class so it's never mistaken for the ad-spend input below —
     // in practice a row is never both per-unit AND spend-priced (pricing_mode is a single
@@ -5068,7 +5106,7 @@ function buildDraft() {
     const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     const qtyInput   = row.querySelector('.qty-field');
     const quotedInput = row.querySelector('input[type=number].quoted-price-field');
-    const noteInput  = row.querySelector('input[type=text].notes-field');
+    const noteInput  = row.querySelector('.notes-field');
     if (spendInput && spendInput.value) draft.spendValues[id] = spendInput.value;
     if (qtyInput && qtyInput.value) draft.qtyValues[id] = qtyInput.value;
     if (quotedInput && quotedInput.value) draft.quotedValues[id] = quotedInput.value;
@@ -5188,8 +5226,8 @@ function loadDraft() {
         Object.entries(d.noteValues).forEach(([id, val]) => {
           const row = document.querySelector(`tr[data-id="${id}"]`);
           if (!row) return;
-          const input = row.querySelector('input[type=text].notes-field');
-          if (input) input.value = val;
+          const input = row.querySelector('.notes-field');
+          if (input) { input.value = val; autoGrowNotesField(input); }
         });
       }
       updateBadges();
@@ -5289,7 +5327,7 @@ function resetForm() {
   formPages.forEach(page => {
     document.querySelectorAll(`${page} input[type=checkbox]`).forEach(cb => cb.checked = false);
     document.querySelectorAll(`${page} tr.selected`).forEach(tr => tr.classList.remove('selected'));
-    document.querySelectorAll(`${page} input[type=text], ${page} input[type=email], ${page} input[type=tel], ${page} input[type=date], ${page} input[type=time], ${page} input[type=number], ${page} textarea`).forEach(i => i.value = '');
+    document.querySelectorAll(`${page} input[type=text], ${page} input[type=email], ${page} input[type=tel], ${page} input[type=date], ${page} input[type=time], ${page} input[type=number], ${page} textarea`).forEach(i => { i.value = ''; if (i.tagName === 'TEXTAREA') i.style.height = ''; });
   });
   // Kept as a second, redundant safety net now that the root cause above is fixed —
   // harmless to leave in place.
@@ -5646,7 +5684,7 @@ function generateCatalogRowHtml(r, hasSpendCol) {
       <td>${esc(r.label)}</td>
       ${spendCell}
       ${dateCells}
-      <td><input type="text" class="notes-field" placeholder="Notes..."/></td>
+      <td><textarea class="notes-field" placeholder="Notes..." rows="1" oninput="autoGrowNotesField(this)"></textarea></td>
     </tr>`;
 }
 
@@ -5712,7 +5750,7 @@ function renderMultiTableSection(sectionId) {
     // sub-table now gets its own headers, making each one self-contained and readable
     // on its own rather than depending on a DIFFERENT table further up the page.
     const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th class="right">Start</th><th class="right">End</th><th>Notes</th></tr></thead>';
-    const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-start"/><col class="c-end"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(r => generateCatalogRowHtml(r, true)).join('')}</tbody></table>`;
+    const tableHtml = `<div class="svc-table-scroll"><table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-start"/><col class="c-end"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(r => generateCatalogRowHtml(r, true)).join('')}</tbody></table></div>`;
     return headerHtml + tableHtml;
   }).join('');
 }
@@ -5980,12 +6018,12 @@ function renderSectionCards() {
       const thead = hasSpend
         ? `<th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th>${dateThs}<th>Notes</th>`
         : `<th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th>${dateThs}<th>Notes</th>`;
-      body = `<table class="svc-table ${shapeClass}"><colgroup>${colgroup}</colgroup>
+      body = `<div class="svc-table-scroll"><table class="svc-table ${shapeClass}"><colgroup>${colgroup}</colgroup>
           <thead><tr>${thead}</tr></thead>
           <tbody id="tbody-${esc(sec.id)}">
             <!-- Rows generated at runtime via renderCatalogSection('${esc(sec.id)}') -->
           </tbody>
-        </table>`;
+        </table></div>`;
     }
     return `<div class="card">
       <div class="card-head" onclick="toggleSection('${esc(sec.id)}')">
