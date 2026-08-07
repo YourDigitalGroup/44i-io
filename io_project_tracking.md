@@ -8014,3 +8014,35 @@ explored, and it was never built. This is distinct from the real, live Accountin
 (an admin-portal tab for margin/CPM/cut-% configuration per service) — that page
 doesn't show or receive spend/budget figures either. So today, a budget change made
 in the Strategist Portal has no accounting-side destination to flow into.
+
+### 2026-08-07 (cont'd) — Multi-discipline strategist support: schema/RPC confirmed live, feature now fully closed out
+
+Picked back up the one piece left open from the multi-discipline strategist project
+(client-side admin editor + public form logic were already done and shipped earlier
+this session): confirming the `services.strategist_disciplines` column actually
+exists and that `admin_save_service` writes it correctly.
+
+Ran `select column_name from information_schema.columns where table_name =
+'services' and column_name ilike '%discipline%'` — only `strategist_disciplines`
+came back. The old planned single-value column (`strategist_discipline`, from the
+2026-08-06 single-discipline build) was never actually created in the live database
+— only written up in the plan — so there was nothing to backfill from; a plain
+`alter table services add column if not exists strategist_disciplines jsonb not
+null default '[]'::jsonb` was enough (and turned out to already be a no-op, since
+the column was already there from an earlier partial run).
+
+Pulled the live `admin_save_service` definition via `pg_get_functiondef` and
+confirmed it already handles `strategist_disciplines` correctly on both paths — no
+patch needed:
+- Insert: `coalesce(p_data->'strategist_disciplines', '[]'::jsonb)` in the column
+  list, using `->` (jsonb) not `->>` (text), correct for an array value.
+- Update: `strategist_disciplines = case when p_data ? 'strategist_disciplines'
+  then p_data->'strategist_disciplines' else strategist_disciplines end` — the
+  same partial-update convention every other column in this RPC uses, also
+  correctly using `->`.
+- No reference anywhere to the old `strategist_discipline` singular column.
+
+**Multi-discipline strategist support is now fully wired end-to-end**: schema,
+save RPC, admin Service editor's "Multiple Strategists Needed?" checkbox UI, and
+the public form's Trello-tagging resolution logic (`memberIdsForLineItems` /
+`serviceDisciplines`). Nothing left pending on this thread.
