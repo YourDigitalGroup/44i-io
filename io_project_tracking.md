@@ -7471,4 +7471,36 @@ not a scrollable region). Items 2-4 (print Campaign Notes styling, Additional
 Notes position, date-pill polish) are markup/CSS changes verified by reading the
 generated template directly — no independent screenshot this round since none of
 the three touch any JS logic, only presentation of already-correct data.
-print/PDF engines can differ slightly from on-screen rendering).
+
+### 2026-08-07 (cont'd) — Regression from the column-realignment fix: two inline Fee-column controls now overflow
+
+Claire's screenshot showed the Quote-price input clipped to "…" again, and the
+quarter-hour preset dropdown ("1 hr") visibly overflowing the Fee column into
+Frequency — both real regressions from the "cramped tables" column-alignment fix
+earlier today.
+
+**Root cause**: `.c-fee` was narrowed from 96px to 80px in that fix (to free up
+room for Notes on the 8-column ad-spend tables), but two special-case inline
+controls that live INSIDE the Fee column — `quoted-price-field` (the "Quote $"
+input for QUR items) and the quarter-hour preset `<select>` (Optional Content
+Support's "× 1 hr" dropdown) — were never re-checked against the new width. Both
+were hardcoded to `width:64px`, sized for the OLD 96px column (24px padding left
+72px usable, 64px fit with margin). The new 80px column leaves only ~56px usable
+— 64px now overflows by 8px, which is exactly enough to either clip via the cell's
+existing `overflow:hidden;text-overflow:ellipsis` (the Quote input) or visibly
+spill past the column edge (the preset select, which isn't wrapped by an ellipsis
+rule the same way).
+
+**Fix**: shrunk both to fit the new ~56px usable width with real margin, same
+reasoning as the ORIGINAL "not a razor's-edge fit" comment already documented for
+`quoted-price-field` (just re-applied against the new column width instead of the
+old one): `quoted-price-field` 64px→46px, placeholder "Quote $"→"$"; the preset
+`<select>` 64px→44px, font-size 11px→9px (fits every preset label, "15 min"
+through "2 hrs", comfortably).
+
+**Verified**: `node --check` passes. Re-ran every existing Playwright test from
+today — all still pass unchanged. Rendered the actual fixed markup with the page's
+real CSS for both affected rows (Optional Content Support's per-unit preset
+dropdown, a QUR flat-rate row's Quote input) and screenshotted it
+(`screenshot-fee-column-fix.js`, scratchpad-only) — confirms "1 hr" now sits fully
+inside the Fee column and the Quote input shows a plain "$" with no "…" clipping.

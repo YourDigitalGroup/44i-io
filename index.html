@@ -5970,18 +5970,23 @@ function renderPriceCells() {
       const existingVal = selected[id]?.quotedPriceEntered
         ? (isOneTime ? selected[id].fee : selected[id].recurring)
         : '';
-      // Fits inside the shared 96px .c-fee column — the column's own 12px-each-side
-      // cell padding (.svc-table td) leaves only ~72px of usable content width, and the
-      // cell itself has overflow:hidden + text-overflow:ellipsis (.svc-table td.right),
-      // so anything wider gets silently clipped with a trailing "…" rather than wrapping
-      // or visibly overflowing. A 100px input clipped its own placeholder text to
-      // "Quoted Pric"; a follow-up at 76px was STILL a few px over that ~72px ceiling,
-      // producing the "…" sitting just past the visible box. Shrunk further (64px, well
-      // under the ceiling) with an even shorter placeholder so there's real margin, not
-      // a razor's-edge fit.
-      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quote $" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:64px;padding:2px 3px;font-size:11px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
+      // Fits inside the shared .c-fee column — the column's own 12px-each-side cell
+      // padding (.svc-table td) eats into whatever the column's total width is, and
+      // the cell itself has overflow:hidden + text-overflow:ellipsis (.svc-table
+      // td.right), so anything wider than the remaining usable width gets silently
+      // clipped with a trailing "…" rather than wrapping or visibly overflowing.
+      // FIXED (2026-08-07, found live via a Claire screenshot — the "…" was back):
+      // .c-fee was narrowed from 96px to 80px in the column-realignment fix earlier
+      // today (to make room for Notes on the 8-column ad-spend tables), which wasn't
+      // re-checked against this input's own still-96px-era 64px width — 80px column
+      // minus 24px padding leaves only ~56px usable, less than the input's own 64px.
+      // Shrunk again (46px, well under the new ceiling) with an even shorter
+      // placeholder so there's real margin, not a razor's-edge fit — matches the
+      // reasoning already documented above, just re-applied to the new narrower
+      // column width.
+      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="$" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:46px;padding:2px 3px;font-size:10px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
     } else if (r.pricing_mode === 'per_unit') {
-      // 96px fixed column width (.c-fee, shared by every table) can't fit "$175 ×
+      // .c-fee's fixed column width (shared by every table) can't fit "$175 ×
       // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
       // Deliberate 2-line stack instead: fee on top, compact "× [box]" beneath,
       // both right-aligned (inherits feeTd's .right class) — reads as intentional.
@@ -5999,8 +6004,14 @@ function renderPriceCells() {
       const presetOptions = r.qty_preset_options
         ? (typeof r.qty_preset_options === 'string' ? JSON.parse(r.qty_preset_options) : r.qty_preset_options)
         : null;
+      // Preset dropdown width shrunk (2026-08-07, same "…" overflow found live via
+      // the same Claire screenshot as quoted-price-field above, same root cause —
+      // .c-fee narrowed 96px->80px earlier today, not re-checked against this
+      // control's own still-96px-era 64px width) — 44px comfortably fits every
+      // preset label ("15 min" through "2 hrs") within the new ~56px usable width,
+      // alongside the "×" prefix beside it.
       const qtyControl = (Array.isArray(presetOptions) && presetOptions.length)
-        ? `<select class="qty-field" onchange="updateQty(this,'${esc(id)}')" style="width:64px;padding:2px 3px;font-size:11px;border:1px solid var(--border);border-radius:5px" title="Quantity">
+        ? `<select class="qty-field" onchange="updateQty(this,'${esc(id)}')" style="width:44px;padding:1px 2px;font-size:9px;border:1px solid var(--border);border-radius:5px" title="Quantity">
             ${presetOptions.map(h => `<option value="${h}" ${h === 1 ? 'selected' : ''}>${esc(qtyOptionLabel(h))}</option>`).join('')}
           </select>`
         : `<input type="number" class="qty-field" min="1" value="1" onchange="updateQty(this,'${esc(id)}')" style="width:36px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity"/>`;
