@@ -1068,6 +1068,20 @@ function monthRowFor(lineId, monthDate) {
   return prior ? { campaign_line_id: lineId, month: monthDate.toISOString().slice(0,10), gross_budget: prior.gross_budget, _carried: true } : null;
 }
 
+// FIXED (2026-08-07, found live via Claire — the Campaign Setup queue's Gross
+// Budget summary read blank while viewing a month before the campaign's own flight
+// start, even though the real starting budget already existed from the signed IO):
+// monthRowFor() is tied to whichever month the top-bar picker happens to be on —
+// correct for an ACTIVE campaign (you're genuinely asking "what was budgeted for
+// THIS specific month"), but wrong for a still-pending setup, which hasn't started
+// yet and has nothing to do with today's calendar month. Used only by
+// renderSetupPanels() below — the main pacing table (Active/Paused/Complete) keeps
+// using monthRowFor() + the real top-bar month, unchanged.
+function setupBudgetRowFor(lineId) {
+  const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
+  return rows[0] || null;
+}
+
 function strategistLineActiveInMonth(line, monthDate) {
   const monthKey = strategistMonthKey(monthDate);
   if (line.flight_start && monthKey < strategistMonthKey(new Date(line.flight_start + 'T00:00:00'))) return false;
@@ -1141,7 +1155,7 @@ function renderSetupPanels(lines) {
   if (!lines.length) return '<p style="color:var(--muted);font-size:13px;padding:20px 0">No campaigns waiting on setup.</p>';
   return lines.map(l => {
     const client = l.client_name || '(unknown client)';
-    const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
+    const monthRow = setupBudgetRowFor(l.id) || {};
     const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
     const monthRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month));
     return `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#FAFCFE">
@@ -1190,6 +1204,42 @@ function renderSetupPanels(lines) {
 function strategistToggleVaries(lineId, checked) {
   document.getElementById('setup-months-' + lineId).style.display = checked ? '' : 'none';
   strategistSaveLine(lineId, { budget_varies_by_month: checked }, false);
+  if (checked) strategistPrefillMonths(lineId);
+}
+
+// Pre-fills up to 12 months' worth of Gross Budget rows the moment "Budget is
+// different by month" gets checked (2026-08-07, per Claire — having to click
+// "+ Add month" one at a time to build out a flight's whole schedule before you
+// can even start correcting the specific months that actually differ was real
+// friction). Copies the SAME base budget already on file (setupBudgetRowFor()'s
+// row — the flight's earliest month, seeded from the signed IO) into every month
+// from there that doesn't already have its own row, capped at 12 — a flight
+// running years or genuinely open-ended ("Ongoing", no end date) only gets its
+// first 12 months pre-filled; "+ Add month" still works for anything beyond that.
+// No-op if 2+ real month rows already exist (someone's already building this out
+// by hand — don't second-guess it), or if there's no base budget yet to copy from.
+async function strategistPrefillMonths(lineId) {
+  const existingRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId);
+  if (existingRows.length > 1) return;
+  const baseRow = setupBudgetRowFor(lineId);
+  if (!baseRow || baseRow.gross_budget == null) return;
+  const existingMonths = new Set(existingRows.map(m => m.month));
+  const start = new Date(baseRow.month + 'T00:00:00');
+  const saves = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    const monthStr = d.toISOString().slice(0, 10);
+    if (!existingMonths.has(monthStr)) {
+      saves.push(sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_campaign_line_id: lineId, p_month: monthStr, p_data: { gross_budget: baseRow.gross_budget }
+      }) }));
+    }
+  }
+  if (!saves.length) return;
+  await Promise.all(saves);
+  await fetchStrategistData();
+  renderStrategistDashboard();
 }
 
 async function strategistAddSetupMonth(lineId) {

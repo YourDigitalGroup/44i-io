@@ -7905,4 +7905,54 @@ different strategist stays visible under "My Campaigns" scope (previously would
 have been hidden); an active line assigned to someone else is still correctly
 hidden under "My Campaigns" (unchanged); the same active line becomes visible under
 "All Strategists" (unchanged). Committed and pushed.
+
+### 2026-08-07 (cont'd) — Campaign Setup: Gross Budget display was month-gated, plus a pre-fill for "Budget is different by month"
+
+Claire's AM found two more things while testing the SEM campaign from earlier: the
+Setup panel's Gross Budget line showed "$—/mo" while she happened to be viewing
+August 2026, even though the campaign's real starting budget ($1,000/mo, from the
+signed IO) already existed — just on the September row, since the flight starts
+Sep 1. Confirmed via code, not just guessed: `renderSetupPanels()` was calling
+`monthRowFor(l.id, strategistCurrentMonth)` — the SAME function the Active/Paused/
+Complete pacing table correctly uses (tied to whichever month the top-bar picker is
+on), but wrong for a still-`pending` setup, which hasn't started yet and has
+nothing to do with today's calendar month. Viewing a month before flight start
+finds no exact row and nothing to carry forward from (carry-forward only looks
+backward in time), so it shows blank — not a bad write, just a display gap.
+
+**Fix**: new `setupBudgetRowFor(lineId)` — returns the line's EARLIEST
+`campaign_months` row regardless of which month is selected in the top bar. Used
+only inside `renderSetupPanels()`; `monthRowFor()` itself and the main pacing table
+are completely untouched, since month-based viewing IS correct once a campaign is
+actually active.
+
+**Second ask, confirmed via AskUserQuestion (12-month cap, not the full flight)**:
+checking "Budget is different by month" used to just reveal whatever month rows
+already existed (usually just the one seeded by the signing flow) — building out a
+whole flight's schedule meant clicking "+ Add month" one at a time before you could
+even start correcting the specific months that differ. New
+`strategistPrefillMonths(lineId)`, called from `strategistToggleVaries()` the
+moment the checkbox goes to checked: copies the SAME base budget
+(`setupBudgetRowFor()`'s row) into every month from the flight's start that doesn't
+already have its own row, capped at 12 — a flight running years (like the real SEM
+one, 3 years) or genuinely open-ended ("Ongoing") only gets its first 12 months
+pre-filled; "+ Add month" still works for anything beyond that. Explicitly a no-op
+if 2+ real month rows already exist (someone's already building this out by hand —
+don't second-guess it) or if there's no base budget yet to copy from. All 12
+inserts fire in parallel (`Promise.all`), followed by ONE refetch+re-render, not 12
+— avoids hammering the API/UI with a full round-trip per month.
+
+**Verified**: `node --check` passes. New Playwright test
+(`test-setup-budget-not-month-gated.js`, scratchpad-only): reproduces Claire's exact
+scenario (flight starts September, viewing August shows blank via `monthRowFor()`,
+but `setupBudgetRowFor()` correctly returns the real $1,000 budget regardless of
+which month is viewed); confirms the main table's `monthRowFor()` is completely
+unchanged (still correctly carries the budget forward once actually viewing a month
+after flight start). New Playwright test (`test-prefill-months.js`,
+scratchpad-only): checking the box creates exactly 11 new months (12 total minus
+the 1 that already existed), all using the correct base budget, correctly stopping
+at 12 months out (no 13th), and doesn't duplicate the already-existing September
+row; confirms it's a no-op once 2+ real rows already exist. Re-ran
+`test-pending-scope-exemption.js` — still passes, no regression from the earlier
+fix in the same file.
 today). Items 4 and 5 not yet resolved.
