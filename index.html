@@ -51,6 +51,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .card-head h3{font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;letter-spacing:.01em}
 .card-head .badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--light);color:var(--muted)}
 .card-head .badge.active{background:#DCFCE7;color:#166534}
+/* Collapse/expand chevron (2026-08-07, replaces raw ▶/▼ Unicode — see toggleSection()
+   for why: some mobile browsers substitute their own glyph for those characters,
+   which is what made it look like a play button). Rotates via CSS instead of
+   swapping characters, so a plain SVG chevron is the only visual involved. */
+.chevron{display:inline-flex;flex-shrink:0;color:var(--muted);transition:transform .15s ease}
+.chevron.expanded{transform:rotate(90deg)}
 .card-body{padding:0}
 
 /* Form fields */
@@ -250,6 +256,14 @@ textarea{resize:vertical;min-height:70px}
     grid-template-columns: minmax(0,1fr) !important;
   }
 
+  /* Contact Name/Phone, Email/Website, City/Business Type (Client Information card)
+     — genuinely balanced pairs, unlike Group/AE above (which no longer uses cols2 at
+     all), but still cramped as two half-width inputs on a phone screen. Stacking these
+     on mobile only, not desktop, where the side-by-side pairing is comfortable. */
+  .field-group.cols2 {
+    grid-template-columns: minmax(0,1fr) !important;
+  }
+
   /* Date inputs STILL overflow on phone even with the max-width cap above — confirmed by
      testing (IO Date/Start Date and the signer page's Date Signed all overflowed the same
      way). Root cause: iOS Safari's NATIVE date-control chrome sizes itself somewhat
@@ -287,7 +301,13 @@ textarea{resize:vertical;min-height:70px}
 .total-item .lbl{font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
 
 /* Summary table */
-.summary-table{width:100%;border-collapse:collapse;font-size:13px}
+/* FIXED (2026-08-07, per Claire on mobile — Notes was cut off): same root cause as
+   the earlier svc-table Notes fix — the card clips overflow, and this table has no
+   responsive handling at all. Scrolls horizontally within its own box instead of
+   letting the card clip it; min-width keeps every column readable rather than the
+   browser squeezing all 5 into whatever narrow width is available. */
+.summary-table-scroll{overflow-x:auto}
+.summary-table{width:100%;min-width:560px;border-collapse:collapse;font-size:13px}
 .summary-table th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
 .summary-table td{padding:9px 14px;border-bottom:1px solid var(--border)}
 .summary-table tr:last-child td{border-bottom:none}
@@ -396,7 +416,14 @@ textarea{resize:vertical;min-height:70px}
   <div id="page-1">
     <div class="card">
       <div class="card-head"><h3>Group & Account Info</h3></div>
-      <div class="field-group cols2">
+      <!-- Stacked, not cols2 (2026-08-07, per Claire — reported cramped specifically
+           on mobile, but the imbalance is real at any width): Group is a single
+           field, AE info is four — side by side, the Group column's box sits alone
+           with a lot of dead space beneath it while the AE column keeps going,
+           which is what actually looked cramped/broken. Stacking reads top-to-down
+           the same way the Client Info card below already stacks "Business Name"
+           above ITS balanced cols2 pairs. -->
+      <div class="field-group">
         <div id="group-display" style="display:none">
           <label class="lbl">Group</label>
           <div id="group-name-display" style="padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#F9FAFB;font-weight:600"></div>
@@ -624,7 +651,7 @@ textarea{resize:vertical;min-height:70px}
     <!-- Summary table -->
     <div class="card">
       <div class="card-head"><h3>Selected Services Summary</h3></div>
-      <div style="padding:0">
+      <div class="summary-table-scroll" style="padding:0">
         <table class="summary-table" id="summary-table">
           <thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead>
           <tbody id="summary-body"></tbody>
@@ -2388,11 +2415,18 @@ function updateTacticDate(input, id, which) {
 }
 
 // ── SECTION TOGGLE ────────────────────────────────────────────
+// FIXED (2026-08-07, per Claire on mobile): the collapse/expand indicator used to be
+// the raw Unicode characters ▶/▼ — several mobile browsers substitute their own
+// colorful "media player" glyph for U+25B6/U+25BC instead of a plain triangle,
+// which is exactly why it looked like a play button on her phone. Replaced with an
+// inline SVG chevron (renders identically everywhere, no font/emoji substitution
+// possible) that rotates 90° via a CSS class instead of swapping characters.
 function toggleSection(id) {
   const sec = document.getElementById('sec-' + id);
   const chev = document.getElementById('chevron-' + id);
-  if (sec.style.display === 'none') { sec.style.display = 'block'; chev.textContent = '▼'; }
-  else { sec.style.display = 'none'; chev.textContent = '▶'; }
+  const expand = sec.style.display === 'none';
+  sec.style.display = expand ? 'block' : 'none';
+  if (chev) chev.classList.toggle('expanded', expand);
 }
 
 // ── SERVICE TOGGLE ────────────────────────────────────────────
@@ -4545,9 +4579,6 @@ function buildIoDocumentHtml() {
   const kocDate = document.getElementById('koc-date')?.value || '';
   const kocTime = document.getElementById('koc-time')?.value || '';
   const kocDisplay = (kocDate && kocTime) ? `${kocDate} at ${kocTime}` : (kocDate || '—');
-  const campStart = document.getElementById('campaign-start').value || '—';
-  const campEnd = document.getElementById('campaign-end').value || '—';
-  const campLength = document.getElementById('campaign-length').value ? document.getElementById('campaign-length').value + ' Months' : '—';
   const campNotes = esc(document.getElementById('campaign-notes').value || '');
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
   const ioDate = document.getElementById('io-date').value || today;
@@ -4754,7 +4785,13 @@ function buildIoDocumentHtml() {
   table.services thead th.amt{text-align:right;width:22%}
   table.services thead th.flight{width:14%;white-space:nowrap}
   table.services thead th.notes{width:28%}
-  table.services tbody td{padding:6px 10px;border-bottom:1px solid #F1F3F5;vertical-align:top}
+  /* FIXED (2026-08-07, per Claire — a long note overflowed past the Notes column
+     instead of wrapping): a plain table cell only wraps at existing whitespace by
+     default — a long unbroken string (no spaces, e.g. a pasted URL or run-together
+     text) has nowhere to break, so it just overflows the column's fixed width
+     instead. overflow-wrap:anywhere forces a break even with no whitespace to break
+     at, same fix needed on svc-name for the same reason with a long service label. */
+  table.services tbody td{padding:6px 10px;border-bottom:1px solid #F1F3F5;vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
   table.services .svc-name{font-size:9.5pt;color:#111827}
   table.services .svc-amt{text-align:right;font-weight:600;font-size:9.5pt;color:#111827;white-space:nowrap}
   table.services .svc-flight{font-size:8.5pt;color:#6B7280;white-space:nowrap}
@@ -4835,20 +4872,14 @@ function buildIoDocumentHtml() {
 </div>
 
 <!-- Campaign window -->
+<!-- Start Date/End Date/Term removed (2026-08-07, found live via a Claire screenshot
+     — the printed IO still showed the old order-wide dates even though flight dates
+     have lived per-tactic, in the Services table's own Flight column, since
+     2026-08-06; only the Step 1 UI card was removed at the time, not this leftover
+     in the print template). Kick-Off Call is unrelated to flight dates (it's KOC
+     scheduling) and stays. -->
 <div class="section-title">Campaign Details</div>
-<div class="campaign-row">
-  <div>
-    <div class="cr-label">Start Date</div>
-    <div class="cr-value">${campStart}</div>
-  </div>
-  <div>
-    <div class="cr-label">End Date</div>
-    <div class="cr-value">${campEnd}</div>
-  </div>
-  <div>
-    <div class="cr-label">Term</div>
-    <div class="cr-value">${campLength}</div>
-  </div>
+<div class="campaign-row" style="grid-template-columns:1fr;max-width:200px">
   <div>
     <div class="cr-label">Kick-Off Call</div>
     <div class="cr-value">${kocDisplay}</div>
@@ -5372,7 +5403,7 @@ function resetForm() {
     const body = document.getElementById('sec-' + sec.id);
     const chev = document.getElementById('chevron-' + sec.id);
     if (body) body.style.display = 'none';
-    if (chev) chev.textContent = '▶';
+    if (chev) chev.classList.remove('expanded');
   });
   updateBadges();
   goStep(1);
@@ -6028,7 +6059,7 @@ function renderSectionCards() {
     return `<div class="card">
       <div class="card-head" onclick="toggleSection('${esc(sec.id)}')">
         <h3>${sec.icon ? esc(sec.icon) + ' ' : ''}${esc(sec.label)} ${headerNote}<span class="badge" id="badge-${esc(sec.id)}">0 selected</span></h3>
-        <span id="chevron-${esc(sec.id)}">▶</span>
+        <span id="chevron-${esc(sec.id)}" class="chevron"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>
       </div>
       <div id="sec-${esc(sec.id)}" class="card-body" style="display:none">
         ${body}
