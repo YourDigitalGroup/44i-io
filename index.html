@@ -130,7 +130,23 @@ select.qty-field{background-image:none;padding-right:3px}
    clipping content past its edge the way it did before this fix. */
 .svc-table-scroll{overflow-x:auto}
 .svc-table td.svc-start-cell,.svc-table td.svc-end-cell{padding:6px 6px}
-.svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input{font-size:11px;padding:4px 5px;width:100%;box-sizing:border-box}
+/* FIXED (2026-08-07, per Claire — "the date pills look a little messy"): only
+   width/padding/font were set here, so these fell back to the base input style's
+   generic border-radius — fine on its own, but the browser's native calendar-icon
+   button sits glued to the right edge with no breathing room and a slightly
+   different visual weight than the rest of the box, which is what actually read
+   as "messy" next to the cleanly flat Spend/Fee cells beside it. Explicit
+   border-radius keeps it consistent with every other input on the form; the
+   calendar icon gets a little room and a toned-down opacity so it reads as a
+   subtle icon rather than a separate glued-on button. */
+.svc-table td.svc-start-cell input,.svc-table td.svc-end-cell input{
+  font-size:11px;padding:4px 5px;width:100%;box-sizing:border-box;
+  border-radius:6px;color:var(--text);cursor:pointer
+}
+.svc-table td.svc-start-cell input::-webkit-calendar-picker-indicator,
+.svc-table td.svc-end-cell input::-webkit-calendar-picker-indicator{
+  opacity:.55;padding:0 0 0 3px;cursor:pointer
+}
 .svc-table td:nth-child(2){white-space:normal;word-break:normal;overflow-wrap:anywhere}
 .svc-table td.svc-freq{color:var(--muted);font-size:11.5px;text-align:right}
 .svc-table td.right{overflow:hidden;text-overflow:ellipsis;text-align:right;color:var(--muted)}
@@ -271,8 +287,16 @@ select.qty-field{background-image:none;padding-right:3px}
      .svc-table above (2026-08-07, per Claire — "people won't think to scroll" is a
      fair read of a plain horizontal-scroll table on a phone; a stacked card, same
      pattern already used for the Step 2 service tables, needs no scrolling at all). */
+  /* FIXED (2026-08-07, per Claire — still scrollable, just showing blank space):
+     the base .summary-table rule below (min-width:560px, for the desktop scroll-
+     safety-net) sits LATER in this stylesheet than this media-query block. Equal
+     specificity + later source order means that base rule was winning even on
+     mobile, leaving the table (and the page around it) 560px wide with nothing
+     drawn past ~390px of actual phone screen — exactly a "scroll right into
+     blank" symptom. !important guarantees this override wins regardless of
+     where either rule sits in the file. */
   .summary-table-scroll { overflow-x: visible; }
-  .summary-table { min-width: 0; table-layout: auto; }
+  .summary-table { min-width: 0 !important; table-layout: auto; }
   .summary-table thead { display: none; }
   .summary-table, .summary-table tbody, .summary-table tr, .summary-table td { display: block; width: 100%; }
   .summary-table tr {
@@ -4844,8 +4868,6 @@ function buildIoDocumentHtml() {
   .campaign-row > div:first-child{border-left:none}
   .campaign-row .cr-label{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:3px}
   .campaign-row .cr-value{font-weight:600;color:#111827}
-  .campaign-notes-line{margin-top:8px;font-size:9.5pt;color:#374151;padding:8px 12px;background:#F9FAFB;border-left:3px solid ${color};border-radius:3px}
-  .campaign-notes-line strong{font-weight:600;color:#111827}
 
   /* Services table */
   table.services{width:100%;border-collapse:collapse;font-size:9.5pt}
@@ -4948,14 +4970,22 @@ function buildIoDocumentHtml() {
      in the print template). Kick-Off Call is unrelated to flight dates (it's KOC
      scheduling) and stays. -->
 <div class="section-title">Campaign Details</div>
-<div class="campaign-row" style="grid-template-columns:1fr;max-width:200px">
+<!-- Campaign Notes moved into this same row, styled like Kick-Off Call instead of
+     its own separate highlighted banner below (2026-08-07, per Claire) — a plain
+     label/value pair reads more consistently here than mixing one compact style
+     with one "callout box" style for two fields in the same section. Defaults to
+     "—" like Kick-Off Call already does, rather than hiding the field entirely
+     when empty, for the same reason. -->
+<div class="campaign-row" style="grid-template-columns:160px 1fr">
   <div>
     <div class="cr-label">Kick-Off Call</div>
     <div class="cr-value">${kocDisplay}</div>
   </div>
+  <div>
+    <div class="cr-label">Campaign Notes</div>
+    <div class="cr-value">${campNotes || '—'}</div>
+  </div>
 </div>
-${campNotes ? `<div class="campaign-notes-line"><strong>Campaign Notes:</strong> ${campNotes}</div>` : ''}
-${specialInstructions ? `<div class="special-box"><strong>Additional Notes</strong>${specialInstructions}</div>` : ''}
 
 <!-- Services -->
 <div class="section-title">Services &amp; Pricing</div>
@@ -4985,6 +5015,8 @@ ${specialInstructions ? `<div class="special-box"><strong>Additional Notes</stro
   </table>
 </div>
 ${monthly > 0 ? `<div class="first-month-note">Subsequent months: ${fmt(monthly)}/mo for the duration of the campaign term.</div>` : ''}
+
+${specialInstructions ? `<div class="special-box"><strong>Additional Notes</strong>${specialInstructions}</div>` : ''}
 
 <!-- Legal -->
 <div class="legal">
