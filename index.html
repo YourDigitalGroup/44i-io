@@ -3683,6 +3683,29 @@ async function submitIO() {
       }
     } catch(e) { console.warn('find_or_create_client failed — order will save without a linked client record:', e.message); }
 
+    // Auto-register a typed AE into the admin roster (2026-08-07, per Claire — an
+    // AM/AE who types their name instead of picking from the roster used to only ever
+    // live on this one order, never showing up under admin AEs afterward). Only fires
+    // when `selectedAeId` is null — i.e. the AE was free-typed, not picked from the
+    // roster dropdown (a real pick already has a roster row by definition, nothing to
+    // create). Same non-blocking, silently-skip-on-failure pattern as
+    // find_or_create_client just above — this is a nice-to-have data-hygiene step, not
+    // something that should ever block a real submission.
+    if (!selectedAeId) {
+      const aeNameForRoster = document.getElementById('ae-name').value.trim();
+      if (aeNameForRoster) {
+        try {
+          await sb('rpc/find_or_create_ae', { method:'POST', body: JSON.stringify({ p_payload: {
+            name: aeNameForRoster,
+            trello_handle: document.getElementById('ae-trello').value.trim() || null,
+            email: document.getElementById('ae-email')?.value.trim() || null,
+            market: document.getElementById('ae-market').value.trim() || null,
+            group_id: selectedGroup.id,
+          } }) });
+        } catch(e) { console.warn('find_or_create_ae failed — order will save without adding this AE to the roster:', e.message); }
+      }
+    }
+
     // 1b. Save order directly to Supabase
     // System-assigned IO number — generated once here, stored on the order, and reused
     // by the PDF so printed and stored values match. Stable join key for future phases.

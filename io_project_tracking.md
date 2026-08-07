@@ -7799,3 +7799,84 @@ FUNCTION` needed. Client-side code (already committed) is safe ahead of this run
 the new `strategist_disciplines` payload key simply won't do anything server-side
 until the column/RPC are live — but the feature isn't functionally complete until
 Claire runs it.
+
+### 2026-08-07 (cont'd) — First real end-to-end test by an AM: 5 findings
+
+Claire's AM ran a genuine test IO through the live system (not a dev-mode preview) —
+first real-world exercise of everything shipped today. "Almost everything worked
+exactly how we planned." Five follow-ups from what she found:
+
+**1. Removed stale Campaign Start/Length from the Trello IO card's description.**
+Same root cause as the printed-IO fix earlier today, just a second leftover spot
+never caught then: `**Campaign Start:**`/`**Campaign Length:** — Months` in the
+Trello card description text (`ioDesc` in `submitIO()`) — order-wide fields from
+before per-tactic dates existed. Each line item's own Flight text (already in the
+same description) covers Start; Campaign Length is now always blank (per-tactic
+lengths can differ), so it only ever printed "— Months," never useful. Removed both
+lines outright — Campaign Notes (still real, still used) stays.
+
+**2. Trello IO description now prefers `accounting_label` too.** Same preference
+already applied to the Accounting Map and `campaign_lines.tactic_label` earlier
+today, extended to the per-service line in the Trello card description
+(`servicesDesc` in `submitIO()`) — added `accounting_label` to the `lineItems`
+builder (reads `CATALOG_ROWS[id]?.accounting_label`) and changed `li.label` to
+`li.accounting_label || li.label`. A reused name (one of the 12 "Business Pro"
+tiers, etc.) now reads disambiguated in the Trello card too, not just the
+Accounting Map/Strategist Portal.
+
+**3. New: typed AE names now auto-register into the admin AE roster.** The AM typed
+her own name into the AE field instead of picking from the roster dropdown (she
+wasn't in it yet) — under the OLD design this was deliberate ("the AE roster is
+admin-managed only and never auto-created from a submission by name match," per the
+existing comment on `setAeNameLocked()`) — but Claire confirmed (via AskUserQuestion)
+she wants this to change: a typed AE should show up in admin going forward, not just
+live on that one order. New RPC `find_or_create_ae(p_payload jsonb)` — password-free
+`SECURITY DEFINER`, same public-form exception as `find_or_create_client`. Dedup:
+case-insensitive exact name match, scoped to `group_id` (AEs are already
+group-scoped, per `admin_save_ae`'s required `group_id`) — only ever CREATES when no
+match exists, never overwrites an existing roster row's `trello_handle`/`market`
+from a fresh submission (same "don't silently clobber" caution
+`find_or_create_client` already follows for clients). `submitIO()` calls it right
+after the `find_or_create_client` call, gated on `!selectedAeId` (null exactly when
+the AE was free-typed — a real roster pick already sets this via `applyAePick()`,
+nothing to create) and a non-blank name; same non-blocking, silently-skip-on-failure
+pattern as every other best-effort side-call in `submitIO()`. SQL given to Claire
+inline (`find_or_create_ae-2026-08-07.sql`, scratchpad, not committed) — not yet run.
+
+**4. Real limitation, not a quick bug: the attached PDF got cut off at a weird
+spot.** Traced the actual PDF-generation path (`generateIoPdfBlob()`,
+`index.html:5171`+): it screenshots the ENTIRE printed document as one tall image via
+html2canvas, then jsPDF slices that single image into fixed-height page chunks
+purely by pixel position — "standard long-image-sliced-across-pages technique," per
+its own comment. This has zero awareness of the underlying content — a page break
+can land anywhere, including mid-table-row or mid-sentence, purely by chance. The
+`@page`/`page-break-inside:avoid` CSS rules already in the file (`.sig-section`,
+`.doc-footer`, `.subtotal-row`, etc.) only apply to the browser's NATIVE print dialog
+— a completely separate, unrelated code path from what actually generates the
+attached/emailed PDF. Not fixed yet — a real fix (walk the live iframe DOM for those
+same already-flagged "don't break me" elements and nudge each page's cut point to
+the nearest safe boundary instead of a blind fixed height) is buildable without a
+full rearchitecture, but is a genuine chunk of work, flagged for its own follow-up
+round rather than rushed in alongside everything else today.
+
+**5. SEM tactic didn't show up in the Strategist Portal — under investigation.**
+Most likely explanation, given today's earlier finding: `create_campaign_lines_from_order()`
+only creates a `campaign_lines` row when a line item's `spend` is `> 0` — if the AM
+didn't enter an ad-spend dollar amount for SEM (plausible for a first test, or if SEM
+was sold QUR-style with no rate yet), no row would ever get created, by design, not a
+bug. Asked Claire to pull the actual submitted order's SEM line-item JSON to confirm
+one way or the other before concluding anything — genuinely could also be a
+real regression in today's trigger patch, not yet ruled out. Picking back up once
+that comes back.
+
+**Verified so far**: `node --check` on `index.html` after items 1/2/3. New Playwright
+test (`test-auto-add-ae.js`, scratchpad-only, run with `NODE_PATH=/opt/node22/lib/node_modules`
+since the scratchpad's own local playwright install had been cleared by an
+environment reset mid-session — global install at that path still has it):
+confirms a typed AE (no roster pick) triggers `find_or_create_ae` with the correct
+payload shape (name/trello_handle/email/market/group_id), a roster-picked AE does
+NOT trigger it, and a defensive blank-name edge case doesn't either. Items 1 and 2
+committed and pushed (commit `71ecb79`). Item 3's RPC not yet run by Claire — feature
+incomplete until it is (same "client code ships ahead of the SQL, harmlessly inert
+until it's live" pattern used for the multi-discipline strategist work earlier
+today). Items 4 and 5 not yet resolved.
