@@ -4531,10 +4531,12 @@ function buildIoDocumentHtml() {
 
       const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
       const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' — ');
-      // Flight column (2026-08-06) — compact "8/15–1/10" per-tactic format, same idea
-      // as the strategist portal's own Flight column, now that dates live per row.
+      // Flight column (2026-08-06) — compact "8/15/26–1/10/27" per-tactic format,
+      // same idea as the strategist portal's own Flight column, now that dates
+      // live per row. Year added (2026-08-07, per Claire) since a printed IO can
+      // span a calendar-year boundary and month/day alone was ambiguous there.
       const flightDisplay = (data.start_date || data.end_date)
-        ? `${data.start_date ? new Date(data.start_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric'}) : '—'} – ${data.end_date ? new Date(data.end_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric'}) : 'Ongoing'}`
+        ? `${data.start_date ? new Date(data.start_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'}) : '—'} – ${data.end_date ? new Date(data.end_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'}) : 'Ongoing'}`
         : '—';
       sectionRows += `<tr><td class="svc-name">${esc(data.label)}</td><td class="svc-amt">${amtCol}</td><td class="svc-flight">${esc(flightDisplay)}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
 
