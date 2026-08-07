@@ -5114,6 +5114,72 @@ function printIO() {
   setTimeout(() => win.print(), 600);
 }
 
+// ── PDF PAGINATION (content-aware) ──────────────────────────────
+// FIXED (2026-08-07, found live via Claire's AM — an attached IO PDF was "cut off
+// at a weird spot"): both PDF generators below capture the whole document as ONE
+// tall screenshot, then slice that image into fixed-height pages purely by pixel
+// position — a technique with zero awareness of the actual content. The @page/
+// page-break-inside CSS rules elsewhere in this file only apply to the browser's
+// native print dialog (window.print()), a completely separate path that never
+// touches this screenshot+slice approach, so they did nothing here. A blind
+// fixed-height cut can land anywhere: mid-table-row, mid-paragraph, mid-signature.
+//
+// Fix: before slicing, walk the live iframe DOM for the same "don't break me"
+// elements the print CSS already flags (table rows, the signature section, the
+// footer, subtotal/section-header rows — NOT .legal, which print CSS deliberately
+// allows breaking inside, since the Terms text is long/dense and fine to split
+// naturally), convert each one's position from CSS px to the PDF's mm space, and
+// nudge each page's cut point up to the nearest safe boundary whenever the naive
+// fixed-height cut would land inside one of them. A PDF page's own physical height
+// can't be shrunk mid-document, so the "saved" sliver at the bottom of a nudged
+// page is painted white instead of showing a partial element — that same content
+// then renders whole at the top of the next page instead.
+function computeUnsafeZonesMm(iframeDoc, imgWidthMm) {
+  const bodyWidthCss = iframeDoc.body.scrollWidth;
+  const mmPerCssPx = imgWidthMm / bodyWidthCss;
+  const selector = 'tr, .no-break, .section-row, .subtotal-row, .totals-row, .sig-section, .doc-footer';
+  return Array.from(iframeDoc.querySelectorAll(selector))
+    .map(el => {
+      const r = el.getBoundingClientRect();
+      return { top: r.top * mmPerCssPx, bottom: r.bottom * mmPerCssPx };
+    })
+    .filter(z => z.bottom > z.top)
+    .sort((a, b) => a.top - b.top);
+}
+
+function paginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, unsafeZones) {
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+
+  // Falls back to the naive cut if the unsafe zone itself doesn't fit within one
+  // page's height from pageStart — better to break through an oversized element
+  // than to get stuck making zero forward progress.
+  const nudgedCut = (naiveEnd, pageStart) => {
+    for (const zone of unsafeZones) {
+      if (naiveEnd > zone.top && naiveEnd < zone.bottom) {
+        return zone.top > pageStart ? zone.top : naiveEnd;
+      }
+    }
+    return naiveEnd;
+  };
+
+  let pageStart = 0;
+  let firstPage = true;
+  while (pageStart < imgHeight) {
+    const naiveEnd = Math.min(pageStart + pageHeight, imgHeight);
+    const pageEnd = naiveEnd < imgHeight ? nudgedCut(naiveEnd, pageStart) : naiveEnd;
+
+    if (!firstPage) pdf.addPage();
+    firstPage = false;
+    pdf.addImage(imgData, 'JPEG', 0, -pageStart, imgWidth, imgHeight);
+    if (pageEnd < pageStart + pageHeight) {
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(0, pageEnd - pageStart, pageWidth, (pageStart + pageHeight) - pageEnd, 'F');
+    }
+    pageStart = pageEnd;
+  }
+}
+
 // ── INTAKE PDF GENERATION (2026-07-15) ─────────────────────────
 // REWRITTEN 2026-07-15 (found live, per Claire — "format that PDF like the IO"): the
 // first version drew intake text directly via jsPDF's plain-text API, which has no
@@ -5157,21 +5223,11 @@ async function generateIntakePdfBlob(workflowName, html) {
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'letter', { compress: true });
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
     const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
     const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
-    let heightLeft = imgHeight;
-    let position = 0;
-    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-    }
+    paginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, computeUnsafeZonesMm(iframe.contentDocument, imgWidth));
 
     const safeWf = workflowName.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
     const fileName = `Intake-${safeWf || 'workflow'}-${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -5221,24 +5277,11 @@ async function generateIoPdfBlob() {
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'letter', { compress: true });
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
     const imgWidth = pageWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
     const imgData = canvas.toDataURL('image/jpeg', 0.85);
 
-    // Standard "long single image sliced across multiple PDF pages" technique — the same
-    // full-height image is drawn on each page at a progressively more negative Y offset,
-    // so each page's fixed height naturally clips to show only its own slice of content.
-    let heightLeft = imgHeight;
-    let position = 0;
-    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-    heightLeft -= pageHeight;
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-    }
+    paginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, computeUnsafeZonesMm(iframe.contentDocument, imgWidth));
 
     const fileName = `IO-${ioNumber}.pdf`;
     return { blob: pdf.output('blob'), base64: pdf.output('datauristring').split(',')[1], fileName };

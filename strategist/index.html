@@ -167,6 +167,11 @@ async function checkStrategistPw() {
 function showStrategistPanel(show) {
   document.getElementById('page-strategist').style.display = show ? 'block' : 'none';
   if (show && currentStrategistUser) {
+    // Default scope to "All Strategists" for a super admin (2026-08-07, per Claire) —
+    // a super typically has no campaigns of their own assigned, so "My Campaigns"
+    // (the module-level default for everyone else) would just start them on an
+    // always-empty view. A real strategist still starts on "My Campaigns" as before.
+    if (currentStrategistUser.role === 'super') strategistScope = 'all';
     const badge = document.getElementById('strategist-user-badge');
     const roleLabel = currentStrategistUser.role === 'super' ? 'Super Admin' : 'Strategist';
     badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#8B5CF6"></span><strong style="color:var(--text)">${esc(currentStrategistUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
