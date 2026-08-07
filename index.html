@@ -3556,6 +3556,7 @@ async function submitIO() {
       return {
         service_id: id,
         label: data.label,
+        accounting_label: CATALOG_ROWS[id]?.accounting_label || null,
         section: data.section,
         fee: (data.fee || 0) * qty,
         recurring: (data.recurring || 0) * qty,
@@ -3979,8 +3980,12 @@ async function submitIO() {
         const calUrl = selectedGroup.am_calendar_url || '';
 
         // ── IO card description ──
+        // Uses accounting_label (2026-08-07, same preference as the Accounting Map and
+        // campaign_lines.tactic_label) when set, so a reused service name (e.g. one of
+        // the 12 "Business Pro" tiers) reads disambiguated here too, not just in the
+        // Accounting Map/Strategist Portal.
         const servicesDesc = lineItems.map(li => {
-          let line = `• ${li.label}`;
+          let line = `• ${li.accounting_label || li.label}`;
           if (li.fee > 0) line += ` — $${li.fee.toLocaleString()} one-time`;
           if (li.recurring > 0) line += ` — $${li.recurring.toLocaleString()}/mo`;
           if (li.spend > 0) line += ` — $${li.spend.toLocaleString()}/mo spend`;
@@ -4003,8 +4008,6 @@ async function submitIO() {
 **City:** ${document.getElementById('city').value}
 **AE:** ${aeName}${aeTrello ? ' (' + aeTrello + ')' : ''}
 **KOC:** ${kocDate||'—'}${kocTime ? ' at ' + kocTime : ''}${calUrl ? '\nKOC Calendar: ' + calUrl : ''}
-**Campaign Start:** ${document.getElementById('campaign-start').value||'—'}
-**Campaign Length:** ${document.getElementById('campaign-length').value||'—'} Months
 **Campaign Notes:** ${document.getElementById('campaign-notes').value||'None'}
 
 **Services Sold:**
