@@ -7723,3 +7723,79 @@ still needs to (1) talk it through with the team and (2) decide the mid-month
 billing-stop-timing question before any of it gets built. Nothing new to record
 there; see the 2026-08-06 "Cancellation design sketch" entry for the full
 sketch when this picks back up.
+
+### 2026-08-07 (cont'd) — Multi-discipline strategist support (in progress — client-side done, schema/RPC pending)
+
+Claire identified real services needing MORE than one strategist discipline tagged at
+once: SEO needs digital+social+web, Social Media Management Pro needs digital+social.
+The existing `services.strategist_discipline` (built 2026-08-06, single text value)
+structurally can't express that — planned via `EnterPlanMode`, approved, then
+implemented client-side (plan saved at `/root/.claude/plans/zany-sleeping-lecun.md`
+for reference).
+
+**Design**: replace the single-value column with a `jsonb` array
+(`strategist_disciplines`). Admin Service editor gets a "Multiple Strategists Needed?"
+checkbox that swaps the existing single dropdown for 3 individual discipline
+checkboxes when checked — the common single-discipline case (most services) looks
+exactly like it does today; only services that genuinely need more than one
+discipline get the more involved UI.
+
+**Built** (`admin/index.html`):
+- New `onMultiStrategistToggle()` shows/hides `admin-svc-strategist-single-wrap` vs.
+  `-multi-wrap` based on the new `admin-svc-multi-strategist` checkbox.
+- `adminNewService()`/`adminEditService()`/`adminSaveService()` updated: edit-mode
+  parses `s.strategist_disciplines` with the same jsonb-array-or-string guard already
+  used for `qty_preset_options` in `index.html` (Supabase can hand this back as either
+  a real array or a JSON-encoded string) — >1 entry auto-checks multi-mode and ticks
+  the matching boxes, exactly 1 stays in single-mode with the dropdown pre-filled, 0
+  is single-mode blank (today's default look). Save builds the array from whichever
+  mode is active, fixed `['digital','social','web']` order regardless of check order
+  so the stored array is deterministic.
+- Updated the two explanatory comments referencing the old single-value column
+  (Strategists tab section header, `ALL_STRATEGISTS` declaration).
+
+**Built** (`index.html`): `memberIdsForLineItems()` changed from `.map(...).filter(Boolean)`
+over a single scalar per service to `.flatMap()` over each service's discipline array
+(new local helper `serviceDisciplines()`, same jsonb-array-or-string guard). Everything
+downstream (the `Set`, `disciplineHandles` lookup, both call sites for the overview IO
+card and per-tactic cards) was already generic across any number of distinct
+disciplines — it was never actually hardcoded to exactly one, so no other change
+needed there.
+
+**Confirmed out of scope** (via grep before planning): `strategist/index.html` never
+references this column at all — it only ever drove Trello-tagging on the public
+form's submit path. No backfill needed either — this only affects which members get
+tagged on FUTURE Trello cards, not any stored historical data (unlike the earlier
+`accounting_label`/`tactic_label` disambiguation work).
+
+**Verified**: `node --check` on both files. Playwright
+(`test-multi-strategist-admin.js`, scratchpad-only): a 3-discipline array auto-checks
+multi-mode and all 3 boxes; a 1-discipline array stays single-mode with the dropdown
+pre-filled; an empty array is blank single-mode; `adminNewService()` correctly resets
+both modes; save payloads are correct for multi-mode (fixed order, e.g. checking
+web-then-digital still saves `["digital","web"]`), single-mode (`["social"]`), and
+blank single-mode (`[]`), with the old `strategist_discipline` key confirmed absent
+from every payload. Playwright (`test-multi-strategist-form.js`, scratchpad-only):
+a 3-discipline service resolves all 3 strategists + the AE; a JSON-string-encoded
+1-discipline array still resolves correctly; an empty array and a missing field both
+contribute nothing (and don't throw); two line items with overlapping disciplines
+dedupe correctly (no doubled member ids). Re-ran the existing
+`test_pricing_group_editor.js` (also exercises `adminNewService()`/`adminEditService()`)
+— still passes, confirming this change didn't disturb other fields on the same form.
+
+**Schema/RPC — SQL written, pending Claire running it.** Got `admin_save_service`'s
+live text (per the two-step-before-editing convention) and wrote the full patch —
+`multi-strategist-schema-and-rpc-2026-08-07.sql` (scratchpad, not committed), 3 steps
+in order so the RPC never references a column before it exists and the old column
+isn't dropped until nothing references it: (1) add `strategist_disciplines jsonb not
+null default '[]'::jsonb`, migrate existing single values in via
+`jsonb_build_array(strategist_discipline)`; (2) `CREATE OR REPLACE` on
+`admin_save_service`, swapping the old column in both the INSERT column list/VALUES
+and the UPDATE SET case-when for the new one — `->'strategist_disciplines'` (not
+`->>`) in both spots, since this stays jsonb, never gets cast to text like every
+scalar field around it; (3) `alter table services drop column
+strategist_discipline`. Same return type/signature as the live function — no `DROP
+FUNCTION` needed. Client-side code (already committed) is safe ahead of this running —
+the new `strategist_disciplines` payload key simply won't do anything server-side
+until the column/RPC are live — but the feature isn't functionally complete until
+Claire runs it.

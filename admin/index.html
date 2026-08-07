@@ -605,13 +605,23 @@
             </div>
             <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Strategist Discipline <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which team owns fulfillment for this service. When sold, the client's assigned strategist for this discipline (set on their Client Profile) gets tagged on this tactic's Trello card alongside the AM/AE. Leave "None" if no strategist should be tagged.</span></label>
-                <select id="admin-svc-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
-                  <option value="">None</option>
-                  <option value="digital">Digital</option>
-                  <option value="social">Social</option>
-                  <option value="web">Web</option>
-                </select>
+                <label class="lbl">Strategist Discipline(s) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which team(s) own fulfillment for this service. When sold, the client's assigned strategist(s) for these disciplines (set on their Client Profile) get tagged on this tactic's Trello card alongside the AM/AE. Leave "None" if no strategist should be tagged.</span></label>
+                <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer;font-size:12px;color:var(--muted)">
+                  <input type="checkbox" id="admin-svc-multi-strategist" onchange="onMultiStrategistToggle()"/> Multiple Strategists Needed?
+                </label>
+                <div id="admin-svc-strategist-single-wrap">
+                  <select id="admin-svc-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                    <option value="">None</option>
+                    <option value="digital">Digital</option>
+                    <option value="social">Social</option>
+                    <option value="web">Web</option>
+                  </select>
+                </div>
+                <div id="admin-svc-strategist-multi-wrap" style="display:none;gap:16px">
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="admin-svc-strategist-digital"/> Digital</label>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="admin-svc-strategist-social"/> Social</label>
+                  <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer"><input type="checkbox" id="admin-svc-strategist-web"/> Web</label>
+                </div>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px">
@@ -878,7 +888,9 @@
            unlike AEs) — each client gets one of each discipline assigned on their Client
            Profile; whichever strategist is assigned gets tagged on that client's Trello
            tactic cards for services carrying that discipline (services.
-           strategist_discipline, set in the Service editor's Behavior & Workflow section). ── -->
+           strategist_disciplines, an array — set in the Service editor's Behavior &
+           Workflow section — since some services need more than one team tagged at
+           once, e.g. SEO needs digital+social+web). ── -->
       <div id="section-strategists" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <div>
@@ -3470,8 +3482,9 @@ async function adminToggleAeActive(id, makeActive) {
 // internal fulfillment role that works across every white-label group) — each client
 // gets one of each discipline assigned on their Client Profile (see
 // populateStrategistDropdown() near the Clients section), and submitIO() tags whichever
-// one is assigned on that client's Trello tactic cards for services carrying a matching
-// services.strategist_discipline.
+// one(s) are assigned on that client's Trello tactic cards for services carrying a
+// matching discipline in services.strategist_disciplines (an array — a service can
+// need more than one discipline tagged, e.g. SEO needs digital+social+web).
 let ALL_STRATEGISTS = [];
 
 // Lazy-load, used by the Client Profile editor (which just needs the roster to populate
@@ -5102,6 +5115,18 @@ function onPricingModeChange(fromUserAction) {
   updateCpmWrapVisibility(fromUserAction);
 }
 
+// Strategist Discipline(s) (2026-08-07 — replaces the old single-discipline dropdown,
+// per Claire: SEO needs digital+social+web all at once, Social Media Management Pro
+// needs digital+social — a single value structurally couldn't express that). Most
+// services still only need one discipline, so the single dropdown stays the DEFAULT
+// view; checking "Multiple Strategists Needed?" swaps to 3 individual checkboxes
+// instead, same show/hide-a-wrap pattern as onPricingModeChange() above.
+function onMultiStrategistToggle() {
+  const multi = document.getElementById('admin-svc-multi-strategist').checked;
+  document.getElementById('admin-svc-strategist-single-wrap').style.display = multi ? 'none' : '';
+  document.getElementById('admin-svc-strategist-multi-wrap').style.display = multi ? 'flex' : 'none';
+}
+
 // Retail CPM has two independent reasons to be visible: Spend pricing (its real rate)
 // or a Modifier flagged as a CPM adjustment (an optional manual override of the
 // Accounting Map's auto-computed combined CPM — added 2026-07-30 per Claire: some
@@ -5195,6 +5220,9 @@ function adminNewService() {
   document.getElementById('admin-svc-unit').value = '';
   document.getElementById('admin-svc-koc').value = 'none';
   document.getElementById('admin-svc-strategist-discipline').value = '';
+  document.getElementById('admin-svc-multi-strategist').checked = false;
+  ['digital','social','web'].forEach(d => { document.getElementById('admin-svc-strategist-' + d).checked = false; });
+  onMultiStrategistToggle();
   document.getElementById('admin-svc-hosting-prompt').value = '';
   document.getElementById('admin-svc-standalone-hosting').value = '';
   document.getElementById('admin-svc-auto-select').value = '';
@@ -5240,7 +5268,21 @@ function adminEditService(id) {
   document.getElementById('admin-svc-cpm-adjustment').checked = !!s.is_cpm_adjustment;
   document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
   document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
-  document.getElementById('admin-svc-strategist-discipline').value = s.strategist_discipline || '';
+  // Multi-discipline (2026-08-07) — same jsonb-array-or-string guard already used for
+  // qty_preset_options in index.html, since Supabase can hand this back as either a
+  // real JS array or a JSON-encoded string depending on the path it came through.
+  const rawDisciplines = s.strategist_disciplines;
+  const parsedDisciplines = rawDisciplines
+    ? (typeof rawDisciplines === 'string' ? JSON.parse(rawDisciplines) : rawDisciplines)
+    : [];
+  const disciplinesList = Array.isArray(parsedDisciplines) ? parsedDisciplines : [];
+  const isMultiDiscipline = disciplinesList.length > 1;
+  document.getElementById('admin-svc-multi-strategist').checked = isMultiDiscipline;
+  document.getElementById('admin-svc-strategist-discipline').value = isMultiDiscipline ? '' : (disciplinesList[0] || '');
+  ['digital','social','web'].forEach(d => {
+    document.getElementById('admin-svc-strategist-' + d).checked = isMultiDiscipline && disciplinesList.includes(d);
+  });
+  onMultiStrategistToggle();
   document.getElementById('admin-svc-trello-template-ref').value = s.trello_template_ref || '';
   document.getElementById('admin-svc-trello-template-type').value = s.trello_template_type || 'list';
   document.getElementById('admin-svc-auto-setup').value = s.auto_add_setup_fee ? 'true' : 'false';
@@ -5364,6 +5406,14 @@ async function adminSaveService() {
   }
   const workflowVal = workflowSel === '__new__' ? workflowNewVal : (workflowSel || null);
 
+  // Multi-discipline (2026-08-07) — array built from whichever control is active.
+  // Fixed order (not check-order) so the stored array is deterministic regardless of
+  // which boxes were ticked first.
+  const multiStrategist = document.getElementById('admin-svc-multi-strategist').checked;
+  const strategistDisciplinesFinal = multiStrategist
+    ? ['digital','social','web'].filter(d => document.getElementById('admin-svc-strategist-' + d).checked)
+    : (document.getElementById('admin-svc-strategist-discipline').value ? [document.getElementById('admin-svc-strategist-discipline').value] : []);
+
   const payload = {
     label: label,
     accounting_label: document.getElementById('admin-svc-accounting-label').value.trim() || null,
@@ -5376,7 +5426,7 @@ async function adminSaveService() {
     is_cpm_adjustment: isCpmAdjustmentFinal,
     retail_cpm: retailCpmFinal,
     koc_requirement: document.getElementById('admin-svc-koc').value,
-    strategist_discipline: document.getElementById('admin-svc-strategist-discipline').value || null,
+    strategist_disciplines: strategistDisciplinesFinal,
     intake_form_id: document.getElementById('admin-svc-intake').value || null,
     workflow: workflowVal,
     trello_template_ref: document.getElementById('admin-svc-trello-template-ref').value.trim() || null,
