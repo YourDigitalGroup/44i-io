@@ -7599,3 +7599,40 @@ is back to its native (non-`none`) value and no `background-image` remains on
 the date input, then screenshots the actual "Targeted Landing Pages" row —
 "mm/dd/yyyy" now shows in full with the browser's own native calendar icon, and
 the picker's click-to-open behavior is restored (native chrome, untouched).
+
+### 2026-08-07 (cont'd) — Dev/testing link was holding onto old test data across refreshes
+
+Claire noticed: refreshing the dev-picker link (the internal testing tool, not a
+real client link) kept bringing back Step 1's previous test data (AE name,
+business name, etc.) instead of starting clean.
+
+**Root cause**: the draft-save/restore feature is deliberate and wanted for REAL
+client links — `getDraftKey()` includes `getSlug()` (the group's `io_slug`), so a
+refresh on a genuine client's in-progress form correctly restores exactly that
+group's draft, and a different client's link never collides with it (documented
+at `loadDraft()`: "a NEW tab has a fresh tab_id → no draft found → blank form
+automatically. A REFRESH keeps the same tab_id → draft restores."). The dev
+picker link, though, has no real `io_slug` at all — `getSlug()` returns `''`,
+so `getDraftKey()` falls back to the same `'nogroup'` slug every single time,
+regardless of which fake group is picked from the dropdown. Every dev-mode
+session on the same device/tab shares ONE draft key, so old test data kept
+coming back on every refresh — the exact bug that draft-per-slug was designed to
+avoid for real links, just not accounted for on a link that has no slug to
+begin with.
+
+**Fix**: `loadDraft()` now checks `isDevPreviewMode` (set by `showDevModePicker()`,
+already used elsewhere to distinguish dev-preview behavior, e.g. `submitIO()`'s
+group-id resolution) first — if true, it clears whatever's sitting at that shared
+draft key and returns without restoring anything. The dev link is explicitly a
+testing tool, not an in-progress form anyone needs preserved across a refresh, so
+it always starts clean now. Real client links are completely unaffected — the
+existing per-slug draft-restore behavior is untouched.
+
+**Verified**: `node --check` passes. Re-ran every existing Playwright test — all
+still pass unchanged. New Playwright test (`test-dev-mode-draft.js`,
+scratchpad-only, run via a `file://` URL since `localStorage` access is denied
+under Playwright's default `about:blank`-style `setContent()` origin): confirms a
+real client link (`isDevPreviewMode = false`) still restores a saved draft
+unchanged, while dev mode (`isDevPreviewMode = true`) does NOT restore the same
+stale draft and clears it from `localStorage` so it can't resurface on a later
+refresh either.
