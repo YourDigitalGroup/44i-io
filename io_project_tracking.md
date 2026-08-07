@@ -8046,3 +8046,21 @@ patch needed:
 save RPC, admin Service editor's "Multiple Strategists Needed?" checkbox UI, and
 the public form's Trello-tagging resolution logic (`memberIdsForLineItems` /
 `serviceDisciplines`). Nothing left pending on this thread.
+
+### 2026-08-07 (cont'd) — `find_or_create_ae` RPC run; auto-add-typed-AE feature now fully live
+
+Claire ran the `find_or_create_ae` RPC (given inline earlier today, scratchpad
+`find_or_create_ae-2026-08-07.sql`). This was the last open piece from item 3 of
+today's live AM test-drive feedback — the public form's `submitIO()` call to it
+(shipped in commit `71ecb79`, gated on a typed-not-picked AE with a non-blank name)
+had been a harmless no-op until the function existed server-side. It's now live:
+a typed AE name auto-registers into the admin AE roster going forward, scoped to
+the group, only when no case-insensitive name match already exists for that group.
+
+**With this, everything from today's live AM test-drive feedback (5 items),
+today's accounting_label disambiguation project, and today's multi-discipline
+strategist support project is fully shipped, confirmed live, and closed.** The
+only remaining open item in this project is the cancellation/edit-a-submitted-IO
+feature, which stays PARKED pending Claire's two outstanding business-side
+confirmations (team discussion on the design; a billing-timing decision) — no
+code work is blocked on my end, only on those two conversations happening.
