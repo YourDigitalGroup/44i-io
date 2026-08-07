@@ -7147,3 +7147,78 @@ Start Date captured correctly with End Date left blank, and the Ongoing-notation
 string renders as expected. Group editor button color and calendar-picker/CSS
 changes are visual — not verifiable via simulation alone; worth a quick look at
 the live Group editor and Step 2 date pickers to confirm.
+
+### 2026-08-07 (cont'd) — Flight-dash spacing, printed IO year, and a real column-alignment bug behind the "cramped" Streaming TV/Video/Audio tables
+
+Three more follow-ups, the last one a genuine bug found from a screenshot Claire
+sent of the Streaming TV Advertising section.
+
+**Flight-dash spacing + printed IO year** (small, `index.html` only): added spaces
+around the Flight range's en-dash ("8/15 – 1/10" instead of "8/15–1/10") in both the
+review table and printed IO. Then added the year to the printed IO's own Flight
+column too (it was month/day only — ambiguous for a flight spanning a calendar-year
+boundary) — "8/15/26 – 1/10/27".
+
+**The real bug**: Claire's screenshot of Streaming TV Advertising showed "Offline
+Visits Tracking"'s Fee/Frequency in the right columns, but then a date-picker
+showing up under the SPEND header, another under START, and "Notes..." under END —
+every cell after Frequency shifted one column left. Root cause: `generateCatalogRowHtml()`
+only emits a Spend `<td>` when a row is itself `pricing_mode='spend'` — a modifier/
+add-on row (Offline Visits Tracking, Addl. Targeting, etc.) has never had one, by
+design (a prior session deliberately reverted giving them a spend cell — see the
+comment above the function). But the enclosing table's `<thead>` always has a Spend
+column whenever ANY row in that table is spend-priced, so a modifier row sitting in
+the same table ended up with one fewer `<td>` than the header — everything after
+Frequency silently shifted left. This wasn't new to today; it's just that per-tactic
+Start/End/Notes made the shift visible for the first time (compare: before dates
+existed, "no Spend cell" only would've bumped the single Notes column over by one).
+
+**The fix**: `generateCatalogRowHtml(r, hasSpendCol)` now takes a second parameter —
+whether the enclosing table needs a Spend column at all (passed from
+`sectionHasSpend()`/hardcoded `true` for the always-spend multi-tables) — and emits
+an empty `<td class="svc-spend-placeholder">` for a non-spend row when it does, so
+every row's cell count always matches its header regardless of that row's own
+pricing mode. `renderPriceCells()`'s spend-cell lookup updated to recognize this
+placeholder (`|| td.classList.contains('svc-spend-placeholder')`) so its per-render
+cleanup loop doesn't strip it back out.
+
+**While already in that function, folded in the two related requests Claire made
+at the same time**:
+- **One-time costs only need a Start Date.** A `billing_type='one_time'` row's End
+  Date cell is now a plain muted "—" (no input) rather than a second date picker —
+  kept as an empty `<td class="svc-end-cell svc-end-na">` (not removed) so the
+  column-count fix above still holds; hidden entirely on the mobile stacked layout
+  (`svc-end-na`) since an unlabeled lone dash there reads as broken, not intentional.
+  `syncRowInputs()` now force-clears `end_date` to `null` for these rows (defends
+  against a stale value surviving from an old draft). New shared `flightDisplayFor()`
+  helper (used by `buildReview()`, `buildIoDocumentHtml()`, and the Trello card
+  description — one place instead of three near-duplicate branches) shows a single
+  date for these, never a "– Ongoing" range, which would misleadingly imply an
+  open-ended campaign for something that's actually just one date.
+- **Modifier/add-on rows use the same dates as whichever tactic they ride with.**
+  These rows (Offline Visits Tracking, Addl. Targeting) never got their own date
+  inputs — replaced with one spanned `<td colspan="2" class="svc-modifier-date-cell">`
+  reading "Uses tactic's dates". New `resolveModifierDates(id)` looks up whichever
+  spend-priced sibling row in the same section+subsection is currently checked and
+  copies ITS start_date/end_date; re-resolved on every `syncRowInputs()` call so it
+  stays correct if the AE switches which tactic is checked. Grounded in the existing
+  "these add-ons recur alongside their parent campaign" understanding already
+  documented in `priceAndFrequency()` (2026-07-07) — this just extends that same
+  logic to the newer per-tactic date fields specifically.
+
+**Verified**: `node --check` passes. Playwright (`test-tactic-dates-fixes.js`, new,
+scratchpad-only): a modifier row gets the placeholder Spend cell and its single
+spanned date cell with no `svc-start-*`/`svc-end-*` inputs of its own; a genuine
+tactic row still gets a real Spend input and its own Start/End inputs; a one-time
+row gets a Start input and no End input; after syncing, the modifier row correctly
+inherits the checked tactic's exact start/end dates, the one-time row's end_date is
+forced to `null`, and `flightDisplayFor()` returns a single date for the one-time
+item vs. a real range for the recurring one. Re-ran `test-date-notes-fix.js` —
+still passes. Also rendered the actual fixed markup + the page's real CSS via
+Playwright and screenshotted it (not committed, scratchpad only) to visually
+confirm Fee/Frequency/Spend/Start/End/Notes now land under their correct headers
+for a mix of tactic + modifier rows — this was the strongest visual driver behind
+Claire's "getting really cramped" comment (item 3); flagged for her to take a
+fresh look now that it's fixed before considering any further padding/spacing
+changes, since those are better judged from the live page than reasoned about in
+the abstract.

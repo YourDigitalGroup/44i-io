@@ -194,6 +194,15 @@ textarea{resize:vertical;min-height:70px}
        below — without it these per-row date inputs overflow their card on phone too. */
     -webkit-appearance: none; appearance: none; min-height: 40px;
   }
+  /* One-time cost's End Date placeholder (2026-08-07) — a lone unlabeled "—" reads as
+     an empty/broken field on the stacked mobile layout with nothing to explain it;
+     the desktop table's column alignment need doesn't apply once cells stack, so it's
+     simplest to just not show it there at all. */
+  .svc-table td.svc-end-na { display: none; }
+  /* Modifier/add-on row's single "Uses tactic's dates" note (2026-08-07) — small and
+     centered on desktop reads oddly full-width/block on mobile; left-align and match
+     the other fields' spacing instead. */
+  .svc-table td.svc-modifier-date-cell { text-align: left !important; padding-top: 6px; }
 
   /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
      At 2-up, "Authorized By (Full Legal Name)" wraps to 2 lines while "Title / Role"
@@ -2316,6 +2325,23 @@ function formatISOToMMDDYY(iso) {
   return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : '';
 }
 
+// Shared Flight-column text for a selected line item — one place so the Selected
+// Services Summary, the printed IO, and the Trello card description can never show
+// three different formats for the same underlying dates. A one-time cost (a single
+// date, not a range — see the one-time-only-needs-Start-Date change, 2026-08-07)
+// shows just that date, never a "– Ongoing" range, which would misleadingly imply an
+// open-ended campaign. `fmt` lets each caller pick its own date-string format (MM/DD/YY
+// for the review screen, numeric month/day/2-digit-year for the printed IO) while
+// sharing the one-time-vs-range branching logic.
+function flightDisplayFor(id, data, fmt) {
+  if (!data.start_date && !data.end_date) return '—';
+  const isOneTime = CATALOG_ROWS[id]?.billing_type === 'one_time';
+  const startStr = fmt(data.start_date) || '—';
+  if (isOneTime) return startStr;
+  const endStr = data.end_date ? (fmt(data.end_date) || '—') : 'Ongoing';
+  return `${startStr} – ${endStr}`;
+}
+
 function updateTacticDate(input, id, which) {
   const iso = input.value || null;
   input.classList.remove('spend-missing');
@@ -2721,6 +2747,22 @@ function updateBadges() {
   autoSaveDraft();
 }
 
+// Modifier/add-on rows (Offline Visits Tracking, Addl. Targeting, etc.) have no date
+// inputs of their own (see generateCatalogRowHtml) — they ride alongside whichever
+// spend-priced sibling "tactic" in the same subsection is checked, per Claire's
+// 2026-08-07 request and consistent with the existing "these add-ons recur alongside
+// their parent campaign" understanding (priceAndFrequency(), 2026-07-07). Re-resolved
+// on every sync since which sibling is checked can change at any time; returns null if
+// no sibling tactic is currently checked (dates stay blank until one is).
+function resolveModifierDates(id) {
+  const r = CATALOG_ROWS[id];
+  if (!r || r.pricing_mode !== 'modifier') return null;
+  const tactic = Object.values(CATALOG_ROWS).find(s =>
+    s.section === r.section && s.subsection_label === r.subsection_label &&
+    s.pricing_mode === 'spend' && selected[s.id]);
+  return tactic ? { start_date: selected[tactic.id].start_date || null, end_date: selected[tactic.id].end_date || null } : null;
+}
+
 // ── SYNC ROW INPUTS → selected{} ──────────────────────────────
 // The per-row Notes (text) and Spend (number) inputs live only in the DOM.
 // This pulls their current values into selected[id] so the review summary,
@@ -2757,10 +2799,22 @@ function syncRowInputs() {
     // already plays for Notes/Spend) — only overwrites when the field currently holds
     // a FULLY valid date, so a mid-edit/incomplete value here never nulls out an
     // already-stored one.
-    const startInput = document.getElementById('svc-start-' + id);
-    const endInput = document.getElementById('svc-end-' + id);
-    if (startInput && startInput.value) selected[id].start_date = startInput.value;
-    if (endInput && endInput.value) selected[id].end_date = endInput.value;
+    // Modifier rows (2026-08-07) have no date inputs at all — resolved from the
+    // checked sibling tactic instead; a one-time row (2026-08-07) has no End Date
+    // input — explicitly cleared here in case a stale value survived from a draft
+    // saved before this rule existed.
+    const catalogRow = CATALOG_ROWS[id];
+    if (catalogRow?.pricing_mode === 'modifier') {
+      const inherited = resolveModifierDates(id);
+      selected[id].start_date = inherited?.start_date || null;
+      selected[id].end_date = inherited?.end_date || null;
+    } else {
+      const startInput = document.getElementById('svc-start-' + id);
+      const endInput = document.getElementById('svc-end-' + id);
+      if (startInput && startInput.value) selected[id].start_date = startInput.value;
+      if (endInput && endInput.value) selected[id].end_date = endInput.value;
+      if (catalogRow?.billing_type === 'one_time') selected[id].end_date = null;
+    }
   });
   updateDerivedCampaignSummary();
 }
@@ -3015,9 +3069,7 @@ function buildReview() {
     // just typed on Step 2 (data.start_date/end_date are the stored ISO values;
     // formatISOToMMDDYY() converts back for display, same helper the date inputs
     // themselves use).
-    const flightDisplay = (data.start_date || data.end_date)
-      ? `${formatISOToMMDDYY(data.start_date) || '—'} – ${data.end_date ? (formatISOToMMDDYY(data.end_date) || '—') : 'Ongoing'}`
-      : '—';
+    const flightDisplay = flightDisplayFor(id, data, formatISOToMMDDYY);
     rows.push(`<tr><td>${esc(data.label)}</td><td>${feeDisplay}</td><td>${amtDisplay}</td><td style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Add prorated hosting line if applicable
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
@@ -3739,7 +3791,12 @@ async function submitIO() {
           if (li.recurring > 0) line += ` — $${li.recurring.toLocaleString()}/mo`;
           if (li.spend > 0) line += ` — $${li.spend.toLocaleString()}/mo spend`;
           if (li.prorated_hosting_amt) line += ` | Prorated: $${li.prorated_hosting_amt.toFixed(2)}`;
-          if (li.start_date || li.end_date) line += ` | Flight: ${li.start_date || '—'} to ${li.end_date || 'Ongoing'}`;
+          if (li.start_date || li.end_date) {
+            const isOneTime = CATALOG_ROWS[li.service_id]?.billing_type === 'one_time';
+            line += isOneTime
+              ? ` | Flight: ${li.start_date || '—'}`
+              : ` | Flight: ${li.start_date || '—'} to ${li.end_date || 'Ongoing'}`;
+          }
           if (li.notes) line += `\n  Notes: ${li.notes}`;
           return line;
         }).join('\n');
@@ -4535,9 +4592,12 @@ function buildIoDocumentHtml() {
       // same idea as the strategist portal's own Flight column, now that dates
       // live per row. Year added (2026-08-07, per Claire) since a printed IO can
       // span a calendar-year boundary and month/day alone was ambiguous there.
-      const flightDisplay = (data.start_date || data.end_date)
-        ? `${data.start_date ? new Date(data.start_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'}) : '—'} – ${data.end_date ? new Date(data.end_date + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'}) : 'Ongoing'}`
-        : '—';
+      // Shares flightDisplayFor()'s one-time-vs-range logic with buildReview() — see
+      // that function's comment for why a one-time cost shows a single date, not a
+      // range.
+      const flightDisplay = flightDisplayFor(id, data, iso => iso
+        ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'})
+        : '');
       sectionRows += `<tr><td class="svc-name">${esc(data.label)}</td><td class="svc-amt">${amtCol}</td><td class="svc-flight">${esc(flightDisplay)}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
 
       const h = hostingChoices[id];
@@ -5523,7 +5583,7 @@ function priceAndFrequency(r) {
 // renderMultiTableSection() (several sub-tables per section, e.g. Video/Streaming TV/
 // Audio) — the actual checkbox/spend-cell logic lives in exactly ONE place so the two
 // generators can never drift into showing different behavior for the same kind of row.
-function generateCatalogRowHtml(r) {
+function generateCatalogRowHtml(r, hasSpendCol) {
   let onchange = r.exclusivity_group
     ? `toggleSingle(this,'${esc(r.id)}','${esc(r.exclusivity_group)}')`
     : `toggle(this,'${esc(r.id)}')`;
@@ -5534,9 +5594,18 @@ function generateCatalogRowHtml(r) {
   if (r.hosting_prompt_type) {
     onchange += `;if(this.checked)promptHosting('${esc(r.id)}','${esc(r.hosting_prompt_type)}')`;
   }
+  // FIXED (2026-08-07, found live via a garbled Streaming TV/Video/Audio row): when
+  // a table has a Spend column (because SOME rows in it are pricing_mode='spend')
+  // but a given row isn't itself spend-priced, this used to render NO <td> at all for
+  // that column — the row then had one fewer cell than the table's <thead>, so every
+  // cell after Spend silently shifted one column left (Start showed under the Spend
+  // header, End under Start, Notes under End). Always emitting an empty placeholder
+  // <td> when the table needs one (hasSpendCol, passed in by the caller) keeps every
+  // row's cell count matching its header regardless of that row's own pricing mode —
+  // the actual "no spend value" intent is unchanged, only the missing-cell bug is fixed.
   const spendCell = r.pricing_mode === 'spend'
     ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
-    : '';
+    : (hasSpendCol ? `<td class="svc-spend-placeholder"></td>` : '');
   // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now
   // (replaces the old single Step-1-wide Campaign Dates card). Length dropped
   // (2026-08-06, per Claire — it made the row too cramped) in favor of both dates
@@ -5549,9 +5618,28 @@ function generateCatalogRowHtml(r) {
   // renderPriceCells() relies on to find it (tds[tds.length-1]) — these two are
   // excluded from that function's cell-clearing loop by class, same way the Spend
   // cell is excluded by its input match.
-  const dateCells = `
+  //
+  // Two special cases, both 2026-08-07 per Claire:
+  // - A one-time cost is a single date, not a range — no End Date input at all (kept
+  //   as an empty, muted cell so the column count/alignment above still holds).
+  // - A modifier/add-on row (pricing_mode='modifier' — e.g. Offline Visits Tracking,
+  //   Addl. Targeting) rides alongside its own parent tactic's campaign, so it gets
+  //   no independent date inputs of its own; syncRowInputs() resolves its dates from
+  //   whichever spend-priced sibling in the same subsection is checked (see
+  //   resolveModifierDates()). Spans both columns with a short explanatory note
+  //   instead of two separate inputs.
+  let dateCells;
+  if (r.pricing_mode === 'modifier') {
+    dateCells = `<td class="svc-modifier-date-cell" colspan="2" style="color:var(--muted);font-size:10.5px;text-align:center">Uses tactic's dates</td>`;
+  } else if (r.billing_type === 'one_time') {
+    dateCells = `
+      <td class="svc-start-cell"><input type="date" id="svc-start-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','start_date')"/></td>
+      <td class="svc-end-cell svc-end-na" style="color:var(--muted);text-align:center">—</td>`;
+  } else {
+    dateCells = `
       <td class="svc-start-cell"><input type="date" id="svc-start-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','start_date')"/></td>
       <td class="svc-end-cell"><input type="date" id="svc-end-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','end_date')"/></td>`;
+  }
   return `
     <tr data-id="${esc(r.id)}">
       <td><input type="checkbox" onchange="${onchange}"/></td>
@@ -5567,7 +5655,8 @@ function renderCatalogSection(sectionId) {
   if (!tbody) return; // section not yet converted to dynamic rows — leave its static HTML alone
 
   const rows = Object.values(CATALOG_ROWS).filter(r => r.section === sectionId);
-  tbody.innerHTML = rows.map(generateCatalogRowHtml).join('');
+  const hasSpendCol = sectionHasSpend(sectionId);
+  tbody.innerHTML = rows.map(r => generateCatalogRowHtml(r, hasSpendCol)).join('');
 }
 
 // ── MULTI-TABLE SECTIONS (Video, Streaming TV, Audio) ──────────────────────
@@ -5623,7 +5712,7 @@ function renderMultiTableSection(sectionId) {
     // sub-table now gets its own headers, making each one self-contained and readable
     // on its own rather than depending on a DIFFERENT table further up the page.
     const theadHtml = '<thead><tr><th style="width:32px"></th><th>Service</th><th class="right">Fee</th><th class="right">Frequency</th><th class="right">Spend</th><th class="right">Start</th><th class="right">End</th><th>Notes</th></tr></thead>';
-    const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-start"/><col class="c-end"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(generateCatalogRowHtml).join('')}</tbody></table>`;
+    const tableHtml = `<table class="svc-table svc-table--spend"><colgroup><col class="c-chk"/><col class="c-svc"/><col class="c-fee"/><col class="c-freq"/><col class="c-spend"/><col class="c-start"/><col class="c-end"/><col class="c-notes"/></colgroup>${theadHtml}<tbody>${groupRows.map(r => generateCatalogRowHtml(r, true)).join('')}</tbody></table>`;
     return headerHtml + tableHtml;
   }).join('');
 }
@@ -5651,11 +5740,17 @@ function renderPriceCells() {
     // producing a duplicated "$175 × box" and a misaligned Notes column.
     // .quoted-price-field (2026-07-14) excluded for the identical reason — a QUR row's
     // own quoted-price input is also an input[type=number].
-    const spendTd   = tds.find(td => td.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)'));
+    // .svc-spend-placeholder (2026-08-07) — the empty alignment placeholder a
+    // non-spend row gets in a spend-shaped table (see generateCatalogRowHtml) has no
+    // input at all, so it wouldn't match the input-based lookup above on its own;
+    // included here so the removal loop below doesn't strip it out every re-render.
+    const spendTd   = tds.find(td => td.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)') || td.classList.contains('svc-spend-placeholder'));
     // Per-tactic date cells (2026-08-06) — identified by class, same exclusion mechanism
     // as spendTd, so the removal loop below doesn't wipe out these three every re-render
     // (this function also runs on dev-group switch, not just once at page load).
-    const dateCellClasses = ['svc-start-cell', 'svc-end-cell'];
+    // .svc-modifier-date-cell (2026-08-07) — a modifier/add-on row's single spanned
+    // "Uses tactic's dates" cell, same exclusion reasoning.
+    const dateCellClasses = ['svc-start-cell', 'svc-end-cell', 'svc-modifier-date-cell'];
 
     // Closes "label drift": refreshes the service name from the catalog's `label` field
     // for EVERY row, not just sections already converted to dynamic generation (alc/rep/
