@@ -7799,3 +7799,160 @@ FUNCTION` needed. Client-side code (already committed) is safe ahead of this run
 the new `strategist_disciplines` payload key simply won't do anything server-side
 until the column/RPC are live — but the feature isn't functionally complete until
 Claire runs it.
+
+### 2026-08-07 (cont'd) — First real end-to-end test by an AM: 5 findings
+
+Claire's AM ran a genuine test IO through the live system (not a dev-mode preview) —
+first real-world exercise of everything shipped today. "Almost everything worked
+exactly how we planned." Five follow-ups from what she found:
+
+**1. Removed stale Campaign Start/Length from the Trello IO card's description.**
+Same root cause as the printed-IO fix earlier today, just a second leftover spot
+never caught then: `**Campaign Start:**`/`**Campaign Length:** — Months` in the
+Trello card description text (`ioDesc` in `submitIO()`) — order-wide fields from
+before per-tactic dates existed. Each line item's own Flight text (already in the
+same description) covers Start; Campaign Length is now always blank (per-tactic
+lengths can differ), so it only ever printed "— Months," never useful. Removed both
+lines outright — Campaign Notes (still real, still used) stays.
+
+**2. Trello IO description now prefers `accounting_label` too.** Same preference
+already applied to the Accounting Map and `campaign_lines.tactic_label` earlier
+today, extended to the per-service line in the Trello card description
+(`servicesDesc` in `submitIO()`) — added `accounting_label` to the `lineItems`
+builder (reads `CATALOG_ROWS[id]?.accounting_label`) and changed `li.label` to
+`li.accounting_label || li.label`. A reused name (one of the 12 "Business Pro"
+tiers, etc.) now reads disambiguated in the Trello card too, not just the
+Accounting Map/Strategist Portal.
+
+**3. New: typed AE names now auto-register into the admin AE roster.** The AM typed
+her own name into the AE field instead of picking from the roster dropdown (she
+wasn't in it yet) — under the OLD design this was deliberate ("the AE roster is
+admin-managed only and never auto-created from a submission by name match," per the
+existing comment on `setAeNameLocked()`) — but Claire confirmed (via AskUserQuestion)
+she wants this to change: a typed AE should show up in admin going forward, not just
+live on that one order. New RPC `find_or_create_ae(p_payload jsonb)` — password-free
+`SECURITY DEFINER`, same public-form exception as `find_or_create_client`. Dedup:
+case-insensitive exact name match, scoped to `group_id` (AEs are already
+group-scoped, per `admin_save_ae`'s required `group_id`) — only ever CREATES when no
+match exists, never overwrites an existing roster row's `trello_handle`/`market`
+from a fresh submission (same "don't silently clobber" caution
+`find_or_create_client` already follows for clients). `submitIO()` calls it right
+after the `find_or_create_client` call, gated on `!selectedAeId` (null exactly when
+the AE was free-typed — a real roster pick already sets this via `applyAePick()`,
+nothing to create) and a non-blank name; same non-blocking, silently-skip-on-failure
+pattern as every other best-effort side-call in `submitIO()`. SQL given to Claire
+inline (`find_or_create_ae-2026-08-07.sql`, scratchpad, not committed) — not yet run.
+
+**4. Real limitation, not a quick bug: the attached PDF got cut off at a weird
+spot.** Traced the actual PDF-generation path (`generateIoPdfBlob()`,
+`index.html:5171`+): it screenshots the ENTIRE printed document as one tall image via
+html2canvas, then jsPDF slices that single image into fixed-height page chunks
+purely by pixel position — "standard long-image-sliced-across-pages technique," per
+its own comment. This has zero awareness of the underlying content — a page break
+can land anywhere, including mid-table-row or mid-sentence, purely by chance. The
+`@page`/`page-break-inside:avoid` CSS rules already in the file (`.sig-section`,
+`.doc-footer`, `.subtotal-row`, etc.) only apply to the browser's NATIVE print dialog
+— a completely separate, unrelated code path from what actually generates the
+attached/emailed PDF. Not fixed yet — a real fix (walk the live iframe DOM for those
+same already-flagged "don't break me" elements and nudge each page's cut point to
+the nearest safe boundary instead of a blind fixed height) is buildable without a
+full rearchitecture, but is a genuine chunk of work, flagged for its own follow-up
+round rather than rushed in alongside everything else today.
+
+**5. SEM tactic didn't show up in the Strategist Portal — under investigation.**
+Most likely explanation, given today's earlier finding: `create_campaign_lines_from_order()`
+only creates a `campaign_lines` row when a line item's `spend` is `> 0` — if the AM
+didn't enter an ad-spend dollar amount for SEM (plausible for a first test, or if SEM
+was sold QUR-style with no rate yet), no row would ever get created, by design, not a
+bug. Asked Claire to pull the actual submitted order's SEM line-item JSON to confirm
+one way or the other before concluding anything — genuinely could also be a
+real regression in today's trigger patch, not yet ruled out. Picking back up once
+that comes back.
+
+**Verified so far**: `node --check` on `index.html` after items 1/2/3. New Playwright
+test (`test-auto-add-ae.js`, scratchpad-only, run with `NODE_PATH=/opt/node22/lib/node_modules`
+since the scratchpad's own local playwright install had been cleared by an
+environment reset mid-session — global install at that path still has it):
+confirms a typed AE (no roster pick) triggers `find_or_create_ae` with the correct
+payload shape (name/trello_handle/email/market/group_id), a roster-picked AE does
+NOT trigger it, and a defensive blank-name edge case doesn't either. Items 1 and 2
+committed and pushed (commit `71ecb79`). Item 3's RPC not yet run by Claire — feature
+incomplete until it is (same "client code ships ahead of the SQL, harmlessly inert
+until it's live" pattern used for the multi-discipline strategist work earlier
+today).
+
+**Item 5 resolved — not a bug, a Strategist Portal filtering gap.** The SEM line's
+own data was fine ($1,000/mo spend, correctly `> 0`) — Claire found it herself once
+she switched to "All Strategists." Real gap, though: the "Campaign Setup" (`pending`
+status) queue was already correctly exempted from the month picker (existing code,
+confirmed working — `l.status !== 'pending' && !strategistLineActiveInMonth(...)`,
+with its own comment explaining why) but was NOT exempted from the "My Campaigns" vs
+"All Strategists" scope toggle. A brand-new campaign line's `assigned_strategist`
+may not match whoever happens to be reviewing setups that day, so gating the shared
+setup to-do queue on personal assignment could hide new work from everyone until
+someone thinks to switch to "All Strategists" — exactly what happened here. Added
+the same `l.status !== 'pending' &&` exemption already used for the month filter to
+the scope filter too, in both `visibleCampaignLines()` (what actually renders) and
+the tab-count loop in `renderStrategistDashboard()` (so the "Campaign Setup" tab's
+own number badge doesn't undercount relative to what's actually visible once
+clicked into). The group filter is untouched — Claire didn't ask for that one, and
+staying within one white-label group's context still makes sense even for setup
+work.
+
+**Verified**: `node --check` on `strategist/index.html`. New Playwright test
+(`test-pending-scope-exemption.js`, scratchpad-only): a pending line assigned to a
+different strategist stays visible under "My Campaigns" scope (previously would
+have been hidden); an active line assigned to someone else is still correctly
+hidden under "My Campaigns" (unchanged); the same active line becomes visible under
+"All Strategists" (unchanged). Committed and pushed.
+
+### 2026-08-07 (cont'd) — Campaign Setup: Gross Budget display was month-gated, plus a pre-fill for "Budget is different by month"
+
+Claire's AM found two more things while testing the SEM campaign from earlier: the
+Setup panel's Gross Budget line showed "$—/mo" while she happened to be viewing
+August 2026, even though the campaign's real starting budget ($1,000/mo, from the
+signed IO) already existed — just on the September row, since the flight starts
+Sep 1. Confirmed via code, not just guessed: `renderSetupPanels()` was calling
+`monthRowFor(l.id, strategistCurrentMonth)` — the SAME function the Active/Paused/
+Complete pacing table correctly uses (tied to whichever month the top-bar picker is
+on), but wrong for a still-`pending` setup, which hasn't started yet and has
+nothing to do with today's calendar month. Viewing a month before flight start
+finds no exact row and nothing to carry forward from (carry-forward only looks
+backward in time), so it shows blank — not a bad write, just a display gap.
+
+**Fix**: new `setupBudgetRowFor(lineId)` — returns the line's EARLIEST
+`campaign_months` row regardless of which month is selected in the top bar. Used
+only inside `renderSetupPanels()`; `monthRowFor()` itself and the main pacing table
+are completely untouched, since month-based viewing IS correct once a campaign is
+actually active.
+
+**Second ask, confirmed via AskUserQuestion (12-month cap, not the full flight)**:
+checking "Budget is different by month" used to just reveal whatever month rows
+already existed (usually just the one seeded by the signing flow) — building out a
+whole flight's schedule meant clicking "+ Add month" one at a time before you could
+even start correcting the specific months that differ. New
+`strategistPrefillMonths(lineId)`, called from `strategistToggleVaries()` the
+moment the checkbox goes to checked: copies the SAME base budget
+(`setupBudgetRowFor()`'s row) into every month from the flight's start that doesn't
+already have its own row, capped at 12 — a flight running years (like the real SEM
+one, 3 years) or genuinely open-ended ("Ongoing") only gets its first 12 months
+pre-filled; "+ Add month" still works for anything beyond that. Explicitly a no-op
+if 2+ real month rows already exist (someone's already building this out by hand —
+don't second-guess it) or if there's no base budget yet to copy from. All 12
+inserts fire in parallel (`Promise.all`), followed by ONE refetch+re-render, not 12
+— avoids hammering the API/UI with a full round-trip per month.
+
+**Verified**: `node --check` passes. New Playwright test
+(`test-setup-budget-not-month-gated.js`, scratchpad-only): reproduces Claire's exact
+scenario (flight starts September, viewing August shows blank via `monthRowFor()`,
+but `setupBudgetRowFor()` correctly returns the real $1,000 budget regardless of
+which month is viewed); confirms the main table's `monthRowFor()` is completely
+unchanged (still correctly carries the budget forward once actually viewing a month
+after flight start). New Playwright test (`test-prefill-months.js`,
+scratchpad-only): checking the box creates exactly 11 new months (12 total minus
+the 1 that already existed), all using the correct base budget, correctly stopping
+at 12 months out (no 13th), and doesn't duplicate the already-existing September
+row; confirms it's a no-op once 2+ real rows already exist. Re-ran
+`test-pending-scope-exemption.js` — still passes, no regression from the earlier
+fix in the same file.
+today). Items 4 and 5 not yet resolved.
