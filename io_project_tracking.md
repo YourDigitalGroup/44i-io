@@ -6971,3 +6971,116 @@ place. That gap is inherent to any Playwright test in this repo (they mock
 the real lesson is upstream of testing: always get and check the definitions
 of every function whose behavior a change depends on, not just the ones a
 task's most obvious next step touches.
+
+## 2026-08-07 — Strategist assignment moves to Group-level default + client override; AM becomes a clean dropdown
+
+Two follow-ups Claire asked for, planned via EnterPlanMode:
+
+**1. Strategist assignment is now Group-first, not Client-first.** Every client in
+a group inherits that group's Digital/Social/Web Strategist by default; the
+Client Profile editor's 3 dropdowns are now explicitly labeled "...Override" and
+only need touching for the rare client who needs someone different from their
+group's usual team. Blank option on the override dropdowns is dynamic — shows
+"— Use Group Default (Name) —" when the group has someone assigned for that
+discipline, plain "— None —" otherwise — computed live and refreshed whenever the
+Group dropdown changes (`refreshClientStrategistDefaults()`, wired to the Group
+select's `onchange`), so switching groups mid-edit never shows a stale default
+name. Whatever's actually saved is still `null` when left blank either way — the
+resolved default is never written onto the client's own row, only inherited at
+read time.
+
+**2. Refinement caught before writing any SQL, per Claire**: digital strategists
+already have real login accounts — they're exactly the people who log into the
+Strategist Portal (`admin_users` rows with `role='strategist'`). So Digital is now
+sourced the SAME way the Account Manager already is: a dropdown over Users, not
+the `strategists` roster table. Only Social and Web — who have no login of their
+own — belong in the Strategists tab, which now drops "Digital" as a Discipline
+option entirely. Practical effect: no new column needed anywhere for a digital
+strategist's contact info — `admin_users` already has `name`/`email`/
+`am_trello_handle` (a generically-useful column despite the AM-flavored name,
+present on every staff row regardless of role).
+
+Also discovered mid-implementation: `admin_users` has no UUID `id` exposed to the
+client anywhere in this app — it's addressed by `name` everywhere (same as the
+Users tab's own `admin-user-original-name` hidden field, and the AM picker's
+existing `am_name`-matching convention). Matched that same convention for Digital
+rather than introducing a new UUID exposure just for this: Digital is stored as a
+plain name string (`digital_strategist_name`), not a FK id, on both `groups` and
+`clients`. Social/Web stay real FK ids into `strategists`, since THAT table's ids
+already are exposed to the client (`ALL_STRATEGISTS` entries always carry `.id`).
+
+**3. AM picker cleanup.** The old "pick-or-type" combo — a dropdown sitting
+alongside 4 always-editable text inputs that remained the real source of truth —
+is now just the dropdown. The 4 fields (`admin-am-name`/`-email`/`-calendar`/
+`-trello`) stay in the DOM, hidden, autofilled by the existing `applyAmPick()`
+(unchanged) — `adminSaveGroup()`'s payload-building code needed zero changes since
+it already reads those same element ids. No free-text fallback (unlike AE/Client
+pickers) — an AM needs a Users record to log into the admin portal at all, so
+there's no realistic "not in the roster yet" case the way there is for AEs or
+clients.
+
+**Why no live join for the AM cleanup**: considered resolving `am_name`/`am_email`/
+etc. via a live join at read time instead of a snapshot-on-save, and deliberately
+ruled it out. Group reads are plain public PostgREST calls (`groups?select=*`, no
+RPC in between — confirmed via Explore) — `groups` allows some public read since
+the IO form needs branding info with no password. `admin_users` holds `pw_hash`
+and has zero public read policy anywhere in this app, by design. A live join would
+require exposing `admin_users` to PostgREST embedding — a real new security
+surface, working against the "admin_users is admin-RPC-only" rule this project has
+followed all session — just for a UI cleanup. Kept the existing snapshot-on-pick
+pattern instead (same one AE/Client pickers already use); same limitation as those
+already have: if a person's info changes later, existing groups keep their old
+snapshot until someone re-opens and re-saves.
+
+**Admin UI changes** (`admin/index.html`):
+- Group editor: AM section collapsed to one dropdown + 3 new strategist dropdowns
+  (Digital sourced from `ALL_STAFF` role='strategist', by name;
+  Social/Web from `ALL_STRATEGISTS`, by id, reusing the existing
+  `populateStrategistDropdown()`).
+- Client editor: all 3 dropdowns relabeled "...Override"; new
+  `refreshClientStrategistDefaults()` recomputes the dynamic blank-option label on
+  group change while preserving whatever override is already selected.
+- Strategists tab: Discipline select drops "Digital"; new-strategist default
+  changed from `digital` to `social`.
+- New shared helper `populateDigitalStrategistDropdown()` (mirrors
+  `populateAmPickerDropdown()` exactly — sourced from Users, stored by name, no
+  autofill-into-other-fields needed since this only records WHO, not contact info).
+
+**Schema/SQL still needed from Claire** — new columns (no live text needed for
+`ALTER TABLE` itself):
+- `groups.digital_strategist_name text`, `groups.social_strategist_id uuid
+  references strategists(id)`, `groups.web_strategist_id uuid references
+  strategists(id)`.
+- `clients.digital_strategist_id` (added earlier today, almost certainly still
+  empty) renamed to `clients.digital_strategist_name`, FK to `strategists`
+  dropped, retyped to `text`.
+- `find_or_create_client` needs its strategist-resolving block updated to
+  `coalesce` the client's override with the group's default, and to source Digital
+  from `admin_users`/`am_trello_handle` instead of `strategists` — I already have
+  this function's current live text from earlier today (I wrote the version
+  that's live, Claire confirmed running it), so no need to re-ask under the usual
+  two-step process for this one.
+- `admin_save_client`'s payload key needs updating from `digital_strategist_id` to
+  `digital_strategist_name` (I have this function's live text from earlier too).
+- `admin_save_group` needs its live text first (never touched this RPC before) —
+  asked Claire for `select pg_get_functiondef('admin_save_group'::regproc);`,
+  then add the 3 new payload keys.
+
+**Verified via Playwright** (`test-strategist-group-defaults.js`, new): Strategists
+tab's Discipline select has no "Digital" option; Group editor's Digital dropdown
+sources from `ALL_STAFF` role='strategist' (not the roster table), Social/Web from
+`ALL_STRATEGISTS`; Client editor's dynamic blank-option label shows the correct
+group-default name per discipline, falls back to plain "None" when the group has
+nothing set, and an already-chosen override survives switching to a different
+group and back; `adminSaveClient()`/`adminSaveGroup()` payloads use the correct
+new key names. Updated `test-admin-strategists.js` (predates this refinement) to
+drop its now-superseded Client-editor assertions and fix its fixture data to
+Social/Web only. Re-ran `test-admin-ae-market.js` and `test-service-editor-layout.js`
+— pass unchanged. `node --check` passes clean.
+
+**Not yet verifiable without live data**: the `find_or_create_client` COALESCE
+logic (client override vs. group default vs. neither) can't be run against real
+Postgres via Playwright — once the SQL above is live, worth a quick real check:
+set a group's Digital/Social/Web defaults, leave one client's overrides blank and
+give another client a real override, submit a test IO for each, and confirm the
+right person lands on the resulting Trello cards.
