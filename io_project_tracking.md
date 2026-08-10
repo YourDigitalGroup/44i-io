@@ -8647,3 +8647,24 @@ into the real campaign table without touching the textarea; removing the other r
 drops it from the issues list entirely; a fresh Preview click on the same text
 resets overrides back to the original 2 unresolved rows, confirming corrections
 don't leak into an unrelated new paste.
+
+### 2026-08-10 (cont'd) — Split order flipped between page loads (Region 1, 3, 2)
+
+Claire caught the "Facebook & Instagram" splits reordering themselves — same 3
+rows already fixed twice today, now showing Region 1/3/2. Real root cause, not a
+repeat of the earlier bug: these 3 rows came from the VERY FIRST split, made
+before `split_order` even existed as a column — so they've stayed `NULL` this
+whole time, silently falling through to the `created_at` tiebreak in the ORDER BY.
+Two of them were inserted in the same transaction as `strategist_split_campaign_line`
+runs — and Postgres freezes `now()` for an entire transaction, so their
+`created_at` values are genuinely, bit-for-bit identical. A tie with nothing left
+to break it is undefined behavior in SQL — Postgres can (and evidently did) return
+it in a different order from one query to the next.
+
+**Fixed two ways**: (1) one-off backfill — extracted the trailing number straight
+out of each row's own `split_label` text ("Region 2" → `split_order = 1`) for any
+row still missing it, since these specific labels happen to be numbered; (2) added
+`cl.id` as a final tiebreaker on `strategist_get_campaign_lines`'s `ORDER BY`, so
+ANY future tie — not just this one — resolves the exact same way every time,
+instead of "usually stable but never actually guaranteed." Claire ran both;
+verify query came back empty and the order held after a refresh.
