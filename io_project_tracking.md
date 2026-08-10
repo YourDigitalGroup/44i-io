@@ -8611,3 +8611,39 @@ branch (same `case when p_data ? 'field'` convention as every other field on thi
 RPC, for consistency and so a split can be corrected later if ever needed). Given
 to Claire to run — once live, bulk import's split support is fully wired end to
 end; client side was already shipped and tested in the previous entry.
+
+### 2026-08-10 (cont'd) — Bulk import: fix unmatched rows in place, no re-paste needed
+
+Claire ran the RPC patch, then asked a real follow-up: could the preview let her
+fix an unmatched Client/Tactic (or drop the row) directly, instead of editing the
+paste and starting over.
+
+**New `strategistParseBulkImport(raw, overrides)`** — `overrides` is keyed by row
+number, holding a picked `clientId`/`serviceId` to force that row's match, or
+`excluded: true` to drop it entirely. Same raw pasted text every time; only the
+override map changes. Errors are now structured objects (`{rowNum, field,
+clientName, tacticName}`) instead of plain strings, so the preview can build a
+real fix-it UI from them rather than just display text.
+
+**Preview UI**: each unresolved row gets a dropdown of the REAL clients (or real
+spend-priced tactics) to pick the correct one from, plus a "Remove this row"
+button. Picking a value or clicking Remove calls `strategistApplyBulkOverride()`,
+which records it and immediately re-renders the WHOLE preview against the same
+textarea content — a fixed row moves into the real campaign table, a removed row
+just disappears from the issues list. Nothing touches the pasted text itself.
+`strategistPreviewBulkImport()` (the button) resets overrides to start clean on a
+genuinely new paste; `strategistRenderBulkPreview()` is the shared render path
+both the button and every correction use.
+
+**Verified**: `node --check` passes. Re-ran all existing bulk-import/split tests
+unchanged and still fully passing (`test-split-campaigns.js` 19/19,
+`test-import-split.js` 16/16, `test-bulk-import-preview.js` 16/16 — the parse
+function's new second `overrides` parameter defaults to `{}`, so every existing
+single-argument call kept working exactly as before). New Playwright test
+(`test-bulk-import-overrides.js`, scratchpad-only, 14/14 passing): a typo'd client
+and a typo'd tactic both correctly surface their own dropdown/remove controls with
+zero database calls; picking the right client from the dropdown resolves that row
+into the real campaign table without touching the textarea; removing the other row
+drops it from the issues list entirely; a fresh Preview click on the same text
+resets overrides back to the original 2 unresolved rows, confirming corrections
+don't leak into an unrelated new paste.
