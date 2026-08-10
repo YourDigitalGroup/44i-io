@@ -8549,3 +8549,57 @@ relative order underneath. Given to Claire to run.
 
 Claire ran it and confirmed both are now correct: split rows show Region 1/2/3 in
 order, and clients/groups sort alphabetically by name. Fully resolved.
+
+### 2026-08-10 (cont'd) — Bulk import: preview step + split support (client side done, one RPC patch pending)
+
+Claire's meeting with her boss this week is about the cancellation/accounting
+questions, so she's moving on to bulk-importing campaigns in the meantime. Asked
+two real questions before diving in, both answered honestly by reading the actual
+code rather than assuming: (1) bulk import had ZERO split awareness — pasted rows
+with different exact titles would each become their own independent line, but none
+would show a split label or have any guaranteed relative order; (2) bulk import
+saved immediately on clicking "Import," with results shown only AFTER the fact —
+no preview/edit step existed, contradicting an early (never-built-this-way) plan
+note about a review-before-import pattern. Confirmed via AskUserQuestion: build
+both now.
+
+**1. Split support.** New optional "Split Label" column in the paste format (recognizes
+"split label"/"split"/"region" as header names). `strategistParseBulkImport()`
+(new, pure — parses only, touches nothing) groups rows into campaigns exactly as
+before, then does a SECOND pass: any campaigns sharing client+tactic+platform that
+were given a Split Label become siblings, assigned `split_order` 0/1/2... in the
+order they were first seen in the paste — deliberately paste-order, not
+alphabetical or anything else, matching every other split-ordering decision this
+session. Each split is created directly as its own line with `split_label`/
+`split_order` already set (unlike the interactive Setup-panel split, bulk import
+never has one pre-existing line to explode out of — every split here is a brand
+new line from the start, so there's no "first split updates in place" step needed).
+
+**2. Preview before saving.** Split `strategistRunBulkImport()` into three pieces:
+`strategistParseBulkImport(raw)` (pure parse, returns a plan or an error, zero DB
+calls), `strategistPreviewBulkImport()` (parses, stores the plan in a new
+module-level `BULK_IMPORT_PLAN`, renders a table of exactly what would happen —
+tactic/split label/platform/title/status/months/create-vs-match — plus any
+unresolved-row errors, all before anything is saved), and
+`strategistConfirmBulkImport()` (the actual save loop, using the already-parsed
+plan — only runs when that button is clicked, and refuses to run at all if no
+plan exists yet). "Import" button renamed to "Preview" to match.
+
+**Verified**: `node --check` passes. Re-ran both existing split tests unchanged
+(`test-split-campaigns.js` 19/19, `test-import-split.js` 16/16 — bulk import
+changes touched neither). New Playwright test (`test-bulk-import-preview.js`,
+scratchpad-only, 16/16 passing): a plain (non-split) row parses with no split
+fields set; a 3-way uneven split pasted deliberately OUT of region order (Region 2,
+then Region 1, then Region 3) gets `split_order` 0/1/2 in that exact PASTE order,
+not alphabetical; Preview makes zero database calls and correctly stores the
+parsed plan; the preview table shows all 3 split labels and a working Confirm
+button with "nothing saved yet" messaging; Confirm actually creates all 3 lines
+with the right `split_label`/`split_order` per line, clears the stored plan
+afterward, and refuses to run again with no plan to work from.
+
+**Not yet done — needs the live RPC first**: `strategist_save_campaign_line` needs
+to actually accept and store `split_label`/`split_order` in its `p_data` case-when
+list — sent to it now, but silently ignored until that RPC is patched. Asked
+Claire for `select pg_get_functiondef('strategist_save_campaign_line'::regproc);`
+before writing that patch, same two-step convention used for every existing RPC
+change this session.
