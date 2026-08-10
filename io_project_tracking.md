@@ -8603,3 +8603,11 @@ list — sent to it now, but silently ignored until that RPC is patched. Asked
 Claire for `select pg_get_functiondef('strategist_save_campaign_line'::regproc);`
 before writing that patch, same two-step convention used for every existing RPC
 change this session.
+
+**RPC patch given.** Added `split_label`/`split_order` to both the insert branch
+(unconditional, since bulk import always sends both explicitly, `null` for a
+non-split line — same convention `has_offline_visits` already uses) and the update
+branch (same `case when p_data ? 'field'` convention as every other field on this
+RPC, for consistency and so a split can be corrected later if ever needed). Given
+to Claire to run — once live, bulk import's split support is fully wired end to
+end; client side was already shipped and tested in the previous entry.
