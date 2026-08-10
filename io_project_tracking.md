@@ -8711,3 +8711,42 @@ shape; a blank Status column still defaults to `active` same as before; the
 preview correctly offers a status-fixing dropdown with the right explanatory
 text; applying that dropdown's override resolves the row into the real campaign
 table, no re-paste needed.
+
+### 2026-08-10 (cont'd) — Two more real bugs from the same 119-campaign import
+
+Claire reported two things from the same import: she likely clicked Confirm
+twice because nothing visibly happened after the first click, probably creating
+duplicates; and the fix-it dropdowns for unmatched clients/tactics weren't in any
+order at all, making a long list painful to search.
+
+**1. Double-submit bug — real, root-caused, fixed.** `strategistConfirmBulkImport()`
+runs a sequential loop of RPC round trips (one or more per campaign) with zero
+loading feedback — for 119+ campaigns that's a genuinely long wait with nothing on
+screen to suggest it's working, which is exactly why she clicked again. That
+second click ran the ENTIRE save loop a second time against the same
+not-yet-cleared `BULK_IMPORT_PLAN` (only nulled at the very end of the first run),
+creating a duplicate for every campaign that didn't already exist. Fixed with a
+new `BULK_IMPORT_CONFIRMING` flag that blocks a second invocation outright (with
+its own toast), plus the confirm button now disables itself and relabels to
+"Saving…" the instant it's clicked — the missing feedback that caused the double-
+click in the first place, not just a guard against the symptom.
+
+**2. Dropdown ordering — real, fixed.** The fix-it dropdowns for unmatched
+clients/tactics rendered in whatever arbitrary order `ALL_STRATEGIST_CLIENTS`/
+`CATALOG_ROWS` happened to iterate in — no sort at all. Both now sort
+alphabetically before rendering (client by name, tactic by accounting label/label).
+
+**Verified**: `node --check` passes. Re-ran every existing bulk-import test
+unchanged and still fully passing (16/16, 14/14, 9/9 across the three prior
+files). New Playwright test (`test-bulk-import-double-submit.js`, scratchpad-only,
+5/5 passing): the client dropdown renders alphabetically (verified "Alpha Inc"
+appears before "Zeta Corp" despite being added to the roster second); the confirm
+button visibly disables and relabels to "Saving…" the moment a save starts; a
+second call while the first is still in flight is blocked with the right toast and
+makes zero additional database calls; the guard correctly resets once the first
+save actually finishes.
+
+**Duplicate cleanup — diagnostic given, not yet run.** Gave Claire a `SELECT`-only
+query first (group by client+tactic+platform+title, `having count(*) > 1`, scoped
+to the last 2 hours) to confirm the actual scope before deleting anything —
+waiting on her results before writing the actual cleanup `DELETE`.

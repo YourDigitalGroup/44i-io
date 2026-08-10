@@ -926,8 +926,10 @@ function strategistRenderBulkPreview() {
   // Each unresolved row gets a fix-it block right in the preview -- a dropdown of
   // the REAL clients/tactics to pick the right one, or a button to drop the row
   // entirely -- rather than a plain error string that sends you back to the paste.
-  const clientOptions = ALL_STRATEGIST_CLIENTS.map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
+  const clientOptions = [...ALL_STRATEGIST_CLIENTS].sort((a, b) => a.name.localeCompare(b.name))
+    .map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
   const tacticOptions = Object.values(CATALOG_ROWS).filter(s => s.pricing_mode === 'spend')
+    .sort((a, b) => (a.accounting_label || a.label).localeCompare(b.accounting_label || b.label))
     .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('');
   const statusOptions = BULK_IMPORT_VALID_STATUSES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   const errorsHtml = plan.errors.map(e => {
@@ -961,7 +963,7 @@ function strategistRenderBulkPreview() {
       <tbody>${rowsHtml}</tbody>
     </table></div>` : ''}
     ${plan.errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 4px">${plan.errors.length} row(s) need a fix before they'll import:</p><div style="margin-bottom:10px">${errorsHtml}</div>` : ''}
-    ${plan.groups.size ? `<div style="display:flex;gap:10px"><button onclick="strategistConfirmBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button></div>` : ''}
+    ${plan.groups.size ? `<div style="display:flex;gap:10px"><button id="bulk-import-confirm-btn" onclick="strategistConfirmBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button></div>` : ''}
   `;
 }
 
@@ -981,10 +983,24 @@ function strategistApplyBulkOverride(rowNum, field, value) {
   strategistRenderBulkPreview();
 }
 
+// Guards against a real bug Claire hit live (2026-08-10): 119 campaigns took long
+// enough (each needs its own sequential RPC round trip) that clicking Confirm gave
+// no visible feedback at all, so she clicked it again -- which ran the whole save
+// loop a SECOND time against the same not-yet-cleared plan, creating a duplicate
+// for every campaign that didn't already exist. This flag blocks a second
+// invocation outright, and disabling+relabeling the button below gives the
+// immediate feedback that was actually missing in the first place.
+let BULK_IMPORT_CONFIRMING = false;
+
 // Actually saves whatever strategistPreviewBulkImport() already parsed and showed.
 async function strategistConfirmBulkImport() {
+  if (BULK_IMPORT_CONFIRMING) { showToast('Already saving — one moment.', 'error'); return; }
   const plan = BULK_IMPORT_PLAN;
   if (!plan) { showToast('Nothing to import — preview first.', 'error'); return; }
+  BULK_IMPORT_CONFIRMING = true;
+  const confirmBtn = document.getElementById('bulk-import-confirm-btn');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; confirmBtn.style.cursor = 'default'; confirmBtn.style.opacity = '.6'; }
+  try {
   // plan.errors are the structured {rowNum, field, ...} objects the preview's
   // fix-it UI reads directly -- flatten to plain strings here since everything
   // pushed onto `errors` from this point on (a bad month, a failed save) is a
@@ -1041,6 +1057,9 @@ async function strategistConfirmBulkImport() {
     `;
   }
   showToast(`Import done: ${createdCount} created, ${matchedExistingCount} matched, ${errors.length} issue(s)`);
+  } finally {
+    BULK_IMPORT_CONFIRMING = false;
+  }
 }
 
 // Fetches the four datasets fresh, WITHOUT touching any view state (current month,
