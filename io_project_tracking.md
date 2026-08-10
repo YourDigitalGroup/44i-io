@@ -8668,3 +8668,46 @@ row still missing it, since these specific labels happen to be numbered; (2) add
 ANY future tie — not just this one — resolves the exact same way every time,
 instead of "usually stable but never actually guaranteed." Claire ran both;
 verify query came back empty and the order held after a refresh.
+
+### 2026-08-10 (cont'd) — Real bug: bulk-imported "Active" status invisible everywhere
+
+Claire bulk-imported 119 campaigns, confirmed the save succeeded, and then
+couldn't find them on any tab, in any month, under either scope, with no group
+filter. Ruled out every plausible filter one at a time via direct questions
+before guessing, then asked her to run a diagnostic query rather than keep
+guessing blind:
+```sql
+select status, count(*) from campaign_lines where created_at > now() - interval '2 hours' group by status;
+```
+Came back `Active, 238` / `active, 3` — root cause confirmed: her CSV's Status
+column had "Active" (capitalized), which the old bulk import code saved
+EXACTLY as typed with no normalization at all. Every status tab/filter in this
+portal compares against a lowercase literal (`'active'`, `'paused'`, etc.), so
+`'Active' !== 'active'` matched NONE of the 4 tabs — completely invisible
+everywhere, not filtered by any specific setting.
+
+**One-off fix**: `update campaign_lines set status = 'active' where status =
+'Active'` — given to Claire, fixed the 238 existing rows.
+
+**Permanent fix, client-side only, no SQL needed**: `strategistParseBulkImport()`
+now lowercases whatever's typed in the Status column and validates it against
+the only 4 statuses this portal actually recognizes (`pending`/`active`/
+`paused`/`complete`) — new `BULK_IMPORT_VALID_STATUSES` constant. A capitalized
+or oddly-spaced but otherwise-correct status (e.g. "Active", "ACTIVE") now just
+quietly normalizes and saves correctly. A genuinely wrong one (a real typo) gets
+caught as a new `field: 'status'` error, surfaced in the preview's existing
+fix-it UI with its own dropdown of the 4 real statuses — same "pick the right one
+or remove the row" pattern already built for unmatched clients/tactics, extended
+to a third field.
+
+**Verified**: `node --check` passes. Re-ran every existing bulk-import test
+unchanged and still fully passing (`test-bulk-import-preview.js` 16/16,
+`test-bulk-import-overrides.js` 14/14 — status normalization didn't touch either
+path's behavior for a blank/already-correct status). New Playwright test
+(`test-bulk-import-status.js`, scratchpad-only, 9/9 passing): "Active" normalizes
+cleanly to `active` with zero errors (the exact real bug, now definitionally not
+a problem); a genuine typo ("Activve") is caught with the right error
+shape; a blank Status column still defaults to `active` same as before; the
+preview correctly offers a status-fixing dropdown with the right explanatory
+text; applying that dropdown's override resolves the row into the real campaign
+table, no re-paste needed.
