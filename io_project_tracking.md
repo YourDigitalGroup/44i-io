@@ -8891,3 +8891,102 @@ the eye) that the character immediately after the dash is U+00A0 while the one
 before it is a regular U+0020; a real long range still renders its dates
 correctly; missing start/end dates still render sensibly with the same fix in
 place.
+
+### 2026-08-10 (cont'd) — Answers received: campaign status + Campaign Setup open questions
+
+Claire got real answers back from her team on a set of previously-outstanding
+Strategist Portal questions. Recorded verbatim by topic, nothing built yet —
+several of these are genuinely new features, not tweaks, and worth scoping
+properly before starting rather than building all of them at once unprompted.
+
+**Campaign status:**
+- Who sets status, and does a change need to trigger anything else? Strategist-
+  controlled; some ad platforms auto-flip active → ended on their own. A
+  notification to the AM the month a campaign is ending "wouldn't hurt" and would
+  help them reach out about renewal — explicitly "probably not a requirement,"
+  not a hard ask.
+- Does a status change need its own record (like the Optimize Log)? "Would be
+  beneficial... but probably not a requirement."
+
+**Campaign Setup & overrides:**
+- Real IO mistakes that come up often: an AE selecting the wrong service, and
+  reps forgetting to select "Offline Visits Tracking." Confirmed as genuinely
+  hard to catch systematically — "one of our hardest challenges." Not something
+  Campaign Setup's review step can fully solve on its own.
+- Can IO-sourced fields (Budget, etc.) still be corrected after a campaign moves
+  past Setup into Active? **Yes, ideally, at any point** — campaigns start late,
+  change budget, get cancelled. Needs verifying against what the strategist
+  portal actually allows editing on an Active campaign today, not assumed.
+- Does a saved Draft need to notify anyone once its blocker clears? "Ideally...
+  notify the strategist" — but Claire's own team isn't sure how that should work
+  alongside Trello. Genuinely unresolved mechanism, not a spec to build from yet.
+- Setup Notes — plain text enough, or worth seeing at a glance what's actually
+  blocking a Pending campaign? Confirmed useful: waiting on creative, waiting on
+  platform access (e.g. Facebook), waiting on the intake form, or simply waiting
+  for the start date to arrive — named as real, recurring blocker categories.
+
+**Not yet built — flagged rather than started, given the volume of new work
+implied:** AM-notification-on-campaign-end and Draft-clears-notify-strategist
+both need real notification/email infrastructure, which doesn't exist anywhere in
+this project yet (same gap already flagged elsewhere in this doc). A status
+change history log is a new table + UI, not a tweak. The Setup Notes blocker
+categories are the most concretely scoped and lowest-risk of the four. Asked
+Claire what she wants prioritized rather than picking for her.
+
+### 2026-08-10 (cont'd) — Building status change log + Setup Notes blocker
+
+Claire picked both of the non-notification-dependent items to build now. Also
+floated a real idea for the two notification-dependent ones (AM-on-campaign-end,
+Draft-clears-notify-strategist): since Trello's already integrated, a Trello
+comment/notification wouldn't need new email infra at all — just a decision on
+how many days something should sit before it fires. Agreed this is worth pursuing
+but is its own separate decision (the threshold, and the exact mechanism) — kept
+parked rather than folded into today's build.
+
+**Schema**: new nullable `campaign_lines.setup_blocker` (text) and a new
+`campaign_status_history` table (`campaign_line_id`, `old_status`, `new_status`,
+`reason`, `changed_by`, `changed_at`). Patched `strategist_get_campaign_lines()`
+and `strategist_save_campaign_line()` to carry `setup_blocker` through (both
+already known from earlier patches this session, so no fresh live-SQL pull
+needed). Two brand-new RPCs: `strategist_log_status_change()` and
+`strategist_get_status_history()` — same "fetch everything, filter client-side
+per campaign" convention already used for the Optimize Log.
+
+**1. Status change log.** The detail panel's Status `<select>` no longer saves
+directly — it opens a small inline box right underneath (same progressive-
+disclosure pattern as the split form, not a blocking `prompt()`) asking "Why the
+change? (optional)." Confirming logs old→new/who/when/reason via the new RPC,
+then saves the actual status; Cancel reverts the select and discards, nothing
+saved. Matches the team's own answer exactly — logging is useful but never
+required, so it's always skippable with one click, never blocks the change
+itself. New "Status history" section in the detail panel lists every change,
+newest first.
+
+**2. Setup Notes blocker.** New "What's this waiting on?" dropdown next to Setup
+Notes — Creative / Platform Access / Intake Form / blank (nothing specific).
+Deliberately did NOT add "waiting on start date" as a 4th manual option — that's
+objectively knowable from the flight dates already on file, so it's auto-detected
+instead: a Pending campaign whose flight hasn't started yet shows a "Starts {date}"
+pill automatically, no strategist input needed. Each Pending campaign's header now
+shows one pill: the manual blocker if set, else the auto-detected start date if in
+the future, else nothing at all — deliberately blank rather than an alarming
+"needs review" badge, matching the team's own distinction between "actually
+blocked" and "just arrived, not yet reviewed."
+
+**Verified**: `node --check` passes. Re-ran all 10 prior test files unchanged and
+fully passing (97 assertions). Two new Playwright tests:
+`test-status-change-log.js` (scratchpad-only, 10/10 passing) — opening the reason
+box makes no database calls yet; Cancel reverts the select and saves nothing;
+Confirm with a reason logs the exact old/new/reason shape then saves the real
+status, and updates the local cache immediately; Confirm with a blank reason still
+works, sending `null` rather than blocking; status history correctly filters to
+just the selected campaign. `test-setup-blocker.js` (scratchpad-only, 9/9
+passing) — a manual blocker always wins over the auto-detected one; a future
+flight start with no manual blocker set shows the auto "Starts" pill; an already-
+started flight with nothing set shows no pill at all; an unrecognized blocker
+value falls through safely instead of rendering broken HTML; the real rendered
+Setup panel shows the pill and the select's saved value correctly; saving reads
+the picked value back out, and clearing it back to blank sends `null`, not an
+empty string.
+
+**Not yet run by Claire.**
