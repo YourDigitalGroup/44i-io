@@ -9173,3 +9173,17 @@ an "Amazaon DSP" typo. Claire then asked to confirm it was alphabetical — it
 wasn't (still in her paste order) — sorted properly on the follow-up. Client-
 side only, no SQL, no code-structure change (still one array, same three call
 sites), nothing to run.
+
+### 2026-08-10 (cont'd) — Accounting Portal concept doc recolored to match the real brand
+
+The concept doc (`accounting-portal-questions.html`, scratchpad) was still
+using an earthy gold/olive palette from whenever it was first drafted — never
+updated after the 2026-08-06 sky-blue rebrand (`shared.css`, matching the new
+44idigital.com). Remapped its CSS variables to the real semantic colors
+actually in use: `--accent` → `#4C8FCB` (shared.css `--accent`), `--warn` →
+`#F59E0B` (shared.css `--warn`), `--good`/`--risk` → `#10B981`/`#EF4444`
+(the actual toast success/error colors), `--ink`/`--muted`/`--rule`/`--paper`
+→ shared.css's `--text`/`--muted`/`--border`/`--bg`. The doc's dark-mode
+block has no real app equivalent to match (admin/strategist are light-mode
+only) — lightened the same sky-blue family for dark-background contrast
+rather than inventing an unrelated dark palette. Republished as an Artifact.
