@@ -8502,3 +8502,148 @@ show under "My Campaigns."
 Same underlying fix as the code patch a few entries up (`strategist_split_campaign_line`
 now copies `assigned_strategist` to every clone going forward) — this backfill only
 covers the one line Claire had already split before that patch went live.
+
+### 2026-08-10 (cont'd) — Split rows displayed in reverse order (3, 2, 1 instead of 1, 2, 3)
+
+Claire flagged the 3 "Facebook & Instagram" splits appearing Region 3 / Region 2 /
+Region 1 top-to-bottom. Root cause: nothing anywhere orders `campaign_lines` rows
+deterministically — `strategist_get_campaign_lines()` has no `ORDER BY` at all, and
+the client renders rows in whatever order Postgres happens to return them. That's
+made worse specifically for splits: the FIRST split updates the original row in
+place rather than inserting a new one, so relying on `created_at` wouldn't even be
+reliable — the two clones inserted in the same transaction can share an identical
+`created_at`, since `now()` is stable for the whole transaction in Postgres, not
+per-statement.
+
+**Fix: a real ordering column, not a timestamp guess.** New nullable
+`campaign_lines.split_order int`. `strategist_split_campaign_line()` now sets it
+explicitly — `0` for the first split (the original row), `1`/`2`/... for each clone
+in the order they were entered in the split form. `strategist_get_campaign_lines()`
+now returns `split_order` and sorts with `order by cl.client_id, cl.tactic_label,
+cl.split_order nulls first, cl.created_at` — split siblings always come out in the
+order they were actually entered, and everything else gets a real deterministic
+order for the first time too (previously not guaranteed at all, just usually
+looked fine by coincidence).
+
+Entirely server-side — no client code changed. `strategistTacticDisplay()`,
+`renderMainTable()`, `renderSetupPanels()` all just render whatever order the data
+arrives in, so fixing the RPC's own order fixes every view at once (main table,
+Setup queue, detail panel) without touching any of them individually.
+
+**Verified**: `node --check` passes. Re-ran both existing split test suites
+(`test-split-campaigns.js` 19/19, `test-import-split.js` 16/16) — both unchanged
+and still fully passing, confirming this fix genuinely needed zero client-side
+changes.
+
+Claire ran it — split order fixed (Region 1/2/3 now correct), but flagged a NEW
+regression: Prairie Flower Casino now sorted above Mitchell Technical College,
+which isn't alphabetical either way. Root cause: the `order by` clause sorted by
+`cl.client_id` — a UUID — not the client's actual name, so it just replaced one
+meaningless order with a different meaningless order.
+
+**Fixed**: `order by` changed to `g.name, c.name, cl.tactic_label, cl.split_order
+nulls first, cl.created_at` — sorts by the actual group/client name text, matching
+what a human expects and what the main table's own group-name grouping already
+assumes, while still using `split_order` to keep split siblings in the right
+relative order underneath. Given to Claire to run.
+
+Claire ran it and confirmed both are now correct: split rows show Region 1/2/3 in
+order, and clients/groups sort alphabetically by name. Fully resolved.
+
+### 2026-08-10 (cont'd) — Bulk import: preview step + split support (client side done, one RPC patch pending)
+
+Claire's meeting with her boss this week is about the cancellation/accounting
+questions, so she's moving on to bulk-importing campaigns in the meantime. Asked
+two real questions before diving in, both answered honestly by reading the actual
+code rather than assuming: (1) bulk import had ZERO split awareness — pasted rows
+with different exact titles would each become their own independent line, but none
+would show a split label or have any guaranteed relative order; (2) bulk import
+saved immediately on clicking "Import," with results shown only AFTER the fact —
+no preview/edit step existed, contradicting an early (never-built-this-way) plan
+note about a review-before-import pattern. Confirmed via AskUserQuestion: build
+both now.
+
+**1. Split support.** New optional "Split Label" column in the paste format (recognizes
+"split label"/"split"/"region" as header names). `strategistParseBulkImport()`
+(new, pure — parses only, touches nothing) groups rows into campaigns exactly as
+before, then does a SECOND pass: any campaigns sharing client+tactic+platform that
+were given a Split Label become siblings, assigned `split_order` 0/1/2... in the
+order they were first seen in the paste — deliberately paste-order, not
+alphabetical or anything else, matching every other split-ordering decision this
+session. Each split is created directly as its own line with `split_label`/
+`split_order` already set (unlike the interactive Setup-panel split, bulk import
+never has one pre-existing line to explode out of — every split here is a brand
+new line from the start, so there's no "first split updates in place" step needed).
+
+**2. Preview before saving.** Split `strategistRunBulkImport()` into three pieces:
+`strategistParseBulkImport(raw)` (pure parse, returns a plan or an error, zero DB
+calls), `strategistPreviewBulkImport()` (parses, stores the plan in a new
+module-level `BULK_IMPORT_PLAN`, renders a table of exactly what would happen —
+tactic/split label/platform/title/status/months/create-vs-match — plus any
+unresolved-row errors, all before anything is saved), and
+`strategistConfirmBulkImport()` (the actual save loop, using the already-parsed
+plan — only runs when that button is clicked, and refuses to run at all if no
+plan exists yet). "Import" button renamed to "Preview" to match.
+
+**Verified**: `node --check` passes. Re-ran both existing split tests unchanged
+(`test-split-campaigns.js` 19/19, `test-import-split.js` 16/16 — bulk import
+changes touched neither). New Playwright test (`test-bulk-import-preview.js`,
+scratchpad-only, 16/16 passing): a plain (non-split) row parses with no split
+fields set; a 3-way uneven split pasted deliberately OUT of region order (Region 2,
+then Region 1, then Region 3) gets `split_order` 0/1/2 in that exact PASTE order,
+not alphabetical; Preview makes zero database calls and correctly stores the
+parsed plan; the preview table shows all 3 split labels and a working Confirm
+button with "nothing saved yet" messaging; Confirm actually creates all 3 lines
+with the right `split_label`/`split_order` per line, clears the stored plan
+afterward, and refuses to run again with no plan to work from.
+
+**Not yet done — needs the live RPC first**: `strategist_save_campaign_line` needs
+to actually accept and store `split_label`/`split_order` in its `p_data` case-when
+list — sent to it now, but silently ignored until that RPC is patched. Asked
+Claire for `select pg_get_functiondef('strategist_save_campaign_line'::regproc);`
+before writing that patch, same two-step convention used for every existing RPC
+change this session.
+
+**RPC patch given.** Added `split_label`/`split_order` to both the insert branch
+(unconditional, since bulk import always sends both explicitly, `null` for a
+non-split line — same convention `has_offline_visits` already uses) and the update
+branch (same `case when p_data ? 'field'` convention as every other field on this
+RPC, for consistency and so a split can be corrected later if ever needed). Given
+to Claire to run — once live, bulk import's split support is fully wired end to
+end; client side was already shipped and tested in the previous entry.
+
+### 2026-08-10 (cont'd) — Bulk import: fix unmatched rows in place, no re-paste needed
+
+Claire ran the RPC patch, then asked a real follow-up: could the preview let her
+fix an unmatched Client/Tactic (or drop the row) directly, instead of editing the
+paste and starting over.
+
+**New `strategistParseBulkImport(raw, overrides)`** — `overrides` is keyed by row
+number, holding a picked `clientId`/`serviceId` to force that row's match, or
+`excluded: true` to drop it entirely. Same raw pasted text every time; only the
+override map changes. Errors are now structured objects (`{rowNum, field,
+clientName, tacticName}`) instead of plain strings, so the preview can build a
+real fix-it UI from them rather than just display text.
+
+**Preview UI**: each unresolved row gets a dropdown of the REAL clients (or real
+spend-priced tactics) to pick the correct one from, plus a "Remove this row"
+button. Picking a value or clicking Remove calls `strategistApplyBulkOverride()`,
+which records it and immediately re-renders the WHOLE preview against the same
+textarea content — a fixed row moves into the real campaign table, a removed row
+just disappears from the issues list. Nothing touches the pasted text itself.
+`strategistPreviewBulkImport()` (the button) resets overrides to start clean on a
+genuinely new paste; `strategistRenderBulkPreview()` is the shared render path
+both the button and every correction use.
+
+**Verified**: `node --check` passes. Re-ran all existing bulk-import/split tests
+unchanged and still fully passing (`test-split-campaigns.js` 19/19,
+`test-import-split.js` 16/16, `test-bulk-import-preview.js` 16/16 — the parse
+function's new second `overrides` parameter defaults to `{}`, so every existing
+single-argument call kept working exactly as before). New Playwright test
+(`test-bulk-import-overrides.js`, scratchpad-only, 14/14 passing): a typo'd client
+and a typo'd tactic both correctly surface their own dropdown/remove controls with
+zero database calls; picking the right client from the dropdown resolves that row
+into the real campaign table without touching the textarea; removing the other row
+drops it from the issues list entirely; a fresh Preview click on the same text
+resets overrides back to the original 2 unresolved rows, confirming corrections
+don't leak into an unrelated new paste.

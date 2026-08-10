@@ -726,6 +726,7 @@ const BULK_IMPORT_COLUMNS = [
   { key: 'tactic', names: ['tactic', 'service'] },
   { key: 'platform', names: ['platform'] },
   { key: 'platform_campaign_name', names: ['platform campaign name', 'campaign name', 'campaign title'] },
+  { key: 'split_label', names: ['split label', 'split', 'region'] },
   { key: 'status', names: ['status'] },
   { key: 'flight_start', names: ['flight start', 'start date'] },
   { key: 'flight_end', names: ['flight end', 'end date'] },
@@ -733,20 +734,28 @@ const BULK_IMPORT_COLUMNS = [
   { key: 'gross_budget', names: ['gross budget', 'budget'] },
 ];
 
+// Holds the parsed-but-not-yet-saved plan between strategistPreviewBulkImport()
+// and strategistConfirmBulkImport() — nothing touches the database until Confirm
+// is actually clicked, same "review before import" pattern used elsewhere in this
+// project (2026-08-10, per Claire).
+let BULK_IMPORT_PLAN = null;
+
 function strategistOpenBulkImportForm() {
   const el = document.getElementById('strategist-bulk-import-form');
   const isOpen = el.style.display !== 'none';
-  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; BULK_IMPORT_PLAN = null; BULK_IMPORT_OVERRIDES = {}; return; }
 
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import campaigns (paste from a CSV or a Google Sheets range)</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Status, Flight Start, Flight End, Month, Gross Budget</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. Dates as YYYY-MM-DD, Month as YYYY-MM.</p>
-    <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Status	Flight Start	Flight End	Month	Gross Budget
-Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July	active	2026-07-01	2026-07-31	2026-07	1500
-Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July	active	2026-07-01	2026-07-31	2026-08	2000"></textarea>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
+    <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Split Label	Status	Flight Start	Flight End	Month	Gross Budget
+Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-07	1500
+Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-08	2000
+Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region1_Larkwood	Region 1	active	2026-08-01	2026-12-31	2026-08	2000
+Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region2_Larkwood	Region 2	active	2026-08-01	2026-12-31	2026-08	2000"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:10px">
-      <button onclick="strategistRunBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Import</button>
+      <button onclick="strategistPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
       <button onclick="strategistOpenBulkImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
     </div>
     <div id="bulk-import-results"></div>
@@ -771,11 +780,20 @@ function resolveBulkService(name) {
     ((r.accounting_label || r.label || '').trim().toLowerCase() === norm)) || null;
 }
 
-async function strategistRunBulkImport() {
-  const raw = document.getElementById('bulk-import-text').value;
-  if (!raw.trim()) { showToast('Paste something first.', 'error'); return; }
+// Pure parse: paste text in, a plan out. Never touches the database -- callers
+// decide what to do with the result. Returns { error } for a hard stop (missing
+// required columns), or { groups, errors } where groups is a Map of identityKey ->
+// campaign fields + monthRows, and errors is a list of unresolved/invalid rows.
+//
+// `overrides` (keyed by rowNum, 2026-08-10 per Claire -- "could the preview call
+// out the things that don't match and I can update them exactly or remove them,"
+// rather than having to fix the paste and start over) lets a specific row's
+// client/tactic be forced to a real id picked from a dropdown, or the row dropped
+// entirely, WITHOUT touching the pasted text at all -- re-parsing with the same
+// raw text plus an override is how a correction actually takes effect.
+function strategistParseBulkImport(raw, overrides = {}) {
   const rows = parsePastedReportRows(raw);
-  if (rows.length < 2) { showToast('Need a header row plus at least one data row.', 'error'); return; }
+  if (rows.length < 2) return { error: 'Need a header row plus at least one data row.' };
 
   const header = rows[0].map(normalizeHeaderName);
   const colIndex = {};
@@ -785,24 +803,26 @@ async function strategistRunBulkImport() {
   });
   const missingRequired = ['client', 'tactic'].filter(k => colIndex[k] === undefined);
   if (missingRequired.length) {
-    showToast('Header row is missing required column(s): ' + missingRequired.join(', '), 'error');
-    return;
+    return { error: 'Header row is missing required column(s): ' + missingRequired.join(', ') };
   }
 
-  const errors = [];
+  const errors = []; // { rowNum, field: 'client'|'tactic', clientName, tacticName }
   // Group data rows by the campaign identity they belong to, so several months for
   // the SAME campaign share one campaign_lines row instead of creating a duplicate
   // per row.
   const groups = new Map(); // identityKey -> { fields, monthRows: [] }
   rows.slice(1).forEach((cols, i) => {
     const rowNum = i + 2; // 1-based, header is row 1
+    if (overrides[rowNum]?.excluded) return; // removed from the import, per Claire's own review
     const get = (key) => colIndex[key] !== undefined ? (cols[colIndex[key]] || '').trim() : '';
     const clientName = get('client'), tacticName = get('tactic');
     if (!clientName && !tacticName) return; // blank line
-    const client = resolveBulkClient(clientName);
-    const service = resolveBulkService(tacticName);
-    if (!client) { errors.push(`Row ${rowNum}: no client matches "${clientName}"`); return; }
-    if (!service) { errors.push(`Row ${rowNum}: no tactic matches "${tacticName}"`); return; }
+    const clientOverrideId = overrides[rowNum]?.clientId;
+    const serviceOverrideId = overrides[rowNum]?.serviceId;
+    const client = clientOverrideId ? ALL_STRATEGIST_CLIENTS.find(c => c.id === clientOverrideId) : resolveBulkClient(clientName);
+    const service = serviceOverrideId ? CATALOG_ROWS[serviceOverrideId] : resolveBulkService(tacticName);
+    if (!client) { errors.push({ rowNum, field: 'client', clientName, tacticName }); return; }
+    if (!service) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
     const platform = get('platform');
     const platformCampaignName = get('platform_campaign_name');
     const identityKey = [client.id, service.id, platform, platformCampaignName].join('|');
@@ -810,7 +830,7 @@ async function strategistRunBulkImport() {
       groups.set(identityKey, {
         client_id: client.id, group_id: client.group_id, service_id: service.id,
         tactic_label: service.accounting_label || service.label, platform: platform || null,
-        platform_campaign_name: platformCampaignName || null,
+        platform_campaign_name: platformCampaignName || null, split_label: get('split_label') || null,
         status: get('status') || 'active', flight_start: get('flight_start') || null, flight_end: get('flight_end') || null,
         monthRows: [],
       });
@@ -823,6 +843,24 @@ async function strategistRunBulkImport() {
     if (month) groups.get(identityKey).monthRows.push({ month, grossBudget, rowNum });
   });
 
+  // Splits: rows sharing the same client+tactic+platform that were given a Split
+  // Label become siblings -- same mechanism as the Setup panel's own split feature
+  // (split_label + split_order), but each is created directly as its own line here
+  // rather than exploding out of one existing line, since bulk import creates
+  // brand-new campaigns rather than splitting an already-existing one. Order is
+  // purely "first seen in the paste," same convention as everywhere else split
+  // ordering matters in this project.
+  const splitGroupOrder = new Map(); // splitGroupKey -> [identityKey, ...] in first-seen order
+  for (const [identityKey, g] of groups) {
+    if (!g.split_label) continue;
+    const splitGroupKey = [g.client_id, g.service_id, g.platform].join('|');
+    if (!splitGroupOrder.has(splitGroupKey)) splitGroupOrder.set(splitGroupKey, []);
+    splitGroupOrder.get(splitGroupKey).push(identityKey);
+  }
+  for (const identityKeys of splitGroupOrder.values()) {
+    identityKeys.forEach((identityKey, idx) => { groups.get(identityKey).split_order = idx; });
+  }
+
   // Existing campaigns are matched the same way the paste-report tool does -- by
   // platform_campaign_name -- so re-running an import (e.g. to add a newer month)
   // updates the SAME campaign instead of creating a duplicate.
@@ -830,10 +868,105 @@ async function strategistRunBulkImport() {
   ALL_CAMPAIGN_LINES.forEach(l => {
     if (l.platform_campaign_name) existingByTitle[l.platform_campaign_name.trim().toLowerCase()] = l;
   });
+  for (const g of groups.values()) {
+    g.existingLineId = g.platform_campaign_name ? existingByTitle[g.platform_campaign_name.trim().toLowerCase()]?.id : null;
+  }
+
+  return { groups, errors };
+}
+
+// Per-rowNum corrections applied on top of the raw paste, without editing the
+// textarea itself -- 2026-08-10, per Claire: fixing a mismatch shouldn't require
+// re-pasting the whole thing. Cleared whenever the form opens/closes.
+let BULK_IMPORT_OVERRIDES = {};
+
+// Parses and shows what WOULD happen -- nothing is saved yet. Claire (2026-08-10):
+// wanted a chance to catch a bad row before anything actually gets created, same
+// review-before-import pattern used elsewhere in this project. Also the single
+// re-render path for every correction made below -- a dropdown pick or a "Remove
+// this row" click both just record an override and call this again.
+function strategistRenderBulkPreview() {
+  const raw = document.getElementById('bulk-import-text').value;
+  if (!raw.trim()) { showToast('Paste something first.', 'error'); return; }
+  const plan = strategistParseBulkImport(raw, BULK_IMPORT_OVERRIDES);
+  if (plan.error) { showToast(plan.error, 'error'); return; }
+  BULK_IMPORT_PLAN = plan;
+
+  const rowsHtml = [...plan.groups.values()].map(g => {
+    const monthsSummary = g.monthRows.length
+      ? g.monthRows.map(m => `${m.month} ($${m.grossBudget || '—'})`).join(', ')
+      : '—';
+    const action = g.existingLineId ? '<span style="color:#0F766E;font-weight:600">Match existing</span>' : '<span style="color:var(--accent);font-weight:600">Create new</span>';
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px">${esc(g.tactic_label)}${g.split_label ? ' <span style="color:var(--muted)">— ' + esc(g.split_label) + '</span>' : ''}</td>
+      <td style="padding:6px 8px">${esc(g.platform || '—')}</td>
+      <td style="padding:6px 8px">${esc(g.platform_campaign_name || '—')}</td>
+      <td style="padding:6px 8px">${esc(g.status)}</td>
+      <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${esc(monthsSummary)}</td>
+      <td style="padding:6px 8px">${action}</td>
+    </tr>`;
+  }).join('');
+
+  // Each unresolved row gets a fix-it block right in the preview -- a dropdown of
+  // the REAL clients/tactics to pick the right one, or a button to drop the row
+  // entirely -- rather than a plain error string that sends you back to the paste.
+  const clientOptions = ALL_STRATEGIST_CLIENTS.map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
+  const tacticOptions = Object.values(CATALOG_ROWS).filter(s => s.pricing_mode === 'spend')
+    .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('');
+  const errorsHtml = plan.errors.map(e => {
+    const fixSelect = e.field === 'client'
+      ? `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'clientId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right client —</option>${clientOptions}</select>`
+      : `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'serviceId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right tactic —</option>${tacticOptions}</select>`;
+    return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:11.5px;color:#B91C1C">Row ${e.rowNum}: no ${esc(e.field)} matches "${esc(e.field === 'client' ? e.clientName : e.tacticName)}"</span>
+      ${fixSelect}
+      <button onclick="strategistApplyBulkOverride(${e.rowNum}, 'excluded', true)" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);font-size:11px;cursor:pointer">Remove this row</button>
+    </div>`;
+  }).join('');
+
+  const resultsEl = document.getElementById('bulk-import-results');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = `
+    <p style="font-size:12px;font-weight:600;margin:0 0 6px">Preview — nothing saved yet. ${plan.groups.size} campaign(s) found${plan.errors.length ? `, ${plan.errors.length} row issue(s)` : ''}.</p>
+    ${plan.groups.size ? `<div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:var(--light);text-align:left"><th style="padding:6px 8px">Tactic</th><th style="padding:6px 8px">Platform</th><th style="padding:6px 8px">Title</th><th style="padding:6px 8px">Status</th><th style="padding:6px 8px">Months</th><th style="padding:6px 8px">Action</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table></div>` : ''}
+    ${plan.errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 4px">${plan.errors.length} row(s) need a fix before they'll import:</p><div style="margin-bottom:10px">${errorsHtml}</div>` : ''}
+    ${plan.groups.size ? `<div style="display:flex;gap:10px"><button onclick="strategistConfirmBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button></div>` : ''}
+  `;
+}
+
+// Button-triggered entry point -- same rendering as every override-driven refresh
+// below, just the first pass over freshly pasted text.
+function strategistPreviewBulkImport() {
+  BULK_IMPORT_OVERRIDES = {};
+  strategistRenderBulkPreview();
+}
+
+// Records one row's correction (a picked client/tactic id, or "remove this row")
+// and immediately re-renders the preview against the SAME pasted text -- the
+// fixed/removed row either joins the real campaign table above or disappears from
+// the issues list, without ever touching the textarea.
+function strategistApplyBulkOverride(rowNum, field, value) {
+  BULK_IMPORT_OVERRIDES[rowNum] = { ...BULK_IMPORT_OVERRIDES[rowNum], [field]: value };
+  strategistRenderBulkPreview();
+}
+
+// Actually saves whatever strategistPreviewBulkImport() already parsed and showed.
+async function strategistConfirmBulkImport() {
+  const plan = BULK_IMPORT_PLAN;
+  if (!plan) { showToast('Nothing to import — preview first.', 'error'); return; }
+  // plan.errors are the structured {rowNum, field, ...} objects the preview's
+  // fix-it UI reads directly -- flatten to plain strings here since everything
+  // pushed onto `errors` from this point on (a bad month, a failed save) is a
+  // fully-resolved sentence for the final results list, not something with its
+  // own correction UI.
+  const errors = plan.errors.map(e => `Row ${e.rowNum}: no ${e.field} matches "${e.field === 'client' ? e.clientName : e.tacticName}"`);
 
   let createdCount = 0, matchedExistingCount = 0, monthsSavedCount = 0;
-  for (const g of groups.values()) {
-    let lineId = g.platform_campaign_name ? existingByTitle[g.platform_campaign_name.trim().toLowerCase()]?.id : null;
+  for (const g of plan.groups.values()) {
+    let lineId = g.existingLineId;
     if (lineId) {
       matchedExistingCount++;
     } else {
@@ -843,6 +976,7 @@ async function strategistRunBulkImport() {
           p_data: {
             client_id: g.client_id, group_id: g.group_id, service_id: g.service_id, tactic_label: g.tactic_label,
             platform: g.platform, platform_campaign_name: g.platform_campaign_name,
+            split_label: g.split_label, split_order: g.split_order ?? null,
             flight_start: g.flight_start, flight_end: g.flight_end,
             status: g.status, assigned_strategist: currentStrategistUser.name,
           }
@@ -864,6 +998,7 @@ async function strategistRunBulkImport() {
     }
   }
 
+  BULK_IMPORT_PLAN = null;
   await fetchStrategistData();
   renderStrategistDashboard();
 
