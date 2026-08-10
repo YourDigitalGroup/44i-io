@@ -9261,3 +9261,44 @@ directly) works. Re-ran `test-setup-blocker.js`, `test-detail-tactic-
 variant.js`, and `test-tactic-variants.js` unchanged and still fully passing
 — no regression to the blocker pill, variant dropdowns, or Confirm/Save Draft
 flows now that they render inside the collapsible body.
+
+### 2026-08-10 (cont'd) — Setup Blocker: multi-select (a campaign can be waiting on more than one thing)
+
+Claire's real example: "Need creative and access to FB page." `setup_blocker`
+was a single value, so picking one silently discarded the other — no way to
+record both. Converted to a genuine multi-select:
+
+- **Schema**: `campaign_lines.setup_blocker` changed from `text` to `text[]`
+  (`setup-blocker-multi-2026-08-10.sql`, scratchpad, not yet run). Existing
+  single values wrapped into a 1-element array in the same migration — nothing
+  on file is lost.
+- **`strategist_save_campaign_line`**: now accepts `setup_blocker` as a JSON
+  array, converted via `jsonb_array_elements_text` guarded by a
+  `jsonb_typeof(...) = 'array'` check — same pattern as `tactic_variants`.
+- **Setup panel**: the single `<select>` is now 3 checkboxes ("check all that
+  apply"). New `strategistReadSetupBlockers(lineId)` reads exactly the checked
+  set; unchecking everything sends `null`, not an empty array.
+- **Header pill**: `strategistSetupBlockerPill()` now renders one badge per
+  selected blocker (wrapped in an `inline-flex` so multiple space evenly),
+  falling through to the existing auto-detected "Starts {date}" pill only
+  when the array is empty/absent — same fallback logic as before.
+- **Bulk Import**: the Setup Blocker column now accepts a semicolon-separated
+  list ("Creative; Platform Access"), each part matched the same way as
+  before (key/full label/short form, case-insensitive). One bad part among
+  otherwise-good ones still flags the WHOLE row (a fix-it override can only
+  replace the full list, not patch one part) rather than silently dropping
+  just that part. Preview's "Waiting on" column joins multiple resolved
+  labels with commas.
+
+**Verified**: `test-multi-blocker.js` (scratchpad, 15/15) — pill renders
+multiple badges and single still works (regression), Setup panel renders all
+3 checkboxes with the right ones pre-checked, the reader function returns
+exactly the checked set, saving sends all checked values, unchecking
+everything sends `null`, bulk import resolves a semicolon-separated cell to
+both keys, a mixed good/bad cell still flags the row, and the preview shows
+both blocker labels. Updated the 2 pre-existing tests that assumed the old
+single-value API (`test-setup-blocker.js`, `test-bulk-import-setup-
+fields.js`) to the new array shape — both pass; re-ran every other setup/
+bulk-import-adjacent test file unchanged and still fully passing.
+
+**Not yet run by Claire**: `setup-blocker-multi-2026-08-10.sql`.
