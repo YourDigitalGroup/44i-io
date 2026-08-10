@@ -8456,3 +8456,28 @@ mechanism handles both adding a PRE-EXISTING service like hosting for the first
 time and adding a brand-new one going forward — no separate import-vs-ongoing
 process to maintain. Not yet decided as final, not yet built — surfaced as the
 better option, pending Claire's confirmation.
+
+### 2026-08-10 (cont'd) — Real bug: split clones missing assigned_strategist, hidden by "My Campaigns"
+
+Claire split a campaign into 3 regions and only one showed up afterward. Root
+cause traced directly, same bug CLASS as the earlier platform-not-copied issue
+fixed a few entries up: `strategist_split_campaign_line`'s clones never carried
+`assigned_strategist` forward — only the ORIGINAL line (the first split) kept it.
+`visibleCampaignLines()`'s existing scope filter (`if (l.status !== 'pending' &&
+strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name)
+return false`) then silently hid the two unassigned clones under "My Campaigns" —
+invisible, not deleted. Only bites a split of a NON-pending line (e.g. one already
+Active, most likely via the "+ New Campaign" import with Active status) — a split
+still sitting in the pending Setup queue is exempt from this filter entirely, so
+that path was never affected.
+
+**Patched `strategist_split_campaign_line` again** (same reasoning as copying
+`platform` forward last time): clones now also copy `v_line.assigned_strategist`.
+Given directly to Claire to run — supersedes whichever version of the RPC is
+currently live, whether or not she'd already run the title patch from two entries
+up.
+
+**Not yet resolved**: the 3 lines from her original split were created before this
+fix, so the two clones still have no `assigned_strategist` in the database today.
+Told her to check "All Strategists" scope to find them, and offered a one-off
+backfill SQL statement if needed once she confirms which lines they are.
