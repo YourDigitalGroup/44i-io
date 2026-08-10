@@ -1278,8 +1278,17 @@ function renderSetupPanels(lines) {
 function strategistOpenSplitForm(lineId) {
   const el = document.getElementById('split-form-' + lineId);
   if (!el) return;
+  // The overall "Exact campaign title" field above gets disabled while this is
+  // open -- each split has its own title below, so leaving the shared field
+  // editable at the same time would just be a second, ambiguous place to type
+  // one (same reasoning already applied to the import form's version of this).
+  const titleInput = document.getElementById('setup-platform-campaign-name-' + lineId);
   const showing = el.style.display !== 'none';
-  if (showing) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  if (showing) {
+    el.style.display = 'none'; el.innerHTML = '';
+    if (titleInput) { titleInput.disabled = false; titleInput.title = ''; }
+    return;
+  }
   const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
   const monthRow = setupBudgetRowFor(lineId) || {};
   const fullAmount = monthRow.gross_budget != null ? Number(monthRow.gross_budget) : '';
@@ -1296,6 +1305,7 @@ function strategistOpenSplitForm(lineId) {
       <button onclick="strategistOpenSplitForm('${lineId}')" style="padding:7px 14px;border-radius:7px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
     </div>
   </div>`;
+  if (titleInput) { titleInput.disabled = true; titleInput.title = 'Set separately per split below'; }
 }
 
 function strategistSplitRowHtml(lineId, idx, label, amount, title) {
