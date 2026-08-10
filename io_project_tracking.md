@@ -8990,3 +8990,117 @@ the picked value back out, and clearing it back to blank sends `null`, not an
 empty string.
 
 **Not yet run by Claire.**
+
+### 2026-08-10 (cont'd) — RLS fix for `campaign_status_history`
+
+Supabase flagged the new table from the previous entry for missing Row Level
+Security (anon/authenticated keys could otherwise read it directly). Fixed the
+same way every other sensitive table in this project handles it — RLS enabled,
+zero policies attached, since all real access already goes through
+`SECURITY DEFINER` RPCs that bypass RLS anyway:
+
+```sql
+alter table campaign_status_history enable row level security;
+```
+
+### 2026-08-10 (cont'd) — Tactic label reconciliation: corrected direction, real CSV from the team
+
+Claire sent the team's ACTUAL final answer as a CSV, and it turned out to be a
+different ask than the verbal table implied — corrected here rather than
+carried forward wrong. The CSV's left column ("Team's Name") is the label they
+want to actually SEE going forward; the right column is what the catalog
+currently shows. Two different situations came out of comparing the two:
+
+**1. Straightforward renames** — the majority of rows. Just shortening
+`accounting_label` to match the team's name (e.g. "Amazon Prime Ads — Business
+Pro" → "Amazon Prime", "LinkedIn" instead of "LinkedIn Ads"). Pure data edit,
+no code involved — Claire enters these herself in the Services tab.
+
+**2. "Section" rows — one catalog row secretly covers 2-3 different tactics.**
+Five catalog rows use a combined/ambiguous label today because the catalog
+never distinguished between the underlying variants the team actually tracks
+separately:
+
+| Catalog row (today) | Team names it covers |
+|---|---|
+| Geofencing or 1st Party Addressable | Addressable: 1st Party, Geofencing |
+| CRM Addressable or Curated Addressable | Addressable: Curated, CRM |
+| Event or Lookback | Event Targeting, Lookback Targeting |
+| Custom Site Targeting & Ad Retargeting | Targeted Display: AdRT, Targeted Display: Custom Site Targeting |
+| Site Retargeting, Keyword, Contextual, or Category | Targeted Display: Contextual, Targeted Display: Keyword, Targeted Display: SiteRT |
+
+Claire confirmed which variant applies to a given campaign is only ever noted
+in the IO's free-text notes field — no structured source to auto-detect from.
+She explicitly did NOT want a free-text override (typo risk); wanted a fixed
+dropdown of just the known options instead. Built as a new `services.
+tactic_variants text[]` column the strategist picks from during Campaign
+Setup — see the next entry for the actual build.
+
+**PMax was not part of the final CSV — still unconfirmed**, flagged back to
+Claire to follow up with the team separately.
+
+### 2026-08-10 (cont'd) — Tactic variant dropdown (Campaign Setup) + Services tab field to configure it
+
+Built the mechanism from the previous entry. Three pieces:
+
+**1. Schema + `admin_save_service` patch.** `services.tactic_variants text[]`,
+nullable — set only on the 5 "section" rows above. `admin_save_service()`
+needed a real patch (not just a new case-when line) since `p_data->
+'tactic_variants'` arrives as a JSON array or JSON null and the column is a
+plain Postgres array — a bare `::text[]` cast fails against non-array JSON, so
+both the insert and update branches convert via `jsonb_array_elements_text`
+guarded by a `jsonb_typeof(...) = 'array'` check. SQL: `tactic-variants-2026-
+08-10.sql` (services column + `strategist_save_campaign_line` patch) and
+`tactic-variants-admin-save-2026-08-10.sql` (`admin_save_service` patch), both
+scratchpad, not yet run by Claire.
+
+**2. Services tab.** New "Tactic Options" field right below Accounting Map
+Label — comma-separated input (e.g. "Geofencing, Addressable: 1st Party"),
+parsed into an array on save, blank means null (not `[]`). Left blank for
+every service except the 5 section rows. Also fixed the Accounting Map
+Label field's help text while touching this section — it claimed "shown ONLY
+in the Accounting Map tab," which stopped being true once `accounting_label`
+was wired into the Strategist Portal's `tactic_label` earlier this project
+(2026-08-07 entry). Now reads "shown in the Accounting Map AND as the tactic
+name in the Strategist Portal."
+
+**3. Strategist Portal Campaign Setup panel.** The plain "Tactic" text in
+Setup now becomes a dropdown — but ONLY for services with `tactic_variants`
+configured; every other service looks exactly as before. Options are exactly
+the catalog's configured list plus a blank "— Choose which one —" default
+(never silently pre-selects the first option). Picking one sends it as
+`tactic_label` on Confirm & Activate / Save Draft; leaving it blank omits
+`tactic_label` from the save entirely, so it never overwrites the existing
+value with nothing. Required a new `strategist_save_campaign_line` patch too —
+`tactic_label` was previously frozen at line-creation with no update path.
+
+Also added new `create_campaign_lines_from_order()` special-case (separate
+ask, same conversation): SEO tiers (`seo-bb`/`seo-bp`/`seo-bs`, matched by
+`section = 'seo'` rather than hardcoded ids so it covers any future SEO tier
+too) are flat-fee and never hit the trigger's existing `spend > 0` branch —
+meaning SEO has never shown up in the Strategist Portal at all. Claire
+confirmed the team only actually tracks two things under any SEO tier: LLO
+and Rep Monitoring. Trigger now always creates both as their own
+`campaign_lines` rows (tactic_label literally "LLO (SEO)" / "Rep Monitoring
+(SEO)") whenever an SEO-section service is on the order — no budget/
+`campaign_months` row (pure status/setup tracking per Claire's call), flight
+dates copied from the SEO line item. SQL: `seo-tracking-lines-2026-08-10.sql`,
+scratchpad, not yet run. **Only fires on future signed IOs** — existing SEO
+clients need a separate one-off backfill if Claire wants those retroactively
+added; deliberately not built without her asking for it.
+
+**Verified**: both files' extracted `<script>` bodies parse clean via `new
+Function(...)`. New test `test-tactic-variants.js` (scratchpad, 8/8 passing) —
+plain services show the old plain text with no dropdown; a variant service
+with the tactic_label still at its combined default shows the blank "Choose"
+option selected (never guesses); an already-set matching value pre-selects
+correctly; Confirm & Activate sends the chosen variant as `tactic_label`;
+leaving the dropdown blank omits the key entirely rather than sending an
+overwrite. Admin-side parse/join logic (comma-string ↔ array, whitespace
+trimming, blank-means-null) verified via a targeted expression test
+(`test-admin-tactic-variants-logic.js`, 4 assertions) rather than driving the
+full `adminSaveService()`/`adminEditService()` functions, which touch ~30
+unrelated DOM fields not worth stubbing for this change alone.
+
+**Not yet run by Claire**: `tactic-variants-2026-08-10.sql`,
+`tactic-variants-admin-save-2026-08-10.sql`, `seo-tracking-lines-2026-08-10.sql`.

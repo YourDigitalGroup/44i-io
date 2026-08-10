@@ -451,8 +451,13 @@
               </div>
             </div>
             <div style="margin-bottom:12px">
-              <label class="lbl">Accounting Map Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; internal-only, shown ONLY in the Accounting Map tab. Leave blank to just use Label above. Never shown to clients/AEs.</span></label>
+              <label class="lbl">Accounting Map Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; internal-only, shown in the Accounting Map AND as the tactic name in the Strategist Portal. Leave blank to just use Label above. Never shown to clients/AEs.</span></label>
               <input type="text" id="admin-svc-accounting-label" placeholder="e.g. Targeted Display — Geo-Targeting (w/ Visits, combined CPM)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div style="margin-bottom:12px">
+              <label class="lbl">Tactic Options <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; only for services that are actually 2-3 different tactics under one price/catalog row. If set, strategists pick one from this exact list during Campaign Setup instead of seeing the combined label above. Leave blank for every other service.</span></label>
+              <input type="text" id="admin-svc-tactic-variants" placeholder="e.g. Geofencing, Addressable: 1st Party" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <p style="font-size:10px;color:var(--muted);margin-top:4px">Comma-separated. This is the exact wording strategists will choose from — no free typing on their end.</p>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
@@ -5195,7 +5200,7 @@ function adminNewService() {
   document.getElementById('admin-service-form-subtitle').textContent =
     'Restricted to sections already converted to dynamic rows — see note below.';
   document.getElementById('admin-svc-original-id').value = '';
-  ['admin-svc-id','admin-svc-label','admin-svc-accounting-label','admin-svc-sort','admin-svc-price',
+  ['admin-svc-id','admin-svc-label','admin-svc-accounting-label','admin-svc-tactic-variants','admin-svc-sort','admin-svc-price',
    'admin-svc-modifier','admin-svc-cpm',
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
    'admin-svc-spend-min','admin-svc-trello-template-ref'].forEach(id => {
@@ -5251,6 +5256,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-id').dataset.manuallyEdited = '1'; // FIXED (2026-07-14, found live): without this, autoServiceId() (bound to the Label field's oninput) silently regenerated this disabled-but-still-live ID field to match whatever new label was typed, on every keystroke. That regenerated id — not the service's real one — was what got sent as p_service_id on Save, matching zero rows in the UPDATE (no error raised on a 0-row update), so the label (and nothing else, since a same-session edit to other fields still carried the correct original id right up until the label was touched) silently failed to persist despite the success toast. Same fix already applied to the Sections editor's analogous bug — never carried over here.
   document.getElementById('admin-svc-label').value = s.label || '';
   document.getElementById('admin-svc-accounting-label').value = s.accounting_label || '';
+  document.getElementById('admin-svc-tactic-variants').value = Array.isArray(s.tactic_variants) ? s.tactic_variants.join(', ') : '';
   document.getElementById('admin-svc-sort').value = s.sort_order ?? '';
   document.getElementById('admin-svc-pricing-mode').value = s.pricing_mode || 'flat';
   document.getElementById('admin-svc-price').value = s.default_price ?? '';
@@ -5409,6 +5415,9 @@ async function adminSaveService() {
   const payload = {
     label: label,
     accounting_label: document.getElementById('admin-svc-accounting-label').value.trim() || null,
+    tactic_variants: document.getElementById('admin-svc-tactic-variants').value.trim()
+      ? document.getElementById('admin-svc-tactic-variants').value.split(',').map(v => v.trim()).filter(Boolean)
+      : null,
     section: document.getElementById('admin-svc-section').value,
     pricing_mode: document.getElementById('admin-svc-pricing-mode').value,
     default_price: priceVal === '' ? null : parseFloat(priceVal),

@@ -1245,6 +1245,17 @@ function strategistTacticDisplay(line) {
   return line.has_offline_visits ? base + ' + Offline Visits Tracking' : base;
 }
 
+// A handful of catalog services are actually 2-3 different tactics sharing one
+// price/catalog row (e.g. "Geofencing or 1st Party Addressable" covers both
+// Geofencing and Addressable: 1st Party) -- which one a given campaign is is
+// only ever noted in the IO's free-text notes, so it can't be auto-detected.
+// A fixed dropdown (services.tactic_variants) lets the strategist record the
+// exact answer without free-typing/typos. Returns null for every other service.
+function strategistTacticVariantOptions(line) {
+  const svc = CATALOG_ROWS[line.service_id];
+  return (svc && Array.isArray(svc.tactic_variants) && svc.tactic_variants.length) ? svc.tactic_variants : null;
+}
+
 // Goal override moved from campaign_lines to campaign_months (2026-08-06, per
 // Claire: "It should be clear month by month what the strategists are planning to
 // do... it can still do the auto calculation based on the gross budget but have it
@@ -1461,7 +1472,14 @@ function renderSetupPanels(lines) {
       </div>
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px;font-size:12px">
         <div><label class="lbl">Client</label><div>${esc(client)}</div></div>
-        <div><label class="lbl">Tactic</label><div>${esc(strategistTacticDisplay(l))}</div></div>
+        <div><label class="lbl">Tactic</label>${(() => {
+          const variants = strategistTacticVariantOptions(l);
+          if (!variants) return `<div>${esc(strategistTacticDisplay(l))}</div>`;
+          return `<select id="setup-tactic-variant-${l.id}" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid var(--border);font-size:12px">
+            <option value="" ${!variants.includes(l.tactic_label) ? 'selected' : ''}>— Choose which one —</option>
+            ${variants.map(v => `<option value="${esc(v)}" ${l.tactic_label === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+          </select>`;
+        })()}</div>
         <div><label class="lbl">Flight</label><div>${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</div></div>
         <div><label class="lbl">Gross Budget</label><div>$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo</div></div>
         <div><label class="lbl">In-Platform Budget</label><div>${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</div></div>
@@ -1789,10 +1807,12 @@ async function strategistConfirmActivate(lineId) {
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   const blocker = document.getElementById('setup-blocker-' + lineId).value;
+  const variantEl = document.getElementById('setup-tactic-variant-' + lineId);
   if (!platform) { showToast('Pick a platform before activating.', 'error'); return; }
   await strategistSaveLine(lineId, {
     platform, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blocker || null,
-    status: 'active', assigned_strategist: currentStrategistUser.name
+    status: 'active', assigned_strategist: currentStrategistUser.name,
+    ...(variantEl && variantEl.value ? { tactic_label: variantEl.value } : {})
   });
   await strategistApplyCachedReportIfMatch(lineId);
   showToast('Campaign activated!');
@@ -1803,7 +1823,11 @@ async function strategistSaveDraft(lineId) {
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   const blocker = document.getElementById('setup-blocker-' + lineId).value;
-  await strategistSaveLine(lineId, { platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blocker || null });
+  const variantEl = document.getElementById('setup-tactic-variant-' + lineId);
+  await strategistSaveLine(lineId, {
+    platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blocker || null,
+    ...(variantEl && variantEl.value ? { tactic_label: variantEl.value } : {})
+  });
   await strategistApplyCachedReportIfMatch(lineId);
   showToast('Draft saved');
 }
