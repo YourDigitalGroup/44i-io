@@ -8871,3 +8871,23 @@ and also patches locally first).
 flight date ranges and said more tweaking is needed, but hasn't given specifics
 yet. Nothing done here — waiting on what exactly needs to change before touching
 anything.
+
+**Flight dates, specific fix given (2026-08-10, same day):** the dash was ending
+up alone on its own line once a range wrapped. Root cause: each individual date
+already uses a non-breaking space internally (fixed 2026-08-06, so a date's own
+month/day/year never splits), but the regular spaces AROUND the dash left TWO
+valid wrap points — "date1 / – date2" or "date1 – / date2" — and the browser
+sometimes picked the one that strands the dash alone. `strategistFormatFlightRange()`
+now uses a non-breaking space specifically AFTER the dash, gluing it to the end
+date and leaving exactly one valid break point (right after the start date) —
+same non-breaking-space technique already used inside each date, just applied to
+the join between them too.
+
+**Verified**: `node --check` passes. Re-ran all 9 prior tests unchanged and fully
+passing. New Playwright test (`test-flight-dash-nbsp.js`, scratchpad-only, 5/5
+passing): confirmed via actual character codepoint inspection (not just visual
+appearance, since a non-breaking space is indistinguishable from a regular one to
+the eye) that the character immediately after the dash is U+00A0 while the one
+before it is a regular U+0020; a real long range still renders its dates
+correctly; missing start/end dates still render sensibly with the same fix in
+place.
