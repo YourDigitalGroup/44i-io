@@ -8437,4 +8437,22 @@ Two real options, not yet decided — flagged for Claire rather than picked:
   the future Accounting Portal separately read straight from `orders.line_items`
   for anything with no matching campaign line. Zero risk to the Strategist Portal
   or its trigger, but two different data sources feeding one Accounting view.
-Not decided — asked Claire which she'd rather do; nothing built or changed yet.
+
+**Refined, per Claire's follow-up**: her real question was narrower than "should
+these flow through automatically" — she confirmed strategists genuinely don't need
+to know about these at all, and asked specifically how a service already billed on
+a different system (e.g. Website MRR Hosting via Stripe) would get ADDED to the
+Accounting Portal once it exists.
+
+**Recommendation (not yet built, Accounting Portal doesn't exist yet to hold it):**
+a separate, purpose-built manual entry for billing-only revenue — pick the client,
+name the service, enter the monthly revenue, note where it's actually billed
+(Stripe, etc.). No platform, no budget-by-month, no strategist assignment, none of
+the `campaign_lines` machinery — that whole apparatus doesn't apply to a flat fee
+with no ad spend or platform to pace against. This supersedes option (A) above
+(tagging a `campaign_lines` row as billing-only) — cleaner to keep that table
+strategist-only and give billing-only revenue its own small path instead. One
+mechanism handles both adding a PRE-EXISTING service like hosting for the first
+time and adding a brand-new one going forward — no separate import-vs-ongoing
+process to maintain. Not yet decided as final, not yet built — surfaced as the
+better option, pending Claire's confirmation.
