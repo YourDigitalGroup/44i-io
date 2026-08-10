@@ -8828,3 +8828,46 @@ bulk-created campaign whose title matches an already-cached report gets BOTH its
 pasted budget month AND the cached report's actuals month saved, with the results
 message correctly mentioning the applied report; a campaign with no cache match
 makes no extra call at all.
+
+### 2026-08-10 (cont'd) — Retroactive backfill button, real platform-revert bug, flight dates flagged
+
+Claire asked for three things at once: apply the cached-report fix retroactively
+to her 119 already-imported campaigns; a real bug where changing a campaign's
+Platform in the main table shows a "Saved" confirmation but then appears to
+revert; and more flight-date tweaking still needed (screenshot of several date
+ranges shared, specifics not yet given).
+
+**1. New "Re-check Cached Reports" button**, next to Bulk Import in the toolbar.
+Loops every campaign with a platform + exact title set, checks it against
+`findCachedReportMatch()` (same pure lookup built for the bulk-import fix), and
+applies any match — same non-refetching raw RPC pattern, one refetch+rerender at
+the end regardless of how many campaigns get touched. Covers both this specific
+119-campaign backfill and any future case where a report gets pasted before the
+matching campaign exists yet (not just a one-off fix, a standing safety net).
+
+**2. Platform-revert bug — real, root-caused.** `strategistSaveLine(lineId, data,
+reload)` called with `reload:false` (used for minor inline edits like the main
+table's Platform dropdown) saved to the database correctly but never touched the
+in-memory `ALL_CAMPAIGN_LINES` cache — only a full `reload:true` refetch did that.
+The database was never wrong; the NEXT render for any unrelated reason (switching
+tabs, selecting a different campaign) rendered from that stale cached value and
+looked exactly like the save had silently reverted. Fixed by patching the local
+line object in place immediately after every successful save, regardless of the
+`reload` flag — cheap, and makes the cache correct without needing a full
+refetch+rerender for a one-field edit.
+
+**Verified**: `node --check` passes. Re-ran all 8 prior bulk-import/split tests
+unchanged and fully passing. New Playwright test
+(`test-recheck-cached-reports.js`, scratchpad-only, 6/6 passing): applies to
+every campaign whose platform+title matches something in the cache, skips ones
+with no match and ones with no platform/title at all, reports the right count in
+the toast, and handles an empty cache without crashing. New Playwright test
+(`test-save-line-cache-patch.js`, scratchpad-only, 4/4 passing): a `reload:false`
+save now correctly updates the local cache (the actual bug, now fixed) and a
+later read never reverts; the `reload:true` path is unchanged (still refetches,
+and also patches locally first).
+
+**3. Flight dates — not yet addressed.** Claire shared a screenshot of several
+flight date ranges and said more tweaking is needed, but hasn't given specifics
+yet. Nothing done here — waiting on what exactly needs to change before touching
+anything.

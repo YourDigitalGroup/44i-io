@@ -45,6 +45,7 @@
           <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
           <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
           <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
+          <button onclick="strategistRecheckCachedReports()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--border);background:var(--light);color:var(--text);cursor:pointer;font-weight:600;font-size:12px">Re-check Cached Reports</button>
         </div>
       </div>
 
@@ -1644,6 +1645,34 @@ async function strategistApplyCachedReportIfMatch(lineId) {
   await strategistSaveMonth(lineId, found.report_month, found.data);
 }
 
+// "Re-check Cached Reports" button (2026-08-10, per Claire) -- a one-off backfill
+// for campaigns created BEFORE bulk import started checking the cache (the 119
+// she'd already imported when that bug was fixed), and a standing safety net for
+// any future case where a report gets pasted before the campaign it belongs to
+// exists yet. Same non-refetching raw RPC pattern as the bulk import loop -- one
+// refetch+rerender at the end, not one per campaign.
+async function strategistRecheckCachedReports() {
+  const candidates = ALL_CAMPAIGN_LINES.filter(l => l.platform && l.platform_campaign_name);
+  let appliedCount = 0;
+  const errors = [];
+  for (const line of candidates) {
+    const found = findCachedReportMatch(line.platform, line.platform_campaign_name);
+    if (!found) continue;
+    try {
+      await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_campaign_line_id: line.id, p_month: found.report_month, p_data: found.data
+      }) });
+      appliedCount++;
+    } catch(e) { errors.push(`${line.tactic_label || line.service_id} (${line.platform_campaign_name}): ${e.message}`); }
+  }
+  await fetchStrategistData();
+  renderStrategistDashboard();
+  showToast(appliedCount || errors.length
+    ? `Applied ${appliedCount} cached report(s)${errors.length ? `, ${errors.length} issue(s)` : ''}.`
+    : 'No matches found in the cached reports.');
+}
+
 // The detail panel's title field used reload:false (a plain "Saved" toast, no
 // refetch) like the rest of that panel's minor fields -- switched to a dedicated
 // wrapper so ALL_CAMPAIGN_LINES actually reflects the new title before checking it
@@ -1659,6 +1688,15 @@ async function strategistSaveLine(lineId, data, reload) {
     await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
       p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: lineId, p_data: cleanData
     }) });
+    // Real bug found live (2026-08-10, Claire): a reload:false save (e.g. the main
+    // table's inline Platform dropdown) wrote to the database correctly, but never
+    // touched the in-memory ALL_CAMPAIGN_LINES cache -- the NEXT render for any
+    // unrelated reason (switching tabs, selecting a different row) then rendered
+    // from that stale cache and looked like the save had silently reverted. Patch
+    // the local object directly so it stays correct without needing a full
+    // refetch+rerender for a one-field edit.
+    const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
+    if (line) Object.assign(line, cleanData);
     if (reload !== false) { await fetchStrategistData(); renderStrategistDashboard(); }
     else showToast('Saved');
   } catch(e) { showToast('Error saving: ' + e.message, 'error'); }
