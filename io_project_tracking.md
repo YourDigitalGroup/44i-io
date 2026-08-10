@@ -8546,3 +8546,6 @@ nulls first, cl.created_at` — sorts by the actual group/client name text, matc
 what a human expects and what the main table's own group-name grouping already
 assumes, while still using `split_order` to keep split siblings in the right
 relative order underneath. Given to Claire to run.
+
+Claire ran it and confirmed both are now correct: split rows show Region 1/2/3 in
+order, and clients/groups sort alphabetically by name. Fully resolved.
