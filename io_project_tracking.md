@@ -8242,3 +8242,49 @@ directly, same "answered" treatment as the revenue-share questions above.
 - The real Accounting Portal build itself is still fully scaffold-only (per the
   entry above) — this decision is recorded for whenever that build actually
   starts, not something with anywhere to land yet.
+
+### 2026-08-10 — Split campaigns: SQL run, Strategist Portal side built and shipped
+
+Claire ran the full SQL package from the entry above as one script. Verified rather
+than assumed (per this project's standing practice, given an earlier session this
+week where a combined script silently skipped statements): confirmed both new
+`campaign_lines` columns (`split_label`, `order_line_notes`) exist via
+`information_schema.columns`, and confirmed `strategist_split_campaign_line` exists
+via `pg_proc` — both came back clean.
+
+**Built the client side on top of it:**
+- `strategistTacticDisplay(line)` — one-line change, appends `— {split_label}` when
+  present, before the existing `+ Offline Visits Tracking` suffix. Every place a
+  tactic name renders (Setup panel header, Setup panel's Tactic field, main table
+  row, detail panel header) already routed through this single function, so this
+  one change covers all four without touching any of them individually.
+- Campaign Setup panel now shows a highlighted notes block (amber, matching the
+  existing "missing" treatment elsewhere in this project) whenever the order's
+  `campaign_notes` and/or that line's own `order_line_notes` are non-empty — so
+  "split into 3 regions, $2k/$2k/$1k" is visible exactly where a strategist is
+  doing the split, not something to hunt for elsewhere. Omitted entirely when both
+  are empty, not shown as an empty box.
+- New "Split into Multiple Campaigns" button on every pending Setup line, next to
+  Confirm & Activate / Save Draft. Opens an inline form (starts with 2 rows, first
+  pre-filled with the line's current full budget) — label (free text) + $ amount
+  per split, "+ Add split" for more. Save calls the new
+  `strategist_split_campaign_line` RPC, blocks with a toast if fewer than 2 rows
+  have both a label and an amount filled in (silently drops any incomplete row
+  rather than erroring on it, so an accidentally-left-blank extra row doesn't block
+  a real 2-way split).
+
+**Verified**: `node --check` passes. New Playwright test
+(`test-split-campaigns.js`, scratchpad-only, 14/14 passing): `strategistTacticDisplay`
+correctly appends the split label (and combines correctly with the existing Offline
+Visits Tracking suffix); the Setup panel shows the notes block only when there's
+something to show, and shows both the IO-level and line-level note text when
+present; the split form opens with 2 rows, the first pre-filled with the real
+current budget; "+ Add split" adds a third row; saving calls the RPC with the
+correct line id and the correct `{label, amount}` array (verified all 3 amounts,
+including the uneven $2,000/$2,000/$1,000 case); an incomplete split (a blank
+second row) is blocked with the right toast message and never reaches the RPC.
+
+**Not yet done**: the Accounting Portal's rollup-with-expand display of a split
+tactic (decided in the entry above, reflected in the merged Artifact) has nowhere
+to land yet — the real Accounting Portal is still scaffold-only per the earlier
+entry. This is purely the Strategist Portal half of the feature.
