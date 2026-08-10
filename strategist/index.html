@@ -740,6 +740,10 @@ const BULK_IMPORT_COLUMNS = [
 // project (2026-08-10, per Claire).
 let BULK_IMPORT_PLAN = null;
 
+// The only 4 statuses any tab/filter in this portal actually recognizes -- a
+// pasted Status column gets lowercased and checked against this before saving.
+const BULK_IMPORT_VALID_STATUSES = ['pending', 'active', 'paused', 'complete'];
+
 function strategistOpenBulkImportForm() {
   const el = document.getElementById('strategist-bulk-import-form');
   const isOpen = el.style.display !== 'none';
@@ -823,6 +827,18 @@ function strategistParseBulkImport(raw, overrides = {}) {
     const service = serviceOverrideId ? CATALOG_ROWS[serviceOverrideId] : resolveBulkService(tacticName);
     if (!client) { errors.push({ rowNum, field: 'client', clientName, tacticName }); return; }
     if (!service) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
+    // Normalized to lowercase and validated against the 4 real statuses this
+    // portal actually knows about -- found live 2026-08-10 (Claire): a CSV's
+    // Status column typed as "Active" (capitalized) saved exactly as typed and
+    // then matched NONE of the lowercase-only status tabs anywhere, making 238
+    // real campaigns invisible on every tab, in every month, regardless of scope.
+    const statusOverride = overrides[rowNum]?.status;
+    const statusRaw = get('status');
+    const status = statusOverride || (statusRaw ? statusRaw.toLowerCase() : 'active');
+    if (!BULK_IMPORT_VALID_STATUSES.includes(status)) {
+      errors.push({ rowNum, field: 'status', clientName, tacticName, statusRaw });
+      return;
+    }
     const platform = get('platform');
     const platformCampaignName = get('platform_campaign_name');
     const identityKey = [client.id, service.id, platform, platformCampaignName].join('|');
@@ -831,7 +847,7 @@ function strategistParseBulkImport(raw, overrides = {}) {
         client_id: client.id, group_id: client.group_id, service_id: service.id,
         tactic_label: service.accounting_label || service.label, platform: platform || null,
         platform_campaign_name: platformCampaignName || null, split_label: get('split_label') || null,
-        status: get('status') || 'active', flight_start: get('flight_start') || null, flight_end: get('flight_end') || null,
+        status, flight_start: get('flight_start') || null, flight_end: get('flight_end') || null,
         monthRows: [],
       });
     }
@@ -910,15 +926,29 @@ function strategistRenderBulkPreview() {
   // Each unresolved row gets a fix-it block right in the preview -- a dropdown of
   // the REAL clients/tactics to pick the right one, or a button to drop the row
   // entirely -- rather than a plain error string that sends you back to the paste.
-  const clientOptions = ALL_STRATEGIST_CLIENTS.map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
+  const clientOptions = [...ALL_STRATEGIST_CLIENTS].sort((a, b) => a.name.localeCompare(b.name))
+    .map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
   const tacticOptions = Object.values(CATALOG_ROWS).filter(s => s.pricing_mode === 'spend')
+    .sort((a, b) => (a.accounting_label || a.label).localeCompare(b.accounting_label || b.label))
     .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('');
+  const statusOptions = BULK_IMPORT_VALID_STATUSES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   const errorsHtml = plan.errors.map(e => {
-    const fixSelect = e.field === 'client'
-      ? `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'clientId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right client —</option>${clientOptions}</select>`
-      : `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'serviceId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right tactic —</option>${tacticOptions}</select>`;
+    let message, fixSelect;
+    if (e.field === 'client') {
+      message = `no client matches "${esc(e.clientName)}"`;
+      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'clientId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right client —</option>${clientOptions}</select>`;
+    } else if (e.field === 'tactic') {
+      message = `no tactic matches "${esc(e.tacticName)}"`;
+      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'serviceId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right tactic —</option>${tacticOptions}</select>`;
+    } else {
+      // status -- only pending/active/paused/complete are recognized anywhere in
+      // this portal; anything else (a typo, wrong capitalization) saves fine but
+      // is then invisible on every tab, so it's caught here instead.
+      message = `"${esc(e.statusRaw)}" isn't a real status`;
+      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'status', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right status —</option>${statusOptions}</select>`;
+    }
     return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:11.5px;color:#B91C1C">Row ${e.rowNum}: no ${esc(e.field)} matches "${esc(e.field === 'client' ? e.clientName : e.tacticName)}"</span>
+      <span style="font-size:11.5px;color:#B91C1C">Row ${e.rowNum}: ${message}</span>
       ${fixSelect}
       <button onclick="strategistApplyBulkOverride(${e.rowNum}, 'excluded', true)" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);font-size:11px;cursor:pointer">Remove this row</button>
     </div>`;
@@ -933,7 +963,7 @@ function strategistRenderBulkPreview() {
       <tbody>${rowsHtml}</tbody>
     </table></div>` : ''}
     ${plan.errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 4px">${plan.errors.length} row(s) need a fix before they'll import:</p><div style="margin-bottom:10px">${errorsHtml}</div>` : ''}
-    ${plan.groups.size ? `<div style="display:flex;gap:10px"><button onclick="strategistConfirmBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button></div>` : ''}
+    ${plan.groups.size ? `<div style="display:flex;gap:10px"><button id="bulk-import-confirm-btn" onclick="strategistConfirmBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button></div>` : ''}
   `;
 }
 
@@ -953,18 +983,35 @@ function strategistApplyBulkOverride(rowNum, field, value) {
   strategistRenderBulkPreview();
 }
 
+// Guards against a real bug Claire hit live (2026-08-10): 119 campaigns took long
+// enough (each needs its own sequential RPC round trip) that clicking Confirm gave
+// no visible feedback at all, so she clicked it again -- which ran the whole save
+// loop a SECOND time against the same not-yet-cleared plan, creating a duplicate
+// for every campaign that didn't already exist. This flag blocks a second
+// invocation outright, and disabling+relabeling the button below gives the
+// immediate feedback that was actually missing in the first place.
+let BULK_IMPORT_CONFIRMING = false;
+
 // Actually saves whatever strategistPreviewBulkImport() already parsed and showed.
 async function strategistConfirmBulkImport() {
+  if (BULK_IMPORT_CONFIRMING) { showToast('Already saving — one moment.', 'error'); return; }
   const plan = BULK_IMPORT_PLAN;
   if (!plan) { showToast('Nothing to import — preview first.', 'error'); return; }
+  BULK_IMPORT_CONFIRMING = true;
+  const confirmBtn = document.getElementById('bulk-import-confirm-btn');
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; confirmBtn.style.cursor = 'default'; confirmBtn.style.opacity = '.6'; }
+  try {
   // plan.errors are the structured {rowNum, field, ...} objects the preview's
   // fix-it UI reads directly -- flatten to plain strings here since everything
   // pushed onto `errors` from this point on (a bad month, a failed save) is a
   // fully-resolved sentence for the final results list, not something with its
   // own correction UI.
-  const errors = plan.errors.map(e => `Row ${e.rowNum}: no ${e.field} matches "${e.field === 'client' ? e.clientName : e.tacticName}"`);
+  const errors = plan.errors.map(e => {
+    if (e.field === 'status') return `Row ${e.rowNum}: "${e.statusRaw}" isn't a real status`;
+    return `Row ${e.rowNum}: no ${e.field} matches "${e.field === 'client' ? e.clientName : e.tacticName}"`;
+  });
 
-  let createdCount = 0, matchedExistingCount = 0, monthsSavedCount = 0;
+  let createdCount = 0, matchedExistingCount = 0, monthsSavedCount = 0, reportsAppliedCount = 0;
   for (const g of plan.groups.values()) {
     let lineId = g.existingLineId;
     if (lineId) {
@@ -996,6 +1043,20 @@ async function strategistConfirmBulkImport() {
         monthsSavedCount++;
       } catch(e) { errors.push(`Row ${mr.rowNum}: couldn't save month: ${e.message}`); }
     }
+    // Real gap found live (2026-08-10, Claire): every OTHER way a campaign gets
+    // created or edited in this portal checks the cached platform report for a
+    // title match and auto-fills actuals -- bulk import never did. Same lookup,
+    // no refetch/rerender per row (see findCachedReportMatch's own comment).
+    const cachedMatch = findCachedReportMatch(g.platform, g.platform_campaign_name);
+    if (cachedMatch) {
+      try {
+        await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+          p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+          p_campaign_line_id: lineId, p_month: cachedMatch.report_month, p_data: cachedMatch.data
+        }) });
+        reportsAppliedCount++;
+      } catch(e) { errors.push(`Couldn't apply the cached platform report for "${g.tactic_label}" (${g.platform_campaign_name}): ${e.message}`); }
+    }
   }
 
   BULK_IMPORT_PLAN = null;
@@ -1005,11 +1066,14 @@ async function strategistConfirmBulkImport() {
   const resultsEl = document.getElementById('bulk-import-results');
   if (resultsEl) {
     resultsEl.innerHTML = `
-      <p style="font-size:12px;color:#166534;font-weight:600;margin:0 0 4px">${createdCount} campaign(s) created, ${matchedExistingCount} matched to an existing campaign, ${monthsSavedCount} month(s) saved.</p>
+      <p style="font-size:12px;color:#166534;font-weight:600;margin:0 0 4px">${createdCount} campaign(s) created, ${matchedExistingCount} matched to an existing campaign, ${monthsSavedCount} month(s) saved${reportsAppliedCount ? `, ${reportsAppliedCount} filled in from an already-pasted platform report` : ''}.</p>
       ${errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 0">${errors.length} issue(s):</p><ul style="font-size:11.5px;color:#B91C1C;margin:4px 0 0;padding-left:18px">${errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     `;
   }
-  showToast(`Import done: ${createdCount} created, ${matchedExistingCount} matched, ${errors.length} issue(s)`);
+  showToast(`Import done: ${createdCount} created, ${matchedExistingCount} matched, ${reportsAppliedCount} report(s) applied, ${errors.length} issue(s)`);
+  } finally {
+    BULK_IMPORT_CONFIRMING = false;
+  }
 }
 
 // Fetches the four datasets fresh, WITHOUT touching any view state (current month,
@@ -1559,15 +1623,25 @@ async function strategistSaveMonth(lineId, monthStr, data) {
 // autofill should start when there is a campaign title to reference") -- rather than
 // waiting for her next twice-weekly paste. No-op if the platform has nothing cached,
 // or nothing in that cache matches this exact title yet.
+// Pure lookup, no DB call -- split out so bulk import (2026-08-10) can reuse the
+// exact same matching rule without also inheriting strategistSaveMonth()'s
+// refetch+rerender, which would be a full dashboard reload PER campaign across
+// 100+ bulk-imported rows.
+function findCachedReportMatch(platform, platformCampaignName) {
+  if (!platform || !platformCampaignName) return null;
+  const cache = PLATFORM_REPORT_CACHE[platform];
+  if (!cache) return null;
+  const wanted = platformCampaignName.trim().toLowerCase();
+  const match = cache.rows.find(r => (r.title || '').trim().toLowerCase() === wanted);
+  return match ? { report_month: cache.report_month, data: match.data } : null;
+}
+
 async function strategistApplyCachedReportIfMatch(lineId) {
   const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
-  if (!line || !line.platform || !line.platform_campaign_name) return;
-  const cache = PLATFORM_REPORT_CACHE[line.platform];
-  if (!cache) return;
-  const wanted = line.platform_campaign_name.trim().toLowerCase();
-  const match = cache.rows.find(r => (r.title || '').trim().toLowerCase() === wanted);
-  if (!match) return;
-  await strategistSaveMonth(lineId, cache.report_month, match.data);
+  if (!line) return;
+  const found = findCachedReportMatch(line.platform, line.platform_campaign_name);
+  if (!found) return;
+  await strategistSaveMonth(lineId, found.report_month, found.data);
 }
 
 // The detail panel's title field used reload:false (a plain "Saved" toast, no

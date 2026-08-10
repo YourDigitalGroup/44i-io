@@ -8647,3 +8647,184 @@ into the real campaign table without touching the textarea; removing the other r
 drops it from the issues list entirely; a fresh Preview click on the same text
 resets overrides back to the original 2 unresolved rows, confirming corrections
 don't leak into an unrelated new paste.
+
+### 2026-08-10 (cont'd) — Split order flipped between page loads (Region 1, 3, 2)
+
+Claire caught the "Facebook & Instagram" splits reordering themselves — same 3
+rows already fixed twice today, now showing Region 1/3/2. Real root cause, not a
+repeat of the earlier bug: these 3 rows came from the VERY FIRST split, made
+before `split_order` even existed as a column — so they've stayed `NULL` this
+whole time, silently falling through to the `created_at` tiebreak in the ORDER BY.
+Two of them were inserted in the same transaction as `strategist_split_campaign_line`
+runs — and Postgres freezes `now()` for an entire transaction, so their
+`created_at` values are genuinely, bit-for-bit identical. A tie with nothing left
+to break it is undefined behavior in SQL — Postgres can (and evidently did) return
+it in a different order from one query to the next.
+
+**Fixed two ways**: (1) one-off backfill — extracted the trailing number straight
+out of each row's own `split_label` text ("Region 2" → `split_order = 1`) for any
+row still missing it, since these specific labels happen to be numbered; (2) added
+`cl.id` as a final tiebreaker on `strategist_get_campaign_lines`'s `ORDER BY`, so
+ANY future tie — not just this one — resolves the exact same way every time,
+instead of "usually stable but never actually guaranteed." Claire ran both;
+verify query came back empty and the order held after a refresh.
+
+### 2026-08-10 (cont'd) — Real bug: bulk-imported "Active" status invisible everywhere
+
+Claire bulk-imported 119 campaigns, confirmed the save succeeded, and then
+couldn't find them on any tab, in any month, under either scope, with no group
+filter. Ruled out every plausible filter one at a time via direct questions
+before guessing, then asked her to run a diagnostic query rather than keep
+guessing blind:
+```sql
+select status, count(*) from campaign_lines where created_at > now() - interval '2 hours' group by status;
+```
+Came back `Active, 238` / `active, 3` — root cause confirmed: her CSV's Status
+column had "Active" (capitalized), which the old bulk import code saved
+EXACTLY as typed with no normalization at all. Every status tab/filter in this
+portal compares against a lowercase literal (`'active'`, `'paused'`, etc.), so
+`'Active' !== 'active'` matched NONE of the 4 tabs — completely invisible
+everywhere, not filtered by any specific setting.
+
+**One-off fix**: `update campaign_lines set status = 'active' where status =
+'Active'` — given to Claire, fixed the 238 existing rows.
+
+**Permanent fix, client-side only, no SQL needed**: `strategistParseBulkImport()`
+now lowercases whatever's typed in the Status column and validates it against
+the only 4 statuses this portal actually recognizes (`pending`/`active`/
+`paused`/`complete`) — new `BULK_IMPORT_VALID_STATUSES` constant. A capitalized
+or oddly-spaced but otherwise-correct status (e.g. "Active", "ACTIVE") now just
+quietly normalizes and saves correctly. A genuinely wrong one (a real typo) gets
+caught as a new `field: 'status'` error, surfaced in the preview's existing
+fix-it UI with its own dropdown of the 4 real statuses — same "pick the right one
+or remove the row" pattern already built for unmatched clients/tactics, extended
+to a third field.
+
+**Verified**: `node --check` passes. Re-ran every existing bulk-import test
+unchanged and still fully passing (`test-bulk-import-preview.js` 16/16,
+`test-bulk-import-overrides.js` 14/14 — status normalization didn't touch either
+path's behavior for a blank/already-correct status). New Playwright test
+(`test-bulk-import-status.js`, scratchpad-only, 9/9 passing): "Active" normalizes
+cleanly to `active` with zero errors (the exact real bug, now definitionally not
+a problem); a genuine typo ("Activve") is caught with the right error
+shape; a blank Status column still defaults to `active` same as before; the
+preview correctly offers a status-fixing dropdown with the right explanatory
+text; applying that dropdown's override resolves the row into the real campaign
+table, no re-paste needed.
+
+### 2026-08-10 (cont'd) — Two more real bugs from the same 119-campaign import
+
+Claire reported two things from the same import: she likely clicked Confirm
+twice because nothing visibly happened after the first click, probably creating
+duplicates; and the fix-it dropdowns for unmatched clients/tactics weren't in any
+order at all, making a long list painful to search.
+
+**1. Double-submit bug — real, root-caused, fixed.** `strategistConfirmBulkImport()`
+runs a sequential loop of RPC round trips (one or more per campaign) with zero
+loading feedback — for 119+ campaigns that's a genuinely long wait with nothing on
+screen to suggest it's working, which is exactly why she clicked again. That
+second click ran the ENTIRE save loop a second time against the same
+not-yet-cleared `BULK_IMPORT_PLAN` (only nulled at the very end of the first run),
+creating a duplicate for every campaign that didn't already exist. Fixed with a
+new `BULK_IMPORT_CONFIRMING` flag that blocks a second invocation outright (with
+its own toast), plus the confirm button now disables itself and relabels to
+"Saving…" the instant it's clicked — the missing feedback that caused the double-
+click in the first place, not just a guard against the symptom.
+
+**2. Dropdown ordering — real, fixed.** The fix-it dropdowns for unmatched
+clients/tactics rendered in whatever arbitrary order `ALL_STRATEGIST_CLIENTS`/
+`CATALOG_ROWS` happened to iterate in — no sort at all. Both now sort
+alphabetically before rendering (client by name, tactic by accounting label/label).
+
+**Verified**: `node --check` passes. Re-ran every existing bulk-import test
+unchanged and still fully passing (16/16, 14/14, 9/9 across the three prior
+files). New Playwright test (`test-bulk-import-double-submit.js`, scratchpad-only,
+5/5 passing): the client dropdown renders alphabetically (verified "Alpha Inc"
+appears before "Zeta Corp" despite being added to the roster second); the confirm
+button visibly disables and relabels to "Saving…" the moment a save starts; a
+second call while the first is still in flight is blocked with the right toast and
+makes zero additional database calls; the guard correctly resets once the first
+save actually finishes.
+
+**Duplicate cleanup — diagnostic given, not yet run.** Gave Claire a `SELECT`-only
+query first (group by client+tactic+platform+title, `having count(*) > 1`, scoped
+to the last 2 hours) to confirm the actual scope before deleting anything —
+waiting on her results before writing the actual cleanup `DELETE`.
+
+**Duplicate cleanup — resolved.** Diagnostic came back with all 119 real campaigns
+at exactly `copies = 2`, no anomalies — matches the double-submit theory exactly.
+Cleaned up with a transaction (delete `campaign_months` for the extra copies first,
+then the duplicate `campaign_lines` themselves, keeping the earliest of each pair)
+— Claire ran it, verify query came back empty.
+
+### 2026-08-10 (cont'd) — Tactic label comparison doc, for the team to confirm
+
+While cleaning up the duplicates, Claire noticed the strategist team's own tactic
+names (from their pre-existing pacing reports) don't match the catalog's labels —
+asked for a comparison so she can confirm with the team before any renames happen.
+
+Pulled the live catalog (`select id, section, subsection_label, label,
+accounting_label from services where active is not false order by section,
+sort_order`) and matched all 40 of the team's tactic names against it by hand:
+**25 clean 1:1 matches**, **5 catalog rows that currently cover 2–3 team tactic
+names each** (needs a real decision — split into separate rows, or one label
+loosely covering both — not a simple rename), and **4 unmatched names** flagged as
+unconfirmed guesses rather than assumed (LLO (SEO), Rep Monitoring (SEO), PMax all
+guessed as bundled inside other packages, not sold as their own line). Also
+flagged the reverse gap: `netflix-bp` exists in the catalog with no team-facing
+name on their list at all.
+
+**Caught my own mistake before shipping it**: first draft compared against the
+bare client-facing `label` ("Business Pro") instead of the `accounting_label`
+where one's already set (e.g. "Amazon Prime Ads — Business Pro") — Claire caught
+this ("remember we added the section to the tactic name") before it went out.
+Fixed, and it surfaced something useful: several rows already effectively match
+the team's naming once you look at the right field, and the team's naming
+consistently follows a "Section: Variant" pattern (e.g. "Targeted Display:
+Audience," "Streaming TV: Audience") — flagged as a possible section-level fix
+(name ~15 sections once) rather than editing every individual service by hand.
+
+**Delivered two ways**: an Artifact (`tactic-label-comparison.html`, republished
+same URL as the first draft) and a Word document
+(`Tactic-Label-Comparison.docx`, built with `docx`-js, sent directly to Claire).
+The `.docx` passed full XSD schema validation (149 paragraphs) — but honestly
+flagged to Claire that I could NOT visually verify it before sending: LibreOffice's
+headless renderer is broken in this environment (fails converting even a trivial
+one-paragraph test file, unrelated to this document's content), so the usual
+render-and-look verification step wasn't possible this time.
+
+Claire has sent both to her team for confirmation. Nothing in the catalog changed.
+
+### 2026-08-10 (cont'd) — Real bug: bulk import never checked the cached platform report
+
+Claire noticed her 119 bulk-imported campaigns had no actuals — correctly
+expected, since bulk import only ever creates the budget, not actuals (those come
+from "Paste Platform Report," matched by exact title). But she then asked the
+right follow-up: didn't we build it so a cached report auto-applies the moment a
+campaign gets a matching platform+title? Checked the code rather than assume —
+real gap confirmed: `strategistApplyCachedReportIfMatch()` is called after every
+OTHER way a line gets created or edited (`+ New Campaign`, detail panel saves,
+`Confirm & Activate`) — bulk import's confirm loop never called it at all.
+
+**Fixed.** Split the matching logic out of `strategistApplyCachedReportIfMatch()`
+into a new pure `findCachedReportMatch(platform, platformCampaignName)` (no DB
+call) — needed because the existing function looks up the line from
+`ALL_CAMPAIGN_LINES`, which doesn't yet contain a campaign bulk import just
+created in the same request (that refetch only happens once, at the very end of
+the whole batch), and because reusing the existing function's `strategistSaveMonth()`
+wrapper would trigger a full dashboard refetch+rerender per campaign — fine for
+one interactive save, disastrous across 100+ bulk rows. Bulk import's confirm loop
+now calls `findCachedReportMatch()` for every group and, on a match, saves the
+cached actuals with the same raw RPC call already used for budget months (no
+extra refetch). New `reportsAppliedCount`, surfaced in both the results message
+and the toast.
+
+**Verified**: `node --check` passes. Re-ran every existing bulk-import test
+unchanged and fully passing (19/19, 16/16, 16/16, 14/14, 9/9, 5/5 across six prior
+files). New Playwright test (`test-bulk-import-cached-report.js`, scratchpad-only,
+8/8 passing): the pure lookup correctly matches by exact title, correctly returns
+null for a different title/uncached platform/null inputs, and never throws; a
+bulk-created campaign whose title matches an already-cached report gets BOTH its
+pasted budget month AND the cached report's actuals month saved, with the results
+message correctly mentioning the applied report; a campaign with no cache match
+makes no extra call at all.
