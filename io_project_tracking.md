@@ -8394,3 +8394,47 @@ starts un-disabled and correctly pre-filled from the line's own updated title.
 **Verified**: `node --check` passes. Extended `test-split-campaigns.js` (19/19
 passing, up from 17): the overall title field is disabled while the split form is
 open, and re-enabled after Cancel.
+
+### 2026-08-10 (cont'd) — Two Accounting Portal questions from Claire
+
+**1. Matching previous services to current Strategist Portal campaigns, once the
+real Accounting Portal is built — answered, no gap found.** The future Accounting
+Portal is expected to read from the exact same `campaign_lines`/`campaign_months`
+data the Strategist Portal already writes to, so there's no separate "add it to
+accounting" step. Any campaign already in the Strategist Portal — from a signed IO
+or manually via "+ New Campaign" — will automatically show up on the Accounting
+side too. For genuinely historical months, the existing "add a past month" backfill
+already in Strategist Portal IS the mechanism — enter it there, Accounting inherits
+it for free.
+
+**2. Group-level services (sold to/used by the white-label agency partner itself,
+not a client under them) — PARKED, Claire confirming with her team.** Real open
+question: does a group-level service get its own IO, or is it added some other
+way entirely? Genuinely undecided, not something to guess at — no action until she
+has an answer.
+
+**3. Services never tracked by a strategist at all (e.g. flat website hosting, a
+one-time site build) — REAL GAP FOUND, needs a decision before Accounting is built.**
+Traced this rather than assumed: `create_campaign_lines_from_order()` only creates a
+`campaign_lines` row when a line item's `spend` (ad media spend) is `> 0` — confirmed
+in `index.html` that `.spend` is ONLY ever populated for `pricing_mode === 'spend'`
+services; a flat-fee service (hosting, a one-time build, a flat-priced retainer)
+never sets it, so it stays `0` and the trigger's `if coalesce(...,0) > 0` guard skips
+it entirely. **These services have zero representation anywhere today** — not in the
+Strategist Portal (correctly, strategists have no ad platform to manage for them),
+but ALSO not anywhere a future Accounting Portal could read from, since it's
+expected to share that same data. The mockup's "Billed Externally" example (Website
+MRR Hosting) only worked because it's fictional — a real one wouldn't have a row to
+show.
+
+Two real options, not yet decided — flagged for Claire rather than picked:
+- **(A) Always create a `campaign_lines` row**, even at `spend = 0`, tagged somehow
+  (e.g. a boolean) as billing-only — and have the Strategist Portal's own queries
+  explicitly filter those out so they never clutter a strategist's queue. One data
+  source for both portals, but touches the trigger the Strategist Portal already
+  depends on, so needs care.
+- **(B) Leave `campaign_lines` exactly as-is** (ad-spend services only), and have
+  the future Accounting Portal separately read straight from `orders.line_items`
+  for anything with no matching campaign line. Zero risk to the Strategist Portal
+  or its trigger, but two different data sources feeding one Accounting view.
+Not decided — asked Claire which she'd rather do; nothing built or changed yet.
