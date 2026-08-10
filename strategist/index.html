@@ -391,16 +391,22 @@ function strategistOpenImportForm() {
         <label class="lbl">Flight End</label>
         <input type="date" id="import-flight-end" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
-      <div>
+      <div style="grid-column:span 2">
         <label class="lbl">Current Gross Budget</label>
-        <input type="number" id="import-gross-budget" placeholder="$/mo" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+        <div id="import-budget-single">
+          <input type="number" id="import-gross-budget" placeholder="$/mo" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+        </div>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
+          <input type="checkbox" id="import-split-toggle" onchange="strategistToggleImportSplit(this.checked)"/> Split into multiple campaigns (e.g. one price sold across several regions)
+        </label>
+        <div id="import-budget-split" style="display:none;margin-top:8px"></div>
       </div>
       <div style="grid-column:span 2">
         <label class="lbl">Exact campaign title in the ad platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— used to match this campaign when you paste a platform report below</span></label>
         <input id="import-platform-campaign-name" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
     </div>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 12px">This creates the campaign as of the current month. Once it's in the list, click into it to add any past months' budgets/actuals you want on record — as far back as makes sense for this one.</p>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 12px">This creates the campaign as of the current month. Once it's in the list, click into it to add any past months' budgets/actuals you want on record — as far back as makes sense for this one. If split, everything above applies to the first split only — click into each new one afterward to fill in its own platform/title.</p>
     <div style="display:flex;gap:10px">
       <button onclick="strategistSubmitImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Campaign</button>
       <button onclick="strategistOpenImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
@@ -422,6 +428,23 @@ function strategistFilterClientOptions() {
   if (filtered.some(c => c.id === currentValue)) sel.value = currentValue;
 }
 
+// Same split-rows UI as the Setup panel's own split form (strategistSplitRowHtml/
+// strategistAddSplitRow), reused here with 'import' as the key instead of a real
+// line id — those two functions only ever use the id as a CSS class suffix, so a
+// not-yet-created campaign works exactly the same way.
+function strategistToggleImportSplit(checked) {
+  document.getElementById('import-budget-single').style.display = checked ? 'none' : '';
+  const wrap = document.getElementById('import-budget-split');
+  if (checked) {
+    wrap.style.display = 'block';
+    wrap.innerHTML = `<div id="split-rows-import">${strategistSplitRowHtml('import', 0, '', '')}${strategistSplitRowHtml('import', 1, '', '')}</div>
+      <button type="button" onclick="strategistAddSplitRow('import')" style="margin-top:4px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);font-size:11px;cursor:pointer">+ Add split</button>`;
+  } else {
+    wrap.style.display = 'none';
+    wrap.innerHTML = '';
+  }
+}
+
 async function strategistSubmitImport() {
   const clientSel = document.getElementById('import-client');
   const clientId = clientSel.value;
@@ -436,8 +459,21 @@ async function strategistSubmitImport() {
   const grossBudget = document.getElementById('import-gross-budget').value;
   const platformCampaignName = document.getElementById('import-platform-campaign-name').value.trim();
   const hasOfflineVisits = document.getElementById('import-has-offline-visits').checked;
+  const isSplit = document.getElementById('import-split-toggle').checked;
 
   if (!clientId || !serviceId) { showToast('Pick a client and a tactic.', 'error'); return; }
+
+  // Same real scenario as the Setup panel's own split form: one price sold across
+  // several regions/segments. Read+validate BEFORE creating anything, same as
+  // strategistSaveSplit() does, so a bad split never leaves a half-created campaign
+  // behind.
+  let splits = null;
+  if (isSplit) {
+    const labels = [...document.querySelectorAll('.split-label-import')].map(el => el.value.trim());
+    const amounts = [...document.querySelectorAll('.split-amount-import')].map(el => el.value);
+    splits = labels.map((label, i) => ({ label, amount: amounts[i] })).filter(s => s.label && s.amount !== '');
+    if (splits.length < 2) { showToast('Enter a label and amount for at least 2 splits.', 'error'); return; }
+  }
 
   try {
     const newId = await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
@@ -449,7 +485,22 @@ async function strategistSubmitImport() {
         status, assigned_strategist: currentStrategistUser.name, has_offline_visits: hasOfflineVisits
       }
     }) });
-    if (grossBudget) {
+    if (isSplit) {
+      // Seed one budget row (required before strategist_split_campaign_line can run,
+      // same "earliest row" convention it already uses) with the FIRST split's own
+      // amount -- the split RPC below overwrites this line with that exact same
+      // value anyway, so seeding it directly rather than the generic grossBudget
+      // field avoids one pointless intermediate write.
+      await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_campaign_line_id: newId, p_month: new Date().toISOString().slice(0,10),
+        p_data: { gross_budget: parseFloat(splits[0].amount) }
+      }) });
+      await sb('rpc/strategist_split_campaign_line', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_line_id: newId, p_splits: splits.map(s => ({ label: s.label, amount: parseFloat(s.amount) }))
+      }) });
+    } else if (grossBudget) {
       await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
         p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
         p_campaign_line_id: newId, p_month: new Date().toISOString().slice(0,10),
@@ -462,7 +513,7 @@ async function strategistSubmitImport() {
     await fetchStrategistData();
     await strategistApplyCachedReportIfMatch(newId);
     renderStrategistDashboard();
-    showToast('Campaign imported!');
+    showToast(isSplit ? `Campaign imported and split into ${splits.length}.` : 'Campaign imported!');
   } catch(e) { showToast('Error importing campaign: ' + e.message, 'error'); }
 }
 

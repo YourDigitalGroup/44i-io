@@ -8288,3 +8288,42 @@ second row) is blocked with the right toast message and never reaches the RPC.
 tactic (decided in the entry above, reflected in the merged Artifact) has nowhere
 to land yet — the real Accounting Portal is still scaffold-only per the earlier
 entry. This is purely the Strategist Portal half of the feature.
+
+### 2026-08-10 (cont'd) — Split into multiple campaigns, extended to "+ New Campaign"
+
+Claire asked for the same split capability on the manual "+ New Campaign" import
+form (`strategistOpenImportForm()`) — used for campaigns already running from the
+old IO system, not created via the order trigger, so this scenario (one price sold
+across several regions) needs to be handleable there too.
+
+No new SQL needed — reused `strategist_split_campaign_line` exactly as built for
+the Setup panel, since it only ever needs an existing line with one budget row to
+split from, regardless of how that line was created.
+
+- New "Split into multiple campaigns" checkbox next to Current Gross Budget. Checking
+  it swaps the single $/mo field for the same split-rows UI as the Setup panel's own
+  split form — reused `strategistSplitRowHtml()`/`strategistAddSplitRow()` directly,
+  passing `'import'` in place of a real line id (those two functions only ever use
+  the id as a CSS class suffix, so a not-yet-created campaign works identically).
+- `strategistSubmitImport()`: validates the split (≥2 complete label+amount rows)
+  BEFORE creating anything, same as the Setup flow's own validation order. On submit:
+  creates the line as normal via `strategist_save_campaign_line`, seeds one budget
+  row with the FIRST split's own amount (required before the split RPC can run —
+  same "earliest row" convention it already uses), then calls
+  `strategist_split_campaign_line` for the rest. Non-split imports are completely
+  unchanged — same single gross-budget flow as before.
+- Same known limitation carried over from the Setup-panel version, not new here:
+  platform/exact-platform-title/Offline-Visits-Tracking entered on the form apply
+  only to the FIRST split — the split RPC's clones don't carry those fields over
+  (by design, since they can genuinely differ per split), so a strategist needs to
+  click into each new split afterward to fill those in individually. Called out
+  directly in the form's own helper text.
+
+**Verified**: `node --check` passes. New Playwright test (`test-import-split.js`,
+scratchpad-only, 13/13 passing): the split checkbox correctly swaps which UI shows;
+"+ Add split" adds a row; an incomplete split (a blank row) is blocked with the
+right toast BEFORE any RPC call fires; a complete 3-way uneven split ($2,000/$2,000/
+$1,000) creates the line first, seeds its budget row with exactly the first split's
+amount, then calls the split RPC with the new line's real id and all 3 splits
+correctly shaped; the non-split path still works completely unchanged (single
+gross-budget save, no split RPC call at all).
