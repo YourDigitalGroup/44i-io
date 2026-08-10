@@ -9211,3 +9211,32 @@ blank is fine (saves `null`, not an empty string); a garbage blocker value is
 caught as a row error rather than silently dropped; the override fix-it flow
 resolves it same as a bad Status would. Re-ran all 6 prior bulk-import/split-
 import test files unchanged and still fully passing — no regression.
+
+### 2026-08-10 (cont'd) — Real bug: variant tactic names not recognized by Bulk Import or + New Campaign
+
+Claire tried bulk-importing a campaign using one of the specific variant names
+from the CSV (e.g. "Event Targeting") and it couldn't find it — same problem
+with "+ New Campaign." Root cause: `resolveBulkService()` only ever matched a
+catalog row's own combined label (`accounting_label`/`label`) — it never
+looked at `services.tactic_variants` at all, so a strategist typing/pasting
+the SPECIFIC variant name (which is the whole point of that field) always came
+back unmatched, even though the underlying catalog row genuinely exists.
+
+Fixed by replacing it with `resolveBulkTactic()` — checks the combined label
+first (regression-safe), then falls back to searching every spend service's
+`tactic_variants` array for an exact case-insensitive match, returning the
+EXACT variant text as `tactic_label` (not the combined label) when it hits.
+"+ New Campaign" had the mirror-image gap: its Tactic dropdown only ever
+showed the combined label, no way to specify which variant a brand-new
+campaign is. Added a second dropdown next to Tactic (same pattern as the
+Setup/detail panel dropdowns already built) that appears only for services
+with `tactic_variants` configured; leaving it blank falls back to the
+combined label rather than sending nothing.
+
+**Verified**: `test-variant-tactic-matching.js` (scratchpad, 14/14) — direct
+label matching unchanged, variant names resolve to the right service with
+exact variant text preserved, case-insensitive, the combined/ambiguous label
+itself still resolves too, garbage still returns null; New Campaign's
+dropdown appears only for variant services, submit sends the chosen variant,
+blank selection falls back to the combined label. Re-ran all 7 prior bulk-
+import/split-import test files unchanged and still fully passing.
