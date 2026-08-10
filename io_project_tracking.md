@@ -8502,3 +8502,37 @@ show under "My Campaigns."
 Same underlying fix as the code patch a few entries up (`strategist_split_campaign_line`
 now copies `assigned_strategist` to every clone going forward) — this backfill only
 covers the one line Claire had already split before that patch went live.
+
+### 2026-08-10 (cont'd) — Split rows displayed in reverse order (3, 2, 1 instead of 1, 2, 3)
+
+Claire flagged the 3 "Facebook & Instagram" splits appearing Region 3 / Region 2 /
+Region 1 top-to-bottom. Root cause: nothing anywhere orders `campaign_lines` rows
+deterministically — `strategist_get_campaign_lines()` has no `ORDER BY` at all, and
+the client renders rows in whatever order Postgres happens to return them. That's
+made worse specifically for splits: the FIRST split updates the original row in
+place rather than inserting a new one, so relying on `created_at` wouldn't even be
+reliable — the two clones inserted in the same transaction can share an identical
+`created_at`, since `now()` is stable for the whole transaction in Postgres, not
+per-statement.
+
+**Fix: a real ordering column, not a timestamp guess.** New nullable
+`campaign_lines.split_order int`. `strategist_split_campaign_line()` now sets it
+explicitly — `0` for the first split (the original row), `1`/`2`/... for each clone
+in the order they were entered in the split form. `strategist_get_campaign_lines()`
+now returns `split_order` and sorts with `order by cl.client_id, cl.tactic_label,
+cl.split_order nulls first, cl.created_at` — split siblings always come out in the
+order they were actually entered, and everything else gets a real deterministic
+order for the first time too (previously not guaranteed at all, just usually
+looked fine by coincidence).
+
+Entirely server-side — no client code changed. `strategistTacticDisplay()`,
+`renderMainTable()`, `renderSetupPanels()` all just render whatever order the data
+arrives in, so fixing the RPC's own order fixes every view at once (main table,
+Setup queue, detail panel) without touching any of them individually.
+
+**Verified**: `node --check` passes. Re-ran both existing split test suites
+(`test-split-campaigns.js` 19/19, `test-import-split.js` 16/16) — both unchanged
+and still fully passing, confirming this fix genuinely needed zero client-side
+changes.
+
+**Not yet run by Claire.**
