@@ -357,7 +357,7 @@ function strategistOpenImportForm() {
   const isOpen = el.style.display !== 'none';
   if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
 
-  const spendServices = Object.values(CATALOG_ROWS).filter(r => r.pricing_mode === 'spend');
+  const spendServices = Object.values(CATALOG_ROWS).filter(r => r.pricing_mode === 'spend' || TRACKABLE_FLAT_SERVICE_IDS.includes(r.id));
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:10px">Import a campaign already running from the old IO system</strong>
@@ -375,6 +375,7 @@ function strategistOpenImportForm() {
         <select id="import-service" onchange="strategistImportServiceChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
           <option value="">— Select —</option>
           ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
+          ${SEO_TRACKING_ONLY_TACTICS.map((t, i) => `<option value="__seo_track_${i}__">${esc(t.tacticLabel)}</option>`).join('')}
         </select>
         <div id="import-tactic-variant-wrap" style="display:none;margin-top:5px"></div>
         <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
@@ -478,10 +479,12 @@ async function strategistSubmitImport() {
   const clientId = clientSel.value;
   const groupId = clientSel.selectedOptions[0]?.dataset.groupId || null;
   const serviceSel = document.getElementById('import-service');
-  const serviceId = serviceSel.value;
-  const serviceLabel = serviceSel.selectedOptions[0]?.textContent || '';
+  const seoTrackMatch = /^__seo_track_(\d+)__$/.exec(serviceSel.value);
+  const seoTrack = seoTrackMatch ? SEO_TRACKING_ONLY_TACTICS[Number(seoTrackMatch[1])] : null;
+  const serviceId = seoTrack ? seoTrack.serviceId : serviceSel.value;
+  const serviceLabel = seoTrack ? seoTrack.tacticLabel : (serviceSel.selectedOptions[0]?.textContent || '');
   const variantEl = document.getElementById('import-tactic-variant');
-  const tacticLabel = (variantEl && variantEl.value) ? variantEl.value : serviceLabel;
+  const tacticLabel = seoTrack ? seoTrack.tacticLabel : ((variantEl && variantEl.value) ? variantEl.value : serviceLabel);
   const platform = strategistReadPlatformValue('import-platform');
   const status = document.getElementById('import-status').value;
   const flightStart = document.getElementById('import-flight-start').value || null;
@@ -795,7 +798,7 @@ function strategistOpenBulkImportForm() {
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import campaigns (paste from a CSV or a Google Sheets range)</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, Setup Notes, Setup Blocker</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, and/or Intake Form — same 3 options as the Setup panel; separate more than one with a semicolon, e.g. "Creative; Platform Access") — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, Setup Notes, Setup Blocker</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. <strong>Tactic</strong> also accepts LLO, Reputation Mgmt., LLO (SEO), and Rep Monitoring (SEO) — flat-fee tactics the team tracks even though they carry no budget of their own. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, and/or Intake Form — same 3 options as the Setup panel; separate more than one with a semicolon, e.g. "Creative; Platform Access") — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
     <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Split Label	Status	Flight Start	Flight End	Month	Gross Budget	Setup Notes	Setup Blocker
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-07	1500
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-08	2000
@@ -821,6 +824,28 @@ function resolveBulkClient(name) {
   const norm = (name || '').trim().toLowerCase();
   return ALL_STRATEGIST_CLIENTS.find(c => c.name.trim().toLowerCase() === norm) || null;
 }
+
+// Flat-fee catalog services the strategist team tracks anyway despite carrying
+// no spend/budget of their own -- explicitly allow-listed rather than opening
+// every non-spend service to the Tactic pickers (most flat-fee services, e.g.
+// "Addl. Monthly Email," were never meant to be tracked as an ongoing
+// campaign). Claire, 2026-08-10: specifically asked for LLO and Reputation
+// Mgmt. to be addable via Bulk Import / + New Campaign.
+const TRACKABLE_FLAT_SERVICE_IDS = ['llo-bp', 'rep-bp'];
+
+// LLO (SEO) and Rep Monitoring (SEO) have no catalog row of their own -- the
+// create_campaign_lines_from_order() trigger (2026-08-10 "SEO tracking lines"
+// work) inserts them automatically whenever any SEO tier is sold, tactic_label
+// literally "LLO (SEO)"/"Rep Monitoring (SEO)". For campaigns that predate that
+// trigger, or weren't created via a live IO at all, Claire needs to add these
+// two directly through the same manual-entry tools. Anchored to seo-bp as a
+// placeholder service_id -- functionally inert here (no budget, no pricing
+// logic reads it), so which exact SEO tier doesn't matter for these lines.
+const SEO_TRACKING_ONLY_TACTICS = [
+  { tacticLabel: 'LLO (SEO)', serviceId: 'seo-bp' },
+  { tacticLabel: 'Rep Monitoring (SEO)', serviceId: 'seo-bp' },
+];
+
 // Returns { service, tacticLabel } or null. Checks the catalog's own combined
 // label first, then falls back to searching every spend service's
 // tactic_variants -- the 5 "which one is it" services (e.g. "Event or
@@ -834,9 +859,11 @@ function resolveBulkTactic(name) {
     const r = CATALOG_ROWS[name];
     return { service: r, tacticLabel: r.accounting_label || r.label };
   }
-  const direct = Object.values(CATALOG_ROWS).find(r => r.pricing_mode === 'spend' &&
+  const direct = Object.values(CATALOG_ROWS).find(r => (r.pricing_mode === 'spend' || TRACKABLE_FLAT_SERVICE_IDS.includes(r.id)) &&
     ((r.accounting_label || r.label || '').trim().toLowerCase() === norm));
   if (direct) return { service: direct, tacticLabel: direct.accounting_label || direct.label };
+  const seoTrack = SEO_TRACKING_ONLY_TACTICS.find(t => t.tacticLabel.toLowerCase() === norm);
+  if (seoTrack && CATALOG_ROWS[seoTrack.serviceId]) return { service: CATALOG_ROWS[seoTrack.serviceId], tacticLabel: seoTrack.tacticLabel };
   for (const r of Object.values(CATALOG_ROWS)) {
     if (r.pricing_mode !== 'spend' || !Array.isArray(r.tactic_variants)) continue;
     const variant = r.tactic_variants.find(v => v.trim().toLowerCase() === norm);
@@ -885,7 +912,10 @@ function strategistParseBulkImport(raw, overrides = {}) {
     const clientOverrideId = overrides[rowNum]?.clientId;
     const serviceOverrideId = overrides[rowNum]?.serviceId;
     const client = clientOverrideId ? ALL_STRATEGIST_CLIENTS.find(c => c.id === clientOverrideId) : resolveBulkClient(clientName);
-    const tacticMatch = serviceOverrideId
+    const seoTrackOverrideMatch = serviceOverrideId ? /^__seo_track_(\d+)__$/.exec(serviceOverrideId) : null;
+    const tacticMatch = seoTrackOverrideMatch
+      ? { service: CATALOG_ROWS[SEO_TRACKING_ONLY_TACTICS[Number(seoTrackOverrideMatch[1])].serviceId], tacticLabel: SEO_TRACKING_ONLY_TACTICS[Number(seoTrackOverrideMatch[1])].tacticLabel }
+      : serviceOverrideId
       ? { service: CATALOG_ROWS[serviceOverrideId], tacticLabel: CATALOG_ROWS[serviceOverrideId]?.accounting_label || CATALOG_ROWS[serviceOverrideId]?.label }
       : resolveBulkTactic(tacticName);
     const service = tacticMatch?.service || null;
@@ -932,7 +962,12 @@ function strategistParseBulkImport(raw, overrides = {}) {
     }
     const platform = get('platform');
     const platformCampaignName = get('platform_campaign_name');
-    const identityKey = [client.id, service.id, platform, platformCampaignName].join('|');
+    // Includes tacticLabel, not just service.id -- otherwise LLO (SEO) and Rep
+    // Monitoring (SEO) (same anchor service_id, and typically no distinct
+    // platform/title of their own) would collide into ONE group instead of two
+    // separate campaigns. Safe for every other case too: multiple month rows
+    // for the same real campaign always carry the same tactic text already.
+    const identityKey = [client.id, service.id, tacticMatch.tacticLabel, platform, platformCampaignName].join('|');
     if (!groups.has(identityKey)) {
       groups.set(identityKey, {
         client_id: client.id, group_id: client.group_id, service_id: service.id,
@@ -1023,9 +1058,10 @@ function strategistRenderBulkPreview() {
   // entirely -- rather than a plain error string that sends you back to the paste.
   const clientOptions = [...ALL_STRATEGIST_CLIENTS].sort((a, b) => a.name.localeCompare(b.name))
     .map(c => `<option value="${esc(c.id)}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
-  const tacticOptions = Object.values(CATALOG_ROWS).filter(s => s.pricing_mode === 'spend')
+  const tacticOptions = Object.values(CATALOG_ROWS).filter(s => s.pricing_mode === 'spend' || TRACKABLE_FLAT_SERVICE_IDS.includes(s.id))
     .sort((a, b) => (a.accounting_label || a.label).localeCompare(b.accounting_label || b.label))
-    .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('');
+    .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('') +
+    SEO_TRACKING_ONLY_TACTICS.map((t, i) => `<option value="__seo_track_${i}__">${esc(t.tacticLabel)}</option>`).join('');
   const statusOptions = BULK_IMPORT_VALID_STATUSES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   const blockerOptions = Object.entries(SETUP_BLOCKER_LABELS).map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('');
   const errorsHtml = plan.errors.map(e => {

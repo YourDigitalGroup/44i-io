@@ -9261,3 +9261,95 @@ directly) works. Re-ran `test-setup-blocker.js`, `test-detail-tactic-
 variant.js`, and `test-tactic-variants.js` unchanged and still fully passing
 — no regression to the blocker pill, variant dropdowns, or Confirm/Save Draft
 flows now that they render inside the collapsible body.
+
+### 2026-08-10 (cont'd) — Setup Blocker: multi-select (a campaign can be waiting on more than one thing)
+
+Claire's real example: "Need creative and access to FB page." `setup_blocker`
+was a single value, so picking one silently discarded the other — no way to
+record both. Converted to a genuine multi-select:
+
+- **Schema**: `campaign_lines.setup_blocker` changed from `text` to `text[]`
+  (`setup-blocker-multi-2026-08-10.sql`, scratchpad, not yet run). Existing
+  single values wrapped into a 1-element array in the same migration — nothing
+  on file is lost.
+- **`strategist_save_campaign_line`**: now accepts `setup_blocker` as a JSON
+  array, converted via `jsonb_array_elements_text` guarded by a
+  `jsonb_typeof(...) = 'array'` check — same pattern as `tactic_variants`.
+- **Setup panel**: the single `<select>` is now 3 checkboxes ("check all that
+  apply"). New `strategistReadSetupBlockers(lineId)` reads exactly the checked
+  set; unchecking everything sends `null`, not an empty array.
+- **Header pill**: `strategistSetupBlockerPill()` now renders one badge per
+  selected blocker (wrapped in an `inline-flex` so multiple space evenly),
+  falling through to the existing auto-detected "Starts {date}" pill only
+  when the array is empty/absent — same fallback logic as before.
+- **Bulk Import**: the Setup Blocker column now accepts a semicolon-separated
+  list ("Creative; Platform Access"), each part matched the same way as
+  before (key/full label/short form, case-insensitive). One bad part among
+  otherwise-good ones still flags the WHOLE row (a fix-it override can only
+  replace the full list, not patch one part) rather than silently dropping
+  just that part. Preview's "Waiting on" column joins multiple resolved
+  labels with commas.
+
+**Verified**: `test-multi-blocker.js` (scratchpad, 15/15) — pill renders
+multiple badges and single still works (regression), Setup panel renders all
+3 checkboxes with the right ones pre-checked, the reader function returns
+exactly the checked set, saving sends all checked values, unchecking
+everything sends `null`, bulk import resolves a semicolon-separated cell to
+both keys, a mixed good/bad cell still flags the row, and the preview shows
+both blocker labels. Updated the 2 pre-existing tests that assumed the old
+single-value API (`test-setup-blocker.js`, `test-bulk-import-setup-
+fields.js`) to the new array shape — both pass; re-ran every other setup/
+bulk-import-adjacent test file unchanged and still fully passing.
+
+**Not yet run by Claire**: `setup-blocker-multi-2026-08-10.sql`.
+
+### 2026-08-10 (cont'd) — Real bug: LLO, Reputation Mgmt., LLO (SEO), Rep Monitoring (SEO) missing from Bulk Import / + New Campaign
+
+Claire tried adding these 4 tactics through the manual-entry tools and none of
+them showed up. Two different root causes:
+
+- **LLO and Reputation Mgmt.** are real catalog rows (`llo-bp`, `rep-bp`), but
+  flat-fee (`pricing_mode != 'spend'`) — every Tactic picker in the portal
+  (`+ New Campaign`'s dropdown, Bulk Import's matching, its fix-it dropdown)
+  filters to `pricing_mode === 'spend'` only, so they were invisible no matter
+  what was typed.
+- **LLO (SEO) and Rep Monitoring (SEO)** have no catalog row at all — the
+  `create_campaign_lines_from_order()` trigger from earlier today inserts them
+  as synthetic tracking lines, but only automatically, only on a brand-new
+  signed IO. There was no path to add one manually for a campaign that
+  predates that trigger.
+
+Fixed both, deliberately narrow rather than opening the floodgates:
+`TRACKABLE_FLAT_SERVICE_IDS = ['llo-bp', 'rep-bp']` explicitly allow-lists
+just these two flat-fee rows (most flat-fee services — "Addl. Monthly Email,"
+setup fees, etc. — were never meant to be tracked as an ongoing campaign, so
+broadening to ALL flat-fee services would have cluttered every picker).
+`SEO_TRACKING_ONLY_TACTICS` hardcodes the two SEO pseudo-tactics, anchored to
+`seo-bp` as a placeholder `service_id` — functionally inert since these lines
+carry no budget and nothing else reads that id for pricing. `+ New Campaign`
+gets both as extra dropdown options (sentinel values like `__seo_track_0__`,
+resolved in `strategistSubmitImport`); Bulk Import's Tactic column and its
+fix-it dropdown now accept all 4 directly by name.
+
+**Real bug caught while building this**: `resolveBulkTactic`'s grouping key
+(`identityKey`) was built from `client.id + service.id + platform + title`
+alone — no `tactic_label`. Since LLO (SEO) and Rep Monitoring (SEO) share the
+one `seo-bp` anchor and typically have no platform/title of their own (pure
+tracking, nothing to match a platform report against), pasting BOTH for the
+same client — the exact real scenario this was built for — collided into ONE
+group instead of two, silently dropping one of them. Fixed by adding
+`tacticLabel` to the identity key; safe for every other case too, since
+multiple month rows for one real campaign already share the same tactic text
+by definition.
+
+**Verified**: `test-flat-tactics.js` (scratchpad, 21/21) — LLO/Reputation
+Mgmt. resolve via the allow-list; both SEO pseudo-tactics resolve via the
+sentinel, case-insensitive; a non-allow-listed flat service stays excluded
+(no scope creep); direct spend matching unaffected; all 4 pasted together
+create 4 SEPARATE groups with correct labels (the collision fix, specifically
+verified); `+ New Campaign`'s dropdown lists all 4 and excludes non-allow-
+listed ones; submitting the SEO pseudo-tactic sends the right `service_id`
++ `tactic_label` with no variant dropdown shown; the bulk-import fix-it
+dropdown offers all 4 too. Re-ran all 14 other strategist-portal test files
+unchanged and still fully passing — no regression from the identityKey
+change, which touches every bulk-import row regardless of tactic.
