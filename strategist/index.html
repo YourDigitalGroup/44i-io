@@ -953,7 +953,8 @@ function parseGoalOverride(raw, allowRange) {
 // a plain boolean on the base tactic's own campaign_lines row rather than parsing
 // it in/out of tactic_label text.
 function strategistTacticDisplay(line) {
-  const base = line.tactic_label || line.service_id;
+  let base = line.tactic_label || line.service_id;
+  if (line.split_label) base += ' — ' + line.split_label;
   return line.has_offline_visits ? base + ' + Offline Visits Tracking' : base;
 }
 
@@ -1196,14 +1197,81 @@ function renderSetupPanels(lines) {
         </div>`).join('') || '<span style="font-size:11px;color:var(--muted)">No months entered yet.</span>'}
         <button onclick="strategistAddSetupMonth('${l.id}')" style="margin-top:6px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);font-size:11px;cursor:pointer">+ Add month</button>
       </div>
+      ${(l.campaign_notes || l.order_line_notes) ? `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#FFFBEB">
+        ${l.campaign_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">IO Campaign Notes</div><div style="font-size:12.5px;color:var(--text);margin-bottom:${l.order_line_notes ? '8px' : '0'}">${esc(l.campaign_notes)}</div>` : ''}
+        ${l.order_line_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">Note on this line</div><div style="font-size:12.5px;color:var(--text)">${esc(l.order_line_notes)}</div>` : ''}
+      </div>` : ''}
       <label class="lbl">Setup Notes</label>
       <textarea id="setup-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px;margin-bottom:12px" placeholder="What's this waiting on before it can go live?">${esc(l.setup_notes || '')}</textarea>
+      <div id="split-form-${l.id}" style="display:none;margin-bottom:12px"></div>
       <div style="display:flex;gap:10px">
         <button onclick="strategistConfirmActivate('${l.id}')" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm &amp; Activate</button>
         <button onclick="strategistSaveDraft('${l.id}')" style="padding:8px 16px;border-radius:7px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Save Draft</button>
+        <button onclick="strategistOpenSplitForm('${l.id}')" style="padding:8px 16px;border-radius:7px;background:#fff;border:1px solid var(--accent);color:var(--accent);font-size:12.5px;font-weight:600;cursor:pointer">Split into Multiple Campaigns</button>
       </div>
     </div>`;
   }).join('');
+}
+
+// ── SPLIT INTO MULTIPLE CAMPAIGNS (2026-08-10) ───────────────────
+// Real scenario Claire found: one IO tactic sold at one total price, but the client
+// splits it themselves across several regions/segments (noted only as free text on
+// the IO today). Turns one pending line into N fully independent campaign_lines rows
+// -- each tracked separately from here on (own budget/pacing/status), per Claire's
+// explicit call over keeping it as one line with an internal breakdown. Amounts are
+// manually entered, not auto-divided -- real splits are uneven (confirmed via her
+// $2,000/$2,000/$1,000 example). The label is free text, not a fixed region list --
+// per Claire, this isn't always going to be a region specifically.
+function strategistOpenSplitForm(lineId) {
+  const el = document.getElementById('split-form-' + lineId);
+  if (!el) return;
+  const showing = el.style.display !== 'none';
+  if (showing) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
+  const monthRow = setupBudgetRowFor(lineId) || {};
+  const fullAmount = monthRow.gross_budget != null ? Number(monthRow.gross_budget) : '';
+  el.style.display = 'block';
+  el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:8px;padding:12px 14px;background:#fff">
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Splits this ${esc(line ? strategistTacticDisplay(line) : 'campaign')} line into separate campaigns, each tracked independently from here on. Label each one (a region, an audience segment — whatever distinguishes it) and its own dollar amount.</p>
+    <div id="split-rows-${lineId}">
+      ${strategistSplitRowHtml(lineId, 0, '', fullAmount)}
+      ${strategistSplitRowHtml(lineId, 1, '', '')}
+    </div>
+    <button onclick="strategistAddSplitRow('${lineId}')" style="margin:6px 0 12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);font-size:11px;cursor:pointer">+ Add split</button>
+    <div style="display:flex;gap:10px">
+      <button onclick="strategistSaveSplit('${lineId}')" style="padding:7px 14px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Save Split</button>
+      <button onclick="strategistOpenSplitForm('${lineId}')" style="padding:7px 14px;border-radius:7px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function strategistSplitRowHtml(lineId, idx, label, amount) {
+  return `<div class="split-row-${lineId}" style="display:flex;gap:8px;margin-bottom:8px">
+    <input type="text" class="split-label-${lineId}" value="${esc(label)}" placeholder="e.g. Region 1" style="flex:1;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+    <input type="number" class="split-amount-${lineId}" value="${esc(String(amount))}" placeholder="$ amount" style="width:120px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+  </div>`;
+}
+
+function strategistAddSplitRow(lineId) {
+  const container = document.getElementById('split-rows-' + lineId);
+  const idx = container.querySelectorAll('.split-row-' + lineId).length;
+  container.insertAdjacentHTML('beforeend', strategistSplitRowHtml(lineId, idx, '', ''));
+}
+
+async function strategistSaveSplit(lineId) {
+  const labels = [...document.querySelectorAll('.split-label-' + lineId)].map(el => el.value.trim());
+  const amounts = [...document.querySelectorAll('.split-amount-' + lineId)].map(el => el.value);
+  const splits = labels.map((label, i) => ({ label, amount: amounts[i] })).filter(s => s.label && s.amount !== '');
+  if (splits.length < 2) { showToast('Enter a label and amount for at least 2 splits.', 'error'); return; }
+  try {
+    await sb('rpc/strategist_split_campaign_line', { method: 'POST', body: JSON.stringify({
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+      p_line_id: lineId, p_splits: splits.map(s => ({ label: s.label, amount: parseFloat(s.amount) }))
+    }) });
+    await fetchStrategistData();
+    renderStrategistDashboard();
+    showToast(`Split into ${splits.length} campaigns.`);
+  } catch(e) { showToast('Error splitting: ' + e.message, 'error'); }
 }
 
 function strategistToggleVaries(lineId, checked) {

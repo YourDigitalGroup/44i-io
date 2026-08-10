@@ -202,7 +202,7 @@
                is internal margin data, a completely different concern from what a client
                is billed. Restricted to super admins, same guard as Custom Pricing. -->
           <div id="tab-accounting-override" style="display:none">
-            <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Fixed Cut $, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. A CPM-adjustment modifier (like Offline Visits Tracking) shows one row per tactic it can combine with, so each pairing (e.g. Geo-Targeting w/ Offline Tracking vs. Site-Targeting w/ Offline Tracking) can be overridden separately for this group.</p>
+            <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. A CPM-adjustment modifier (like Offline Visits Tracking) shows one row per tactic it can combine with, so each pairing (e.g. Geo-Targeting w/ Offline Tracking vs. Site-Targeting w/ Offline Tracking) can be overridden separately for this group.</p>
             <div id="accounting-override-fields"></div>
             <p style="font-size:10px;color:var(--muted);margin-top:12px">Internal only — never shown to clients or on the printed IO. Affects only how this group's real margin is calculated, not anything on the public form.</p>
           </div>
@@ -1156,15 +1156,11 @@
               <p id="admin-accounting-yda-preview" style="font-size:11px;color:var(--muted);margin-top:4px">Group's cut (YDA): —</p>
             </div>
             <div>
-              <label class="lbl">44i Fixed Cut $ <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— 0 = use the percentage above instead</span></label>
-              <input type="number" step="0.01" id="admin-accounting-fixed-cut" placeholder="0" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-            <div>
               <label class="lbl">Platform CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— drives In-Platform Budget/Goal in the Strategist Portal</span></label>
               <input type="number" step="0.01" id="admin-accounting-platform-cpm" placeholder="e.g. 3.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl">(Of Gross) Budgeted Spend % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— legacy, no longer used by the Strategist Portal</span></label>
               <input type="number" step="0.01" id="admin-accounting-budgeted-spend" placeholder="e.g. 25" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
@@ -1553,7 +1549,6 @@ function onPriceInput(serviceId, val) {
 let currentAccountingOverrides = {};
 const ACCOUNTING_OVERRIDE_FIELDS = [
   { key: 'fortyfouri_cut_pct', label: '44i Cut %', suffix: '%' },
-  { key: 'fortyfouri_fixed_cut', label: 'Fixed Cut $', suffix: '' },
   { key: 'platform_cpm', label: 'Platform CPM', suffix: '' },
   { key: 'budgeted_spend_pct', label: 'Budgeted Spend % (legacy)', suffix: '%' },
 ];
@@ -1615,7 +1610,6 @@ function renderAccountingOverrideFields() {
           hasSetupFee: false,
           fields: {
             fortyfouri_cut_pct: pctOverridden ? ownA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
-            fortyfouri_fixed_cut: pctOverridden ? ownA.fortyfouri_fixed_cut : 0,
             platform_cpm: pctOverridden ? ownA.platform_cpm : baseA?.platform_cpm,
             budgeted_spend_pct: pctOverridden ? ownA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
           },
@@ -1632,7 +1626,6 @@ function renderAccountingOverrideFields() {
             hasSetupFee: false,
             fields: {
               fortyfouri_cut_pct: pctOverridden ? pairA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
-              fortyfouri_fixed_cut: pctOverridden ? pairA.fortyfouri_fixed_cut : 0,
               platform_cpm: pctOverridden ? pairA.platform_cpm : baseA?.platform_cpm,
               budgeted_spend_pct: pctOverridden ? pairA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
             },
@@ -1652,7 +1645,6 @@ function renderAccountingOverrideFields() {
       hasSetupFee: s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null,
       fields: {
         fortyfouri_cut_pct: base.fortyfouri_cut_pct,
-        fortyfouri_fixed_cut: base.fortyfouri_fixed_cut,
         platform_cpm: base.platform_cpm,
         budgeted_spend_pct: base.budgeted_spend_pct,
         setup_fee_cut_pct: base.setup_fee_cut_pct,
@@ -3903,10 +3895,9 @@ function fmtPct(n) {
 // Builds one <tr> for the Accounting Map list — shared by real service rows and the
 // synthetic reference rows a multi-candidate CPM-adjustment modifier generates below,
 // so both use identical derivation math and never drift apart.
-function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retailCpm, cutPct, fixedCut, budgetedPct, platformCpm, setupFeeSplitDisplay, missing, editBtnHtml, note, cpmAdjustment }) {
+function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retailCpm, cutPct, budgetedPct, platformCpm, setupFeeSplitDisplay, missing, editBtnHtml, note, cpmAdjustment }) {
   const ydaPct = cutPct != null ? fmtPct(100 - Number(cutPct)) : null;
-  const cutDollar = (fixedCut && Number(fixedCut) > 0) ? Number(fixedCut)
-    : ((defaultRetail != null && cutPct != null) ? (defaultRetail * Number(cutPct) / 100) : null);
+  const cutDollar = (defaultRetail != null && cutPct != null) ? (defaultRetail * Number(cutPct) / 100) : null;
   const cutCpm = (retailCpm != null && cutPct != null) ? (retailCpm * Number(cutPct) / 100) : null;
   const budgetedPctDisplay = fmtPct(budgetedPct);
   const cutPctDisplay = fmtPct(cutPct);
@@ -4008,7 +3999,7 @@ function renderAdminAccountingList() {
         // is editable, not fixed. Two independent overrides, each optional:
         //   - Retail CPM: set directly on the MODIFIER's own Services-tab row (s.retail_cpm)
         //     to replace the auto-computed combined CPM entirely.
-        //   - 44i Cut %/Budgeted Spend %/Fixed Cut $: the modifier's OWN accounting_map
+        //   - 44i Cut %/Budgeted Spend %: the modifier's OWN accounting_map
         //     entry (`a`), same as any other service — present only once someone clicks
         //     Edit and saves it, wins over the base tactic's percentages when present.
         const base = candidates[0];
@@ -4021,7 +4012,6 @@ function renderAdminAccountingList() {
           id: s.id, displayLabel, indent: true, cpmAdjustment: true,
           defaultRetail: null, retailCpm: combinedCpm,
           cutPct: pctOverridden ? a.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
-          fixedCut: pctOverridden ? a.fortyfouri_fixed_cut : 0,
           budgetedPct: pctOverridden ? a.budgeted_spend_pct : baseA?.budgeted_spend_pct,
           platformCpm: pctOverridden ? a.platform_cpm : baseA?.platform_cpm,
           setupFeeSplitDisplay: null, missing: false,
@@ -4043,7 +4033,7 @@ function renderAdminAccountingList() {
         // entry, which stays completely untouched by any of this.
         html += renderAccountingMapRow({
           id: s.id, displayLabel, indent: true, cpmAdjustment: true,
-          defaultRetail: null, retailCpm: null, cutPct: null, fixedCut: 0, budgetedPct: null, platformCpm: null,
+          defaultRetail: null, retailCpm: null, cutPct: null, budgetedPct: null, platformCpm: null,
           setupFeeSplitDisplay: null, missing: false,
           editBtnHtml: `<span style="font-size:11px;color:var(--muted)">${candidates.length} tactics — each independently overridable below</span>`,
           note: `combines with ${candidates.length} different tactics depending on the order`,
@@ -4057,7 +4047,6 @@ function renderAdminAccountingList() {
             id: base.id, displayLabel: `${base.accounting_label || base.label} (w/ ${displayLabel})`, indent: true, cpmAdjustment: true,
             defaultRetail: null, retailCpm: combinedCpm,
             cutPct: pctOverridden ? pairA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
-            fixedCut: pctOverridden ? pairA.fortyfouri_fixed_cut : 0,
             budgetedPct: pctOverridden ? pairA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
             platformCpm: pctOverridden ? pairA.platform_cpm : baseA?.platform_cpm,
             setupFeeSplitDisplay: null, missing: false,
@@ -4074,7 +4063,7 @@ function renderAdminAccountingList() {
           id: s.id, displayLabel, indent: true, cpmAdjustment: true,
           defaultRetail: s.default_price != null ? Number(s.default_price) : null,
           retailCpm: s.retail_cpm != null ? Number(s.retail_cpm) : null,
-          cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct, platformCpm: a?.platform_cpm,
+          cutPct: a?.fortyfouri_cut_pct, budgetedPct: a?.budgeted_spend_pct, platformCpm: a?.platform_cpm,
           setupFeeSplitDisplay: null, missing,
           editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`,
         });
@@ -4104,7 +4093,7 @@ function renderAdminAccountingList() {
       id: s.id, displayLabel, indent: false,
       defaultRetail: s.default_price != null ? Number(s.default_price) : null,
       retailCpm: s.retail_cpm != null ? Number(s.retail_cpm) : null,
-      cutPct: a?.fortyfouri_cut_pct, fixedCut: a?.fortyfouri_fixed_cut, budgetedPct: a?.budgeted_spend_pct, platformCpm: a?.platform_cpm,
+      cutPct: a?.fortyfouri_cut_pct, budgetedPct: a?.budgeted_spend_pct, platformCpm: a?.platform_cpm,
       setupFeeSplitDisplay, missing,
       editBtnHtml: `<button onclick="adminEditAccounting('${esc(s.id)}')" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--text)">${missing ? 'Set Up' : 'Edit'}</button>`,
     });
@@ -4156,7 +4145,6 @@ function adminEditAccounting(serviceId, pairWithServiceId) {
   document.getElementById('admin-accounting-default-retail-display').value = s.default_price != null ? '$' + Number(s.default_price).toFixed(2) : '— (not set on this service)';
   document.getElementById('admin-accounting-retail-cpm-display').value = s.retail_cpm != null ? '$' + Number(s.retail_cpm).toFixed(2) : '— (not set on this service)';
   document.getElementById('admin-accounting-cut-pct').value = a?.fortyfouri_cut_pct ?? '';
-  document.getElementById('admin-accounting-fixed-cut').value = a?.fortyfouri_fixed_cut ?? '';
   document.getElementById('admin-accounting-budgeted-spend').value = a?.budgeted_spend_pct ?? '';
   document.getElementById('admin-accounting-platform-cpm').value = a?.platform_cpm ?? '';
   updateAccountingYdaPreview();
@@ -4189,7 +4177,6 @@ async function adminSaveAccountingMap() {
   if (!serviceId) { showToast('No service selected', 'error'); return; }
   const pairWithServiceId = document.getElementById('admin-accounting-pair-with-id').value || '';
   const cutVal = document.getElementById('admin-accounting-cut-pct').value;
-  const fixedVal = document.getElementById('admin-accounting-fixed-cut').value;
   const budgetedVal = document.getElementById('admin-accounting-budgeted-spend').value;
   const platformCpmVal = document.getElementById('admin-accounting-platform-cpm').value;
   // Cleared to '' by adminEditAccounting() whenever the service has no setup fee
@@ -4198,7 +4185,6 @@ async function adminSaveAccountingMap() {
 
   const payload = {
     fortyfouri_cut_pct: cutVal === '' ? null : parseFloat(cutVal),
-    fortyfouri_fixed_cut: fixedVal === '' ? 0 : parseFloat(fixedVal),
     budgeted_spend_pct: budgetedVal === '' ? null : parseFloat(budgetedVal),
     platform_cpm: platformCpmVal === '' ? null : parseFloat(platformCpmVal),
     setup_fee_cut_pct: setupFeeCutVal === '' ? null : parseFloat(setupFeeCutVal)

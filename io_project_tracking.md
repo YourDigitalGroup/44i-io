@@ -8126,3 +8126,165 @@ feature — reconciliation view, revenue-share display, status tracking. This sc
 exists purely so the whole system (form → admin → strategist → accounting) is
 visibly connected today, per Claire's ask, while the actual accounting logic waits
 on real answers, same discipline used everywhere else on this project.
+
+### 2026-08-07 (cont'd) — Three of the accounting questions answered already; Fixed Cut $ removed from the Accounting Map
+
+Claire answered three of the open questions from the doc above without needing to
+ask her team — they were already decided/known:
+
+1. **"Where do the revenue-share numbers live?"** — Claire's answer: they're already
+   in the Accounting Map. No separate spreadsheet/QuickBooks source to reconcile —
+   closes this question, nothing to change.
+2. **"Are they fixed per service or does a group's deal override them?"** — Claire's
+   answer: this is already covered — the per-group Accounting Overrides mechanism
+   (built 2026-07-30, same shape as Custom Pricing) already lets a specific group's
+   negotiated deal override 44i Cut %/Platform CPM/Budgeted Spend % on a per-service
+   basis. Confirmed in code, nothing to build.
+3. **"Does Fixed Cut $ combine with or override the percentage cut?"** — Claire's
+   answer, after looking at the real data: very few services have a Fixed Cut $ set
+   at all, and where one is set it's redundant with 44i Cut $ (by design — Fixed Cut
+   was always meant as a dollar-amount override that WINS when set, computed % only
+   used as a fallback). Her call: remove the field entirely rather than keep an
+   effectively-unused override mechanism around.
+
+**Removed `fortyfouri_fixed_cut` from the UI/JS layer** (left the underlying
+`accounting_map.fortyfouri_fixed_cut` DB column untouched — no data loss, safely
+inert, droppable later if Claire wants the schema fully clean, but not urgent).
+Changes in `admin/index.html`:
+- Base Accounting Map editor: removed the "44i Fixed Cut $" input; 44i Cut % now
+  pairs with Platform CPM in that row, Budgeted Spend % gets its own row alone.
+- `renderAccountingMapRow()`: dropped the `fixedCut` param — the "44i Cut $" column
+  now always derives from `Default Retail × Cut %`, the same math it silently fell
+  back to for every service that never had a Fixed Cut set anyway.
+- Removed `fortyfouri_fixed_cut` from `ACCOUNTING_OVERRIDE_FIELDS` (group-level
+  override table loses that column too) and from every `fields:`/render-call object
+  that referenced it.
+- `adminEditAccounting()`/`adminSaveAccountingMap()`: stopped reading/writing the
+  now-removed `#admin-accounting-fixed-cut` input.
+- Updated two stale comments that still described Fixed Cut $ as a live field.
+
+**Verified**: `node --check` passes. New Playwright test
+(`test-remove-fixed-cut.js`, scratchpad-only, 4/4 passing): `ACCOUNTING_OVERRIDE_FIELDS`
+no longer offers Fixed Cut $ as an override (44i Cut % still does); `renderAccountingMapRow()`
+correctly computes the 44i Cut $ column from Default Retail × Cut % alone with no
+leftover `undefined` from the removed parameter.
+
+Two questions remain fully open on the doc shared with the team: **billing/proration
+timing** and **service-status tracking** — plus the day-to-day workflow/QuickBooks
+and access/scope questions. Not yet updated in the shared Artifact to reflect these
+three as answered — worth a follow-up pass once the team's answers on the rest come
+back, so the doc gets one clean revision rather than several small ones.
+
+### 2026-08-07 (cont'd) — New real gap found: split campaigns (one IO price, multiple regions) — design decided, NOT YET BUILT
+
+Claire found a real client scenario in the Strategist Portal that isn't handled
+today: a client's IO sells one tactic (Social Ads) for one total price ($5,000),
+but the client splits it across 3 regions themselves — noted today only as free
+text in the IO's Campaign Notes or a per-service note, with nothing that lets a
+strategist actually track each region separately. Shared a screenshot of the
+existing pacing spreadsheet showing exactly this: 3 separate rows per split
+(`SocialAds_Region1_MitchellTech_44i`, etc.), each with its own budget/platform/
+goal — confirms this is a real, already-happening pattern, not a hypothetical.
+
+**Design confirmed (via AskUserQuestion + follow-up), nothing built yet:**
+- A pending Setup line gets a new "Split into multiple campaigns" action. Each
+  split gets a free-text label (a region, an audience segment — not restricted to
+  regions specifically) and its own dollar amount, entered manually (uneven splits
+  are real and expected — confirmed via the $2,000/$2,000/$1,000 example, not an
+  even 3-way divide).
+- Saving turns the ONE pending line into 3 SEPARATE `campaign_lines` rows, each
+  tracked fully independently going forward (own budget, pacing, status) — not a
+  single line with an internal breakdown. Wherever a tactic name displays, a split
+  row reads as `Social Ads — Region 1` (label appended), so it stays identifiable
+  everywhere in the Strategist Portal, the same disambiguation pattern already
+  established for `accounting_label` in the catalog.
+- New request surfaced in the same conversation: the Setup panel should also show
+  the order's own Campaign Notes (and that line's own note, if the AM left one)
+  directly where the strategist is doing the split — so "split into 3 regions,
+  $2k/$2k/$1k" is visible right there, not something dug up from the original IO/
+  PDF separately. Confirmed via code that this data already exists (`orders.
+  campaign_notes` and each line item's own `notes` are already both displayed in
+  the admin Orders detail view) but is currently surfaced NOWHERE in the
+  Strategist Portal — confirmed via grep, zero references to either field in
+  `strategist/index.html`. Whether `strategist_get_campaign_lines` currently
+  returns these fields isn't yet confirmed — need the RPC's live definition
+  before patching it.
+- **Accounting side — one important correction from my first proposal.** I first
+  suggested mirroring the strategist side exactly (one row per split). Claire's
+  correction: the accounting view should instead show ONE aggregated row per
+  tactic (revenue/spend/44i revenue summed across its splits), expandable to see
+  each split's own numbers underneath — matches how the CURRENT spreadsheet
+  already stays clean by not surfacing every region as its own line by default.
+  Reflected in the merged Accounting Portal Artifact (see below) as a new
+  "Larkwood Automotive" example: one `▾ Social Ads (3 regions)` parent row summed
+  to $5,000/$4,000/$2,500, with 3 indented `↳ Region N` child rows underneath —
+  reuses the exact `↳` indent convention already established in the admin
+  Accounting Map's own reference rows, kept for visual consistency across this
+  project's internal tools.
+
+**Updated the merged Accounting Portal Artifact** (same URL as before —
+`accounting-portal-questions.html`, scratchpad, not committed) to record this as
+a DECIDED item under "Answered so far," not an open question — moved out of the
+open-questions list since Claire settled the rollup-vs-per-split question
+directly, same "answered" treatment as the revenue-share questions above.
+
+**Not yet built — this whole feature is design-only so far:**
+- Schema: a new nullable label column on `campaign_lines` (exact name TBD) for
+  the split differentiator; needs a live look at `strategist_get_campaign_lines`
+  (`select pg_get_functiondef('strategist_get_campaign_lines'::regproc);`) before
+  writing the column/RPC patch, plus confirming whether `campaign_notes`/per-line
+  `notes` already flow through that RPC or need adding.
+- A new RPC to perform the split as one atomic operation (turn 1 pending line into
+  N labeled rows) — not yet designed in SQL, just described above.
+- Strategist Portal UI: the "Split into multiple campaigns" form itself, the
+  Setup panel surfacing IO/line notes, and the `Tactic — Label` display change
+  everywhere a split row's tactic name renders.
+- The real Accounting Portal build itself is still fully scaffold-only (per the
+  entry above) — this decision is recorded for whenever that build actually
+  starts, not something with anywhere to land yet.
+
+### 2026-08-10 — Split campaigns: SQL run, Strategist Portal side built and shipped
+
+Claire ran the full SQL package from the entry above as one script. Verified rather
+than assumed (per this project's standing practice, given an earlier session this
+week where a combined script silently skipped statements): confirmed both new
+`campaign_lines` columns (`split_label`, `order_line_notes`) exist via
+`information_schema.columns`, and confirmed `strategist_split_campaign_line` exists
+via `pg_proc` — both came back clean.
+
+**Built the client side on top of it:**
+- `strategistTacticDisplay(line)` — one-line change, appends `— {split_label}` when
+  present, before the existing `+ Offline Visits Tracking` suffix. Every place a
+  tactic name renders (Setup panel header, Setup panel's Tactic field, main table
+  row, detail panel header) already routed through this single function, so this
+  one change covers all four without touching any of them individually.
+- Campaign Setup panel now shows a highlighted notes block (amber, matching the
+  existing "missing" treatment elsewhere in this project) whenever the order's
+  `campaign_notes` and/or that line's own `order_line_notes` are non-empty — so
+  "split into 3 regions, $2k/$2k/$1k" is visible exactly where a strategist is
+  doing the split, not something to hunt for elsewhere. Omitted entirely when both
+  are empty, not shown as an empty box.
+- New "Split into Multiple Campaigns" button on every pending Setup line, next to
+  Confirm & Activate / Save Draft. Opens an inline form (starts with 2 rows, first
+  pre-filled with the line's current full budget) — label (free text) + $ amount
+  per split, "+ Add split" for more. Save calls the new
+  `strategist_split_campaign_line` RPC, blocks with a toast if fewer than 2 rows
+  have both a label and an amount filled in (silently drops any incomplete row
+  rather than erroring on it, so an accidentally-left-blank extra row doesn't block
+  a real 2-way split).
+
+**Verified**: `node --check` passes. New Playwright test
+(`test-split-campaigns.js`, scratchpad-only, 14/14 passing): `strategistTacticDisplay`
+correctly appends the split label (and combines correctly with the existing Offline
+Visits Tracking suffix); the Setup panel shows the notes block only when there's
+something to show, and shows both the IO-level and line-level note text when
+present; the split form opens with 2 rows, the first pre-filled with the real
+current budget; "+ Add split" adds a third row; saving calls the RPC with the
+correct line id and the correct `{label, amount}` array (verified all 3 amounts,
+including the uneven $2,000/$2,000/$1,000 case); an incomplete split (a blank
+second row) is blocked with the right toast message and never reaches the RPC.
+
+**Not yet done**: the Accounting Portal's rollup-with-expand display of a split
+tactic (decided in the entry above, reflected in the merged Artifact) has nowhere
+to land yet — the real Accounting Portal is still scaffold-only per the earlier
+entry. This is purely the Strategist Portal half of the feature.
