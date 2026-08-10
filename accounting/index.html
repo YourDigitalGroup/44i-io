@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>44i Accounting Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="../shared.css"/>
+</head>
+<body>
+
+<div id="toast" class="toast"></div>
+
+<!-- ACCOUNTING PANEL — scaffold only (2026-08-07). Same login-gated shell pattern as
+     /admin and /strategist, sharing shared.js/shared.css per CLAUDE.md's plan for
+     future role-based views. What accounting actually needs to see/do is real
+     business-logic scope waiting on team answers (see the "Accounting Portal —
+     Concept & Open Questions" doc shared with the accounting team) — intentionally
+     NOT decided here yet, same as the strategist scaffold started. -->
+<div id="page-accounting" style="display:none">
+  <div class="card" style="max-width:1100px;margin:24px auto;padding-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
+      <div id="accounting-user-badge" style="font-size:12px;color:var(--muted)"></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <a id="accounting-admin-portal-link" href="../admin/index.html" onclick="adminPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Admin →</a>
+        <button onclick="accountingLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
+      </div>
+    </div>
+
+    <div style="padding:60px 40px;text-align:center">
+      <div style="font-size:36px;margin-bottom:14px">🧾</div>
+      <p style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Accounting Portal — Coming Soon</p>
+      <p style="font-size:13px;color:var(--muted);max-width:440px;margin:0 auto">
+        You're logged in — this is the foundation only. What this portal actually shows
+        (billing reconciliation, revenue-share data, service status) is waiting on
+        answers to a short set of questions shared with the accounting team.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ACCOUNTING LOGIN MODAL — same shape as /admin's and /strategist's, scoped to
+     accounting/super roles only (super included so it can be tested as it's built,
+     same "James stays a super admin for now" arrangement used everywhere else). -->
+<div id="accounting-login-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
+    <div style="font-size:32px;margin-bottom:12px">🔒</div>
+    <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Accounting Access</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
+    <select id="accounting-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
+      <option value="">— Select your name —</option>
+    </select>
+    <input type="password" id="accounting-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkAccountingPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
+    <div id="accounting-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
+    <div style="display:flex;gap:9px">
+      <button onclick="checkAccountingPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
+    </div>
+  </div>
+</div>
+
+<script src="../shared.js"></script>
+<script>
+// Same "don't hardcode a roster" pattern as /admin's and /strategist's login —
+// populated from the shared get_login_roster RPC, filtered client-side to the
+// roles that belong on this specific portal.
+let currentAccountingUser = null; // {name, email, role, pw}
+
+async function loadAccountingRoster() {
+  const sel = document.getElementById('accounting-name-select');
+  let roster = [];
+  try {
+    roster = await sb('rpc/get_login_roster', { method: 'POST', body: JSON.stringify({}) }) || [];
+  } catch(e) {
+    console.warn('Could not load login roster:', e.message);
+  }
+  const eligible = roster.filter(u => u.role === 'accounting' || u.role === 'super');
+  sel.innerHTML = '<option value="">— Select your name —</option>' +
+    eligible.map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
+}
+
+function promptAccountingLogin() {
+  document.getElementById('accounting-login-modal').style.display = 'flex';
+  document.getElementById('accounting-name-select').value = '';
+  document.getElementById('accounting-pw-input').value = '';
+  document.getElementById('accounting-pw-error').style.display = 'none';
+}
+
+// Same shape as attemptStrategistLogin/attemptAdminLogin — used by both the modal's
+// submit button and the silent admin->accounting handoff below.
+async function attemptAccountingLogin(name, pw) {
+  if (!name) return { ok: false, error: 'Please select your name.' };
+  let row;
+  try {
+    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
+    row = Array.isArray(res) ? res[0] : res;
+  } catch(e) {
+    return { ok: false, error: 'Could not reach the login service. Check your connection and try again.' };
+  }
+  if (!row || !row.role) return { ok: false, error: 'Incorrect password. Please try again.' };
+  if (row.role !== 'accounting' && row.role !== 'super') {
+    return { ok: false, error: 'This account isn\'t set up for the Accounting portal.' };
+  }
+  return { ok: true, role: row.role, email: row.email || '' };
+}
+
+async function checkAccountingPw() {
+  const name = document.getElementById('accounting-name-select').value;
+  const pw = document.getElementById('accounting-pw-input').value;
+  const errEl = document.getElementById('accounting-pw-error');
+  const result = await attemptAccountingLogin(name, pw);
+  if (result.ok) {
+    currentAccountingUser = { name, email: result.email, role: result.role, pw };
+    document.getElementById('accounting-login-modal').style.display = 'none';
+    showAccountingPanel(true);
+  } else {
+    errEl.textContent = result.error;
+    errEl.style.display = 'block';
+    document.getElementById('accounting-pw-input').value = '';
+    if (result.error.includes('select your name')) return;
+    document.getElementById('accounting-pw-input').focus();
+  }
+}
+
+function showAccountingPanel(show) {
+  document.getElementById('page-accounting').style.display = show ? 'block' : 'none';
+  if (show && currentAccountingUser) {
+    const badge = document.getElementById('accounting-user-badge');
+    const roleLabel = currentAccountingUser.role === 'super' ? 'Super Admin' : 'Accounting';
+    badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#F59E0B"></span><strong style="color:var(--text)">${esc(currentAccountingUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
+    // Only a super admin gets a way back to /admin from here — an accounting-role
+    // login is deliberately rejected by /admin (same as accounting is rejected there
+    // today), so showing this link to a real accounting user would just dead-end them.
+    const adminLink = document.getElementById('accounting-admin-portal-link');
+    if (adminLink) adminLink.style.display = currentAccountingUser.role === 'super' ? 'inline' : 'none';
+  }
+}
+
+// Handoff to admin/index.html's tryAdminHandoffLogin() — same one-time sessionStorage
+// pattern used between /admin and /strategist. Only relevant for a super admin here,
+// since a real accounting login has nowhere to hand off to.
+function adminPortalHandoff() {
+  if (!currentAccountingUser) return;
+  try {
+    sessionStorage.setItem('admin_handoff_name', currentAccountingUser.name);
+    sessionStorage.setItem('admin_handoff_pw', currentAccountingUser.pw);
+  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
+}
+
+// Silent handoff from the admin portal's "Go to Accounting Portal" link — same
+// one-time sessionStorage pattern as the existing admin<->strategist handoff.
+async function tryAccountingHandoffLogin() {
+  let name, pw;
+  try {
+    name = sessionStorage.getItem('accounting_handoff_name');
+    pw = sessionStorage.getItem('accounting_handoff_pw');
+    sessionStorage.removeItem('accounting_handoff_name');
+    sessionStorage.removeItem('accounting_handoff_pw');
+  } catch(e) { return false; }
+  if (!name || !pw) return false;
+  const result = await attemptAccountingLogin(name, pw);
+  if (!result.ok) return false;
+  currentAccountingUser = { name, email: result.email, role: result.role, pw };
+  showAccountingPanel(true);
+  return true;
+}
+
+function accountingLogout() {
+  currentAccountingUser = null;
+  showAccountingPanel(false);
+  promptAccountingLogin();
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAccountingRoster();
+  if (await tryAccountingHandoffLogin()) return;
+  promptAccountingLogin();
+});
+</script>
+</body>
+</html>
