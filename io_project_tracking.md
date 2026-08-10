@@ -9187,3 +9187,27 @@ actually in use: `--accent` → `#4C8FCB` (shared.css `--accent`), `--warn` →
 block has no real app equivalent to match (admin/strategist are light-mode
 only) — lightened the same sky-blue family for dark-background contrast
 rather than inventing an unrelated dark palette. Republished as an Artifact.
+
+### 2026-08-10 (cont'd) — Bulk Import: Setup Notes + Setup Blocker columns
+
+Claire asked whether a campaign still waiting on something (creative,
+platform access, an intake form) could be bulk-imported too. Bulk import
+already supported `Status = pending` — that part already worked — but had
+no way to record WHY in the same paste; she'd have had to open each one
+afterward in the Setup queue. Added two new optional columns, **Setup
+Notes** and **Setup Blocker**, feeding the exact same fields the Setup panel
+itself uses. Setup Blocker accepts its raw key (`creative`), full label
+(`Waiting on Creative`), or short form (`Creative`), all case-insensitive —
+an unrecognized value gets the same fix-it dropdown treatment already built
+for an unrecognized Status (a dropdown of the 3 real options, or a "Remove
+this row" button), rather than silently dropping it. The preview table gets
+a new "Waiting on" column showing the resolved blocker + notes before
+Confirm.
+
+**Verified**: `test-bulk-import-setup-fields.js` (scratchpad, 13/13) —
+pending status/notes/blocker all carry through to the actual save payload;
+all three blocker input forms (key/full label/short form) resolve correctly;
+blank is fine (saves `null`, not an empty string); a garbage blocker value is
+caught as a row error rather than silently dropped; the override fix-it flow
+resolves it same as a bad Status would. Re-ran all 6 prior bulk-import/split-
+import test files unchanged and still fully passing — no regression.
