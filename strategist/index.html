@@ -1011,7 +1011,7 @@ async function strategistConfirmBulkImport() {
     return `Row ${e.rowNum}: no ${e.field} matches "${e.field === 'client' ? e.clientName : e.tacticName}"`;
   });
 
-  let createdCount = 0, matchedExistingCount = 0, monthsSavedCount = 0;
+  let createdCount = 0, matchedExistingCount = 0, monthsSavedCount = 0, reportsAppliedCount = 0;
   for (const g of plan.groups.values()) {
     let lineId = g.existingLineId;
     if (lineId) {
@@ -1043,6 +1043,20 @@ async function strategistConfirmBulkImport() {
         monthsSavedCount++;
       } catch(e) { errors.push(`Row ${mr.rowNum}: couldn't save month: ${e.message}`); }
     }
+    // Real gap found live (2026-08-10, Claire): every OTHER way a campaign gets
+    // created or edited in this portal checks the cached platform report for a
+    // title match and auto-fills actuals -- bulk import never did. Same lookup,
+    // no refetch/rerender per row (see findCachedReportMatch's own comment).
+    const cachedMatch = findCachedReportMatch(g.platform, g.platform_campaign_name);
+    if (cachedMatch) {
+      try {
+        await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+          p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+          p_campaign_line_id: lineId, p_month: cachedMatch.report_month, p_data: cachedMatch.data
+        }) });
+        reportsAppliedCount++;
+      } catch(e) { errors.push(`Couldn't apply the cached platform report for "${g.tactic_label}" (${g.platform_campaign_name}): ${e.message}`); }
+    }
   }
 
   BULK_IMPORT_PLAN = null;
@@ -1052,11 +1066,11 @@ async function strategistConfirmBulkImport() {
   const resultsEl = document.getElementById('bulk-import-results');
   if (resultsEl) {
     resultsEl.innerHTML = `
-      <p style="font-size:12px;color:#166534;font-weight:600;margin:0 0 4px">${createdCount} campaign(s) created, ${matchedExistingCount} matched to an existing campaign, ${monthsSavedCount} month(s) saved.</p>
+      <p style="font-size:12px;color:#166534;font-weight:600;margin:0 0 4px">${createdCount} campaign(s) created, ${matchedExistingCount} matched to an existing campaign, ${monthsSavedCount} month(s) saved${reportsAppliedCount ? `, ${reportsAppliedCount} filled in from an already-pasted platform report` : ''}.</p>
       ${errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 0">${errors.length} issue(s):</p><ul style="font-size:11.5px;color:#B91C1C;margin:4px 0 0;padding-left:18px">${errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
     `;
   }
-  showToast(`Import done: ${createdCount} created, ${matchedExistingCount} matched, ${errors.length} issue(s)`);
+  showToast(`Import done: ${createdCount} created, ${matchedExistingCount} matched, ${reportsAppliedCount} report(s) applied, ${errors.length} issue(s)`);
   } finally {
     BULK_IMPORT_CONFIRMING = false;
   }
@@ -1609,15 +1623,25 @@ async function strategistSaveMonth(lineId, monthStr, data) {
 // autofill should start when there is a campaign title to reference") -- rather than
 // waiting for her next twice-weekly paste. No-op if the platform has nothing cached,
 // or nothing in that cache matches this exact title yet.
+// Pure lookup, no DB call -- split out so bulk import (2026-08-10) can reuse the
+// exact same matching rule without also inheriting strategistSaveMonth()'s
+// refetch+rerender, which would be a full dashboard reload PER campaign across
+// 100+ bulk-imported rows.
+function findCachedReportMatch(platform, platformCampaignName) {
+  if (!platform || !platformCampaignName) return null;
+  const cache = PLATFORM_REPORT_CACHE[platform];
+  if (!cache) return null;
+  const wanted = platformCampaignName.trim().toLowerCase();
+  const match = cache.rows.find(r => (r.title || '').trim().toLowerCase() === wanted);
+  return match ? { report_month: cache.report_month, data: match.data } : null;
+}
+
 async function strategistApplyCachedReportIfMatch(lineId) {
   const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
-  if (!line || !line.platform || !line.platform_campaign_name) return;
-  const cache = PLATFORM_REPORT_CACHE[line.platform];
-  if (!cache) return;
-  const wanted = line.platform_campaign_name.trim().toLowerCase();
-  const match = cache.rows.find(r => (r.title || '').trim().toLowerCase() === wanted);
-  if (!match) return;
-  await strategistSaveMonth(lineId, cache.report_month, match.data);
+  if (!line) return;
+  const found = findCachedReportMatch(line.platform, line.platform_campaign_name);
+  if (!found) return;
+  await strategistSaveMonth(lineId, found.report_month, found.data);
 }
 
 // The detail panel's title field used reload:false (a plain "Saved" toast, no

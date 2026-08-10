@@ -8750,3 +8750,81 @@ save actually finishes.
 query first (group by client+tactic+platform+title, `having count(*) > 1`, scoped
 to the last 2 hours) to confirm the actual scope before deleting anything —
 waiting on her results before writing the actual cleanup `DELETE`.
+
+**Duplicate cleanup — resolved.** Diagnostic came back with all 119 real campaigns
+at exactly `copies = 2`, no anomalies — matches the double-submit theory exactly.
+Cleaned up with a transaction (delete `campaign_months` for the extra copies first,
+then the duplicate `campaign_lines` themselves, keeping the earliest of each pair)
+— Claire ran it, verify query came back empty.
+
+### 2026-08-10 (cont'd) — Tactic label comparison doc, for the team to confirm
+
+While cleaning up the duplicates, Claire noticed the strategist team's own tactic
+names (from their pre-existing pacing reports) don't match the catalog's labels —
+asked for a comparison so she can confirm with the team before any renames happen.
+
+Pulled the live catalog (`select id, section, subsection_label, label,
+accounting_label from services where active is not false order by section,
+sort_order`) and matched all 40 of the team's tactic names against it by hand:
+**25 clean 1:1 matches**, **5 catalog rows that currently cover 2–3 team tactic
+names each** (needs a real decision — split into separate rows, or one label
+loosely covering both — not a simple rename), and **4 unmatched names** flagged as
+unconfirmed guesses rather than assumed (LLO (SEO), Rep Monitoring (SEO), PMax all
+guessed as bundled inside other packages, not sold as their own line). Also
+flagged the reverse gap: `netflix-bp` exists in the catalog with no team-facing
+name on their list at all.
+
+**Caught my own mistake before shipping it**: first draft compared against the
+bare client-facing `label` ("Business Pro") instead of the `accounting_label`
+where one's already set (e.g. "Amazon Prime Ads — Business Pro") — Claire caught
+this ("remember we added the section to the tactic name") before it went out.
+Fixed, and it surfaced something useful: several rows already effectively match
+the team's naming once you look at the right field, and the team's naming
+consistently follows a "Section: Variant" pattern (e.g. "Targeted Display:
+Audience," "Streaming TV: Audience") — flagged as a possible section-level fix
+(name ~15 sections once) rather than editing every individual service by hand.
+
+**Delivered two ways**: an Artifact (`tactic-label-comparison.html`, republished
+same URL as the first draft) and a Word document
+(`Tactic-Label-Comparison.docx`, built with `docx`-js, sent directly to Claire).
+The `.docx` passed full XSD schema validation (149 paragraphs) — but honestly
+flagged to Claire that I could NOT visually verify it before sending: LibreOffice's
+headless renderer is broken in this environment (fails converting even a trivial
+one-paragraph test file, unrelated to this document's content), so the usual
+render-and-look verification step wasn't possible this time.
+
+Claire has sent both to her team for confirmation. Nothing in the catalog changed.
+
+### 2026-08-10 (cont'd) — Real bug: bulk import never checked the cached platform report
+
+Claire noticed her 119 bulk-imported campaigns had no actuals — correctly
+expected, since bulk import only ever creates the budget, not actuals (those come
+from "Paste Platform Report," matched by exact title). But she then asked the
+right follow-up: didn't we build it so a cached report auto-applies the moment a
+campaign gets a matching platform+title? Checked the code rather than assume —
+real gap confirmed: `strategistApplyCachedReportIfMatch()` is called after every
+OTHER way a line gets created or edited (`+ New Campaign`, detail panel saves,
+`Confirm & Activate`) — bulk import's confirm loop never called it at all.
+
+**Fixed.** Split the matching logic out of `strategistApplyCachedReportIfMatch()`
+into a new pure `findCachedReportMatch(platform, platformCampaignName)` (no DB
+call) — needed because the existing function looks up the line from
+`ALL_CAMPAIGN_LINES`, which doesn't yet contain a campaign bulk import just
+created in the same request (that refetch only happens once, at the very end of
+the whole batch), and because reusing the existing function's `strategistSaveMonth()`
+wrapper would trigger a full dashboard refetch+rerender per campaign — fine for
+one interactive save, disastrous across 100+ bulk rows. Bulk import's confirm loop
+now calls `findCachedReportMatch()` for every group and, on a match, saves the
+cached actuals with the same raw RPC call already used for budget months (no
+extra refetch). New `reportsAppliedCount`, surfaced in both the results message
+and the toast.
+
+**Verified**: `node --check` passes. Re-ran every existing bulk-import test
+unchanged and fully passing (19/19, 16/16, 16/16, 14/14, 9/9, 5/5 across six prior
+files). New Playwright test (`test-bulk-import-cached-report.js`, scratchpad-only,
+8/8 passing): the pure lookup correctly matches by exact title, correctly returns
+null for a different title/uncached platform/null inputs, and never throws; a
+bulk-created campaign whose title matches an already-cached report gets BOTH its
+pasted budget month AND the cached report's actuals month saved, with the results
+message correctly mentioning the applied report; a campaign with no cache match
+makes no extra call at all.
