@@ -8481,3 +8481,24 @@ up.
 fix, so the two clones still have no `assigned_strategist` in the database today.
 Told her to check "All Strategists" scope to find them, and offered a one-off
 backfill SQL statement if needed once she confirms which lines they are.
+
+Claire confirmed all 3 ("Facebook & Instagram," split into Region 2/Region 3) show
+under "All Strategists" — nothing was lost, purely a visibility bug, matching the
+diagnosis exactly.
+
+**Backfill SQL — first attempt found nothing (own mistake, caught before declaring
+success).** Matched siblings by `sib.order_id = cl.order_id`, which silently never
+matches when both sides are genuinely `NULL` — plain `=` never equals `NULL` in
+SQL — and these lines almost certainly have a null `order_id` since they came from
+a manual "+ New Campaign" import, not a real signed IO. Claire ran it and correctly
+got back the 2 still-null rows instead of an empty result, confirming the query
+itself needed fixing, not just re-running.
+
+**v2, fixed**: matched siblings using `is not distinct from` (NULL-safe equality)
+across `client_id`/`service_id`/`order_id`/`flight_start`/`flight_end` instead of
+plain `=`. Claire ran it — verify query came back empty. Both splits now correctly
+show under "My Campaigns."
+
+Same underlying fix as the code patch a few entries up (`strategist_split_campaign_line`
+now copies `assigned_strategist` to every clone going forward) — this backfill only
+covers the one line Claire had already split before that patch went live.
