@@ -9157,3 +9157,57 @@ applies — no way to infer this from data already on file.
 just for her list) — and the manual per-campaign variant selection itself,
 still outstanding. PMax also still unconfirmed by the team, separate from
 this CSV.
+
+### 2026-08-10 (cont'd) — Full platform list, alphabetized
+
+Claire sent the team's complete list of platforms actually in use (some with
+no cached-report auto-fill support yet, but she wants them selectable
+regardless — reporting integration is separate future work, not blocking).
+`PLATFORM_OPTIONS` (single source read by every platform dropdown — Setup
+panel, detail panel, main table's inline edit) replaced from the old 5-entry
+list to the full 14: Amazon DSP, Disney+ / HULU, Facebook Ads, Frequence,
+GBP, Google Ads, Grade.us, LinkedIn Ads, Local Incite, Simpli.fi, Snapchat
+Ads, StackAdapt, The Trade Desk, Yext. Normalized "The TradeDesk" to match
+the "The Trade Desk" spelling already used elsewhere in this file, and fixed
+an "Amazaon DSP" typo. Claire then asked to confirm it was alphabetical — it
+wasn't (still in her paste order) — sorted properly on the follow-up. Client-
+side only, no SQL, no code-structure change (still one array, same three call
+sites), nothing to run.
+
+### 2026-08-10 (cont'd) — Accounting Portal concept doc recolored to match the real brand
+
+The concept doc (`accounting-portal-questions.html`, scratchpad) was still
+using an earthy gold/olive palette from whenever it was first drafted — never
+updated after the 2026-08-06 sky-blue rebrand (`shared.css`, matching the new
+44idigital.com). Remapped its CSS variables to the real semantic colors
+actually in use: `--accent` → `#4C8FCB` (shared.css `--accent`), `--warn` →
+`#F59E0B` (shared.css `--warn`), `--good`/`--risk` → `#10B981`/`#EF4444`
+(the actual toast success/error colors), `--ink`/`--muted`/`--rule`/`--paper`
+→ shared.css's `--text`/`--muted`/`--border`/`--bg`. The doc's dark-mode
+block has no real app equivalent to match (admin/strategist are light-mode
+only) — lightened the same sky-blue family for dark-background contrast
+rather than inventing an unrelated dark palette. Republished as an Artifact.
+
+### 2026-08-10 (cont'd) — Bulk Import: Setup Notes + Setup Blocker columns
+
+Claire asked whether a campaign still waiting on something (creative,
+platform access, an intake form) could be bulk-imported too. Bulk import
+already supported `Status = pending` — that part already worked — but had
+no way to record WHY in the same paste; she'd have had to open each one
+afterward in the Setup queue. Added two new optional columns, **Setup
+Notes** and **Setup Blocker**, feeding the exact same fields the Setup panel
+itself uses. Setup Blocker accepts its raw key (`creative`), full label
+(`Waiting on Creative`), or short form (`Creative`), all case-insensitive —
+an unrecognized value gets the same fix-it dropdown treatment already built
+for an unrecognized Status (a dropdown of the 3 real options, or a "Remove
+this row" button), rather than silently dropping it. The preview table gets
+a new "Waiting on" column showing the resolved blocker + notes before
+Confirm.
+
+**Verified**: `test-bulk-import-setup-fields.js` (scratchpad, 13/13) —
+pending status/notes/blocker all carry through to the actual save payload;
+all three blocker input forms (key/full label/short form) resolve correctly;
+blank is fine (saves `null`, not an empty string); a garbage blocker value is
+caught as a row error rather than silently dropped; the override fix-it flow
+resolves it same as a bad Status would. Re-ran all 6 prior bulk-import/split-
+import test files unchanged and still fully passing — no regression.
