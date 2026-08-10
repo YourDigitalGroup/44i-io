@@ -8327,3 +8327,52 @@ $1,000) creates the line first, seeds its budget row with exactly the first spli
 amount, then calls the split RPC with the new line's real id and all 3 splits
 correctly shaped; the non-split path still works completely unchanged (single
 gross-budget save, no split RPC call at all).
+
+### 2026-08-10 (cont'd) — Split campaigns: each split now gets its own exact platform title
+
+Claire caught a real gap right after the previous entry shipped: since each split
+runs as its OWN campaign in the ad platform, matching a pasted report by exact
+title only works if every split has its own title, not just the first (which is
+all the split RPC captured until now).
+
+**Patched `strategist_split_campaign_line`** (client-authored this session, so
+patched directly without re-pulling live SQL — the RPC hadn't been touched by
+anyone else since): `p_splits` items now accept an optional
+`platform_campaign_name` key. The first split's update now also sets
+`platform_campaign_name` (via `coalesce`, so leaving it blank doesn't null out
+something already there). Every cloned split now also copies the ORIGINAL line's
+`platform` forward (previously only the first split kept a platform at all —
+every clone came out with `platform = null`) plus its own title — reasoned that
+all splits of one tactic run on the same ad platform, only the title differs, so
+a clone with no platform could never match a report even with its title filled in.
+
+**Client side, both split entry points:**
+- `strategistSplitRowHtml()` (shared by both the Setup panel's split form and the
+  "+ New Campaign" import form) gained a third input, "Exact campaign title in the
+  ad platform," per row.
+- Setup panel's split form pre-fills the first row's title from the line's own
+  existing `platform_campaign_name`, same as it already pre-fills the first row's
+  amount from the existing budget.
+- Import form: the standalone "Exact campaign title" field is now hidden the
+  moment split mode is checked (each split gets its own instead, so keeping the
+  shared field visible would just be a second, ambiguous place to type a title) —
+  and the initial line-creation call sends `platform_campaign_name: null` when
+  splitting, letting the split RPC's own per-split title be the only source of
+  truth for the first split rather than two different fields potentially disagreeing.
+- Both `strategistSaveSplit()` and `strategistSubmitImport()`'s split branch now
+  read the title inputs and send `platform_campaign_name` per split (blank → `null`,
+  same convention as every other optional field in this project).
+
+**Verified**: `node --check` passes. Re-ran and extended both existing Playwright
+tests: `test-split-campaigns.js` (17/17 passing, up from 14) — added assertions
+that the Setup split form pre-fills the first row's title from the existing line,
+that the RPC call carries each split's own title correctly, and that a blank title
+is sent as `null` rather than an empty string. `test-import-split.js` (16/16
+passing, up from 13) — added assertions that the standalone title field hides when
+split mode is checked, that the initial line creation sends a null title when
+splitting (not the now-hidden field's stale value), and that the split RPC call
+carries each split's own title.
+
+**Not yet run by Claire**: the RPC patch above — client code is shipped but the
+per-split title is a no-op server-side until she runs it (same "client ships ahead
+of the SQL, harmless until live" pattern used throughout this project).
