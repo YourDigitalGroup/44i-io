@@ -8891,3 +8891,44 @@ the eye) that the character immediately after the dash is U+00A0 while the one
 before it is a regular U+0020; a real long range still renders its dates
 correctly; missing start/end dates still render sensibly with the same fix in
 place.
+
+### 2026-08-10 (cont'd) — Answers received: campaign status + Campaign Setup open questions
+
+Claire got real answers back from her team on a set of previously-outstanding
+Strategist Portal questions. Recorded verbatim by topic, nothing built yet —
+several of these are genuinely new features, not tweaks, and worth scoping
+properly before starting rather than building all of them at once unprompted.
+
+**Campaign status:**
+- Who sets status, and does a change need to trigger anything else? Strategist-
+  controlled; some ad platforms auto-flip active → ended on their own. A
+  notification to the AM the month a campaign is ending "wouldn't hurt" and would
+  help them reach out about renewal — explicitly "probably not a requirement,"
+  not a hard ask.
+- Does a status change need its own record (like the Optimize Log)? "Would be
+  beneficial... but probably not a requirement."
+
+**Campaign Setup & overrides:**
+- Real IO mistakes that come up often: an AE selecting the wrong service, and
+  reps forgetting to select "Offline Visits Tracking." Confirmed as genuinely
+  hard to catch systematically — "one of our hardest challenges." Not something
+  Campaign Setup's review step can fully solve on its own.
+- Can IO-sourced fields (Budget, etc.) still be corrected after a campaign moves
+  past Setup into Active? **Yes, ideally, at any point** — campaigns start late,
+  change budget, get cancelled. Needs verifying against what the strategist
+  portal actually allows editing on an Active campaign today, not assumed.
+- Does a saved Draft need to notify anyone once its blocker clears? "Ideally...
+  notify the strategist" — but Claire's own team isn't sure how that should work
+  alongside Trello. Genuinely unresolved mechanism, not a spec to build from yet.
+- Setup Notes — plain text enough, or worth seeing at a glance what's actually
+  blocking a Pending campaign? Confirmed useful: waiting on creative, waiting on
+  platform access (e.g. Facebook), waiting on the intake form, or simply waiting
+  for the start date to arrive — named as real, recurring blocker categories.
+
+**Not yet built — flagged rather than started, given the volume of new work
+implied:** AM-notification-on-campaign-end and Draft-clears-notify-strategist
+both need real notification/email infrastructure, which doesn't exist anywhere in
+this project yet (same gap already flagged elsewhere in this doc). A status
+change history log is a new table + UI, not a tweak. The Setup Notes blocker
+categories are the most concretely scoped and lowest-risk of the four. Asked
+Claire what she wants prioritized rather than picking for her.
