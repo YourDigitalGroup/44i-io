@@ -8535,4 +8535,14 @@ Setup queue, detail panel) without touching any of them individually.
 and still fully passing, confirming this fix genuinely needed zero client-side
 changes.
 
-**Not yet run by Claire.**
+Claire ran it — split order fixed (Region 1/2/3 now correct), but flagged a NEW
+regression: Prairie Flower Casino now sorted above Mitchell Technical College,
+which isn't alphabetical either way. Root cause: the `order by` clause sorted by
+`cl.client_id` — a UUID — not the client's actual name, so it just replaced one
+meaningless order with a different meaningless order.
+
+**Fixed**: `order by` changed to `g.name, c.name, cl.tactic_label, cl.split_order
+nulls first, cl.created_at` — sorts by the actual group/client name text, matching
+what a human expects and what the main table's own group-name grouping already
+assumes, while still using `split_order` to keep split siblings in the right
+relative order underneath. Given to Claire to run.
