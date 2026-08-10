@@ -9211,3 +9211,53 @@ blank is fine (saves `null`, not an empty string); a garbage blocker value is
 caught as a row error rather than silently dropped; the override fix-it flow
 resolves it same as a bad Status would. Re-ran all 6 prior bulk-import/split-
 import test files unchanged and still fully passing — no regression.
+
+### 2026-08-10 (cont'd) — Real bug: variant tactic names not recognized by Bulk Import or + New Campaign
+
+Claire tried bulk-importing a campaign using one of the specific variant names
+from the CSV (e.g. "Event Targeting") and it couldn't find it — same problem
+with "+ New Campaign." Root cause: `resolveBulkService()` only ever matched a
+catalog row's own combined label (`accounting_label`/`label`) — it never
+looked at `services.tactic_variants` at all, so a strategist typing/pasting
+the SPECIFIC variant name (which is the whole point of that field) always came
+back unmatched, even though the underlying catalog row genuinely exists.
+
+Fixed by replacing it with `resolveBulkTactic()` — checks the combined label
+first (regression-safe), then falls back to searching every spend service's
+`tactic_variants` array for an exact case-insensitive match, returning the
+EXACT variant text as `tactic_label` (not the combined label) when it hits.
+"+ New Campaign" had the mirror-image gap: its Tactic dropdown only ever
+showed the combined label, no way to specify which variant a brand-new
+campaign is. Added a second dropdown next to Tactic (same pattern as the
+Setup/detail panel dropdowns already built) that appears only for services
+with `tactic_variants` configured; leaving it blank falls back to the
+combined label rather than sending nothing.
+
+**Verified**: `test-variant-tactic-matching.js` (scratchpad, 14/14) — direct
+label matching unchanged, variant names resolve to the right service with
+exact variant text preserved, case-insensitive, the combined/ambiguous label
+itself still resolves too, garbage still returns null; New Campaign's
+dropdown appears only for variant services, submit sends the chosen variant,
+blank selection falls back to the combined label. Re-ran all 7 prior bulk-
+import/split-import test files unchanged and still fully passing.
+
+### 2026-08-10 (cont'd) — Campaign Setup panels collapsed by default
+
+With Active at 149+ campaigns and the Setup queue growing as Claire enters
+more, every Pending campaign rendering fully expanded (full grid, platform
+fields, notes, blocker dropdown, action buttons) made the page enormous.
+Setup panels now start collapsed — just the client/tactic header, the
+blocker pill, and the Pending badge — click the header to expand or
+collapse. New module state `STRATEGIST_EXPANDED_SETUP_LINES` (a `Set`) tracks
+which lines are open; a line stays expanded across a re-render (e.g. after a
+save) once opened, but every fresh page load starts fully collapsed again by
+design — deliberately not persisted anywhere.
+
+**Verified**: `test-setup-panel-collapse.js` (scratchpad, 8/8) — body hidden
+by default, chevron (▸/▾) reflects collapsed/expanded state, expanding one
+line doesn't affect a different line, toggling twice returns to collapsed,
+and a real DOM `.click()` on the header (not just calling the toggle function
+directly) works. Re-ran `test-setup-blocker.js`, `test-detail-tactic-
+variant.js`, and `test-tactic-variants.js` unchanged and still fully passing
+— no regression to the blocker pill, variant dropdowns, or Confirm/Save Draft
+flows now that they render inside the collapsible body.
