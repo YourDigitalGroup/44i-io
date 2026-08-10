@@ -8288,3 +8288,91 @@ second row) is blocked with the right toast message and never reaches the RPC.
 tactic (decided in the entry above, reflected in the merged Artifact) has nowhere
 to land yet — the real Accounting Portal is still scaffold-only per the earlier
 entry. This is purely the Strategist Portal half of the feature.
+
+### 2026-08-10 (cont'd) — Split into multiple campaigns, extended to "+ New Campaign"
+
+Claire asked for the same split capability on the manual "+ New Campaign" import
+form (`strategistOpenImportForm()`) — used for campaigns already running from the
+old IO system, not created via the order trigger, so this scenario (one price sold
+across several regions) needs to be handleable there too.
+
+No new SQL needed — reused `strategist_split_campaign_line` exactly as built for
+the Setup panel, since it only ever needs an existing line with one budget row to
+split from, regardless of how that line was created.
+
+- New "Split into multiple campaigns" checkbox next to Current Gross Budget. Checking
+  it swaps the single $/mo field for the same split-rows UI as the Setup panel's own
+  split form — reused `strategistSplitRowHtml()`/`strategistAddSplitRow()` directly,
+  passing `'import'` in place of a real line id (those two functions only ever use
+  the id as a CSS class suffix, so a not-yet-created campaign works identically).
+- `strategistSubmitImport()`: validates the split (≥2 complete label+amount rows)
+  BEFORE creating anything, same as the Setup flow's own validation order. On submit:
+  creates the line as normal via `strategist_save_campaign_line`, seeds one budget
+  row with the FIRST split's own amount (required before the split RPC can run —
+  same "earliest row" convention it already uses), then calls
+  `strategist_split_campaign_line` for the rest. Non-split imports are completely
+  unchanged — same single gross-budget flow as before.
+- Same known limitation carried over from the Setup-panel version, not new here:
+  platform/exact-platform-title/Offline-Visits-Tracking entered on the form apply
+  only to the FIRST split — the split RPC's clones don't carry those fields over
+  (by design, since they can genuinely differ per split), so a strategist needs to
+  click into each new split afterward to fill those in individually. Called out
+  directly in the form's own helper text.
+
+**Verified**: `node --check` passes. New Playwright test (`test-import-split.js`,
+scratchpad-only, 13/13 passing): the split checkbox correctly swaps which UI shows;
+"+ Add split" adds a row; an incomplete split (a blank row) is blocked with the
+right toast BEFORE any RPC call fires; a complete 3-way uneven split ($2,000/$2,000/
+$1,000) creates the line first, seeds its budget row with exactly the first split's
+amount, then calls the split RPC with the new line's real id and all 3 splits
+correctly shaped; the non-split path still works completely unchanged (single
+gross-budget save, no split RPC call at all).
+
+### 2026-08-10 (cont'd) — Split campaigns: each split now gets its own exact platform title
+
+Claire caught a real gap right after the previous entry shipped: since each split
+runs as its OWN campaign in the ad platform, matching a pasted report by exact
+title only works if every split has its own title, not just the first (which is
+all the split RPC captured until now).
+
+**Patched `strategist_split_campaign_line`** (client-authored this session, so
+patched directly without re-pulling live SQL — the RPC hadn't been touched by
+anyone else since): `p_splits` items now accept an optional
+`platform_campaign_name` key. The first split's update now also sets
+`platform_campaign_name` (via `coalesce`, so leaving it blank doesn't null out
+something already there). Every cloned split now also copies the ORIGINAL line's
+`platform` forward (previously only the first split kept a platform at all —
+every clone came out with `platform = null`) plus its own title — reasoned that
+all splits of one tactic run on the same ad platform, only the title differs, so
+a clone with no platform could never match a report even with its title filled in.
+
+**Client side, both split entry points:**
+- `strategistSplitRowHtml()` (shared by both the Setup panel's split form and the
+  "+ New Campaign" import form) gained a third input, "Exact campaign title in the
+  ad platform," per row.
+- Setup panel's split form pre-fills the first row's title from the line's own
+  existing `platform_campaign_name`, same as it already pre-fills the first row's
+  amount from the existing budget.
+- Import form: the standalone "Exact campaign title" field is now hidden the
+  moment split mode is checked (each split gets its own instead, so keeping the
+  shared field visible would just be a second, ambiguous place to type a title) —
+  and the initial line-creation call sends `platform_campaign_name: null` when
+  splitting, letting the split RPC's own per-split title be the only source of
+  truth for the first split rather than two different fields potentially disagreeing.
+- Both `strategistSaveSplit()` and `strategistSubmitImport()`'s split branch now
+  read the title inputs and send `platform_campaign_name` per split (blank → `null`,
+  same convention as every other optional field in this project).
+
+**Verified**: `node --check` passes. Re-ran and extended both existing Playwright
+tests: `test-split-campaigns.js` (17/17 passing, up from 14) — added assertions
+that the Setup split form pre-fills the first row's title from the existing line,
+that the RPC call carries each split's own title correctly, and that a blank title
+is sent as `null` rather than an empty string. `test-import-split.js` (16/16
+passing, up from 13) — added assertions that the standalone title field hides when
+split mode is checked, that the initial line creation sends a null title when
+splitting (not the now-hidden field's stale value), and that the split RPC call
+carries each split's own title.
+
+**Not yet run by Claire**: the RPC patch above — client code is shipped but the
+per-split title is a no-op server-side until she runs it (same "client ships ahead
+of the SQL, harmless until live" pattern used throughout this project).
