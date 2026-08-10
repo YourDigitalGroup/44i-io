@@ -9157,3 +9157,19 @@ applies — no way to infer this from data already on file.
 just for her list) — and the manual per-campaign variant selection itself,
 still outstanding. PMax also still unconfirmed by the team, separate from
 this CSV.
+
+### 2026-08-10 (cont'd) — Full platform list, alphabetized
+
+Claire sent the team's complete list of platforms actually in use (some with
+no cached-report auto-fill support yet, but she wants them selectable
+regardless — reporting integration is separate future work, not blocking).
+`PLATFORM_OPTIONS` (single source read by every platform dropdown — Setup
+panel, detail panel, main table's inline edit) replaced from the old 5-entry
+list to the full 14: Amazon DSP, Disney+ / HULU, Facebook Ads, Frequence,
+GBP, Google Ads, Grade.us, LinkedIn Ads, Local Incite, Simpli.fi, Snapchat
+Ads, StackAdapt, The Trade Desk, Yext. Normalized "The TradeDesk" to match
+the "The Trade Desk" spelling already used elsewhere in this file, and fixed
+an "Amazaon DSP" typo. Claire then asked to confirm it was alphabetical — it
+wasn't (still in her paste order) — sorted properly on the follow-up. Client-
+side only, no SQL, no code-structure change (still one array, same three call
+sites), nothing to run.
