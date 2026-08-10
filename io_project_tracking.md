@@ -8174,3 +8174,71 @@ timing** and **service-status tracking** — plus the day-to-day workflow/QuickB
 and access/scope questions. Not yet updated in the shared Artifact to reflect these
 three as answered — worth a follow-up pass once the team's answers on the rest come
 back, so the doc gets one clean revision rather than several small ones.
+
+### 2026-08-07 (cont'd) — New real gap found: split campaigns (one IO price, multiple regions) — design decided, NOT YET BUILT
+
+Claire found a real client scenario in the Strategist Portal that isn't handled
+today: a client's IO sells one tactic (Social Ads) for one total price ($5,000),
+but the client splits it across 3 regions themselves — noted today only as free
+text in the IO's Campaign Notes or a per-service note, with nothing that lets a
+strategist actually track each region separately. Shared a screenshot of the
+existing pacing spreadsheet showing exactly this: 3 separate rows per split
+(`SocialAds_Region1_MitchellTech_44i`, etc.), each with its own budget/platform/
+goal — confirms this is a real, already-happening pattern, not a hypothetical.
+
+**Design confirmed (via AskUserQuestion + follow-up), nothing built yet:**
+- A pending Setup line gets a new "Split into multiple campaigns" action. Each
+  split gets a free-text label (a region, an audience segment — not restricted to
+  regions specifically) and its own dollar amount, entered manually (uneven splits
+  are real and expected — confirmed via the $2,000/$2,000/$1,000 example, not an
+  even 3-way divide).
+- Saving turns the ONE pending line into 3 SEPARATE `campaign_lines` rows, each
+  tracked fully independently going forward (own budget, pacing, status) — not a
+  single line with an internal breakdown. Wherever a tactic name displays, a split
+  row reads as `Social Ads — Region 1` (label appended), so it stays identifiable
+  everywhere in the Strategist Portal, the same disambiguation pattern already
+  established for `accounting_label` in the catalog.
+- New request surfaced in the same conversation: the Setup panel should also show
+  the order's own Campaign Notes (and that line's own note, if the AM left one)
+  directly where the strategist is doing the split — so "split into 3 regions,
+  $2k/$2k/$1k" is visible right there, not something dug up from the original IO/
+  PDF separately. Confirmed via code that this data already exists (`orders.
+  campaign_notes` and each line item's own `notes` are already both displayed in
+  the admin Orders detail view) but is currently surfaced NOWHERE in the
+  Strategist Portal — confirmed via grep, zero references to either field in
+  `strategist/index.html`. Whether `strategist_get_campaign_lines` currently
+  returns these fields isn't yet confirmed — need the RPC's live definition
+  before patching it.
+- **Accounting side — one important correction from my first proposal.** I first
+  suggested mirroring the strategist side exactly (one row per split). Claire's
+  correction: the accounting view should instead show ONE aggregated row per
+  tactic (revenue/spend/44i revenue summed across its splits), expandable to see
+  each split's own numbers underneath — matches how the CURRENT spreadsheet
+  already stays clean by not surfacing every region as its own line by default.
+  Reflected in the merged Accounting Portal Artifact (see below) as a new
+  "Larkwood Automotive" example: one `▾ Social Ads (3 regions)` parent row summed
+  to $5,000/$4,000/$2,500, with 3 indented `↳ Region N` child rows underneath —
+  reuses the exact `↳` indent convention already established in the admin
+  Accounting Map's own reference rows, kept for visual consistency across this
+  project's internal tools.
+
+**Updated the merged Accounting Portal Artifact** (same URL as before —
+`accounting-portal-questions.html`, scratchpad, not committed) to record this as
+a DECIDED item under "Answered so far," not an open question — moved out of the
+open-questions list since Claire settled the rollup-vs-per-split question
+directly, same "answered" treatment as the revenue-share questions above.
+
+**Not yet built — this whole feature is design-only so far:**
+- Schema: a new nullable label column on `campaign_lines` (exact name TBD) for
+  the split differentiator; needs a live look at `strategist_get_campaign_lines`
+  (`select pg_get_functiondef('strategist_get_campaign_lines'::regproc);`) before
+  writing the column/RPC patch, plus confirming whether `campaign_notes`/per-line
+  `notes` already flow through that RPC or need adding.
+- A new RPC to perform the split as one atomic operation (turn 1 pending line into
+  N labeled rows) — not yet designed in SQL, just described above.
+- Strategist Portal UI: the "Split into multiple campaigns" form itself, the
+  Setup panel surfacing IO/line notes, and the `Tactic — Label` display change
+  everywhere a split row's tactic name renders.
+- The real Accounting Portal build itself is still fully scaffold-only (per the
+  entry above) — this decision is recorded for whenever that build actually
+  starts, not something with anywhere to land yet.
