@@ -741,6 +741,8 @@ const BULK_IMPORT_COLUMNS = [
   { key: 'flight_end', names: ['flight end', 'end date'] },
   { key: 'month', names: ['month'] },
   { key: 'gross_budget', names: ['gross budget', 'budget'] },
+  { key: 'setup_notes', names: ['setup notes', 'notes'] },
+  { key: 'setup_blocker', names: ['setup blocker', 'blocker', 'waiting on'] },
 ];
 
 // Holds the parsed-but-not-yet-saved plan between strategistPreviewBulkImport()
@@ -761,12 +763,13 @@ function strategistOpenBulkImportForm() {
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import campaigns (paste from a CSV or a Google Sheets range)</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
-    <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Split Label	Status	Flight Start	Flight End	Month	Gross Budget
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, Setup Notes, Setup Blocker</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, or Intake Form — same 3 options as the Setup panel) — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
+    <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Split Label	Status	Flight Start	Flight End	Month	Gross Budget	Setup Notes	Setup Blocker
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-07	1500
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-08	2000
 Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region1_Larkwood	Region 1	active	2026-08-01	2026-12-31	2026-08	2000
-Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region2_Larkwood	Region 2	active	2026-08-01	2026-12-31	2026-08	2000"></textarea>
+Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region2_Larkwood	Region 2	active	2026-08-01	2026-12-31	2026-08	2000
+Thistlebrook Clinic	SEM	Google Ads			pending				Waiting on client sign-off on ad copy	creative"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:10px">
       <button onclick="strategistPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
       <button onclick="strategistOpenBulkImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
@@ -848,6 +851,26 @@ function strategistParseBulkImport(raw, overrides = {}) {
       errors.push({ rowNum, field: 'status', clientName, tacticName, statusRaw });
       return;
     }
+    // A Pending campaign (e.g. still waiting on creative or platform access) can
+    // note WHY right in the same paste -- matched against the same 3 options the
+    // Setup panel itself offers: its key ("creative"), its full label ("Waiting
+    // on Creative"), or just the short form ("Creative"), all case-insensitive.
+    // Blank is always fine (just means "nothing specific yet"); anything else
+    // unrecognized is a typo worth catching rather than silently dropping.
+    const blockerOverride = overrides[rowNum]?.setupBlocker;
+    const blockerRaw = get('setup_blocker');
+    let setupBlocker = blockerOverride || null;
+    if (!setupBlocker && blockerRaw) {
+      const wanted = blockerRaw.trim().toLowerCase();
+      const found = Object.entries(SETUP_BLOCKER_LABELS).find(([key, label]) =>
+        key === wanted || label.toLowerCase() === wanted || label.toLowerCase().replace(/^waiting on /, '') === wanted);
+      if (found) {
+        setupBlocker = found[0];
+      } else {
+        errors.push({ rowNum, field: 'setup_blocker', clientName, tacticName, blockerRaw });
+        return;
+      }
+    }
     const platform = get('platform');
     const platformCampaignName = get('platform_campaign_name');
     const identityKey = [client.id, service.id, platform, platformCampaignName].join('|');
@@ -857,6 +880,7 @@ function strategistParseBulkImport(raw, overrides = {}) {
         tactic_label: service.accounting_label || service.label, platform: platform || null,
         platform_campaign_name: platformCampaignName || null, split_label: get('split_label') || null,
         status, flight_start: get('flight_start') || null, flight_end: get('flight_end') || null,
+        setup_notes: get('setup_notes') || null, setup_blocker: setupBlocker,
         monthRows: [],
       });
     }
@@ -922,11 +946,13 @@ function strategistRenderBulkPreview() {
       ? g.monthRows.map(m => `${m.month} ($${m.grossBudget || '—'})`).join(', ')
       : '—';
     const action = g.existingLineId ? '<span style="color:#0F766E;font-weight:600">Match existing</span>' : '<span style="color:var(--accent);font-weight:600">Create new</span>';
+    const waitingOn = [g.setup_blocker ? SETUP_BLOCKER_LABELS[g.setup_blocker] : null, g.setup_notes].filter(Boolean).join(' — ');
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:6px 8px">${esc(g.tactic_label)}${g.split_label ? ' <span style="color:var(--muted)">— ' + esc(g.split_label) + '</span>' : ''}</td>
       <td style="padding:6px 8px">${esc(g.platform || '—')}</td>
       <td style="padding:6px 8px">${esc(g.platform_campaign_name || '—')}</td>
       <td style="padding:6px 8px">${esc(g.status)}</td>
+      <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${esc(waitingOn || '—')}</td>
       <td style="padding:6px 8px;font-size:11px;color:var(--muted)">${esc(monthsSummary)}</td>
       <td style="padding:6px 8px">${action}</td>
     </tr>`;
@@ -941,6 +967,7 @@ function strategistRenderBulkPreview() {
     .sort((a, b) => (a.accounting_label || a.label).localeCompare(b.accounting_label || b.label))
     .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('');
   const statusOptions = BULK_IMPORT_VALID_STATUSES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  const blockerOptions = Object.entries(SETUP_BLOCKER_LABELS).map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('');
   const errorsHtml = plan.errors.map(e => {
     let message, fixSelect;
     if (e.field === 'client') {
@@ -949,6 +976,9 @@ function strategistRenderBulkPreview() {
     } else if (e.field === 'tactic') {
       message = `no tactic matches "${esc(e.tacticName)}"`;
       fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'serviceId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right tactic —</option>${tacticOptions}</select>`;
+    } else if (e.field === 'setup_blocker') {
+      message = `"${esc(e.blockerRaw)}" isn't a real setup blocker`;
+      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'setupBlocker', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right blocker —</option>${blockerOptions}</select>`;
     } else {
       // status -- only pending/active/paused/complete are recognized anywhere in
       // this portal; anything else (a typo, wrong capitalization) saves fine but
@@ -968,7 +998,7 @@ function strategistRenderBulkPreview() {
   resultsEl.innerHTML = `
     <p style="font-size:12px;font-weight:600;margin:0 0 6px">Preview — nothing saved yet. ${plan.groups.size} campaign(s) found${plan.errors.length ? `, ${plan.errors.length} row issue(s)` : ''}.</p>
     ${plan.groups.size ? `<div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:var(--light);text-align:left"><th style="padding:6px 8px">Tactic</th><th style="padding:6px 8px">Platform</th><th style="padding:6px 8px">Title</th><th style="padding:6px 8px">Status</th><th style="padding:6px 8px">Months</th><th style="padding:6px 8px">Action</th></tr></thead>
+      <thead><tr style="background:var(--light);text-align:left"><th style="padding:6px 8px">Tactic</th><th style="padding:6px 8px">Platform</th><th style="padding:6px 8px">Title</th><th style="padding:6px 8px">Status</th><th style="padding:6px 8px">Waiting on</th><th style="padding:6px 8px">Months</th><th style="padding:6px 8px">Action</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table></div>` : ''}
     ${plan.errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 4px">${plan.errors.length} row(s) need a fix before they'll import:</p><div style="margin-bottom:10px">${errorsHtml}</div>` : ''}
@@ -1017,6 +1047,7 @@ async function strategistConfirmBulkImport() {
   // own correction UI.
   const errors = plan.errors.map(e => {
     if (e.field === 'status') return `Row ${e.rowNum}: "${e.statusRaw}" isn't a real status`;
+    if (e.field === 'setup_blocker') return `Row ${e.rowNum}: "${e.blockerRaw}" isn't a real setup blocker`;
     return `Row ${e.rowNum}: no ${e.field} matches "${e.field === 'client' ? e.clientName : e.tacticName}"`;
   });
 
@@ -1035,6 +1066,7 @@ async function strategistConfirmBulkImport() {
             split_label: g.split_label, split_order: g.split_order ?? null,
             flight_start: g.flight_start, flight_end: g.flight_end,
             status: g.status, assigned_strategist: currentStrategistUser.name,
+            setup_notes: g.setup_notes, setup_blocker: g.setup_blocker,
           }
         }) });
         createdCount++;
