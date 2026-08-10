@@ -9302,3 +9302,54 @@ fields.js`) to the new array shape — both pass; re-ran every other setup/
 bulk-import-adjacent test file unchanged and still fully passing.
 
 **Not yet run by Claire**: `setup-blocker-multi-2026-08-10.sql`.
+
+### 2026-08-10 (cont'd) — Real bug: LLO, Reputation Mgmt., LLO (SEO), Rep Monitoring (SEO) missing from Bulk Import / + New Campaign
+
+Claire tried adding these 4 tactics through the manual-entry tools and none of
+them showed up. Two different root causes:
+
+- **LLO and Reputation Mgmt.** are real catalog rows (`llo-bp`, `rep-bp`), but
+  flat-fee (`pricing_mode != 'spend'`) — every Tactic picker in the portal
+  (`+ New Campaign`'s dropdown, Bulk Import's matching, its fix-it dropdown)
+  filters to `pricing_mode === 'spend'` only, so they were invisible no matter
+  what was typed.
+- **LLO (SEO) and Rep Monitoring (SEO)** have no catalog row at all — the
+  `create_campaign_lines_from_order()` trigger from earlier today inserts them
+  as synthetic tracking lines, but only automatically, only on a brand-new
+  signed IO. There was no path to add one manually for a campaign that
+  predates that trigger.
+
+Fixed both, deliberately narrow rather than opening the floodgates:
+`TRACKABLE_FLAT_SERVICE_IDS = ['llo-bp', 'rep-bp']` explicitly allow-lists
+just these two flat-fee rows (most flat-fee services — "Addl. Monthly Email,"
+setup fees, etc. — were never meant to be tracked as an ongoing campaign, so
+broadening to ALL flat-fee services would have cluttered every picker).
+`SEO_TRACKING_ONLY_TACTICS` hardcodes the two SEO pseudo-tactics, anchored to
+`seo-bp` as a placeholder `service_id` — functionally inert since these lines
+carry no budget and nothing else reads that id for pricing. `+ New Campaign`
+gets both as extra dropdown options (sentinel values like `__seo_track_0__`,
+resolved in `strategistSubmitImport`); Bulk Import's Tactic column and its
+fix-it dropdown now accept all 4 directly by name.
+
+**Real bug caught while building this**: `resolveBulkTactic`'s grouping key
+(`identityKey`) was built from `client.id + service.id + platform + title`
+alone — no `tactic_label`. Since LLO (SEO) and Rep Monitoring (SEO) share the
+one `seo-bp` anchor and typically have no platform/title of their own (pure
+tracking, nothing to match a platform report against), pasting BOTH for the
+same client — the exact real scenario this was built for — collided into ONE
+group instead of two, silently dropping one of them. Fixed by adding
+`tacticLabel` to the identity key; safe for every other case too, since
+multiple month rows for one real campaign already share the same tactic text
+by definition.
+
+**Verified**: `test-flat-tactics.js` (scratchpad, 21/21) — LLO/Reputation
+Mgmt. resolve via the allow-list; both SEO pseudo-tactics resolve via the
+sentinel, case-insensitive; a non-allow-listed flat service stays excluded
+(no scope creep); direct spend matching unaffected; all 4 pasted together
+create 4 SEPARATE groups with correct labels (the collision fix, specifically
+verified); `+ New Campaign`'s dropdown lists all 4 and excludes non-allow-
+listed ones; submitting the SEO pseudo-tactic sends the right `service_id`
++ `tactic_label` with no variant dropdown shown; the bulk-import fix-it
+dropdown offers all 4 too. Re-ran all 14 other strategist-portal test files
+unchanged and still fully passing — no regression from the identityKey
+change, which touches every bulk-import row regardless of tactic.
