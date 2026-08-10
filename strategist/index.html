@@ -372,10 +372,11 @@ function strategistOpenImportForm() {
       </div>
       <div>
         <label class="lbl">Tactic</label>
-        <select id="import-service" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+        <select id="import-service" onchange="strategistImportServiceChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
           <option value="">— Select —</option>
           ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
         </select>
+        <div id="import-tactic-variant-wrap" style="display:none;margin-top:5px"></div>
         <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
           <input type="checkbox" id="import-has-offline-visits"/> + Offline Visits Tracking
         </label>
@@ -423,6 +424,23 @@ function strategistOpenImportForm() {
   </div>`;
 }
 
+// Shows a locked variant dropdown right under Tactic when the picked service is
+// one of the 5 "which one is it" services (services.tactic_variants) -- same
+// mechanism as the Setup panel and detail panel dropdowns, just for a campaign
+// that doesn't exist yet. Hidden/cleared for every other service.
+function strategistImportServiceChanged() {
+  const wrap = document.getElementById('import-tactic-variant-wrap');
+  const serviceId = document.getElementById('import-service').value;
+  const variants = serviceId && Array.isArray(CATALOG_ROWS[serviceId]?.tactic_variants) && CATALOG_ROWS[serviceId].tactic_variants.length
+    ? CATALOG_ROWS[serviceId].tactic_variants : null;
+  if (!variants) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+  wrap.style.display = 'block';
+  wrap.innerHTML = `<select id="import-tactic-variant" style="width:100%;padding:6px 8px;border-radius:6px;border:1px dashed var(--accent);font-size:12px">
+    <option value="">— Choose which one —</option>
+    ${variants.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}
+  </select>`;
+}
+
 // Filters the Client <select>'s options live as you type (2026-08-04, per Claire —
 // "that list is really long"), rather than swapping to a whole separate combobox
 // widget for one field. Keeps the current selection if it still matches after
@@ -462,6 +480,8 @@ async function strategistSubmitImport() {
   const serviceSel = document.getElementById('import-service');
   const serviceId = serviceSel.value;
   const serviceLabel = serviceSel.selectedOptions[0]?.textContent || '';
+  const variantEl = document.getElementById('import-tactic-variant');
+  const tacticLabel = (variantEl && variantEl.value) ? variantEl.value : serviceLabel;
   const platform = strategistReadPlatformValue('import-platform');
   const status = document.getElementById('import-status').value;
   const flightStart = document.getElementById('import-flight-start').value || null;
@@ -490,7 +510,7 @@ async function strategistSubmitImport() {
     const newId = await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
       p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: null,
       p_data: {
-        client_id: clientId, group_id: groupId, service_id: serviceId, tactic_label: serviceLabel,
+        client_id: clientId, group_id: groupId, service_id: serviceId, tactic_label: tacticLabel,
         platform: platform || null, platform_campaign_name: isSplit ? null : (platformCampaignName || null),
         flight_start: flightStart, flight_end: flightEnd,
         status, assigned_strategist: currentStrategistUser.name, has_offline_visits: hasOfflineVisits
@@ -789,11 +809,28 @@ function resolveBulkClient(name) {
   const norm = (name || '').trim().toLowerCase();
   return ALL_STRATEGIST_CLIENTS.find(c => c.name.trim().toLowerCase() === norm) || null;
 }
-function resolveBulkService(name) {
+// Returns { service, tacticLabel } or null. Checks the catalog's own combined
+// label first, then falls back to searching every spend service's
+// tactic_variants -- the 5 "which one is it" services (e.g. "Event or
+// Lookback") don't match on their combined label at all; a strategist pastes
+// the SPECIFIC variant name ("Event Targeting", "Lookback Targeting") instead,
+// so tacticLabel comes back as that exact variant text, not the combined one.
+function resolveBulkTactic(name) {
   const norm = (name || '').trim().toLowerCase();
-  if (CATALOG_ROWS[name]) return CATALOG_ROWS[name]; // literal service_id typed directly
-  return Object.values(CATALOG_ROWS).find(r => r.pricing_mode === 'spend' &&
-    ((r.accounting_label || r.label || '').trim().toLowerCase() === norm)) || null;
+  if (!norm) return null;
+  if (CATALOG_ROWS[name]) { // literal service_id typed directly
+    const r = CATALOG_ROWS[name];
+    return { service: r, tacticLabel: r.accounting_label || r.label };
+  }
+  const direct = Object.values(CATALOG_ROWS).find(r => r.pricing_mode === 'spend' &&
+    ((r.accounting_label || r.label || '').trim().toLowerCase() === norm));
+  if (direct) return { service: direct, tacticLabel: direct.accounting_label || direct.label };
+  for (const r of Object.values(CATALOG_ROWS)) {
+    if (r.pricing_mode !== 'spend' || !Array.isArray(r.tactic_variants)) continue;
+    const variant = r.tactic_variants.find(v => v.trim().toLowerCase() === norm);
+    if (variant) return { service: r, tacticLabel: variant };
+  }
+  return null;
 }
 
 // Pure parse: paste text in, a plan out. Never touches the database -- callers
@@ -836,7 +873,10 @@ function strategistParseBulkImport(raw, overrides = {}) {
     const clientOverrideId = overrides[rowNum]?.clientId;
     const serviceOverrideId = overrides[rowNum]?.serviceId;
     const client = clientOverrideId ? ALL_STRATEGIST_CLIENTS.find(c => c.id === clientOverrideId) : resolveBulkClient(clientName);
-    const service = serviceOverrideId ? CATALOG_ROWS[serviceOverrideId] : resolveBulkService(tacticName);
+    const tacticMatch = serviceOverrideId
+      ? { service: CATALOG_ROWS[serviceOverrideId], tacticLabel: CATALOG_ROWS[serviceOverrideId]?.accounting_label || CATALOG_ROWS[serviceOverrideId]?.label }
+      : resolveBulkTactic(tacticName);
+    const service = tacticMatch?.service || null;
     if (!client) { errors.push({ rowNum, field: 'client', clientName, tacticName }); return; }
     if (!service) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
     // Normalized to lowercase and validated against the 4 real statuses this
@@ -877,7 +917,7 @@ function strategistParseBulkImport(raw, overrides = {}) {
     if (!groups.has(identityKey)) {
       groups.set(identityKey, {
         client_id: client.id, group_id: client.group_id, service_id: service.id,
-        tactic_label: service.accounting_label || service.label, platform: platform || null,
+        tactic_label: tacticMatch.tacticLabel, platform: platform || null,
         platform_campaign_name: platformCampaignName || null, split_label: get('split_label') || null,
         status, flight_start: get('flight_start') || null, flight_end: get('flight_end') || null,
         setup_notes: get('setup_notes') || null, setup_blocker: setupBlocker,
