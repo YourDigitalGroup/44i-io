@@ -8126,3 +8126,51 @@ feature — reconciliation view, revenue-share display, status tracking. This sc
 exists purely so the whole system (form → admin → strategist → accounting) is
 visibly connected today, per Claire's ask, while the actual accounting logic waits
 on real answers, same discipline used everywhere else on this project.
+
+### 2026-08-07 (cont'd) — Three of the accounting questions answered already; Fixed Cut $ removed from the Accounting Map
+
+Claire answered three of the open questions from the doc above without needing to
+ask her team — they were already decided/known:
+
+1. **"Where do the revenue-share numbers live?"** — Claire's answer: they're already
+   in the Accounting Map. No separate spreadsheet/QuickBooks source to reconcile —
+   closes this question, nothing to change.
+2. **"Are they fixed per service or does a group's deal override them?"** — Claire's
+   answer: this is already covered — the per-group Accounting Overrides mechanism
+   (built 2026-07-30, same shape as Custom Pricing) already lets a specific group's
+   negotiated deal override 44i Cut %/Platform CPM/Budgeted Spend % on a per-service
+   basis. Confirmed in code, nothing to build.
+3. **"Does Fixed Cut $ combine with or override the percentage cut?"** — Claire's
+   answer, after looking at the real data: very few services have a Fixed Cut $ set
+   at all, and where one is set it's redundant with 44i Cut $ (by design — Fixed Cut
+   was always meant as a dollar-amount override that WINS when set, computed % only
+   used as a fallback). Her call: remove the field entirely rather than keep an
+   effectively-unused override mechanism around.
+
+**Removed `fortyfouri_fixed_cut` from the UI/JS layer** (left the underlying
+`accounting_map.fortyfouri_fixed_cut` DB column untouched — no data loss, safely
+inert, droppable later if Claire wants the schema fully clean, but not urgent).
+Changes in `admin/index.html`:
+- Base Accounting Map editor: removed the "44i Fixed Cut $" input; 44i Cut % now
+  pairs with Platform CPM in that row, Budgeted Spend % gets its own row alone.
+- `renderAccountingMapRow()`: dropped the `fixedCut` param — the "44i Cut $" column
+  now always derives from `Default Retail × Cut %`, the same math it silently fell
+  back to for every service that never had a Fixed Cut set anyway.
+- Removed `fortyfouri_fixed_cut` from `ACCOUNTING_OVERRIDE_FIELDS` (group-level
+  override table loses that column too) and from every `fields:`/render-call object
+  that referenced it.
+- `adminEditAccounting()`/`adminSaveAccountingMap()`: stopped reading/writing the
+  now-removed `#admin-accounting-fixed-cut` input.
+- Updated two stale comments that still described Fixed Cut $ as a live field.
+
+**Verified**: `node --check` passes. New Playwright test
+(`test-remove-fixed-cut.js`, scratchpad-only, 4/4 passing): `ACCOUNTING_OVERRIDE_FIELDS`
+no longer offers Fixed Cut $ as an override (44i Cut % still does); `renderAccountingMapRow()`
+correctly computes the 44i Cut $ column from Default Retail × Cut % alone with no
+leftover `undefined` from the removed parameter.
+
+Two questions remain fully open on the doc shared with the team: **billing/proration
+timing** and **service-status tracking** — plus the day-to-day workflow/QuickBooks
+and access/scope questions. Not yet updated in the shared Artifact to reflect these
+three as answered — worth a follow-up pass once the team's answers on the rest come
+back, so the doc gets one clean revision rather than several small ones.
