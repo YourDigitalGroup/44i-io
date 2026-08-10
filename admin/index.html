@@ -32,6 +32,7 @@
       <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
         <a id="admin-strategist-portal-link" href="../strategist/index.html" onclick="strategistPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Strategist Portal →</a>
+        <a id="admin-accounting-portal-link" href="../accounting/index.html" onclick="accountingPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Accounting Portal →</a>
         <button onclick="adminLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
       </div>
     </div>
@@ -1772,6 +1773,11 @@ function showAdmin(show) {
     // one click away, not just for the restricted-view role).
     const strategistLink = document.getElementById('admin-strategist-portal-link');
     if (strategistLink) strategistLink.style.display = (isStrategist || currentAdminUser?.role === 'super') ? 'inline' : 'none';
+    // Accounting has no visibility here at all (attemptAdminLogin rejects that role
+    // outright), so this link only ever makes sense for a super admin testing/using
+    // both portals — no restricted-view role to show it to, unlike the strategist link.
+    const accountingLink = document.getElementById('admin-accounting-portal-link');
+    if (accountingLink) accountingLink.style.display = currentAdminUser?.role === 'super' ? 'inline' : 'none';
     ['groups','clients','map','sections','intake','ae','legal','notifications','reconcile','users','accounting'].forEach(s => {
       const tab = document.getElementById('section-tab-' + s);
       if (tab) tab.style.display = isStrategist ? 'none' : '';
@@ -6246,6 +6252,18 @@ function strategistPortalHandoff() {
   try {
     sessionStorage.setItem('strategist_handoff_name', currentAdminUser.name);
     sessionStorage.setItem('strategist_handoff_pw', currentAdminUser.pw);
+  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
+}
+
+// Same handoff pattern as strategistPortalHandoff() above, for the new "Go to
+// Accounting Portal" link (2026-08-07, scaffold). Only ever shown to a super admin
+// (see showAdmin()), so this is purely a super-admin convenience — a real
+// accounting-role login never reaches this page to click it.
+function accountingPortalHandoff() {
+  if (!currentAdminUser) return;
+  try {
+    sessionStorage.setItem('accounting_handoff_name', currentAdminUser.name);
+    sessionStorage.setItem('accounting_handoff_pw', currentAdminUser.pw);
   } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
 }
 

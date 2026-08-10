@@ -8064,3 +8064,65 @@ only remaining open item in this project is the cancellation/edit-a-submitted-IO
 feature, which stays PARKED pending Claire's two outstanding business-side
 confirmations (team discussion on the design; a billing-timing decision) — no
 code work is blocked on my end, only on those two conversations happening.
+
+### 2026-08-07 (cont'd) — Accounting Portal: kicked off (questions doc sent + scaffold built)
+
+Claire wants to move on the Accounting Portal now, while her AM is on PTO and less
+testing bandwidth is needed elsewhere — goal is to get the Strategist and Accounting
+sides both visibly working together as one connected system, not necessarily public
+yet. Confirmed with her first (AskUserQuestion) that this should follow the SAME
+"questions doc to the team before building real logic" process already used for the
+Strategist Portal, rather than guessing at proration/revenue-share/status-tracking
+answers — those three are genuine unresolved business decisions, not something to
+invent.
+
+**1. Questions doc — built and shared as an Artifact** (`accounting-portal-questions.html`
+in scratchpad, not committed — a discussion aid, not application code, same
+non-committed treatment as the Strategist Portal's original mockup/questions doc).
+Three parts: (a) a "where this already stands" recap — the Accounting Map (margin/
+CPM config) and `accounting_label` disambiguation are both already live; cancellation
+stays parked; (b) an illustrative reconciliation-view mockup using confirmed
+Accounting Map math (In-Platform Budget = Gross Budget × Budgeted Spend %), fictional
+data only; (c) open questions grouped by topic for Claire to walk the accounting team
+through: **Billing & proration timing** (mid-month cancel/start, mid-flight rate
+changes — same question cancellation is already waiting on), **Revenue-share data**
+(where Group Cut/44i Cut/YDA numbers actually live today, who maintains them, fixed
+vs. per-group), **Service-status tracking** (day- vs. month-level precision, is a
+paused month billed, does history matter), **Day-to-day workflow & tooling** (the
+real monthly close process step by step, and whether this should connect to
+QuickBooks — flagged that a QuickBooks connector is already available to wire in,
+not yet authorized, so "can we even do that" doesn't block the conversation),
+**Access & scope** (who needs a login, scoped or full visibility). Nothing here is
+decided — same "concept only" framing as the Strategist doc.
+
+**2. Accounting Portal scaffold — built, same foundation-only pattern the Strategist
+Portal started with.** New `/accounting/index.html`: login-gated shell (roster
+filtered to `role === 'accounting' || 'super'`, same `admin_login` RPC + shared
+`get_login_roster` pattern as `/admin` and `/strategist`), a "Coming Soon" placeholder
+inside the gate — deliberately no real accounting logic yet, since that's exactly
+what the questions doc above is trying to resolve first. `admin_users.role` already
+supports `'accounting'` (added 2026-07-18, selectable in the Users tab) and
+`attemptAdminLogin()` in `/admin` already rejects an accounting-role login outright
+— both confirmed still in place, no changes needed there.
+
+Wired the same handoff pattern already used between `/admin` and `/strategist`:
+`/admin` gets a new "Go to Accounting Portal" link (`accountingPortalHandoff()`,
+sessionStorage one-hop handoff) — shown ONLY for a super admin, unlike the
+strategist link (also shown to a strategist login), since an accounting-role login
+can never reach `/admin` in the first place to need a way back. `/accounting`
+reciprocally gets a "Go to Admin" link, shown only when `currentAccountingUser.role
+=== 'super'`.
+
+**Verified**: `node --check` on both `admin/index.html` and `accounting/index.html`.
+New Playwright test (`test-accounting-scaffold.js`, scratchpad-only, 6/6 passing):
+an accounting-role login shows the right badge and correctly hides the admin link; a
+super-role login shows the admin link; logout and both handoff functions exist and
+are wired. New Playwright test (`test-admin-accounting-link.js`, scratchpad-only,
+4/4 passing): the new admin-side link shows only for super, stays hidden for both
+`am` and `strategist` roles, and the handoff function exists.
+
+**Not yet done, waiting on the questions doc coming back**: any real accounting
+feature — reconciliation view, revenue-share display, status tracking. This scaffold
+exists purely so the whole system (form → admin → strategist → accounting) is
+visibly connected today, per Claire's ask, while the actual accounting logic waits
+on real answers, same discipline used everywhere else on this project.
