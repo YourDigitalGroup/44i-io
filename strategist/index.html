@@ -208,6 +208,7 @@ function adminPortalHandoff() {
 let ALL_CAMPAIGN_LINES = [];
 let ALL_CAMPAIGN_MONTHS = [];
 let ALL_OPTIMIZE_LOG = [];
+let ALL_STATUS_HISTORY = [];
 let ALL_STRATEGIST_CLIENTS = []; // {id, name, group_id, group_name} — for the "+ New Campaign" import picker
 let PLATFORM_CPM_RATES = { base: {}, group: {} }; // service_id -> $CPM, and group_id|service_id -> $CPM
 let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, data}] } -- last paste per platform, overwritten each time
@@ -1091,18 +1092,20 @@ async function strategistConfirmBulkImport() {
 // to be looking at.
 async function fetchStrategistData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
-  const [lines, months, log, rates, clients, reportCache] = await Promise.all([
+  const [lines, months, log, rates, clients, reportCache, statusHistory] = await Promise.all([
     sb('rpc/strategist_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_optimize_log', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_budgeted_spend_rates', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_platform_report_cache', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sb('rpc/strategist_get_status_history', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
   ]);
   ALL_CAMPAIGN_LINES = lines || [];
   ALL_CAMPAIGN_MONTHS = months || [];
   ALL_OPTIMIZE_LOG = log || [];
   ALL_STRATEGIST_CLIENTS = clients || [];
+  ALL_STATUS_HISTORY = statusHistory || [];
   PLATFORM_CPM_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
     if (r.scope === 'base') PLATFORM_CPM_RATES.base[r.service_id] = r.platform_cpm;
@@ -1212,6 +1215,30 @@ function parseGoalOverride(raw, allowRange) {
 // Accounting Map already shows "(w/ Offline Visits Tracking)" pairings. Tracked as
 // a plain boolean on the base tactic's own campaign_lines row rather than parsing
 // it in/out of tactic_label text.
+// Setup queue "at a glance" pill (2026-08-10, per the strategist team's own
+// answer: it helps to see WHAT's actually blocking a Pending campaign -- waiting
+// on creative, platform access, the intake form, or simply the start date --
+// rather than just a plain notes field everyone has to open and read one at a
+// time). "Waiting on start date" is deliberately auto-detected from the flight
+// dates already on file, not a 4th manual option -- it's objectively knowable,
+// no reason to make a strategist set it by hand. Returns null (no pill at all)
+// when nothing distinguishes a line -- a newly-arrived, not-yet-reviewed
+// campaign should look plain, not alarming.
+const SETUP_BLOCKER_LABELS = {
+  creative: 'Waiting on Creative',
+  platform_access: 'Waiting on Platform Access',
+  intake_form: 'Waiting on Intake Form',
+};
+function strategistSetupBlockerPill(line) {
+  if (line.setup_blocker && SETUP_BLOCKER_LABELS[line.setup_blocker]) {
+    return `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#FEF3C7;color:#92400E">${esc(SETUP_BLOCKER_LABELS[line.setup_blocker])}</span>`;
+  }
+  if (line.flight_start && new Date(line.flight_start + 'T00:00:00') > new Date()) {
+    return `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#DBEAFE;color:#1E40AF">Starts ${esc(strategistFormatFlightDate(line.flight_start))}</span>`;
+  }
+  return '';
+}
+
 function strategistTacticDisplay(line) {
   let base = line.tactic_label || line.service_id;
   if (line.split_label) base += ' — ' + line.split_label;
@@ -1427,7 +1454,10 @@ function renderSetupPanels(lines) {
     return `<div style="border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#FAFCFE">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <strong style="font-size:13.5px">Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</strong>
-        <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:20px;background:var(--light);color:var(--muted)">Pending</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${strategistSetupBlockerPill(l)}
+          <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:20px;background:var(--light);color:var(--muted)">Pending</span>
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px;font-size:12px">
         <div><label class="lbl">Client</label><div>${esc(client)}</div></div>
@@ -1461,6 +1491,13 @@ function renderSetupPanels(lines) {
         ${l.campaign_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">IO Campaign Notes</div><div style="font-size:12.5px;color:var(--text);margin-bottom:${l.order_line_notes ? '8px' : '0'}">${esc(l.campaign_notes)}</div>` : ''}
         ${l.order_line_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">Note on this line</div><div style="font-size:12.5px;color:var(--text)">${esc(l.order_line_notes)}</div>` : ''}
       </div>` : ''}
+      <label class="lbl">What's this waiting on?</label>
+      <select id="setup-blocker-${l.id}" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:10px">
+        <option value="" ${!l.setup_blocker ? 'selected' : ''}>— Nothing specific / just arrived —</option>
+        <option value="creative" ${l.setup_blocker === 'creative' ? 'selected' : ''}>Creative</option>
+        <option value="platform_access" ${l.setup_blocker === 'platform_access' ? 'selected' : ''}>Platform access (e.g. Facebook)</option>
+        <option value="intake_form" ${l.setup_blocker === 'intake_form' ? 'selected' : ''}>Intake form</option>
+      </select>
       <label class="lbl">Setup Notes</label>
       <textarea id="setup-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px;margin-bottom:12px" placeholder="What's this waiting on before it can go live?">${esc(l.setup_notes || '')}</textarea>
       <div id="split-form-${l.id}" style="display:none;margin-bottom:12px"></div>
@@ -1709,13 +1746,52 @@ async function strategistSaveLine(lineId, data, reload) {
   } catch(e) { showToast('Error saving: ' + e.message, 'error'); }
 }
 
+// ── STATUS CHANGE LOG (2026-08-10, per the strategist team's own answer: a
+// status change "would be beneficial [to log], but probably not a requirement"
+// -- so the reason is always optional, never blocking, and skippable with one
+// click. Reveals a small inline box right under the Status select rather than a
+// blocking prompt(), same progressive-disclosure pattern already used for the
+// split form. ──────────────────────────────────────────────────────────────
+function strategistOpenStatusChangeReason(lineId, newStatus, oldStatus) {
+  const el = document.getElementById('status-reason-' + lineId);
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--light)">
+    <span style="font-size:11.5px;color:var(--muted)">Why the change? <span style="font-style:italic">(optional)</span></span>
+    <input type="text" id="status-reason-input-${lineId}" style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px" onkeydown="if(event.key==='Enter')strategistConfirmStatusChange('${lineId}','${newStatus}','${oldStatus}')"/>
+    <button onclick="strategistConfirmStatusChange('${lineId}','${newStatus}','${oldStatus}')" style="padding:5px 12px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:11.5px;font-weight:600;cursor:pointer">Save</button>
+    <button onclick="strategistCancelStatusChange('${lineId}','${oldStatus}')" style="padding:5px 12px;border-radius:6px;background:#fff;border:1px solid var(--border);font-size:11.5px;cursor:pointer">Cancel</button>
+  </div>`;
+  document.getElementById('status-reason-input-' + lineId).focus();
+}
+
+function strategistCancelStatusChange(lineId, oldStatus) {
+  const select = document.getElementById('status-select-' + lineId);
+  if (select) select.value = oldStatus;
+  const el = document.getElementById('status-reason-' + lineId);
+  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+}
+
+async function strategistConfirmStatusChange(lineId, newStatus, oldStatus) {
+  const reasonInput = document.getElementById('status-reason-input-' + lineId);
+  const reason = reasonInput ? reasonInput.value.trim() : '';
+  try {
+    await sb('rpc/strategist_log_status_change', { method: 'POST', body: JSON.stringify({
+      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+      p_campaign_line_id: lineId, p_old_status: oldStatus, p_new_status: newStatus, p_reason: reason || null
+    }) });
+  } catch(e) { showToast('Error logging status change: ' + e.message, 'error'); }
+  await strategistSaveLine(lineId, { status: newStatus });
+}
+
 async function strategistConfirmActivate(lineId) {
   const platform = strategistReadPlatformValue('setup-platform-' + lineId);
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
+  const blocker = document.getElementById('setup-blocker-' + lineId).value;
   if (!platform) { showToast('Pick a platform before activating.', 'error'); return; }
   await strategistSaveLine(lineId, {
-    platform, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null,
+    platform, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blocker || null,
     status: 'active', assigned_strategist: currentStrategistUser.name
   });
   await strategistApplyCachedReportIfMatch(lineId);
@@ -1726,7 +1802,8 @@ async function strategistSaveDraft(lineId) {
   const platform = strategistReadPlatformValue('setup-platform-' + lineId);
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
-  await strategistSaveLine(lineId, { platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null });
+  const blocker = document.getElementById('setup-blocker-' + lineId).value;
+  await strategistSaveLine(lineId, { platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blocker || null });
   await strategistApplyCachedReportIfMatch(lineId);
   showToast('Draft saved');
 }
@@ -1838,6 +1915,7 @@ function renderStrategistDetailPanel() {
   if (!l) { panel.innerHTML = ''; return; }
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
   const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
+  const statusHistory = ALL_STATUS_HISTORY.filter(h => h.campaign_line_id === l.id);
   const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
   const goal = computeGoal(l, monthRow);
 
@@ -1857,13 +1935,22 @@ function renderStrategistDetailPanel() {
         <input type="checkbox" ${l.has_offline_visits ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_offline_visits: this.checked})"/> + Offline Visits Tracking
       </label>
       <label class="lbl" style="margin:0">Status</label>
-      <select onchange="strategistSaveLine('${l.id}', {status: this.value})" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;font-weight:600">
+      <select id="status-select-${l.id}" onchange="strategistOpenStatusChangeReason('${l.id}', this.value, '${l.status}')" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;font-weight:600">
         <option value="active" ${l.status === 'active' ? 'selected' : ''}>Active</option>
         <option value="paused" ${l.status === 'paused' ? 'selected' : ''}>Paused</option>
         <option value="complete" ${l.status === 'complete' ? 'selected' : ''}>Complete</option>
       </select>
       <span style="font-size:11px;color:var(--muted)">Pausing moves this campaign to the Paused tab; switch it back to Active to pick up where you left off.</span>
     </div>
+    <div id="status-reason-${l.id}" style="display:none;margin:-6px 0 14px"></div>
+
+    ${statusHistory.length ? `<div style="margin-bottom:14px">
+      <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Status history</p>
+      ${statusHistory.map(h => `<div style="display:flex;align-items:baseline;gap:10px;padding:4px 0;font-size:12px">
+        <span style="font-family:monospace;font-size:10.5px;color:var(--muted);width:130px;flex:none">${esc(new Date(h.changed_at).toLocaleString('en-US', {month:'short',day:'numeric',year:'2-digit',hour:'numeric',minute:'2-digit'}))}</span>
+        <span><strong>${esc(h.old_status || '—')} → ${esc(h.new_status)}</strong> <span style="color:var(--muted)">— ${esc(h.changed_by || 'unknown')}</span>${h.reason ? `: ${esc(h.reason)}` : ''}</span>
+      </div>`).join('')}
+    </div>` : ''}
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">This month's numbers</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
