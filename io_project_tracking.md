@@ -9102,5 +9102,58 @@ trimming, blank-means-null) verified via a targeted expression test
 full `adminSaveService()`/`adminEditService()` functions, which touch ~30
 unrelated DOM fields not worth stubbing for this change alone.
 
-**Not yet run by Claire**: `tactic-variants-2026-08-10.sql`,
-`tactic-variants-admin-save-2026-08-10.sql`, `seo-tracking-lines-2026-08-10.sql`.
+**Run by Claire**: all three SQL files above (combined into
+`run-all-2026-08-10.sql` for convenience — all statements are `create or
+replace`/`add column if not exists`, safe to re-run).
+
+### 2026-08-10 (cont'd) — Detail panel also needs the variant dropdown, not just Setup
+
+Claire's actual need ("update the tactics currently entered in the portal")
+surfaced a real gap: the variant dropdown built in the previous entry only
+rendered in the Setup queue, reachable only for Pending campaigns. Any
+already-Active campaign on one of the 5 section services had no way to record
+which variant applies at all. Added the identical dropdown to the campaign
+detail panel's header (visible for any status, not just Pending) — same
+`strategistTacticVariantOptions()` check, saves inline via the existing
+`reload:false` pattern used by the detail panel's other quick-edit fields
+(platform URL, exact campaign title). Verified with
+`test-detail-tactic-variant.js` (scratchpad, 6/6) — no dropdown for plain
+services, blank default when unset, save patches the local cache immediately,
+re-render pre-selects the saved value.
+
+### 2026-08-10 (cont'd) — Real CSV from the team applied: catalog renames + Tactic Options + existing-campaign backfill
+
+With the real catalog ids in hand (queried live rather than guessed), applied
+the team's confirmed CSV in three steps, each verified against live data
+before/after:
+
+**1. Catalog update** (`tactic-name-catalog-update-2026-08-10.sql`) — 25
+straightforward `accounting_label` renames (e.g. "SEM — Business Pro" → "SEM",
+"Facebook & Instagram" → "Facebook/IG Ads") plus `tactic_variants` set on the
+5 section rows (`lt-geo`, `lt-crm`, `lt-event`, `td-custom`, `td-site`) to the
+team's exact wording. `td-dynamic` needed no change — its label already
+matched. Run by Claire, 0 rows returned (all `UPDATE` statements, expected).
+
+**2. Existing-campaign backfill** — `accounting_label` only affects NEW
+campaigns going forward; existing `campaign_lines.tactic_label` values were
+frozen at creation and don't auto-update. Ran a preview `SELECT` first (per
+this project's established two-step pattern for data changes) —118 rows came
+back, every single one an expected rename (Facebook & Instagram → Facebook/IG
+Ads, SEM — Business Pro → SEM, Streaming TV — Business Pro - Location →
+Streaming TV: Location, etc.), nothing unexpected. Claire confirmed, then ran
+the matching `UPDATE` (`backfill-tactic-label-2026-08-10.sql`) — deliberately
+scoped to `tactic_variants is null` so it never touches the 5 section-row
+services (a blanket overwrite there would be a guess, not a fact).
+
+**3. Section-row campaigns still need manual review.** Gave Claire
+`find-variant-campaigns-2026-08-10.sql` — lists every existing campaign on one
+of the 5 section services (client, current ambiguous label, status, and the
+exact options to choose from), so she has a concrete list to work through
+with the new dropdowns rather than hunting for them. Each one requires
+checking that specific IO's original notes to know which variant actually
+applies — no way to infer this from data already on file.
+
+**Not yet run by Claire**: `find-variant-campaigns-2026-08-10.sql` (read-only,
+just for her list) — and the manual per-campaign variant selection itself,
+still outstanding. PMax also still unconfirmed by the team, separate from
+this CSV.
