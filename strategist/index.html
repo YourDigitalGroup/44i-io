@@ -795,13 +795,13 @@ function strategistOpenBulkImportForm() {
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import campaigns (paste from a CSV or a Google Sheets range)</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, Setup Notes, Setup Blocker</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, or Intake Form — same 3 options as the Setup panel) — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, Setup Notes, Setup Blocker</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, and/or Intake Form — same 3 options as the Setup panel; separate more than one with a semicolon, e.g. "Creative; Platform Access") — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
     <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Split Label	Status	Flight Start	Flight End	Month	Gross Budget	Setup Notes	Setup Blocker
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-07	1500
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-08	2000
 Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region1_Larkwood	Region 1	active	2026-08-01	2026-12-31	2026-08	2000
 Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region2_Larkwood	Region 2	active	2026-08-01	2026-12-31	2026-08	2000
-Thistlebrook Clinic	SEM	Google Ads			pending				Waiting on client sign-off on ad copy	creative"></textarea>
+Thistlebrook Clinic	SEM	Google Ads			pending				Waiting on client sign-off on ad copy	creative; platform_access"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:10px">
       <button onclick="strategistPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
       <button onclick="strategistOpenBulkImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
@@ -903,25 +903,32 @@ function strategistParseBulkImport(raw, overrides = {}) {
       errors.push({ rowNum, field: 'status', clientName, tacticName, statusRaw });
       return;
     }
-    // A Pending campaign (e.g. still waiting on creative or platform access) can
-    // note WHY right in the same paste -- matched against the same 3 options the
-    // Setup panel itself offers: its key ("creative"), its full label ("Waiting
-    // on Creative"), or just the short form ("Creative"), all case-insensitive.
-    // Blank is always fine (just means "nothing specific yet"); anything else
-    // unrecognized is a typo worth catching rather than silently dropping.
+    // A Pending campaign can genuinely be waiting on more than one thing at once
+    // (Claire: "Need creative AND access to FB page") -- semicolon-separated in
+    // the cell (e.g. "Creative; Platform Access"), each part matched against the
+    // same 3 options the Setup panel itself offers: its key ("creative"), its
+    // full label ("Waiting on Creative"), or just the short form ("Creative"),
+    // all case-insensitive. Blank is always fine (just means "nothing specific
+    // yet"); any unrecognized part is a typo worth catching, not silently
+    // dropping -- the WHOLE row is flagged rather than dropping just that part,
+    // since a fix-it override here can only replace the full list anyway.
     const blockerOverride = overrides[rowNum]?.setupBlocker;
     const blockerRaw = get('setup_blocker');
-    let setupBlocker = blockerOverride || null;
-    if (!setupBlocker && blockerRaw) {
-      const wanted = blockerRaw.trim().toLowerCase();
-      const found = Object.entries(SETUP_BLOCKER_LABELS).find(([key, label]) =>
-        key === wanted || label.toLowerCase() === wanted || label.toLowerCase().replace(/^waiting on /, '') === wanted);
-      if (found) {
-        setupBlocker = found[0];
-      } else {
-        errors.push({ rowNum, field: 'setup_blocker', clientName, tacticName, blockerRaw });
+    let setupBlocker = null;
+    if (blockerOverride) {
+      setupBlocker = Array.isArray(blockerOverride) ? blockerOverride : [blockerOverride];
+    } else if (blockerRaw) {
+      const parts = blockerRaw.split(';').map(s => s.trim()).filter(Boolean);
+      const resolved = [];
+      for (const part of parts) {
+        const wanted = part.toLowerCase();
+        const found = Object.entries(SETUP_BLOCKER_LABELS).find(([key, label]) =>
+          key === wanted || label.toLowerCase() === wanted || label.toLowerCase().replace(/^waiting on /, '') === wanted);
+        if (found) { resolved.push(found[0]); continue; }
+        errors.push({ rowNum, field: 'setup_blocker', clientName, tacticName, blockerRaw: part });
         return;
       }
+      setupBlocker = resolved;
     }
     const platform = get('platform');
     const platformCampaignName = get('platform_campaign_name');
@@ -998,7 +1005,8 @@ function strategistRenderBulkPreview() {
       ? g.monthRows.map(m => `${m.month} ($${m.grossBudget || '—'})`).join(', ')
       : '—';
     const action = g.existingLineId ? '<span style="color:#0F766E;font-weight:600">Match existing</span>' : '<span style="color:var(--accent);font-weight:600">Create new</span>';
-    const waitingOn = [g.setup_blocker ? SETUP_BLOCKER_LABELS[g.setup_blocker] : null, g.setup_notes].filter(Boolean).join(' — ');
+    const blockerLabels = Array.isArray(g.setup_blocker) ? g.setup_blocker.map(b => SETUP_BLOCKER_LABELS[b]).filter(Boolean) : [];
+    const waitingOn = [blockerLabels.join(', ') || null, g.setup_notes].filter(Boolean).join(' — ');
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:6px 8px">${esc(g.tactic_label)}${g.split_label ? ' <span style="color:var(--muted)">— ' + esc(g.split_label) + '</span>' : ''}</td>
       <td style="padding:6px 8px">${esc(g.platform || '—')}</td>
@@ -1314,8 +1322,13 @@ const SETUP_BLOCKER_LABELS = {
   intake_form: 'Waiting on Intake Form',
 };
 function strategistSetupBlockerPill(line) {
-  if (line.setup_blocker && SETUP_BLOCKER_LABELS[line.setup_blocker]) {
-    return `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#FEF3C7;color:#92400E">${esc(SETUP_BLOCKER_LABELS[line.setup_blocker])}</span>`;
+  // setup_blocker is a text[] (2026-08-10, per Claire -- a campaign can genuinely
+  // be waiting on more than one thing at once, e.g. creative AND platform access)
+  // -- one pill per recognized blocker, wrapped so multiple ones space evenly.
+  const blockers = Array.isArray(line.setup_blocker) ? line.setup_blocker.filter(b => SETUP_BLOCKER_LABELS[b]) : [];
+  if (blockers.length) {
+    return `<span style="display:inline-flex;gap:5px">${blockers.map(b =>
+      `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#FEF3C7;color:#92400E">${esc(SETUP_BLOCKER_LABELS[b])}</span>`).join('')}</span>`;
   }
   if (line.flight_start && new Date(line.flight_start + 'T00:00:00') > new Date()) {
     return `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#DBEAFE;color:#1E40AF">Starts ${esc(strategistFormatFlightDate(line.flight_start))}</span>`;
@@ -1595,13 +1608,12 @@ function renderSetupPanels(lines) {
         ${l.campaign_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">IO Campaign Notes</div><div style="font-size:12.5px;color:var(--text);margin-bottom:${l.order_line_notes ? '8px' : '0'}">${esc(l.campaign_notes)}</div>` : ''}
         ${l.order_line_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">Note on this line</div><div style="font-size:12.5px;color:var(--text)">${esc(l.order_line_notes)}</div>` : ''}
       </div>` : ''}
-      <label class="lbl">What's this waiting on?</label>
-      <select id="setup-blocker-${l.id}" style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;margin-bottom:10px">
-        <option value="" ${!l.setup_blocker ? 'selected' : ''}>— Nothing specific / just arrived —</option>
-        <option value="creative" ${l.setup_blocker === 'creative' ? 'selected' : ''}>Creative</option>
-        <option value="platform_access" ${l.setup_blocker === 'platform_access' ? 'selected' : ''}>Platform access (e.g. Facebook)</option>
-        <option value="intake_form" ${l.setup_blocker === 'intake_form' ? 'selected' : ''}>Intake form</option>
-      </select>
+      <label class="lbl">What's this waiting on? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— check all that apply</span></label>
+      <div id="setup-blocker-${l.id}" style="display:flex;gap:16px;margin-bottom:10px;font-size:12.5px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="creative" ${Array.isArray(l.setup_blocker) && l.setup_blocker.includes('creative') ? 'checked' : ''}/> Creative</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="platform_access" ${Array.isArray(l.setup_blocker) && l.setup_blocker.includes('platform_access') ? 'checked' : ''}/> Platform access (e.g. Facebook)</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="intake_form" ${Array.isArray(l.setup_blocker) && l.setup_blocker.includes('intake_form') ? 'checked' : ''}/> Intake form</label>
+      </div>
       <label class="lbl">Setup Notes</label>
       <textarea id="setup-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px;margin-bottom:12px" placeholder="What's this waiting on before it can go live?">${esc(l.setup_notes || '')}</textarea>
       <div id="split-form-${l.id}" style="display:none;margin-bottom:12px"></div>
@@ -1889,15 +1901,23 @@ async function strategistConfirmStatusChange(lineId, newStatus, oldStatus) {
   await strategistSaveLine(lineId, { status: newStatus });
 }
 
+// setup_blocker is a checkbox group now, not a single <select> -- a campaign
+// can genuinely be waiting on more than one thing at once (Claire: "Need
+// creative AND access to FB page"). Returns [] (not null) when nothing's
+// checked; callers convert that to null before saving.
+function strategistReadSetupBlockers(lineId) {
+  return [...document.querySelectorAll(`#setup-blocker-${lineId} .setup-blocker-cb:checked`)].map(el => el.value);
+}
+
 async function strategistConfirmActivate(lineId) {
   const platform = strategistReadPlatformValue('setup-platform-' + lineId);
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
-  const blocker = document.getElementById('setup-blocker-' + lineId).value;
+  const blockers = strategistReadSetupBlockers(lineId);
   const variantEl = document.getElementById('setup-tactic-variant-' + lineId);
   if (!platform) { showToast('Pick a platform before activating.', 'error'); return; }
   await strategistSaveLine(lineId, {
-    platform, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blocker || null,
+    platform, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blockers.length ? blockers : null,
     status: 'active', assigned_strategist: currentStrategistUser.name,
     ...(variantEl && variantEl.value ? { tactic_label: variantEl.value } : {})
   });
@@ -1909,10 +1929,10 @@ async function strategistSaveDraft(lineId) {
   const platform = strategistReadPlatformValue('setup-platform-' + lineId);
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
-  const blocker = document.getElementById('setup-blocker-' + lineId).value;
+  const blockers = strategistReadSetupBlockers(lineId);
   const variantEl = document.getElementById('setup-tactic-variant-' + lineId);
   await strategistSaveLine(lineId, {
-    platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blocker || null,
+    platform: platform || null, platform_campaign_name: platformCampaignName || null, setup_notes: notes || null, setup_blocker: blockers.length ? blockers : null,
     ...(variantEl && variantEl.value ? { tactic_label: variantEl.value } : {})
   });
   await strategistApplyCachedReportIfMatch(lineId);
