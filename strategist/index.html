@@ -319,7 +319,14 @@ function strategistFormatFlightDate(dateStr) {
 function strategistFormatFlightRange(start, end) {
   const s = strategistFormatFlightDate(start), e = strategistFormatFlightDate(end);
   if (!s && !e) return '—';
-  return `${s || '—'} – ${e || '—'}`;
+  // Real bug found live (2026-08-10, Claire): once a range is long enough to wrap,
+  // the dash itself could end up alone on its own line -- the space BEFORE it was
+  // breakable, so the browser had two valid wrap points ("date1 / – date2" and
+  // "date1 – / date2") and sometimes picked the one that strands the dash. A
+  // non-breaking space after the dash glues it to the end date, leaving exactly
+  // one valid break point (right after the start date), so the dash never sits
+  // alone -- same non-breaking-space technique already used within each date.
+  return `${s || '—'} – ${e || '—'}`;
 }
 function strategistSetScope(scope) {
   strategistScope = scope;
