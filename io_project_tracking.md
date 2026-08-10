@@ -8394,3 +8394,111 @@ starts un-disabled and correctly pre-filled from the line's own updated title.
 **Verified**: `node --check` passes. Extended `test-split-campaigns.js` (19/19
 passing, up from 17): the overall title field is disabled while the split form is
 open, and re-enabled after Cancel.
+
+### 2026-08-10 (cont'd) — Two Accounting Portal questions from Claire
+
+**1. Matching previous services to current Strategist Portal campaigns, once the
+real Accounting Portal is built — answered, no gap found.** The future Accounting
+Portal is expected to read from the exact same `campaign_lines`/`campaign_months`
+data the Strategist Portal already writes to, so there's no separate "add it to
+accounting" step. Any campaign already in the Strategist Portal — from a signed IO
+or manually via "+ New Campaign" — will automatically show up on the Accounting
+side too. For genuinely historical months, the existing "add a past month" backfill
+already in Strategist Portal IS the mechanism — enter it there, Accounting inherits
+it for free.
+
+**2. Group-level services (sold to/used by the white-label agency partner itself,
+not a client under them) — PARKED, Claire confirming with her team.** Real open
+question: does a group-level service get its own IO, or is it added some other
+way entirely? Genuinely undecided, not something to guess at — no action until she
+has an answer.
+
+**3. Services never tracked by a strategist at all (e.g. flat website hosting, a
+one-time site build) — REAL GAP FOUND, needs a decision before Accounting is built.**
+Traced this rather than assumed: `create_campaign_lines_from_order()` only creates a
+`campaign_lines` row when a line item's `spend` (ad media spend) is `> 0` — confirmed
+in `index.html` that `.spend` is ONLY ever populated for `pricing_mode === 'spend'`
+services; a flat-fee service (hosting, a one-time build, a flat-priced retainer)
+never sets it, so it stays `0` and the trigger's `if coalesce(...,0) > 0` guard skips
+it entirely. **These services have zero representation anywhere today** — not in the
+Strategist Portal (correctly, strategists have no ad platform to manage for them),
+but ALSO not anywhere a future Accounting Portal could read from, since it's
+expected to share that same data. The mockup's "Billed Externally" example (Website
+MRR Hosting) only worked because it's fictional — a real one wouldn't have a row to
+show.
+
+Two real options, not yet decided — flagged for Claire rather than picked:
+- **(A) Always create a `campaign_lines` row**, even at `spend = 0`, tagged somehow
+  (e.g. a boolean) as billing-only — and have the Strategist Portal's own queries
+  explicitly filter those out so they never clutter a strategist's queue. One data
+  source for both portals, but touches the trigger the Strategist Portal already
+  depends on, so needs care.
+- **(B) Leave `campaign_lines` exactly as-is** (ad-spend services only), and have
+  the future Accounting Portal separately read straight from `orders.line_items`
+  for anything with no matching campaign line. Zero risk to the Strategist Portal
+  or its trigger, but two different data sources feeding one Accounting view.
+
+**Refined, per Claire's follow-up**: her real question was narrower than "should
+these flow through automatically" — she confirmed strategists genuinely don't need
+to know about these at all, and asked specifically how a service already billed on
+a different system (e.g. Website MRR Hosting via Stripe) would get ADDED to the
+Accounting Portal once it exists.
+
+**Recommendation (not yet built, Accounting Portal doesn't exist yet to hold it):**
+a separate, purpose-built manual entry for billing-only revenue — pick the client,
+name the service, enter the monthly revenue, note where it's actually billed
+(Stripe, etc.). No platform, no budget-by-month, no strategist assignment, none of
+the `campaign_lines` machinery — that whole apparatus doesn't apply to a flat fee
+with no ad spend or platform to pace against. This supersedes option (A) above
+(tagging a `campaign_lines` row as billing-only) — cleaner to keep that table
+strategist-only and give billing-only revenue its own small path instead. One
+mechanism handles both adding a PRE-EXISTING service like hosting for the first
+time and adding a brand-new one going forward — no separate import-vs-ongoing
+process to maintain. Not yet decided as final, not yet built — surfaced as the
+better option, pending Claire's confirmation.
+
+### 2026-08-10 (cont'd) — Real bug: split clones missing assigned_strategist, hidden by "My Campaigns"
+
+Claire split a campaign into 3 regions and only one showed up afterward. Root
+cause traced directly, same bug CLASS as the earlier platform-not-copied issue
+fixed a few entries up: `strategist_split_campaign_line`'s clones never carried
+`assigned_strategist` forward — only the ORIGINAL line (the first split) kept it.
+`visibleCampaignLines()`'s existing scope filter (`if (l.status !== 'pending' &&
+strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name)
+return false`) then silently hid the two unassigned clones under "My Campaigns" —
+invisible, not deleted. Only bites a split of a NON-pending line (e.g. one already
+Active, most likely via the "+ New Campaign" import with Active status) — a split
+still sitting in the pending Setup queue is exempt from this filter entirely, so
+that path was never affected.
+
+**Patched `strategist_split_campaign_line` again** (same reasoning as copying
+`platform` forward last time): clones now also copy `v_line.assigned_strategist`.
+Given directly to Claire to run — supersedes whichever version of the RPC is
+currently live, whether or not she'd already run the title patch from two entries
+up.
+
+**Not yet resolved**: the 3 lines from her original split were created before this
+fix, so the two clones still have no `assigned_strategist` in the database today.
+Told her to check "All Strategists" scope to find them, and offered a one-off
+backfill SQL statement if needed once she confirms which lines they are.
+
+Claire confirmed all 3 ("Facebook & Instagram," split into Region 2/Region 3) show
+under "All Strategists" — nothing was lost, purely a visibility bug, matching the
+diagnosis exactly.
+
+**Backfill SQL — first attempt found nothing (own mistake, caught before declaring
+success).** Matched siblings by `sib.order_id = cl.order_id`, which silently never
+matches when both sides are genuinely `NULL` — plain `=` never equals `NULL` in
+SQL — and these lines almost certainly have a null `order_id` since they came from
+a manual "+ New Campaign" import, not a real signed IO. Claire ran it and correctly
+got back the 2 still-null rows instead of an empty result, confirming the query
+itself needed fixing, not just re-running.
+
+**v2, fixed**: matched siblings using `is not distinct from` (NULL-safe equality)
+across `client_id`/`service_id`/`order_id`/`flight_start`/`flight_end` instead of
+plain `=`. Claire ran it — verify query came back empty. Both splits now correctly
+show under "My Campaigns."
+
+Same underlying fix as the code patch a few entries up (`strategist_split_campaign_line`
+now copies `assigned_strategist` to every clone going forward) — this backfill only
+covers the one line Claire had already split before that patch went live.
