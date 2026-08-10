@@ -9240,3 +9240,24 @@ itself still resolves too, garbage still returns null; New Campaign's
 dropdown appears only for variant services, submit sends the chosen variant,
 blank selection falls back to the combined label. Re-ran all 7 prior bulk-
 import/split-import test files unchanged and still fully passing.
+
+### 2026-08-10 (cont'd) — Campaign Setup panels collapsed by default
+
+With Active at 149+ campaigns and the Setup queue growing as Claire enters
+more, every Pending campaign rendering fully expanded (full grid, platform
+fields, notes, blocker dropdown, action buttons) made the page enormous.
+Setup panels now start collapsed — just the client/tactic header, the
+blocker pill, and the Pending badge — click the header to expand or
+collapse. New module state `STRATEGIST_EXPANDED_SETUP_LINES` (a `Set`) tracks
+which lines are open; a line stays expanded across a re-render (e.g. after a
+save) once opened, but every fresh page load starts fully collapsed again by
+design — deliberately not persisted anywhere.
+
+**Verified**: `test-setup-panel-collapse.js` (scratchpad, 8/8) — body hidden
+by default, chevron (▸/▾) reflects collapsed/expanded state, expanding one
+line doesn't affect a different line, toggling twice returns to collapsed,
+and a real DOM `.click()` on the header (not just calling the toggle function
+directly) works. Re-ran `test-setup-blocker.js`, `test-detail-tactic-
+variant.js`, and `test-tactic-variants.js` unchanged and still fully passing
+— no regression to the blocker pill, variant dropdowns, or Confirm/Save Draft
+flows now that they render inside the collapsible body.
