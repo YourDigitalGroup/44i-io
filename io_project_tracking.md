@@ -8376,3 +8376,21 @@ carries each split's own title.
 **Not yet run by Claire**: the RPC patch above — client code is shipped but the
 per-split title is a no-op server-side until she runs it (same "client ships ahead
 of the SQL, harmless until live" pattern used throughout this project).
+
+### 2026-08-10 (cont'd) — Setup panel's overall title field disables while splitting
+
+Small follow-up Claire caught: on the Campaign Setup panel (not the import form,
+which already got this same treatment), the overall "Exact Campaign Title" field
+stayed live and editable the whole time the split form was open right below it —
+two places to type a title for the same line at once, same ambiguity already
+avoided on the import form's side.
+
+`strategistOpenSplitForm()` now disables `setup-platform-campaign-name-{id}`
+(with a `title` tooltip explaining why) the moment the split form opens, and
+re-enables it on Cancel. No change needed for the success path — saving a split
+re-renders the whole Setup panel from scratch with fresh data, which naturally
+starts un-disabled and correctly pre-filled from the line's own updated title.
+
+**Verified**: `node --check` passes. Extended `test-split-campaigns.js` (19/19
+passing, up from 17): the overall title field is disabled while the split form is
+open, and re-enabled after Cancel.
