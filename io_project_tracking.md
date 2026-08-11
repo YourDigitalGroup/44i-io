@@ -9471,3 +9471,43 @@ to blank (including whitespace-only) sends `null` rather than an empty
 string, real values get trimmed, and it correctly triggers a full reload.
 Re-ran 3 other detail-panel-adjacent test files unchanged and still fully
 passing.
+
+### 2026-08-10 (cont'd) — Auto-complete a campaign once its flight ends
+
+Same motivation as the per-month pause schedule: Claire didn't want
+strategists to have to remember to switch Status to Complete once a
+campaign's flight is over. Considered a server-side cron job again and
+rejected it again, same reasoning as the pause schedule — no confirmed
+pg_cron on this Supabase plan, and a client-side sweep on every normal data
+load catches it just as reliably without needing one.
+
+New `strategistSweepFlightEndedCampaigns()`, called at the end of every
+`fetchStrategistData()` (i.e. every page load or save). Filters
+`ALL_CAMPAIGN_LINES` for `status === 'active'` with a `flight_end` in the
+past, and for each one calls the EXISTING `strategist_log_status_change` +
+`strategist_save_campaign_line` RPCs directly — no new SQL at all.
+Deliberately restricted to `status === 'active'` only, matching the pause
+schedule's own philosophy: a campaign a strategist manually paused stays
+exactly as they left it, never auto-completed out from under them. An open-
+ended campaign (no `flight_end` set at all) is never touched. Self-limiting:
+once a line becomes `'complete'` it no longer matches the sweep's filter, so
+it never re-fires for the same campaign on a later load. The log entry is
+attributed to whichever strategist's session happened to trigger the sweep
+(there's no true "system" user in `admin_users`), but the reason text —
+"Automatically completed — past flight end date" — makes clear it wasn't a
+manual click.
+
+**Verified**: `test-auto-complete-flight-end.js` (scratchpad, 12/12) — a
+past-due Active campaign gets completed with the correct log shape and save
+payload; a still-running Active campaign is untouched; a manually-paused
+campaign whose flight also already ended is left alone (manual state wins);
+an open-ended campaign is never touched; a campaign ending exactly today
+stays active (not yet actually past); only the genuinely-qualifying
+campaign gets an RPC call, never an unrelated one; the local status-history
+cache is patched immediately so the detail panel can explain the change
+right away; re-running the sweep on an already-complete campaign is a
+no-op; and one campaign's RPC failure doesn't stop the sweep from
+completing the others in the same batch. Re-ran 5 other test files
+(including all fetchStrategistData-adjacent ones) unchanged and still fully
+passing — none of them exercise the real `fetchStrategistData()` body, so
+no interference from the new sweep call.
