@@ -10806,3 +10806,82 @@ card still shows it. `test-accounting-bulk-match-gross-discrepancy-2026-08-
 on an exact match, no pasted number, and no system month row to compare
 against. Re-ran all other test files across both portals — no
 regressions.
+
+### 2026-08-12 (cont'd) — Track ALL ordered services, not just spend-tracked tactics
+
+Claire: "we need to track all services ordered not just the tactics with
+spend." Root cause: `create_campaign_lines_from_order()` only ever created
+a `campaign_lines` row for a line item with ad spend > 0 (plus a special
+case for SEO's two dollar-less tracking lines). Every flat/recurring-fee-
+only service ordered — Website Hosting, a flat monthly retainer, a one-
+time website build fee — never got a line at all, invisible to both
+portals, not just Accounting.
+
+Checked scope with Claire before touching a trigger that fires on every
+future order in both portals' shared table:
+- **Coverage**: everything ordered, including one-time-only fees (not just
+  recurring/monthly ones).
+- **Visibility**: these new lines are **Accounting-only** — must NOT show
+  up in Strategist's Setup/Active queues (no pacing/optimize-log workflow
+  makes sense for a flat hosting fee).
+
+**Schema**: two new `campaign_lines` columns — `accounting_only` (boolean,
+defaults false for every existing/spend-tracked line) and `billing_type`
+(`'spend'` | `'recurring'` | `'one_time'`). `create_campaign_lines_from_
+order()` gets a new branch, independent of the existing spend/SEO
+branches: any item with no ad spend but a real `fee` and/or `recurring`
+dollar amount gets its own line (`accounting_only=true`, `status='active'`
+— skips Setup entirely) plus one `campaign_months` row for its first
+month. Deliberate accepted overlap: an SEO item with a flat retainer now
+gets its two existing (dollar-less) Strategist tracking lines AND this new
+accounting-only line with the real figure — not folded into one of the
+tracking lines, which would have made those mean two different things
+depending on the order. `strategist_get_campaign_lines` now excludes
+`accounting_only` lines; `accounting_get_campaign_lines` exposes both new
+columns.
+
+**Real follow-on problem, caught before shipping**: nobody in Strategist
+ever touches an accounting-only line, so nothing proactively creates its
+NEXT month's `campaign_months` row the way Strategist's own prefill
+mechanism does for spend campaigns — after the first month, a recurring
+flat service would just vanish from the table. Fixed with a JS carry-
+forward, not a new prefill job: `accountingMonthRowFor()` now falls back
+to the most recent PRIOR month's Gross Budget for a `billing_type:
+'recurring'` line when the exact month has no row yet — same "hasn't
+changed, so it's still $X" convention the Strategist Portal's own
+`monthRowFor()` already uses for a flat/non-varying spend budget. Returns
+a synthetic row with the carried Gross Budget but explicitly null actual
+spend/confirmed/paused (never leaks a past month's confirmed/paused state
+onto a month nothing's actually been recorded for yet). `'one_time'` lines
+deliberately never carry forward — they only ever happened in the one
+month they were billed.
+
+**Second follow-on problem, also caught before shipping**: a carried-
+forward month has no real row, so the existing plain-`UPDATE` `accounting_
+confirm_month` silently affected 0 rows — manually confirming one of these
+did nothing at all, with no error. Fixed by checking the `UPDATE`'s own row
+count and `INSERT`ing a real row (carrying the Gross Budget the portal was
+already showing, via a new optional `p_gross_budget` param) only when
+there was nothing to update — an already-real row's own `gross_budget` is
+never touched by this function either way. No unique constraint exists on
+`(campaign_line_id, month)` to lean on a plain upsert, hence the row-count
+check instead.
+
+Small UI addition: a "(flat fee — accounting only)" / "(one-time fee —
+accounting only)" tag next to the tactic label, since these never appear
+in Strategist at all — the only place Claire can tell one apart from an
+ordinary tracked tactic.
+
+**New SQL** (`accounting-track-all-ordered-services-2026-08-12.sql`, given
+to Claire) — the two new columns, the patched order trigger, and three
+patched RPCs (`strategist_get_campaign_lines`, `accounting_get_campaign_
+lines`, `accounting_confirm_month`).
+
+**Verified**: `test-accounting-track-all-ordered-2026-08-12.js` (15/15) —
+a recurring line's Gross Budget correctly carries into a month with no row
+yet; a one-time line and an ordinary spend-tracked line (neither
+`billing_type: 'recurring'`) correctly do NOT carry forward and vanish
+once their real row is behind them; the carried-forward synthetic row
+never leaks actual_spend/confirmed/paused; confirming a carried-forward
+month sends the right Gross Budget for the RPC to create a real row with.
+Re-ran all other test files across both portals — no regressions.
