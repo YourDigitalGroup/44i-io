@@ -9399,3 +9399,50 @@ file still has exactly one `<script>` block and it parses clean via `new
 Function(...)`.
 
 **Not yet run by Claire**: `client-service-flights-2026-08-10.sql`.
+
+### 2026-08-10 (cont'd) — Scheduled per-month pause (strategists don't have to remember to flip Status)
+
+Claire's ask: "select which months to pause a campaign during its flight and
+which to have it active... so strategists don't have to remember to change
+the status." Considered a cron/scheduled-job approach (actually flipping
+`campaign_lines.status` on a timer) but rejected it — nothing outside this
+portal currently reads `status` directly, and computing it live at render
+time (same "fetch everything, filter client-side" convention already used
+throughout) avoids needing any background job at all, in Supabase or
+otherwise.
+
+**Schema**: `campaign_months.paused boolean default false` — one flag per
+month, exact-month only, deliberately NOT carried forward the way Gross
+Budget is (a pause scheduled for July shouldn't leak into August just
+because nobody's entered an August row yet). Both `strategist_get_campaign_
+months` and `strategist_save_campaign_month` patched to carry it.
+`campaign-month-pause-schedule-2026-08-10.sql`, scratchpad, not yet run.
+
+**Client-side**: new `strategistMonthPaused(lineId, monthDate)` (exact-month
+lookup) and `strategistEffectiveStatus(line, monthDate)` — the campaign's own
+`status` wins outright whenever it's anything other than `'active'` (manual
+paused-indefinitely/complete/pending are real states the schedule should
+never override); only an Active campaign can be knocked down to effectively-
+Paused for a scheduled month. Wired into both `visibleCampaignLines()` (tab
+filtering) and the tab count badges — a scheduled-paused Active campaign now
+correctly shows under the Paused tab, and moves back to Active the moment the
+viewed month has no schedule entry, no status flip ever needed. Added a
+"Paused" checkbox column to the detail panel's Monthly History table (any
+month, including a not-yet-existing future one via the existing "+ Add
+another month" flow — that's how a pause gets scheduled ahead of time), and a
+small "⏸ Scheduled paused this month" pill next to the Status dropdown so it's
+clear why a campaign might show Paused in the tabs while Status itself still
+reads Active.
+
+**Verified**: `test-month-pause-schedule.js` (scratchpad, 15/15) — exact-
+month lookup with no carry-forward; effective status drops to paused only
+for the scheduled month and stays active in every other month; a manually-
+paused or complete line's real status always wins regardless of any
+schedule entry; the Active/Paused tabs correctly move a scheduled-paused
+line between them as the viewed month changes; the checkbox renders
+checked/unchecked correctly and saves back (unchecking sends `false`, not a
+removal); the pill shows only for an Active line during its scheduled month,
+never for an already-manually-paused one. Re-ran 6 other test files touching
+`visibleCampaignLines()`/the detail panel unchanged and still fully passing.
+
+**Not yet run by Claire**: `campaign-month-pause-schedule-2026-08-10.sql`.
