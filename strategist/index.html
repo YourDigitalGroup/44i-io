@@ -2123,26 +2123,70 @@ async function strategistFillMonthsToFlightEnd(lineId) {
   showToast(`Filled ${saves.length} month(s) through flight end.`);
 }
 
-// "Backfill all campaigns" (2026-08-11, per Claire) -- runs the same fill
-// logic across every active/paused campaign with a flight end date in one
-// pass, instead of clicking the per-campaign button one at a time. Skips
-// anything with no flight end (open-ended) or no existing month yet to base
-// the fill on -- exactly the same guard conditions the single-campaign
-// button already enforces, just applied in bulk.
+// Same core logic as strategistComputeFillSaves, but for a campaign with NO
+// flight_end ("Ongoing") this fills a rolling 12-month planning horizon from
+// TODAY instead of returning nothing (2026-08-12, real bug found live:
+// the bulk pass's candidate filter required flight_end, so an open-ended
+// campaign was silently excluded from the whole run every time -- Claire
+// clicked the bulk button, got a "success" toast for the campaigns that DID
+// have a flight_end, and had no way to know the one that actually needed
+// fixing was skipped entirely). Only used by the bulk pass -- the single-
+// campaign "Fill remaining months to flight end" button stays flight_end-
+// only, matching its own label; it's simply not rendered for an ongoing
+// campaign (see the detail panel's own ${l.flight_end ? ... : ''} guard).
+function strategistComputeBulkFillSaves(lineId) {
+  const l = ALL_CAMPAIGN_LINES.find(x => x.id === lineId);
+  if (!l) return { saves: [], skipReason: 'campaign not found' };
+  const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
+  if (!rows.length) return { saves: [], skipReason: 'no existing month to extend from' };
+  const last = rows[rows.length - 1];
+  const existingMonths = new Set(rows.map(m => m.month));
+  const start = new Date(last.month + 'T00:00:00');
+  let end;
+  if (l.flight_end) {
+    end = new Date(l.flight_end + 'T00:00:00');
+  } else {
+    const now = new Date();
+    end = new Date(now.getFullYear(), now.getMonth() + 12, 1);
+  }
+  const monthCount = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  if (monthCount < 1) return { saves: [], skipReason: null }; // already covers -- not an error, just nothing to do
+  const saves = [];
+  for (let i = 1; i <= monthCount; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    const monthStr = d.toISOString().slice(0, 10);
+    if (!existingMonths.has(monthStr)) saves.push({ lineId, monthStr, gross_budget: last.gross_budget });
+  }
+  return { saves, skipReason: null };
+}
+
+// "Backfill all campaigns" (2026-08-11, per Claire; extended 2026-08-12 to
+// cover ongoing campaigns too -- see strategistComputeBulkFillSaves above).
+// Runs across every active/paused campaign in one pass, instead of clicking
+// the per-campaign button one at a time. A campaign with no existing month
+// row at all is still skipped (nothing to extrapolate a budget from) --
+// but now that's REPORTED by name in the final toast rather than silently
+// vanishing, matching "no silent caps."
 async function strategistBulkFillAllToFlightEnd() {
-  const candidates = ALL_CAMPAIGN_LINES.filter(l => (l.status === 'active' || l.status === 'paused') && l.flight_end);
+  const candidates = ALL_CAMPAIGN_LINES.filter(l => l.status === 'active' || l.status === 'paused');
   let allSaves = [];
   let linesFilled = 0;
+  const skipped = [];
   candidates.forEach(l => {
-    const saves = strategistComputeFillSaves(l.id);
+    const { saves, skipReason } = strategistComputeBulkFillSaves(l.id);
     if (saves.length) { allSaves = allSaves.concat(saves); linesFilled++; }
+    else if (skipReason) skipped.push(`${l.client_name || '(unknown)'} — ${l.tactic_label || l.service_id} (${skipReason})`);
   });
-  if (!allSaves.length) { showToast('Every active/paused campaign already covers its full flight.'); return; }
+  if (!allSaves.length && !skipped.length) { showToast('Every active/paused campaign already covers its full flight/planning horizon.'); return; }
   showToast(`Filling ${allSaves.length} month(s) across ${linesFilled} campaign(s)…`);
   await Promise.all(allSaves.map(strategistSaveFillEntry));
   await fetchStrategistData();
   renderStrategistDashboard();
-  showToast(`Done — filled ${allSaves.length} month(s) across ${linesFilled} campaign(s).`);
+  if (skipped.length) {
+    showToast(`Done — filled ${allSaves.length} month(s) across ${linesFilled} campaign(s). ${skipped.length} skipped (no existing budget to extend): ${skipped.join('; ')}`, 'error');
+  } else {
+    showToast(`Done — filled ${allSaves.length} month(s) across ${linesFilled} campaign(s).`);
+  }
 }
 
 async function strategistSaveMonth(lineId, monthStr, data) {
