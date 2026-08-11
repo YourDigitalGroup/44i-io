@@ -9994,3 +9994,33 @@ confirmed unrelated to this change — reproduces identically on the prior
 commit, a stale assertion from before the "Pending Website" 4th blocker
 option was added; not something this session touched or should fix silently
 without flagging it first.
+
+### 2026-08-11 (cont'd) — Paused checkbox added to each month in Campaign Setup
+
+Claire: "We also need to be able to check paused for any month in the
+campaign set up." The scheduled per-month Paused checkbox (2026-08-10) only
+ever existed on the detail panel's Monthly History table, which a pending
+line can't reach — same reachability gap as the Flight dates/Offline Visits
+fix just above.
+
+Added the identical Paused checkbox to each month row in the Setup panel's
+"Budget is different by month" section, next to that month's Gross Budget
+input — same `strategistSaveMonth(lineId, month, {paused: this.checked})`
+call, same immediate-save-on-change behavior (unlike Platform/Notes/dates in
+this panel, which batch at Save Draft/Confirm & Activate time) as the detail
+panel's own version, so both places behave identically once you've used
+either. Carries the same clarifying `title` tooltip explaining this is the
+scheduled-pause mechanism, not the overall Status dropdown — and, since
+`strategistEffectiveStatus()` only consults a month's `paused` flag while
+the campaign's overall status is `'active'`, checking it during Setup is a
+no-op until the campaign is actually activated (by design — you're
+pre-scheduling a future pause, not pausing something that isn't running
+yet).
+
+**Verified**: `test-setup-month-paused.js` (scratchpad, 6/6) — one checkbox
+renders per month, correctly checked/unchecked from that month's existing
+`paused` value; toggling one sends `{paused: true}` for exactly that
+month's RPC call (not another month's); the tooltip text is present. Re-ran
+`test-setup-offline-and-dates.js` (9/9), `test-month-pause-schedule.js`
+(15/15), and `test-setup-panel-collapse.js` (8/8) unchanged and still fully
+passing.

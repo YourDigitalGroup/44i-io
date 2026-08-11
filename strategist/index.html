@@ -1852,6 +1852,10 @@ function renderSetupPanels(lines) {
           <span style="width:90px;color:var(--muted);font-weight:600">${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}</span>
           <input type="number" value="${m.gross_budget ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {gross_budget: this.value})" style="width:110px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
           <span style="font-size:10px;color:var(--muted)">Gross</span>
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;margin-left:6px">
+            <input type="checkbox" ${m.paused ? 'checked' : ''} onchange="strategistSaveMonth('${l.id}', '${m.month}', {paused: this.checked})" title="Scheduled paused this month -- takes effect once this campaign is Active; doesn't do anything while it's still Pending"/>
+            <span style="font-size:10px;color:var(--muted)">Paused</span>
+          </label>
         </div>`).join('') || '<span style="font-size:11px;color:var(--muted)">No months entered yet.</span>'}
         <button onclick="strategistAddSetupMonth('${l.id}')" style="margin-top:6px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);font-size:11px;cursor:pointer">+ Add month</button>
       </div>
