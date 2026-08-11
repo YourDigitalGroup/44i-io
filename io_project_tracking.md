@@ -10105,3 +10105,79 @@ variant already has its pairing override entered in Admin's Accounting Map
 today, or whether some still need the actual rate typed in (the mechanism
 now works end-to-end once a rate is entered; it can't invent one that was
 never set).
+
+### 2026-08-11 (cont'd) — Accounting Portal: sort clients alphabetically
+
+Claire, after confirming the Offline Visits fix worked correctly on real
+data: "Clients need to be in alpha order." The table rendered in whatever
+order `accounting_get_campaign_lines` happened to return rows (insertion
+order), not sorted. Added a `.sort()` by `client_name` (localeCompare) after
+filtering/computing each row, right before rendering — same simple approach
+used elsewhere in the app for alphabetical lists.
+
+**Verified**: `test-accounting-alpha-sort.js` (scratchpad, 1/1) — three
+clients fed in deliberately out of order render in correct alphabetical
+order. Re-ran `test-accounting-offline-visits-cutpct.js` (10/10) unchanged
+and still fully passing.
+
+### 2026-08-11 (cont'd) — Accounting Portal v2: full mockup layout (grouping, Flight/Spend, split rollups, Confirmed/Billed Externally)
+
+Claire, after the Offline Visits fix and alpha-sort landed: "Let's build it
+all out the way we planned for it to look so that is done." Brought the
+real portal up to the 2026-08-07 concept mockup's full layout rather than
+staying at the narrower v1 revenue-split-only view.
+
+**Added**:
+- **Grouped by Group** — a full-width banner row per Group (alphabetical),
+  replacing the plain "Group" column; Client rows within a group are
+  alphabetical too (on top of the earlier alpha-sort fix).
+- **Flight column** — `Aug '26 – Dec '26` / `Aug '26 – Ongoing` style, reusing
+  the same "no end date = Ongoing" convention as the Strategist Portal.
+- **Actual Spend column** — `campaign_months.actual_spend`, already being
+  fetched, just never rendered until now.
+- **Split rollups** — multiple `campaign_lines` sharing the same (client,
+  service, tactic) — a real scenario: a client splits one IO tactic across
+  several regions, each tracked as its own line via `split_label` (the
+  Strategist Portal's "Split into Multiple Campaigns" feature) — now roll up
+  into ONE row (aggregated Gross/Spend/44i's $/Group's $, Flight = earliest
+  start/latest end, "ongoing" if ANY region still is), expandable via a
+  caret click to see each region's own numbers. Matches the mockup's
+  "Larkwood Automotive (3 regions)" example exactly.
+- **Confirmed** — a new per-line-per-month sign-off (`campaign_months.confirmed_by`/
+  `confirmed_at`), a checkbox next to each row; the Status column shows
+  "Confirmed · {name}, {date}" for a single line, or "N of M confirmed" for
+  a rollup with mixed states (the mockup's own example).
+- **Billed Externally** — a new per-line flag (`campaign_lines.billed_externally`)
+  for services invoiced outside this system (e.g. Website MRR hosting via
+  Stripe, per the mockup's own example) — shown here for reference without
+  needing confirmation, since it's not billed through this flow at all.
+
+**Both Confirmed and Billed Externally are genuinely NEW mechanisms** —
+never previously decided anywhere, including in the 2026-08-07 questions doc
+(which explicitly proposed both as CONCEPTS but left the deeper questions
+open: should a confirmed month lock its numbers? who can un-confirm?).
+Built as the simplest version of what the mockup visually showed — a plain
+toggle, no lock/workflow — since Claire's ask was specifically to build the
+LOOK now. Flagged directly in the page's own banner and in this entry: these
+don't restrict anything yet; anyone with Accounting/super access can
+check/uncheck either at any time.
+
+**New SQL** (`accounting-portal-v2-mockup-layout-2026-08-11.sql`, given to
+Claire): two new columns (`campaign_months.confirmed_by`/`confirmed_at`,
+`campaign_lines.billed_externally`), two new RPCs
+(`accounting_confirm_month`, `accounting_set_billed_externally`), and
+patches to `accounting_get_campaign_lines`/`accounting_get_campaign_months`
+to expose the new fields.
+
+**Verified**: `test-accounting-v2-mockup-layout.js` (scratchpad, 15/15) —
+group banners and clients-within-group both render alphabetically; Flight
+and Actual Spend render correctly; a 2-region split collapses into one
+rollup row with correctly summed Gross/Spend, shows "(2 splits)" and "1 of 2
+confirmed" (one region confirmed, one not) while collapsed, and expands to
+reveal both regions with their own individual Confirmed/Needs-confirmation
+pills; the Confirm/Billed-Externally checkboxes call the correct RPCs with
+the correct payload; a billed-externally-flagged line shows that pill
+instead of "Needs confirmation." Re-ran `test-accounting-portal-v1.js`
+(12/12), `test-accounting-offline-visits-cutpct.js` (10/10),
+`test-accounting-alpha-sort.js` (1/1), and `test-accounting-admin-handoff.js`
+(7/7) unchanged and still fully passing.
