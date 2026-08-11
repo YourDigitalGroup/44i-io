@@ -10442,3 +10442,44 @@ regression) and all other accounting/flight-wrap test files (`test-accounting-po
 15/15, `test-flight-range-nowrap.js` 8/8, `test-accounting-expected-spend.js`
 7/7) unchanged and still fully passing. 86/86 across all 9 accounting test
 files.
+
+### 2026-08-11 (cont'd) — Full-flight month prefill + backfill for already-truncated campaigns
+
+Claire: "Extend the pre-fill to cover the full flight length. The reason
+for only doing the first 12 months was for them to be able to adjust the
+spend if needed. If the spend isn't adjusted it should go by the default
+monthly spend in the IO." Confirms the diagnosis from the Accounting Portal
+session — the 12-month cap was a deliberate original decision, now
+superseded now that a real multi-year flight (2026–2029) hit it live.
+
+**`strategistPrefillMonths()` extended**: for a campaign with a defined
+`flight_end`, now fills every month from the flight's start through
+`flight_end` — however many months that is, no longer capped at 12. A
+genuinely open-ended flight (`flight_end` is null) still has no defined
+length to fill toward, so it keeps the original 12-month rolling window
+exactly as before; "+ Add month" still covers anything past that. Every
+month still copies the SAME base Gross Budget already on file, per Claire's
+"go by the default monthly spend in the IO."
+
+**New: `strategistFillMonthsToFlightEnd(lineId)`** — a one-time backfill for
+campaigns that already got truncated by the OLD cap before this fix
+existed (exactly Claire's real 2029 example, already sitting at ~12 months
+today). New "Fill remaining months to flight end" button in the detail
+panel's Monthly History section (only shown when the campaign has a
+flight_end at all) — fills every month from whatever the LAST existing
+month row is through flight_end, using that last month's own Gross Budget
+as the default. No-op (with a clear toast) if the flight is open-ended or
+already fully covered.
+
+**Verified**: `test-prefill-full-flight.js` (scratchpad, 9/9) — a 36-month
+(2026-08 to 2029-07) flight prefills all 36 months on setup, reaching
+exactly the final month and never overshooting past flight_end; an open-
+ended flight still caps at the original 12; the backfill function correctly
+fills the remaining 24 months for a campaign already stuck at 12 (starting
+right after the last existing month, ending exactly at flight_end), using
+that last month's own budget as the default for every new one (verified via
+the actual save payloads, not just count); an open-ended flight is
+correctly a no-op with an explanatory toast. Re-ran
+`test-setup-panel-collapse.js` (8/8), `test-setup-offline-and-dates.js`
+(9/9), and `test-bulk-import-flight-extend.js` (11/11) unchanged and still
+fully passing.
