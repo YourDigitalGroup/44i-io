@@ -9726,3 +9726,33 @@ mistake like this at the source — only work around it downstream in the
 Strategist Portal. Claire wants to note this now as a live example to bring
 to the team, but is deliberately not scoping who should be able to edit an
 IO or what that flow looks like until she's talked it through with them.
+
+### 2026-08-11 — Editable Flight Start/End dates on the campaign detail panel
+
+Claire's bulk-import backlog turned up a real gap: many already-imported
+campaigns are missing a start or end date, and re-importing via Bulk Import
+only updates an existing campaign when it can match by exact Platform
+Campaign Name — many of these entries don't have a title set yet either, so
+a follow-up paste to just add a date risked creating a duplicate line
+instead of updating the real one. Claire asked directly: "I just want to
+make sure there is a way to update the dates in the campaign itself not
+through the bulk import" — there wasn't one; the detail panel only ever
+*displayed* Flight as read-only text, never let you edit it.
+
+Added two `<input type="date">` fields (Flight Start, Flight End) to the
+campaign detail panel, right above the Offline Visits/Status row, using the
+exact same inline-save pattern as the existing Split Label / Platform
+Campaign Name / Platform URL fields (`strategistSaveLine(id, {field}, false)`
+— saves immediately on change, patches the in-memory `ALL_CAMPAIGN_LINES`
+cache directly per the existing reload:false convention, no full page
+refetch needed). No SQL/RPC change needed — `strategist_save_campaign_line`
+already accepts `flight_start`/`flight_end` since Bulk Import writes those
+same columns today. Blank End is preserved as `null` (ongoing/no end date),
+matching the existing convention used everywhere else in the portal
+(`flightDisplayFor()`, the overlap-warning logic on the public IO form,
+etc).
+
+**Verified**: `test-edit-flight-dates.js` (scratchpad, 7/7) — both inputs
+render, prefill from the line's existing dates (blank End for an ongoing
+campaign), saving End writes the correct RPC payload and updates the local
+cache, and clearing Start sends `null` (not an empty string) to the RPC.

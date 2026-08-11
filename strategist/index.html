@@ -2278,7 +2278,12 @@ function renderStrategistDetailPanel() {
       </div>
     </div>
 
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      <label class="lbl" style="margin:0">Flight Start</label>
+      <input type="date" id="detail-flight-start-${l.id}" value="${esc(l.flight_start || '')}" onchange="strategistSaveLine('${l.id}', {flight_start: this.value || null}, false)" style="padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:12px"/>
+      <label class="lbl" style="margin:0">Flight End</label>
+      <input type="date" id="detail-flight-end-${l.id}" value="${esc(l.flight_end || '')}" placeholder="Ongoing" onchange="strategistSaveLine('${l.id}', {flight_end: this.value || null}, false)" style="padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:12px"/>
+      <span style="font-size:11px;color:var(--muted);margin-right:8px">Blank End = ongoing/no end date</span>
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-right:8px">
         <input type="checkbox" ${l.has_offline_visits ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_offline_visits: this.checked})"/> + Offline Visits Tracking
       </label>
