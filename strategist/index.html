@@ -1978,26 +1978,39 @@ function strategistToggleVaries(lineId, checked) {
   if (checked) strategistPrefillMonths(lineId);
 }
 
-// Pre-fills up to 12 months' worth of Gross Budget rows the moment "Budget is
+// Pre-fills Gross Budget rows for a flight's FULL length the moment "Budget is
 // different by month" gets checked (2026-08-07, per Claire — having to click
 // "+ Add month" one at a time to build out a flight's whole schedule before you
 // can even start correcting the specific months that actually differ was real
-// friction). Copies the SAME base budget already on file (setupBudgetRowFor()'s
-// row — the flight's earliest month, seeded from the signed IO) into every month
-// from there that doesn't already have its own row, capped at 12 — a flight
-// running years or genuinely open-ended ("Ongoing", no end date) only gets its
-// first 12 months pre-filled; "+ Add month" still works for anything beyond that.
-// No-op if 2+ real month rows already exist (someone's already building this out
-// by hand — don't second-guess it), or if there's no base budget yet to copy from.
+// friction; extended 2026-08-11, also per Claire, after a real multi-year flight
+// — 2026 through 2029 — silently stopped showing past its old 12-month cutoff:
+// "the reason for only doing the first 12 months was for them to be able to
+// adjust the spend if needed. If the spend isn't adjusted it should go by the
+// default monthly spend in the IO"). Copies the SAME base budget already on
+// file (setupBudgetRowFor()'s row — the flight's earliest month, seeded from
+// the signed IO) into every month from there through flight_end that doesn't
+// already have its own row — however many months that is, not capped at 12
+// anymore. A genuinely open-ended flight (no flight_end at all) has no defined
+// length to fill, so it still falls back to the original 12-month rolling
+// window; "+ Add month" still covers anything beyond that. No-op if 2+ real
+// month rows already exist (someone's already building this out by hand —
+// don't second-guess it), or if there's no base budget yet to copy from.
 async function strategistPrefillMonths(lineId) {
   const existingRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId);
   if (existingRows.length > 1) return;
   const baseRow = setupBudgetRowFor(lineId);
   if (!baseRow || baseRow.gross_budget == null) return;
+  const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
   const existingMonths = new Set(existingRows.map(m => m.month));
   const start = new Date(baseRow.month + 'T00:00:00');
+  let monthCount = 12;
+  if (line?.flight_end) {
+    const end = new Date(line.flight_end + 'T00:00:00');
+    monthCount = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+    if (monthCount < 1) monthCount = 1;
+  }
   const saves = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < monthCount; i++) {
     const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
     const monthStr = d.toISOString().slice(0, 10);
     if (!existingMonths.has(monthStr)) {
@@ -2038,6 +2051,44 @@ async function strategistAddHistoryMonth(lineId) {
   if (!match) { showToast('Enter a month as YYYY-MM, e.g. 2026-03', 'error'); return; }
   const monthStr = `${match[1]}-${match[2]}-01`;
   await strategistSaveMonth(lineId, monthStr, {});
+}
+
+// One-time backfill for a campaign that already got truncated by the old
+// 12-month prefill cap before strategistPrefillMonths() was extended to
+// cover a flight's full length (2026-08-11, per Claire — a real campaign
+// running through 2029 had silently stopped at ~2027). Fills every month
+// from the LAST existing month row through flight_end, using that last
+// month's own Gross Budget as the default for each new one ("if the spend
+// isn't adjusted it should go by the default monthly spend in the IO").
+// No-op if the flight is open-ended (no flight_end to fill toward) or
+// already fully covered.
+async function strategistFillMonthsToFlightEnd(lineId) {
+  const l = ALL_CAMPAIGN_LINES.find(x => x.id === lineId);
+  if (!l?.flight_end) { showToast('This campaign has no flight end date to fill toward.', 'error'); return; }
+  const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
+  if (!rows.length) { showToast('No existing months to base the fill on yet.', 'error'); return; }
+  const last = rows[rows.length - 1];
+  const existingMonths = new Set(rows.map(m => m.month));
+  const start = new Date(last.month + 'T00:00:00');
+  const end = new Date(l.flight_end + 'T00:00:00');
+  const monthCount = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  if (monthCount < 1) { showToast('Already covers the full flight.', 'error'); return; }
+  const saves = [];
+  for (let i = 1; i <= monthCount; i++) {
+    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    const monthStr = d.toISOString().slice(0, 10);
+    if (!existingMonths.has(monthStr)) {
+      saves.push(sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_campaign_line_id: lineId, p_month: monthStr, p_data: { gross_budget: last.gross_budget }
+      }) }));
+    }
+  }
+  if (!saves.length) { showToast('Already covers the full flight.', 'error'); return; }
+  await Promise.all(saves);
+  await fetchStrategistData();
+  renderStrategistDashboard();
+  showToast(`Filled ${saves.length} month(s) through flight end.`);
 }
 
 async function strategistSaveMonth(lineId, monthStr, data) {
@@ -2435,6 +2486,7 @@ function renderStrategistDetailPanel() {
       <div style="display:flex;align-items:center;gap:8px;margin:8px 0">
         <input type="month" id="add-month-${l.id}" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:11px"/>
         <button onclick="strategistAddHistoryMonth('${l.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer">+ Add another month</button>
+        ${l.flight_end ? `<button onclick="strategistFillMonthsToFlightEnd('${l.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:11px;cursor:pointer" title="Fills every remaining month through the flight end date using the last month's own Gross Budget as the default">Fill remaining months to flight end</button>` : ''}
       </div>
     </div>
 

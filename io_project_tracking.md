@@ -10442,3 +10442,102 @@ regression) and all other accounting/flight-wrap test files (`test-accounting-po
 15/15, `test-flight-range-nowrap.js` 8/8, `test-accounting-expected-spend.js`
 7/7) unchanged and still fully passing. 86/86 across all 9 accounting test
 files.
+
+### 2026-08-11 (cont'd) — Full-flight month prefill + backfill for already-truncated campaigns
+
+Claire: "Extend the pre-fill to cover the full flight length. The reason
+for only doing the first 12 months was for them to be able to adjust the
+spend if needed. If the spend isn't adjusted it should go by the default
+monthly spend in the IO." Confirms the diagnosis from the Accounting Portal
+session — the 12-month cap was a deliberate original decision, now
+superseded now that a real multi-year flight (2026–2029) hit it live.
+
+**`strategistPrefillMonths()` extended**: for a campaign with a defined
+`flight_end`, now fills every month from the flight's start through
+`flight_end` — however many months that is, no longer capped at 12. A
+genuinely open-ended flight (`flight_end` is null) still has no defined
+length to fill toward, so it keeps the original 12-month rolling window
+exactly as before; "+ Add month" still covers anything past that. Every
+month still copies the SAME base Gross Budget already on file, per Claire's
+"go by the default monthly spend in the IO."
+
+**New: `strategistFillMonthsToFlightEnd(lineId)`** — a one-time backfill for
+campaigns that already got truncated by the OLD cap before this fix
+existed (exactly Claire's real 2029 example, already sitting at ~12 months
+today). New "Fill remaining months to flight end" button in the detail
+panel's Monthly History section (only shown when the campaign has a
+flight_end at all) — fills every month from whatever the LAST existing
+month row is through flight_end, using that last month's own Gross Budget
+as the default. No-op (with a clear toast) if the flight is open-ended or
+already fully covered.
+
+**Verified**: `test-prefill-full-flight.js` (scratchpad, 9/9) — a 36-month
+(2026-08 to 2029-07) flight prefills all 36 months on setup, reaching
+exactly the final month and never overshooting past flight_end; an open-
+ended flight still caps at the original 12; the backfill function correctly
+fills the remaining 24 months for a campaign already stuck at 12 (starting
+right after the last existing month, ending exactly at flight_end), using
+that last month's own budget as the default for every new one (verified via
+the actual save payloads, not just count); an open-ended flight is
+correctly a no-op with an explanatory toast. Re-ran
+`test-setup-panel-collapse.js` (8/8), `test-setup-offline-and-dates.js`
+(9/9), and `test-bulk-import-flight-extend.js` (11/11) unchanged and still
+fully passing.
+
+### 2026-08-11 (cont'd) — Real bug: manual confirm threw a uuid/text SQL error; row-height and Total-row padding fixes
+
+Claire tried the new manual-confirm checkbox and got a real error:
+`operator does not exist: uuid = text`. Root cause: `campaign_months.campaign_line_id`
+and `campaign_lines.id` are both `uuid` columns, but `accounting_confirm_month`
+and `accounting_set_billed_externally` compared them directly against
+`p_campaign_line_id` (declared `text`, matching how every other accounting
+RPC and every JS call site already passes ids). Fixed by casting the
+parameter to `uuid` at the comparison in both functions — no JS change
+needed, parameter type unchanged.
+
+Also fixed two display issues from the same message:
+- **Manual confirm checkbox moved inline next to the status pill** (was
+  stacked below it on its own line, making every detail-card row taller
+  than it needed to be) — now both sit in one flex row.
+- **Total row padding** — `tbody td{padding:9px 12px}` never matched
+  `tfoot td` (different selector scope), so the Total row's cells had
+  effectively zero padding, making that row visually cramped/misaligned
+  compared to the rows above it even though the column count itself was
+  already correct (yesterday's fix). Added an explicit `tfoot td` padding
+  rule matching the body rows.
+
+**New SQL** (`accounting-confirm-uuid-fix-2026-08-11.sql`, given to Claire)
+— patches both functions with the `::uuid` cast.
+
+**Still open**: Claire asked to "shade the top headers for the whole group
+a different brand color" — asked what should change from the existing
+colored divider-row banner; her answer was "something else" without
+elaborating yet. Not touched pending her description.
+
+**Verified**: re-ran all 9 accounting test files (86/86) unchanged and
+still fully passing after the checkbox/padding CSS changes — no JS logic
+changed in this pass, so no new test needed beyond the regression check.
+
+### 2026-08-11 (cont'd) — Stat tile bar tints with the filtered Group's brand color
+
+Clarified: Claire's "shade the top headers for the whole group a different
+brand color" was about the STAT TILE summary bar at the top of the page,
+not the table's group banner rows (those already got their brand color a
+few commits ago).
+
+When filtered to a single Group, the stat-tile bar's background now tints
+with that group's own `brand_color` (mixed 88% toward white so tile text
+stays readable regardless of how saturated the source color is) and its
+border switches to the group's color at full saturation. Viewing "All
+Groups" (mixed data — no single brand color would be accurate) keeps the
+plain white/neutral-border default, same as a group with no brand_color set
+at all even when filtered to it.
+
+**Verified**: `test-accounting-stat-tile-group-tint.js` (scratchpad, 6/6) —
+the tint math itself is exact and deterministic; "All Groups" stays white;
+filtering to a group with a real brand color tints the bar and sets the
+border to that exact color; filtering to a group with no brand_color still
+stays neutral rather than guessing at a color. Re-ran all 9 other accounting
+test files (86/86) unchanged and still fully passing. 92/92 total. No SQL
+change — pure client-side, reuses `group_color` already added to
+`accounting_get_campaign_lines` for the table's own banners.
