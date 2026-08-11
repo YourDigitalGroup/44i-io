@@ -10355,3 +10355,90 @@ regression), `test-accounting-offline-visits-cutpct.js` (10/10),
 `test-accounting-alpha-sort.js` (1/1), `test-accounting-admin-handoff.js`
 (7/7), and `test-flight-range-nowrap.js` (8/8) unchanged and still fully
 passing. 71/71 across all 8 accounting test files.
+
+### 2026-08-11 (cont'd) — Accounting Portal v5: total-row alignment, actual spend tile, manual confirm, group color, pill colors
+
+Claire's next round of concrete feedback, all fixed same session:
+
+**1. Total row alignment.** The `<tfoot>` row used `colspan="3"` to merge
+Client/Tactic/Flight into one "Total" label cell — under certain content-
+width combinations that can size differently than a plain cell, causing
+visible drift from the header/body columns above it. Rebuilt with one
+literal `<td>` per column (8 real cells, matching the header's 8 `<th>`s
+exactly) — removes the possibility of colspan-driven misalignment entirely
+rather than trying to tune widths.
+
+**2. Actual Spend added to the stat-tile summary bar** (now 5 tiles:
+Expected Revenue, Expected Spend, Actual Spend, 44i Revenue, Awaiting
+Confirmation) — the header block only showed the computed Expected Spend
+before, not the real reported figure next to it.
+
+**3. Manual confirm, reinstated in the detail card only.** Claire: "for
+ones that need confirmation we need to be able to manually select in the
+detail card, especially for tactics that aren't tracked in the strategist
+portal." Automatic-from-actual-spend (yesterday's v4 change) works fine for
+tracked ad campaigns, but a manually-invoiced service (e.g. Website
+hosting) never gets an `actual_spend` figure from the Strategist Portal at
+all — it would sit as "Needs confirmation" forever with no way to clear it.
+Reinstated the `accounting_confirm_month` RPC call (already existed,
+unused since v4, no new SQL) as a per-month checkbox inside the detail
+card only — disabled (and titled why) whenever real actual spend is
+already present, since that's already auto-confirmed. Main table stays
+completely checkbox-free, per the earlier ask — `confirmed` is now `actual
+spend entered OR manually confirmed`, resolved once and read everywhere
+(main table pill, rollup aggregation, detail card).
+
+**4. Group brand color on banner rows**, matching the Strategist Portal's
+own main table exactly. Claire: "Can we also use the group color for their
+header like the strategists." Added `group_color` (from `groups.brand_color`)
+to `accounting_get_campaign_lines`, plus the identical relative-luminance
+contrast-text-color function the Strategist Portal already uses, so light
+and dark brand colors both stay readable. Falls back to the existing
+neutral band for a group with no brand color set.
+
+**5. Pill colors reconciled against what's already established elsewhere**
+in the app, in lieu of the literal new-site palette (asked Claire to
+confirm specific hex values if she wants an exact match beyond this).
+Confirmed/Needs-confirmation already matched the Strategist Portal's own
+pacing-pill greens/ambers exactly; **Billed Externally's indigo was the one
+inconsistent color** — changed to the same blue (`#DBEAFE`/`#1E40AF`)
+already used for the Setup panel's "Starts {date}" pill, so all three
+states now draw from colors already in real use elsewhere, not one-off
+picks.
+
+**Investigated, not yet fixed — real root cause found, needs Claire's
+call**: "the campaign shows on all months in the flight, there was one that
+was through 2029 but stopped showing up in 2027." Traced to
+`strategistPrefillMonths()` in the Strategist Portal — an existing,
+documented decision that only auto-creates `campaign_months` rows for a
+flight's first 12 months; anything beyond that needs "+ Add month" by hand.
+A campaign starting ~2026 running to 2029 gets rows through ~2027, then
+stops, exactly matching the symptom. This isn't an Accounting Portal bug —
+Accounting can only show a month that has a real budget row to read. Asked
+Claire whether to extend the pre-fill to cover a flight's full length
+automatically, or leave the 12-month cap and just add this campaign's
+remaining months by hand. Not touched pending her answer.
+
+**New SQL** (`accounting-group-color-2026-08-11.sql`, given to Claire) —
+adds `group_color` to `accounting_get_campaign_lines`. No other schema
+changes this pass (manual confirm reuses existing SQL from two sessions
+ago).
+
+**Verified**: `test-accounting-manual-confirm-group-color.js` (scratchpad,
+10/10, new) — a never-Strategist-tracked tactic starts as "Needs
+confirmation," its manual-confirm checkbox is enabled (not disabled) since
+there's no actual spend yet, the RPC call carries the right payload, and
+once `confirmed_by` is set the main table correctly shows "Confirmed"
+instead; a group with its own brand color colors its banner row with it
+(dark color → white text, confirmed via the same contrast math as
+Strategist), a group with no color falls back to the neutral band; the
+Total row has exactly the same 8 `<td>`s as the header has `<th>`s (no
+colspan drift possible); 5 stat tiles render, including the new Actual
+Spend one. Re-ran `test-accounting-stats-and-detail-card.js` (16/16 — one
+assertion updated for the now-legitimate manual-confirm checkboxes, not a
+regression) and all other accounting/flight-wrap test files (`test-accounting-portal-v1.js`
+12/12, `test-accounting-offline-visits-cutpct.js` 10/10, `test-accounting-alpha-sort.js`
+1/1, `test-accounting-admin-handoff.js` 7/7, `test-accounting-v2-mockup-layout.js`
+15/15, `test-flight-range-nowrap.js` 8/8, `test-accounting-expected-spend.js`
+7/7) unchanged and still fully passing. 86/86 across all 9 accounting test
+files.
