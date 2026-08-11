@@ -764,6 +764,8 @@ const BULK_IMPORT_COLUMNS = [
   { key: 'flight_end', names: ['flight end', 'end date'] },
   { key: 'month', names: ['month'] },
   { key: 'gross_budget', names: ['gross budget', 'budget'] },
+  { key: 'in_platform_override', names: ['in-platform override', 'in platform override', 'in-platform budget', 'in platform budget'] },
+  { key: 'goal_override', names: ['goal override', 'goal'] },
   { key: 'setup_notes', names: ['setup notes', 'notes'] },
   { key: 'setup_blocker', names: ['setup blocker', 'blocker', 'waiting on'] },
 ];
@@ -798,13 +800,13 @@ function strategistOpenBulkImportForm() {
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import campaigns (paste from a CSV or a Google Sheets range)</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, Setup Notes, Setup Blocker</strong>. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. <strong>Tactic</strong> also accepts LLO, Reputation Mgmt., LLO (SEO), and Rep Monitoring (SEO) — flat-fee tactics the team tracks even though they carry no budget of their own. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, and/or Intake Form — same 3 options as the Setup panel; separate more than one with a semicolon, e.g. "Creative; Platform Access") — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
-    <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Split Label	Status	Flight Start	Flight End	Month	Gross Budget	Setup Notes	Setup Blocker
-Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-07	1500
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, In-Platform Override, Goal Override, Setup Notes, Setup Blocker</strong>. <strong>In-Platform Override</strong> and <strong>Goal Override</strong> are both optional — leave blank to keep using the auto-calculated value for that month, same as leaving them blank in the campaign's own detail panel. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. <strong>Tactic</strong> also accepts LLO, Reputation Mgmt., LLO (SEO), and Rep Monitoring (SEO) — flat-fee tactics the team tracks even though they carry no budget of their own. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, and/or Intake Form — same 3 options as the Setup panel; separate more than one with a semicolon, e.g. "Creative; Platform Access") — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
+    <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Split Label	Status	Flight Start	Flight End	Month	Gross Budget	In-Platform Override	Goal Override	Setup Notes	Setup Blocker
+Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-07	1500	750	150-200
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-08	2000
 Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region1_Larkwood	Region 1	active	2026-08-01	2026-12-31	2026-08	2000
 Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region2_Larkwood	Region 2	active	2026-08-01	2026-12-31	2026-08	2000
-Thistlebrook Clinic	SEM	Google Ads			pending				Waiting on client sign-off on ad copy	creative; platform_access"></textarea>
+Thistlebrook Clinic	SEM	Google Ads			pending							Waiting on client sign-off on ad copy	creative; platform_access"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:10px">
       <button onclick="strategistPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
       <button onclick="strategistOpenBulkImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
@@ -983,7 +985,12 @@ function strategistParseBulkImport(raw, overrides = {}) {
     // Budget column can be "$1,500"-formatted -- strip $ and , before it ever reaches
     // a numeric column, or the save throws Postgres error 22P02.
     const grossBudget = get('gross_budget').replace(/[$,]/g, '').trim();
-    if (month) groups.get(identityKey).monthRows.push({ month, grossBudget, rowNum });
+    // Same $/, stripping for In-Platform Override (also always numeric); Goal is
+    // deliberately left alone -- SEM's own goal can be a text range ("150-200"),
+    // which a blanket strip would mangle.
+    const inPlatformOverride = get('in_platform_override').replace(/[$,]/g, '').trim();
+    const goalOverride = get('goal_override').trim();
+    if (month) groups.get(identityKey).monthRows.push({ month, grossBudget, inPlatformOverride, goalOverride, rowNum });
   });
 
   // Splits: rows sharing the same client+tactic+platform that were given a Split
@@ -1037,7 +1044,10 @@ function strategistRenderBulkPreview() {
 
   const rowsHtml = [...plan.groups.values()].map(g => {
     const monthsSummary = g.monthRows.length
-      ? g.monthRows.map(m => `${m.month} ($${m.grossBudget || '—'})`).join(', ')
+      ? g.monthRows.map(m => {
+          const extras = [m.inPlatformOverride ? `IP $${m.inPlatformOverride}` : null, m.goalOverride ? `Goal ${m.goalOverride}` : null].filter(Boolean);
+          return `${m.month} ($${m.grossBudget || '—'}${extras.length ? ', ' + extras.join(', ') : ''})`;
+        }).join(', ')
       : '—';
     const action = g.existingLineId ? '<span style="color:#0F766E;font-weight:600">Match existing</span>' : '<span style="color:var(--accent);font-weight:600">Create new</span>';
     const blockerLabels = Array.isArray(g.setup_blocker) ? g.setup_blocker.map(b => SETUP_BLOCKER_LABELS[b]).filter(Boolean) : [];
@@ -1171,11 +1181,15 @@ async function strategistConfirmBulkImport() {
     for (const mr of g.monthRows) {
       const match = /^(\d{4})-(\d{2})$/.exec(mr.month);
       if (!match) { errors.push(`Row ${mr.rowNum}: "${mr.month}" isn't a valid month (use YYYY-MM)`); continue; }
+      const monthData = {};
+      if (mr.grossBudget) monthData.gross_budget = mr.grossBudget;
+      if (mr.inPlatformOverride) monthData.in_platform_override = mr.inPlatformOverride;
+      if (mr.goalOverride) monthData.goal_override = mr.goalOverride;
       try {
         await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
           p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
           p_campaign_line_id: lineId, p_month: `${match[1]}-${match[2]}-01`,
-          p_data: mr.grossBudget ? { gross_budget: mr.grossBudget } : {}
+          p_data: monthData
         }) });
         monthsSavedCount++;
       } catch(e) { errors.push(`Row ${mr.rowNum}: couldn't save month: ${e.message}`); }
