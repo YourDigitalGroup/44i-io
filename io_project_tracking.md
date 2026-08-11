@@ -10920,3 +10920,54 @@ and the button/function wiring (`strategistBulkFillAllToFlightEnd`) is
 still intact. Couldn't reproduce blind without more detail — asked Claire
 for specifics (which button, any error message, what she actually saw)
 rather than guess further and risk shipping a fix for the wrong problem.
+
+### 2026-08-12 (cont'd) — Real bug found: bulk backfill silently skipped open-ended campaigns
+
+Claire's follow-up: "I clicked the bulk button and got it says it added
+months but when I go to the accounting portal everything stops at Sept
+2027." Found the real bug on inspection this time (not blind): `strategist
+BulkFillAllToFlightEnd`'s candidate filter was `l.status === 'active' &&
+l.flight_end` — an "Ongoing" campaign (no flight end date at all) never
+qualified as a candidate, so it was **silently excluded from the whole
+run, every time**, with zero indication. The toast's "success" summary was
+real, just only for the OTHER campaigns that happened to have a flight_end
+— the specific one that actually needed fixing was invisible the entire
+time.
+
+Claire's stated scope: she doesn't need this to keep working indefinitely
+going forward, just needs the campaigns that are ALREADY broken corrected
+now, with the underlying rule being "every month in a flight should be
+accounted for, either an override or the standard budget from the IO."
+
+Fix, `strategistComputeBulkFillSaves(lineId)` (bulk-pass-only, doesn't
+touch the single-campaign "Fill remaining months to flight end" button,
+which stays flight_end-only matching its own label and its own `${l.
+flight_end ? ... : ''}` render guard): a campaign WITH a flight_end still
+fills toward it exactly as before; a campaign with NO flight_end now fills
+a rolling 12-month planning horizon from **today** instead of returning
+nothing. Also fixed the underlying "no silent caps" problem itself, not
+just this one instance of it: a campaign truly skipped (no existing month
+row to extrapolate a budget from at all) is now named in the final toast
+("N skipped (no existing budget to extend): Client — Tactic") instead of
+just vanishing from the count with no trace.
+
+**Flagged, not fixed** (matches "I don't need this moving forward," so
+left alone per her own scope): `strategistPrefillMonths()` — the mechanism
+that fills a BRAND NEW campaign's months at activation — only ever runs
+once (guarded by `existingRows.length > 1`) and, for an open-ended flight,
+fills exactly 12 months from activation and never refills again. Any
+truly ongoing campaign will eventually run out the same way roughly a
+year after activation, with nothing automatically extending it further —
+the exact same class of gap, just not yet triggered for newer campaigns.
+Not touched this pass since she said she doesn't need it solved right
+now, but noted here so it doesn't get forgotten as "already handled."
+
+**Verified**: new `test-strategist-bulk-backfill-ongoing-2026-08-12.js`
+(5/5) — an ongoing campaign with a stale last month now fills forward
+through a 12-month-from-today horizon; a campaign with a real flight_end
+still works exactly as before; a campaign with no existing month row at
+all is still correctly skipped, but now named in the toast instead of
+silent. Re-ran the original `test-strategist-bulk-backfill-2026-08-11.js`
+(7/7, still passing — its own "never touched" campaign happens to have no
+month row either, so the candidate-filter change didn't affect it) plus
+every other test file across both portals — no regressions.
