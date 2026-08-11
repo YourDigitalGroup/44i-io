@@ -330,6 +330,9 @@ function strategistFormatFlightDate(dateStr) {
   // "–"), it just can't wrap in the middle of a single date anymore.
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }).replace(/ /g, ' ');
 }
+// Returns HTML, not plain text -- callers must NOT wrap this in esc() (safe: s/e
+// only ever come from Date.toLocaleDateString on our own flight_start/flight_end
+// values, never free-typed text, so there's nothing here to escape).
 function strategistFormatFlightRange(start, end) {
   const s = strategistFormatFlightDate(start), e = strategistFormatFlightDate(end);
   if (!s && !e) return '—';
@@ -337,10 +340,16 @@ function strategistFormatFlightRange(start, end) {
   // the dash itself could end up alone on its own line -- the space BEFORE it was
   // breakable, so the browser had two valid wrap points ("date1 / – date2" and
   // "date1 – / date2") and sometimes picked the one that strands the dash. A
-  // non-breaking space after the dash glues it to the end date, leaving exactly
-  // one valid break point (right after the start date), so the dash never sits
-  // alone -- same non-breaking-space technique already used within each date.
-  return `${s || '—'} – ${e || '—'}`;
+  // non-breaking space after the dash was meant to fix this by gluing it to the
+  // end date, but that alone wasn't enough (found live again, 2026-08-11, Claire
+  // -- screenshots showing 3-line wraps): an en dash carries its OWN line-break
+  // opportunity in the Unicode line-breaking algorithm, independent of the
+  // whitespace around it, so browsers can still break immediately after "–" even
+  // though a non-breaking space follows it. Wrapping "– end-date" in its own
+  // white-space:nowrap span removes every break point inside that chunk
+  // (including the dash's own), leaving exactly one valid break -- right after
+  // the start date, in the normal (breakable) space between the two chunks.
+  return `${s || '—'} <span style="white-space:nowrap">– ${e || '—'}</span>`;
 }
 function strategistSetScope(scope) {
   strategistScope = scope;
@@ -2290,7 +2299,7 @@ function renderMainTable(lines) {
           </select>
           <input type="text" value="${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? esc(l.platform) : ''}" placeholder="Platform" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="display:${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'inline-block' : 'none'};width:100%;min-width:132px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px;margin-top:2px"/>
         </td>
-        <td style="padding:9px 10px;max-width:110px">${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</td>
+        <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
         <td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${monthRow.actual_spend != null ? '$' + Number(monthRow.actual_spend).toLocaleString() : '—'}</td>
