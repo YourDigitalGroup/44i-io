@@ -11,14 +11,26 @@
 
 <div id="toast" class="toast"></div>
 
-<!-- ACCOUNTING PANEL — scaffold only (2026-08-07). Same login-gated shell pattern as
-     /admin and /strategist, sharing shared.js/shared.css per CLAUDE.md's plan for
-     future role-based views. What accounting actually needs to see/do is real
-     business-logic scope waiting on team answers (see the "Accounting Portal —
-     Concept & Open Questions" doc shared with the accounting team) — intentionally
-     NOT decided here yet, same as the strategist scaffold started. -->
+<!-- ACCOUNTING PORTAL — v1 framework (2026-08-11), same login-gated shell
+     pattern as /strategist (which itself started this way 2026-07-18), per
+     Claire's timeline: both need to be built and working before the real IO
+     launches, so nothing accounting needs gets left out of the system. This
+     v1 is deliberately a REVENUE SPLIT VIEW ONLY -- Gross Budget, in 44i's
+     Cut %, out 44i's $ and the Group's $ (YDA) -- built to be cross-checked
+     directly against Claire's current revenue spreadsheet using the
+     campaigns already imported into the Strategist Portal. Two things are
+     KNOWN gaps, not oversights, flagged in the banner below and left out of
+     the math on purpose until confirmed: `fortyfouri_fixed_cut` (exists in
+     accounting_map, never actually wired into a formula anywhere in the app)
+     and the Setup Fee split (`setup_fee_cut_pct` -- a one-time fee, not a
+     recurring monthly amount, needs its own separate handling). Everything
+     else about what accounting actually needs day to day (invoicing, sign-
+     off, reconciliation workflow) is intentionally NOT decided here -- same
+     "ship the shell, let a real user find the gaps live" approach used for
+     the Strategist Portal, rather than guessing at a workflow nobody's used
+     yet. -->
 <div id="page-accounting" style="display:none">
-  <div class="card" style="max-width:1100px;margin:24px auto;padding-bottom:20px">
+  <div class="card" style="max-width:1400px;margin:24px auto;padding-bottom:20px">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="accounting-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
@@ -27,21 +39,38 @@
       </div>
     </div>
 
-    <div style="padding:60px 40px;text-align:center">
-      <div style="font-size:36px;margin-bottom:14px">🧾</div>
-      <p style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:8px">Accounting Portal — Coming Soon</p>
-      <p style="font-size:13px;color:var(--muted);max-width:440px;margin:0 auto">
-        You're logged in — this is the foundation only. What this portal actually shows
-        (billing reconciliation, revenue-share data, service status) is waiting on
-        answers to a short set of questions shared with the accounting team.
-      </p>
+    <div style="padding:16px 20px 0">
+      <div style="background:#FEF9E7;border:1px solid #F5E1A4;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:#8A6D12">
+        <strong>v1 — revenue split by 44i Cut % only.</strong> Fixed Cut and the Setup Fee split aren't included in these totals yet (they need their own confirmed handling before they're added). Compare this against the current revenue spreadsheet and flag anything that doesn't line up.
+      </div>
+
+      <!-- Top bar: month picker + filters -->
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <button onclick="accountingShiftMonth(-1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">‹</button>
+          <span id="accounting-month-label" style="font-size:13px;font-weight:700;color:var(--text);min-width:110px;text-align:center"></span>
+          <button onclick="accountingShiftMonth(1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">›</button>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;font-size:12px">
+          <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
+            <option value="">All Groups</option>
+          </select>
+          <select id="accounting-status-filter" onchange="accountingSetStatusFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
+            <option value="">All Statuses</option>
+            <option value="active" selected>Active only</option>
+            <option value="paused">Paused only</option>
+            <option value="complete">Complete only</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="accounting-table-wrap" style="overflow-x:auto"></div>
     </div>
   </div>
 </div>
 
-<!-- ACCOUNTING LOGIN MODAL — same shape as /admin's and /strategist's, scoped to
-     accounting/super roles only (super included so it can be tested as it's built,
-     same "James stays a super admin for now" arrangement used everywhere else). -->
+<!-- ACCOUNTING LOGIN MODAL — same shape as /strategist's, scoped to
+     accounting/super roles only. -->
 <div id="accounting-login-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
@@ -60,9 +89,6 @@
 
 <script src="../shared.js"></script>
 <script>
-// Same "don't hardcode a roster" pattern as /admin's and /strategist's login —
-// populated from the shared get_login_roster RPC, filtered client-side to the
-// roles that belong on this specific portal.
 let currentAccountingUser = null; // {name, email, role, pw}
 
 async function loadAccountingRoster() {
@@ -85,8 +111,6 @@ function promptAccountingLogin() {
   document.getElementById('accounting-pw-error').style.display = 'none';
 }
 
-// Same shape as attemptStrategistLogin/attemptAdminLogin — used by both the modal's
-// submit button and the silent admin->accounting handoff below.
 async function attemptAccountingLogin(name, pw) {
   if (!name) return { ok: false, error: 'Please select your name.' };
   let row;
@@ -126,16 +150,18 @@ function showAccountingPanel(show) {
   if (show && currentAccountingUser) {
     const badge = document.getElementById('accounting-user-badge');
     const roleLabel = currentAccountingUser.role === 'super' ? 'Super Admin' : 'Accounting';
-    badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#F59E0B"></span><strong style="color:var(--text)">${esc(currentAccountingUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
-    // Only a super admin gets a way back to /admin from here — an accounting-role
-    // login is deliberately rejected by /admin (same as accounting is rejected there
-    // today), so showing this link to a real accounting user would just dead-end them.
+    badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#0EA5E9"></span><strong style="color:var(--text)">${esc(currentAccountingUser.name)}</strong> <span style="color:var(--muted)">— ${roleLabel}</span></span>`;
+    // Only a super admin gets a way back to /admin from here -- an accounting-role
+    // login is deliberately rejected by /admin (attemptAdminLogin), so showing this
+    // link to a real accounting user would just dead-end them (carried over from
+    // the original scaffold, 2026-08-07).
     const adminLink = document.getElementById('accounting-admin-portal-link');
     if (adminLink) adminLink.style.display = currentAccountingUser.role === 'super' ? 'inline' : 'none';
+    loadAccountingDashboard();
   }
 }
 
-// Handoff to admin/index.html's tryAdminHandoffLogin() — same one-time sessionStorage
+// Handoff to admin/index.html's tryAdminHandoffLogin() -- same one-time sessionStorage
 // pattern used between /admin and /strategist. Only relevant for a super admin here,
 // since a real accounting login has nowhere to hand off to.
 function adminPortalHandoff() {
@@ -146,7 +172,7 @@ function adminPortalHandoff() {
   } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
 }
 
-// Silent handoff from the admin portal's "Go to Accounting Portal" link — same
+// Silent handoff FROM the admin portal's "Go to Accounting Portal" link -- same
 // one-time sessionStorage pattern as the existing admin<->strategist handoff.
 async function tryAccountingHandoffLogin() {
   let name, pw;
@@ -168,6 +194,150 @@ function accountingLogout() {
   currentAccountingUser = null;
   showAccountingPanel(false);
   promptAccountingLogin();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ACCOUNTING DASHBOARD (2026-08-11) — v1 revenue split view. See the banner
+// comment above #page-accounting for exactly what's deliberately left out
+// and why.
+// ══════════════════════════════════════════════════════════════════════════
+
+let ALL_ACCOUNTING_LINES = [];
+let ALL_ACCOUNTING_MONTHS = [];
+let ACCOUNTING_CUT_RATES = { base: {}, group: {} }; // service_id -> pct, and group_id|service_id -> pct
+let accountingCurrentMonth = new Date();
+let accountingGroupFilter = '';
+let accountingStatusFilter = 'active';
+
+function accountingMonthKey(d) { return d.toISOString().slice(0, 7); }
+function accountingMonthLabel(d) { return d.toLocaleString('en-US', { month: 'long', year: 'numeric' }); }
+
+function accountingShiftMonth(delta) {
+  accountingCurrentMonth = new Date(accountingCurrentMonth.getFullYear(), accountingCurrentMonth.getMonth() + delta, 1);
+  renderAccountingDashboard();
+}
+function accountingSetGroupFilter(groupName) {
+  accountingGroupFilter = groupName;
+  renderAccountingDashboard();
+}
+function accountingSetStatusFilter(status) {
+  accountingStatusFilter = status;
+  renderAccountingDashboard();
+}
+
+// Group override wins, else the base service rate, else null (no rate configured
+// at all -- shown as "—" rather than guessing 0%, same "no silent wrong guess"
+// convention as the Strategist Portal's own rate fallbacks).
+function accountingEffectiveCutPct(serviceId, groupId) {
+  const groupRate = groupId ? ACCOUNTING_CUT_RATES.group[`${groupId}|${serviceId}`] : undefined;
+  if (groupRate != null) return groupRate;
+  const baseRate = ACCOUNTING_CUT_RATES.base[serviceId];
+  return baseRate != null ? baseRate : null;
+}
+
+// 44i's $ = Gross Budget x Cut % ; Group's $ (YDA) = the remainder of Gross --
+// confirmed rule (100 - Cut % is always the Group's share, per Admin's own
+// "Group's cut (YDA) is always 100% minus this" note). Returns nulls (not 0s)
+// when Gross Budget or Cut % isn't available, so a missing rate is visibly
+// missing in the table rather than rendering as $0.
+function accountingSplitRevenue(grossBudget, cutPct) {
+  if (grossBudget == null || cutPct == null) return { fortyfouri: null, group: null };
+  const fortyfouri = Number(grossBudget) * (Number(cutPct) / 100);
+  return { fortyfouri, group: Number(grossBudget) - fortyfouri };
+}
+
+async function fetchAccountingData() {
+  const [lines, months, rates] = await Promise.all([
+    sb('rpc/accounting_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
+    sb('rpc/accounting_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
+    sb('rpc/accounting_get_rates', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
+  ]);
+  ALL_ACCOUNTING_LINES = lines || [];
+  ALL_ACCOUNTING_MONTHS = months || [];
+  ACCOUNTING_CUT_RATES = { base: {}, group: {} };
+  (rates || []).forEach(r => {
+    if (r.scope === 'base') ACCOUNTING_CUT_RATES.base[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
+    else if (r.scope === 'group') ACCOUNTING_CUT_RATES.group[`${r.group_id}|${r.service_id}`] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
+  });
+}
+
+function accountingMonthRowFor(lineId, monthDate) {
+  const key = accountingMonthKey(monthDate);
+  return ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === lineId && m.month.slice(0, 7) === key) || null;
+}
+
+async function loadAccountingDashboard() {
+  await fetchAccountingData();
+  renderAccountingDashboard();
+}
+
+function renderAccountingDashboard() {
+  document.getElementById('accounting-month-label').textContent = accountingMonthLabel(accountingCurrentMonth);
+
+  const groupFilterEl = document.getElementById('accounting-group-filter');
+  const groupNames = [...new Set(ALL_ACCOUNTING_LINES.map(l => l.group_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  if (accountingGroupFilter && !groupNames.includes(accountingGroupFilter)) accountingGroupFilter = '';
+  groupFilterEl.innerHTML = '<option value="">All Groups</option>' +
+    groupNames.map(g => `<option value="${esc(g)}" ${g === accountingGroupFilter ? 'selected' : ''}>${esc(g)}</option>`).join('');
+
+  const rows = ALL_ACCOUNTING_LINES.filter(l => {
+    if (accountingGroupFilter && l.group_name !== accountingGroupFilter) return false;
+    if (accountingStatusFilter && l.status !== accountingStatusFilter) return false;
+    return true;
+  }).map(l => {
+    const monthRow = accountingMonthRowFor(l.id, accountingCurrentMonth);
+    const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
+    const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id);
+    const split = accountingSplitRevenue(gross, cutPct);
+    return { line: l, gross, cutPct, split };
+  }).filter(r => r.gross != null); // no month row for this line/month at all -- nothing to show yet
+
+  const wrap = document.getElementById('accounting-table-wrap');
+  if (!rows.length) {
+    wrap.innerHTML = '<p style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No campaigns with a budget entered for this month yet.</p>';
+    return;
+  }
+
+  let totalGross = 0, totalFortyfouri = 0, totalGroup = 0;
+  const bodyRows = rows.map(r => {
+    totalGross += r.gross;
+    if (r.split.fortyfouri != null) { totalFortyfouri += r.split.fortyfouri; totalGroup += r.split.group; }
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:9px 10px"><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
+      <td style="padding:9px 10px">${esc(r.line.group_name || '—')}</td>
+      <td style="padding:9px 10px">${esc(r.line.tactic_label || r.line.service_id || '—')}</td>
+      <td style="padding:9px 10px">${esc(r.line.status || '—')}</td>
+      <td style="padding:9px 10px">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      <td style="padding:9px 10px">${r.cutPct != null ? r.cutPct + '%' : '<span style="color:var(--muted)">— not set</span>'}</td>
+      <td style="padding:9px 10px">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+      <td style="padding:9px 10px">${r.split.group != null ? '$' + r.split.group.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead>
+      <tr style="border-bottom:2px solid var(--border)">
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Client</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Tactic</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Status</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Gross Budget</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut %</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i's $</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group's $ (YDA)</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows}</tbody>
+    <tfoot>
+      <tr style="border-top:2px solid var(--border);font-weight:700">
+        <td colspan="4" style="padding:9px 10px">Total</td>
+        <td style="padding:9px 10px">$${totalGross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="padding:9px 10px"></td>
+        <td style="padding:9px 10px">$${totalFortyfouri.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td style="padding:9px 10px">$${totalGroup.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      </tr>
+    </tfoot>
+  </table>`;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
