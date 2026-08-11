@@ -58,6 +58,7 @@
   #page-accounting .acct-status-pill.confirmed{background:#DDF2DE;color:#2E7D42}
   #page-accounting .acct-status-pill.needs{background:#FBF3C7;color:#8A6D12}
   #page-accounting .acct-status-pill.external{background:#DBEAFE;color:#1E40AF}
+  #page-accounting .acct-status-pill.paused{background:#E5E7EB;color:#4B5563}
 </style>
 </head>
 <body>
@@ -368,6 +369,7 @@ function accountingRenderDetailCard() {
       label: d.toLocaleString('en-US', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(-2),
       monthStr, gross, actualSpend, expectedSpend, split,
       confirmed: actualSpend != null || manuallyConfirmed, manuallyConfirmed,
+      paused: !!monthRow?.paused,
     };
   });
 
@@ -383,21 +385,30 @@ function accountingRenderDetailCard() {
     </div>
     <table>
       <thead><tr><th>Month</th><th class="num">Revenue</th><th class="num">44i Revenue</th><th class="num">Expected Spend</th><th class="num">Actual Spend</th><th>Status</th></tr></thead>
-      <tbody>${months.map(m => `<tr>
-          <td><strong>${esc(m.label)}</strong></td>
-          <td class="num">${m.gross != null ? '$' + m.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num">${m.split.fortyfouri != null ? '$' + m.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num">${m.expectedSpend != null ? '$' + m.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num">${m.actualSpend != null ? '$' + m.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+      <tbody>${months.map(m => {
+          // Paused month's dollar figures gray out (2026-08-12, per Claire) --
+          // inline style on the <td> itself, not the <tr>, since #page-accounting
+          // tbody td{color:...} is more specific than a color inherited from a
+          // styled ancestor <tr> and would otherwise win.
+          const dollarStyle = m.paused ? ' style="color:var(--muted)"' : '';
+          return `<tr>
+          <td${dollarStyle}><strong>${esc(m.label)}</strong></td>
+          <td class="num"${dollarStyle}>${m.gross != null ? '$' + m.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num"${dollarStyle}>${m.split.fortyfouri != null ? '$' + m.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num"${dollarStyle}>${m.expectedSpend != null ? '$' + m.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num"${dollarStyle}>${m.actualSpend != null ? '$' + m.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td>
             <div style="display:flex;align-items:center;gap:8px">
-              ${line.billed_externally ? accountingStatusPill('external', 'Billed externally') : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
-              ${!line.billed_externally ? `<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'};white-space:nowrap">
+              ${line.billed_externally ? accountingStatusPill('external', 'Billed externally')
+                : m.paused ? accountingStatusPill('paused', 'Paused')
+                : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
+              ${!line.billed_externally && !m.paused ? `<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'};white-space:nowrap">
                 <input type="checkbox" ${m.manuallyConfirmed ? 'checked' : ''} ${m.actualSpend != null ? 'disabled title="Already confirmed automatically -- real spend is entered for this month"' : ''} onchange="accountingConfirmMonth('${line.id}','${m.monthStr}', this.checked)"/> Manually confirm
               </label>` : ''}
             </div>
           </td>
-        </tr>`).join('')}</tbody>
+        </tr>`;
+        }).join('')}</tbody>
     </table>`;
 }
 // Toggles Billed Externally for a whole campaign (2026-08-11: moved from a
@@ -549,8 +560,8 @@ function accountingOpenBulkMatchForm() {
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk match against what's already in the system</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Paste rows from your own tracking sheet as <strong>Client, Tactic</strong> (one pair per line, tab or comma separated). Nothing here is sent anywhere except back to your own browser -- this only checks it against campaigns already loaded in this portal.</p>
-    <textarea id="acct-bulk-match-input" rows="6" placeholder="Tassel Ridge Winery&#9;FB/IG Ads&#10;Fisher &amp; Son Roofing&#9;Website" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px"></textarea>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Paste rows from your own tracking sheet as <strong>Client, Tactic, Gross Budget</strong> (Gross Budget is optional -- one row per line, tab or comma separated). Nothing here is sent anywhere except back to your own browser -- this only checks it against campaigns already loaded in this portal, for the month currently showing in the top bar (${esc(accountingMonthLabel(accountingCurrentMonth))}).</p>
+    <textarea id="acct-bulk-match-input" rows="6" placeholder="Tassel Ridge Winery&#9;FB/IG Ads&#9;750&#10;Fisher &amp; Son Roofing&#9;Website" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:12px">
       <button onclick="accountingRunBulkMatch()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Check Matches</button>
       <button onclick="accountingOpenBulkMatchForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
@@ -563,7 +574,8 @@ function accountingRunBulkMatch() {
   const raw = document.getElementById('acct-bulk-match-input').value;
   const rows = raw.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
     const parts = l.includes('\t') ? l.split('\t') : l.split(',');
-    return { clientText: (parts[0] || '').trim(), tacticText: (parts[1] || '').trim() };
+    const grossText = (parts[2] || '').trim();
+    return { clientText: (parts[0] || '').trim(), tacticText: (parts[1] || '').trim(), grossText };
   });
   const norm = s => (s || '').trim().toLowerCase();
 
@@ -573,6 +585,19 @@ function accountingRunBulkMatch() {
       l.client_id === client.id && norm(l.tactic_label).includes(norm(row.tacticText)));
 
     if (lineMatch) {
+      // Gross Budget discrepancy check (2026-08-12, per Claire) -- read-only
+      // flag, never an auto-update. Only fires when BOTH a pasted number and
+      // a system figure for the currently-viewed month exist and genuinely
+      // differ (>$0.01, to ignore float noise) -- silent when either side
+      // has nothing to compare against, rather than guessing at a mismatch.
+      const pastedGross = row.grossText ? parseFloat(row.grossText.replace(/[$,]/g, '')) : null;
+      const systemMonthRow = accountingMonthRowFor(lineMatch.id, accountingCurrentMonth);
+      const systemGross = systemMonthRow?.gross_budget != null ? Number(systemMonthRow.gross_budget) : null;
+      const hasDiscrepancy = pastedGross != null && !isNaN(pastedGross) && systemGross != null && Math.abs(pastedGross - systemGross) > 0.01;
+
+      if (hasDiscrepancy) {
+        return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">⚠️ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:#8A6D12">Gross Budget mismatch: your sheet says $${pastedGross.toLocaleString(undefined,{maximumFractionDigits:2})}, system says $${systemGross.toLocaleString(undefined,{maximumFractionDigits:2})} for ${esc(accountingMonthLabel(accountingCurrentMonth))}</span></div>`;
+      }
       return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">✅ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">already in the system</span></div>`;
     }
     if (client) {
@@ -590,22 +615,34 @@ function accountingRunBulkMatch() {
 }
 
 function accountingStatusPill(kind, text) {
-  const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external' }[kind];
+  const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external', paused: 'paused' }[kind];
   return `<span class="acct-status-pill ${cls}">${esc(text)}</span>`;
 }
 // Confirmed = a real actual-spend figure entered for the month, OR a manual
 // confirm from the detail card (for tactics the Strategist Portal never
-// tracks actuals for at all). Either one is sufficient.
+// tracks actuals for at all). Either one is sufficient. Paused (2026-08-12,
+// per Claire: "how should we indicate a paused month in the middle of a
+// flight") takes priority over Confirmed/Needs confirmation -- a paused
+// month never needs confirming, it's just not running -- but Billed
+// Externally still wins over Paused (a manually-invoiced tactic can be
+// paused in the ad platform and still get billed).
 function accountingLineStatusPill(r) {
   if (r.line.billed_externally) return accountingStatusPill('external', 'Billed externally');
+  if (r.paused) return accountingStatusPill('paused', 'Paused');
   if (r.confirmed) return accountingStatusPill('confirmed', 'Confirmed');
   return accountingStatusPill('needs', 'Needs confirmation');
 }
 // Status text for a rollup PARENT row -- summarizes across all its children
 // rather than picking one child's state, since a split can have some regions
-// confirmed and others not (the mockup's "2 of 3 confirmed" example).
+// confirmed and others not (the mockup's "2 of 3 confirmed" example). Same
+// Billed Externally > Paused > Confirmed priority as the single-line pill --
+// only shows a whole-rollup "Paused" when EVERY region is paused this month,
+// otherwise a partially-paused rollup falls through to the normal
+// confirmed-count summary (a region-specific pause doesn't need its own
+// "X of Y paused" line here -- that detail is visible in the expanded rows).
 function accountingRollupStatusPill(r) {
   if (r.children.every(c => c.line.billed_externally)) return accountingStatusPill('external', 'Billed externally');
+  if (r.children.every(c => c.paused)) return accountingStatusPill('paused', 'Paused');
   if (r.confirmedCount === r.totalCount) return accountingStatusPill('confirmed', 'Confirmed');
   if (r.confirmedCount === 0) return accountingStatusPill('needs', 'Needs confirmation');
   return accountingStatusPill('needs', `${r.confirmedCount} of ${r.totalCount} confirmed`);
@@ -815,7 +852,8 @@ function accountingBuildRows() {
     // never tracks actuals for at all -- 2026-08-11, Claire). No checkbox in
     // the main table either way -- this is just the resolved boolean.
     const confirmed = actualSpend != null || !!monthRow?.confirmed_by;
-    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed };
+    const paused = !!monthRow?.paused;
+    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed, paused };
   }).filter(r => r.gross != null); // no month row for this line/month at all -- nothing to show yet
 
   const groups = new Map();

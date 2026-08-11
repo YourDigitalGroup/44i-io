@@ -10757,3 +10757,52 @@ portals: the header cell and the current group's banner cell stay at the
 identical screen position before and after a 300px internal scroll, while
 a body row genuinely moves out of view underneath them. Re-ran all 15
 other test files across both portals — all still passing.
+
+### 2026-08-12 (cont'd) — Paused-month indicator, Gross Budget discrepancy flag in Bulk Match
+
+Two follow-ups from the same conversation, both in Accounting.
+
+**1. Paused-month indicator.** Claire asked how to indicate a paused month
+in the middle of a flight — the Strategist Portal already lets a month be
+marked paused (`campaign_months.paused`, added 2026-08-10) but Accounting
+never surfaced it at all. `accounting_get_campaign_months` never returned
+that column; patched it to (no new column, existing mechanism only).
+Priority order, applied everywhere status is shown: **Billed Externally >
+Paused > Confirmed/Needs confirmation** (a paused month never needs
+confirming; a manually-invoiced tactic can still be paused in the ad
+platform and billed regardless). Main table: single-line rows show a new
+gray "Paused" pill; a region-split rollup only shows the whole-rollup
+"Paused" pill when **every** region is paused that month, otherwise it
+falls through to the normal confirmed-count summary (a partially-paused
+split doesn't need its own new summary state — that detail is visible once
+expanded). Detail card: a paused month's dollar figures gray out and the
+manual-confirm checkbox is hidden entirely (nothing to confirm).
+
+**2. Gross Budget discrepancy flag (Bulk Match).** Claire asked directly:
+does Bulk Match do anything about a Gross Budget mismatch? Honest answer
+at the time was no — confirmed that gap, then built the read-only flag she
+asked for. Paste format gained an optional third column (Gross Budget);
+when a pasted row matches an existing line AND both a pasted number and
+the system's own figure for the *currently-viewed month* exist and differ
+by more than a cent, the row shows "⚠️ Gross Budget mismatch: your sheet
+says $X, system says $Y" instead of the plain checkmark. Deliberately
+read-only — never auto-updates the system's number from a paste; matches
+the same "flag for a human to look at, not a silent change" stance the
+whole Bulk Match tool already took for new-line creation. Silent (plain
+checkmark) whenever either side has nothing to compare — no pasted number,
+or no month row in the system yet — rather than guessing at a mismatch
+from incomplete data.
+
+**New SQL** (`accounting-paused-month-2026-08-12.sql`, given to Claire) —
+one-line patch to `accounting_get_campaign_months`, exposing the existing
+`paused` column.
+
+**Verified**: `test-accounting-paused-month-2026-08-12.js` (8/8) — single-
+line paused pill, normal line unaffected, whole-rollup Paused only when
+every region is paused (not when just one is), detail card grays dollars
+and hides the checkbox for a paused month while a normal month in the same
+card still shows it. `test-accounting-bulk-match-gross-discrepancy-2026-08-
+12.js` (4/4) — flags a real mismatch with both figures shown, stays silent
+on an exact match, no pasted number, and no system month row to compare
+against. Re-ran all other test files across both portals — no
+regressions.
