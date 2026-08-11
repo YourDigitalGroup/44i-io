@@ -2123,25 +2123,31 @@ async function strategistFillMonthsToFlightEnd(lineId) {
   showToast(`Filled ${saves.length} month(s) through flight end.`);
 }
 
-// Same core logic as strategistComputeFillSaves, but for a campaign with NO
-// flight_end ("Ongoing") this fills a rolling 12-month planning horizon from
-// TODAY instead of returning nothing (2026-08-12, real bug found live:
-// the bulk pass's candidate filter required flight_end, so an open-ended
-// campaign was silently excluded from the whole run every time -- Claire
-// clicked the bulk button, got a "success" toast for the campaigns that DID
-// have a flight_end, and had no way to know the one that actually needed
-// fixing was skipped entirely). Only used by the bulk pass -- the single-
-// campaign "Fill remaining months to flight end" button stays flight_end-
-// only, matching its own label; it's simply not rendered for an ongoing
-// campaign (see the detail panel's own ${l.flight_end ? ... : ''} guard).
+// Fills the WHOLE flight from its own Flight Start date, not just forward
+// from wherever the last existing row happens to be (2026-08-12, per
+// Claire: "I need it to fill based on the full flight from the start") --
+// this catches any gap in the MIDDLE of a flight too, not only a truncated
+// tail. Every filled-in month uses the campaign's own standard/IO budget --
+// its EARLIEST existing month's Gross Budget (setupBudgetRowFor, same
+// "standard budget from the IO" source strategistPrefillMonths already
+// uses for a brand-new campaign) -- rather than whatever the LAST existing
+// row happens to be, since a stale/truncated campaign's last row isn't
+// necessarily the right one to extrapolate from. Any month that already
+// has its own row (including a deliberate override) is left untouched --
+// this only ever fills a genuine gap, never overwrites existing data.
+// A campaign with no flight_end ("Ongoing") fills a rolling 12-month
+// planning horizon from TODAY instead of running forever with no target.
+// Only used by the bulk pass -- the single-campaign "Fill remaining months
+// to flight end" button is unchanged (still extends forward from the last
+// row using ITS rate, a deliberately different one-off use: "the rate just
+// changed, keep going with the new one").
 function strategistComputeBulkFillSaves(lineId) {
   const l = ALL_CAMPAIGN_LINES.find(x => x.id === lineId);
   if (!l) return { saves: [], skipReason: 'campaign not found' };
-  const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
-  if (!rows.length) return { saves: [], skipReason: 'no existing month to extend from' };
-  const last = rows[rows.length - 1];
-  const existingMonths = new Set(rows.map(m => m.month));
-  const start = new Date(last.month + 'T00:00:00');
+  const baseRow = setupBudgetRowFor(lineId); // earliest existing month = the campaign's standard IO budget
+  if (!baseRow || baseRow.gross_budget == null) return { saves: [], skipReason: 'no existing month to base a standard budget on' };
+  const existingMonths = new Set(ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).map(m => m.month));
+  const start = new Date((l.flight_start || baseRow.month) + 'T00:00:00');
   let end;
   if (l.flight_end) {
     end = new Date(l.flight_end + 'T00:00:00');
@@ -2150,12 +2156,12 @@ function strategistComputeBulkFillSaves(lineId) {
     end = new Date(now.getFullYear(), now.getMonth() + 12, 1);
   }
   const monthCount = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-  if (monthCount < 1) return { saves: [], skipReason: null }; // already covers -- not an error, just nothing to do
+  if (monthCount < 0) return { saves: [], skipReason: null }; // flight already over/inverted -- not an error, just nothing to do
   const saves = [];
-  for (let i = 1; i <= monthCount; i++) {
+  for (let i = 0; i <= monthCount; i++) {
     const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
     const monthStr = d.toISOString().slice(0, 10);
-    if (!existingMonths.has(monthStr)) saves.push({ lineId, monthStr, gross_budget: last.gross_budget });
+    if (!existingMonths.has(monthStr)) saves.push({ lineId, monthStr, gross_budget: baseRow.gross_budget });
   }
   return { saves, skipReason: null };
 }
