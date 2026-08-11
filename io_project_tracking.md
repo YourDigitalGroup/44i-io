@@ -11130,3 +11130,33 @@ behaves exactly as before (Setup queue, no status override, billing_type
 08-11.js`) had a stale "flat service excluded from dropdown" assertion —
 updated to reflect the new, correct, intended behavior, not a regression.
 Re-ran every other test file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Removed "Backfill All to Flight End"; excluded modifier services from Add Service
+
+**Removed** the "Backfill All to Flight End" button and its two backing
+functions (`strategistComputeBulkFillSaves`, `strategistBulkFillAllToFlight
+End`) from the Strategist Portal per Claire: "I think we can now remove the
+Backfill all to Flight End as well" — the already-broken campaigns are
+corrected, and going forward every month fills in automatically (this
+session's earlier carry-forward work), so the one-time correction tool has
+no more job to do. Left `strategistComputeFillSaves`/`strategistSaveFillEntry`/
+`strategistFillMonthsToFlightEnd` untouched — the single-campaign "Fill
+remaining months to flight end" button is a different, still-useful tool
+(a deliberate one-off: "the rate just changed, extend forward with the new
+one"), not what she asked to remove. Deleted the 3 scratchpad test files
+that only ever tested the removed feature (now correctly throw
+`ReferenceError` against the current file, expected, not a regression).
+
+**Fixed**, live mid-build, per Claire ("there are a bunch of offline
+tracking on their own. we have the toggle for that"): the "show all
+services" fix for Add Service's Tactic dropdown (a few messages earlier)
+had no filter at all, so it also pulled in modifier/add-on catalog rows —
+Offline Visits Tracking chief among them — as if they were standalone
+tactics, even though there's already a dedicated "+ Offline Visits
+Tracking" checkbox right below the dropdown for exactly that. Now excludes
+`pricing_mode: 'modifier'` and `is_cpm_adjustment` rows from the list.
+
+**Verified**: syntax-checked both files after the removal; re-ran
+`test-accounting-add-service-all-tactics-2026-08-12.js` (now 14/14, adding
+a dedicated modifier-exclusion assertion) and every other test file across
+both portals — no regressions.
