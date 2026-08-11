@@ -10483,3 +10483,37 @@ correctly a no-op with an explanatory toast. Re-ran
 `test-setup-panel-collapse.js` (8/8), `test-setup-offline-and-dates.js`
 (9/9), and `test-bulk-import-flight-extend.js` (11/11) unchanged and still
 fully passing.
+
+### 2026-08-11 (cont'd) — Real bug: manual confirm threw a uuid/text SQL error; row-height and Total-row padding fixes
+
+Claire tried the new manual-confirm checkbox and got a real error:
+`operator does not exist: uuid = text`. Root cause: `campaign_months.campaign_line_id`
+and `campaign_lines.id` are both `uuid` columns, but `accounting_confirm_month`
+and `accounting_set_billed_externally` compared them directly against
+`p_campaign_line_id` (declared `text`, matching how every other accounting
+RPC and every JS call site already passes ids). Fixed by casting the
+parameter to `uuid` at the comparison in both functions — no JS change
+needed, parameter type unchanged.
+
+Also fixed two display issues from the same message:
+- **Manual confirm checkbox moved inline next to the status pill** (was
+  stacked below it on its own line, making every detail-card row taller
+  than it needed to be) — now both sit in one flex row.
+- **Total row padding** — `tbody td{padding:9px 12px}` never matched
+  `tfoot td` (different selector scope), so the Total row's cells had
+  effectively zero padding, making that row visually cramped/misaligned
+  compared to the rows above it even though the column count itself was
+  already correct (yesterday's fix). Added an explicit `tfoot td` padding
+  rule matching the body rows.
+
+**New SQL** (`accounting-confirm-uuid-fix-2026-08-11.sql`, given to Claire)
+— patches both functions with the `::uuid` cast.
+
+**Still open**: Claire asked to "shade the top headers for the whole group
+a different brand color" — asked what should change from the existing
+colored divider-row banner; her answer was "something else" without
+elaborating yet. Not touched pending her description.
+
+**Verified**: re-ran all 9 accounting test files (86/86) unchanged and
+still fully passing after the checkbox/padding CSS changes — no JS logic
+changed in this pass, so no new test needed beyond the regression check.

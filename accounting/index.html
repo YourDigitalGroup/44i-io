@@ -40,6 +40,7 @@
   #page-accounting thead th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
   #page-accounting thead th.num, #page-accounting td.num{text-align:right}
   #page-accounting tbody td{padding:9px 12px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text)}
+  #page-accounting tfoot td{padding:10px 12px;font-variant-numeric:tabular-nums;color:var(--text);font-size:12.5px}
   #page-accounting tr.acct-group-row td{background:var(--light);font-weight:700;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:8px 12px}
   #page-accounting tr.acct-row{cursor:pointer}
   #page-accounting tr.acct-row:hover td{background:var(--light)}
@@ -370,10 +371,12 @@ function accountingRenderDetailCard() {
           <td class="num">${m.expectedSpend != null ? '$' + m.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${m.actualSpend != null ? '$' + m.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td>
-            ${line.billed_externally ? accountingStatusPill('external', 'Billed externally') : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
-            ${!line.billed_externally ? `<label style="display:flex;align-items:center;gap:5px;margin-top:4px;font-size:10.5px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'}">
-              <input type="checkbox" ${m.manuallyConfirmed ? 'checked' : ''} ${m.actualSpend != null ? 'disabled title="Already confirmed automatically -- real spend is entered for this month"' : ''} onchange="accountingConfirmMonth('${line.id}','${m.monthStr}', this.checked)"/> Manually confirm
-            </label>` : ''}
+            <div style="display:flex;align-items:center;gap:8px">
+              ${line.billed_externally ? accountingStatusPill('external', 'Billed externally') : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
+              ${!line.billed_externally ? `<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'};white-space:nowrap">
+                <input type="checkbox" ${m.manuallyConfirmed ? 'checked' : ''} ${m.actualSpend != null ? 'disabled title="Already confirmed automatically -- real spend is entered for this month"' : ''} onchange="accountingConfirmMonth('${line.id}','${m.monthStr}', this.checked)"/> Manually confirm
+              </label>` : ''}
+            </div>
           </td>
         </tr>`).join('')}</tbody>
     </table>`;
