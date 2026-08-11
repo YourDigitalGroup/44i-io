@@ -9564,3 +9564,165 @@ header pill renders it; Bulk Import resolves it by both its short form
 ("Pending Website") and its raw key ("pending_website"). Re-ran
 `test-multi-blocker.js`, `test-setup-blocker.js`, and `test-bulk-import-
 setup-fields.js` unchanged and still fully passing.
+
+### 2026-08-10 (cont'd) — Bulk Import: In-Platform Override and Goal Override columns
+
+Claire: bulk import is the only tool she needs on the strategist side until
+the public IO form comes into use for these campaigns, and going back to do
+overrides one campaign at a time afterward takes a while. Added both as
+optional columns — leave blank to keep using the auto-calculated value, same
+as leaving them blank in a campaign's own detail panel. In-Platform Override
+gets the same `$`/`,` stripping as Gross Budget (always numeric); Goal
+Override is left untouched since SEM's own goal can be a text range
+("150-200") that stripping would mangle. Preview's Months summary column
+shows both when present. Caught and fixed a real column-alignment bug in the
+placeholder example while touching it — verified field-by-field with `awk
+-F'\t'`, not eyeballed, after a first attempt was one tab short and would
+have silently shifted Setup Notes/Setup Blocker into the wrong columns.
+
+**Verified**: `test-bulk-import-overrides-cols.js` (scratchpad, 8/8) — both
+columns parse with `$`/`,`-stripping behaving correctly per field, blank
+inputs stay blank (not "0" or an empty-string sentinel), Confirm Import
+saves all three fields together per month, and a month with no overrides
+omits those keys from the save payload entirely. Re-ran 7 other bulk-
+import-adjacent test files unchanged and still fully passing.
+
+### 2026-08-10 (cont'd) — Real gap found: SEM has NO In-Platform Budget or Goal formula
+
+Claire asked to look for any consistent pattern in her actual entered
+overrides that might point to something missing in the formulas — she'd
+specifically noticed In-Platform Budget for SEM tends to land around half
+the Gross Budget. Pulled her real data and found something bigger than "a
+tendency": `services.retail_cpm` is `null` for SEM, and BOTH In-Platform
+Budget and Goal depend entirely on that field — meaning there has never
+been ANY formula for SEM at all. Every single SEM month has required a
+fully manual override, for both fields, always.
+
+Her real numbers turned out to be extremely clean once pulled:
+- **In-Platform**: 39 real overrides, min ratio 0.500, avg 0.517 — a
+  genuine, consistent ~50%-of-Gross rule, not noise.
+- **Goal**: 30+ real entries almost all matched Gross ÷ $12 exactly (e.g.
+  $1000 → 83, $600 → 50, $5000 → 417), and every *range* entry ("83-250",
+  "125-375") matched Gross ÷ $4 and Gross ÷ $12 as the two ends precisely —
+  i.e. she's been manually applying a $4-$12 CPC range by hand, every
+  month, with zero system help. A few clients clearly run a different real
+  rate (one implies $6 CPC, another $4 CPC) — genuine per-client variation,
+  not a formula bug.
+
+Also flagged (not yet acted on): **Streaming TV: Audience** shows the same
+suspiciously tight ~50% clustering (0.435–0.564 across 13 overrides) despite
+already having a `retail_cpm` set — worth Claire checking its Platform CPM
+in Admin → Accounting Map, since that pattern looks like the same kind of
+gap, just not yet confirmed.
+
+**Built** (with Claire's go-ahead): two new rate fields, using the EXACT
+same base-rate + per-group-override mechanism Platform CPM already has —
+no new concept introduced, just extending an existing one:
+- `in_platform_pct` — % of Gross Budget, consulted by
+  `computeInPlatformBudget()` only when a service has no `retail_cpm` at
+  all (today: only SEM). Defaults nothing on its own — stays `null`/fully
+  manual until an admin actually sets a rate.
+- `cpc_low`/`cpc_high` — $ CPC range, consulted by `computeGoal()` to
+  auto-produce a Goal range for a clicks-based service, in the exact same
+  shape ("83-250") a manual SEM entry already takes. All-or-nothing per
+  scope (a group override with only one end set falls back to the base
+  rate entirely, never a silent half-guess).
+
+**Admin**: two new fields on the base Accounting Map editor form (In-
+Platform %, CPC Low/High) plus population/save wiring in both
+`adminEditAccounting()`/`adminSaveAccountingMap()`; 3 new columns on the
+per-group Accounting Overrides table (`ACCOUNTING_OVERRIDE_FIELDS` is
+data-driven, so this was mostly automatic) — stored in
+`groups.accounting_overrides`, already a sparse jsonb blob, no schema
+change needed there. The main Accounting Map LIST view (the table on
+page load, before clicking into a service) does NOT show these new
+columns yet — only visible via the edit form — flagged as a possible
+follow-up, not done now to keep scope contained.
+
+**Strategist Portal**: new `IN_PLATFORM_PCT_RATES`/`CPC_RATES` caches +
+`effectiveInPlatformPct()`/`effectiveCpcRange()` helpers, mirroring
+`effectivePlatformCpm()` exactly. `computeInPlatformBudget()` falls back to
+Gross × In-Platform % only when the impressions-based path is unavailable;
+`computeGoal()` falls back to a CPC-range-derived Goal range only for a
+clicks-based service with no manual override — both stay `null`/fully
+manual, exactly as before, until an admin actually configures a rate.
+
+Requires `sem-formula-rates-2026-08-10.sql` (scratchpad) — adds
+`accounting_map.in_platform_pct`/`cpc_low`/`cpc_high` and patches
+`admin_get_accounting_map`, BOTH `admin_save_accounting_map` overloads
+(there are two — one with a `p_pair_with_service_id` param, one without),
+and `strategist_get_budgeted_spend_rates` to carry all three.
+
+**Verified**: `test-sem-formula-fallbacks.js` (scratchpad, 14/14) — group
+override beats base for both new rates; a half-set group CPC override
+falls back to base entirely rather than silently guessing on one end;
+SEM's In-Platform correctly falls back to Gross × % ONLY when a rate is
+actually configured (stays `null` otherwise); a normal CPM-based service
+is completely unaffected by either fallback; SEM's auto Goal range for a
+$1000 budget computes to exactly "83-250" — matching Claire's own real
+historical entries precisely; a manual override still wins over the new
+auto-calc. Re-ran 4 other test files touching `computeGoal()`/the rate
+caches unchanged and still fully passing.
+
+**Not yet run by Claire**: `sem-formula-rates-2026-08-10.sql`. Once it's
+run, someone (Claire or an AM) still needs to actually SET the SEM rates in
+Admin → Accounting Map (In-Platform % = 50, CPC Low/High = 4/12, or
+whatever the team confirms as the real default) — the formula exists now,
+but nothing auto-calculates until a real rate is entered.
+
+### 2026-08-10 (cont'd) — Real bug: Bulk Import silently dropped a later row's flight dates
+
+Claire was trying to bulk-import a real recurring campaign (Little and
+Holland ESQ / Event Targeting, split into Geo and Audience pieces, each
+recurring in two separate waves — Sept and Nov-Dec — with different dates
+each time) and asked "should I just create multiple campaign lines right
+away?" after the split attempt didn't seem to hold the right dates.
+
+Root cause: `strategistParseBulkImport()`'s group-merging only ever set
+`flight_start`/`flight_end` from the FIRST row it saw for a given campaign
+identity — any later row sharing that identity (e.g. a second recurring
+wave with its own, later dates) had its dates silently dropped, even though
+its Month/Gross Budget were still correctly captured as an extra month row.
+Fixed by extending to the earliest start / latest end seen across every row
+for that campaign, regardless of paste order.
+
+Also clarified for Claire directly (not a bug, just a design fact worth
+restating): splits are identified by their own distinct **Platform Campaign
+Name**, not by Split Label alone — `identityKey` never included
+`split_label`. Two rows with the same (blank) title but different Split
+Labels collide into ONE group. Her draft paste had no titles filled in at
+all, which is why the intended Geo/Audience split wouldn't have worked
+regardless of the date bug.
+
+**Still open, needs Claire's input**: the Setup panel's "Split into Multiple
+Campaigns" feature (`strategist_split_campaign_line`) always copies the
+ORIGINAL line's single flight range to every resulting split — there's no
+way to give each split its own different dates at split-creation time.
+Whether that's worth building depends on whether Geo/Audience really need
+independently different ranges from each other (not just an extended range
+per split across recurring waves, which the fix above already handles) —
+parked pending her answer.
+
+**Verified**: `test-bulk-import-flight-extend.js` (scratchpad, 11/11) — a
+later row's later end date correctly extends `flight_end`; an earlier row
+seen SECOND in the paste still extends `flight_start` backward (fully
+order-independent); two distinct splits (each with their own Platform
+Campaign Name) keep their own independent ranges rather than bleeding into
+each other; a normal single-row campaign is completely unaffected. Re-ran
+12 other bulk-import-adjacent test files unchanged and still fully passing.
+
+Follow-up: Claire confirmed same-range-for-all-splits is fine for now (no
+further work needed there), and traced the Little and Holland ESQ date
+discrepancy back to the actual paper IO — the campaigns really are
+single-date, so the odd multi-date entry was a transfer error, not a data
+model gap. Exactly the kind of mistake this system is meant to catch.
+
+**Reinforces the existing PARKED edit-a-submitted-IO/cancellation item**
+(see the 2026-08-06 "PARKED — cancellations + edit-a-submitted-IO" entry
+above — still the same connected design question, not a new one). This
+transfer-error catch is a concrete real-world example of exactly why it
+matters: once an IO is signed today, there's no way to go back and fix a
+mistake like this at the source — only work around it downstream in the
+Strategist Portal. Claire wants to note this now as a live example to bring
+to the team, but is deliberately not scoping who should be able to edit an
+IO or what that flow looks like until she's talked it through with them.
