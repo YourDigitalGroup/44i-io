@@ -51,7 +51,6 @@
   #page-accounting .acct-status-pill.confirmed{background:#DDF2DE;color:#2E7D42}
   #page-accounting .acct-status-pill.needs{background:#FBF3C7;color:#8A6D12}
   #page-accounting .acct-status-pill.external{background:#DBEAFE;color:#1E40AF}
-  #page-accounting .acct-note{background:#FEF9E7;border:1px solid #F5E1A4;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:11.5px;color:#8A6D12}
 </style>
 </head>
 <body>
@@ -81,10 +80,6 @@
         <a id="accounting-admin-portal-link" href="../admin/index.html" onclick="adminPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Admin →</a>
         <button onclick="accountingLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
       </div>
-    </div>
-
-    <div class="acct-note">
-      <strong>Revenue split by 44i Cut % only.</strong> Fixed Cut and the Setup Fee split aren't included in these totals yet (they need their own confirmed handling before they're added). <strong>Confirmed</strong>/<strong>Billed externally</strong> are plain toggles for now — nothing locks a month or restricts who can check/uncheck them yet. Compare this against the current revenue spreadsheet and flag anything that doesn't line up.
     </div>
 
     <!-- Top bar: month picker + filters -->
@@ -263,6 +258,7 @@ function accountingLogout() {
 let ALL_ACCOUNTING_LINES = [];
 let ALL_ACCOUNTING_MONTHS = [];
 let ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} }; // service_id -> pct, group_id|service_id -> pct, and (offline-visits pairing) service_id -> pct
+let ACCOUNTING_CUT_TIERS = {}; // service_id -> [{ max, cut_pct }, ...] sorted ascending, e.g. SEM
 let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} }; // for Expected Spend -- same shape as the Strategist Portal's own PLATFORM_CPM_RATES
 let ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // Expected Spend fallback for a service with no Retail CPM (e.g. SEM)
 let accountingCurrentMonth = new Date();
@@ -342,7 +338,7 @@ function accountingRenderDetailCard() {
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override);
-    const cutPct = accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits);
+    const cutPct = accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
@@ -471,11 +467,26 @@ function accountingSetStatusFilter(status) {
 // Known gap, not silently invented: a per-GROUP override of a pairing rate
 // isn't supported here, because Admin's own per-group override table isn't
 // pairing-aware either -- matching existing behavior, not a new limitation.
-function accountingEffectiveCutPct(serviceId, groupId, hasOfflineVisits) {
+// SEM's 44i Revenue isn't a flat cut % -- it's tiered by how much is being
+// spent (2026-08-11, Claire: "SEM < $1,000... 75%, SEM $5,000+... 85%").
+// Looked up against the month's own Gross Budget, same figure the flat rate
+// already multiplies against. When a service has tiers configured, they
+// REPLACE the flat rate entirely -- a group override of the flat rate is
+// irrelevant once tiers exist (documented gap, not silently invented, same
+// as the Offline Visits pairing rate's own group-override gap).
+function accountingEffectiveCutPctTier(serviceId, grossBudget) {
+  const tiers = ACCOUNTING_CUT_TIERS[serviceId];
+  if (!tiers || !tiers.length || grossBudget == null) return null;
+  const tier = tiers.find(t => t.max == null || Number(grossBudget) <= Number(t.max));
+  return tier ? Number(tier.cut_pct) : null;
+}
+function accountingEffectiveCutPct(serviceId, groupId, hasOfflineVisits, grossBudget) {
   if (hasOfflineVisits) {
     const pairingRate = ACCOUNTING_CUT_RATES.pairing[serviceId];
     if (pairingRate != null) return pairingRate;
   }
+  const tierRate = accountingEffectiveCutPctTier(serviceId, grossBudget);
+  if (tierRate != null) return tierRate;
   const groupRate = groupId ? ACCOUNTING_CUT_RATES.group[`${groupId}|${serviceId}`] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_CUT_RATES.base[serviceId];
@@ -562,6 +573,7 @@ async function fetchAccountingData() {
   ALL_ACCOUNTING_LINES = lines || [];
   ALL_ACCOUNTING_MONTHS = months || [];
   ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} };
+  ACCOUNTING_CUT_TIERS = {};
   ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} };
   ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
@@ -569,6 +581,7 @@ async function fetchAccountingData() {
       ACCOUNTING_CUT_RATES.base[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.base[r.service_id] = Number(r.platform_cpm);
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.base[r.service_id] = Number(r.in_platform_pct);
+      if (Array.isArray(r.spend_tiers) && r.spend_tiers.length) ACCOUNTING_CUT_TIERS[r.service_id] = r.spend_tiers;
     } else if (r.scope === 'group') {
       const key = `${r.group_id}|${r.service_id}`;
       ACCOUNTING_CUT_RATES.group[key] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
@@ -609,7 +622,7 @@ function accountingBuildRows() {
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.group_id, monthRow?.in_platform_override);
-    const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits);
+    const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
     // manual confirm from the detail card (for tactics the Strategist Portal

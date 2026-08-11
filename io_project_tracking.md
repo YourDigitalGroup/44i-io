@@ -10541,3 +10541,52 @@ stays neutral rather than guessing at a color. Re-ran all 9 other accounting
 test files (86/86) unchanged and still fully passing. 92/92 total. No SQL
 change — pure client-side, reuses `group_color` already added to
 `accounting_get_campaign_lines` for the table's own banners.
+
+### 2026-08-11 (cont'd) — Removed the v1 banner; SEM's spend-tiered 44i Revenue
+
+**Removed** the yellow "Revenue split by 44i Cut % only..." note at the top
+of the Accounting Portal per Claire's ask — it was a v1-era disclaimer that
+no longer matches what the portal actually shows now (Expected Spend,
+Actual Spend, group colors, etc. have all been added since).
+
+**SEM's real 44i Revenue formula, from Claire's own live figuring**: not a
+flat cut %, tiered by how much is being spent that month — ≤$4,999 → 44i
+75% / Group 25%, $5,000+ → 44i 85% / Group 15% (her reference table also
+listed a <$1,000 tier at the same 75% as the $1,001–$4,999 tier, so they
+collapse into one effective band with a clean $4,999 boundary — no behavior
+difference, just fewer rows to store). Built as a **generic mechanism**
+(`accounting_map.spend_tiers`, a jsonb array of `{max, cut_pct}` sorted
+ascending, `max: null` meaning "and up"), not hardcoded to SEM specifically,
+in case another service ever needs tiered pricing — but only SEM's real
+tiers are populated via this pass's SQL. Looked up against the month's own
+Gross Budget, the same figure the flat rate already multiplies against.
+When a service has tiers configured, they REPLACE its flat rate entirely —
+a group override of the flat rate becomes moot once tiers exist for that
+service (documented gap, matching the same pattern already accepted for the
+Offline Visits pairing rate's own group-override gap).
+
+**New SQL** (`accounting-sem-spend-tiers-2026-08-11.sql`, given to Claire) —
+new `accounting_map.spend_tiers` column, SEM's real tier data inserted,
+patches `accounting_get_rates` to expose it.
+
+**Also discussed, not yet built**: Claire asked for a way to manually add
+untracked services to Accounting (mirroring Strategist's "+ New Campaign")
+plus a way to catch anything missing between the two portals. Recommended:
+since Accounting and Strategist already share the same `campaign_lines`
+table, giving Accounting its own manual-add form gets the "Strategist never
+knew about this" direction for free — an incomplete line naturally lands in
+Strategist's existing Campaign Setup (pending) queue, no new mechanism
+needed. The reverse direction (something real in Strategist that Accounting
+never verified) still needs a decision on what "missing" means there —
+suggested a simple "Rate not set" status filter rather than a whole new
+reconciliation view, pending her confirmation before building either piece.
+
+**Verified**: `test-accounting-sem-spend-tiers.js` (scratchpad, 9/9) — the
+tier boundary itself lands correctly on both sides ($4,999 → 75%, $5,000 →
+85%), tiers fully replace the flat rate (a deliberately wrong 999% base
+sentinel never leaks through once tiers are configured), a service with no
+tiers is completely unaffected, no Gross Budget falls through to the normal
+resolution rather than guessing, and the full revenue-split math produces
+the exact real dollar splits at both a low-tier and high-tier spend level.
+Re-ran all 10 other accounting test files (92/92) unchanged and still fully
+passing. 101/101 total across 11 files.
