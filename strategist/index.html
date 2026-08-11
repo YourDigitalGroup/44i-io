@@ -52,6 +52,7 @@
           <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
           <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
           <button onclick="strategistRecheckCachedReports()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--border);background:var(--light);color:var(--text);cursor:pointer;font-weight:600;font-size:12px">Re-check Cached Reports</button>
+          <button onclick="strategistBulkFillAllToFlightEnd()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--border);background:var(--light);color:var(--text);cursor:pointer;font-weight:600;font-size:12px">Backfill All to Flight End</button>
         </div>
       </div>
 
@@ -2069,33 +2070,72 @@ async function strategistAddHistoryMonth(lineId) {
 // isn't adjusted it should go by the default monthly spend in the IO").
 // No-op if the flight is open-ended (no flight_end to fill toward) or
 // already fully covered.
-async function strategistFillMonthsToFlightEnd(lineId) {
+// Pure computation, no network/reload side effects -- shared by the single-
+// campaign button and the bulk "fill every campaign" pass below, so the bulk
+// pass can batch every line's saves into one Promise.all + one reload instead
+// of doing a full data refetch per campaign (2026-08-11, per Claire).
+function strategistComputeFillSaves(lineId) {
   const l = ALL_CAMPAIGN_LINES.find(x => x.id === lineId);
-  if (!l?.flight_end) { showToast('This campaign has no flight end date to fill toward.', 'error'); return; }
+  if (!l?.flight_end) return [];
   const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
-  if (!rows.length) { showToast('No existing months to base the fill on yet.', 'error'); return; }
+  if (!rows.length) return [];
   const last = rows[rows.length - 1];
   const existingMonths = new Set(rows.map(m => m.month));
   const start = new Date(last.month + 'T00:00:00');
   const end = new Date(l.flight_end + 'T00:00:00');
   const monthCount = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-  if (monthCount < 1) { showToast('Already covers the full flight.', 'error'); return; }
+  if (monthCount < 1) return [];
   const saves = [];
   for (let i = 1; i <= monthCount; i++) {
     const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
     const monthStr = d.toISOString().slice(0, 10);
     if (!existingMonths.has(monthStr)) {
-      saves.push(sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
-        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
-        p_campaign_line_id: lineId, p_month: monthStr, p_data: { gross_budget: last.gross_budget }
-      }) }));
+      saves.push({ lineId, monthStr, gross_budget: last.gross_budget });
     }
   }
+  return saves;
+}
+
+function strategistSaveFillEntry(entry) {
+  return sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
+    p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+    p_campaign_line_id: entry.lineId, p_month: entry.monthStr, p_data: { gross_budget: entry.gross_budget }
+  }) });
+}
+
+async function strategistFillMonthsToFlightEnd(lineId) {
+  const l = ALL_CAMPAIGN_LINES.find(x => x.id === lineId);
+  if (!l?.flight_end) { showToast('This campaign has no flight end date to fill toward.', 'error'); return; }
+  const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId);
+  if (!rows.length) { showToast('No existing months to base the fill on yet.', 'error'); return; }
+  const saves = strategistComputeFillSaves(lineId);
   if (!saves.length) { showToast('Already covers the full flight.', 'error'); return; }
-  await Promise.all(saves);
+  await Promise.all(saves.map(strategistSaveFillEntry));
   await fetchStrategistData();
   renderStrategistDashboard();
   showToast(`Filled ${saves.length} month(s) through flight end.`);
+}
+
+// "Backfill all campaigns" (2026-08-11, per Claire) -- runs the same fill
+// logic across every active/paused campaign with a flight end date in one
+// pass, instead of clicking the per-campaign button one at a time. Skips
+// anything with no flight end (open-ended) or no existing month yet to base
+// the fill on -- exactly the same guard conditions the single-campaign
+// button already enforces, just applied in bulk.
+async function strategistBulkFillAllToFlightEnd() {
+  const candidates = ALL_CAMPAIGN_LINES.filter(l => (l.status === 'active' || l.status === 'paused') && l.flight_end);
+  let allSaves = [];
+  let linesFilled = 0;
+  candidates.forEach(l => {
+    const saves = strategistComputeFillSaves(l.id);
+    if (saves.length) { allSaves = allSaves.concat(saves); linesFilled++; }
+  });
+  if (!allSaves.length) { showToast('Every active/paused campaign already covers its full flight.'); return; }
+  showToast(`Filling ${allSaves.length} month(s) across ${linesFilled} campaign(s)…`);
+  await Promise.all(allSaves.map(strategistSaveFillEntry));
+  await fetchStrategistData();
+  renderStrategistDashboard();
+  showToast(`Done — filled ${allSaves.length} month(s) across ${linesFilled} campaign(s).`);
 }
 
 async function strategistSaveMonth(lineId, monthStr, data) {

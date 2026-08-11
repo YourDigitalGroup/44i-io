@@ -10647,3 +10647,82 @@ at a time via the existing per-campaign "Fill remaining months to flight
 end" button) and the Accounting manual-add-service feature (her own
 proposed reconciliation-by-side-effect approach) — both pending her
 reply.
+
+### 2026-08-11 (cont'd) — Bulk flight-end backfill, Accounting "+ Add Service" / Bulk Match, region-color tint
+
+Claire answered "bulk" and "yes, build it" on both open items above, plus
+two more design asks in the same message. All SQL/JS, no schema changes
+beyond the two new RPCs below.
+
+**1. Bulk flight-end backfill (Strategist Portal).** New "Backfill All to
+Flight End" button next to "+ New Campaign" runs the same fill logic the
+per-campaign button already does (`strategistFillMonthsToFlightEnd`,
+2026-08-11 earlier this session), across every active/paused campaign with
+a flight end date, in one pass. Refactored the per-campaign function's core
+math into `strategistComputeFillSaves(lineId)` (pure, no network/reload) so
+the bulk pass can collect saves from every campaign into ONE `Promise.all`
++ one reload, instead of doing a full data refetch per campaign — with 50+
+active campaigns that would have been 50 sequential reloads. Same guard
+conditions as the single-campaign version: skips anything open-ended (no
+flight_end) or with no existing month yet to base the fill on.
+
+**2. Accounting "+ Add Service" (manual add, mirrors Strategist's "+ New
+Campaign").** Per Claire: "I need a way to manually add services, similar
+to the strategists for services that they don't track." New button opens
+a form (Client, Tactic, Flight Start/End, optional current Gross Budget) —
+submitting inserts straight into `campaign_lines`, the SAME table
+Strategist writes to. The deliberate difference from Strategist's own
+import (which defaults to Active): this defaults to **status='pending'**,
+so the new line lands in Strategist's existing Campaign Setup queue
+automatically — that queue IS the "make sure Strategist knows about this"
+mechanism Claire asked for, nothing new needed there. Tactic dropdown uses
+the same "spend-priced, or one of the 2 flat-priced-but-trackable
+exceptions" filter as Strategist's own dropdown (duplicated
+`TRACKABLE_FLAT_SERVICE_IDS` list) so Accounting can never add a tactic
+Strategist's own Setup UI wouldn't recognize.
+
+**New SQL** (`accounting-add-service-2026-08-11.sql`, given to Claire) —
+two new accounting/super-only RPCs: `accounting_get_clients` (full client
+roster with group, for the picker) and `accounting_add_campaign_line`
+(inserts the line + an optional first campaign_months row in one call).
+
+**3. Bulk Match — the reconciliation tool, built as a side effect of #2.**
+Claire: "a way to verify what may be missing from one portal or the
+other... Could we add a bulk option similar to the strategist that
+searches for matches?" — modeled directly on Strategist's own "Paste
+Platform Report" tool (same Client-Tab-Tactic paste convention). Paste
+rows straight from her own tracking sheet; each row is matched client-side
+against `ALL_ACCOUNTING_LINES`/`ALL_ACCOUNTING_CLIENTS` already loaded in
+the page — nothing pasted here is ever sent anywhere, directly answering
+her earlier "I don't really want to paste all of our actual data here"
+concern from this same session. Three outcomes per row: ✅ already in the
+system, ⚠️ client found but this tactic isn't tracked yet (with an inline
+"+ Add" button that opens the Add Service form pre-filled with that
+client), or ❌ client not found at all (told to add the client in Admin
+first — deliberately NOT auto-creating clients here, that's a group-
+assignment decision out of scope for this tool).
+
+**4. Region-split rows tint with the group's brand color.** Claire: "for
+tactics that have regions that drop down can we add the same shading at
+the stat tiles" — the expanded child rows under a region-split rollup
+(e.g. "2 regions") used a flat gray (`#FAFCFE`); now uses
+`accountingTintColor()` (the same "mix toward white" function built for
+the stat tiles' own group-color tint) against that line's `group_color`,
+falling back to the same flat gray when the group has no brand color set.
+Implemented via a `--child-tint` CSS custom property on each child `<tr>`
+so the existing `tr.acct-child td{background:...}` rule didn't need
+restructuring.
+
+**Verified**: `test-strategist-bulk-backfill-2026-08-11.js` (7/7) — fills
+the right month count per campaign, skips open-ended/wrong-status/already-
+covered campaigns, uses each campaign's own last-known budget as the
+default. `test-accounting-add-service-bulk-match-2026-08-11.js` (11/11) —
+Tactic dropdown correctly includes/excludes by pricing mode, submit calls
+the RPC with the right shape including the optional first month, and all
+three Bulk Match outcomes (matched / client-found-no-tactic / client-not-
+found) render correctly including the pre-filled Add button.
+`test-accounting-region-tint-2026-08-11.js` (3/3) — a group with a brand
+color tints its region rows toward that color, a group without one still
+falls back to the flat gray. Re-ran every other existing test file across
+both portals (Strategist + Accounting, 15 files) — all still passing, no
+regressions.
