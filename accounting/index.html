@@ -204,7 +204,7 @@ function accountingLogout() {
 
 let ALL_ACCOUNTING_LINES = [];
 let ALL_ACCOUNTING_MONTHS = [];
-let ACCOUNTING_CUT_RATES = { base: {}, group: {} }; // service_id -> pct, and group_id|service_id -> pct
+let ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} }; // service_id -> pct, group_id|service_id -> pct, and (offline-visits pairing) service_id -> pct
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
 let accountingStatusFilter = 'active';
@@ -225,10 +225,29 @@ function accountingSetStatusFilter(status) {
   renderAccountingDashboard();
 }
 
-// Group override wins, else the base service rate, else null (no rate configured
-// at all -- shown as "—" rather than guessing 0%, same "no silent wrong guess"
-// convention as the Strategist Portal's own rate fallbacks).
-function accountingEffectiveCutPct(serviceId, groupId) {
+// Real gap found live (2026-08-11, Claire cross-checking against her revenue
+// spreadsheet): every "w/Visits" tactic came out wrong -- e.g. Geofencing is
+// 45% normally but 45.59% with Offline Visits Tracking. This isn't a new
+// rate concept -- Admin's Accounting Map has supported a per-(tactic,
+// modifier)-pairing override for this since 2026-07-31 (Offline Visits
+// Tracking is modeled as its own is_cpm_adjustment service, paired with the
+// tactic) -- this portal just never fetched or applied it. When a line has
+// Offline Visits Tracking, the pairing rate wins outright if one's been set
+// for that tactic; otherwise falls through to the normal group-then-base
+// resolution below (so a tactic with no pairing override configured yet
+// doesn't silently show as "not set" just because visits tracking is on --
+// only the DIFFERENCE from the plain rate needs its own override, same as
+// Admin's own UI: the base entry stays authoritative until someone
+// overrides the pairing specifically).
+//
+// Known gap, not silently invented: a per-GROUP override of a pairing rate
+// isn't supported here, because Admin's own per-group override table isn't
+// pairing-aware either -- matching existing behavior, not a new limitation.
+function accountingEffectiveCutPct(serviceId, groupId, hasOfflineVisits) {
+  if (hasOfflineVisits) {
+    const pairingRate = ACCOUNTING_CUT_RATES.pairing[serviceId];
+    if (pairingRate != null) return pairingRate;
+  }
   const groupRate = groupId ? ACCOUNTING_CUT_RATES.group[`${groupId}|${serviceId}`] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_CUT_RATES.base[serviceId];
@@ -254,10 +273,11 @@ async function fetchAccountingData() {
   ]);
   ALL_ACCOUNTING_LINES = lines || [];
   ALL_ACCOUNTING_MONTHS = months || [];
-  ACCOUNTING_CUT_RATES = { base: {}, group: {} };
+  ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} };
   (rates || []).forEach(r => {
     if (r.scope === 'base') ACCOUNTING_CUT_RATES.base[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
     else if (r.scope === 'group') ACCOUNTING_CUT_RATES.group[`${r.group_id}|${r.service_id}`] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
+    else if (r.scope === 'pairing') ACCOUNTING_CUT_RATES.pairing[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
   });
 }
 
@@ -287,7 +307,7 @@ function renderAccountingDashboard() {
   }).map(l => {
     const monthRow = accountingMonthRowFor(l.id, accountingCurrentMonth);
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
-    const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id);
+    const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits);
     const split = accountingSplitRevenue(gross, cutPct);
     return { line: l, gross, cutPct, split };
   }).filter(r => r.gross != null); // no month row for this line/month at all -- nothing to show yet
@@ -305,7 +325,7 @@ function renderAccountingDashboard() {
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:9px 10px"><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
       <td style="padding:9px 10px">${esc(r.line.group_name || '—')}</td>
-      <td style="padding:9px 10px">${esc(r.line.tactic_label || r.line.service_id || '—')}</td>
+      <td style="padding:9px 10px">${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}</td>
       <td style="padding:9px 10px">${esc(r.line.status || '—')}</td>
       <td style="padding:9px 10px">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td style="padding:9px 10px">${r.cutPct != null ? r.cutPct + '%' : '<span style="color:var(--muted)">— not set</span>'}</td>
