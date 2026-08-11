@@ -10806,3 +10806,117 @@ card still shows it. `test-accounting-bulk-match-gross-discrepancy-2026-08-
 on an exact match, no pasted number, and no system month row to compare
 against. Re-ran all other test files across both portals — no
 regressions.
+
+### 2026-08-12 (cont'd) — Track ALL ordered services, not just spend-tracked tactics
+
+Claire: "we need to track all services ordered not just the tactics with
+spend." Root cause: `create_campaign_lines_from_order()` only ever created
+a `campaign_lines` row for a line item with ad spend > 0 (plus a special
+case for SEO's two dollar-less tracking lines). Every flat/recurring-fee-
+only service ordered — Website Hosting, a flat monthly retainer, a one-
+time website build fee — never got a line at all, invisible to both
+portals, not just Accounting.
+
+Checked scope with Claire before touching a trigger that fires on every
+future order in both portals' shared table:
+- **Coverage**: everything ordered, including one-time-only fees (not just
+  recurring/monthly ones).
+- **Visibility**: these new lines are **Accounting-only** — must NOT show
+  up in Strategist's Setup/Active queues (no pacing/optimize-log workflow
+  makes sense for a flat hosting fee).
+
+**Schema**: two new `campaign_lines` columns — `accounting_only` (boolean,
+defaults false for every existing/spend-tracked line) and `billing_type`
+(`'spend'` | `'recurring'` | `'one_time'`). `create_campaign_lines_from_
+order()` gets a new branch, independent of the existing spend/SEO
+branches: any item with no ad spend but a real `fee` and/or `recurring`
+dollar amount gets its own line (`accounting_only=true`, `status='active'`
+— skips Setup entirely) plus one `campaign_months` row for its first
+month. Deliberate accepted overlap: an SEO item with a flat retainer now
+gets its two existing (dollar-less) Strategist tracking lines AND this new
+accounting-only line with the real figure — not folded into one of the
+tracking lines, which would have made those mean two different things
+depending on the order. `strategist_get_campaign_lines` now excludes
+`accounting_only` lines; `accounting_get_campaign_lines` exposes both new
+columns.
+
+**Real follow-on problem, caught before shipping**: nobody in Strategist
+ever touches an accounting-only line, so nothing proactively creates its
+NEXT month's `campaign_months` row the way Strategist's own prefill
+mechanism does for spend campaigns — after the first month, a recurring
+flat service would just vanish from the table. Fixed with a JS carry-
+forward, not a new prefill job: `accountingMonthRowFor()` now falls back
+to the most recent PRIOR month's Gross Budget for a `billing_type:
+'recurring'` line when the exact month has no row yet — same "hasn't
+changed, so it's still $X" convention the Strategist Portal's own
+`monthRowFor()` already uses for a flat/non-varying spend budget. Returns
+a synthetic row with the carried Gross Budget but explicitly null actual
+spend/confirmed/paused (never leaks a past month's confirmed/paused state
+onto a month nothing's actually been recorded for yet). `'one_time'` lines
+deliberately never carry forward — they only ever happened in the one
+month they were billed.
+
+**Second follow-on problem, also caught before shipping**: a carried-
+forward month has no real row, so the existing plain-`UPDATE` `accounting_
+confirm_month` silently affected 0 rows — manually confirming one of these
+did nothing at all, with no error. Fixed by checking the `UPDATE`'s own row
+count and `INSERT`ing a real row (carrying the Gross Budget the portal was
+already showing, via a new optional `p_gross_budget` param) only when
+there was nothing to update — an already-real row's own `gross_budget` is
+never touched by this function either way. No unique constraint exists on
+`(campaign_line_id, month)` to lean on a plain upsert, hence the row-count
+check instead.
+
+Small UI addition: a "(flat fee — accounting only)" / "(one-time fee —
+accounting only)" tag next to the tactic label, since these never appear
+in Strategist at all — the only place Claire can tell one apart from an
+ordinary tracked tactic.
+
+**New SQL** (`accounting-track-all-ordered-services-2026-08-12.sql`, given
+to Claire) — the two new columns, the patched order trigger, and three
+patched RPCs (`strategist_get_campaign_lines`, `accounting_get_campaign_
+lines`, `accounting_confirm_month`).
+
+**Verified**: `test-accounting-track-all-ordered-2026-08-12.js` (15/15) —
+a recurring line's Gross Budget correctly carries into a month with no row
+yet; a one-time line and an ordinary spend-tracked line (neither
+`billing_type: 'recurring'`) correctly do NOT carry forward and vanish
+once their real row is behind them; the carried-forward synthetic row
+never leaks actual_spend/confirmed/paused; confirming a carried-forward
+month sends the right Gross Budget for the RPC to create a real row with.
+Re-ran all other test files across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Billed Externally excluded from 44i Revenue totals; bulk backfill reported not working
+
+**Billed Externally exclusion (built).** Claire: "if a service is billed
+externally it should not be included in the 44i revenue because that is
+the number that we should be invoicing." Real gap: the stat tile and Total
+row summed every row's 44i Revenue regardless of `billed_externally`, so a
+group invoicing a client directly outside 44i still inflated the number
+44i would actually invoice against. New `accountingSplitInvoiceable(r)`
+splits a row's already-computed 44i Revenue into invoiceable vs. excluded
+— checks each CHILD individually for a rollup (a region split can have
+some regions billed externally and others not), not the rollup as a
+whole. Only the TOTALS change; the per-row table cell still shows its own
+calculated split either way, since it's still a useful reference number.
+Added a 6th stat tile, "Billed Externally (excl.)", so the excluded amount
+stays visible instead of just disappearing from the summary bar — grid
+widened from 5 to 6 columns.
+
+**Verified**: new `test-accounting-billed-externally-excluded-2026-08-12.
+js` (5/5) — 44i Revenue tile and the Total row both exclude a billed-
+externally line's contribution; the new tile shows exactly that excluded
+amount; the per-row cell still shows its own calculated split regardless;
+a mixed rollup (one region billed externally, one not) only excludes the
+externally-billed child's portion. One older test (`test-accounting-
+manual-confirm-group-color.js`) had a stale "5 stat tiles" assertion from
+before this tile existed — updated to 6, not a regression. Re-ran every
+other test file across both portals — all still passing.
+
+**Bulk backfill reported not working — investigating.** Claire: "The
+back fill flight dates didn't work." Re-ran the existing `test-strategist-
+bulk-backfill-2026-08-11.js` against the current file — still 7/7,
+and the button/function wiring (`strategistBulkFillAllToFlightEnd`) is
+still intact. Couldn't reproduce blind without more detail — asked Claire
+for specifics (which button, any error message, what she actually saw)
+rather than guess further and risk shipping a fix for the wrong problem.

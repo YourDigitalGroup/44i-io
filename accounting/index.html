@@ -24,7 +24,7 @@
   #page-accounting .acct-filters{display:flex;gap:10px}
   #page-accounting .acct-filter-btn{display:flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:6px;padding:6px 10px 6px 12px;font-size:11.5px;letter-spacing:.03em;color:var(--muted);background:#fff}
   #page-accounting .acct-filter-btn select{background:transparent;color:var(--text);border:none;font-family:inherit;font-size:11.5px;cursor:pointer;padding-right:2px}
-  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(5,1fr);background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05)}
+  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05)}
   #page-accounting .acct-stat{padding:14px 20px}
   #page-accounting .acct-stat + .acct-stat{border-left:1px solid var(--border)}
   #page-accounting .acct-stat-label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
@@ -358,7 +358,11 @@ function accountingRenderDetailCard() {
     const d = new Date(accountingCurrentMonth.getFullYear(), accountingCurrentMonth.getMonth() + offset, 1);
     const monthKey = accountingMonthKey(d);
     const monthStr = monthKey + '-01';
-    const monthRow = ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === line.id && m.month.slice(0, 7) === monthKey);
+    // Shared helper, not a raw lookup (2026-08-12) -- carries a 'recurring'
+    // accounting-only line's Gross Budget forward the same way the main
+    // table does, so the detail card doesn't show "—" for a future month
+    // just because nothing explicitly wrote a row for it yet.
+    const monthRow = accountingMonthRowFor(line.id, d);
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override);
@@ -403,7 +407,7 @@ function accountingRenderDetailCard() {
                 : m.paused ? accountingStatusPill('paused', 'Paused')
                 : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
               ${!line.billed_externally && !m.paused ? `<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'};white-space:nowrap">
-                <input type="checkbox" ${m.manuallyConfirmed ? 'checked' : ''} ${m.actualSpend != null ? 'disabled title="Already confirmed automatically -- real spend is entered for this month"' : ''} onchange="accountingConfirmMonth('${line.id}','${m.monthStr}', this.checked)"/> Manually confirm
+                <input type="checkbox" ${m.manuallyConfirmed ? 'checked' : ''} ${m.actualSpend != null ? 'disabled title="Already confirmed automatically -- real spend is entered for this month"' : ''} onchange="accountingConfirmMonth('${line.id}','${m.monthStr}', this.checked, ${m.gross != null ? m.gross : 'null'})"/> Manually confirm
               </label>` : ''}
             </div>
           </td>
@@ -435,11 +439,15 @@ async function accountingToggleBilledExternally(lineId, value) {
 // accounting_confirm_month/campaign_months.confirmed_by, unused since the
 // automatic-from-actual-spend pass but never removed. Main table stays
 // checkbox-free -- this is intentionally only reachable from the card.
-async function accountingConfirmMonth(lineId, monthStr, confirmed) {
+// grossBudget (2026-08-12) -- a carried-forward month (a 'recurring'
+// accounting-only line, see accountingMonthRowFor) has no real
+// campaign_months row yet; the RPC uses this ONLY if it has to create that
+// row from scratch, never to overwrite an already-real row's own figure.
+async function accountingConfirmMonth(lineId, monthStr, confirmed, grossBudget) {
   try {
     await sb('rpc/accounting_confirm_month', { method: 'POST', body: JSON.stringify({
       p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw,
-      p_campaign_line_id: lineId, p_month: monthStr, p_confirmed: confirmed
+      p_campaign_line_id: lineId, p_month: monthStr, p_confirmed: confirmed, p_gross_budget: grossBudget ?? null
     }) });
     await fetchAccountingData();
     renderAccountingDashboard();
@@ -725,6 +733,30 @@ function accountingSplitRevenue(grossBudget, cutPct) {
   return { fortyfouri, group: Number(grossBudget) - fortyfouri };
 }
 
+// Splits a row's (already-computed) 44i Revenue into what's actually
+// invoiceable by 44i vs. what's Billed Externally and needs to be excluded
+// (2026-08-12, per Claire: "if a service is billed externally it should
+// not be included in the 44i revenue, because that is the number we should
+// be invoicing"). Only affects TOTALS (stat tiles, the Total row) -- the
+// per-row table cell keeps showing the calculated split either way, since
+// that number is still useful as a reference even for a billed-externally
+// line. A rollup can have some regions billed externally and others not,
+// so this checks each CHILD individually rather than the rollup as a
+// whole.
+function accountingSplitInvoiceable(r) {
+  if (r.isRollup) {
+    let invoiceable = 0, excluded = 0;
+    r.children.forEach(c => {
+      if (c.split.fortyfouri == null) return;
+      if (c.line.billed_externally) excluded += c.split.fortyfouri;
+      else invoiceable += c.split.fortyfouri;
+    });
+    return { invoiceable, excluded };
+  }
+  if (r.split.fortyfouri == null) return { invoiceable: 0, excluded: 0 };
+  return r.line.billed_externally ? { invoiceable: 0, excluded: r.split.fortyfouri } : { invoiceable: r.split.fortyfouri, excluded: 0 };
+}
+
 // "Expected Spend" (2026-08-11, per Claire: it's a genuinely different number
 // from Actual Spend, needs its own column) -- exactly the Strategist Portal's
 // own In-Platform Budget formula: Budgeted Impressions (Gross ÷ Retail CPM ×
@@ -816,9 +848,35 @@ async function fetchAccountingData() {
   });
 }
 
+// Carries a Gross Budget forward for a 'recurring' accounting-only line
+// (2026-08-12, per Claire: "track all services ordered, not just tactics
+// with spend") -- a flat monthly service like Website Hosting never gets
+// touched by Strategist at all (accounting-only, on purpose), so nothing
+// proactively inserts its NEXT month's campaign_months row the way
+// Strategist's own prefill mechanism does for spend campaigns. Rather than
+// building an equivalent prefill job, this carries the last known month's
+// Gross Budget forward live -- same "hasn't changed, so it's still $X"
+// convention the Strategist Portal's own monthRowFor() already uses for a
+// flat/non-varying spend budget. Deliberately does NOT carry forward for
+// 'one_time' fees (billing_type other than 'recurring') -- those only ever
+// happened in the one month they were billed, and for ordinary spend-
+// tracked lines Strategist's real prefilled rows already cover this, so
+// the fallback rarely even applies to them.
 function accountingMonthRowFor(lineId, monthDate) {
   const key = accountingMonthKey(monthDate);
-  return ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === lineId && m.month.slice(0, 7) === key) || null;
+  const exact = ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === lineId && m.month.slice(0, 7) === key);
+  if (exact) return exact;
+  const line = ALL_ACCOUNTING_LINES.find(l => l.id === lineId);
+  if (line?.billing_type !== 'recurring') return null;
+  const priorRows = ALL_ACCOUNTING_MONTHS
+    .filter(m => m.campaign_line_id === lineId && m.month.slice(0, 7) < key)
+    .sort((a, b) => a.month.localeCompare(b.month));
+  if (!priorRows.length) return null;
+  const last = priorRows[priorRows.length - 1];
+  // Synthetic row -- carries ONLY the Gross Budget forward, never actual
+  // spend/confirmed/paused state from the prior month (that would make the
+  // current month look confirmed/paused just because a past one was).
+  return { campaign_line_id: lineId, month: key + '-01', gross_budget: last.gross_budget, actual_spend: null, confirmed_by: null, confirmed_at: null, in_platform_override: null, paused: false };
 }
 
 async function loadAccountingDashboard() {
@@ -895,12 +953,23 @@ function accountingBuildRows() {
 // % and Group's $ (YDA) were dropped as their own columns per that same ask
 // -- the cut % is still used internally to compute 44i Revenue, just no
 // longer shown as its own column.
+// Tags a line created straight from an order's flat fee/recurring amount
+// (2026-08-12, per Claire: "track all services ordered, not just tactics
+// with spend") -- these never go through Strategist's Setup queue at all
+// (accounting_only), so this is the only place Claire can tell one apart
+// from a normal Strategist-tracked tactic at a glance. No tag at all for
+// ordinary spend-tracked lines (accounting_only false/undefined).
+function accountingBillingTypeTag(line) {
+  if (!line.accounting_only) return '';
+  const label = line.billing_type === 'one_time' ? 'one-time fee' : 'flat fee';
+  return ` <span style="font-size:10px;color:var(--muted)">(${label} — accounting only)</span>`;
+}
 function accountingRenderRow(r) {
   if (r.isRollup) {
     const expanded = ACCOUNTING_EXPANDED_SPLITS.has(r.key);
     let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')">
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span></td>
+      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span>${accountingBillingTypeTag(r.line)}</td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
       <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
@@ -933,7 +1002,7 @@ function accountingRenderRow(r) {
   const selected = r.line.id === accountingSelectedLineId;
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')">
     <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
     <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
     <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
@@ -959,12 +1028,21 @@ function renderAccountingDashboard() {
   // silently disagree. "Expected Spend" here is the COMPUTED figure (Retail
   // CPM/Platform CPM formula), not Actual Spend -- the two are genuinely
   // different numbers now that both have their own table column.
-  let totalGross = 0, totalExpectedSpend = 0, totalActualSpend = 0, totalFortyfouri = 0, awaiting = 0;
+  //
+  // 44i Revenue excludes anything Billed Externally (2026-08-12, per Claire:
+  // "that is the number we should be invoicing" -- a billed-externally line
+  // is invoiced by the group directly, not by 44i, so it was never really
+  // 44i's revenue to begin with even though the per-row cell still shows the
+  // calculated split for reference). Tracked separately as its own tile so
+  // the excluded amount doesn't just silently vanish from the summary bar.
+  let totalGross = 0, totalExpectedSpend = 0, totalActualSpend = 0, totalFortyfouri = 0, totalBilledExternally = 0, awaiting = 0;
   rows.forEach(r => {
     totalGross += r.gross;
     if (r.expectedSpend != null) totalExpectedSpend += r.expectedSpend;
     if (r.actualSpend != null) totalActualSpend += r.actualSpend;
-    if (r.split.fortyfouri != null) totalFortyfouri += r.split.fortyfouri;
+    const { invoiceable, excluded } = accountingSplitInvoiceable(r);
+    totalFortyfouri += invoiceable;
+    totalBilledExternally += excluded;
     if (accountingRowNeedsConfirmation(r)) awaiting++;
   });
   const stat = (label, value, cls) => `<div class="acct-stat"><div class="acct-stat-label">${esc(label)}</div><div class="acct-stat-value${cls ? ' ' + cls : ''}">${value}</div></div>`;
@@ -974,6 +1052,7 @@ function renderAccountingDashboard() {
     stat('Expected Spend', '$' + totalExpectedSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Actual Spend', '$' + totalActualSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2})) +
+    stat('Billed Externally (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Awaiting Confirmation', `${awaiting} of ${rows.length}`, awaiting > 0 ? 'warn' : '');
   // Tint the stat bar with the filtered Group's own brand color -- viewing
   // "All Groups" (mixed data, no single brand color applies) keeps the
