@@ -1397,6 +1397,15 @@ const SETUP_BLOCKER_LABELS = {
   creative: 'Waiting on Creative',
   platform_access: 'Waiting on Platform Access',
   intake_form: 'Waiting on Intake Form',
+  pending_website: 'Pending Website',
+};
+// Setup panel checkbox display is generated FROM the object above (2026-08-10 --
+// found live: a new blocker had to be added in two separate places, the source
+// object AND a hardcoded checkbox list that had drifted out of sync with it).
+// Only used for a short display form that differs from the full "Waiting on X"
+// label, or an extra parenthetical hint -- every other key needs neither.
+const SETUP_BLOCKER_CHECKBOX_HINTS = {
+  platform_access: { hint: ' (e.g. Facebook)' },
 };
 function strategistSetupBlockerPill(line) {
   // setup_blocker is a text[] (2026-08-10, per Claire -- a campaign can genuinely
@@ -1708,10 +1717,12 @@ function renderSetupPanels(lines) {
         ${l.order_line_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">Note on this line</div><div style="font-size:12.5px;color:var(--text)">${esc(l.order_line_notes)}</div>` : ''}
       </div>` : ''}
       <label class="lbl">What's this waiting on? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— check all that apply</span></label>
-      <div id="setup-blocker-${l.id}" style="display:flex;gap:16px;margin-bottom:10px;font-size:12.5px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="creative" ${Array.isArray(l.setup_blocker) && l.setup_blocker.includes('creative') ? 'checked' : ''}/> Creative</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="platform_access" ${Array.isArray(l.setup_blocker) && l.setup_blocker.includes('platform_access') ? 'checked' : ''}/> Platform access (e.g. Facebook)</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="intake_form" ${Array.isArray(l.setup_blocker) && l.setup_blocker.includes('intake_form') ? 'checked' : ''}/> Intake form</label>
+      <div id="setup-blocker-${l.id}" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px">
+        ${Object.entries(SETUP_BLOCKER_LABELS).map(([key, label]) => {
+          const short = (SETUP_BLOCKER_CHECKBOX_HINTS[key]?.short) || label.replace(/^Waiting on /, '');
+          const hint = SETUP_BLOCKER_CHECKBOX_HINTS[key]?.hint || '';
+          return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="${esc(key)}" ${Array.isArray(l.setup_blocker) && l.setup_blocker.includes(key) ? 'checked' : ''}/> ${esc(short)}${hint}</label>`;
+        }).join('')}
       </div>
       <label class="lbl">Setup Notes</label>
       <textarea id="setup-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px;margin-bottom:12px" placeholder="What's this waiting on before it can go live?">${esc(l.setup_notes || '')}</textarea>
