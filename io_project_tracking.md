@@ -11011,3 +11011,52 @@ fill test files (7/7 and 5/5 — each happens to only have one pre-existing
 month row per line in its own fixtures, so first-row-vs-last-row made no
 observable difference there, consistent rather than coincidental) plus
 every other test file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Real gap found: ordinary flat-budget campaigns never carried forward in Accounting
+
+Claire asked directly: "moving forward when a service is ordered will
+every month in the flight automatically be filled in?" Answering that
+honestly surfaced a real, previously-unknown gap rather than a clean
+"yes." Strategist's own `monthRowFor()` already carries a FLAT (non-
+varying) campaign's Gross Budget forward live for any month with no real
+row — that's WHY an ordinary standard campaign only ever needs its FIRST
+`campaign_months` row from the order trigger, never an explicit one every
+month; Strategist's own table just computes it on the fly. Accounting
+never had the equivalent — this session's earlier carry-forward fix only
+covered the NEW `'recurring'` flat-fee lines, explicitly reasoning
+ordinary spend-tracked lines didn't need it because "Strategist's real
+prefilled rows already cover this." That reasoning was wrong: an ordinary
+flat-budget AD-SPEND campaign would have eventually vanished from
+Accounting after its first month too, once Strategist's own carry-forward
+(which Accounting never shared) was the only thing still covering it.
+
+Fix: `accountingMonthRowFor()` rewritten to carry forward whenever a
+line is NOT flagged `budget_varies_by_month` — mirroring Strategist's own
+rule exactly, not a new invented one — with one deliberate exception:
+`billing_type: 'one_time'` fees never carry forward regardless, since they
+only ever happened in the one month they were billed. Also picked up the
+same edge case Strategist's own function already handles: a real row can
+exist for the exact month with genuine actual_spend but a still-null
+Gross Budget (e.g. a platform report got pasted before anyone entered a
+budget) — that now carries the budget forward from the most recent prior
+month while keeping the month's own real actuals, instead of the null
+blanking the whole row. A genuinely VARYING campaign with a missing month
+still correctly shows nothing — that's a real gap needing an actual entry,
+not something to guess at.
+
+**New SQL** (`accounting-flat-budget-carry-forward-2026-08-12.sql`, given
+to Claire) — one-line patch to `accounting_get_campaign_lines`, exposing
+the existing `budget_varies_by_month` column.
+
+**Verified**: new `test-accounting-flat-budget-carry-forward-2026-08-12.
+js` (7/7) — an ordinary flat ad-spend campaign now carries its budget
+forward with no leaked actual_spend; a varying campaign's missing month
+correctly stays a real gap (null); a one-time fee never carries forward
+even though its own varies-by-month flag is falsy; the existing recurring-
+line mechanism still works; a real row with null Gross Budget but genuine
+actual_spend carries the budget forward while keeping its own real spend
+figure. One older test (`test-accounting-track-all-ordered-2026-08-12.
+js`) had a stale "ordinary spend line never carries forward" assertion
+from before this fix existed — updated to reflect the new, correct
+behavior, not a regression. Re-ran every other test file across both
+portals — no regressions.

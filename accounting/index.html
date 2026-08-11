@@ -862,21 +862,53 @@ async function fetchAccountingData() {
 // happened in the one month they were billed, and for ordinary spend-
 // tracked lines Strategist's real prefilled rows already cover this, so
 // the fallback rarely even applies to them.
+// Carries forward for any line that's NOT flagged "varies by month" -- an
+// ORDINARY flat-budget ad-spend campaign included, not just this session's
+// new 'recurring' flat-fee lines (2026-08-12, per Claire: "when a service
+// is ordered will every month in the flight automatically be filled in?").
+// Real gap found answering that: Strategist's own monthRowFor() already
+// carries a flat campaign's Gross Budget forward live -- that's WHY a
+// standard campaign only ever needs its first campaign_months row, never
+// an explicit one every month. Accounting never had the equivalent, so an
+// ordinary flat-budget campaign would eventually vanish from Accounting
+// after its first month too, once Strategist's own real prefilled rows
+// ran out -- same class of bug as the flat-fee one, just a different set
+// of lines. 'one_time' fees are the one deliberate exception -- they never
+// carry forward regardless of budget_varies_by_month, since they only
+// ever happened in the one month they were billed.
 function accountingMonthRowFor(lineId, monthDate) {
   const key = accountingMonthKey(monthDate);
   const exact = ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === lineId && m.month.slice(0, 7) === key);
-  if (exact) return exact;
   const line = ALL_ACCOUNTING_LINES.find(l => l.id === lineId);
-  if (line?.billing_type !== 'recurring') return null;
-  const priorRows = ALL_ACCOUNTING_MONTHS
-    .filter(m => m.campaign_line_id === lineId && m.month.slice(0, 7) < key)
-    .sort((a, b) => a.month.localeCompare(b.month));
-  if (!priorRows.length) return null;
-  const last = priorRows[priorRows.length - 1];
+  const carriesForward = line && line.billing_type !== 'one_time' && !line.budget_varies_by_month;
+
+  // Same edge case Strategist's own monthRowFor() already handles: a real
+  // row can exist for this exact month with actual_spend/confirmed_by set
+  // but gross_budget still null (e.g. a platform report got pasted before
+  // anyone entered a budget) -- without this, that null would win outright
+  // and blank the whole row instead of carrying just the budget forward
+  // while keeping this month's own real actuals.
+  if (exact) {
+    if (exact.gross_budget == null && carriesForward) {
+      const prior = accountingMostRecentPriorMonth(lineId, key);
+      if (prior) return { ...exact, gross_budget: prior.gross_budget };
+    }
+    return exact;
+  }
+
+  if (!carriesForward) return null;
+  const prior = accountingMostRecentPriorMonth(lineId, key);
+  if (!prior) return null;
   // Synthetic row -- carries ONLY the Gross Budget forward, never actual
   // spend/confirmed/paused state from the prior month (that would make the
   // current month look confirmed/paused just because a past one was).
-  return { campaign_line_id: lineId, month: key + '-01', gross_budget: last.gross_budget, actual_spend: null, confirmed_by: null, confirmed_at: null, in_platform_override: null, paused: false };
+  return { campaign_line_id: lineId, month: key + '-01', gross_budget: prior.gross_budget, actual_spend: null, confirmed_by: null, confirmed_at: null, in_platform_override: null, paused: false };
+}
+function accountingMostRecentPriorMonth(lineId, key) {
+  const priorRows = ALL_ACCOUNTING_MONTHS
+    .filter(m => m.campaign_line_id === lineId && m.month.slice(0, 7) < key)
+    .sort((a, b) => a.month.localeCompare(b.month));
+  return priorRows.length ? priorRows[priorRows.length - 1] : null;
 }
 
 async function loadAccountingDashboard() {
