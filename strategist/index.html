@@ -353,14 +353,20 @@ function strategistFormatFlightRange(start, end) {
 }
 function strategistSetScope(scope) {
   strategistScope = scope;
+  strategistSelectedLineId = null;
   renderStrategistDashboard();
 }
+// Closes any open detail panel too (2026-08-11, per Claire) -- same reasoning as
+// strategistSetStatusTab just below: changing the filter changes what's even in
+// the table, so a stale-open panel for a now-filtered-out line is confusing.
 function strategistSetGroupFilter(groupName) {
   strategistGroupFilter = groupName;
+  strategistSelectedLineId = null;
   renderStrategistDashboard();
 }
 function strategistSetPacingFilter(segment) {
   strategistPacingFilter = segment;
+  strategistSelectedLineId = null;
   renderStrategistDashboard();
 }
 function strategistSetStatusTab(tab) {
@@ -1798,6 +1804,7 @@ function renderStrategistDashboard() {
   const lines = visibleCampaignLines();
   document.getElementById('strategist-setup-panel').innerHTML = strategistStatusTab === 'pending' ? renderSetupPanels(lines) : '';
   document.getElementById('strategist-table-wrap').innerHTML = strategistStatusTab === 'pending' ? '' : renderMainTable(lines);
+  applyStickyGroupOffset('strategist-table-wrap');
   renderStrategistDetailPanel();
 }
 
@@ -2299,6 +2306,20 @@ function strategistContrastTextColor(hex) {
   return luminance > 0.6 ? '#1F2937' : '#FFFFFF';
 }
 
+// Sticky header row + sticky "current group" banner while scrolling a long
+// table (2026-08-11, per Claire). The group banner's sticky offset has to sit
+// right below the header row, but the header's own height isn't fixed (it
+// wraps onto 1-2 lines depending on column width), so it's measured from the
+// live DOM after each render rather than hardcoded.
+function applyStickyGroupOffset(wrapId) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const thead = wrap.querySelector('thead');
+  if (!thead) return;
+  const top = thead.getBoundingClientRect().height;
+  wrap.querySelectorAll('.sticky-group-td').forEach(td => { td.style.top = top + 'px'; });
+}
+
 function renderMainTable(lines) {
   if (!lines.length) return '<p style="color:var(--muted);font-size:13px;padding:20px 0">No campaigns in this tab.</p>';
   const byGroup = {};
@@ -2320,7 +2341,7 @@ function renderMainTable(lines) {
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1250px">
     <thead><tr style="background:var(--light)">
       ${MAIN_TABLE_COLUMNS.map(([h, w]) =>
-        `<th style="padding:8px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;max-width:${w}px;vertical-align:bottom">${h}</th>`).join('')}
+        `<th style="position:sticky;top:0;z-index:3;background:var(--light);padding:8px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;max-width:${w}px;vertical-align:bottom">${h}</th>`).join('')}
     </tr></thead><tbody>`;
 
   Object.keys(byGroup).sort((a, b) => a.localeCompare(b)).forEach(groupName => {
@@ -2329,7 +2350,7 @@ function renderMainTable(lines) {
     // catalog's default accent if a group has no brand_color set.
     const bg = byGroup[groupName].color || '#EFF6FF';
     const fg = strategistContrastTextColor(bg);
-    html += `<tr style="background:${esc(bg)}"><td colspan="13" style="padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:${fg}">${esc(groupName)}</td></tr>`;
+    html += `<tr style="background:${esc(bg)}"><td class="sticky-group-td" colspan="13" style="position:sticky;z-index:2;background:${esc(bg)};padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:${fg}">${esc(groupName)}</td></tr>`;
     byGroup[groupName].rows.forEach(l => {
       const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
       const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);

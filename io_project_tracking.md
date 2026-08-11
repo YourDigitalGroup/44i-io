@@ -10590,3 +10590,60 @@ resolution rather than guessing, and the full revenue-split math produces
 the exact real dollar splits at both a low-tier and high-tier spend level.
 Re-ran all 10 other accounting test files (92/92) unchanged and still fully
 passing. 101/101 total across 11 files.
+
+### 2026-08-11 (cont'd) — Scroll-to-top, auto-close on toggle, sticky headers (both portals)
+
+Three UI asks, all cosmetic/behavioral, no schema/RPC changes:
+
+**1. Scroll to top when opening a tactic's detail.** Strategist already
+smooth-scrolled its detail panel into view on open (built 2026-08-06);
+Accounting's `accountingSelectLine` never had the equivalent — added the
+same `scrollIntoView({behavior:'smooth', block:'start'})` call there.
+
+**2. Closing an open detail panel/card when you toggle away.** Strategist's
+status-tab switch already reset `strategistSelectedLineId` (built earlier);
+added the same reset to its group filter, pacing filter, and scope toggle,
+and to Accounting's group filter, status filter, and month-shift — a
+detail view left open while you change what the table is even showing was
+confusing to have to notice and close manually.
+
+**3. Sticky header row + sticky "current group" banner.** `position:sticky;
+top:0` on the header `<th>`s in both portals' main tables (Accounting's
+own table lives inside a scrolling `.acct-table-wrap`; Strategist's table
+sits in the normal page scroll). The group banner row needs to stick just
+below the header, but the header's own height isn't fixed — it wraps onto
+1-2 lines depending on column width — so a small `applyStickyGroupOffset()`
+helper measures the live `<thead>` height after each render and sets that
+as the group row's own sticky `top` offset, in both files (duplicated
+rather than moved into shared.js, matching that file's existing "only code
+both index.html and admin.html call" scope note — every portal having its
+own copy is the established pattern here, not a shared.js violation).
+
+**Verified**: new `test-sticky-scroll-close-2026-08-11.js` (Accounting,
+8/8) and `test-strategist-sticky-close-2026-08-11.js` (Strategist, 7/7) —
+scroll-into-view fires only when actually opening (not on re-selecting the
+same line to close it), every filter/tab/scope change clears the open
+selection, and both the header row and the group banner row resolve to
+`position:sticky` with a real measured top offset. Re-ran all 11 existing
+accounting test files unchanged — one (`test-accounting-manual-confirm-
+group-color.js`) needed its own fix, not a product bug: it string-matched
+a literal hex color (`"background:#123456"`) against the group row's
+rendered `innerHTML`, but setting `td.style.top` via JS (the new sticky
+offset) makes the browser normalize the *entire* style attribute the next
+time it's serialized back out (hex → `rgb()`, spacing added) — the actual
+rendered color never changed, only the literal string. Switched that test
+to `getComputedStyle()` instead of string-matching; still 10/10 after the
+fix. 101/101 across the other 10 files, unchanged.
+
+**Also delivered**: re-sent the two SQL files from earlier this session
+that hadn't been confirmed run yet — `accounting-confirm-uuid-fix-2026-08-
+11.sql` (the manual-confirm `uuid = text` fix) and `accounting-sem-spend-
+tiers-2026-08-11.sql` (SEM's tiered revenue split). Both are `create or
+replace`, safe to run again if already applied.
+
+**Still open, not built**: the flight-months bulk backfill (asked whether
+Claire wants it applied to every already-active campaign at once, or one
+at a time via the existing per-campaign "Fill remaining months to flight
+end" button) and the Accounting manual-add-service feature (her own
+proposed reconciliation-by-side-effect approach) — both pending her
+reply.
