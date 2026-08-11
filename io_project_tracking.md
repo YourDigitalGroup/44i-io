@@ -10885,3 +10885,38 @@ once their real row is behind them; the carried-forward synthetic row
 never leaks actual_spend/confirmed/paused; confirming a carried-forward
 month sends the right Gross Budget for the RPC to create a real row with.
 Re-ran all other test files across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Billed Externally excluded from 44i Revenue totals; bulk backfill reported not working
+
+**Billed Externally exclusion (built).** Claire: "if a service is billed
+externally it should not be included in the 44i revenue because that is
+the number that we should be invoicing." Real gap: the stat tile and Total
+row summed every row's 44i Revenue regardless of `billed_externally`, so a
+group invoicing a client directly outside 44i still inflated the number
+44i would actually invoice against. New `accountingSplitInvoiceable(r)`
+splits a row's already-computed 44i Revenue into invoiceable vs. excluded
+— checks each CHILD individually for a rollup (a region split can have
+some regions billed externally and others not), not the rollup as a
+whole. Only the TOTALS change; the per-row table cell still shows its own
+calculated split either way, since it's still a useful reference number.
+Added a 6th stat tile, "Billed Externally (excl.)", so the excluded amount
+stays visible instead of just disappearing from the summary bar — grid
+widened from 5 to 6 columns.
+
+**Verified**: new `test-accounting-billed-externally-excluded-2026-08-12.
+js` (5/5) — 44i Revenue tile and the Total row both exclude a billed-
+externally line's contribution; the new tile shows exactly that excluded
+amount; the per-row cell still shows its own calculated split regardless;
+a mixed rollup (one region billed externally, one not) only excludes the
+externally-billed child's portion. One older test (`test-accounting-
+manual-confirm-group-color.js`) had a stale "5 stat tiles" assertion from
+before this tile existed — updated to 6, not a regression. Re-ran every
+other test file across both portals — all still passing.
+
+**Bulk backfill reported not working — investigating.** Claire: "The
+back fill flight dates didn't work." Re-ran the existing `test-strategist-
+bulk-backfill-2026-08-11.js` against the current file — still 7/7,
+and the button/function wiring (`strategistBulkFillAllToFlightEnd`) is
+still intact. Couldn't reproduce blind without more detail — asked Claire
+for specifics (which button, any error message, what she actually saw)
+rather than guess further and risk shipping a fix for the wrong problem.
