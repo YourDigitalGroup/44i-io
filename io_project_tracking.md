@@ -10286,3 +10286,72 @@ updated for "(N regions)," not a regression), and `test-flight-range-nowrap.js`
 
 No SQL changes in this pass — pure presentation plus the detail-card
 feature, reusing v2's existing RPCs/schema entirely.
+
+### 2026-08-11 (cont'd) — Accounting Portal v4: fonts, real column list, automatic Confirmed status
+
+Claire, after v3: "I don't know how we went from the clean mockup to this
+messy unprofessional product." Three concrete, real fixes:
+
+**1. Fonts.** v3 used a monospace font (`ui-monospace`) for column headers
+and stat-tile labels, imitating the mockup DOC's own editorial typography
+choice rather than matching this app's house style. Removed entirely —
+headers/labels now use the same Montserrat + `label.lbl`-style uppercase
+convention every other table in Admin/Strategist already uses.
+
+**2. Column list, exactly as specified**: Client, Tactic, Flight, Revenue,
+44i Revenue, Expected Spend, Actual Spend, Status. **44i Cut % and Group's $
+(YDA) are no longer their own columns** — the cut % is still used
+internally to compute 44i Revenue, just not displayed on its own anymore.
+**Expected Spend is a real, separate, newly-computed number** — not a
+renamed Actual Spend. It's the exact same formula the Strategist Portal
+already uses for In-Platform Budget: Budgeted Impressions (Gross ÷ Retail
+CPM × 1000) × Platform CPM ÷ 1000, falling back to Gross × In-Platform % for
+a service with no Retail CPM (e.g. SEM), with a per-month manual override
+(`campaign_months.in_platform_override` — the same column the Strategist
+Portal already writes to) always winning. Retail CPM comes from the public
+services catalog via `shared.js`'s existing `loadCatalog()` — no new RPC
+needed for that part.
+
+**3. Status is now fully automatic — no more inline checkboxes.** Claire:
+"If there is actual spend that should automatically update the status to
+confirmed, I don't want the checkboxes out like that, I think it looks
+messy." A real `actual_spend` figure having been entered for the month now
+directly means Confirmed — the manual per-month sign-off checkbox (and its
+"Confirmed · name, date" wording) is gone from both the main table AND the
+detail card. **Billed Externally moved out of the table entirely** into a
+single checkbox in the detail card's header — one control per selected
+campaign instead of two checkboxes cluttering every row.
+
+The `confirmed_by`/`confirmed_at` columns and `accounting_confirm_month` RPC
+(added yesterday) are now unused — left in place (harmless) rather than
+migrated away, matching the project's existing pattern for
+`fortyfouri_fixed_cut` (a real column that's never been wired into a
+formula). `accounting_set_billed_externally` is still used, just from a new
+location.
+
+**New SQL** (`accounting-expected-spend-2026-08-11.sql`, given to Claire) —
+patches `accounting_get_rates` (adds `platform_cpm`/`in_platform_pct` to the
+base+group scopes) and `accounting_get_campaign_months` (adds
+`in_platform_override`). No new tables/columns — pure additive field
+exposure on two existing RPCs.
+
+**Verified**: `test-accounting-expected-spend.js` (scratchpad, 7/7) — the
+CPM formula itself (group Platform CPM override beats base, a different
+group still gets base, In-Platform % fallback for a no-Retail-CPM service,
+no rate configured at all → null never guessed, a manual override always
+wins, missing Gross Budget → null). `test-accounting-stats-and-detail-card.js`
+(15/15, rewritten) — Expected Spend in the stat tile is genuinely the
+computed figure, not Actual Spend re-labeled; zero checkboxes anywhere in
+the main table; the detail card auto-shows Confirmed for a month with real
+spend and Needs confirmation for months without, with exactly one checkbox
+in the whole card (the header's Billed Externally toggle). `test-accounting-v2-mockup-layout.js`
+(15/15, rewritten) — a rollup's two regions each auto-derive their own
+status from their own actual spend (one Confirmed, one Needs confirmation,
+correctly producing "1 of 2 confirmed" on the collapsed parent), zero
+checkboxes in the table, Billed Externally still displays correctly though
+no longer toggleable from there. Re-ran `test-accounting-portal-v1.js`
+(12/12 — one assertion updated for the dropped Cut % column, not a
+regression), `test-accounting-offline-visits-cutpct.js` (10/10),
+`test-accounting-alpha-sort.js` (1/1), `test-accounting-admin-handoff.js`
+(7/7), and `test-flight-range-nowrap.js` (8/8) unchanged and still fully
+passing. 71/71 across all 8 accounting test files.
