@@ -9994,3 +9994,114 @@ confirmed unrelated to this change — reproduces identically on the prior
 commit, a stale assertion from before the "Pending Website" 4th blocker
 option was added; not something this session touched or should fix silently
 without flagging it first.
+
+### 2026-08-11 (cont'd) — Paused checkbox added to each month in Campaign Setup
+
+Claire: "We also need to be able to check paused for any month in the
+campaign set up." The scheduled per-month Paused checkbox (2026-08-10) only
+ever existed on the detail panel's Monthly History table, which a pending
+line can't reach — same reachability gap as the Flight dates/Offline Visits
+fix just above.
+
+Added the identical Paused checkbox to each month row in the Setup panel's
+"Budget is different by month" section, next to that month's Gross Budget
+input — same `strategistSaveMonth(lineId, month, {paused: this.checked})`
+call, same immediate-save-on-change behavior (unlike Platform/Notes/dates in
+this panel, which batch at Save Draft/Confirm & Activate time) as the detail
+panel's own version, so both places behave identically once you've used
+either. Carries the same clarifying `title` tooltip explaining this is the
+scheduled-pause mechanism, not the overall Status dropdown — and, since
+`strategistEffectiveStatus()` only consults a month's `paused` flag while
+the campaign's overall status is `'active'`, checking it during Setup is a
+no-op until the campaign is actually activated (by design — you're
+pre-scheduling a future pause, not pausing something that isn't running
+yet).
+
+**Verified**: `test-setup-month-paused.js` (scratchpad, 6/6) — one checkbox
+renders per month, correctly checked/unchecked from that month's existing
+`paused` value; toggling one sends `{paused: true}` for exactly that
+month's RPC call (not another month's); the tooltip text is present. Re-ran
+`test-setup-offline-and-dates.js` (9/9), `test-month-pause-schedule.js`
+(15/15), and `test-setup-panel-collapse.js` (8/8) unchanged and still fully
+passing.
+
+### 2026-08-11 (cont'd) — Real bug found: Accounting Portal never applied the Offline Visits Tracking cut-% override
+
+Follow-up to the revenue-split mismatch Claire caught. She confirmed the
+spreadsheet formula itself was never modified, which meant the mismatch had
+to be a real gap on the portal's side, not a stale/manual spreadsheet entry.
+Pasted the actual `'Suggested Map'` reference rows to nail it down:
+
+| Tactic | Plain 44i Cut % | w/Visits 44i Cut % |
+|---|---|---|
+| Targeted Display: Audience | 47.50% | 47.92% |
+| Location Targeting Event/Lookback | (not needed) | 45.45% |
+| Location Targeting Geofencing | 45.00% | 45.59% |
+| FB & IG Ads | 45.00% | (no visits variant) |
+
+Every mismatched row from the earlier comparison was exactly the tactics
+with "w/Visits" in the name — confirming Offline Visits Tracking changes the
+real 44i Cut %, and every row WITHOUT "w/Visits" had already matched
+perfectly.
+
+**Root cause — and it's not a missing concept, it's a missed integration.**
+Admin's Accounting Map has supported exactly this since 2026-07-31: Offline
+Visits Tracking is modeled as its own `is_cpm_adjustment` service; a tactic
+can have a SEPARATE `accounting_map` row keyed by `(service_id = the tactic,
+pair_with_service_id = the modifier)`, overridable independently per tactic
+(Admin's "(w/ Offline Visits Tracking)" sub-rows, "Override" button — already
+built, already used for CPM). The Accounting Portal (built yesterday, before
+this mismatch was ever caught) simply never fetched those pairing rows or a
+campaign line's `has_offline_visits` flag — it always used the plain rate
+for every line regardless of the flag. This was always going to undercount
+every w/Visits campaign; the SEM-style "missing formula" framing from
+yesterday doesn't apply here at all — the formula already existed elsewhere
+in the app, just not wired into this new page.
+
+**Fix**:
+- `accounting_get_campaign_lines` now also returns `has_offline_visits`.
+- `accounting_get_rates` now also returns a `'pairing'` scope: for every
+  tactic with its own override paired against an `is_cpm_adjustment`
+  modifier (found generically via `services.is_cpm_adjustment = true`, not a
+  hardcoded modifier id, since a section can have its own modifier row per
+  Admin's existing multi-candidate logic), its pairing-specific 44i Cut %.
+- `accountingEffectiveCutPct(serviceId, groupId, hasOfflineVisits)` — when
+  `hasOfflineVisits` is true AND a pairing override exists for that service,
+  it wins outright over the group-then-base resolution. If no pairing
+  override is configured for that service, falls through to the normal
+  resolution rather than showing "not set" just because the flag happens to
+  be on — matches Admin's own UI, where the base entry stays authoritative
+  until someone explicitly overrides the pairing.
+- Table now shows a small "+Visits" tag next to the tactic name so a mismatch
+  like this is visible at a glance going forward, not just caught by manual
+  cross-checking.
+
+**Known, explicitly NOT built**: a per-GROUP override of a pairing rate.
+Admin's own per-group override table isn't pairing-aware either, so this
+matches existing behavior rather than inventing a new mechanic — flagged,
+not silently guessed at.
+
+**New SQL** (`accounting-offline-visits-cutpct-2026-08-11.sql`, given to
+Claire) — patches `accounting_get_campaign_lines` and `accounting_get_rates`
+(both from yesterday's v1 script) with the above. No new column, no schema
+change — purely exposing data that already existed.
+
+**Verified**: `test-accounting-offline-visits-cutpct.js` (scratchpad, 10/10)
+— a w/Visits line uses the pairing rate, the same tactic without visits
+still uses the plain base rate, a tactic with no visits variant at all is
+unaffected either way, a visits-flagged line with no pairing override
+configured falls back to the base rate rather than showing blank, a group
+override still wins when visits is off but the pairing rate still wins over
+it when visits is on (documented gap, not a bug), and a full render using
+Claire's own ABRA numbers lands within a couple cents of her real $372.46
+(the small remainder is the sheet displaying its rate rounded to 45.59%
+while the true stored rate carries more precision — a data-entry precision
+question for Admin, not a portal math bug). Re-ran `test-accounting-portal-v1.js`
+(12/12) and `test-accounting-admin-handoff.js` (7/7) unchanged and still
+fully passing.
+
+**Still to confirm with Claire**: whether every tactic that has a "w/Visits"
+variant already has its pairing override entered in Admin's Accounting Map
+today, or whether some still need the actual rate typed in (the mechanism
+now works end-to-end once a rate is entered; it can't invent one that was
+never set).
