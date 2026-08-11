@@ -976,15 +976,26 @@ function strategistParseBulkImport(raw, overrides = {}) {
     // separate campaigns. Safe for every other case too: multiple month rows
     // for the same real campaign always carry the same tactic text already.
     const identityKey = [client.id, service.id, tacticMatch.tacticLabel, platform, platformCampaignName].join('|');
+    const rowFlightStart = get('flight_start') || null;
+    const rowFlightEnd = get('flight_end') || null;
     if (!groups.has(identityKey)) {
       groups.set(identityKey, {
         client_id: client.id, group_id: client.group_id, service_id: service.id,
         tactic_label: tacticMatch.tacticLabel, platform: platform || null,
         platform_campaign_name: platformCampaignName || null, split_label: get('split_label') || null,
-        status, flight_start: get('flight_start') || null, flight_end: get('flight_end') || null,
+        status, flight_start: rowFlightStart, flight_end: rowFlightEnd,
         setup_notes: get('setup_notes') || null, setup_blocker: setupBlocker,
         monthRows: [],
       });
+    } else {
+      // Real bug found live (2026-08-10, Claire): a later row for the SAME campaign
+      // (e.g. a second recurring wave with its own, later dates) had its
+      // flight_start/flight_end silently dropped -- only the very first row's dates
+      // were ever kept. Now extends to the earliest start / latest end seen across
+      // every row for this campaign, instead of freezing on the first one.
+      const g = groups.get(identityKey);
+      if (rowFlightStart && (!g.flight_start || rowFlightStart < g.flight_start)) g.flight_start = rowFlightStart;
+      if (rowFlightEnd && (!g.flight_end || rowFlightEnd > g.flight_end)) g.flight_end = rowFlightEnd;
     }
     const month = get('month');
     // Same fix as the paste-report tool (2026-08-06): a real spreadsheet's Gross
