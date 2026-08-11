@@ -9669,3 +9669,44 @@ run, someone (Claire or an AM) still needs to actually SET the SEM rates in
 Admin → Accounting Map (In-Platform % = 50, CPC Low/High = 4/12, or
 whatever the team confirms as the real default) — the formula exists now,
 but nothing auto-calculates until a real rate is entered.
+
+### 2026-08-10 (cont'd) — Real bug: Bulk Import silently dropped a later row's flight dates
+
+Claire was trying to bulk-import a real recurring campaign (Little and
+Holland ESQ / Event Targeting, split into Geo and Audience pieces, each
+recurring in two separate waves — Sept and Nov-Dec — with different dates
+each time) and asked "should I just create multiple campaign lines right
+away?" after the split attempt didn't seem to hold the right dates.
+
+Root cause: `strategistParseBulkImport()`'s group-merging only ever set
+`flight_start`/`flight_end` from the FIRST row it saw for a given campaign
+identity — any later row sharing that identity (e.g. a second recurring
+wave with its own, later dates) had its dates silently dropped, even though
+its Month/Gross Budget were still correctly captured as an extra month row.
+Fixed by extending to the earliest start / latest end seen across every row
+for that campaign, regardless of paste order.
+
+Also clarified for Claire directly (not a bug, just a design fact worth
+restating): splits are identified by their own distinct **Platform Campaign
+Name**, not by Split Label alone — `identityKey` never included
+`split_label`. Two rows with the same (blank) title but different Split
+Labels collide into ONE group. Her draft paste had no titles filled in at
+all, which is why the intended Geo/Audience split wouldn't have worked
+regardless of the date bug.
+
+**Still open, needs Claire's input**: the Setup panel's "Split into Multiple
+Campaigns" feature (`strategist_split_campaign_line`) always copies the
+ORIGINAL line's single flight range to every resulting split — there's no
+way to give each split its own different dates at split-creation time.
+Whether that's worth building depends on whether Geo/Audience really need
+independently different ranges from each other (not just an extended range
+per split across recurring waves, which the fix above already handles) —
+parked pending her answer.
+
+**Verified**: `test-bulk-import-flight-extend.js` (scratchpad, 11/11) — a
+later row's later end date correctly extends `flight_end`; an earlier row
+seen SECOND in the paste still extends `flight_start` backward (fully
+order-independent); two distinct splits (each with their own Platform
+Campaign Name) keep their own independent ranges rather than bleeding into
+each other; a normal single-row campaign is completely unaffected. Re-ran
+12 other bulk-import-adjacent test files unchanged and still fully passing.
