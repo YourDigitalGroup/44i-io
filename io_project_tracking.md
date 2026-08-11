@@ -9710,3 +9710,19 @@ order-independent); two distinct splits (each with their own Platform
 Campaign Name) keep their own independent ranges rather than bleeding into
 each other; a normal single-row campaign is completely unaffected. Re-ran
 12 other bulk-import-adjacent test files unchanged and still fully passing.
+
+Follow-up: Claire confirmed same-range-for-all-splits is fine for now (no
+further work needed there), and traced the Little and Holland ESQ date
+discrepancy back to the actual paper IO — the campaigns really are
+single-date, so the odd multi-date entry was a transfer error, not a data
+model gap. Exactly the kind of mistake this system is meant to catch.
+
+**Reinforces the existing PARKED edit-a-submitted-IO/cancellation item**
+(see the 2026-08-06 "PARKED — cancellations + edit-a-submitted-IO" entry
+above — still the same connected design question, not a new one). This
+transfer-error catch is a concrete real-world example of exactly why it
+matters: once an IO is signed today, there's no way to go back and fix a
+mistake like this at the source — only work around it downstream in the
+Strategist Portal. Claire wants to note this now as a live example to bring
+to the team, but is deliberately not scoping who should be able to edit an
+IO or what that flow looks like until she's talked it through with them.
