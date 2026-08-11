@@ -10726,3 +10726,34 @@ color tints its region rows toward that color, a group without one still
 falls back to the flat gray. Re-ran every other existing test file across
 both portals (Strategist + Accounting, 15 files) — all still passing, no
 regressions.
+
+### 2026-08-12 — Real bug: sticky headers never actually stuck
+
+Claire: "the sticky headers not working." Root cause: the earlier sticky
+pass only verified that `position:sticky` was *set* on the header/group
+cells (via `getComputedStyle`), never that it actually stayed pinned
+against a real, scrolling page — an incomplete test that missed the real
+bug. `.acct-table-wrap`/`#strategist-table-wrap` both use `overflow:auto`
+(or `overflow-x:auto`, which forces the y-axis to compute as `auto` too, a
+CSS spec quirk) to allow horizontal scrolling on a wide table. That
+`overflow:auto` makes the wrap div itself the "nearest scroll container" a
+sticky descendant sticks against — but with no height limit, that div
+never actually overflows internally (it just grows to fit its content), so
+there's nothing for the sticky header to stick against *inside it*, and it
+never tracked the page's own scroll at all. Confirmed live: scrolled the
+real page 400px, the header hadn't moved a pixel from its unscrolled
+position — sitting frozen, not stuck.
+
+**Fix**: gave both wraps a bounded `max-height:70vh` — turning each into a
+genuine internally-scrolling panel (its own scrollbar, content taller than
+the box), which is what `position:sticky` actually needs to have something
+to stick against. Verified this really works by scrolling the wrap's own
+`scrollTop` and checking a body row's rect visibly moves out from under a
+header/group-banner rect that stays exactly still — not just that the CSS
+property is set.
+
+**Verified**: new `test-sticky-fix-final-2026-08-12.js` — for both
+portals: the header cell and the current group's banner cell stay at the
+identical screen position before and after a 300px internal scroll, while
+a body row genuinely moves out of view underneath them. Re-ran all 15
+other test files across both portals — all still passing.

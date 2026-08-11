@@ -83,7 +83,14 @@
       <div id="strategist-detail-panel" style="margin-bottom:16px"></div>
 
       <!-- Main pacing table -->
-      <div id="strategist-table-wrap" style="overflow-x:auto"></div>
+      <!-- max-height added 2026-08-12 alongside Accounting's identical fix --
+           overflow-x:auto alone forces this div into being its own vertical
+           scroll container too (a CSS spec quirk: setting one overflow axis
+           to non-visible forces the other to compute as 'auto' as well), but
+           with no height limit it never actually scrolled internally, so the
+           sticky header/group row just sat frozen and never tracked the
+           page's own scroll. -->
+      <div id="strategist-table-wrap" style="overflow-x:auto;overflow-y:auto;max-height:70vh"></div>
     </div>
   </div>
 </div>

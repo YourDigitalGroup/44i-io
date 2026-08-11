@@ -35,7 +35,14 @@
   #page-accounting .acct-detail-title{font-weight:700;font-size:14px;color:var(--text)}
   #page-accounting .acct-detail-sub{color:var(--muted);font-size:12px}
   #page-accounting .acct-detail-close{background:var(--light);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer}
-  #page-accounting .acct-table-wrap{border:1px solid var(--border);border-radius:8px;overflow:auto;background:#fff}
+  /* max-height (2026-08-12, per Claire: "sticky headers not working") --
+     overflow:auto alone makes this div its OWN scroll container for sticky
+     purposes, but with no height limit it never actually scrolls internally
+     (the page scrolls instead), so the sticky thead/group-row just sat frozen
+     at the top of this div and never tracked page scroll at all. Bounding
+     the height makes it a real scrolling panel, which is what sticky needs
+     to have something to stick against. */
+  #page-accounting .acct-table-wrap{border:1px solid var(--border);border-radius:8px;overflow:auto;max-height:70vh;background:#fff}
   #page-accounting table{width:100%;border-collapse:collapse;font-size:12.5px}
   #page-accounting thead th{position:sticky;top:0;z-index:3;background:#fff;text-align:left;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
   #page-accounting thead th.num, #page-accounting td.num{text-align:right}
