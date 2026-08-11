@@ -6,34 +6,76 @@
 <title>44i Accounting Portal</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="../shared.css"/>
+<!-- Layout additions scoped to #page-accounting (2026-08-11) -- same light
+     palette as /admin and /strategist (shared.css's --border/--muted/--text/
+     --accent/--light: Claire confirmed the dark look in her screenshot was
+     just her OS being in dark mode triggering the mockup doc's own
+     prefers-color-scheme block, not an intended design -- "keep the coloring
+     the same as admin and strategists"). Only new here: the stat-tile
+     summary row, the top filter-pill buttons, and the click-a-row detail
+     card -- structural pieces from the mockup that v2 didn't have yet. -->
+<style>
+  #page-accounting .mono{font-family:ui-monospace,"SF Mono","Cascadia Code",monospace}
+  #page-accounting .acct-wrap{max-width:1180px;margin:24px auto 0;padding:0 16px 40px}
+  #page-accounting .acct-header{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+  #page-accounting .acct-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+  #page-accounting .acct-month-nav{display:flex;align-items:center;gap:10px}
+  #page-accounting .acct-month-nav button{background:var(--light);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 11px;cursor:pointer;font-size:14px}
+  #page-accounting .acct-month-label{font-weight:700;font-size:15px;min-width:120px;text-align:center;color:var(--text)}
+  #page-accounting .acct-filters{display:flex;gap:10px}
+  #page-accounting .acct-filter-btn{display:flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:6px;padding:6px 10px 6px 12px;font-size:11.5px;letter-spacing:.03em;color:var(--muted);background:#fff}
+  #page-accounting .acct-filter-btn select{background:transparent;color:var(--text);border:none;font-family:inherit;font-size:11.5px;cursor:pointer;padding-right:2px}
+  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05)}
+  #page-accounting .acct-stat{padding:14px 20px}
+  #page-accounting .acct-stat + .acct-stat{border-left:1px solid var(--border)}
+  #page-accounting .acct-stat-label{font-family:ui-monospace,"SF Mono",monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  #page-accounting .acct-stat-value{font-size:22px;font-weight:700;color:var(--text)}
+  #page-accounting .acct-stat-value.warn{color:#B45309}
+  #page-accounting .acct-detail-card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px 18px;margin-bottom:18px;box-shadow:0 1px 2px rgba(20,40,60,.05)}
+  #page-accounting .acct-detail-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+  #page-accounting .acct-detail-title{font-weight:700;font-size:14px;color:var(--text)}
+  #page-accounting .acct-detail-sub{color:var(--muted);font-size:12px}
+  #page-accounting .acct-detail-close{background:var(--light);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer}
+  #page-accounting .acct-table-wrap{border:1px solid var(--border);border-radius:8px;overflow:auto;background:#fff}
+  #page-accounting table{width:100%;border-collapse:collapse;font-size:12.5px}
+  #page-accounting thead th{text-align:left;font-family:ui-monospace,"SF Mono",monospace;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+  #page-accounting thead th.num, #page-accounting td.num{text-align:right}
+  #page-accounting tbody td{padding:9px 12px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text)}
+  #page-accounting tr.acct-group-row td{background:var(--light);font-weight:700;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:8px 12px}
+  #page-accounting tr.acct-row{cursor:pointer}
+  #page-accounting tr.acct-row:hover td{background:var(--light)}
+  #page-accounting tr.acct-row.selected td{background:var(--light)}
+  #page-accounting tr.acct-child td{background:#FAFCFE}
+  #page-accounting tr.acct-child td:first-of-type{color:var(--muted);padding-left:26px}
+  #page-accounting .acct-status-pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap}
+  #page-accounting .acct-status-pill.confirmed{background:#DDF2DE;color:#2E7D42}
+  #page-accounting .acct-status-pill.needs{background:#FBF3C7;color:#8A6D12}
+  #page-accounting .acct-status-pill.external{background:#E0E7FF;color:#3730A3}
+  #page-accounting .acct-note{background:#FEF9E7;border:1px solid #F5E1A4;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:11.5px;color:#8A6D12}
+</style>
 </head>
 <body>
 
 <div id="toast" class="toast"></div>
 
-<!-- ACCOUNTING PORTAL — v2 layout (2026-08-11), same login-gated shell
-     pattern as /strategist. v1 (revenue split only) got cross-checked live
-     against Claire's real revenue spreadsheet and caught a real bug (Offline
-     Visits Tracking's cut-% override wasn't being applied -- fixed same
-     session). v2 brings the table up to the 2026-08-07 concept mockup's full
-     layout per Claire's "build it all out the way we planned for it to
-     look": grouped by Group (banner rows), Flight + Actual Spend columns,
-     split rollups (one row per client+tactic even when it's really N
-     campaign_lines from a region split, expandable), and the two manual
-     mechanisms the mockup proposed but never built -- Confirmed (who/when,
-     per line per month) and Billed Externally (services invoiced outside
-     this system, e.g. Website MRR hosting via Stripe). Both are the
-     SIMPLEST version of what the mockup showed (a plain toggle, no lock/
-     workflow) -- the deeper questions from that doc (should a confirmed
-     month lock? who can un-confirm?) are still open and NOT decided here.
-     Two things are still KNOWN gaps, flagged in the banner below and left
-     out of the math on purpose until confirmed: `fortyfouri_fixed_cut`
-     (exists in accounting_map, never wired into any formula in the app) and
-     the Setup Fee split (`setup_fee_cut_pct` -- a one-time fee, not a
-     recurring monthly amount, needs its own separate handling). -->
+<!-- ACCOUNTING PORTAL — v3 layout (2026-08-11), matching the original
+     "Accounting Portal — Concept & Open Questions" dashboard mockup's actual
+     structure (stat-tile summary row, a per-campaign detail card with a
+     short month lookahead) per Claire's "it still doesn't look like the
+     mockup" -- v2 (same day, earlier) matched the mockup's grouping/split-
+     rollup/Confirmed/Billed-Externally structure but kept a plain table-only
+     layout, missing the summary bar and detail card entirely. First attempt
+     at this pass used the mockup DOC's dark-mode CSS (the screenshot Claire
+     sent happened to be taken with her OS in dark mode, triggering that
+     doc's own prefers-color-scheme block) -- corrected immediately per
+     Claire: "keep the coloring the same as admin and strategists," so this
+     uses shared.css's normal light palette throughout, same as every other
+     portal. Everything from v2 (RPCs, rollup logic, Confirmed/Billed
+     Externally mechanics) is unchanged -- this is presentation + the new
+     detail-card feature, not a data model change. -->
 <div id="page-accounting" style="display:none">
-  <div class="card" style="max-width:1400px;margin:24px auto;padding-bottom:20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
+  <div class="acct-wrap">
+    <div class="acct-header">
       <div id="accounting-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
         <a id="accounting-admin-portal-link" href="../admin/index.html" onclick="adminPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Admin →</a>
@@ -41,33 +83,41 @@
       </div>
     </div>
 
-    <div style="padding:16px 20px 0">
-      <div style="background:#FEF9E7;border:1px solid #F5E1A4;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:11.5px;color:#8A6D12">
-        <strong>Revenue split by 44i Cut % only.</strong> Fixed Cut and the Setup Fee split aren't included in these totals yet (they need their own confirmed handling before they're added). <strong>Confirmed</strong>/<strong>Billed externally</strong> are plain toggles for now — nothing locks a month or restricts who can check/uncheck them yet. Compare this against the current revenue spreadsheet and flag anything that doesn't line up.
-      </div>
+    <div class="acct-note">
+      <strong>Revenue split by 44i Cut % only.</strong> Fixed Cut and the Setup Fee split aren't included in these totals yet (they need their own confirmed handling before they're added). <strong>Confirmed</strong>/<strong>Billed externally</strong> are plain toggles for now — nothing locks a month or restricts who can check/uncheck them yet. Compare this against the current revenue spreadsheet and flag anything that doesn't line up.
+    </div>
 
-      <!-- Top bar: month picker + filters -->
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <button onclick="accountingShiftMonth(-1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">‹</button>
-          <span id="accounting-month-label" style="font-size:13px;font-weight:700;color:var(--text);min-width:110px;text-align:center"></span>
-          <button onclick="accountingShiftMonth(1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">›</button>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;font-size:12px">
-          <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
+    <!-- Top bar: month picker + filters -->
+    <div class="acct-topbar">
+      <div class="acct-month-nav">
+        <button onclick="accountingShiftMonth(-1)">‹</button>
+        <span id="accounting-month-label" class="acct-month-label"></span>
+        <button onclick="accountingShiftMonth(1)">›</button>
+      </div>
+      <div class="acct-filters mono">
+        <label class="acct-filter-btn">Group:
+          <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)">
             <option value="">All Groups</option>
           </select>
-          <select id="accounting-status-filter" onchange="accountingSetStatusFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
-            <option value="">All Statuses</option>
-            <option value="active" selected>Active only</option>
-            <option value="paused">Paused only</option>
-            <option value="complete">Complete only</option>
+        </label>
+        <label class="acct-filter-btn">Status:
+          <select id="accounting-status-filter" onchange="accountingSetStatusFilter(this.value)">
+            <option value="">All Lines</option>
+            <option value="active">Active</option>
+            <option value="paused">Paused</option>
+            <option value="complete">Complete</option>
           </select>
-        </div>
+        </label>
       </div>
-
-      <div id="accounting-table-wrap" style="overflow-x:auto"></div>
     </div>
+
+    <!-- Summary stat tiles -->
+    <div id="accounting-stats" class="acct-stats"></div>
+
+    <!-- Per-campaign detail card -- only rendered when a row is selected -->
+    <div id="accounting-detail-card"></div>
+
+    <div id="accounting-table-wrap" class="acct-table-wrap"></div>
   </div>
 </div>
 
@@ -215,8 +265,9 @@ let ALL_ACCOUNTING_MONTHS = [];
 let ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} }; // service_id -> pct, group_id|service_id -> pct, and (offline-visits pairing) service_id -> pct
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
-let accountingStatusFilter = 'active';
+let accountingStatusFilter = ''; // '' = All Lines, matching the mockup's default -- was 'active'-only before this pass
 let ACCOUNTING_EXPANDED_SPLITS = new Set(); // rollup keys currently expanded -- always starts empty on load
+let accountingSelectedLineId = null; // drives the per-campaign detail card below the stat tiles
 
 // Same wrap-avoidance fix as the Strategist Portal's own strategistFormatFlightDate/
 // Range (2026-08-11, found live in that table's narrow Flight column, applies here
@@ -238,10 +289,91 @@ function accountingFormatConfirmedDate(iso) {
   if (!iso) return '';
   return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric' });
 }
+// Fuller "Aug 2026 – Jan 2027" format for the detail card header only -- the
+// main table stays on the shorter "Aug '26" form (narrower column).
+function accountingFormatFullFlightDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleString('en-US', { month: 'short', year: 'numeric' }).replace(/ /g, '\xa0');
+}
+function accountingFormatFullFlightRange(start, end) {
+  const s = accountingFormatFullFlightDate(start), e = accountingFormatFullFlightDate(end);
+  if (!s && !e) return '—';
+  return `${s || '—'} <span style="white-space:nowrap">– ${e || 'Ongoing'}</span>`;
+}
 function accountingToggleSplit(key) {
   if (ACCOUNTING_EXPANDED_SPLITS.has(key)) ACCOUNTING_EXPANDED_SPLITS.delete(key);
   else ACCOUNTING_EXPANDED_SPLITS.add(key);
   renderAccountingDashboard();
+}
+// Clicking a single campaign's row (not a rollup parent, which toggles its own
+// split expansion instead) opens the mockup's per-campaign detail card -- a
+// short 3-month lookahead starting at whatever month the top bar is currently
+// showing, so Confirmed can be checked off for several upcoming months without
+// having to step the month picker back and forth.
+function accountingSelectLine(lineId) {
+  accountingSelectedLineId = accountingSelectedLineId === lineId ? null : lineId;
+  renderAccountingDashboard();
+}
+function accountingCloseDetailCard() {
+  accountingSelectedLineId = null;
+  renderAccountingDashboard();
+}
+// A row still needs attention if it isn't fully confirmed and isn't (fully)
+// billed externally -- drives both the table's own status pill logic (already
+// built) and the "Awaiting Confirmation" stat tile below.
+function accountingRowNeedsConfirmation(r) {
+  if (r.isRollup) {
+    if (r.children.every(c => c.line.billed_externally)) return false;
+    return r.confirmedCount < r.totalCount;
+  }
+  if (r.line.billed_externally) return false;
+  return !r.confirmed;
+}
+function accountingRenderDetailCard() {
+  const el = document.getElementById('accounting-detail-card');
+  const line = accountingSelectedLineId ? ALL_ACCOUNTING_LINES.find(l => l.id === accountingSelectedLineId) : null;
+  if (!line) { el.innerHTML = ''; el.className = ''; accountingSelectedLineId = null; return; }
+  el.className = 'acct-detail-card';
+
+  const months = [0, 1, 2].map(offset => {
+    const d = new Date(accountingCurrentMonth.getFullYear(), accountingCurrentMonth.getMonth() + offset, 1);
+    const monthKey = accountingMonthKey(d);
+    const monthStr = monthKey + '-01';
+    const monthRow = ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === line.id && m.month.slice(0, 7) === monthKey);
+    const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
+    const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
+    const cutPct = accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits);
+    const split = accountingSplitRevenue(gross, cutPct);
+    return {
+      label: d.toLocaleString('en-US', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(-2),
+      monthStr, gross, actualSpend, split,
+      confirmed: !!monthRow?.confirmed_by, confirmedBy: monthRow?.confirmed_by, confirmedAt: monthRow?.confirmed_at,
+    };
+  });
+
+  el.innerHTML = `<div class="acct-detail-head">
+      <div class="acct-detail-title">${esc(line.client_name || '(unknown)')} — ${esc(line.tactic_label || line.service_id || '—')}</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="acct-detail-sub">${esc(line.group_name || '—')} · ${accountingFormatFullFlightRange(line.flight_start, line.flight_end)}</div>
+        <button class="acct-detail-close" onclick="accountingCloseDetailCard()">✕ Close</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Month</th><th class="num">Revenue</th><th class="num">Spend</th><th class="num">44i Revenue</th><th>Confirmed</th></tr></thead>
+      <tbody>${months.map(m => `<tr>
+          <td><strong>${esc(m.label)}</strong></td>
+          <td class="num">${m.gross != null ? '$' + m.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num">${m.actualSpend != null ? '$' + m.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num">${m.split.fortyfouri != null ? '$' + m.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:${m.confirmed ? '#2E7D42' : 'var(--muted)'}">
+              <input type="checkbox" ${m.confirmed ? 'checked' : ''} ${m.gross == null ? 'disabled' : ''} onchange="accountingConfirmMonth('${line.id}','${m.monthStr}', this.checked)"/>
+              ${m.confirmed ? esc(m.confirmedBy) + ' · ' + accountingFormatConfirmedDate(m.confirmedAt) : 'Confirm'}
+            </label>
+          </td>
+        </tr>`).join('')}</tbody>
+    </table>`;
 }
 async function accountingConfirmMonth(lineId, monthStr, confirmed) {
   try {
@@ -436,44 +568,46 @@ function accountingBuildRows() {
 function accountingRenderRow(r) {
   if (r.isRollup) {
     const expanded = ACCOUNTING_EXPANDED_SPLITS.has(r.key);
-    let html = `<tr style="border-bottom:1px solid var(--border);cursor:pointer" onclick="accountingToggleSplit('${r.key}')">
-      <td style="padding:9px 10px"><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-      <td style="padding:9px 10px"><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} splits)</span></td>
-      <td style="padding:9px 10px">${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
-      <td style="padding:9px 10px">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-      <td style="padding:9px 10px">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-      <td style="padding:9px 10px"><span style="color:var(--muted);font-size:11px">varies</span></td>
-      <td style="padding:9px 10px">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-      <td style="padding:9px 10px">${r.split.group != null ? '$' + r.split.group.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-      <td style="padding:9px 10px">${accountingRollupStatusPill(r)}</td>
+    let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')">
+      <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
+      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span></td>
+      <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
+      <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+      <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+      <td class="num"><span style="color:var(--muted);font-size:11px">varies</span></td>
+      <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+      <td class="num">${r.split.group != null ? '$' + r.split.group.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+      <td>${accountingRollupStatusPill(r)}</td>
     </tr>`;
     if (expanded) {
       r.children.forEach(c => {
-        html += `<tr style="border-bottom:1px solid var(--border);background:var(--light)">
+        const selected = c.line.id === accountingSelectedLineId;
+        html += `<tr class="acct-row acct-child${selected ? ' selected' : ''}" onclick="event.stopPropagation();accountingSelectLine('${c.line.id}')">
           <td></td>
-          <td style="padding:9px 10px 9px 28px">${esc(c.line.split_label || '(unlabeled split)')}</td>
-          <td style="padding:9px 10px">${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
-          <td style="padding:9px 10px">$${c.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-          <td style="padding:9px 10px">${c.actualSpend != null ? '$' + c.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td style="padding:9px 10px">${c.cutPct != null ? c.cutPct + '%' : '<span style="color:var(--muted)">— not set</span>'}</td>
-          <td style="padding:9px 10px">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td style="padding:9px 10px">${c.split.group != null ? '$' + c.split.group.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td style="padding:9px 10px">${accountingLineStatusPill(c)}${accountingConfirmControlsHtml(c)}</td>
+          <td>${esc(c.line.split_label || '(unlabeled split)')}</td>
+          <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
+          <td class="num">$${c.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+          <td class="num">${c.actualSpend != null ? '$' + c.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num">${c.cutPct != null ? c.cutPct + '%' : '<span style="color:var(--muted)">— not set</span>'}</td>
+          <td class="num">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num">${c.split.group != null ? '$' + c.split.group.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td>${accountingLineStatusPill(c)}${accountingConfirmControlsHtml(c)}</td>
         </tr>`;
       });
     }
     return html;
   }
-  return `<tr style="border-bottom:1px solid var(--border)">
-    <td style="padding:9px 10px"><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-    <td style="padding:9px 10px">${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}</td>
-    <td style="padding:9px 10px">${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
-    <td style="padding:9px 10px">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-    <td style="padding:9px 10px">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-    <td style="padding:9px 10px">${r.cutPct != null ? r.cutPct + '%' : '<span style="color:var(--muted)">— not set</span>'}</td>
-    <td style="padding:9px 10px">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-    <td style="padding:9px 10px">${r.split.group != null ? '$' + r.split.group.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-    <td style="padding:9px 10px">${accountingLineStatusPill(r)}${accountingConfirmControlsHtml(r)}</td>
+  const selected = r.line.id === accountingSelectedLineId;
+  return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')">
+    <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}</td>
+    <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
+    <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+    <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+    <td class="num">${r.cutPct != null ? r.cutPct + '%' : '<span style="color:var(--muted)">— not set</span>'}</td>
+    <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+    <td class="num">${r.split.group != null ? '$' + r.split.group.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+    <td onclick="event.stopPropagation()">${accountingLineStatusPill(r)}${accountingConfirmControlsHtml(r)}</td>
   </tr>`;
 }
 
@@ -487,6 +621,26 @@ function renderAccountingDashboard() {
     groupNames.map(g => `<option value="${esc(g)}" ${g === accountingGroupFilter ? 'selected' : ''}>${esc(g)}</option>`).join('');
 
   const rows = accountingBuildRows();
+
+  // Stat tiles (mockup's summary bar) -- computed from the SAME filtered rows
+  // the table itself renders, so the tiles and the table total row can never
+  // silently disagree.
+  let totalGross = 0, totalSpend = 0, totalFortyfouri = 0, totalGroup = 0, awaiting = 0;
+  rows.forEach(r => {
+    totalGross += r.gross;
+    if (r.actualSpend != null) totalSpend += r.actualSpend;
+    if (r.split.fortyfouri != null) { totalFortyfouri += r.split.fortyfouri; totalGroup += r.split.group; }
+    if (accountingRowNeedsConfirmation(r)) awaiting++;
+  });
+  const stat = (label, value, cls) => `<div class="acct-stat"><div class="acct-stat-label">${esc(label)}</div><div class="acct-stat-value${cls ? ' ' + cls : ''}">${value}</div></div>`;
+  document.getElementById('accounting-stats').innerHTML =
+    stat('Expected Revenue', '$' + totalGross.toLocaleString(undefined, {maximumFractionDigits:2})) +
+    stat('Expected Spend', '$' + totalSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
+    stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2})) +
+    stat('Awaiting Confirmation', `${awaiting} of ${rows.length}`, awaiting > 0 ? 'warn' : '');
+
+  accountingRenderDetailCard();
+
   const wrap = document.getElementById('accounting-table-wrap');
   if (!rows.length) {
     wrap.innerHTML = '<p style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No campaigns with a budget entered for this month yet.</p>';
@@ -504,35 +658,29 @@ function renderAccountingDashboard() {
   });
   const groupOrder = [...byGroup.keys()].sort((a, b) => a.localeCompare(b));
 
-  let totalGross = 0, totalSpend = 0, totalFortyfouri = 0, totalGroup = 0;
   let bodyRows = '';
   groupOrder.forEach(groupName => {
-    bodyRows += `<tr style="background:var(--light)"><td colspan="9" style="padding:8px 10px;font-weight:700;font-size:11.5px;color:var(--text)">${esc(groupName)}</td></tr>`;
-    byGroup.get(groupName).forEach(r => {
-      totalGross += r.gross;
-      if (r.actualSpend != null) totalSpend += r.actualSpend;
-      if (r.split.fortyfouri != null) { totalFortyfouri += r.split.fortyfouri; totalGroup += r.split.group; }
-      bodyRows += accountingRenderRow(r);
-    });
+    bodyRows += `<tr class="acct-group-row"><td colspan="9">${esc(groupName)}</td></tr>`;
+    byGroup.get(groupName).forEach(r => { bodyRows += accountingRenderRow(r); });
   });
 
-  const th = label => `<th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${label}</th>`;
-  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+  const th = (label, num) => `<th${num ? ' class="num"' : ''}>${label}</th>`;
+  wrap.innerHTML = `<table>
     <thead>
-      <tr style="border-bottom:2px solid var(--border)">
-        ${th('Client')}${th('Tactic')}${th('Flight')}${th('Gross Budget')}${th('Actual Spend')}${th('44i Cut %')}${th('44i\'s $')}${th('Group\'s $ (YDA)')}${th('Status')}
+      <tr>
+        ${th('Client')}${th('Tactic')}${th('Flight')}${th('Revenue', true)}${th('Spend', true)}${th('44i Cut %', true)}${th('44i Revenue', true)}${th('Group\'s $ (YDA)', true)}${th('Status')}
       </tr>
     </thead>
     <tbody>${bodyRows}</tbody>
     <tfoot>
-      <tr style="border-top:2px solid var(--border);font-weight:700">
-        <td colspan="3" style="padding:9px 10px">Total</td>
-        <td style="padding:9px 10px">$${totalGross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="padding:9px 10px">$${totalSpend.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="padding:9px 10px"></td>
-        <td style="padding:9px 10px">$${totalFortyfouri.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="padding:9px 10px">$${totalGroup.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td style="padding:9px 10px"></td>
+      <tr style="font-weight:700">
+        <td colspan="3">Total</td>
+        <td class="num">$${totalGross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td class="num">$${totalSpend.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td></td>
+        <td class="num">$${totalFortyfouri.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td class="num">$${totalGroup.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td></td>
       </tr>
     </tfoot>
   </table>`;

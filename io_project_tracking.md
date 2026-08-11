@@ -10223,3 +10223,66 @@ account for the now-nbsp-separated date format, not a regression),
 `test-edit-flight-dates.js` (7/7), `test-setup-offline-and-dates.js` (9/9),
 and `test-bulk-import-flight-extend.js` (11/11) unchanged and still fully
 passing.
+
+### 2026-08-11 (cont'd) — Accounting Portal v3: stat tiles, detail card, light theme (corrected)
+
+Claire, after v2 shipped: "the accounting portal still doesn't look like the
+mockup." Real gap this time — v2 matched the mockup's data STRUCTURE
+(grouping, split rollups, Confirmed/Billed Externally) but the mockup
+itself has two entire sections v2 never built at all: a 4-tile summary bar
+(Expected Revenue / Expected Spend / 44i Revenue / Awaiting Confirmation)
+and a per-campaign detail card with a short month-by-month lookahead —
+Claire's screenshot showed both, from a dashboard-style mockup that's
+separate from (and richer than) the "Concept & Open Questions" document this
+project has been referencing.
+
+**First attempt at this fix went wrong and was corrected same session**: the
+screenshot Claire sent was dark-themed, so the first pass reskinned the
+whole portal in a dark palette pulled from the mockup doc's own
+`prefers-color-scheme: dark` CSS block. Claire caught it immediately: "I
+don't need the dark theme... that is how my computer is set up. keep the
+coloring the same as admin and strategists" — the dark appearance was just
+her OS triggering that doc's dark-mode media query when the screenshot was
+taken, not an intended design. Reverted to shared.css's normal light
+palette (which, it turns out, uses the exact same hex values as the
+mockup's own *light*-mode block anyway — no real conflict, just a wrong
+inference from a screenshot).
+
+**Added** (light theme, scoped CSS under `#page-accounting`, structure only
+— no data model changes from v2's RPCs/rollup logic):
+- **Stat tile row** — Expected Revenue/Spend, 44i Revenue, and Awaiting
+  Confirmation ("N of M"), computed from the exact same filtered `rows` the
+  table itself renders, so the tiles and the table's own totals row can
+  never silently disagree.
+- **Per-campaign detail card** — clicking any single campaign row (not a
+  rollup parent, which still just toggles its own split expansion) opens a
+  card above the table: title, Group · full Flight range, and a 3-month
+  table (current month + next 2) with Revenue/Spend/44i Revenue and a
+  Confirm checkbox per month — lets a strategist confirm several upcoming
+  months in one place without stepping the top month picker back and forth.
+  Toggles closed on a second click of the same row, or via its own ✕ Close
+  button.
+- Column headers/wording aligned to the mockup ("Revenue"/"Spend"/"44i
+  Revenue" instead of "Gross Budget"/"Actual Spend"/"44i's $"; "(N regions)"
+  instead of "(N splits)"), right-aligned numeric columns, monospace
+  uppercase header labels.
+- Default Status filter changed from "Active only" to "All Lines" (mockup's
+  own default) — this is now a real dropdown labeled "Status:" rather than
+  the earlier plain select.
+
+**Verified**: `test-accounting-stats-and-detail-card.js` (scratchpad, 12/12)
+— stat tiles compute correctly from filtered rows; a billed-externally line
+and an already-confirmed-this-month line both correctly count as NOT
+awaiting confirmation; no detail card renders until a row is selected;
+selecting a row shows its title, full flight range, all 3 lookahead months,
+the confirmed month's name/date, and an unconfirmed month's disabled-until-
+budget-exists "Confirm" checkbox; re-clicking the same row closes the card
+(toggle), and the ✕ Close button clears the selection directly. Re-ran
+`test-accounting-portal-v1.js` (12/12), `test-accounting-offline-visits-cutpct.js`
+(10/10), `test-accounting-alpha-sort.js` (1/1), `test-accounting-admin-handoff.js`
+(7/7), `test-accounting-v2-mockup-layout.js` (15/15 — one wording assertion
+updated for "(N regions)," not a regression), and `test-flight-range-nowrap.js`
+(8/8) unchanged and still fully passing.
+
+No SQL changes in this pass — pure presentation plus the detail-card
+feature, reusing v2's existing RPCs/schema entirely.
