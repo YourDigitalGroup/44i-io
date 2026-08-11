@@ -1901,6 +1901,16 @@ async function strategistSavePlatformCampaignName(lineId, value) {
   await strategistApplyCachedReportIfMatch(lineId);
 }
 
+// Lets a split label be added/corrected on an already-active campaign (2026-08-10,
+// per Claire -- a few rows got missed setting Split Label during a bulk import).
+// Full reload (not reload:false) since split_label feeds directly into the header
+// title and the main table's Tactic column text via strategistTacticDisplay() --
+// worth the refetch so the correction is visible immediately, not just on the
+// next unrelated re-render.
+async function strategistSaveSplitLabel(lineId, value) {
+  await strategistSaveLine(lineId, { split_label: value.trim() || null });
+}
+
 async function strategistSaveLine(lineId, data, reload) {
   try {
     const cleanData = Object.fromEntries(Object.entries(data).map(([k,v]) => [k, v === '' ? null : v]));
@@ -2119,6 +2129,7 @@ function renderStrategistDetailPanel() {
         </select>`;
       })()}</strong>
       <div style="display:flex;align-items:center;gap:8px">
+        <input id="detail-split-label-${l.id}" value="${esc(l.split_label || '')}" placeholder="Split label (e.g. Region 1) — blank if not split" onchange="strategistSaveSplitLabel('${l.id}', this.value)" style="width:170px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSavePlatformCampaignName('${l.id}', this.value)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
