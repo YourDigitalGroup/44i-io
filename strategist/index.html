@@ -40,6 +40,12 @@
           <select id="strategist-group-filter" onchange="strategistSetGroupFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
             <option value="">All Groups</option>
           </select>
+          <select id="strategist-pacing-filter" onchange="strategistSetPacingFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
+            <option value="">All Pacing</option>
+            <option value="risk">🔴 Risk</option>
+            <option value="warn">🟡 Watch</option>
+            <option value="good">🟢 Good</option>
+          </select>
           <span id="strategist-scope-mine" onclick="strategistSetScope('mine')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">My Campaigns</span>
           <span id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border-radius:7px;border:1px solid var(--border);cursor:pointer;font-weight:600">All Strategists</span>
           <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
@@ -220,6 +226,7 @@ let CPC_RATES = { base: {}, group: {} }; // { low, high } $ CPC, used for a clic
 let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, data}] } -- last paste per platform, overwritten each time
 let strategistScope = 'mine';               // 'mine' | 'all'
 let strategistGroupFilter = '';              // '' = all groups, else a group_name
+let strategistPacingFilter = '';             // '' = all, else 'good' | 'warn' | 'risk' -- worse of spend/perf pacing
 let strategistStatusTab = 'pending';        // pending | active | paused | complete
 let strategistCurrentMonth = null;          // Date, always day 1
 let strategistSelectedLineId = null;
@@ -341,6 +348,10 @@ function strategistSetScope(scope) {
 }
 function strategistSetGroupFilter(groupName) {
   strategistGroupFilter = groupName;
+  renderStrategistDashboard();
+}
+function strategistSetPacingFilter(segment) {
+  strategistPacingFilter = segment;
   renderStrategistDashboard();
 }
 function strategistSetStatusTab(tab) {
@@ -1599,6 +1610,28 @@ function pacingPillHtml(pct) {
   return `<span style="display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;background:${colors[0]};color:${colors[1]}">${Math.round(pct)}%</span>`;
 }
 
+// The Pacing filter (2026-08-11, per Claire: the Active list is getting long for
+// both an individual strategist and everyone combined -- needs a way to surface
+// which campaigns actually need a look) uses the exact same good/warn/risk
+// segments already shown on every row's spend/performance pacing pills, just as
+// a filter instead of only a color. A line can be off on spend but fine on
+// performance (or vice versa) -- the filter uses the WORSE of the two, since a
+// campaign that's fine on one metric but at risk on the other still needs review.
+// Returns null (matches nothing but "All Pacing") when neither metric is
+// computable yet -- e.g. a campaign with no actuals entered this month.
+function strategistLinePacingSegment(l) {
+  const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
+  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
+  const goal = computeGoal(l, monthRow);
+  const spendPacing = pacingPct(monthRow.actual_spend, inPlatform, l.flight_start, l.flight_end, strategistCurrentMonth);
+  const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
+  const perfPacing = pacingPct(actualPerf, goal.value, l.flight_start, l.flight_end, strategistCurrentMonth);
+  const classes = [pacingClass(spendPacing), pacingClass(perfPacing)].filter(Boolean);
+  if (!classes.length) return null;
+  const rank = { risk: 3, warn: 2, good: 1 };
+  return classes.reduce((worst, c) => rank[c] > rank[worst] ? c : worst);
+}
+
 // Finds this line's row for a specific month, carrying the prior month's Gross Budget
 // forward when the campaign's budget doesn't vary month to month and no explicit row
 // exists yet for the requested month — so a flat-budget campaign never needs its
@@ -1707,6 +1740,7 @@ function visibleCampaignLines() {
     // shared list once every client had a real owner assigned in Admin.
     if (strategistScope === 'mine' && strategistLineScopeName(l) !== currentStrategistUser.name) return false;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return false;
+    if (strategistPacingFilter && strategistLinePacingSegment(l) !== strategistPacingFilter) return false;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return false;
     return true;
   });
@@ -1725,6 +1759,7 @@ function renderStrategistDashboard() {
   ALL_CAMPAIGN_LINES.forEach(l => {
     if (strategistScope === 'mine' && strategistLineScopeName(l) !== currentStrategistUser.name) return;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return;
+    if (strategistPacingFilter && strategistLinePacingSegment(l) !== strategistPacingFilter) return;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return;
     const eff = strategistEffectiveStatus(l, strategistCurrentMonth);
     if (counts[eff] != null) counts[eff]++;

@@ -9827,3 +9827,40 @@ covering for them (shows under A's "My Campaigns", not B's), and the
 reverse (a campaign for B's own client that A happened to set up while
 covering — still shows under B's). Confirms scoping now runs entirely off
 client ownership regardless of who touched the line.
+
+### 2026-08-11 (cont'd) — Pacing filter (Risk/Watch/Good) on the campaign table
+
+Claire: the Active list will get long for both an individual strategist and
+everyone combined — asked whether we could filter by MTD spend/performance
+percentage to help surface campaigns that need review, then asked for the
+filter to "have the options for each segment" rather than a single
+needs-review toggle.
+
+No new threshold decision needed — every row already shows a spend pacing
+pill and a performance pacing pill colored by the existing, Claire-confirmed
+`PACING_THRESHOLDS` (`{ good: 90, warn: 70 }`, i.e. good ≥90%, warn 70–89.9%,
+risk <70%). This just exposes those same three segments as a filter dropdown
+next to the existing Group filter ("All Pacing" / 🔴 Risk / 🟡 Watch / 🟢
+Good) instead of adding a new metric or a new judgment call.
+
+Added `strategistLinePacingSegment(l)` — computes both the spend pacing and
+performance pacing class for the campaign's current month (reusing
+`pacingPct`/`pacingClass`, the exact same calls the table already makes to
+render each pill) and returns the WORSE of the two, since a campaign fine on
+spend but off on performance (or vice versa) still needs a look. Returns
+`null` when neither metric is computable yet (e.g. no actuals entered this
+month) — a null-segment line only shows under "All Pacing", not under any
+specific segment, so it doesn't silently masquerade as "Good".
+`strategistPacingFilter` wired into both `visibleCampaignLines()` and the
+tab count loop in `renderStrategistDashboard()`, same pattern as the
+existing Group filter and (from earlier today) the client-strategist scope
+filter — all three now compose together.
+
+**Verified**: `test-pacing-filter.js` (scratchpad, 6/6) — a campaign paced
+exactly at goal correctly segments as "good", one paced far under (20% of
+expected) as "risk", one with no actuals entered as `null` (visible only
+under "All Pacing"); each specific filter value shows only its matching
+line; clearing the filter shows all three again. Re-ran
+`test-setup-scope-by-client-strategist.js` (4/4), `test-month-pause-schedule.js`
+(15/15), and `test-auto-complete-flight-end.js` (12/12) unchanged and still
+fully passing.
