@@ -358,11 +358,14 @@ function accountingRenderDetailCard() {
     const d = new Date(accountingCurrentMonth.getFullYear(), accountingCurrentMonth.getMonth() + offset, 1);
     const monthKey = accountingMonthKey(d);
     const monthStr = monthKey + '-01';
-    // Shared helper, not a raw lookup (2026-08-12) -- carries a 'recurring'
-    // accounting-only line's Gross Budget forward the same way the main
-    // table does, so the detail card doesn't show "—" for a future month
-    // just because nothing explicitly wrote a row for it yet.
-    const monthRow = accountingMonthRowFor(line.id, d);
+    // Shared helper, not a raw lookup (2026-08-12) -- carries a flat/non-
+    // varying line's Gross Budget forward the same way the main table
+    // does, so the detail card doesn't show "—" for a future month just
+    // because nothing explicitly wrote a row for it yet. Still gated by
+    // accountingLineActiveInMonth, though (2026-08-12 fix) -- a month past
+    // this line's own flight_end shows nothing, same as the main table,
+    // regardless of what the carry-forward would otherwise compute.
+    const monthRow = accountingLineActiveInMonth(line, d) ? accountingMonthRowFor(line.id, d) : null;
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override);
@@ -922,10 +925,30 @@ async function loadAccountingDashboard() {
 // own campaign_line in the Strategist Portal via split_label, per the
 // "Split into Multiple Campaigns" feature). A group of 1 renders plain; a
 // group of >1 renders as an expandable rollup, aggregate first.
+// Same rule as the Strategist Portal's own strategistLineActiveInMonth --
+// is the currently-viewed month even within this line's flight at all.
+// REAL bug found live (2026-08-12, right after the flat-budget carry-
+// forward fix above): Accounting never had this check, and used to get
+// away without one because a line's real campaign_months rows simply ran
+// out once its flight ended -- once carry-forward started covering
+// ORDINARY flat campaigns too, a line with no month row past its own
+// flight_end kept showing up anyway (the carried Gross Budget doesn't know
+// or care whether the flight's actually over). This is a separate
+// visibility check from accountingMonthRowFor's own budget math, same
+// separation Strategist's own architecture already has -- a line outside
+// its flight for this month is excluded here, full stop, regardless of
+// what accountingMonthRowFor would have computed for it.
+function accountingLineActiveInMonth(line, monthDate) {
+  const monthKey = accountingMonthKey(monthDate);
+  if (line.flight_start && monthKey < accountingMonthKey(new Date(line.flight_start + 'T00:00:00'))) return false;
+  if (line.flight_end && monthKey > accountingMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
+  return true;
+}
 function accountingBuildRows() {
   const filtered = ALL_ACCOUNTING_LINES.filter(l => {
     if (accountingGroupFilter && l.group_name !== accountingGroupFilter) return false;
     if (accountingStatusFilter && l.status !== accountingStatusFilter) return false;
+    if (!accountingLineActiveInMonth(l, accountingCurrentMonth)) return false;
     return true;
   });
 
