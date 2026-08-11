@@ -9353,3 +9353,96 @@ listed ones; submitting the SEO pseudo-tactic sends the right `service_id`
 dropdown offers all 4 too. Re-ran all 14 other strategist-portal test files
 unchanged and still fully passing — no regression from the identityKey
 change, which touches every bulk-import row regardless of tactic.
+
+### 2026-08-10 (cont'd) — Public IO form: overlapping-date service warning (duplicate-IO nudge)
+
+Claire's boss raised a real incident: an AE submitted a duplicate IO for a
+service a client already had an active order for. She asked for something
+like the existing "similar client name" warning, but for services + dates.
+Built on the same public IO form (`index.html`), same non-blocking-nudge
+philosophy — a genuine renewal or a real second buy right after the last one
+is still valid, so this warns, never blocks.
+
+**New RPC**: `get_client_service_flights(p_client_id)` — no auth, same
+pattern as `get_group_clients()` (already exposes a group's client roster to
+any anonymous form user in that group). Returns every past order line item
+with a `service_id` + `start_date` across ALL that client's orders (service_id,
+tactic label, start/end dates, order id) — no pricing/financial fields.
+`client-service-flights-2026-08-10.sql`, scratchpad, not yet run.
+
+**Client-side**: once an existing client is picked, `CLIENT_SERVICE_HISTORY`
+is fetched via the new RPC. `checkServiceDateOverlap(id)` compares a checked
+tactic's own dates against that history for the SAME `service_id` — on a
+match, inserts an inline warning row directly under that tactic's own row
+(`⚠ This client already has an order for this exact service with overlapping
+dates (...). Double-check this isn't a duplicate IO before submitting.`),
+removes it the moment the dates no longer overlap or the tactic is unchecked.
+Hooked into `toggle()` (covers `toggleSingle()` too, since it calls `toggle()`
+internally) and `updateTacticDate()`, so it re-evaluates live as dates
+change. `recheckAllServiceOverlaps()` re-runs the check for every currently-
+selected tactic right after a client pick (history just changed) and after
+switching back to "New Client" (clears every stale warning — nothing to
+compare against for a brand-new business). Missing end dates (either side)
+are treated as open-ended/ongoing, matching `flightDisplayFor()`'s own "no
+end date = Ongoing" convention already used elsewhere on this form.
+
+**Verified**: `test-service-overlap.js` (scratchpad, 13/13) — no warning with
+no history; warning appears and names the right overlapping dates on a
+genuine hit; clears when a date moves out of overlap and correctly reappears
+if moved back into it; clears on uncheck; an open-ended existing order (no
+end date) still correctly overlaps a later start; a genuinely non-
+overlapping past order stays silent; a different `service_id` in history
+never cross-triggers a warning on an unrelated row; `recheckAllServiceOverlaps`
+picks up freshly-fetched history; the full `applyClientPick` flow (RPC fetch
+on an existing client, clear on "New Client") works end-to-end. Confirmed the
+file still has exactly one `<script>` block and it parses clean via `new
+Function(...)`.
+
+**Not yet run by Claire**: `client-service-flights-2026-08-10.sql`.
+
+### 2026-08-10 (cont'd) — Scheduled per-month pause (strategists don't have to remember to flip Status)
+
+Claire's ask: "select which months to pause a campaign during its flight and
+which to have it active... so strategists don't have to remember to change
+the status." Considered a cron/scheduled-job approach (actually flipping
+`campaign_lines.status` on a timer) but rejected it — nothing outside this
+portal currently reads `status` directly, and computing it live at render
+time (same "fetch everything, filter client-side" convention already used
+throughout) avoids needing any background job at all, in Supabase or
+otherwise.
+
+**Schema**: `campaign_months.paused boolean default false` — one flag per
+month, exact-month only, deliberately NOT carried forward the way Gross
+Budget is (a pause scheduled for July shouldn't leak into August just
+because nobody's entered an August row yet). Both `strategist_get_campaign_
+months` and `strategist_save_campaign_month` patched to carry it.
+`campaign-month-pause-schedule-2026-08-10.sql`, scratchpad, not yet run.
+
+**Client-side**: new `strategistMonthPaused(lineId, monthDate)` (exact-month
+lookup) and `strategistEffectiveStatus(line, monthDate)` — the campaign's own
+`status` wins outright whenever it's anything other than `'active'` (manual
+paused-indefinitely/complete/pending are real states the schedule should
+never override); only an Active campaign can be knocked down to effectively-
+Paused for a scheduled month. Wired into both `visibleCampaignLines()` (tab
+filtering) and the tab count badges — a scheduled-paused Active campaign now
+correctly shows under the Paused tab, and moves back to Active the moment the
+viewed month has no schedule entry, no status flip ever needed. Added a
+"Paused" checkbox column to the detail panel's Monthly History table (any
+month, including a not-yet-existing future one via the existing "+ Add
+another month" flow — that's how a pause gets scheduled ahead of time), and a
+small "⏸ Scheduled paused this month" pill next to the Status dropdown so it's
+clear why a campaign might show Paused in the tabs while Status itself still
+reads Active.
+
+**Verified**: `test-month-pause-schedule.js` (scratchpad, 15/15) — exact-
+month lookup with no carry-forward; effective status drops to paused only
+for the scheduled month and stays active in every other month; a manually-
+paused or complete line's real status always wins regardless of any
+schedule entry; the Active/Paused tabs correctly move a scheduled-paused
+line between them as the viewed month changes; the checkbox renders
+checked/unchecked correctly and saves back (unchecking sends `false`, not a
+removal); the pill shows only for an Active line during its scheduled month,
+never for an already-manually-paused one. Re-ran 6 other test files touching
+`visibleCampaignLines()`/the detail panel unchanged and still fully passing.
+
+**Not yet run by Claire**: `campaign-month-pause-schedule-2026-08-10.sql`.

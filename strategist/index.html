@@ -1526,9 +1526,30 @@ function strategistLineActiveInMonth(line, monthDate) {
   return true;
 }
 
+// Scheduled pause (2026-08-10, per Claire -- so a strategist doesn't have to
+// remember to flip a campaign's status on/off for a seasonal pause). Checks
+// the EXACT month only -- deliberately no carry-forward from a prior month
+// the way Gross Budget does, since a pause scheduled for July shouldn't leak
+// into August just because nobody entered an August row yet.
+function strategistMonthPaused(lineId, monthDate) {
+  const key = strategistMonthKey(monthDate);
+  const row = ALL_CAMPAIGN_MONTHS.find(m => m.campaign_line_id === lineId && strategistMonthKey(new Date(m.month + 'T00:00:00')) === key);
+  return !!row?.paused;
+}
+
+// The campaign's overall status (campaign_lines.status) still wins outright
+// whenever it's anything other than 'active' -- paused-indefinitely, complete,
+// and pending are all real manual states the schedule should never override.
+// Only an 'active' campaign can be knocked down to effectively-paused for a
+// specific scheduled month.
+function strategistEffectiveStatus(line, monthDate) {
+  if (line.status !== 'active') return line.status;
+  return strategistMonthPaused(line.id, monthDate) ? 'paused' : 'active';
+}
+
 function visibleCampaignLines() {
   return ALL_CAMPAIGN_LINES.filter(l => {
-    if (l.status !== strategistStatusTab) return false;
+    if (strategistEffectiveStatus(l, strategistCurrentMonth) !== strategistStatusTab) return false;
     // Pending (Campaign Setup) is a shared to-do queue, not personal/monthly work in
     // progress yet -- exempted from BOTH the "My Campaigns" scope (2026-08-07, per
     // Claire, found live: a brand-new line's assigned_strategist may not match
@@ -1557,7 +1578,8 @@ function renderStrategistDashboard() {
     if (l.status !== 'pending' && strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return;
-    if (counts[l.status] != null) counts[l.status]++;
+    const eff = strategistEffectiveStatus(l, strategistCurrentMonth);
+    if (counts[eff] != null) counts[eff]++;
   });
 
   // Populate the group filter's own options -- every group with at least one
@@ -2115,6 +2137,7 @@ function renderStrategistDetailPanel() {
         <option value="complete" ${l.status === 'complete' ? 'selected' : ''}>Complete</option>
       </select>
       <span style="font-size:11px;color:var(--muted)">Pausing moves this campaign to the Paused tab; switch it back to Active to pick up where you left off.</span>
+      ${l.status === 'active' && strategistMonthPaused(l.id, strategistCurrentMonth) ? `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#FEF3C7;color:#92400E">⏸ Scheduled paused this month</span>` : ''}
     </div>
     <div id="status-reason-${l.id}" style="display:none;margin:-6px 0 14px"></div>
 
@@ -2136,10 +2159,11 @@ function renderStrategistDetailPanel() {
     </div>
 
     <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 4px">Monthly history</p>
-    <p style="font-size:10.5px;color:var(--muted);margin:0 0 8px">In-Platform and Goal are normally computed automatically from that month's Gross Budget — the override next to each is there for a specific month that needs to diverge from the plan; leave it blank to keep using the auto-calculated value.${l.service_id === 'sem-bp' ? ' A range like "150-200" is OK for SEM\'s Goal; pacing uses the midpoint.' : ''}</p>
+    <p style="font-size:10.5px;color:var(--muted);margin:0 0 8px">In-Platform and Goal are normally computed automatically from that month's Gross Budget — the override next to each is there for a specific month that needs to diverge from the plan; leave it blank to keep using the auto-calculated value.${l.service_id === 'sem-bp' ? ' A range like "150-200" is OK for SEM\'s Goal; pacing uses the midpoint.' : ''} Check <strong>Paused</strong> on a month (e.g. a seasonal off-month) to have this campaign show up under Paused for just that month automatically — no need to remember to flip the Status dropdown above and back. Only applies while overall Status is Active; add a future month below to schedule one ahead of time.</p>
     <div style="border:1px solid var(--border);border-radius:8px;padding:4px 12px;margin-bottom:16px;background:var(--light)">
       <div style="display:flex;align-items:center;gap:8px;font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);padding:6px 0">
         <span style="width:90px">Month</span>
+        <span style="width:60px">Paused</span>
         <span style="width:90px">Gross</span>
         <span style="width:130px">In-Platform</span>
         <span style="width:130px">Goal</span>
@@ -2153,6 +2177,7 @@ function renderStrategistDetailPanel() {
         return `
         <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--border)">
           <span style="width:90px;color:var(--muted);font-weight:600">${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}</span>
+          <span style="width:60px;text-align:center"><input type="checkbox" ${m.paused ? 'checked' : ''} onchange="strategistSaveMonth('${l.id}', '${m.month}', {paused: this.checked})" title="Scheduled paused this month -- overrides Active down to effectively-Paused for this month only, without touching the campaign's overall status"/></span>
           <input type="number" value="${m.gross_budget ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {gross_budget: this.value})" placeholder="Gross" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
           <input type="number" value="${m.in_platform_override ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {in_platform_override: this.value})" placeholder="${autoInPlatform != null ? 'Auto: ' + Math.round(autoInPlatform) : 'In-Platform override'}" title="${m.in_platform_override != null ? 'Overridden — auto-calculated value is ' + (autoInPlatform != null ? '$' + Math.round(autoInPlatform) : 'unavailable') : ''}" style="width:${autoInPlatform != null ? '110px' : '130px'};padding:5px 6px;border-radius:6px;border:1px ${m.in_platform_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
           <input type="${l.service_id === 'sem-bp' ? 'text' : 'number'}" value="${esc(m.goal_override ?? '')}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {goal_override: this.value})" placeholder="${l.service_id === 'sem-bp' ? (autoGoal.value != null ? 'Auto: ' + autoGoal.display : 'e.g. 150 or 150-200') : (autoGoal.value != null ? 'Auto: ' + autoGoal.display : 'Goal')}" title="${m.goal_override != null && m.goal_override !== '' ? 'Overridden — auto-calculated value is ' + (autoGoal.value != null ? autoGoal.display + ' ' + autoGoal.unit : 'unavailable') : ''}" style="width:${autoGoal.value != null ? '110px' : '130px'};padding:5px 6px;border-radius:6px;border:1px ${m.goal_override != null && m.goal_override !== '' ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>

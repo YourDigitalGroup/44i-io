@@ -1183,6 +1183,14 @@ function applyAePick(id) {
 let CLIENT_ROSTER = [];
 let selectedClientId = null;
 
+// Real scenario Claire's boss raised: an AE submitted a duplicate IO for a
+// service the client already had an active/overlapping order for. Fetched via
+// get_client_service_flights() once an existing client is picked (same "narrow
+// public function" pattern as get_group_clients) -- every past order line item
+// with a service_id + start_date, across all their orders. checkServiceDateOverlap()
+// below compares this against whatever's currently checked on the form.
+let CLIENT_SERVICE_HISTORY = [];
+
 async function loadClientRoster(groupId) {
   const wrap = document.getElementById('client-picker-wrap');
   const sel = document.getElementById('client-picker');
@@ -1218,7 +1226,7 @@ function setBizNameLocked(locked) {
   if (hint) hint.style.display = locked ? 'block' : 'none';
 }
 
-function applyClientPick(id) {
+async function applyClientPick(id) {
   selectedClientId = id || null;
   if (!id) {
     // Switched back to "New Client" — clear the fields so a previously-picked
@@ -1227,6 +1235,8 @@ function applyClientPick(id) {
       const el = document.getElementById(fid); if (el) el.value = '';
     });
     setBizNameLocked(false);
+    CLIENT_SERVICE_HISTORY = [];
+    recheckAllServiceOverlaps();
     return;
   }
   const c = CLIENT_ROSTER.find(x => x.id === id);
@@ -1239,6 +1249,13 @@ function applyClientPick(id) {
   document.getElementById('city').value = c.city || '';
   document.getElementById('biz-type').value = c.business_type || '';
   setBizNameLocked(true);
+  try {
+    CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify({ p_client_id: id }) }) || [];
+  } catch(e) {
+    console.warn('Could not load this client\'s service history — overlap warnings skipped:', e.message);
+    CLIENT_SERVICE_HISTORY = [];
+  }
+  recheckAllServiceOverlaps();
 }
 
 // Safety net: if a client was picked but the business name is then hand-edited away
@@ -2522,6 +2539,48 @@ function updateTacticDate(input, id, which) {
   input.classList.remove('spend-missing');
   if (selected[id]) selected[id][which] = iso;
   if (iso) autoCheckIfNeeded(id);
+  checkServiceDateOverlap(id);
+}
+
+// ── DUPLICATE-IO WARNING (2026-08-10) ────────────────────────
+// Real scenario Claire's boss raised: an AE submitted a duplicate IO for a
+// service the client already had an active order for, with overlapping dates.
+// Same non-blocking-nudge pattern as the "similar client name" warning above —
+// warns, never stops submission, since a genuine renewal/second identical
+// buy right after the last one is a real, valid case too.
+// Missing end date is treated as open-ended/ongoing on EITHER side, matching
+// flightDisplayFor()'s own "no end date = Ongoing" convention elsewhere on
+// this form.
+function datesOverlap(existStart, existEnd, newStart, newEnd) {
+  if (!existStart || !newStart) return false;
+  const es = new Date(existStart), ns = new Date(newStart);
+  const ee = existEnd ? new Date(existEnd) : null;
+  const ne = newEnd ? new Date(newEnd) : null;
+  const startsBeforeOtherEnds = !ee || ns <= ee;
+  const endsAfterOtherStarts = !ne || es <= ne;
+  return startsBeforeOtherEnds && endsAfterOtherStarts;
+}
+
+function checkServiceDateOverlap(id) {
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const existingWarnRow = document.getElementById('warn-row-' + id);
+  if (existingWarnRow) existingWarnRow.remove();
+  if (!row || !selected[id] || !CLIENT_SERVICE_HISTORY.length) return;
+  const { start_date, end_date } = selected[id];
+  if (!start_date) return;
+  const overlaps = CLIENT_SERVICE_HISTORY.filter(h => h.service_id === id && datesOverlap(h.start_date, h.end_date, start_date, end_date));
+  if (!overlaps.length) return;
+  const colCount = row.children.length;
+  const detail = overlaps.map(h => `${h.start_date || '—'} – ${h.end_date || 'Ongoing'}`).join(', ');
+  row.insertAdjacentHTML('afterend', `<tr id="warn-row-${esc(id)}"><td colspan="${colCount}" style="background:#FEF3C7;color:#92400E;font-size:11px;padding:6px 10px">⚠ This client already has an order for this exact service with overlapping dates (${esc(detail)}). Double-check this isn't a duplicate IO before submitting.</td></tr>`);
+}
+
+// Re-runs the overlap check for every currently-checked tactic — needed both
+// right after a client is picked (CLIENT_SERVICE_HISTORY just changed) and
+// after switching back to "New Client" (clears every stale warning row, since
+// there's no history to compare against for a brand-new business).
+function recheckAllServiceOverlaps() {
+  Object.keys(selected).forEach(checkServiceDateOverlap);
 }
 
 // ── SECTION TOGGLE ────────────────────────────────────────────
@@ -2646,6 +2705,7 @@ function toggle(cb, id) {
       setVidGroupDisabled('vid-pkg', false);
     }
   }
+  checkServiceDateOverlap(id);
   updateBadges();
   updateIntakeStatusCard();
   updateKocCard();
