@@ -37,7 +37,7 @@
   #page-accounting .acct-detail-close{background:var(--light);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer}
   #page-accounting .acct-table-wrap{border:1px solid var(--border);border-radius:8px;overflow:auto;background:#fff}
   #page-accounting table{width:100%;border-collapse:collapse;font-size:12.5px}
-  #page-accounting thead th{text-align:left;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
+  #page-accounting thead th{position:sticky;top:0;z-index:3;background:#fff;text-align:left;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap}
   #page-accounting thead th.num, #page-accounting td.num{text-align:right}
   #page-accounting tbody td{padding:9px 12px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text)}
   #page-accounting tfoot td{padding:10px 12px;font-variant-numeric:tabular-nums;color:var(--text);font-size:12.5px}
@@ -306,8 +306,13 @@ function accountingToggleSplit(key) {
 // showing, so Confirmed can be checked off for several upcoming months without
 // having to step the month picker back and forth.
 function accountingSelectLine(lineId) {
-  accountingSelectedLineId = accountingSelectedLineId === lineId ? null : lineId;
+  const opening = accountingSelectedLineId !== lineId;
+  accountingSelectedLineId = opening ? lineId : null;
   renderAccountingDashboard();
+  // Same scroll-to-editor convention as strategist/admin (2026-08-11, per Claire:
+  // the detail card renders above the table, so opening it while scrolled down a
+  // long list left it off-screen above the click).
+  if (opening) document.getElementById('accounting-detail-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function accountingCloseDetailCard() {
   accountingSelectedLineId = null;
@@ -436,16 +441,22 @@ function accountingRollupStatusPill(r) {
 function accountingMonthKey(d) { return d.toISOString().slice(0, 7); }
 function accountingMonthLabel(d) { return d.toLocaleString('en-US', { month: 'long', year: 'numeric' }); }
 
+// Switching month/group/status closes any open detail card (2026-08-11, per
+// Claire) -- the card is tied to one specific line, and changing what the table
+// is even showing makes a stale-open card confusing/easy to miss closing manually.
 function accountingShiftMonth(delta) {
   accountingCurrentMonth = new Date(accountingCurrentMonth.getFullYear(), accountingCurrentMonth.getMonth() + delta, 1);
+  accountingSelectedLineId = null;
   renderAccountingDashboard();
 }
 function accountingSetGroupFilter(groupName) {
   accountingGroupFilter = groupName;
+  accountingSelectedLineId = null;
   renderAccountingDashboard();
 }
 function accountingSetStatusFilter(status) {
   accountingStatusFilter = status;
+  accountingSelectedLineId = null;
   renderAccountingDashboard();
 }
 
@@ -781,7 +792,7 @@ function renderAccountingDashboard() {
   groupOrder.forEach(groupName => {
     const bg = byGroup.get(groupName).color || '#EBF4FB';
     const fg = accountingContrastTextColor(bg);
-    bodyRows += `<tr><td colspan="8" style="padding:8px 12px;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:${esc(bg)};color:${fg}">${esc(groupName)}</td></tr>`;
+    bodyRows += `<tr><td class="sticky-group-td" colspan="8" style="position:sticky;z-index:2;padding:8px 12px;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:${esc(bg)};color:${fg}">${esc(groupName)}</td></tr>`;
     byGroup.get(groupName).rows.forEach(r => { bodyRows += accountingRenderRow(r); });
   });
 
@@ -793,7 +804,7 @@ function renderAccountingDashboard() {
   // plain cell under certain content-width combinations; this removes that
   // possibility entirely by keeping the same 8 real cells every row has).
   wrap.innerHTML = `<table>
-    <thead>
+    <thead class="acct-sticky-thead">
       <tr>
         ${th('Client')}${th('Tactic')}${th('Flight')}${th('Revenue', true)}${th('44i Revenue', true)}${th('Expected Spend', true)}${th('Actual Spend', true)}${th('Status')}
       </tr>
@@ -812,6 +823,23 @@ function renderAccountingDashboard() {
       </tr>
     </tfoot>
   </table>`;
+  applyStickyGroupOffset('accounting-table-wrap');
+}
+
+// Sticky header row + sticky "current group" banner while scrolling a long
+// table (2026-08-11, per Claire). The group banner's sticky offset has to sit
+// right below the header row, but the header's height isn't hardcoded here
+// (it can change with font/zoom), so it's measured from the live DOM after
+// each render rather than assumed. Same helper duplicated in the Strategist
+// Portal -- kept local rather than moved to shared.js since shared.js's own
+// convention is code both index.html and admin.html call, not every portal.
+function applyStickyGroupOffset(wrapId) {
+  const wrap = document.getElementById(wrapId);
+  if (!wrap) return;
+  const thead = wrap.querySelector('thead');
+  if (!thead) return;
+  const top = thead.getBoundingClientRect().height;
+  wrap.querySelectorAll('.sticky-group-td').forEach(td => { td.style.top = top + 'px'; });
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
