@@ -9961,3 +9961,36 @@ pending a real user actually using the tool. Also open: whether
 (not addressed in v1 — a paired service currently just falls back to its own
 base rate, same gap that already exists elsewhere in Admin's own accounting
 tooling).
+
+### 2026-08-11 (cont'd) — Offline Visits Tracking and Flight dates now checkable in Campaign Setup
+
+Claire: "I need a way to check the offline tracking on the campaign setup
+and the dates." Real gap: Campaign Setup (pending) only ever showed Flight
+as read-only text, and didn't show the Offline Visits Tracking flag at all
+(it only ever rendered as a "+ Offline Visits Tracking" suffix on the Tactic
+label elsewhere, and wasn't even reliably visible there for a tactic with
+variants). Both were only actually editable from the row detail panel — but
+a pending line can't reach that panel at all, since the Campaign Setup tab
+renders these Setup panels instead of the normal clickable table rows.
+
+Added Flight Start/End date inputs (replacing the static text) and an
+Offline Visits Tracking checkbox to the Setup panel body, prefilled from the
+line's current values. Both follow the SAME pattern as every other Setup
+panel field (Platform, Campaign Title, Setup Blockers) — read at Save
+Draft/Confirm & Activate time via a new shared `strategistReadSetupFlightAndOffline(lineId)`
+helper, not auto-saved on change, so a strategist can review/correct these
+before committing either action, consistent with how the rest of the Setup
+panel already works.
+
+**Verified**: `test-setup-offline-and-dates.js` (scratchpad, 9/9) — both
+inputs prefill correctly (including a blank End for an ongoing campaign);
+editing the dates and toggling the checkbox before either Save Draft or
+Confirm & Activate sends the edited values in that save's payload; Confirm &
+Activate still correctly sets `status: 'active'` alongside the edited
+fields. Re-ran `test-setup-panel-collapse.js` (8/8) and
+`test-pending-website-blocker.js` (10/10) unchanged and still fully passing.
+`test-multi-blocker.js` shows one pre-existing failure (`threeCheckboxesRendered`)
+confirmed unrelated to this change — reproduces identically on the prior
+commit, a stale assertion from before the "Pending Website" 4th blocker
+option was added; not something this session touched or should fix silently
+without flagging it first.
