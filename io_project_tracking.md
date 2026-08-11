@@ -9353,3 +9353,49 @@ listed ones; submitting the SEO pseudo-tactic sends the right `service_id`
 dropdown offers all 4 too. Re-ran all 14 other strategist-portal test files
 unchanged and still fully passing — no regression from the identityKey
 change, which touches every bulk-import row regardless of tactic.
+
+### 2026-08-10 (cont'd) — Public IO form: overlapping-date service warning (duplicate-IO nudge)
+
+Claire's boss raised a real incident: an AE submitted a duplicate IO for a
+service a client already had an active order for. She asked for something
+like the existing "similar client name" warning, but for services + dates.
+Built on the same public IO form (`index.html`), same non-blocking-nudge
+philosophy — a genuine renewal or a real second buy right after the last one
+is still valid, so this warns, never blocks.
+
+**New RPC**: `get_client_service_flights(p_client_id)` — no auth, same
+pattern as `get_group_clients()` (already exposes a group's client roster to
+any anonymous form user in that group). Returns every past order line item
+with a `service_id` + `start_date` across ALL that client's orders (service_id,
+tactic label, start/end dates, order id) — no pricing/financial fields.
+`client-service-flights-2026-08-10.sql`, scratchpad, not yet run.
+
+**Client-side**: once an existing client is picked, `CLIENT_SERVICE_HISTORY`
+is fetched via the new RPC. `checkServiceDateOverlap(id)` compares a checked
+tactic's own dates against that history for the SAME `service_id` — on a
+match, inserts an inline warning row directly under that tactic's own row
+(`⚠ This client already has an order for this exact service with overlapping
+dates (...). Double-check this isn't a duplicate IO before submitting.`),
+removes it the moment the dates no longer overlap or the tactic is unchecked.
+Hooked into `toggle()` (covers `toggleSingle()` too, since it calls `toggle()`
+internally) and `updateTacticDate()`, so it re-evaluates live as dates
+change. `recheckAllServiceOverlaps()` re-runs the check for every currently-
+selected tactic right after a client pick (history just changed) and after
+switching back to "New Client" (clears every stale warning — nothing to
+compare against for a brand-new business). Missing end dates (either side)
+are treated as open-ended/ongoing, matching `flightDisplayFor()`'s own "no
+end date = Ongoing" convention already used elsewhere on this form.
+
+**Verified**: `test-service-overlap.js` (scratchpad, 13/13) — no warning with
+no history; warning appears and names the right overlapping dates on a
+genuine hit; clears when a date moves out of overlap and correctly reappears
+if moved back into it; clears on uncheck; an open-ended existing order (no
+end date) still correctly overlaps a later start; a genuinely non-
+overlapping past order stays silent; a different `service_id` in history
+never cross-triggers a warning on an unrelated row; `recheckAllServiceOverlaps`
+picks up freshly-fetched history; the full `applyClientPick` flow (RPC fetch
+on an existing client, clear on "New Client") works end-to-end. Confirmed the
+file still has exactly one `<script>` block and it parses clean via `new
+Function(...)`.
+
+**Not yet run by Claire**: `client-service-flights-2026-08-10.sql`.
