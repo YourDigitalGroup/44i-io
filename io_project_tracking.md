@@ -9537,3 +9537,30 @@ actually render expanded (not collapsed) in the Setup panel, and a
 totally unrelated, never-touched pending campaign still starts collapsed
 as normal. Re-ran `test-import-split.js`, `test-setup-panel-collapse.js`,
 and `test-setup-blocker.js` unchanged and still fully passing.
+
+### 2026-08-10 (cont'd) — New Setup Blocker: "Pending Website"
+
+Claire asked to add "Pending Website" to the list of setup blockers. Added
+`pending_website: 'Pending Website'` to `SETUP_BLOCKER_LABELS`.
+
+While adding it, found a real drift risk worth fixing at the same time: the
+Setup panel's blocker checkboxes were a hardcoded 3-item `<label>` list,
+entirely separate from `SETUP_BLOCKER_LABELS` (the actual source of truth
+already used by the header pill, Bulk Import's matching, and its fix-it
+dropdown) — a new blocker had to be added in two different places to fully
+work, and it would have been easy to add one and forget the other. Changed
+the checkboxes to generate directly FROM `SETUP_BLOCKER_LABELS`, so a future
+addition is a one-line change. A small `SETUP_BLOCKER_CHECKBOX_HINTS` map
+preserves the one real display difference that existed (Platform Access's
+"(e.g. Facebook)" hint) without reintroducing hardcoding for everything
+else. No SQL needed — `setup_blocker` is already a plain `text[]`; any
+string key works with no schema change.
+
+**Verified**: `test-pending-website-blocker.js` (scratchpad, 10/10) — all 4
+checkboxes render (including the new one) with exactly the right label
+text; the existing 3 are visually unaffected (Platform Access still shows
+its hint); selecting and saving Pending Website works end-to-end; the
+header pill renders it; Bulk Import resolves it by both its short form
+("Pending Website") and its raw key ("pending_website"). Re-ran
+`test-multi-blocker.js`, `test-setup-blocker.js`, and `test-bulk-import-
+setup-fields.js` unchanged and still fully passing.
