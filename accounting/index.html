@@ -310,7 +310,8 @@ function renderAccountingDashboard() {
     const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits);
     const split = accountingSplitRevenue(gross, cutPct);
     return { line: l, gross, cutPct, split };
-  }).filter(r => r.gross != null); // no month row for this line/month at all -- nothing to show yet
+  }).filter(r => r.gross != null) // no month row for this line/month at all -- nothing to show yet
+    .sort((a, b) => (a.line.client_name || '').localeCompare(b.line.client_name || ''));
 
   const wrap = document.getElementById('accounting-table-wrap');
   if (!rows.length) {

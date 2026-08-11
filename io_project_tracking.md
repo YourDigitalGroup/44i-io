@@ -10105,3 +10105,17 @@ variant already has its pairing override entered in Admin's Accounting Map
 today, or whether some still need the actual rate typed in (the mechanism
 now works end-to-end once a rate is entered; it can't invent one that was
 never set).
+
+### 2026-08-11 (cont'd) — Accounting Portal: sort clients alphabetically
+
+Claire, after confirming the Offline Visits fix worked correctly on real
+data: "Clients need to be in alpha order." The table rendered in whatever
+order `accounting_get_campaign_lines` happened to return rows (insertion
+order), not sorted. Added a `.sort()` by `client_name` (localeCompare) after
+filtering/computing each row, right before rendering — same simple approach
+used elsewhere in the app for alphabetical lists.
+
+**Verified**: `test-accounting-alpha-sort.js` (scratchpad, 1/1) — three
+clients fed in deliberately out of order render in correct alphabetical
+order. Re-ran `test-accounting-offline-visits-cutpct.js` (10/10) unchanged
+and still fully passing.
