@@ -9511,3 +9511,29 @@ completing the others in the same batch. Re-ran 5 other test files
 (including all fetchStrategistData-adjacent ones) unchanged and still fully
 passing — none of them exercise the real `fetchStrategistData()` body, so
 no interference from the new sweep call.
+
+### 2026-08-10 (cont'd) — Real bug: split "saved" but looked like it didn't hold
+
+Claire tested Split into Multiple Campaigns and reported it said it saved
+but didn't hold — she had to leave and re-enter Campaign Setup to actually
+see the resulting splits. It HAD saved; the bug was purely visual, a direct
+side effect of the "Setup panels collapse by default" change earlier this
+session: the newly-created split rows rendered collapsed, easy to miss or
+scroll past, making a real success look like a silent failure.
+
+`strategist_split_campaign_line` already returns `{line_ids: [...]}`
+covering both the original line (now split 0) and every new clone — the
+client was just never capturing that return value at all. Fixed by adding
+every returned id to `STRATEGIST_EXPANDED_SETUP_LINES` right after a
+successful split, so every resulting row renders expanded immediately, no
+SQL change needed. Checked the "+ New Campaign" form's own split path too —
+it creates campaigns directly as Active/Paused/Complete (never Pending), so
+they land in the main table, not the collapsible Setup panel; unaffected by
+this bug, left unchanged.
+
+**Verified**: `test-split-expands-panels.js` (scratchpad, 5/5) — both the
+original line and the new clone get marked expanded after a split, both
+actually render expanded (not collapsed) in the Setup panel, and a
+totally unrelated, never-touched pending campaign still starts collapsed
+as normal. Re-ran `test-import-split.js`, `test-setup-panel-collapse.js`,
+and `test-setup-blocker.js` unchanged and still fully passing.
