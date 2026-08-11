@@ -9864,3 +9864,100 @@ line; clearing the filter shows all three again. Re-ran
 `test-setup-scope-by-client-strategist.js` (4/4), `test-month-pause-schedule.js`
 (15/15), and `test-auto-complete-flight-end.js` (12/12) unchanged and still
 fully passing.
+
+### 2026-08-11 (cont'd) — Accounting Portal v1 framework
+
+Claire: given her timeline of wanting both the strategist and accounting
+sides built and functional before the real IO launches, asked whether there's
+enough to build the accounting framework now, "knowing we will need to make
+tweaks, similar to the strategists" — explicitly not wanting to fall behind
+waiting on answers when everyone's busy. Confirmed plan with her: build the
+v1 shell now, scoped to the calculation/display layer that's already
+unambiguous from existing data (Gross Budget → 44i's Cut % → 44i's $ / the
+Group's $), and treat the real accounting *workflow* (invoicing, sign-off,
+reconciliation) the same way the Strategist Portal's own workflow got built —
+iterating live once a real user is in it, rather than guessing at a process
+nobody's used yet. She confirmed she'll use the campaigns already imported
+into the Strategist Portal to cross-check this against her current revenue
+spreadsheet.
+
+**Correction — this is NOT a from-scratch build.** `/accounting/index.html`
+already existed as a login-gated "Coming Soon" scaffold, built 2026-08-07
+alongside a proration/revenue-share/service-status **questions doc already
+sent to the accounting team** (see that date's "Accounting Portal: kicked
+off" entry) — those questions are still unanswered as of today. This session
+initially missed that history (built as if starting fresh) and had to
+retrofit the fix below rather than catching it up front; noting the miss
+here since "verify against the real file before claiming something is true"
+is a standing project rule and this violated it. **Real regression caught
+and fixed in the same pass**: the rewrite of `accounting/index.html` initially
+dropped the existing admin↔accounting handoff (`tryAccountingHandoffLogin()`,
+the "Go to Admin" link, `adminPortalHandoff()`) that the original scaffold
+shipped — restored, since `/admin`'s own "Go to Accounting Portal" link/
+`accountingPortalHandoff()` sender was untouched and still expects this side
+to receive it.
+
+Given Claire's explicit "don't want to fall behind waiting on answers" ask
+today, decided to move ahead of the still-open questions doc the same way
+the Strategist Portal did — ship the v1 shell now, treat the 2026-08-07
+open questions (billing/proration timing, where revenue-share data really
+lives, service-status precision, day-to-day workflow, access/scope) as
+things to keep checking against as this gets used live, not blockers.
+
+**v1 scope — deliberately a revenue-split view ONLY**: for the selected
+month, per campaign line: Client, Group, Tactic, Status, Gross Budget, 44i
+Cut %, 44i's $, and the Group's $ (YDA). Month picker (‹›), Group filter, and
+a Status filter (defaults to Active only). A totals row sums Gross/44i's
+$/Group's $ across whatever's currently filtered/visible — meant to be
+compared directly against the equivalent total on Claire's spreadsheet.
+
+**Formula used**: 44i's $ = Gross Budget × 44i Cut % (resolved group-override-
+else-base, identical resolution to every other rate in `accounting_map` this
+session); the Group's $ (YDA) is always the remainder of Gross — confirmed
+existing rule, not stored separately (see Admin's own "Group's cut (YDA) is
+always 100% minus this" note). A missing rate renders as "— not set" and is
+excluded from the totals, never silently guessed at.
+
+**Two things deliberately left OUT of the math for now** (flagged in a
+banner on the page itself, not just here): `fortyfouri_fixed_cut` (a column
+that's existed in `accounting_map` for a while but has never actually been
+wired into any formula anywhere in the app — no confirmed mechanics to build
+against yet) and the Setup Fee split (`setup_fee_cut_pct` — a one-time fee,
+not a recurring monthly amount, needs its own separate handling, not folded
+into a monthly Gross-based split). Both are known gaps to revisit once
+Claire's cross-check surfaces whether they matter for the numbers she's
+comparing against.
+
+**New SQL** (`accounting-portal-v1-2026-08-11.sql`, given to Claire) — three
+brand-new, read-only RPCs, gated to role in ('accounting','super'), mirroring
+the existing narrow-RPC-per-portal convention (a strategist login can't see
+44i's cut %; an accounting login doesn't need setup blockers/optimize logs):
+`accounting_get_campaign_lines` (client/group names joined in, service_id,
+tactic_label, status, flight dates), `accounting_get_campaign_months` (month,
+gross_budget, actual_spend), `accounting_get_rates` (base + per-group-
+override `fortyfouri_cut_pct`/`fortyfouri_fixed_cut`/`setup_fee_cut_pct` —
+the full economics, unlike the strategist-scoped rates RPC which deliberately
+excludes them).
+
+**Verified**: `test-accounting-portal-v1.js` (scratchpad, 12/12) — rate
+resolution (group override beats base, base is the fallback, an unconfigured
+service/group returns null rather than a guessed 0%), the revenue-split math
+itself (44i's $ = Gross × Cut%, Group's $ = the remainder; a missing Gross or
+Cut % returns null on both sides rather than a wrong number), and the full
+render path (status filter correctly excludes a Paused line while Active
+stays, a line with no configured rate shows "— not set" and is excluded from
+the totals row rather than distorting it). `test-accounting-admin-handoff.js`
+(scratchpad, 7/7) — confirms the restored handoff: the receiving function
+exists and correctly consumes/clears the sessionStorage handoff, logs in as
+the handed-off user, and the "Go to Admin" link shows only for a super login
+(hidden for a real accounting-role login, matching the original scaffold's
+reasoning that accounting has nowhere to hand off to).
+
+**Still open / next**: what the real day-to-day accounting workflow looks
+like (invoicing cadence, sign-off, reconciliation against actual spend) is
+intentionally not decided or built yet — same as everything else parked
+pending a real user actually using the tool. Also open: whether
+`pair_with_service_id` bundle pricing needs its own handling in this view
+(not addressed in v1 — a paired service currently just falls back to its own
+base rate, same gap that already exists elsewhere in Admin's own accounting
+tooling).
