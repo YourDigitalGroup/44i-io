@@ -1680,21 +1680,21 @@ function strategistEffectiveStatus(line, monthDate) {
   return strategistMonthPaused(line.id, monthDate) ? 'paused' : 'active';
 }
 
-// Pending (Campaign Setup) lines don't have a reliable assigned_strategist of
-// their own -- that field is set to whoever created/imported the line (often
-// Claire, doing a bulk entry), not the client's real owner. Once every
-// group/client has a real Digital Strategist assigned in Admin (2026-08-11),
-// a pending line's owner for scoping purposes is the CLIENT's effective
-// Digital Strategist (client override, else group default) instead. A client
-// that's still unassigned in Admin resolves to null here -- it simply won't
-// match anyone's "My Campaigns", so it still surfaces under "All Strategists"
-// rather than silently vanishing.
+// A campaign line's assigned_strategist field is set to whoever
+// created/imported/set it up -- not necessarily who actually owns the
+// client (2026-08-11, per Claire: if Strategist A is out and Strategist B
+// sets up or otherwise touches the campaign, it's still A's campaign -- B
+// was just helping out). So for scoping purposes (My Campaigns/All
+// Strategists), EVERY status -- pending, active, paused, complete -- uses
+// the CLIENT's effective Digital Strategist (client override, else group
+// default) instead of assigned_strategist. A client that's still
+// unassigned in Admin resolves to null here -- it simply won't match
+// anyone's "My Campaigns", so it still surfaces under "All Strategists"
+// rather than silently vanishing. assigned_strategist itself is left alone
+// (still written on create) -- it's just no longer what scoping reads.
 function strategistLineScopeName(l) {
-  if (l.status === 'pending') {
-    const client = ALL_STRATEGIST_CLIENTS.find(c => c.id === l.client_id);
-    return client?.digital_strategist_name || null;
-  }
-  return l.assigned_strategist || null;
+  const client = ALL_STRATEGIST_CLIENTS.find(c => c.id === l.client_id);
+  return client?.digital_strategist_name || null;
 }
 
 function visibleCampaignLines() {

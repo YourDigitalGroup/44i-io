@@ -9804,3 +9804,26 @@ itself returns for the same scope. Re-ran `test-setup-panel-collapse.js`
 (8/8), `test-split-expands-panels.js` (5/5), and
 `test-bulk-import-flight-extend.js` (11/11) unchanged and still fully
 passing.
+
+### 2026-08-11 (cont'd) — Active/Paused/Complete also follow the client's assigned strategist
+
+Claire, immediately after the Campaign Setup scoping change above: "The
+active campaigns should also follow which strategist they are assigned to
+like the campaign setup. That is because say one strategist is out and
+another sets up the campaign. It is still the assigned strategist's
+campaign, the other strategist was just helping out."
+
+`strategistLineScopeName(l)` simplified to drop the pending-only branch —
+EVERY status now resolves scope through the client's effective Digital
+Strategist (`ALL_STRATEGIST_CLIENTS` lookup), never `assigned_strategist`.
+`assigned_strategist` itself is untouched (still written when a line is
+created) — it's just no longer what the My Campaigns/All Strategists toggle
+reads for any status.
+
+**Verified**: extended `test-setup-scope-by-client-strategist.js` (scratchpad,
+now 4/4) with two lines that isolate the exact scenario Claire described —
+a campaign for a client owned by Strategist A, but created by Strategist B
+covering for them (shows under A's "My Campaigns", not B's), and the
+reverse (a campaign for B's own client that A happened to set up while
+covering — still shows under B's). Confirms scoping now runs entirely off
+client ownership regardless of who touched the line.
