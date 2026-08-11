@@ -1170,6 +1170,20 @@
               <label class="lbl">(Of Gross) Budgeted Spend % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— legacy, no longer used by the Strategist Portal</span></label>
               <input type="number" step="0.01" id="admin-accounting-budgeted-spend" placeholder="e.g. 25" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
+            <div>
+              <label class="lbl">In-Platform % (of Gross) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— fallback for a service with no Retail CPM (e.g. SEM), so In-Platform Budget still auto-calculates</span></label>
+              <input type="number" step="0.01" id="admin-accounting-in-platform-pct" placeholder="e.g. 50" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+            <div>
+              <label class="lbl">CPC Low <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for a clicks-based service (e.g. SEM); drives the low end of the Goal range</span></label>
+              <input type="number" step="0.01" id="admin-accounting-cpc-low" placeholder="e.g. 4.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <label class="lbl">CPC High <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— high end of the Goal range</span></label>
+              <input type="number" step="0.01" id="admin-accounting-cpc-high" placeholder="e.g. 12.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
           </div>
           <div id="admin-accounting-setup-fee-block" style="display:none;margin-bottom:12px;padding:14px;background:#fff;border-radius:8px;border:1px solid var(--border)">
             <p style="font-size:11px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Setup Fee Split <span id="admin-accounting-setup-fee-amount-note" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></p>
@@ -1556,6 +1570,9 @@ const ACCOUNTING_OVERRIDE_FIELDS = [
   { key: 'fortyfouri_cut_pct', label: '44i Cut %', suffix: '%' },
   { key: 'platform_cpm', label: 'Platform CPM', suffix: '' },
   { key: 'budgeted_spend_pct', label: 'Budgeted Spend % (legacy)', suffix: '%' },
+  { key: 'in_platform_pct', label: 'In-Platform % (no CPM)', suffix: '%' },
+  { key: 'cpc_low', label: 'CPC Low', suffix: '' },
+  { key: 'cpc_high', label: 'CPC High', suffix: '' },
 ];
 
 function renderAccountingOverrideFields() {
@@ -1653,6 +1670,9 @@ function renderAccountingOverrideFields() {
         platform_cpm: base.platform_cpm,
         budgeted_spend_pct: base.budgeted_spend_pct,
         setup_fee_cut_pct: base.setup_fee_cut_pct,
+        in_platform_pct: base.in_platform_pct,
+        cpc_low: base.cpc_low,
+        cpc_high: base.cpc_high,
       },
     });
   });
@@ -4152,6 +4172,9 @@ function adminEditAccounting(serviceId, pairWithServiceId) {
   document.getElementById('admin-accounting-cut-pct').value = a?.fortyfouri_cut_pct ?? '';
   document.getElementById('admin-accounting-budgeted-spend').value = a?.budgeted_spend_pct ?? '';
   document.getElementById('admin-accounting-platform-cpm').value = a?.platform_cpm ?? '';
+  document.getElementById('admin-accounting-in-platform-pct').value = a?.in_platform_pct ?? '';
+  document.getElementById('admin-accounting-cpc-low').value = a?.cpc_low ?? '';
+  document.getElementById('admin-accounting-cpc-high').value = a?.cpc_high ?? '';
   updateAccountingYdaPreview();
   // Setup Fee Split is a property of the service's own setup fee, never of a pairing
   // with another service's modifier — always hidden while editing a pairing override.
@@ -4184,6 +4207,9 @@ async function adminSaveAccountingMap() {
   const cutVal = document.getElementById('admin-accounting-cut-pct').value;
   const budgetedVal = document.getElementById('admin-accounting-budgeted-spend').value;
   const platformCpmVal = document.getElementById('admin-accounting-platform-cpm').value;
+  const inPlatformPctVal = document.getElementById('admin-accounting-in-platform-pct').value;
+  const cpcLowVal = document.getElementById('admin-accounting-cpc-low').value;
+  const cpcHighVal = document.getElementById('admin-accounting-cpc-high').value;
   // Cleared to '' by adminEditAccounting() whenever the service has no setup fee
   // configured, so this naturally saves as null for services where it doesn't apply.
   const setupFeeCutVal = document.getElementById('admin-accounting-setup-fee-cut-pct').value;
@@ -4192,7 +4218,10 @@ async function adminSaveAccountingMap() {
     fortyfouri_cut_pct: cutVal === '' ? null : parseFloat(cutVal),
     budgeted_spend_pct: budgetedVal === '' ? null : parseFloat(budgetedVal),
     platform_cpm: platformCpmVal === '' ? null : parseFloat(platformCpmVal),
-    setup_fee_cut_pct: setupFeeCutVal === '' ? null : parseFloat(setupFeeCutVal)
+    setup_fee_cut_pct: setupFeeCutVal === '' ? null : parseFloat(setupFeeCutVal),
+    in_platform_pct: inPlatformPctVal === '' ? null : parseFloat(inPlatformPctVal),
+    cpc_low: cpcLowVal === '' ? null : parseFloat(cpcLowVal),
+    cpc_high: cpcHighVal === '' ? null : parseFloat(cpcHighVal)
   };
   try {
     await sb('rpc/admin_save_accounting_map', {

@@ -211,6 +211,12 @@ let ALL_OPTIMIZE_LOG = [];
 let ALL_STATUS_HISTORY = [];
 let ALL_STRATEGIST_CLIENTS = []; // {id, name, group_id, group_name} — for the "+ New Campaign" import picker
 let PLATFORM_CPM_RATES = { base: {}, group: {} }; // service_id -> $CPM, and group_id|service_id -> $CPM
+// Same base+group-override shape as PLATFORM_CPM_RATES, for the two new rate
+// fields added 2026-08-10 to plug SEM's missing In-Platform Budget/Goal
+// formula (services.retail_cpm is null for SEM -- there was no formula at
+// all, just a manual override every month).
+let IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // % of Gross Budget, used when a service has no retail_cpm
+let CPC_RATES = { base: {}, group: {} }; // { low, high } $ CPC, used for a clicks-based service's Goal range
 let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, data}] } -- last paste per platform, overwritten each time
 let strategistScope = 'mine';               // 'mine' | 'all'
 let strategistGroupFilter = '';              // '' = all groups, else a group_name
@@ -1249,9 +1255,19 @@ async function fetchStrategistData() {
   ALL_STRATEGIST_CLIENTS = clients || [];
   ALL_STATUS_HISTORY = statusHistory || [];
   PLATFORM_CPM_RATES = { base: {}, group: {} };
+  IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
+  CPC_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
-    if (r.scope === 'base') PLATFORM_CPM_RATES.base[r.service_id] = r.platform_cpm;
-    else PLATFORM_CPM_RATES.group[r.group_id + '|' + r.service_id] = r.platform_cpm;
+    const cpc = (r.cpc_low != null || r.cpc_high != null) ? { low: r.cpc_low, high: r.cpc_high } : null;
+    if (r.scope === 'base') {
+      PLATFORM_CPM_RATES.base[r.service_id] = r.platform_cpm;
+      IN_PLATFORM_PCT_RATES.base[r.service_id] = r.in_platform_pct;
+      if (cpc) CPC_RATES.base[r.service_id] = cpc;
+    } else {
+      PLATFORM_CPM_RATES.group[r.group_id + '|' + r.service_id] = r.platform_cpm;
+      IN_PLATFORM_PCT_RATES.group[r.group_id + '|' + r.service_id] = r.in_platform_pct;
+      if (cpc) CPC_RATES.group[r.group_id + '|' + r.service_id] = cpc;
+    }
   });
   PLATFORM_REPORT_CACHE = {};
   (reportCache || []).forEach(r => { PLATFORM_REPORT_CACHE[r.platform] = { report_month: r.report_month, rows: r.rows || [] }; });
@@ -1319,6 +1335,29 @@ function effectivePlatformCpm(serviceId, groupId) {
   return PLATFORM_CPM_RATES.base[serviceId] != null ? Number(PLATFORM_CPM_RATES.base[serviceId]) : null;
 }
 
+// Same resolution order as effectivePlatformCpm -- fills the gap for a service
+// with no Retail CPM (2026-08-10: SEM), where In-Platform Budget otherwise has
+// no formula to compute from at all.
+function effectiveInPlatformPct(serviceId, groupId) {
+  const groupKey = groupId + '|' + serviceId;
+  if (IN_PLATFORM_PCT_RATES.group[groupKey] != null) return Number(IN_PLATFORM_PCT_RATES.group[groupKey]);
+  return IN_PLATFORM_PCT_RATES.base[serviceId] != null ? Number(IN_PLATFORM_PCT_RATES.base[serviceId]) : null;
+}
+
+// Same resolution order again -- the $ CPC range (e.g. SEM's $4-$12) a
+// clicks-based service's Goal is computed from. Returns null unless BOTH
+// ends are set for whichever scope wins (group override is all-or-nothing,
+// same as every other override here -- a half-set group override would be a
+// silent, confusing partial fallback to the base rate on just one end).
+function effectiveCpcRange(serviceId, groupId) {
+  const groupKey = groupId + '|' + serviceId;
+  const group = CPC_RATES.group[groupKey];
+  if (group && group.low != null && group.high != null) return { low: Number(group.low), high: Number(group.high) };
+  const base = CPC_RATES.base[serviceId];
+  if (base && base.low != null && base.high != null) return { low: Number(base.low), high: Number(base.high) };
+  return null;
+}
+
 // Budgeted Impressions = Gross Budget ÷ Retail CPM × 1000 -- what was actually sold
 // to the client, independent of platform cost efficiency. Confirmed against real
 // strategist spreadsheets 2026-08-05 (Galaxy, Prairie Flower Casino, Fisher & Son,
@@ -1342,7 +1381,15 @@ function budgetedImpressions(grossBudget, serviceId) {
 function computeInPlatformBudget(grossBudget, serviceId, groupId) {
   const impressions = budgetedImpressions(grossBudget, serviceId);
   const platformCpm = effectivePlatformCpm(serviceId, groupId);
-  if (impressions == null || platformCpm == null) return null;
+  if (impressions == null || platformCpm == null) {
+    // Fallback for a service with no Retail CPM at all (2026-08-10: SEM) --
+    // otherwise there's no formula to compute from, and every month needs a
+    // fully manual override. In-Platform % (Admin -> Accounting Map) fills
+    // that gap directly off Gross Budget instead of going through impressions.
+    const pct = effectiveInPlatformPct(serviceId, groupId);
+    if (grossBudget != null && pct != null) return Number(grossBudget) * pct / 100;
+    return null;
+  }
   return impressions * platformCpm / 1000;
 }
 
@@ -1467,7 +1514,18 @@ function computeGoal(line, monthRow) {
   const unit = isClicksBased ? 'clicks' : 'impr.';
   const parsed = parseGoalOverride(monthRow?.goal_override, line.service_id === 'sem-bp');
   if (parsed) return { value: parsed.value, unit, manual: true, overridden: true, isRange: parsed.isRange, display: parsed.display };
-  if (isClicksBased) return { value: null, unit, manual: true };
+  if (isClicksBased) {
+    // Fallback (2026-08-10): a $ CPC range (Admin -> Accounting Map) auto-computes
+    // a Goal range the same shape a manual SEM range already takes ("83-250"),
+    // instead of leaving every month fully manual with no starting point at all.
+    const cpc = effectiveCpcRange(line.service_id, line.group_id);
+    const gross = monthRow?.gross_budget;
+    if (cpc && gross != null) {
+      const low = Number(gross) / cpc.high, high = Number(gross) / cpc.low;
+      return { value: (low + high) / 2, unit, manual: false, isRange: true, display: `${Math.round(low).toLocaleString()}–${Math.round(high).toLocaleString()}` };
+    }
+    return { value: null, unit, manual: true };
+  }
   const auto = budgetedImpressions(monthRow?.gross_budget, line.service_id);
   return { value: auto, unit, manual: false, display: auto != null ? Math.round(auto).toLocaleString() : null };
 }
