@@ -45,7 +45,7 @@
   #page-accounting tr.acct-row{cursor:pointer}
   #page-accounting tr.acct-row:hover td{background:var(--light)}
   #page-accounting tr.acct-row.selected td{background:var(--light)}
-  #page-accounting tr.acct-child td{background:#FAFCFE}
+  #page-accounting tr.acct-child td{background:var(--child-tint, #FAFCFE)}
   #page-accounting tr.acct-child td:first-of-type{color:var(--muted);padding-left:26px}
   #page-accounting .acct-status-pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap}
   #page-accounting .acct-status-pill.confirmed{background:#DDF2DE;color:#2E7D42}
@@ -103,8 +103,18 @@
             <option value="complete">Complete</option>
           </select>
         </label>
+        <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
+        <button onclick="accountingOpenBulkMatchForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Match</button>
       </div>
     </div>
+
+    <!-- "+ Add Service" single-entry form and "Bulk Match" paste tool -- both
+         hidden until opened (2026-08-11, per Claire: a way to manually add a
+         tactic Strategist doesn't track, plus a way to check what's missing
+         from one portal vs. the other without pasting real data into chat --
+         the paste box below runs entirely in this page, client-side). -->
+    <div id="accounting-add-service-form" style="display:none;margin-bottom:16px"></div>
+    <div id="accounting-bulk-match-form" style="display:none;margin-bottom:16px"></div>
 
     <!-- Summary stat tiles -->
     <div id="accounting-stats" class="acct-stats"></div>
@@ -257,6 +267,7 @@ function accountingLogout() {
 
 let ALL_ACCOUNTING_LINES = [];
 let ALL_ACCOUNTING_MONTHS = [];
+let ALL_ACCOUNTING_CLIENTS = []; // {id, name, group_id, group_name} -- for the Add Service picker and Bulk Match lookups
 let ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} }; // service_id -> pct, group_id|service_id -> pct, and (offline-visits pairing) service_id -> pct
 let ACCOUNTING_CUT_TIERS = {}; // service_id -> [{ max, cut_pct }, ...] sorted ascending, e.g. SEM
 let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} }; // for Expected Spend -- same shape as the Strategist Portal's own PLATFORM_CPM_RATES
@@ -416,6 +427,161 @@ async function accountingConfirmMonth(lineId, monthStr, confirmed) {
     renderAccountingDashboard();
   } catch(e) { showToast('Error saving confirmation: ' + e.message, 'error'); }
 }
+
+// ── "+ ADD SERVICE" MANUAL ADD (2026-08-11) ──────────────────────
+// Mirrors the Strategist Portal's own "+ New Campaign" import, for a tactic
+// Accounting knows is real (e.g. it's on the client's invoice) but Strategist
+// never entered -- per Claire: "a way to manually add services, similar to
+// the strategists for services that they don't track." The deliberate
+// difference from Strategist's version (which defaults straight to Active):
+// this defaults to status='pending', so the new line lands in Strategist's
+// existing Campaign Setup queue automatically -- that queue IS the "make
+// sure Strategist knows about this" mechanism, nothing new to build there.
+function accountingOpenAddServiceForm(prefill) {
+  const el = document.getElementById('accounting-add-service-form');
+  const isOpen = el.style.display !== 'none';
+  if (isOpen && !prefill) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  document.getElementById('accounting-bulk-match-form').style.display = 'none';
+  document.getElementById('accounting-bulk-match-form').innerHTML = '';
+
+  // Same "spend-priced, or one of the 2 flat-priced-but-trackable exceptions"
+  // filter as the Strategist Portal's own tactic dropdown (TRACKABLE_FLAT_
+  // SERVICE_IDS there) -- a service Strategist itself wouldn't offer as
+  // trackable shouldn't be addable from here either, since this line lands
+  // straight in that same Setup queue.
+  const ACCT_TRACKABLE_FLAT_SERVICE_IDS = ['llo-bp', 'rep-bp'];
+  const spendServices = Object.values(CATALOG_ROWS).filter(r => r.pricing_mode === 'spend' || ACCT_TRACKABLE_FLAT_SERVICE_IDS.includes(r.id));
+  const sortedClients = [...ALL_ACCOUNTING_CLIENTS].sort((a, b) => a.name.localeCompare(b.name));
+  el.style.display = 'block';
+  el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;background:#F0F9FF">
+    <strong style="font-size:13px;display:block;margin-bottom:10px">Add a service Strategist doesn't have on record yet</strong>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
+      <div>
+        <label class="lbl">Client</label>
+        <select id="acct-add-client" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+          <option value="">— Select —</option>
+          ${sortedClients.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}" ${prefill && prefill.clientId === c.id ? 'selected' : ''}>${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="lbl">Tactic</label>
+        <select id="acct-add-service" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+          <option value="">— Select —</option>
+          ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
+        </select>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
+          <input type="checkbox" id="acct-add-has-offline-visits"/> + Offline Visits Tracking
+        </label>
+      </div>
+      <div>
+        <label class="lbl">Flight Start</label>
+        <input type="date" id="acct-add-flight-start" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+      <div>
+        <label class="lbl">Flight End</label>
+        <input type="date" id="acct-add-flight-end" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+      <div style="grid-column:span 2">
+        <label class="lbl">Current Gross Budget <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional -- creates this month's row too)</span></label>
+        <input type="number" id="acct-add-gross-budget" placeholder="$/mo" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 12px">This creates the campaign as "Campaign Setup" (Pending) in the Strategist Portal, same as any other new order -- Strategist fills in platform/tracking details from there. It will not show up as Active in Accounting until Strategist activates it.</p>
+    <div style="display:flex;gap:10px">
+      <button onclick="accountingSubmitAddService()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Service</button>
+      <button onclick="accountingOpenAddServiceForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+    </div>
+  </div>`;
+}
+
+async function accountingSubmitAddService() {
+  const clientEl = document.getElementById('acct-add-client');
+  const clientId = clientEl.value;
+  const serviceId = document.getElementById('acct-add-service').value;
+  if (!clientId || !serviceId) { showToast('Client and Tactic are both required.', 'error'); return; }
+  const groupId = clientEl.selectedOptions[0]?.dataset.groupId || null;
+  const grossBudget = document.getElementById('acct-add-gross-budget').value;
+  const data = {
+    client_id: clientId, group_id: groupId || null, service_id: serviceId,
+    tactic_label: CATALOG_ROWS[serviceId]?.accounting_label || CATALOG_ROWS[serviceId]?.label || serviceId,
+    flight_start: document.getElementById('acct-add-flight-start').value || null,
+    flight_end: document.getElementById('acct-add-flight-end').value || null,
+    has_offline_visits: document.getElementById('acct-add-has-offline-visits').checked,
+  };
+  if (grossBudget) {
+    data.initial_gross_budget = parseFloat(grossBudget);
+    data.initial_month = new Date().toISOString().slice(0, 10);
+  }
+  try {
+    await sb('rpc/accounting_add_campaign_line', { method: 'POST', body: JSON.stringify({
+      p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw, p_data: data
+    }) });
+    document.getElementById('accounting-add-service-form').style.display = 'none';
+    document.getElementById('accounting-add-service-form').innerHTML = '';
+    await fetchAccountingData();
+    renderAccountingDashboard();
+    showToast('Service added -- now sitting in Strategist\'s Campaign Setup queue.');
+  } catch(e) { showToast('Error adding service: ' + e.message, 'error'); }
+}
+
+// ── BULK MATCH (2026-08-11) ──────────────────────────────────────
+// Claire: "a way to verify what may be missing from one portal or the
+// other" -- without pasting real client data into chat, this runs entirely
+// in her own browser against data already loaded here. Paste one
+// Client<TAB>Tactic pair per line (same tab-separated convention as
+// Strategist's own "Paste Platform Report" tool) and every row is matched
+// against ALL_ACCOUNTING_LINES/ALL_ACCOUNTING_CLIENTS already in memory --
+// nothing pasted here ever leaves this page.
+function accountingOpenBulkMatchForm() {
+  const el = document.getElementById('accounting-bulk-match-form');
+  const isOpen = el.style.display !== 'none';
+  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  document.getElementById('accounting-add-service-form').style.display = 'none';
+  document.getElementById('accounting-add-service-form').innerHTML = '';
+
+  el.style.display = 'block';
+  el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;background:#F0F9FF">
+    <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk match against what's already in the system</strong>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Paste rows from your own tracking sheet as <strong>Client, Tactic</strong> (one pair per line, tab or comma separated). Nothing here is sent anywhere except back to your own browser -- this only checks it against campaigns already loaded in this portal.</p>
+    <textarea id="acct-bulk-match-input" rows="6" placeholder="Tassel Ridge Winery&#9;FB/IG Ads&#10;Fisher &amp; Son Roofing&#9;Website" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px"></textarea>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <button onclick="accountingRunBulkMatch()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Check Matches</button>
+      <button onclick="accountingOpenBulkMatchForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+    </div>
+    <div id="acct-bulk-match-results"></div>
+  </div>`;
+}
+
+function accountingRunBulkMatch() {
+  const raw = document.getElementById('acct-bulk-match-input').value;
+  const rows = raw.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const parts = l.includes('\t') ? l.split('\t') : l.split(',');
+    return { clientText: (parts[0] || '').trim(), tacticText: (parts[1] || '').trim() };
+  });
+  const norm = s => (s || '').trim().toLowerCase();
+
+  const resultsHtml = rows.map(row => {
+    const client = ALL_ACCOUNTING_CLIENTS.find(c => norm(c.name) === norm(row.clientText));
+    const lineMatch = client && ALL_ACCOUNTING_LINES.find(l =>
+      l.client_id === client.id && norm(l.tactic_label).includes(norm(row.tacticText)));
+
+    if (lineMatch) {
+      return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">✅ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">already in the system</span></div>`;
+    }
+    if (client) {
+      return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span>⚠️ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">client found, this tactic isn't tracked yet</span></span>
+        <button onclick='accountingOpenAddServiceForm({clientId:"${esc(client.id)}"})' style="padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">+ Add</button>
+      </div>`;
+    }
+    return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">❌ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">client not found -- add the client in Admin first</span></div>`;
+  }).join('');
+
+  document.getElementById('acct-bulk-match-results').innerHTML = rows.length
+    ? `<div style="border-top:1px solid var(--border)">${resultsHtml}</div>`
+    : `<p style="font-size:12px;color:var(--muted)">Paste at least one row above.</p>`;
+}
+
 function accountingStatusPill(kind, text) {
   const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external' }[kind];
   return `<span class="acct-status-pill ${cls}">${esc(text)}</span>`;
@@ -576,13 +742,15 @@ function accountingTintColor(hex, amount) {
 
 async function fetchAccountingData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
-  const [lines, months, rates] = await Promise.all([
+  const [lines, months, rates, clients] = await Promise.all([
     sb('rpc/accounting_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     sb('rpc/accounting_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     sb('rpc/accounting_get_rates', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
+    sb('rpc/accounting_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
   ]);
   ALL_ACCOUNTING_LINES = lines || [];
   ALL_ACCOUNTING_MONTHS = months || [];
+  ALL_ACCOUNTING_CLIENTS = clients || [];
   ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} };
   ACCOUNTING_CUT_TIERS = {};
   ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} };
@@ -696,9 +864,14 @@ function accountingRenderRow(r) {
       <td>${accountingRollupStatusPill(r)}</td>
     </tr>`;
     if (expanded) {
+      // Region rows tint with the group's own brand color, same "mix toward
+      // white" treatment as the stat tiles use, instead of a flat gray
+      // (2026-08-11, per Claire) -- falls back to the same flat gray when
+      // the group has no brand_color set, via the CSS var's own default.
+      const childTint = accountingTintColor(r.line.group_color, 0.92);
       r.children.forEach(c => {
         const selected = c.line.id === accountingSelectedLineId;
-        html += `<tr class="acct-row acct-child${selected ? ' selected' : ''}" onclick="event.stopPropagation();accountingSelectLine('${c.line.id}')">
+        html += `<tr class="acct-row acct-child${selected ? ' selected' : ''}"${childTint ? ` style="--child-tint:${esc(childTint)}"` : ''} onclick="event.stopPropagation();accountingSelectLine('${c.line.id}')">
           <td></td>
           <td>${esc(c.line.split_label || '(unlabeled split)')}</td>
           <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
