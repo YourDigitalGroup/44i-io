@@ -24,7 +24,7 @@
   #page-accounting .acct-filters{display:flex;gap:10px}
   #page-accounting .acct-filter-btn{display:flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:6px;padding:6px 10px 6px 12px;font-size:11.5px;letter-spacing:.03em;color:var(--muted);background:#fff}
   #page-accounting .acct-filter-btn select{background:transparent;color:var(--text);border:none;font-family:inherit;font-size:11.5px;cursor:pointer;padding-right:2px}
-  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(4,1fr);background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05)}
+  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(5,1fr);background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05)}
   #page-accounting .acct-stat{padding:14px 20px}
   #page-accounting .acct-stat + .acct-stat{border-left:1px solid var(--border)}
   #page-accounting .acct-stat-label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
@@ -49,7 +49,7 @@
   #page-accounting .acct-status-pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;white-space:nowrap}
   #page-accounting .acct-status-pill.confirmed{background:#DDF2DE;color:#2E7D42}
   #page-accounting .acct-status-pill.needs{background:#FBF3C7;color:#8A6D12}
-  #page-accounting .acct-status-pill.external{background:#E0E7FF;color:#3730A3}
+  #page-accounting .acct-status-pill.external{background:#DBEAFE;color:#1E40AF}
   #page-accounting .acct-note{background:#FEF9E7;border:1px solid #F5E1A4;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:11.5px;color:#8A6D12}
 </style>
 </head>
@@ -336,15 +336,18 @@ function accountingRenderDetailCard() {
   const months = [0, 1, 2].map(offset => {
     const d = new Date(accountingCurrentMonth.getFullYear(), accountingCurrentMonth.getMonth() + offset, 1);
     const monthKey = accountingMonthKey(d);
+    const monthStr = monthKey + '-01';
     const monthRow = ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === line.id && m.month.slice(0, 7) === monthKey);
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override);
     const cutPct = accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits);
     const split = accountingSplitRevenue(gross, cutPct);
+    const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
       label: d.toLocaleString('en-US', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(-2),
-      gross, actualSpend, expectedSpend, split, confirmed: actualSpend != null,
+      monthStr, gross, actualSpend, expectedSpend, split,
+      confirmed: actualSpend != null || manuallyConfirmed, manuallyConfirmed,
     };
   });
 
@@ -366,7 +369,12 @@ function accountingRenderDetailCard() {
           <td class="num">${m.split.fortyfouri != null ? '$' + m.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${m.expectedSpend != null ? '$' + m.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${m.actualSpend != null ? '$' + m.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td>${line.billed_externally ? accountingStatusPill('external', 'Billed externally') : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}</td>
+          <td>
+            ${line.billed_externally ? accountingStatusPill('external', 'Billed externally') : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
+            ${!line.billed_externally ? `<label style="display:flex;align-items:center;gap:5px;margin-top:4px;font-size:10.5px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'}">
+              <input type="checkbox" ${m.manuallyConfirmed ? 'checked' : ''} ${m.actualSpend != null ? 'disabled title="Already confirmed automatically -- real spend is entered for this month"' : ''} onchange="accountingConfirmMonth('${line.id}','${m.monthStr}', this.checked)"/> Manually confirm
+            </label>` : ''}
+          </td>
         </tr>`).join('')}</tbody>
     </table>`;
 }
@@ -385,14 +393,32 @@ async function accountingToggleBilledExternally(lineId, value) {
     renderAccountingDashboard();
   } catch(e) { showToast('Error saving: ' + e.message, 'error'); }
 }
+// Manual confirm, reinstated in the detail card ONLY (2026-08-11, per Claire:
+// "for ones that need confirmation we need to be able to manually select in
+// the detail card, especially for tactics that aren't tracked in the
+// strategist portal" -- a tactic with no actual_spend ever flowing in from
+// there, e.g. a manually-invoiced service, would otherwise sit as "Needs
+// confirmation" forever with no way to clear it). Reuses
+// accounting_confirm_month/campaign_months.confirmed_by, unused since the
+// automatic-from-actual-spend pass but never removed. Main table stays
+// checkbox-free -- this is intentionally only reachable from the card.
+async function accountingConfirmMonth(lineId, monthStr, confirmed) {
+  try {
+    await sb('rpc/accounting_confirm_month', { method: 'POST', body: JSON.stringify({
+      p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw,
+      p_campaign_line_id: lineId, p_month: monthStr, p_confirmed: confirmed
+    }) });
+    await fetchAccountingData();
+    renderAccountingDashboard();
+  } catch(e) { showToast('Error saving confirmation: ' + e.message, 'error'); }
+}
 function accountingStatusPill(kind, text) {
   const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external' }[kind];
   return `<span class="acct-status-pill ${cls}">${esc(text)}</span>`;
 }
-// Status is now fully automatic (2026-08-11, per Claire: "if there is actual
-// spend that should automatically update the status to confirmed" -- dropped
-// the manual per-month sign-off checkbox entirely). A real actual-spend
-// figure having been entered for the month IS the confirmation.
+// Confirmed = a real actual-spend figure entered for the month, OR a manual
+// confirm from the detail card (for tactics the Strategist Portal never
+// tracks actuals for at all). Either one is sufficient.
 function accountingLineStatusPill(r) {
   if (r.line.billed_externally) return accountingStatusPill('external', 'Billed externally');
   if (r.confirmed) return accountingStatusPill('confirmed', 'Confirmed');
@@ -499,6 +525,18 @@ function accountingComputeExpectedSpend(grossBudget, serviceId, groupId, inPlatf
   return pct != null ? Number(grossBudget) * pct / 100 : null;
 }
 
+// Same relative-luminance contrast pick as the Strategist Portal's own
+// strategistContrastTextColor -- an arbitrary group brand color (light or
+// dark) always gets readable text against it, and the same visual language
+// as that other table's group banners (2026-08-11, per Claire: "use the
+// group color for their header like the strategists").
+function accountingContrastTextColor(hex) {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return '#0E5D82';
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  const luminance = (0.299*r + 0.587*g + 0.114*b) / 255;
+  return luminance > 0.6 ? '#1F2937' : '#FFFFFF';
+}
+
 async function fetchAccountingData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
   const [lines, months, rates] = await Promise.all([
@@ -558,11 +596,12 @@ function accountingBuildRows() {
     const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.group_id, monthRow?.in_platform_override);
     const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits);
     const split = accountingSplitRevenue(gross, cutPct);
-    // Confirmed is fully automatic (2026-08-11, per Claire: "if there is actual
-    // spend that should automatically update the status to confirmed" -- no more
-    // manual sign-off checkbox cluttering every row). A real actual-spend figure
-    // having been entered for the month IS the confirmation.
-    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed: actualSpend != null };
+    // Confirmed = real actual-spend entered for the month (automatic), OR a
+    // manual confirm from the detail card (for tactics the Strategist Portal
+    // never tracks actuals for at all -- 2026-08-11, Claire). No checkbox in
+    // the main table either way -- this is just the resolved boolean.
+    const confirmed = actualSpend != null || !!monthRow?.confirmed_by;
+    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed };
   }).filter(r => r.gross != null); // no month row for this line/month at all -- nothing to show yet
 
   const groups = new Map();
@@ -675,6 +714,7 @@ function renderAccountingDashboard() {
   document.getElementById('accounting-stats').innerHTML =
     stat('Expected Revenue', '$' + totalGross.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Expected Spend', '$' + totalExpectedSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
+    stat('Actual Spend', '$' + totalActualSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Awaiting Confirmation', `${awaiting} of ${rows.length}`, awaiting > 0 ? 'warn' : '');
 
@@ -688,22 +728,33 @@ function renderAccountingDashboard() {
 
   // Grouped by Group as its own full-width banner row (mockup layout) rather
   // than a plain column -- Group itself is still filterable via the dropdown
-  // above, this is purely a display grouping.
+  // above, this is purely a display grouping. Colored with that group's own
+  // brand color (Admin -> Groups), same as the Strategist Portal's main
+  // table (2026-08-11, per Claire) -- falls back to the light neutral band
+  // if a group has no brand_color set.
   const byGroup = new Map();
   rows.forEach(r => {
     const g = r.line.group_name || '(No Group)';
-    if (!byGroup.has(g)) byGroup.set(g, []);
-    byGroup.get(g).push(r);
+    if (!byGroup.has(g)) byGroup.set(g, { color: r.line.group_color, rows: [] });
+    byGroup.get(g).rows.push(r);
   });
   const groupOrder = [...byGroup.keys()].sort((a, b) => a.localeCompare(b));
 
   let bodyRows = '';
   groupOrder.forEach(groupName => {
-    bodyRows += `<tr class="acct-group-row"><td colspan="8">${esc(groupName)}</td></tr>`;
-    byGroup.get(groupName).forEach(r => { bodyRows += accountingRenderRow(r); });
+    const bg = byGroup.get(groupName).color || '#EBF4FB';
+    const fg = accountingContrastTextColor(bg);
+    bodyRows += `<tr><td colspan="8" style="padding:8px 12px;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:${esc(bg)};color:${fg}">${esc(groupName)}</td></tr>`;
+    byGroup.get(groupName).rows.forEach(r => { bodyRows += accountingRenderRow(r); });
   });
 
   const th = (label, num) => `<th${num ? ' class="num"' : ''}>${label}</th>`;
+  // Total row uses one literal <td> per column (no colspan) so it can never
+  // drift out of alignment with the header/body columns above it (2026-08-11,
+  // per Claire: "the total column is way too small and doesn't line up with
+  // the columns" -- a colspan-merged label cell sizes differently than a
+  // plain cell under certain content-width combinations; this removes that
+  // possibility entirely by keeping the same 8 real cells every row has).
   wrap.innerHTML = `<table>
     <thead>
       <tr>
@@ -712,8 +763,10 @@ function renderAccountingDashboard() {
     </thead>
     <tbody>${bodyRows}</tbody>
     <tfoot>
-      <tr style="font-weight:700">
-        <td colspan="3">Total</td>
+      <tr style="font-weight:700;border-top:2px solid var(--border)">
+        <td>Total</td>
+        <td></td>
+        <td></td>
         <td class="num">$${totalGross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
         <td class="num">$${totalFortyfouri.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
         <td class="num">$${totalExpectedSpend.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
