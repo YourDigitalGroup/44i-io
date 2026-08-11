@@ -10971,3 +10971,43 @@ silent. Re-ran the original `test-strategist-bulk-backfill-2026-08-11.js`
 (7/7, still passing — its own "never touched" campaign happens to have no
 month row either, so the candidate-filter change didn't affect it) plus
 every other test file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Bulk backfill rewritten to fill the WHOLE flight from its start, not just extend the tail
+
+Claire: "I need it to fill based on the full flight from the start."
+Real gap in the previous fix: it only ever extended FORWARD from the last
+existing month row, using THAT row's own budget. That misses any gap in
+the MIDDLE of a flight entirely (nothing after the last row triggers a
+"missing month" check on anything before it), and if the last row happens
+to be a one-off override rather than the campaign's real standard rate,
+every newly-filled month would incorrectly inherit that override forever.
+
+`strategistComputeBulkFillSaves(lineId)` rewritten: the fill window is now
+the campaign's own `flight_start` through `flight_end` (or a rolling
+12-month horizon from today for an open-ended one, unchanged from the
+prior fix) — every month in that FULL range without its own row gets
+filled, not just the ones after the last existing row. The budget used for
+every filled gap is the campaign's **standard IO budget** — its EARLIEST
+existing month's Gross Budget (`setupBudgetRowFor`, the same source
+`strategistPrefillMonths` already uses for a brand-new campaign at
+activation) — not the last row's, so a stale campaign's fill is anchored
+to what the IO actually specified, not to whatever happened to be entered
+most recently. Any month that already has its own row — including a
+genuine one-off override in the middle of the flight — is left completely
+untouched; this only ever fills a true gap, never overwrites existing
+data. The single-campaign "Fill remaining months to flight end" button is
+unchanged on purpose — it's a deliberately different one-off use ("the
+rate just changed, keep going with the new one forward from here"), not
+this "correct what's broken against the IO's own standard" pass.
+
+**Verified**: new `test-strategist-bulk-fill-from-start-2026-08-12.js`
+(7/7) — a campaign with a genuine gap in the MIDDLE of its flight (not
+just a truncated tail) gets exactly those missing months filled, using the
+earliest row's rate; a deliberate override sitting in that same gap
+survives completely untouched; a paused, open-ended campaign still gets
+its rolling-horizon fill using its own standard rate; a `complete`-status
+campaign is still correctly never touched at all. Re-ran both prior bulk-
+fill test files (7/7 and 5/5 — each happens to only have one pre-existing
+month row per line in its own fixtures, so first-row-vs-last-row made no
+observable difference there, consistent rather than coincidental) plus
+every other test file across both portals — no regressions.
