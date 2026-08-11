@@ -9756,3 +9756,74 @@ etc).
 render, prefill from the line's existing dates (blank End for an ongoing
 campaign), saving End writes the correct RPC payload and updates the local
 cache, and clearing Start sends `null` (not an empty string) to the RPC.
+
+### 2026-08-11 (cont'd) — Campaign Setup queue now respects My Campaigns/All Strategists
+
+Claire: "I think we need to include the Campaign Setup in the My Campaigns/All
+Strategist Split. That list is going to get pretty long. I assigned each
+Digital strategist to their groups/clients." Confirmed via AskUserQuestion:
+scope a pending line by the client's assigned Digital Strategist, not by
+whoever created/imported the line.
+
+Background: Campaign Setup (pending) was deliberately EXEMPTED from the
+scope toggle on 2026-08-06 — at the time, `assigned_strategist` on a new
+line was just whoever entered it (usually Claire, doing bulk entry), so
+gating on it risked hiding new work from everyone. That exemption is now
+superseded: with real Digital Strategist assignments in place per
+group/client (Admin → Groups/Clients), a pending line's real owner is
+knowable independent of who typed it in.
+
+**SQL** (`setup-queue-strategist-scope-2026-08-11.sql`, given to Claire) —
+patches `strategist_get_clients` to also return each client's
+`digital_strategist_name`, resolved the same way Admin already resolves it
+for Trello tagging: client-level override if set, else the group's default
+(`coalesce(clients.digital_strategist_name, groups.digital_strategist_name)`).
+No schema change — both columns already existed.
+
+**Client-side** (`strategist/index.html`): new `strategistLineScopeName(l)`
+— for a `pending` line, looks up the client's effective digital strategist
+name from `ALL_STRATEGIST_CLIENTS`; for every other status, unchanged
+(`l.assigned_strategist`). `visibleCampaignLines()` and the tab count loop in
+`renderStrategistDashboard()` both now call this instead of the old
+pending-exemption branch, so Setup rows filter (and their tab badge counts)
+exactly like Active/Paused/Complete already do.
+
+A client with no Digital Strategist assigned yet (client or group level)
+resolves to `null` — it simply won't match anyone's name under "My
+Campaigns", but still shows under "All Strategists" so nothing silently
+disappears. Told Claire this directly: any group she hasn't gotten to yet in
+Admin will surface there as a gap to notice, not a hidden one.
+
+**Verified**: `test-setup-scope-by-client-strategist.js` (scratchpad, 4/4) —
+a pending line whose client resolves to the logged-in strategist shows under
+"My Campaigns"; a differently-owned and an unassigned-client pending line
+don't; "All Strategists" still shows all three; Active/Paused/Complete lines
+are completely unaffected (still keyed on `assigned_strategist` directly);
+the tab count loop's pending badge matches what `visibleCampaignLines()`
+itself returns for the same scope. Re-ran `test-setup-panel-collapse.js`
+(8/8), `test-split-expands-panels.js` (5/5), and
+`test-bulk-import-flight-extend.js` (11/11) unchanged and still fully
+passing.
+
+### 2026-08-11 (cont'd) — Active/Paused/Complete also follow the client's assigned strategist
+
+Claire, immediately after the Campaign Setup scoping change above: "The
+active campaigns should also follow which strategist they are assigned to
+like the campaign setup. That is because say one strategist is out and
+another sets up the campaign. It is still the assigned strategist's
+campaign, the other strategist was just helping out."
+
+`strategistLineScopeName(l)` simplified to drop the pending-only branch —
+EVERY status now resolves scope through the client's effective Digital
+Strategist (`ALL_STRATEGIST_CLIENTS` lookup), never `assigned_strategist`.
+`assigned_strategist` itself is untouched (still written when a line is
+created) — it's just no longer what the My Campaigns/All Strategists toggle
+reads for any status.
+
+**Verified**: extended `test-setup-scope-by-client-strategist.js` (scratchpad,
+now 4/4) with two lines that isolate the exact scenario Claire described —
+a campaign for a client owned by Strategist A, but created by Strategist B
+covering for them (shows under A's "My Campaigns", not B's), and the
+reverse (a campaign for B's own client that A happened to set up while
+covering — still shows under B's). Confirms scoping now runs entirely off
+client ownership regardless of who touched the line.

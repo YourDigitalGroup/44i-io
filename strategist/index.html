@@ -1680,17 +1680,32 @@ function strategistEffectiveStatus(line, monthDate) {
   return strategistMonthPaused(line.id, monthDate) ? 'paused' : 'active';
 }
 
+// A campaign line's assigned_strategist field is set to whoever
+// created/imported/set it up -- not necessarily who actually owns the
+// client (2026-08-11, per Claire: if Strategist A is out and Strategist B
+// sets up or otherwise touches the campaign, it's still A's campaign -- B
+// was just helping out). So for scoping purposes (My Campaigns/All
+// Strategists), EVERY status -- pending, active, paused, complete -- uses
+// the CLIENT's effective Digital Strategist (client override, else group
+// default) instead of assigned_strategist. A client that's still
+// unassigned in Admin resolves to null here -- it simply won't match
+// anyone's "My Campaigns", so it still surfaces under "All Strategists"
+// rather than silently vanishing. assigned_strategist itself is left alone
+// (still written on create) -- it's just no longer what scoping reads.
+function strategistLineScopeName(l) {
+  const client = ALL_STRATEGIST_CLIENTS.find(c => c.id === l.client_id);
+  return client?.digital_strategist_name || null;
+}
+
 function visibleCampaignLines() {
   return ALL_CAMPAIGN_LINES.filter(l => {
     if (strategistEffectiveStatus(l, strategistCurrentMonth) !== strategistStatusTab) return false;
-    // Pending (Campaign Setup) is a shared to-do queue, not personal/monthly work in
-    // progress yet -- exempted from BOTH the "My Campaigns" scope (2026-08-07, per
-    // Claire, found live: a brand-new line's assigned_strategist may not match
-    // whoever happens to be reviewing setups, so gating on scope could hide new work
-    // from everyone until someone thinks to switch to "All Strategists") and the
-    // month picker (already exempted below, for the same "still needs doing now
-    // regardless of when it's flighted" reason).
-    if (l.status !== 'pending' && strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return false;
+    // Campaign Setup (pending) used to be entirely exempt from the "My Campaigns"
+    // scope toggle (2026-08-07) since assigned_strategist wasn't a reliable owner
+    // yet. Superseded 2026-08-11: now scoped via strategistLineScopeName() above,
+    // same as every other tab -- the Setup queue was getting too long as one
+    // shared list once every client had a real owner assigned in Admin.
+    if (strategistScope === 'mine' && strategistLineScopeName(l) !== currentStrategistUser.name) return false;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return false;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return false;
     return true;
@@ -1704,11 +1719,11 @@ function renderStrategistDashboard() {
   document.getElementById('strategist-scope-all').style.background = strategistScope === 'all' ? 'var(--accent)' : 'var(--light)';
   document.getElementById('strategist-scope-all').style.color = strategistScope === 'all' ? '#fff' : 'var(--text)';
 
-  // Same pending-status exemptions as visibleCampaignLines() below, so the tab's own
-  // count badge always matches what actually renders when you click into it.
+  // Same scoping as visibleCampaignLines() above, so the tab's own count badge
+  // always matches what actually renders when you click into it.
   const counts = { pending: 0, active: 0, paused: 0, complete: 0 };
   ALL_CAMPAIGN_LINES.forEach(l => {
-    if (l.status !== 'pending' && strategistScope === 'mine' && l.assigned_strategist !== currentStrategistUser.name) return;
+    if (strategistScope === 'mine' && strategistLineScopeName(l) !== currentStrategistUser.name) return;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return;
     const eff = strategistEffectiveStatus(l, strategistCurrentMonth);
