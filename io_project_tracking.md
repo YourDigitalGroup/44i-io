@@ -10517,3 +10517,27 @@ elaborating yet. Not touched pending her description.
 **Verified**: re-ran all 9 accounting test files (86/86) unchanged and
 still fully passing after the checkbox/padding CSS changes — no JS logic
 changed in this pass, so no new test needed beyond the regression check.
+
+### 2026-08-11 (cont'd) — Stat tile bar tints with the filtered Group's brand color
+
+Clarified: Claire's "shade the top headers for the whole group a different
+brand color" was about the STAT TILE summary bar at the top of the page,
+not the table's group banner rows (those already got their brand color a
+few commits ago).
+
+When filtered to a single Group, the stat-tile bar's background now tints
+with that group's own `brand_color` (mixed 88% toward white so tile text
+stays readable regardless of how saturated the source color is) and its
+border switches to the group's color at full saturation. Viewing "All
+Groups" (mixed data — no single brand color would be accurate) keeps the
+plain white/neutral-border default, same as a group with no brand_color set
+at all even when filtered to it.
+
+**Verified**: `test-accounting-stat-tile-group-tint.js` (scratchpad, 6/6) —
+the tint math itself is exact and deterministic; "All Groups" stays white;
+filtering to a group with a real brand color tints the bar and sets the
+border to that exact color; filtering to a group with no brand_color still
+stays neutral rather than guessing at a color. Re-ran all 9 other accounting
+test files (86/86) unchanged and still fully passing. 92/92 total. No SQL
+change — pure client-side, reuses `group_color` already added to
+`accounting_get_campaign_lines` for the table's own banners.
