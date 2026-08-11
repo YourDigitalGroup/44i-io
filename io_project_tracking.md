@@ -11094,3 +11094,39 @@ scopes it); a campaign that hasn't started yet doesn't show early; the
 detail card's lookahead shows the real figure for a month still within
 the flight and a dash for one past flight_end. Re-ran every other test
 file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Add Service's Tactic dropdown only showed Strategist-trackable services
+
+Claire: "in the accounting portal if I go to add a service I don't see
+all of the services in the dropdown just the ones from the strategists
+portal." Real gap: the Add Service form copied Strategist's own import
+form's Tactic filter (spend-priced, or one of 2 flat-priced exceptions)
+verbatim — which froze out every flat/recurring/one-time service, exactly
+the category "track all ordered services" (earlier this session) exists
+to cover. The form to manually add something Strategist doesn't track
+was itself only offering things Strategist WOULD track.
+
+Fix: Tactic dropdown now lists every active service. Picking a non-
+spend-trackable one reveals a new Billing choice ("Recurring monthly" /
+"One-time fee") and creates the line the same way the order trigger
+already does for one of those — `accounting_only=true`, `status='active'`,
+skipping Strategist's Setup queue entirely (no setup step exists for a
+flat hosting fee). Picking an ordinary spend-trackable tactic behaves
+exactly as before (lands in Strategist's Setup queue). Helper text below
+the form updates to match which path is about to happen.
+
+**New SQL** (`accounting-add-service-all-tactics-2026-08-12.sql`, given
+to Claire) — `accounting_add_campaign_line`'s own INSERT never had
+`accounting_only`/`billing_type` in it at all; both added, both optional
+so a Strategist-trackable add is unaffected.
+
+**Verified**: new `test-accounting-add-service-all-tactics-2026-08-12.js`
+(13/13) — flat/recurring services and the 2 flat-but-trackable exceptions
+both now appear in the dropdown; the Billing choice shows only for a non-
+trackable pick; submitting a flat pick creates an accounting-only, active,
+correctly-billing-typed line; submitting an ordinary spend pick still
+behaves exactly as before (Setup queue, no status override, billing_type
+'spend'). One older test (`test-accounting-add-service-bulk-match-2026-
+08-11.js`) had a stale "flat service excluded from dropdown" assertion —
+updated to reflect the new, correct, intended behavior, not a regression.
+Re-ran every other test file across both portals — no regressions.
