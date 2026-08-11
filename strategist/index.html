@@ -1241,6 +1241,47 @@ async function fetchStrategistData() {
   });
   PLATFORM_REPORT_CACHE = {};
   (reportCache || []).forEach(r => { PLATFORM_REPORT_CACHE[r.platform] = { report_month: r.report_month, rows: r.rows || [] }; });
+  await strategistSweepFlightEndedCampaigns();
+}
+
+// Auto-completes a campaign once its flight has ended, so a strategist doesn't
+// have to remember to switch Status manually (2026-08-10, per Claire -- same
+// "don't make me remember" motivation as the per-month pause schedule). Runs
+// on every fetchStrategistData() call (i.e. every normal page load or save),
+// so whichever campaign just crossed its flight_end since the last fetch gets
+// caught promptly without needing a server-side cron job. Deliberately
+// restricted to status === 'active' only -- a campaign a strategist manually
+// paused stays exactly as they left it; an open-ended campaign (no flight_end
+// at all) is never touched. Self-limiting: once a line is 'complete' it no
+// longer matches the filter, so this never re-fires for the same campaign.
+// Reuses the existing status-change-log RPC directly (no new SQL) -- logged
+// under whichever strategist's session happened to trigger the sweep, same as
+// every other action in this system (there's no true "system" user), but the
+// reason text makes it clear this wasn't a manual click.
+async function strategistSweepFlightEndedCampaigns() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const ended = ALL_CAMPAIGN_LINES.filter(l => l.status === 'active' && l.flight_end && new Date(l.flight_end + 'T00:00:00') < today);
+  for (const l of ended) {
+    try {
+      await sb('rpc/strategist_log_status_change', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_campaign_line_id: l.id, p_old_status: 'active', p_new_status: 'complete',
+        p_reason: 'Automatically completed — past flight end date'
+      }) });
+      await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: l.id,
+        p_data: { status: 'complete' }
+      }) });
+      l.status = 'complete';
+      // Patched locally so the detail panel's Status history immediately explains
+      // the change if opened right after this same load, rather than waiting on
+      // the next unrelated refetch to pick up the row just inserted above.
+      ALL_STATUS_HISTORY.push({
+        id: `local-${l.id}-${Date.now()}`, campaign_line_id: l.id, old_status: 'active', new_status: 'complete',
+        reason: 'Automatically completed — past flight end date', changed_by: currentStrategistUser.name, changed_at: new Date().toISOString()
+      });
+    } catch(e) { console.warn(`Couldn't auto-complete "${l.tactic_label || l.service_id}" (${l.client_name}):`, e.message); }
+  }
 }
 
 async function loadStrategistDashboard() {
