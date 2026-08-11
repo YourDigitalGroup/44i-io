@@ -9446,3 +9446,28 @@ never for an already-manually-paused one. Re-ran 6 other test files touching
 `visibleCampaignLines()`/the detail panel unchanged and still fully passing.
 
 **Not yet run by Claire**: `campaign-month-pause-schedule-2026-08-10.sql`.
+
+### 2026-08-10 (cont'd) — Edit Split Label on an already-active campaign
+
+Claire missed setting Split Label on a few rows during her bulk import and
+had no way to add or fix it afterward — it was only ever settable at
+creation time (the Setup panel's split form, or Bulk Import's own Split
+Label column). Added an inline text input to the detail panel header, same
+quick-edit style as the exact-platform-title/reference-link fields already
+there — works whether the line already has a `split_label` or never had
+one. No SQL needed: `strategist_save_campaign_line` already accepted
+`split_label` as an editable field from earlier split-campaign work.
+
+Deliberately uses a full reload (not the usual silent `reload:false`) since
+`split_label` feeds directly into the header title AND the main table's
+Tactic column text via `strategistTacticDisplay()` — worth the refetch so a
+correction shows up immediately rather than waiting on some unrelated
+re-render.
+
+**Verified**: `test-edit-split-label.js` (scratchpad, 7/7) — blank input
+when no `split_label` exists yet, correct pre-fill when one does, saving a
+new label sends it and patches the local cache immediately, clearing back
+to blank (including whitespace-only) sends `null` rather than an empty
+string, real values get trimmed, and it correctly triggers a full reload.
+Re-ran 3 other detail-panel-adjacent test files unchanged and still fully
+passing.
