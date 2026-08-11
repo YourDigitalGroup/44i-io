@@ -10181,3 +10181,45 @@ instead of "Needs confirmation." Re-ran `test-accounting-portal-v1.js`
 (12/12), `test-accounting-offline-visits-cutpct.js` (10/10),
 `test-accounting-alpha-sort.js` (1/1), and `test-accounting-admin-handoff.js`
 (7/7) unchanged and still fully passing.
+
+### 2026-08-11 (cont'd) — Real bug: Flight dates still wrapping to 3 lines
+
+Claire sent a screenshot of the Strategist Portal's Flight column showing
+dates wrapping to 3 lines ("Nov 30, 25" / "–" / "Dec 31, 26") despite the
+2026-08-10 fix that was supposed to prevent the dash from ever sitting alone
+(a non-breaking space right after the dash, gluing it to the end date).
+
+**Root cause**: that fix wasn't wrong, just incomplete. An en dash (–)
+carries its OWN line-break opportunity in the Unicode line-breaking
+algorithm, independent of the whitespace around it — so a browser can still
+break immediately AFTER the dash character itself even with a non-breaking
+space following it. The non-breaking space prevented breaking at that
+specific space, but not at the dash's own inherent break point.
+
+**Fix**: `strategistFormatFlightRange()` now wraps the "– end-date" portion
+in its own `white-space:nowrap` span, which suppresses every break
+opportunity inside that chunk — including the dash's own — leaving exactly
+one valid break point (the plain, breakable space between the start date
+and that span). This means the function now returns HTML, not plain text;
+its one call site (`strategist/index.html`'s main table) had to stop
+wrapping the result in `esc()` — safe, since the dates only ever come from
+`Date.toLocaleDateString()` on `flight_start`/`flight_end`, never free-typed
+text.
+
+Applied the identical fix to the Accounting Portal's own
+`accountingFormatFlightRange()` (added yesterday for the v2 mockup layout,
+same underlying issue, same 3 call sites needing their `esc()` removed) —
+plus gave its date formatter the same non-breaking-space-within-a-date
+treatment the Strategist Portal's already had, for consistency.
+
+**Verified**: `test-flight-range-nowrap.js` (scratchpad, 8/8) — both
+functions' output contains the `white-space:nowrap` span wrapping the dash
+and end date; an actual narrow (`70px`) container renders the dash+end-date
+chunk on a single line (measured via real layout, `getBoundingClientRect()`,
+not just string content); the "Ongoing" (no end date) case is unaffected;
+neither call site double-escapes the returned HTML. Re-ran
+`test-accounting-v2-mockup-layout.js` (15/15 — one assertion updated to
+account for the now-nbsp-separated date format, not a regression),
+`test-edit-flight-dates.js` (7/7), `test-setup-offline-and-dates.js` (9/9),
+and `test-bulk-import-flight-extend.js` (11/11) unchanged and still fully
+passing.
