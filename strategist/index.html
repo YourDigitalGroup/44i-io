@@ -1789,11 +1789,17 @@ async function strategistSaveSplit(lineId) {
   const splits = labels.map((label, i) => ({ label, amount: amounts[i], title: titles[i] })).filter(s => s.label && s.amount !== '');
   if (splits.length < 2) { showToast('Enter a label and amount for at least 2 splits.', 'error'); return; }
   try {
-    await sb('rpc/strategist_split_campaign_line', { method: 'POST', body: JSON.stringify({
+    const result = await sb('rpc/strategist_split_campaign_line', { method: 'POST', body: JSON.stringify({
       p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
       p_line_id: lineId, p_splits: splits.map(s => ({ label: s.label, amount: parseFloat(s.amount), platform_campaign_name: s.title || null }))
     }) });
     await fetchStrategistData();
+    // Setup panels start collapsed by default (2026-08-10) -- found live, Claire:
+    // "it said it saved but it didn't hold." It had; the resulting splits just
+    // rendered collapsed, easy to miss/scroll past, so it looked like nothing
+    // happened until leaving and re-entering Campaign Setup. Expand every
+    // resulting split immediately using the ids the RPC already returns.
+    (result?.line_ids || []).forEach(id => STRATEGIST_EXPANDED_SETUP_LINES.add(id));
     renderStrategistDashboard();
     showToast(`Split into ${splits.length} campaigns.`);
   } catch(e) { showToast('Error splitting: ' + e.message, 'error'); }
