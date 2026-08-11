@@ -52,7 +52,6 @@
           <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
           <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
           <button onclick="strategistRecheckCachedReports()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--border);background:var(--light);color:var(--text);cursor:pointer;font-weight:600;font-size:12px">Re-check Cached Reports</button>
-          <button onclick="strategistBulkFillAllToFlightEnd()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--border);background:var(--light);color:var(--text);cursor:pointer;font-weight:600;font-size:12px">Backfill All to Flight End</button>
         </div>
       </div>
 
@@ -2121,78 +2120,6 @@ async function strategistFillMonthsToFlightEnd(lineId) {
   await fetchStrategistData();
   renderStrategistDashboard();
   showToast(`Filled ${saves.length} month(s) through flight end.`);
-}
-
-// Fills the WHOLE flight from its own Flight Start date, not just forward
-// from wherever the last existing row happens to be (2026-08-12, per
-// Claire: "I need it to fill based on the full flight from the start") --
-// this catches any gap in the MIDDLE of a flight too, not only a truncated
-// tail. Every filled-in month uses the campaign's own standard/IO budget --
-// its EARLIEST existing month's Gross Budget (setupBudgetRowFor, same
-// "standard budget from the IO" source strategistPrefillMonths already
-// uses for a brand-new campaign) -- rather than whatever the LAST existing
-// row happens to be, since a stale/truncated campaign's last row isn't
-// necessarily the right one to extrapolate from. Any month that already
-// has its own row (including a deliberate override) is left untouched --
-// this only ever fills a genuine gap, never overwrites existing data.
-// A campaign with no flight_end ("Ongoing") fills a rolling 12-month
-// planning horizon from TODAY instead of running forever with no target.
-// Only used by the bulk pass -- the single-campaign "Fill remaining months
-// to flight end" button is unchanged (still extends forward from the last
-// row using ITS rate, a deliberately different one-off use: "the rate just
-// changed, keep going with the new one").
-function strategistComputeBulkFillSaves(lineId) {
-  const l = ALL_CAMPAIGN_LINES.find(x => x.id === lineId);
-  if (!l) return { saves: [], skipReason: 'campaign not found' };
-  const baseRow = setupBudgetRowFor(lineId); // earliest existing month = the campaign's standard IO budget
-  if (!baseRow || baseRow.gross_budget == null) return { saves: [], skipReason: 'no existing month to base a standard budget on' };
-  const existingMonths = new Set(ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).map(m => m.month));
-  const start = new Date((l.flight_start || baseRow.month) + 'T00:00:00');
-  let end;
-  if (l.flight_end) {
-    end = new Date(l.flight_end + 'T00:00:00');
-  } else {
-    const now = new Date();
-    end = new Date(now.getFullYear(), now.getMonth() + 12, 1);
-  }
-  const monthCount = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-  if (monthCount < 0) return { saves: [], skipReason: null }; // flight already over/inverted -- not an error, just nothing to do
-  const saves = [];
-  for (let i = 0; i <= monthCount; i++) {
-    const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
-    const monthStr = d.toISOString().slice(0, 10);
-    if (!existingMonths.has(monthStr)) saves.push({ lineId, monthStr, gross_budget: baseRow.gross_budget });
-  }
-  return { saves, skipReason: null };
-}
-
-// "Backfill all campaigns" (2026-08-11, per Claire; extended 2026-08-12 to
-// cover ongoing campaigns too -- see strategistComputeBulkFillSaves above).
-// Runs across every active/paused campaign in one pass, instead of clicking
-// the per-campaign button one at a time. A campaign with no existing month
-// row at all is still skipped (nothing to extrapolate a budget from) --
-// but now that's REPORTED by name in the final toast rather than silently
-// vanishing, matching "no silent caps."
-async function strategistBulkFillAllToFlightEnd() {
-  const candidates = ALL_CAMPAIGN_LINES.filter(l => l.status === 'active' || l.status === 'paused');
-  let allSaves = [];
-  let linesFilled = 0;
-  const skipped = [];
-  candidates.forEach(l => {
-    const { saves, skipReason } = strategistComputeBulkFillSaves(l.id);
-    if (saves.length) { allSaves = allSaves.concat(saves); linesFilled++; }
-    else if (skipReason) skipped.push(`${l.client_name || '(unknown)'} — ${l.tactic_label || l.service_id} (${skipReason})`);
-  });
-  if (!allSaves.length && !skipped.length) { showToast('Every active/paused campaign already covers its full flight/planning horizon.'); return; }
-  showToast(`Filling ${allSaves.length} month(s) across ${linesFilled} campaign(s)…`);
-  await Promise.all(allSaves.map(strategistSaveFillEntry));
-  await fetchStrategistData();
-  renderStrategistDashboard();
-  if (skipped.length) {
-    showToast(`Done — filled ${allSaves.length} month(s) across ${linesFilled} campaign(s). ${skipped.length} skipped (no existing budget to extend): ${skipped.join('; ')}`, 'error');
-  } else {
-    showToast(`Done — filled ${allSaves.length} month(s) across ${linesFilled} campaign(s).`);
-  }
 }
 
 async function strategistSaveMonth(lineId, monthStr, data) {

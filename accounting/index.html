@@ -502,7 +502,15 @@ function accountingOpenAddServiceForm(prefill) {
   document.getElementById('accounting-bulk-match-form').style.display = 'none';
   document.getElementById('accounting-bulk-match-form').innerHTML = '';
 
-  const allServices = Object.values(CATALOG_ROWS).sort((a, b) => (a.accounting_label || a.label || '').localeCompare(b.accounting_label || b.label || ''));
+  // Excludes modifier/add-on rows (2026-08-12, per Claire: "there are a
+  // bunch of offline tracking on their own. we have the toggle for that")
+  // -- Offline Visits Tracking and any other pricing_mode:'modifier' or
+  // is_cpm_adjustment service are meant to be toggled ONTO a real tactic
+  // (the "+ Offline Visits Tracking" checkbox right below this dropdown),
+  // never picked as a standalone Tactic in their own right.
+  const allServices = Object.values(CATALOG_ROWS)
+    .filter(r => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment)
+    .sort((a, b) => (a.accounting_label || a.label || '').localeCompare(b.accounting_label || b.label || ''));
   const sortedClients = [...ALL_ACCOUNTING_CLIENTS].sort((a, b) => a.name.localeCompare(b.name));
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;background:#F0F9FF">
