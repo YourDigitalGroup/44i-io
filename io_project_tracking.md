@@ -11060,3 +11060,37 @@ js`) had a stale "ordinary spend line never carries forward" assertion
 from before this fix existed — updated to reflect the new, correct
 behavior, not a regression. Re-ran every other test file across both
 portals — no regressions.
+
+### 2026-08-12 (cont'd) — Real regression from the carry-forward fix: tactics never dropped off after their flight ended
+
+Claire, immediately after the flat-budget carry-forward fix above: "on the
+accounting portal none of the tactics drop after their flight date." Real
+bug, introduced by that same fix. Root cause: Accounting never had an
+equivalent of the Strategist Portal's own `strategistLineActiveInMonth` --
+a completely separate "is this line even in scope for the month being
+viewed" check, independent of whatever a line's Gross Budget computes to.
+Accounting got away without one because a line's real `campaign_months`
+rows simply ran out once its flight ended, which USED to make it
+disappear as a side effect, never on purpose. The moment ordinary flat
+campaigns started carrying their budget forward too (this session's
+immediately-prior fix), that accidental disappearing act stopped working
+-- a line with no month row past its own flight_end kept showing up
+anyway, because the carried Gross Budget has no idea the flight is over.
+
+Fix: new `accountingLineActiveInMonth(line, monthDate)`, byte-for-byte the
+same rule as Strategist's own function (checks `flight_start`/`flight_end`
+against the month being viewed) -- applied as its own filter in
+`accountingBuildRows()`, same separation of concerns Strategist's
+architecture already has: visibility is decided independently of budget
+math, not baked into it. Also applied to the detail card's 3-month
+lookahead, which computes its own months outside `accountingBuildRows`
+entirely and needed the same guard for the same reason.
+
+**Verified**: new `test-accounting-flight-end-drops-off-2026-08-12.js`
+(7/7) — a campaign past its flight_end correctly disappears the month
+right after it ends; a campaign still within its flight keeps carrying
+its budget forward correctly (this fix doesn't undo the prior one, it
+scopes it); a campaign that hasn't started yet doesn't show early; the
+detail card's lookahead shows the real figure for a month still within
+the flight and a dash for one past flight_end. Re-ran every other test
+file across both portals — no regressions.
