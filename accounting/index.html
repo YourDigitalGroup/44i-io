@@ -1235,10 +1235,12 @@ async function fetchAccountingData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
   const [lines, months, rates, clients] = await Promise.all([
     sb('rpc/accounting_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
-    // sbAll, not sb -- campaign_months already passed Supabase's 1000-row API cap
-    // (2968 rows, found live 2026-08-12 when a Strategist bulk import saved
-    // correctly but never displayed). See sbAll's own comment in shared.js.
-    sbAll('rpc/accounting_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
+    // TEMPORARILY back to plain sb() (2026-08-12) -- see the revert note on the
+    // matching Strategist fetch; sbAll's Range-header approach doesn't work
+    // against POST-based RPCs and caused a ~2000-request runaway loop in
+    // production. Revert to sbAll once accounting_get_campaign_months accepts
+    // real p_limit/p_offset.
+    sb('rpc/accounting_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     sb('rpc/accounting_get_rates', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     sb('rpc/accounting_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
   ]);
