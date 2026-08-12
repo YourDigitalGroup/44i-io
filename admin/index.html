@@ -5685,7 +5685,17 @@ function viewOrderDetail(orderId) {
     if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
     if (item.prorated_hosting_amt) amtParts.push('+ $' + item.prorated_hosting_amt.toFixed(2) + ' prorated hosting');
     const kocBadge = item.requires_koc ? '<span style="font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:8px;margin-left:4px">KOC</span>' : '';
-    return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(item.label)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td></tr>`;
+    // Shows the same disambiguated title Strategist/Accounting show (2026-08-12,
+    // per Claire: "update this page to include the service title, like the
+    // accounting portal") -- prefers a LIVE catalog lookup over the value frozen
+    // on the order at signing time, so an older order retroactively shows a label
+    // added to the catalog afterward (found live: this exact order's own wm-5p
+    // item had no accounting_label yet at signing time, only just added). Falls
+    // back to the order's own frozen value, then the plain client-facing label,
+    // if the catalog has no live row for this service_id at all (e.g. a
+    // since-deactivated service).
+    const displayLabel = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label;
+    return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td></tr>`;
   }).join('') || '<tr><td colspan="3" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
 
   // Intake forms — show human labels, not field keys
