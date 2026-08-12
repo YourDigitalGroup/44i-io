@@ -113,16 +113,20 @@
         </label>
         <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
         <button onclick="accountingOpenBulkMatchForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Match</button>
+        <button onclick="accountingOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
       </div>
     </div>
 
-    <!-- "+ Add Service" single-entry form and "Bulk Match" paste tool -- both
-         hidden until opened (2026-08-11, per Claire: a way to manually add a
-         tactic Strategist doesn't track, plus a way to check what's missing
-         from one portal vs. the other without pasting real data into chat --
-         the paste box below runs entirely in this page, client-side). -->
+    <!-- "+ Add Service" single-entry form, "Bulk Match" paste tool, and
+         "Bulk Import (CSV)" -- all hidden until opened (2026-08-11/12, per
+         Claire: a way to manually add a tactic Strategist doesn't track, a
+         way to check what's missing from one portal vs. the other without
+         pasting real data into chat, and a way to add many rows at once
+         ["there are a lot of rows to add"] -- all three run entirely in
+         this page, client-side, until Confirm is clicked). -->
     <div id="accounting-add-service-form" style="display:none;margin-bottom:16px"></div>
     <div id="accounting-bulk-match-form" style="display:none;margin-bottom:16px"></div>
+    <div id="accounting-bulk-import-form" style="display:none;margin-bottom:16px"></div>
 
     <!-- Summary stat tiles -->
     <div id="accounting-stats" class="acct-stats"></div>
@@ -495,12 +499,21 @@ function accountingAddServiceTacticChanged() {
     ? 'This creates an Accounting-only line, same as the IO would for a flat/recurring/one-time service -- Strategist never sees this one, there’s no setup step for it.'
     : 'This creates the campaign as "Campaign Setup" (Pending) in the Strategist Portal, same as any other new order -- Strategist fills in platform/tracking details from there. It will not show up as Active in Accounting until Strategist activates it.';
 }
+// Closes every OTHER top-tools form when one is opened -- only one of Add
+// Service / Bulk Match / Bulk Import makes sense open at a time.
+const ACCT_TOP_FORM_IDS = ['accounting-add-service-form', 'accounting-bulk-match-form', 'accounting-bulk-import-form'];
+function accountingCloseOtherForms(exceptId) {
+  ACCT_TOP_FORM_IDS.filter(id => id !== exceptId).forEach(id => {
+    const other = document.getElementById(id);
+    other.style.display = 'none';
+    other.innerHTML = '';
+  });
+}
 function accountingOpenAddServiceForm(prefill) {
   const el = document.getElementById('accounting-add-service-form');
   const isOpen = el.style.display !== 'none';
   if (isOpen && !prefill) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  document.getElementById('accounting-bulk-match-form').style.display = 'none';
-  document.getElementById('accounting-bulk-match-form').innerHTML = '';
+  accountingCloseOtherForms('accounting-add-service-form');
 
   // Excludes modifier/add-on rows (2026-08-12, per Claire: "there are a
   // bunch of offline tracking on their own. we have the toggle for that")
@@ -609,8 +622,7 @@ function accountingOpenBulkMatchForm() {
   const el = document.getElementById('accounting-bulk-match-form');
   const isOpen = el.style.display !== 'none';
   if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; return; }
-  document.getElementById('accounting-add-service-form').style.display = 'none';
-  document.getElementById('accounting-add-service-form').innerHTML = '';
+  accountingCloseOtherForms('accounting-bulk-match-form');
 
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;background:#F0F9FF">
@@ -667,6 +679,200 @@ function accountingRunBulkMatch() {
   document.getElementById('acct-bulk-match-results').innerHTML = rows.length
     ? `<div style="border-top:1px solid var(--border)">${resultsHtml}</div>`
     : `<p style="font-size:12px;color:var(--muted)">Paste at least one row above.</p>`;
+}
+
+// ── BULK IMPORT (2026-08-12, per Claire: "there are a lot of rows to
+// add") ────────────────────────────────────────────────────────────
+// Mirrors the Strategist Portal's own "Bulk Import (CSV)" -- paste,
+// Preview, review, Confirm Import. Nothing is saved until Confirm is
+// clicked. One row per campaign PER MONTH; give the same Client/Tactic
+// several rows (different Month) to bring in more than one month's
+// budget at once -- they're grouped into ONE campaign line. Every active
+// service is offered, same "track all ordered services" scope as Add
+// Service (excluding modifier/add-on rows like Offline Visits Tracking,
+// same reason as there) -- picking a non-spend-trackable tactic gets the
+// same accounting-only/active treatment a single Add Service submission
+// would, no Setup queue detour. Deliberately simpler than Strategist's own
+// tool -- no inline per-row override pickers for an unresolved Client/
+// Tactic; a row that doesn't resolve is reported by row number and text,
+// fix it in the paste and Preview again. That's a real, scoped-down
+// tradeoff, not an oversight -- can be added later if this turns out not
+// to be enough.
+function accountingResolveBulkClient(name) {
+  const norm = (name || '').trim().toLowerCase();
+  return ALL_ACCOUNTING_CLIENTS.find(c => c.name.trim().toLowerCase() === norm) || null;
+}
+function accountingResolveBulkTactic(name) {
+  const norm = (name || '').trim().toLowerCase();
+  if (!norm) return null;
+  const eligible = (r) => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment;
+  if (CATALOG_ROWS[name] && eligible(CATALOG_ROWS[name])) {
+    const r = CATALOG_ROWS[name];
+    return { service: r, tacticLabel: r.accounting_label || r.label };
+  }
+  const direct = Object.values(CATALOG_ROWS).find(r => eligible(r) && (r.accounting_label || r.label || '').trim().toLowerCase() === norm);
+  return direct ? { service: direct, tacticLabel: direct.accounting_label || direct.label } : null;
+}
+function accountingParseCsvRows(text) {
+  return text.trim().split(/\r?\n/).filter(line => line.trim()).map(line =>
+    (line.includes('\t') ? line.split('\t') : line.split(',')).map(c => c.trim())
+  );
+}
+const ACCT_BULK_IMPORT_COLUMNS = [
+  { key: 'client', names: ['client'] },
+  { key: 'tactic', names: ['tactic'] },
+  { key: 'flight_start', names: ['flight start'] },
+  { key: 'flight_end', names: ['flight end'] },
+  { key: 'month', names: ['month'] },
+  { key: 'gross_budget', names: ['gross budget'] },
+  { key: 'billing_type', names: ['billing', 'billing type'] },
+  { key: 'has_offline_visits', names: ['offline visits', 'offline visits tracking'] },
+];
+// Pure parse: paste text in, a plan out, never touches the database. Groups
+// data rows sharing the same Client+Tactic into one campaign (its own
+// month rows collected together), same grouping convention as Strategist's
+// own bulk import.
+function accountingParseBulkImport(raw) {
+  const rows = accountingParseCsvRows(raw);
+  if (rows.length < 2) return { error: 'Need a header row plus at least one data row.' };
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const colIndex = {};
+  ACCT_BULK_IMPORT_COLUMNS.forEach(({ key, names }) => {
+    const idx = header.findIndex(h => names.includes(h));
+    if (idx !== -1) colIndex[key] = idx;
+  });
+  const missingRequired = ['client', 'tactic'].filter(k => colIndex[k] === undefined);
+  if (missingRequired.length) return { error: 'Header row is missing required column(s): ' + missingRequired.join(', ') };
+
+  const errors = []; // { rowNum, field, clientName, tacticName }
+  const groups = new Map(); // identityKey -> { client, service, tacticLabel, flightStart, flightEnd, hasOfflineVisits, billingType, months: [{month, grossBudget}] }
+  rows.slice(1).forEach((cols, i) => {
+    const rowNum = i + 2;
+    const get = (key) => colIndex[key] !== undefined ? (cols[colIndex[key]] || '').trim() : '';
+    const clientName = get('client'), tacticName = get('tactic');
+    if (!clientName && !tacticName) return; // blank line
+    const client = accountingResolveBulkClient(clientName);
+    const tacticMatch = accountingResolveBulkTactic(tacticName);
+    if (!client) { errors.push({ rowNum, field: 'client', clientName, tacticName }); return; }
+    if (!tacticMatch) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
+    const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}`;
+    if (!groups.has(identityKey)) {
+      groups.set(identityKey, {
+        client, service: tacticMatch.service, tacticLabel: tacticMatch.tacticLabel,
+        flightStart: get('flight_start') || null, flightEnd: get('flight_end') || null,
+        hasOfflineVisits: /^(true|yes|1)$/i.test(get('has_offline_visits')),
+        billingType: get('billing_type').toLowerCase() || null,
+        months: [],
+      });
+    }
+    const monthRaw = get('month'); // YYYY-MM
+    const grossBudgetRaw = get('gross_budget');
+    if (monthRaw) {
+      groups.get(identityKey).months.push({
+        month: /^\d{4}-\d{2}$/.test(monthRaw) ? monthRaw + '-01' : monthRaw,
+        grossBudget: grossBudgetRaw ? parseFloat(grossBudgetRaw.replace(/[$,]/g, '')) : null,
+      });
+    }
+  });
+  return { groups: [...groups.values()], errors };
+}
+
+function accountingOpenBulkImportForm() {
+  const el = document.getElementById('accounting-bulk-import-form');
+  const isOpen = el.style.display !== 'none';
+  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; ACCT_BULK_IMPORT_PLAN = null; return; }
+  accountingCloseOtherForms('accounting-bulk-import-form');
+
+  el.style.display = 'block';
+  el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;background:#F0F9FF">
+    <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import services (paste from a CSV or a Google Sheets range)</strong>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Flight Start, Flight End, Month, Gross Budget, Billing, Offline Visits</strong>. Only <strong>Client</strong> and <strong>Tactic</strong> are required. Tab- or comma-separated -- copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH -- give the same Client/Tactic several rows (different Month) to bring in more than one month's budget at once. <strong>Billing</strong> ("Recurring" or "One-time") only matters for a service Strategist wouldn't track anyway (e.g. Website Hosting) -- ignored for an ordinary ad-spend tactic. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
+    <textarea id="acct-bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Flight Start	Flight End	Month	Gross Budget	Billing	Offline Visits
+Tassel Ridge Winery	FB/IG Ads	2026-08-01	2027-01-31	2026-08	1500
+Tassel Ridge Winery	FB/IG Ads	2026-08-01	2027-01-31	2026-09	1500
+Fisher & Son Roofing	Website Hosting	2026-01-01		2026-08	149	Recurring"></textarea>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <button onclick="accountingPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
+      <button onclick="accountingOpenBulkImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+    </div>
+    <div id="acct-bulk-import-results"></div>
+  </div>`;
+}
+
+let ACCT_BULK_IMPORT_PLAN = null; // set by Preview, consumed by Confirm -- never touched by typing alone
+function accountingPreviewBulkImport() {
+  const raw = document.getElementById('acct-bulk-import-text').value;
+  const plan = accountingParseBulkImport(raw);
+  const resultsEl = document.getElementById('acct-bulk-import-results');
+  if (plan.error) {
+    resultsEl.innerHTML = `<p style="font-size:12px;color:#B91C1C;margin:0">${esc(plan.error)}</p>`;
+    ACCT_BULK_IMPORT_PLAN = null;
+    return;
+  }
+  ACCT_BULK_IMPORT_PLAN = plan;
+  const totalMonths = plan.groups.reduce((s, g) => s + Math.max(g.months.length, 1), 0);
+  let html = `<div style="border-top:1px solid var(--border);padding-top:10px">
+    <p style="font-size:12.5px;font-weight:600;margin:0 0 8px">${plan.groups.length} campaign(s), ${totalMonths} month row(s) ready to import${plan.errors.length ? `, ${plan.errors.length} row(s) need fixing first` : ''}.</p>`;
+  html += plan.groups.map(g => {
+    const trackable = accountingIsSpendTrackable(g.service.id);
+    return `<div style="padding:6px 0;font-size:12px;border-bottom:1px solid var(--border)">
+      <strong>${esc(g.client.name)}</strong> — ${esc(g.tacticLabel)} <span style="color:var(--muted)">(${g.months.length || 0} month(s)${trackable ? '' : ', accounting-only'})</span>
+    </div>`;
+  }).join('');
+  if (plan.errors.length) {
+    html += `<p style="font-size:12px;font-weight:600;color:#B91C1C;margin:10px 0 4px">Needs fixing (edit the paste above and Preview again):</p>`;
+    html += plan.errors.map(e => `<div style="font-size:12px;color:#B91C1C;padding:3px 0">Row ${e.rowNum}: ${e.field === 'client' ? 'client' : 'tactic'} "${esc(e.field === 'client' ? e.clientName : e.tacticName)}" not found</div>`).join('');
+  }
+  html += `<div style="margin-top:12px">
+    <button onclick="accountingConfirmBulkImport()" ${plan.groups.length ? '' : 'disabled'} style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button>
+  </div></div>`;
+  resultsEl.innerHTML = html;
+}
+
+async function accountingConfirmBulkImport() {
+  if (!ACCT_BULK_IMPORT_PLAN || !ACCT_BULK_IMPORT_PLAN.groups.length) return;
+  const { groups } = ACCT_BULK_IMPORT_PLAN;
+  let linesCreated = 0, monthsSaved = 0;
+  try {
+    for (const g of groups) {
+      const trackable = accountingIsSpendTrackable(g.service.id);
+      const sortedMonths = [...g.months].sort((a, b) => a.month.localeCompare(b.month));
+      const firstMonth = sortedMonths[0];
+      const data = {
+        client_id: g.client.id, group_id: g.client.group_id || null, service_id: g.service.id,
+        tactic_label: g.tacticLabel, flight_start: g.flightStart, flight_end: g.flightEnd,
+        has_offline_visits: g.hasOfflineVisits,
+        accounting_only: !trackable,
+        status: trackable ? undefined : 'active',
+        billing_type: trackable ? 'spend' : (g.billingType === 'one-time' || g.billingType === 'one_time' ? 'one_time' : 'recurring'),
+      };
+      if (firstMonth && firstMonth.grossBudget != null) {
+        data.initial_gross_budget = firstMonth.grossBudget;
+        data.initial_month = firstMonth.month;
+      }
+      const newId = await sb('rpc/accounting_add_campaign_line', { method: 'POST', body: JSON.stringify({
+        p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw, p_data: data
+      }) });
+      linesCreated++;
+      if (firstMonth) monthsSaved++;
+      // Any month beyond the first goes through accounting_save_campaign_month --
+      // accounting_add_campaign_line only ever handles ONE initial month.
+      for (const m of sortedMonths.slice(1)) {
+        if (m.grossBudget == null) continue;
+        await sb('rpc/accounting_save_campaign_month', { method: 'POST', body: JSON.stringify({
+          p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw,
+          p_campaign_line_id: newId, p_month: m.month, p_data: { gross_budget: m.grossBudget }
+        }) });
+        monthsSaved++;
+      }
+    }
+    document.getElementById('accounting-bulk-import-form').style.display = 'none';
+    document.getElementById('accounting-bulk-import-form').innerHTML = '';
+    ACCT_BULK_IMPORT_PLAN = null;
+    await fetchAccountingData();
+    renderAccountingDashboard();
+    showToast(`Imported ${linesCreated} campaign(s), ${monthsSaved} month(s) saved.`);
+  } catch(e) { showToast('Error during bulk import: ' + e.message, 'error'); }
 }
 
 function accountingStatusPill(kind, text) {

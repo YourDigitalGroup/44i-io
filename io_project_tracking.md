@@ -11160,3 +11160,64 @@ Tracking" checkbox right below the dropdown for exactly that. Now excludes
 `test-accounting-add-service-all-tactics-2026-08-12.js` (now 14/14, adding
 a dedicated modifier-exclusion assertion) and every other test file across
 both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Accounting Bulk Import (CSV)
+
+Claire: "I think we are going to need to create a Bulk import for the
+accounting side, there are a lot of rows to add." Mirrors the Strategist
+Portal's own "Bulk Import (CSV)" -- paste, Preview, review, Confirm
+Import, nothing saved until Confirm is clicked. Every active service is
+offered (same scope as Add Service), excluding modifier/add-on rows
+(Offline Visits Tracking) for the same reason as there. One row per
+campaign PER MONTH -- several rows sharing the same Client+Tactic group
+into ONE campaign, each contributing its own month's Gross Budget. Picking
+a non-spend-trackable tactic (Website Hosting, a retainer) gets the same
+accounting-only/active treatment a single Add Service submission would --
+an optional Billing column ("Recurring"/"One-time") controls which, same
+choice the single form offers via its own dropdown.
+
+Deliberately simpler than Strategist's version on purpose, not by
+oversight: no inline per-row override pickers for an unresolved Client or
+Tactic (Strategist's own tool grew that over several follow-up asks) --
+an unresolved row is reported by row number and raw text; fix it in the
+paste and Preview again. Flagged as a real, scoped-down tradeoff rather
+than silently matching Strategist's full feature set, in case that turns
+out to matter once she's actually using it on real volume.
+
+**New RPC** (`accounting_save_campaign_month`, in `accounting-bulk-
+import-2026-08-12.sql`, given to Claire) -- `accounting_add_campaign_line`
+only ever handles ONE initial month; every month after the first in a
+group goes through this new upsert instead (mirrors `strategist_save_
+campaign_month`'s own `on conflict` pattern, scoped to just the fields
+Accounting uses: gross_budget, in_platform_override, paused).
+
+Also refactored the three top-tools forms (Add Service / Bulk Match / Bulk
+Import) to share one `accountingCloseOtherForms()` helper instead of each
+one repeating its own two-line close-the-other-form logic -- adding a
+third form without it would have meant hand-updating both existing open
+functions again.
+
+**Verified**: new `test-accounting-bulk-import-2026-08-12.js` (14/14) --
+two month-rows for the same Client+Tactic correctly group into one
+campaign; a flat-fee row parses with its Billing choice; a modifier
+service (Offline Visits Tracking) pasted as its own Tactic correctly
+fails to resolve rather than silently matching; an unresolved client and
+an unresolved tactic are both reported; Confirm creates exactly one
+`accounting_add_campaign_line` call per group (spend line: accounting_
+only=false, billing_type='spend', unset status; flat line: accounting_
+only=true, status='active', billing_type from the column) with every
+month after the first going through `accounting_save_campaign_month`.
+New `test-accounting-bulk-import-ui-2026-08-12.js` (9/9) -- opening Bulk
+Import closes the other two forms; Preview renders a correct summary and
+enables Confirm; a bad header shows an error instead of crashing; an
+unresolved row is reported by row number while Confirm stays enabled for
+the rows that DID resolve. Three older test files (`test-accounting-add-
+service-all-tactics-2026-08-12.js`, `test-accounting-add-service-bulk-
+match-2026-08-11.js`, `test-accounting-bulk-match-gross-discrepancy-2026-
+08-12.js`) were missing the new third form container in their own stub
+HTML and threw a null-element error the moment `accountingCloseOtherForms`
+tried to touch it -- a test-harness gap (the real page has all three
+containers), not a product bug; added the missing stub div to each. Full
+suite re-run with exit-code checking this time (not just string-matching
+for "false" in the output, which would have missed a crash) — genuinely
+clean.
