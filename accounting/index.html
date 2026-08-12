@@ -1330,6 +1330,12 @@ function accountingMostRecentPriorMonth(lineId, key) {
 }
 
 async function loadAccountingDashboard() {
+  // Same loading-indicator gap as Strategist's own loadStrategistDashboard()
+  // (found live 2026-08-12, right after the sbAll pagination fix -- fetching now
+  // takes several sequential requests instead of one, and the page looked frozen
+  // with zero feedback). Only wired into the initial load, not every save.
+  const wrap = document.getElementById('accounting-table-wrap');
+  if (wrap) wrap.innerHTML = '<p style="padding:24px;text-align:center;color:var(--muted);font-size:13px">Loading…</p>';
   await fetchAccountingData();
   renderAccountingDashboard();
 }

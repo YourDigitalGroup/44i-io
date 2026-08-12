@@ -1364,6 +1364,14 @@ async function strategistSweepFlightEndedCampaigns() {
 
 async function loadStrategistDashboard() {
   strategistCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  // Found live 2026-08-12 (Claire, right after the sbAll pagination fix): fetching
+  // now takes several sequential requests instead of one, and with zero loading
+  // state anywhere on this page it just looked frozen the whole time. Only wired
+  // into the INITIAL load, not every save's fetchStrategistData() call -- this is
+  // the one that visibly stalls with an otherwise-empty page; a save already has
+  // real content on screen underneath it.
+  const wrap = document.getElementById('strategist-table-wrap');
+  if (wrap) wrap.innerHTML = '<p style="padding:24px;text-align:center;color:var(--muted);font-size:13px">Loading…</p>';
   try {
     await fetchStrategistData();
   } catch(e) {
