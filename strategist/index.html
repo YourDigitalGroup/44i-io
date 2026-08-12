@@ -871,8 +871,17 @@ function resolveBulkClient(name) {
 // every non-spend service to the Tactic pickers (most flat-fee services, e.g.
 // "Addl. Monthly Email," were never meant to be tracked as an ongoing
 // campaign). Claire, 2026-08-10: specifically asked for LLO and Reputation
-// Mgmt. to be addable via Bulk Import / + New Campaign.
-const TRACKABLE_FLAT_SERVICE_IDS = ['llo-bp', 'rep-bp'];
+// Mgmt. to be addable via Bulk Import / + New Campaign. seo-bb/seo-bs/seo-bp
+// (the 3 SEO tiers -- Business Builder/Starter/Pro) added 2026-08-12 for the
+// same reason, surfaced while backfilling existing SEO clients: the parent
+// SEO tactic itself was never addable here at all (only auto-created by a
+// real IO order, via create_campaign_lines_from_order() -- no path for a
+// pre-existing client with no IO record in this system), and Claire needs to
+// record which tier a client actually has while importing. Distinct from
+// SEO_TRACKING_ONLY_TACTICS below (LLO (SEO)/Rep Monitoring (SEO) are
+// pseudo-tactics that ride along WITH an SEO tier, anchored to a placeholder
+// seo-bp id) -- these 3 ids are the real parent tier itself.
+const TRACKABLE_FLAT_SERVICE_IDS = ['llo-bp', 'rep-bp', 'seo-bb', 'seo-bs', 'seo-bp'];
 
 // LLO (SEO) and Rep Monitoring (SEO) have no catalog row of their own -- the
 // create_campaign_lines_from_order() trigger (2026-08-10 "SEO tracking lines"

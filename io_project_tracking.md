@@ -11592,3 +11592,33 @@ rendered table. Re-ran `test-accounting-pending-lineitems-2026-08-12.js`
 (11/11) and `test-accounting-detail-card-io-notes-2026-08-12.js` (3/3) — both
 still fully passing, confirming no regression to the pending-line-item or
 detail-card work from earlier today. `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — SEO tiers now addable via Bulk Import / + New Campaign
+
+Claire, backfilling existing SEO clients: "I thought we already added all
+services to the accounting portal... I would need to be able to select which
+tier." Clarified these are two separate dropdowns in two separate portals —
+Accounting's own "+ Add a Service" form already shows every catalog service
+(fixed earlier today), but Strategist's Bulk Import / `+ New Campaign` Tactic
+picker is a different list, still gated to spend-based services plus the two
+hardcoded LLO/Rep Monitoring exceptions. The parent SEO tiers themselves
+(Business Builder/Starter/Pro) were never addable there at all — only
+auto-created by a real IO order via `create_campaign_lines_from_order()`,
+which a pre-existing backfilled client has no record of in this system.
+
+**Fix**: added `seo-bb`, `seo-bs`, `seo-bp` to `TRACKABLE_FLAT_SERVICE_IDS`
+(same mechanism used for `llo-bp`/`rep-bp` on 2026-08-10, for the identical
+reason). All three usage sites (`+ New Campaign`'s Tactic dropdown,
+`resolveBulkTactic`'s matching, Bulk Import's fix-it override dropdown)
+reference this one constant, so no other code changes were needed.
+
+**Verified no collision with the LLO/Rep Monitoring pseudo-tactics**, which
+share `seo-bp` as their own placeholder anchor: `test-strategist-seo-tier-
+tactic-2026-08-12.js` (scratchpad) confirms the real "SEO — Business Pro"
+label resolves to `seo-bp` with that exact tactic_label, while "LLO (SEO)"
+and "Rep Monitoring (SEO)" still resolve separately to their own distinct
+tactic_label (via `SEO_TRACKING_ONLY_TACTICS`, not the new direct-match
+branch) even though they share the same underlying service_id — no risk of
+merging into one campaign line, matching the existing `identityKey`
+disambiguation-by-tactic_label fix from 2026-08-10. `node --check` passes
+clean.
