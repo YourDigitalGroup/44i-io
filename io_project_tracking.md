@@ -11561,3 +11561,64 @@ runs. Deliberately scoped to just the initial page load, not every
 `fetchStrategistData()` call after a save — a save already has real content
 underneath it, so the same "empty page, nothing happening" problem doesn't
 apply there. `node --check` passes clean on both files.
+
+### 2026-08-12 (cont'd) — Exclude LLO (SEO)/Rep Monitoring (SEO) tracking lines from Accounting
+
+Claire: "For the LLO (SEO) and Rep Management (SEO) they are not their own
+service line, they sit within the SEO services, so those lines don't need to
+be in the accounting portal, just the parent SEO service." These two are
+auto-created by `create_campaign_lines_from_order()` (2026-08-10) purely so
+Strategist can pace them separately — anchored to a placeholder `seo-bp`
+service_id with no real pricing/budget of their own, never meant to be billed
+as their own line. They were showing in Accounting anyway since nothing there
+distinguished them from a real billed tactic.
+
+**Fix**: new `ACCOUNTING_EXCLUDED_TACTIC_LABELS` in `accounting/index.html`
+(own copy of the same two literal tactic-label strings as Strategist's
+`SEO_TRACKING_ONLY_TACTICS`, per this project's "each portal keeps its own
+copy" convention), filtered out at the top of `accountingBuildRows()` — the
+parent SEO tactic's own line (a real catalog row with a real budget) is
+unaffected and still shows normally.
+
+Also noted for later, not acted on: Claire mentioned a dedicated SEO system is
+in progress that may remove the need to show these in Strategist's pacing
+view too, at some future point — nothing to build now, just flagged so it's
+not forgotten when that system exists.
+
+**Verified**: new `test-accounting-exclude-seo-tracking-2026-08-12.js`
+(scratchpad) — a parent SEO line still renders normally; LLO (SEO) and Rep
+Monitoring (SEO) lines for the same client are both excluded from the
+rendered table. Re-ran `test-accounting-pending-lineitems-2026-08-12.js`
+(11/11) and `test-accounting-detail-card-io-notes-2026-08-12.js` (3/3) — both
+still fully passing, confirming no regression to the pending-line-item or
+detail-card work from earlier today. `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — SEO tiers now addable via Bulk Import / + New Campaign
+
+Claire, backfilling existing SEO clients: "I thought we already added all
+services to the accounting portal... I would need to be able to select which
+tier." Clarified these are two separate dropdowns in two separate portals —
+Accounting's own "+ Add a Service" form already shows every catalog service
+(fixed earlier today), but Strategist's Bulk Import / `+ New Campaign` Tactic
+picker is a different list, still gated to spend-based services plus the two
+hardcoded LLO/Rep Monitoring exceptions. The parent SEO tiers themselves
+(Business Builder/Starter/Pro) were never addable there at all — only
+auto-created by a real IO order via `create_campaign_lines_from_order()`,
+which a pre-existing backfilled client has no record of in this system.
+
+**Fix**: added `seo-bb`, `seo-bs`, `seo-bp` to `TRACKABLE_FLAT_SERVICE_IDS`
+(same mechanism used for `llo-bp`/`rep-bp` on 2026-08-10, for the identical
+reason). All three usage sites (`+ New Campaign`'s Tactic dropdown,
+`resolveBulkTactic`'s matching, Bulk Import's fix-it override dropdown)
+reference this one constant, so no other code changes were needed.
+
+**Verified no collision with the LLO/Rep Monitoring pseudo-tactics**, which
+share `seo-bp` as their own placeholder anchor: `test-strategist-seo-tier-
+tactic-2026-08-12.js` (scratchpad) confirms the real "SEO — Business Pro"
+label resolves to `seo-bp` with that exact tactic_label, while "LLO (SEO)"
+and "Rep Monitoring (SEO)" still resolve separately to their own distinct
+tactic_label (via `SEO_TRACKING_ONLY_TACTICS`, not the new direct-match
+branch) even though they share the same underlying service_id — no risk of
+merging into one campaign line, matching the existing `identityKey`
+disambiguation-by-tactic_label fix from 2026-08-10. `node --check` passes
+clean.
