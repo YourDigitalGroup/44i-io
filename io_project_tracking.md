@@ -11482,3 +11482,36 @@ whole codebase (admin's own lists — groups/services/AEs — grow far slower an
 weren't part of this complaint), and didn't touch the project's actual Max Rows
 setting in Supabase, since the pagination fix makes that setting's value
 irrelevant either way.
+
+### 2026-08-12 (cont'd) — First sbAll fix was itself wrong; corrected
+
+Claire confirmed the previous fix deployed correctly (`sbAll` verified present
+in both the live `shared.js` and the live Strategist portal's page source, in
+incognito too, ruling out any caching explanation) — and it was STILL blank.
+
+**Root cause of the fix itself being wrong**: the first version of `sbAll()`
+stopped paging as soon as a response came back shorter than the requested
+1000-row page size, on the assumption the server always fills a page to that
+size when more data remains. Wrong assumption -- the real per-request cap
+apparently sits below 1000 (and/or `Content-Range` isn't exposed to the
+browser via CORS, a known PostgREST default), so literally every page came
+back "short" relative to 1000, and the old logic read that as "no more data"
+after page ONE — silently truncating again, just at a smaller, different
+cutoff than before. Same class of bug, introduced by the fix meant to solve it.
+
+**Real fix**: removed the "shorter than requested" stopping condition
+entirely. The ONLY thing that proves there's no more data is a genuinely EMPTY
+page — so that's now the sole loop-exit condition, regardless of the server's
+real per-request cap or whether `Content-Range` is visible at all. Costs one
+extra "confirm empty" request per fetch in the case where the data happens to
+land exactly on a page boundary — a trivial trade-off for actually being
+correct.
+
+**Verified**: `test-sbAll-small-cap-2026-08-12.js` (new) — simulates a server
+that caps every response at 100 rows regardless of the 1000 requested, both
+with and without `Content-Range` visible, plus the original large-cap case;
+all three correctly fetch the complete 2,968-row set. Re-ran
+`test-sbAll-pagination-2026-08-12.js` and `test-sbAll-edge-cases-2026-08-12.js`
+— both still fully correct (empty/small/exact-boundary tables all fetch
+completely, at the cost of one extra request in the boundary case).
+`node --check` passes clean on `shared.js`.

@@ -51,19 +51,29 @@ async function sb(path, opts={}) {
 // Real bug found live 2026-08-12 (Claire): a bulk import into `campaign_months`
 // saved correctly (confirmed in the DB) but never showed up in the Strategist
 // portal, even after a hard refresh -- root cause was Supabase's project-level
-// API "Max Rows" cap (default 1000) silently truncating the plain sb() call's
-// response once that table passed 1000 rows (it had grown to 2968). No error,
-// no warning -- the newest rows just never arrived client-side. Use this instead
-// of sb() for any RPC/table whose result set can grow past that cap (campaign
-// facts, audit logs, etc.) -- pages through via the Range header until
-// PostgREST's own Content-Range total (exact count, not a guessed page size)
-// says there's nothing left, so it can't silently under-fetch again regardless
-// of how large the table gets or what the project's cap is set to.
+// API "Max Rows" cap silently truncating the plain sb() call's response once
+// that table passed the cap (it had grown to 2968 rows). No error, no warning
+// -- the newest rows just never arrived client-side. Use this instead of sb()
+// for any RPC/table whose result set can grow past that cap (campaign facts,
+// audit logs, etc.).
+//
+// First version of this (still 2026-08-12) assumed the server always returns
+// up to the requested pageSize when more data remains, stopping as soon as a
+// page came back shorter than that -- WRONG, and it re-broke the exact same
+// bug at a different, smaller cutoff: the real per-request cap turned out to
+// be below the 1000 requested here (and/or Content-Range isn't readable
+// client-side -- PostgREST doesn't expose it via CORS by default), so every
+// single page came back "short" relative to 1000, and the old logic read that
+// as "done" after page ONE. Fixed by never trusting page-length-vs-requested
+// as an end signal -- the ONLY thing that proves there's no more data is a
+// genuinely EMPTY page, so that's the sole stopping condition now, regardless
+// of what the server's real per-request cap is or whether Content-Range is
+// visible at all.
 async function sbAll(path, opts={}, pageSize=1000) {
   const method = opts.method || 'GET';
   const body = opts.body || undefined;
   const prefer = (opts.prefer || 'return=representation') + ', count=exact';
-  let all = [], offset = 0, total = null;
+  let all = [], offset = 0;
   while (true) {
     const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
       method,
@@ -80,13 +90,9 @@ async function sbAll(path, opts={}, pageSize=1000) {
     const t = await res.text();
     if (!res.ok) throw new Error('Supabase error ' + res.status + ': ' + t.slice(0,200));
     const page = t ? JSON.parse(t) : [];
+    if (page.length === 0) break; // the only real end-of-data signal
     all = all.concat(page);
-    const cr = res.headers.get('content-range'); // e.g. "0-999/2968"
-    const crTotal = cr && cr.includes('/') ? cr.split('/')[1] : null;
-    total = crTotal && crTotal !== '*' ? parseInt(crTotal, 10) : total;
     offset += page.length;
-    if (page.length === 0) break; // nothing left, regardless of what total says
-    if (total != null ? offset >= total : page.length < pageSize) break;
   }
   return all;
 }
