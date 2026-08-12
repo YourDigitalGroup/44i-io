@@ -11282,3 +11282,50 @@ suggestion note and a dropdown pre-selecting it, listing every real
 client; picking the dropdown resolves the row and leaves the textarea
 untouched; removing a row produces neither a group nor an error for it.
 Re-ran every other test file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Pending-in-Strategist awareness note, with IO notes surfaced too
+
+Claire: "I think we need to add a pending note in the accounting side that
+shows campaigns that are pending in the strategists portal so that there
+is awareness across the board." Real gap: a campaign sitting in
+Strategist's Setup queue (`status='pending'`) has no Gross Budget row yet,
+so it's never shown in Accounting's table AT ALL -- not filtered out,
+literally invisible, no trace it exists.
+
+New `accountingRenderPendingNote()`, a note banner above the stat tiles
+listing every pending campaign (Client — Tactic), rendered only when at
+least one exists (empty otherwise, no empty box left sitting there).
+Deliberately excludes `accounting_only` lines -- those never go through
+Strategist's Setup at all, so "pending in the strategist portal" doesn't
+apply to them. Respects the Group filter (consistent with the rest of the
+page) but not the Status filter, which doesn't even offer "pending" as an
+option -- this is supplementary awareness, not part of the main table's
+own filtering.
+
+**Follow-up in the same message**: "We should also be able to see any
+notes from the IO and the pending campaigns... Sticking with the goal of
+the IO being the source of truth." `accounting_get_campaign_lines` never
+returned `order_line_notes`/`campaign_notes` (order-wide) at all --
+Strategist's own detail panel already surfaces these under "IO Campaign
+Notes" and "Note on this line"; the pending note now shows both, using
+the SAME two labels, so a note reads identically in either portal rather
+than needing its own vocabulary.
+
+**New SQL** (`accounting-pending-note-io-notes-2026-08-12.sql`, given to
+Claire) — patches `accounting_get_campaign_lines` to add both note fields
+via a join to `orders` (mirrors Strategist's own join pattern exactly).
+
+**Test-harness note**: adding the new `#accounting-pending-note` div to
+the real page broke 15 EXISTING test files that call `renderAccounting
+Dashboard()` without that stub present (same recurring class of issue as
+several times earlier this session) — patched all 15 to add the missing
+stub div; confirmed via exit-code checking, not just string-matching,
+that none of them were silently masking a real crash.
+
+**Verified**: new `test-accounting-pending-note-2026-08-12.js` (9/9) --
+correct count and client/tactic list; `accounting_only` and active lines
+both correctly excluded; both note labels ("IO Campaign Notes"/"Note on
+this line") render when present; no empty parentheses for a line with no
+notes at all; Group filter narrows the note; nothing renders (and no
+empty box) when there's no pending campaign at all. Re-ran every other
+test file across both portals — no regressions.
