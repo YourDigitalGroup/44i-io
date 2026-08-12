@@ -59,6 +59,8 @@
   #page-accounting .acct-status-pill.needs{background:#FBF3C7;color:#8A6D12}
   #page-accounting .acct-status-pill.external{background:#DBEAFE;color:#1E40AF}
   #page-accounting .acct-status-pill.paused{background:#E5E7EB;color:#4B5563}
+  #page-accounting .acct-pending-note{background:#F0F9FF;border:1px solid var(--accent);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:var(--text)}
+  #page-accounting .acct-pending-note strong{font-weight:700}
 </style>
 </head>
 <body>
@@ -127,6 +129,12 @@
     <div id="accounting-add-service-form" style="display:none;margin-bottom:16px"></div>
     <div id="accounting-bulk-match-form" style="display:none;margin-bottom:16px"></div>
     <div id="accounting-bulk-import-form" style="display:none;margin-bottom:16px"></div>
+
+    <!-- Pending-in-Strategist awareness note (2026-08-12, per Claire: "so
+         there is awareness across the board") -- a Setup-queue campaign has
+         no Gross Budget row yet, so it never shows in the table below at
+         all; this is the only place Accounting can see one exists. -->
+    <div id="accounting-pending-note"></div>
 
     <!-- Summary stat tiles -->
     <div id="accounting-stats" class="acct-stats"></div>
@@ -1317,6 +1325,41 @@ function accountingLineActiveInMonth(line, monthDate) {
   if (line.flight_end && monthKey > accountingMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
   return true;
 }
+// Awareness note (2026-08-12, per Claire: "so there is awareness across
+// the board") for a campaign sitting in Strategist's own Setup queue --
+// status='pending', still waiting on platform/tracking details. These
+// never show in the table below at all (accountingBuildRows requires a
+// real Gross Budget row, and a pending campaign has none yet), so this is
+// the only place Accounting can see one exists before it's activated.
+// Deliberately excludes accounting_only lines -- those never go through
+// Strategist's Setup at all, so "pending in the strategist portal" doesn't
+// apply to them. Respects the Group filter (so switching group context
+// also filters this note) but not the Status filter, which doesn't even
+// offer "pending" as an option -- this is supplementary, not part of the
+// main table's own filtering.
+function accountingRenderPendingNote() {
+  const el = document.getElementById('accounting-pending-note');
+  const pending = ALL_ACCOUNTING_LINES.filter(l =>
+    l.status === 'pending' && !l.accounting_only &&
+    (!accountingGroupFilter || l.group_name === accountingGroupFilter));
+  if (!pending.length) { el.innerHTML = ''; el.className = ''; return; }
+  el.className = 'acct-pending-note';
+  // Surfaces each pending campaign's own IO notes too (2026-08-12, per
+  // Claire: "we should also be able to see any notes from the IO...
+  // sticking with the goal of the IO being the source of truth") -- same
+  // "IO Campaign Notes" (order-wide)/"Note on this line" (per-tactic)
+  // labels the Strategist Portal's own detail panel already uses, so a
+  // note reads identically in both portals.
+  const items = pending.map(l => {
+    const notes = [
+      l.campaign_notes ? `IO Campaign Notes: ${l.campaign_notes}` : null,
+      l.order_line_notes ? `Note on this line: ${l.order_line_notes}` : null,
+    ].filter(Boolean);
+    const noteText = notes.length ? ` (${notes.map(esc).join(' — ')})` : '';
+    return `${esc(l.client_name || '(unknown)')} — ${esc(l.tactic_label || l.service_id || '—')}${noteText}`;
+  }).join('; ');
+  el.innerHTML = `📋 <strong>${pending.length} campaign${pending.length === 1 ? '' : 's'} pending in Strategist Setup</strong> — not yet reflected in revenue: ${items}`;
+}
 function accountingBuildRows() {
   const filtered = ALL_ACCOUNTING_LINES.filter(l => {
     if (accountingGroupFilter && l.group_name !== accountingGroupFilter) return false;
@@ -1448,6 +1491,8 @@ function renderAccountingDashboard() {
   if (accountingGroupFilter && !groupNames.includes(accountingGroupFilter)) accountingGroupFilter = '';
   groupFilterEl.innerHTML = '<option value="">All Groups</option>' +
     groupNames.map(g => `<option value="${esc(g)}" ${g === accountingGroupFilter ? 'selected' : ''}>${esc(g)}</option>`).join('');
+
+  accountingRenderPendingNote();
 
   const rows = accountingBuildRows();
 
