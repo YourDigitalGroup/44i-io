@@ -757,11 +757,20 @@ function accountingParseBulkImport(raw) {
     if (!tacticMatch) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
     const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}`;
     if (!groups.has(identityKey)) {
+      // Does this Client+Tactic already exist -- from Strategist's own
+      // order flow, an earlier Accounting Add Service, or a prior Bulk
+      // Import -- ALL_ACCOUNTING_LINES covers every source (2026-08-12,
+      // per Claire: "will it know if something is already in the
+      // strategist portal?"). If so, this group ADDS its pasted months
+      // to that SAME line instead of creating a duplicate one.
+      const existingLine = ALL_ACCOUNTING_LINES.find(l =>
+        l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel);
       groups.set(identityKey, {
         client, service: tacticMatch.service, tacticLabel: tacticMatch.tacticLabel,
         flightStart: get('flight_start') || null, flightEnd: get('flight_end') || null,
         hasOfflineVisits: /^(true|yes|1)$/i.test(get('has_offline_visits')),
         billingType: get('billing_type').toLowerCase() || null,
+        existingLineId: existingLine ? existingLine.id : null,
         months: [],
       });
     }
@@ -815,8 +824,11 @@ function accountingPreviewBulkImport() {
     <p style="font-size:12.5px;font-weight:600;margin:0 0 8px">${plan.groups.length} campaign(s), ${totalMonths} month row(s) ready to import${plan.errors.length ? `, ${plan.errors.length} row(s) need fixing first` : ''}.</p>`;
   html += plan.groups.map(g => {
     const trackable = accountingIsSpendTrackable(g.service.id);
+    const tag = g.existingLineId
+      ? 'already in the system -- adding to it'
+      : trackable ? 'new campaign' : 'new campaign, accounting-only';
     return `<div style="padding:6px 0;font-size:12px;border-bottom:1px solid var(--border)">
-      <strong>${esc(g.client.name)}</strong> — ${esc(g.tacticLabel)} <span style="color:var(--muted)">(${g.months.length || 0} month(s)${trackable ? '' : ', accounting-only'})</span>
+      <strong>${esc(g.client.name)}</strong> — ${esc(g.tacticLabel)} <span style="color:var(--muted)">(${g.months.length || 0} month(s), ${tag})</span>
     </div>`;
   }).join('');
   if (plan.errors.length) {
@@ -832,11 +844,33 @@ function accountingPreviewBulkImport() {
 async function accountingConfirmBulkImport() {
   if (!ACCT_BULK_IMPORT_PLAN || !ACCT_BULK_IMPORT_PLAN.groups.length) return;
   const { groups } = ACCT_BULK_IMPORT_PLAN;
-  let linesCreated = 0, monthsSaved = 0;
+  let linesCreated = 0, linesMatched = 0, monthsSaved = 0;
   try {
     for (const g of groups) {
-      const trackable = accountingIsSpendTrackable(g.service.id);
       const sortedMonths = [...g.months].sort((a, b) => a.month.localeCompare(b.month));
+      let lineId = g.existingLineId;
+
+      if (lineId) {
+        // Already in the system (Strategist's own order flow, an earlier
+        // Add Service, or a prior Bulk Import) -- add these months to that
+        // SAME line rather than creating a duplicate one (2026-08-12, per
+        // Claire: "will it know if something is already in the strategist
+        // portal?"). Every month goes through accounting_save_campaign_month
+        // here, including the first -- there's no "initial month" concept
+        // for a line that already exists.
+        linesMatched++;
+        for (const m of sortedMonths) {
+          if (m.grossBudget == null) continue;
+          await sb('rpc/accounting_save_campaign_month', { method: 'POST', body: JSON.stringify({
+            p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw,
+            p_campaign_line_id: lineId, p_month: m.month, p_data: { gross_budget: m.grossBudget }
+          }) });
+          monthsSaved++;
+        }
+        continue;
+      }
+
+      const trackable = accountingIsSpendTrackable(g.service.id);
       const firstMonth = sortedMonths[0];
       const data = {
         client_id: g.client.id, group_id: g.client.group_id || null, service_id: g.service.id,
@@ -871,7 +905,7 @@ async function accountingConfirmBulkImport() {
     ACCT_BULK_IMPORT_PLAN = null;
     await fetchAccountingData();
     renderAccountingDashboard();
-    showToast(`Imported ${linesCreated} campaign(s), ${monthsSaved} month(s) saved.`);
+    showToast(`${linesCreated} new campaign(s) created, ${linesMatched} already-existing campaign(s) matched, ${monthsSaved} month(s) saved.`);
   } catch(e) { showToast('Error during bulk import: ' + e.message, 'error'); }
 }
 

@@ -11221,3 +11221,30 @@ containers), not a product bug; added the missing stub div to each. Full
 suite re-run with exit-code checking this time (not just string-matching
 for "false" in the output, which would have missed a crash) — genuinely
 clean.
+
+### 2026-08-12 (cont'd) — Bulk Import now detects already-existing campaigns
+
+Claire asked directly: "will it know if something is already in the
+strategist portal?" Honest answer at the time was no — it would have
+blindly created a duplicate `campaign_lines` row for a Client+Tactic that
+already existed, from Strategist's own order flow, an earlier Add Service,
+or a prior Bulk Import run. Real gap for a tool explicitly meant for "a
+lot of rows" — fixed rather than shipped with it.
+
+Each parsed group now checks `ALL_ACCOUNTING_LINES` (which already
+covers every source, not just Strategist's) for a matching Client+Tactic
+before deciding what to do: if found, its pasted months get added to that
+SAME line via `accounting_save_campaign_month` (every month, including
+what would have been the "first" one — there's no "initial month" concept
+for a line that already exists); only a genuinely new Client+Tactic still
+goes through `accounting_add_campaign_line`. Preview now labels each group
+"already in the system -- adding to it" vs. "new campaign" so it's visible
+before Confirm which is which. Final toast reports both counts separately
+(new campaigns created vs. existing ones matched) instead of one combined
+number.
+
+**Verified**: extended `test-accounting-bulk-import-2026-08-12.js` to
+17/17 -- a Client+Tactic already in `ALL_ACCOUNTING_LINES` is detected at
+parse time, Confirm creates zero new lines for it and saves both its
+pasted months onto the existing line's own id. Re-ran every other test
+file across both portals — no regressions.
