@@ -48,6 +48,49 @@ async function sb(path, opts={}) {
   return t ? JSON.parse(t) : null;
 }
 
+// Real bug found live 2026-08-12 (Claire): a bulk import into `campaign_months`
+// saved correctly (confirmed in the DB) but never showed up in the Strategist
+// portal, even after a hard refresh -- root cause was Supabase's project-level
+// API "Max Rows" cap (default 1000) silently truncating the plain sb() call's
+// response once that table passed 1000 rows (it had grown to 2968). No error,
+// no warning -- the newest rows just never arrived client-side. Use this instead
+// of sb() for any RPC/table whose result set can grow past that cap (campaign
+// facts, audit logs, etc.) -- pages through via the Range header until
+// PostgREST's own Content-Range total (exact count, not a guessed page size)
+// says there's nothing left, so it can't silently under-fetch again regardless
+// of how large the table gets or what the project's cap is set to.
+async function sbAll(path, opts={}, pageSize=1000) {
+  const method = opts.method || 'GET';
+  const body = opts.body || undefined;
+  const prefer = (opts.prefer || 'return=representation') + ', count=exact';
+  let all = [], offset = 0, total = null;
+  while (true) {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
+      method,
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        Prefer: prefer,
+        'Range-Unit': 'items',
+        Range: `${offset}-${offset + pageSize - 1}`,
+      },
+      body
+    });
+    const t = await res.text();
+    if (!res.ok) throw new Error('Supabase error ' + res.status + ': ' + t.slice(0,200));
+    const page = t ? JSON.parse(t) : [];
+    all = all.concat(page);
+    const cr = res.headers.get('content-range'); // e.g. "0-999/2968"
+    const crTotal = cr && cr.includes('/') ? cr.split('/')[1] : null;
+    total = crTotal && crTotal !== '*' ? parseInt(crTotal, 10) : total;
+    offset += page.length;
+    if (page.length === 0) break; // nothing left, regardless of what total says
+    if (total != null ? offset >= total : page.length < pageSize) break;
+  }
+  return all;
+}
+
 // ── CATALOG STATE ────────────────────────────────────────────────
 // Populated once at startup by loadCatalog() below, from the `services` and
 // `intake_forms` Supabase tables. Both the public form (its own catalog-row
