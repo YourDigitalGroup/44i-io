@@ -21,33 +21,41 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root{
-  /* Sky blue (2026-08-06) — matches the new 44idigital.com's own accent, replacing the
-     older cyan. Admin/Strategist are 44i's own internal tools (unlike the public IO
-     form, which stays on each white-label group's own brand_color) — see
-     io_project_tracking.md for why the IO form's --accent was deliberately left alone. */
-  --accent:#4C8FCB;
-  --accent-rgb:76,143,203;
-  --accent-dark:#3A74AC;
+  /* Palette ported 2026-08-12 from the pacing-dashboard concept mockup (Artifact,
+     2026-07-18 — see io_project_tracking.md) at Claire's request ("we are looking a
+     little blah still"). Two brand colors (blue/navy) plus soft warm neutrals, replacing
+     the flatter blue/white/near-black set below. Admin/Strategist/Accounting are 44i's
+     own internal tools (unlike the public IO form, which stays on each white-label
+     group's own brand_color and keeps its own separate inline stylesheet — this file
+     isn't loaded there, so the public form is unaffected by this change). */
+  --brand-color-primary:#629AD0;
+  --brand-color-secondary:#2C4863;
+  --accent:var(--brand-color-primary);
+  --accent-rgb:98,154,208;
+  --accent-dark:var(--brand-color-secondary);
   --accent2:#0F6E56;
+  --accent-green:#A2D29C;
+  --accent-blue:#B1CCE7;
   --warn:#F59E0B;
-  --bg:#fff;
+  --bg:#F6F6F8;
   --card:#fff;
-  --border:#DDE8F0;
-  --text:#1A2332;
-  --muted:#5A6A7A;
-  --light:#EBF4FB;
+  --border:#E6E8EC;
+  --text:var(--brand-color-secondary);
+  --muted:#51708D;
+  --muted-quiet:#8499AB;
+  --light:#EAF1F8;
+  --shadow:0 1px 0 rgba(44,72,99,.04),0 12px 32px -8px rgba(44,72,99,.14);
+  --shadow-lg:0 2px 0 rgba(44,72,99,.04),0 32px 64px -16px rgba(44,72,99,.20);
 }
 
-body{font-family:'Montserrat',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-variant-numeric:tabular-nums}
+body{font-family:'Manrope',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-variant-numeric:tabular-nums}
 input,select,textarea,button{font-family:inherit}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
 
-/* Cards — the admin panel wraps its entire content in a single .card. Shadow
-   upgraded to a layered hairline+soft-shadow combo (2026-08-06, matching the public
-   IO form's same change) — needed now that --bg and --card are both white; a flat
-   low-opacity shadow alone doesn't separate a white card from a white page the way
-   it did against the old pale-blue background. */
-.card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05),0 10px 24px rgba(20,40,60,.06)}
+/* Cards — the admin panel wraps its entire content in a single .card. Shadow uses the
+   ported mockup's soft layered shadow (2026-08-12) — needed now that --bg is a warm
+   off-white and --card is white, so cards read as raised without a harsh outline. */
+.card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
 
 /* Field labels */
 label.lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
