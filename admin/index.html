@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>44i Admin Portal</title>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="../shared.css"/>
 <style>
   /* Service editor grouping (2026-07-10) — admin-only, so kept here rather than
@@ -2251,7 +2251,7 @@ function renderSuggestedMap() {
       const billing = freqText === 'Monthly'
         ? '<span style="font-size:10px;color:#0F6E56;font-weight:600">Monthly</span>'
         : freqText === 'One Time'
-          ? '<span style="font-size:10px;color:#3A74AC;font-weight:600">One-Time</span>'
+          ? '<span style="font-size:10px;color:var(--accent-dark);font-weight:600">One-Time</span>'
           : freqText === '—'
             ? '<span style="color:var(--muted)">—</span>'
             : `<span style="font-size:10px;color:var(--text);font-weight:600">${esc(freqText)}</span>`;

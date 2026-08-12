@@ -11389,3 +11389,43 @@ only the active one. New `test-accounting-detail-card-io-notes-2026-08-
 present, and neither when absent. Deleted `test-accounting-pending-note-
 2026-08-12.js` (tested the now-removed banner, not a regression). Re-ran
 every other test file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Port the concept-mockup design palette into shared.css
+
+Claire said the portals "are looking a little blah still" and shared a DevTools
+screenshot of CSS custom properties (Manrope font, `--brand-color-primary: #629AD0`,
+`--brand-color-secondary: #2C4863`, `--paper`/`--cream`/`--ink`/`--rule`/soft shadow
+tokens, etc.), asking "does this help?" I grepped the whole repo for those exact
+variable names and font and found zero matches in any of the four real pages or
+`shared.css` — they only matched the pacing-dashboard concept mockup Artifact built
+and shared 2026-07-18 (a standalone page, never committed to this repo, per that
+day's entry above). Confirmed with Claire that's what she'd inspected, and she asked
+to port that palette into `shared.css` for real.
+
+**What changed**: `shared.css`'s `:root` tokens were replaced with the mockup's
+two-color brand system (`--brand-color-primary`/`--brand-color-secondary`, aliased
+into the existing `--accent`/`--accent-dark`/`--text` names so nothing downstream
+needed renaming), a warm off-white `--bg` (#F6F6F8) instead of stark white, a softer
+`--border` (#E6E8EC) and `--muted` (#51708D), and the mockup's layered soft shadow
+(`--shadow`/`--shadow-lg`) applied to `.card`. Body font switched from Montserrat to
+Manrope (font-weight range kept the same). The Google Fonts `<link>` in
+`admin/index.html`, `strategist/index.html`, and `accounting/index.html` was swapped
+from Montserrat to Manrope — those three all load `shared.css`. One stray hardcoded
+old-palette color in `admin/index.html` (`#3A74AC` on a "One-Time" label) was updated
+to `var(--accent-dark)` for consistency.
+
+**Deliberately NOT touched**: `index.html` (the public IO form) — it doesn't link
+`shared.css` and keeps its own separate inline stylesheet on purpose (it stays on each
+white-label group's own `brand_color`, not 44i's internal palette — see the
+2026-08-06 entry above for why). This change is Admin/Strategist/Accounting only.
+
+**Verified**: screenshotted all three portals' login screens with Playwright
+(`screenshot-palette-2026-08-12.js`, scratchpad) — Manrope renders, the navy/blue
+accent and soft card shadow show correctly on Accounting and Strategist's login
+cards. Admin's screenshot only shows a toast ("Could not load the service catalog")
+because this sandbox has no live Supabase connection to load its catalog before
+rendering the form — a test-environment limitation, not a CSS problem; the new warm
+background color is visible behind the toast either way. Full logged-in views with
+real data (tables, stat tiles, status pills) were NOT visually checked, since that
+needs a live Supabase session — worth a quick look on the real deployed site to
+confirm nothing reads oddly against the new background.
