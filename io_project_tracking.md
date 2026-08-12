@@ -12015,3 +12015,28 @@ just for `accounting_only` lines instead of section collisions.
 (pending line items, IO notes, SEO-tracking exclusion, Addl. Targeting,
 auto-billing-type/amount) -- all still fully passing, confirming no other
 code depended on this tag. `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — PARKED: what counts as 44i Revenue for a flat/accounting-only line with no Cut %?
+
+Claire noticed the "Billed Externally (excl.)" stat tile showed $0 for
+Website Monthly's 5-Page ($299 revenue, marked Billed Externally). Root
+cause explained, not fixed yet: "44i Revenue" is always computed as
+`Gross × Cut %`, and `wm-5p` -- like every flat/accounting-only service
+added via the "track all services ordered" work -- has no Cut % configured
+in the Accounting Map at all (these were never part of the original
+ad-spend rate setup). So its 44i Revenue is genuinely unknown (shown as a
+dash), and `accountingSplitInvoiceable()` correctly excludes $0 of an
+unknown amount -- consistent, but clearly not what Claire expects to see.
+
+**Real open question, parked pending her boss's answer**: for a flat/
+accounting-only line with no group revenue split concept (Website Hosting, a
+page package, etc.), should the FULL Gross amount default to counting as
+44i Revenue (100% or nothing, no Cut % needed), or does every one of these
+flat services genuinely need its own real Cut % configured in the
+Accounting Map first, same requirement as an ad-spend tactic? This decides
+whether `accountingSplitRevenue`/`accountingEffectiveCutPct` need a
+default-to-100%-when-no-rate-exists fallback specifically for
+`accounting_only` lines, or whether the real fix is a data-entry task in
+Admin (configuring a Cut % for every flat service) instead of a code change.
+No code touched until this is answered -- business-logic ambiguity, not
+guessed at.
