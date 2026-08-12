@@ -11858,3 +11858,34 @@ ongoing campaigns reading the same way, not a full formatting unification.
 -- an open-ended flight now shows "Ongoing" and never a bare trailing dash; a
 real two-sided date range is unaffected; a campaign with neither date set
 still shows a plain "—". `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — Campaign Setup queue now grouped by group, alphabetical
+
+Claire: "in the campaign set up can we add what group the client is with and
+put it in alpha order by group? I think that will be easier to identify
+especially when it is a new client." The Setup (pending) queue was a flat
+list of cards with zero group awareness -- no group name shown anywhere, no
+grouping/sorting at all, unlike the main table (Active/Paused/Complete tabs),
+which already groups by `group_name` alphabetically with a colored sticky
+header band matching each group's own brand color.
+
+**Fix**: `renderSetupPanels()` now groups its lines by `group_name` the same
+way `renderMainTable()` already does, sorted alphabetically, with the same
+colored group-band header above each cluster (falls back to the same default
+blue when a group has no `brand_color` set). The original per-line card
+markup was extracted into its own `renderSetupPanel(l)` function, called once
+per line within each group's cluster, rather than duplicating that large
+template.
+
+**Verified**: new `test-strategist-setup-grouped-2026-08-12.js` (scratchpad)
+-- three pending lines across two groups given deliberately out-of-order
+(Zebra before Acme in the input array) render with Acme's group band first,
+both Acme clients cluster correctly between the Acme and Zebra headers (not
+interleaved), and the empty state ("No campaigns waiting on setup") still
+works unchanged. Re-ran `test-strategist-flight-ongoing-2026-08-12.js`,
+`test-strategist-sticky-close-2026-08-11.js` (sticky-header scroll behavior,
+since this touches the same setup-panel area), and the Strategist half of
+`test-addl-targeting-2026-08-12.js` -- all still fully passing. Deleted
+`test-strategist-seo-tier-tactic-2026-08-12.js` (tested the SEO-tiers-in-
+Strategist feature reverted earlier this session, not a regression).
+`node --check` passes clean.
