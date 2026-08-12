@@ -11889,3 +11889,56 @@ since this touches the same setup-panel area), and the Strategist half of
 `test-strategist-seo-tier-tactic-2026-08-12.js` (tested the SEO-tiers-in-
 Strategist feature reverted earlier this session, not a regression).
 `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — Auto-derive billing type AND amount in "+ Add a Service"
+
+Claire: "when you + add service, you shouldn't need to mark if it is a
+recurring or one time cost, it should already know that from the IO." Then,
+mid-build, extended the ask twice more: "If it is a one time cost, we would
+only need a 'start' date and don't need a gross budget" and "Shouldn't have
+to add the amount, it should take it from the services or group override" --
+confirmed "same with monthly" when asked whether the amount auto-fill should
+also apply to recurring services, not just one-time.
+
+**Billing type**: the manual "Recurring monthly / One-time fee" `<select>`
+is gone. New `accountingDerivedBillingType(serviceId)` reads the catalog's own
+`services.billing_type` directly (anything other than literally `'one_time'`
+maps to `'recurring'`) -- shown as a plain read-only line, not asked for.
+
+**Amount**: new `accountingDerivedAmount(serviceId, clientId)` -- checks the
+selected client's group's `io_pricing` override first (the exact same
+mechanism the public IO form itself uses via `applyCustomPricing()` in
+`index.html`; `group_service_overrides` is confirmed dead/unused per the
+tracking doc), falls back to the catalog's own `default_price`. Required a
+new SQL change: `accounting_get_clients` didn't fetch `groups.io_pricing` at
+all before this (Accounting never needed group-level pricing until now) --
+added `'group_io_pricing', g.io_pricing` to its jsonb output, run by Claire.
+Shown as a read-only line next to Billing; falls back to manual entry only if
+neither the override nor the catalog has a real price at all (e.g. a QUR
+service).
+
+**Flight End**: hidden entirely for a one-time service (a single event has
+one date, not a range) -- stays visible for a recurring one, since that's
+still a real ongoing flight. Gross Budget's manual input is hidden for BOTH
+one-time and recurring flat services now that their amount is always
+derived; stays visible ONLY for a spend-tracked tactic, whose real dollar
+figure still varies per client/CPM with nothing in the catalog to derive it
+from.
+
+**Submit**: for a non-trackable addition, the derived amount seeds
+`initial_gross_budget`, with `initial_month` set to Flight Start (not always
+"today") so a service added to record a past charge lands in the right
+month.
+
+**Verified**: rewrote `test-accounting-auto-billing-type-2026-08-12.js`
+(scratchpad, 14 assertions) -- billing type derives correctly for both
+values; amount falls back to the catalog price with no override, a group
+override wins over the catalog price, and an override doesn't leak onto a
+DIFFERENT service the group never overrode; the UI correctly shows/hides
+Flight End and Gross Budget across all three cases (recurring, one-time,
+spend-trackable) and displays the right derived text (with/without "/mo").
+Re-ran `test-accounting-pending-lineitems-2026-08-12.js`,
+`test-accounting-detail-card-io-notes-2026-08-12.js`,
+`test-accounting-exclude-seo-tracking-2026-08-12.js`, and
+`test-addl-targeting-2026-08-12.js` -- all still fully passing. `node
+--check` passes clean.
