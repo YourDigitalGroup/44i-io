@@ -343,6 +343,10 @@ function strategistFormatFlightDate(dateStr) {
 function strategistFormatFlightRange(start, end) {
   const s = strategistFormatFlightDate(start), e = strategistFormatFlightDate(end);
   if (!s && !e) return '—';
+  // "Ongoing" for a null end date (2026-08-12, per Claire: "update the
+  // strategist portal to match the accounting portal for ongoing campaigns")
+  // -- Accounting's own accountingFormatFlightRange already says "Ongoing"
+  // explicitly; this used to fall back to a bare dash with nothing after it.
   // Real bug found live (2026-08-10, Claire): once a range is long enough to wrap,
   // the dash itself could end up alone on its own line -- the space BEFORE it was
   // breakable, so the browser had two valid wrap points ("date1 / – date2" and
@@ -356,7 +360,7 @@ function strategistFormatFlightRange(start, end) {
   // white-space:nowrap span removes every break point inside that chunk
   // (including the dash's own), leaving exactly one valid break -- right after
   // the start date, in the normal (breakable) space between the two chunks.
-  return `${s || '—'} <span style="white-space:nowrap">– ${e || '—'}</span>`;
+  return `${s || '—'} <span style="white-space:nowrap">– ${e || 'Ongoing'}</span>`;
 }
 function strategistSetScope(scope) {
   strategistScope = scope;
