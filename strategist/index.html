@@ -1862,9 +1862,28 @@ function renderStrategistDashboard() {
 }
 
 // ── CAMPAIGN SETUP (Pending queue) ───────────────────────────────
+// Grouped by client's group, alphabetical, with the same colored group-band
+// convention as the main table's own byGroup rendering (2026-08-12, per
+// Claire: "add what group the client is with and put it in alpha order by
+// group... especially when it is a new client" -- the Setup queue used to be
+// one flat, ungrouped list with no indication of which group a client
+// belonged to at all).
 function renderSetupPanels(lines) {
   if (!lines.length) return '<p style="color:var(--muted);font-size:13px;padding:20px 0">No campaigns waiting on setup.</p>';
-  return lines.map(l => {
+  const byGroup = {};
+  lines.forEach(l => {
+    const key = l.group_name || '(no group)';
+    if (!byGroup[key]) byGroup[key] = { color: l.group_color, rows: [] };
+    byGroup[key].rows.push(l);
+  });
+  return Object.keys(byGroup).sort((a, b) => a.localeCompare(b)).map(groupName => {
+    const bg = byGroup[groupName].color || '#EFF6FF';
+    const fg = strategistContrastTextColor(bg);
+    return `<div style="background:${esc(bg)};padding:7px 12px;border-radius:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${fg};margin-bottom:8px">${esc(groupName)}</div>` +
+      byGroup[groupName].rows.map(l => renderSetupPanel(l)).join('');
+  }).join('');
+}
+function renderSetupPanel(l) {
     const client = l.client_name || '(unknown client)';
     const monthRow = setupBudgetRowFor(l.id) || {};
     const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
@@ -1953,7 +1972,6 @@ function renderSetupPanels(lines) {
       </div>
       </div>
     </div>`;
-  }).join('');
 }
 
 // ── SPLIT INTO MULTIPLE CAMPAIGNS (2026-08-10) ───────────────────
