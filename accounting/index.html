@@ -517,14 +517,57 @@ function accountingIsSpendTrackable(serviceId) {
   const r = CATALOG_ROWS[serviceId];
   return !!r && (r.pricing_mode === 'spend' || ACCT_TRACKABLE_FLAT_SERVICE_IDS.includes(serviceId));
 }
+// The catalog's own services.billing_type already says whether a tactic is
+// one-time or ongoing -- no need to ask again (2026-08-12, per Claire: "you
+// shouldn't need to mark if it is a recurring or one time cost, it should
+// already know that from the IO"). Maps the catalog's more granular values
+// (monthly/yearly/annual/one_time/null) down to the two campaign_lines.
+// billing_type actually stores here -- anything that isn't literally
+// 'one_time' is 'recurring'.
+function accountingDerivedBillingType(serviceId) {
+  return CATALOG_ROWS[serviceId]?.billing_type === 'one_time' ? 'one_time' : 'recurring';
+}
+// The catalog's own default_price (or a group's own io_pricing override, same
+// mechanism the public IO form itself uses -- see applyCustomPricing() in
+// index.html) already says what a flat/recurring/one-time service costs --
+// no need to manually type a Gross Budget for one either (2026-08-12, per
+// Claire: "Shouldn't have to add the amount, it should take it from the
+// services or group override" -- confirmed "same with monthly" when asked
+// whether this applies to recurring too, not just one-time). Returns null if
+// neither the group override nor the catalog has a real price (e.g. a QUR
+// service with no default_price set) -- caller falls back to manual entry.
+function accountingDerivedAmount(serviceId, clientId) {
+  const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+  const pricing = client?.group_io_pricing;
+  if (pricing && pricing[serviceId] != null) return Number(pricing[serviceId]);
+  const base = CATALOG_ROWS[serviceId]?.default_price;
+  return base != null ? Number(base) : null;
+}
 function accountingAddServiceTacticChanged() {
   const serviceId = document.getElementById('acct-add-service').value;
+  const clientId = document.getElementById('acct-add-client').value;
   const billingWrap = document.getElementById('acct-add-billing-wrap');
   const helpText = document.getElementById('acct-add-help-text');
   const addlWrap = document.getElementById('acct-add-addl-targeting-wrap');
   if (addlWrap) addlWrap.style.display = ACCT_ADDL_TARGETING_SERVICE_IDS.includes(serviceId) ? 'flex' : 'none';
   const trackable = serviceId ? accountingIsSpendTrackable(serviceId) : true;
   billingWrap.style.display = serviceId && !trackable ? 'block' : 'none';
+  // Flight End only makes sense for an ongoing/recurring service -- a
+  // one-time fee is a single event with just one date, not a range.
+  const isOneTime = serviceId && !trackable && accountingDerivedBillingType(serviceId) === 'one_time';
+  document.getElementById('acct-add-flight-end-wrap').style.display = isOneTime ? 'none' : '';
+  // Gross Budget stays manual ONLY for a spend-tracked tactic (its real
+  // dollar amount varies per client/CPM, nothing in the catalog to derive it
+  // from) -- hidden for both recurring and one-time flat services, whose
+  // amount is now always auto-derived instead.
+  document.getElementById('acct-add-gross-budget-wrap').style.display = trackable ? '' : 'none';
+  if (serviceId && !trackable) {
+    document.getElementById('acct-add-billing-derived').textContent =
+      isOneTime ? 'One-time fee' : 'Recurring monthly';
+    const amount = accountingDerivedAmount(serviceId, clientId);
+    document.getElementById('acct-add-amount-derived').textContent =
+      amount != null ? `$${amount.toLocaleString(undefined,{maximumFractionDigits:2})}${isOneTime ? '' : '/mo'}` : 'Not set in the catalog -- add it in Admin first';
+  }
   helpText.textContent = serviceId && !trackable
     ? 'This creates an Accounting-only line, same as the IO would for a flat/recurring/one-time service -- Strategist never sees this one, there’s no setup step for it.'
     : 'This creates the campaign as "Campaign Setup" (Pending) in the Strategist Portal, same as any other new order -- Strategist fills in platform/tracking details from there. It will not show up as Active in Accounting until Strategist activates it.';
@@ -580,7 +623,7 @@ function accountingOpenAddServiceForm(prefill) {
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
       <div>
         <label class="lbl">Client</label>
-        <select id="acct-add-client" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+        <select id="acct-add-client" onchange="accountingAddServiceTacticChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
           <option value="">— Select —</option>
           ${sortedClients.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}" ${prefill && prefill.clientId === c.id ? 'selected' : ''}>${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('')}
         </select>
@@ -597,22 +640,20 @@ function accountingOpenAddServiceForm(prefill) {
         <label id="acct-add-addl-targeting-wrap" style="display:none;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
           <input type="checkbox" id="acct-add-has-addl-targeting"/> + Addl. Targeting
         </label>
-        <div id="acct-add-billing-wrap" style="display:none;margin-top:5px">
-          <select id="acct-add-billing-type" style="width:100%;padding:6px 8px;border-radius:6px;border:1px dashed var(--accent);font-size:11.5px">
-            <option value="recurring">Recurring monthly</option>
-            <option value="one_time">One-time fee</option>
-          </select>
+        <div id="acct-add-billing-wrap" style="display:none;margin-top:5px;font-size:11px;color:var(--muted)">
+          Billing: <strong id="acct-add-billing-derived" style="color:var(--text)"></strong><br/>
+          Amount: <strong id="acct-add-amount-derived" style="color:var(--text)"></strong>
         </div>
       </div>
       <div>
         <label class="lbl">Flight Start</label>
         <input type="date" id="acct-add-flight-start" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
-      <div>
+      <div id="acct-add-flight-end-wrap">
         <label class="lbl">Flight End</label>
         <input type="date" id="acct-add-flight-end" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
-      <div style="grid-column:span 2">
+      <div id="acct-add-gross-budget-wrap" style="grid-column:span 2">
         <label class="lbl">Current Gross Budget <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">(optional -- creates this month's row too)</span></label>
         <input type="number" id="acct-add-gross-budget" placeholder="$/mo" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
@@ -631,12 +672,12 @@ async function accountingSubmitAddService() {
   const serviceId = document.getElementById('acct-add-service').value;
   if (!clientId || !serviceId) { showToast('Client and Tactic are both required.', 'error'); return; }
   const groupId = clientEl.selectedOptions[0]?.dataset.groupId || null;
-  const grossBudget = document.getElementById('acct-add-gross-budget').value;
+  const flightStart = document.getElementById('acct-add-flight-start').value || null;
   const trackable = accountingIsSpendTrackable(serviceId);
   const data = {
     client_id: clientId, group_id: groupId || null, service_id: serviceId,
     tactic_label: CATALOG_ROWS[serviceId]?.accounting_label || CATALOG_ROWS[serviceId]?.label || serviceId,
-    flight_start: document.getElementById('acct-add-flight-start').value || null,
+    flight_start: flightStart,
     flight_end: document.getElementById('acct-add-flight-end').value || null,
     has_offline_visits: document.getElementById('acct-add-has-offline-visits').checked,
     has_addl_targeting: document.getElementById('acct-add-has-addl-targeting').checked,
@@ -645,11 +686,27 @@ async function accountingSubmitAddService() {
     // straight to active, no Strategist Setup step.
     accounting_only: !trackable,
     status: trackable ? undefined : 'active',
-    billing_type: trackable ? 'spend' : document.getElementById('acct-add-billing-type').value,
+    billing_type: trackable ? 'spend' : accountingDerivedBillingType(serviceId),
   };
-  if (grossBudget) {
-    data.initial_gross_budget = parseFloat(grossBudget);
-    data.initial_month = new Date().toISOString().slice(0, 10);
+  if (trackable) {
+    // Only a spend-tracked tactic still takes a manual amount -- its real
+    // dollar figure varies per client/CPM, nothing in the catalog to derive.
+    const grossBudget = document.getElementById('acct-add-gross-budget').value;
+    if (grossBudget) {
+      data.initial_gross_budget = parseFloat(grossBudget);
+      data.initial_month = new Date().toISOString().slice(0, 10);
+    }
+  } else {
+    // Flat/recurring/one-time: amount comes from the catalog (or the
+    // client's group override) automatically -- no manual entry (2026-08-12,
+    // per Claire). Seeded against Flight Start (the date it's billed for a
+    // one-time fee; the first month for a recurring one) rather than always
+    // "today", so a service added to record a past charge lands correctly.
+    const derived = accountingDerivedAmount(serviceId, clientId);
+    if (derived != null) {
+      data.initial_gross_budget = derived;
+      data.initial_month = flightStart || new Date().toISOString().slice(0, 10);
+    }
   }
   try {
     await sb('rpc/accounting_add_campaign_line', { method: 'POST', body: JSON.stringify({
