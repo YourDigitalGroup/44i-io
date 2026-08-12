@@ -1365,8 +1365,20 @@ function accountingLineActiveInMonth(line, monthDate) {
   if (line.flight_end && monthKey > accountingMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
   return true;
 }
+// LLO (SEO) and Rep Monitoring (SEO) aren't their own billed service -- they're
+// auto-created by create_campaign_lines_from_order() (2026-08-10) purely so
+// Strategist can pace them separately, anchored to a placeholder seo-bp
+// service_id with no real pricing/budget of their own. Claire, 2026-08-12:
+// they sit within the parent SEO service, not their own accounting line, so
+// they shouldn't show in Accounting at all -- only the parent SEO tactic's
+// own line (a real catalog row with a real budget) belongs here. Same literal
+// tactic_label strings as Strategist's own SEO_TRACKING_ONLY_TACTICS, kept as
+// its own copy per this project's "each portal keeps its own copy" convention
+// (no shared constant file between the two portals).
+const ACCOUNTING_EXCLUDED_TACTIC_LABELS = ['LLO (SEO)', 'Rep Monitoring (SEO)'];
 function accountingBuildRows() {
   const filtered = ALL_ACCOUNTING_LINES.filter(l => {
+    if (ACCOUNTING_EXCLUDED_TACTIC_LABELS.includes(l.tactic_label)) return false;
     if (accountingGroupFilter && l.group_name !== accountingGroupFilter) return false;
     if (accountingStatusFilter && l.status !== accountingStatusFilter) return false;
     if (!accountingLineActiveInMonth(l, accountingCurrentMonth)) return false;

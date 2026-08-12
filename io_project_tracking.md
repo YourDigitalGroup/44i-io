@@ -11561,3 +11561,34 @@ runs. Deliberately scoped to just the initial page load, not every
 `fetchStrategistData()` call after a save — a save already has real content
 underneath it, so the same "empty page, nothing happening" problem doesn't
 apply there. `node --check` passes clean on both files.
+
+### 2026-08-12 (cont'd) — Exclude LLO (SEO)/Rep Monitoring (SEO) tracking lines from Accounting
+
+Claire: "For the LLO (SEO) and Rep Management (SEO) they are not their own
+service line, they sit within the SEO services, so those lines don't need to
+be in the accounting portal, just the parent SEO service." These two are
+auto-created by `create_campaign_lines_from_order()` (2026-08-10) purely so
+Strategist can pace them separately — anchored to a placeholder `seo-bp`
+service_id with no real pricing/budget of their own, never meant to be billed
+as their own line. They were showing in Accounting anyway since nothing there
+distinguished them from a real billed tactic.
+
+**Fix**: new `ACCOUNTING_EXCLUDED_TACTIC_LABELS` in `accounting/index.html`
+(own copy of the same two literal tactic-label strings as Strategist's
+`SEO_TRACKING_ONLY_TACTICS`, per this project's "each portal keeps its own
+copy" convention), filtered out at the top of `accountingBuildRows()` — the
+parent SEO tactic's own line (a real catalog row with a real budget) is
+unaffected and still shows normally.
+
+Also noted for later, not acted on: Claire mentioned a dedicated SEO system is
+in progress that may remove the need to show these in Strategist's pacing
+view too, at some future point — nothing to build now, just flagged so it's
+not forgotten when that system exists.
+
+**Verified**: new `test-accounting-exclude-seo-tracking-2026-08-12.js`
+(scratchpad) — a parent SEO line still renders normally; LLO (SEO) and Rep
+Monitoring (SEO) lines for the same client are both excluded from the
+rendered table. Re-ran `test-accounting-pending-lineitems-2026-08-12.js`
+(11/11) and `test-accounting-detail-card-io-notes-2026-08-12.js` (3/3) — both
+still fully passing, confirming no regression to the pending-line-item or
+detail-card work from earlier today. `node --check` passes clean.
