@@ -420,6 +420,9 @@ function strategistOpenImportForm() {
         <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
           <input type="checkbox" id="import-has-offline-visits"/> + Offline Visits Tracking
         </label>
+        <label id="import-addl-targeting-wrap" style="display:none;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
+          <input type="checkbox" id="import-has-addl-targeting"/> + Addl. Targeting
+        </label>
       </div>
       <div>
         <label class="lbl">Platform</label>
@@ -464,13 +467,30 @@ function strategistOpenImportForm() {
   </div>`;
 }
 
+// YouTube TV's own +$10 CPM modifier (services.yttv-addl), tracked the same
+// way as Offline Visits Tracking -- changes the CPM basis used internally
+// for margin/accounting purposes, no charge to the client (services.
+// is_cpm_adjustment = true) -- but unlike Offline Visits Tracking, which
+// applies broadly across many sections, this ONLY ever applies to YouTube TV
+// (2026-08-12, per Claire: "Youtube just has the Addl targeting"). Kept as
+// its own array (not a single hardcoded id) in case a similar single-tactic
+// modifier shows up for another section later -- same "don't hardcode past
+// what's needed, but don't overbuild either" balance as TRACKABLE_FLAT_
+// SERVICE_IDS above.
+const ADDL_TARGETING_SERVICE_IDS = ['yttv-bp'];
+
 // Shows a locked variant dropdown right under Tactic when the picked service is
 // one of the 5 "which one is it" services (services.tactic_variants) -- same
 // mechanism as the Setup panel and detail panel dropdowns, just for a campaign
-// that doesn't exist yet. Hidden/cleared for every other service.
+// that doesn't exist yet. Hidden/cleared for every other service. Also toggles
+// the "+ Addl. Targeting" checkbox's visibility right below it (2026-08-12) --
+// unlike Offline Visits Tracking's checkbox (always shown, since it can apply
+// to many different tactics), this one only makes sense for YouTube TV.
 function strategistImportServiceChanged() {
   const wrap = document.getElementById('import-tactic-variant-wrap');
   const serviceId = document.getElementById('import-service').value;
+  const addlWrap = document.getElementById('import-addl-targeting-wrap');
+  if (addlWrap) addlWrap.style.display = ADDL_TARGETING_SERVICE_IDS.includes(serviceId) ? 'flex' : 'none';
   const variants = serviceId && Array.isArray(CATALOG_ROWS[serviceId]?.tactic_variants) && CATALOG_ROWS[serviceId].tactic_variants.length
     ? CATALOG_ROWS[serviceId].tactic_variants : null;
   if (!variants) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
@@ -531,6 +551,7 @@ async function strategistSubmitImport() {
   const grossBudget = document.getElementById('import-gross-budget').value;
   const platformCampaignName = document.getElementById('import-platform-campaign-name').value.trim();
   const hasOfflineVisits = document.getElementById('import-has-offline-visits').checked;
+  const hasAddlTargeting = document.getElementById('import-has-addl-targeting').checked;
   const isSplit = document.getElementById('import-split-toggle').checked;
 
   if (!clientId || !serviceId) { showToast('Pick a client and a tactic.', 'error'); return; }
@@ -555,7 +576,8 @@ async function strategistSubmitImport() {
         client_id: clientId, group_id: groupId, service_id: serviceId, tactic_label: tacticLabel,
         platform: platform || null, platform_campaign_name: isSplit ? null : (platformCampaignName || null),
         flight_start: flightStart, flight_end: flightEnd,
-        status, assigned_strategist: currentStrategistUser.name, has_offline_visits: hasOfflineVisits
+        status, assigned_strategist: currentStrategistUser.name, has_offline_visits: hasOfflineVisits,
+        has_addl_targeting: hasAddlTargeting
       }
     }) });
     if (isSplit) {
@@ -1548,7 +1570,9 @@ function strategistSetupBlockerPill(line) {
 function strategistTacticDisplay(line) {
   let base = line.tactic_label || line.service_id;
   if (line.split_label) base += ' — ' + line.split_label;
-  return line.has_offline_visits ? base + ' + Offline Visits Tracking' : base;
+  if (line.has_offline_visits) base += ' + Offline Visits Tracking';
+  if (line.has_addl_targeting) base += ' + Addl. Targeting';
+  return base;
 }
 
 // A handful of catalog services are actually 2-3 different tactics sharing one
@@ -1888,6 +1912,9 @@ function renderSetupPanels(lines) {
       <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;margin-bottom:8px">
         <input type="checkbox" id="setup-offline-visits-${l.id}" ${l.has_offline_visits ? 'checked' : ''}/> + Offline Visits Tracking
       </label>
+      ${ADDL_TARGETING_SERVICE_IDS.includes(l.service_id) ? `<label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;margin-bottom:8px">
+        <input type="checkbox" id="setup-addl-targeting-${l.id}" ${l.has_addl_targeting ? 'checked' : ''}/> + Addl. Targeting
+      </label>` : ''}
       <div id="setup-months-${l.id}" style="${l.budget_varies_by_month ? '' : 'display:none'};border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin-bottom:12px;background:#fff">
         ${monthRows.map(m => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 0">
           <span style="width:90px;color:var(--muted);font-weight:600">${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}</span>
@@ -2298,10 +2325,15 @@ function strategistReadSetupBlockers(lineId) {
 // can't even reach since Campaign Setup renders these panels instead of the main
 // table). Shared by both save paths below so they stay in sync.
 function strategistReadSetupFlightAndOffline(lineId) {
+  // Addl. Targeting checkbox only renders for YouTube TV lines (see
+  // ADDL_TARGETING_SERVICE_IDS) -- guard the read since the element won't
+  // exist for any other tactic.
+  const addlEl = document.getElementById('setup-addl-targeting-' + lineId);
   return {
     flight_start: document.getElementById('setup-flight-start-' + lineId).value || null,
     flight_end: document.getElementById('setup-flight-end-' + lineId).value || null,
     has_offline_visits: document.getElementById('setup-offline-visits-' + lineId).checked,
+    ...(addlEl ? { has_addl_targeting: addlEl.checked } : {}),
   };
 }
 
@@ -2490,6 +2522,9 @@ function renderStrategistDetailPanel() {
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-right:8px">
         <input type="checkbox" ${l.has_offline_visits ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_offline_visits: this.checked})"/> + Offline Visits Tracking
       </label>
+      ${ADDL_TARGETING_SERVICE_IDS.includes(l.service_id) ? `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-right:8px">
+        <input type="checkbox" ${l.has_addl_targeting ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_addl_targeting: this.checked})"/> + Addl. Targeting
+      </label>` : ''}
       <label class="lbl" style="margin:0">Status</label>
       <select id="status-select-${l.id}" onchange="strategistOpenStatusChangeReason('${l.id}', this.value, '${l.status}')" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;font-weight:600">
         <option value="active" ${l.status === 'active' ? 'selected' : ''}>Active</option>

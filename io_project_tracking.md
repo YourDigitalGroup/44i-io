@@ -11694,3 +11694,122 @@ Re-ran `test-accounting-pending-lineitems-2026-08-12.js` (still 13/13 after
 today's blocker-relocation update), `test-accounting-detail-card-io-notes-
 2026-08-12.js`, and `test-accounting-exclude-seo-tracking-2026-08-12.js` --
 all still fully passing. `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — Accounting Label audit: catalog-wide disambiguation pass
+
+Claire asked whether the new Accounting-portal section tag made the
+`accounting_label` field redundant. Checked the history first rather than
+guessing: `accounting_label` solves a broader problem than the section tag
+does — it's what Strategist's own dashboard displays (no section-deriving
+logic there), what `create_campaign_lines_from_order()` bakes into every
+NEW campaign line's permanent `tactic_label` at creation time, and what Bulk
+Import matches pasted Tactic names against. The section tag is
+display-only, Accounting-portal-only, derived fresh at render time — it
+doesn't touch stored data at all. Recommended keeping `accounting_label`;
+Claire agreed.
+
+**Full-catalog audit, at her request** ("I think we should update all of the
+services to make sure that their accounting label is correct"). Pulled every
+active service (`id, section, label, accounting_label`) and compared every
+label against every other label across different sections, the same
+collision `accounting_label` was originally built to solve (2026-08-07).
+Found every EXACT label collision already correctly handled from that
+original pass: "Business Pro" (11 sections), "Business Builder"/"Business
+Starter" (seo/sm), "Geotargeting, Keyword, Contextual, Category &
+Retargeting" (nd/nv/pa/pv), "Optional Content Support" (web-mo/web-ot) — all
+already disambiguated. "Offline Visits Tracking" (10 sections, none set) is
+the one deliberate exception from that same original pass — a modifier row
+that always rides alongside its base tactic's already-identified name, never
+appearing standalone, so it was never actually ambiguous.
+
+**Claire caught two real gaps my exact-string-match scan missed**: TLP
+(Targeted Landing Page) and Email Marketing's own Business Builder/Starter/
+Pro tiers use suffixed label text ("Business Pro (11-15 Pages)", "Business
+Builder <2,500", etc.) that isn't textually IDENTICAL to seo/sm's plain
+"Business Pro" — so they never showed up as an exact collision — but they're
+the same underlying tier-naming ambiguity. I flagged the same gap applied to
+Website One-Time's own tiers ("Business Starter\*"/"Business Builder\*"/
+"Business Pro\*") rather than silently including or excluding them; Claire
+confirmed to include those too. Also disambiguated two near-duplicate pairs
+between Website Monthly and Website One-Time that use nearly-identical
+wording (Hosting Only/Hosting Fee, and the Visitor ID tiers, which differ only
+by a "(standalone)" suffix).
+
+**SQL run** (Claire, directly in Supabase SQL editor, both scratchpad-only —
+not committed):
+1. `services.accounting_label` set for 26 ids: `tlp-bs/bb/bp`,
+   `em-bb-2500/em-bb-5000/em-bp-30k/em-bp-30kp`, `w-bs/bb/bp`,
+   `wm-hosting`/`w-hosting`, `wm-ecomm-hosting`/`w-ecomm-hosting`, and the 12
+   Visitor ID variants (`wm-vid200/350/500[e]`, `w-vid200/350/500[e]`) — same
+   "Section — Name" format as the original 22, section names ("Targeted
+   Landing Page", "Email Marketing", "Website Monthly", "Website One-Time")
+   confirmed from the catalog's own real section labels, not guessed.
+2. One-time backfill of `campaign_lines.tactic_label` for the same 26 ids,
+   scoped to only rows where `tactic_label` still exactly matches the
+   service's plain `label` (so nothing manually customized or split gets
+   overwritten) — **ran clean, 0 rows updated**, confirming Claire's own
+   expectation that no real campaigns exist yet on any of these 26 services.
+
+No code changes this pass — purely catalog data, same mechanisms already
+built.
+
+### 2026-08-12 (cont'd) — YouTube TV's Addl. Targeting wired into both portals
+
+Claire: "did we workout the addl. Targeting for Youtube ads in either the
+strategists or accounting portal? I know we have the offline tracking
+covered." Checked both files directly -- `yttv-addl` wasn't referenced
+anywhere in either portal, only on the public form. Confirmed with Claire:
+YouTube TV only ever has this one modifier (no Offline Visits option to
+collide with), it's a $0/no-charge CPM adjustment tracked the same way as
+Offline Visits Tracking, and Admin's Accounting Map already has the "(w/
+Addl. Targeting)" pairing rate set up for `yttv-bp` -- so this was purely
+wiring the existing rate into both portals' UI, not new pricing logic.
+
+**New SQL** (`campaign_lines.has_addl_targeting boolean default false`, plus
+`strategist_save_campaign_line`/`strategist_get_campaign_lines`/
+`accounting_get_campaign_lines`/`accounting_add_campaign_line` all updated to
+read/write it, same `case when p_data ? 'field'` pattern as every other
+column added this way) -- run by Claire, success.
+
+**Client-side, both portals** -- own `ADDL_TARGETING_SERVICE_IDS`/
+`ACCT_ADDL_TARGETING_SERVICE_IDS` array (currently just `['yttv-bp']`, kept as
+an array rather than one hardcoded id in case a similar single-tactic
+modifier shows up elsewhere later). Unlike Offline Visits Tracking's checkbox
+(shown unconditionally, since it can apply to many different tactics), the
+new "+ Addl. Targeting" checkbox only reveals itself when the selected/
+existing tactic is YouTube TV:
+- Strategist: `+ New Campaign`'s Tactic dropdown (`strategistImportServiceChanged`
+  now also toggles this checkbox's visibility), the Setup panel (conditionally
+  rendered into the panel's HTML, so `strategistReadSetupFlightAndOffline`
+  guards the read since the element won't exist for other tactics), and the
+  detail panel (conditionally rendered same as Setup). `strategistTacticDisplay`
+  now appends "+ Addl. Targeting" the same way it already does for Offline
+  Visits, and can show both suffixes together if a line somehow had both.
+- Accounting: "+ Add a Service" form (checkbox always in the DOM, just
+  hidden/shown via `accountingAddServiceTacticChanged`, so no null-guard
+  needed on read), and Bulk Import's parser/column list, mirroring
+  `has_offline_visits` exactly in both places.
+- `accountingEffectiveCutPct` now receives `has_offline_visits ||
+  has_addl_targeting` at both call sites, rather than changing the function's
+  own internals -- safe because no tactic in this catalog currently offers
+  both as independently toggleable options, so the two pairing rates can
+  never collide into the same lookup. Flagged in a comment as something that
+  would need a real per-modifier key if that ever changes.
+- Main table row gets a "+Addl. Targeting" tag, same treatment as the
+  existing "+Visits" tag.
+
+**Verified**: new `test-addl-targeting-2026-08-12.js` (scratchpad) -- in
+Strategist: the checkbox is hidden for a non-YTTV tactic and shown for YTTV
+in `+ New Campaign`; `strategistTacticDisplay` correctly appends the suffix
+alone or combined with Offline Visits Tracking; the Setup panel's read
+function doesn't throw when the element doesn't exist (non-YTTV line) and
+correctly reads `true` when it does. In Accounting: same show/hide behavior
+in Add Service; `accountingEffectiveCutPct` returns the plain base rate
+without the modifier and the pairing rate with `has_addl_targeting` alone
+(no `has_offline_visits` involved) confirming the OR logic actually reaches
+the pairing lookup; the main row shows the new tag. Re-ran
+`test-accounting-pending-lineitems-2026-08-12.js`,
+`test-accounting-detail-card-io-notes-2026-08-12.js`,
+`test-accounting-exclude-seo-tracking-2026-08-12.js`, and
+`test-accounting-section-tag-2026-08-12.js` -- all still fully passing.
+`node --check` passes clean on both files.
