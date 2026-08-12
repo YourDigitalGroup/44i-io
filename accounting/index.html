@@ -692,12 +692,16 @@ function accountingRunBulkMatch() {
 // Service (excluding modifier/add-on rows like Offline Visits Tracking,
 // same reason as there) -- picking a non-spend-trackable tactic gets the
 // same accounting-only/active treatment a single Add Service submission
-// would, no Setup queue detour. Deliberately simpler than Strategist's own
-// tool -- no inline per-row override pickers for an unresolved Client/
-// Tactic; a row that doesn't resolve is reported by row number and text,
-// fix it in the paste and Preview again. That's a real, scoped-down
-// tradeoff, not an oversight -- can be added later if this turns out not
-// to be enough.
+// would, no Setup queue detour. An unresolved row (2026-08-12, per Claire:
+// "add the dropdowns like the strategist so that I don't have to
+// repaste") now gets its own fix-it dropdown right in the preview --
+// mirrors Strategist's own override mechanism (ACCT_BULK_IMPORT_OVERRIDES,
+// keyed by row number) so picking the right Client/Tactic re-runs Preview
+// against the SAME pasted text, no re-typing. Each unresolved row also
+// gets a "did you mean X?" suggestion (per Claire: "note if something
+// looks similar") -- a plain Levenshtein-distance nearest match against
+// real clients/tactics, pre-selected in that row's dropdown but never
+// auto-applied without her picking it.
 function accountingResolveBulkClient(name) {
   const norm = (name || '').trim().toLowerCase();
   return ALL_ACCOUNTING_CLIENTS.find(c => c.name.trim().toLowerCase() === norm) || null;
@@ -712,6 +716,48 @@ function accountingResolveBulkTactic(name) {
   }
   const direct = Object.values(CATALOG_ROWS).find(r => eligible(r) && (r.accounting_label || r.label || '').trim().toLowerCase() === norm);
   return direct ? { service: direct, tacticLabel: direct.accounting_label || direct.label } : null;
+}
+// Plain edit-distance -- how many single-character insertions/deletions/
+// substitutions turn one string into the other. Used only for a "did you
+// mean" suggestion, never to silently resolve a match on its own.
+function accountingLevenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+// Nearest real client by typed text -- close enough to guess a typo, never
+// close enough to guess an entirely different name. Threshold scales with
+// the typed text's own length so a short name isn't over-matched.
+function accountingSuggestSimilarClient(name) {
+  const norm = (name || '').trim().toLowerCase();
+  if (!norm) return null;
+  let best = null, bestDist = Infinity;
+  ALL_ACCOUNTING_CLIENTS.forEach(c => {
+    const d = accountingLevenshtein(norm, c.name.trim().toLowerCase());
+    if (d < bestDist) { bestDist = d; best = c; }
+  });
+  const threshold = Math.max(2, Math.ceil(norm.length * 0.3));
+  return best && bestDist > 0 && bestDist <= threshold ? best : null;
+}
+function accountingSuggestSimilarTactic(name) {
+  const norm = (name || '').trim().toLowerCase();
+  if (!norm) return null;
+  const eligible = (r) => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment;
+  let best = null, bestDist = Infinity;
+  Object.values(CATALOG_ROWS).filter(eligible).forEach(r => {
+    const label = (r.accounting_label || r.label || '').trim().toLowerCase();
+    const d = accountingLevenshtein(norm, label);
+    if (d < bestDist) { bestDist = d; best = { service: r, tacticLabel: r.accounting_label || r.label }; }
+  });
+  const threshold = Math.max(2, Math.ceil(norm.length * 0.3));
+  return best && bestDist > 0 && bestDist <= threshold ? best : null;
 }
 function accountingParseCsvRows(text) {
   return text.trim().split(/\r?\n/).filter(line => line.trim()).map(line =>
@@ -732,7 +778,13 @@ const ACCT_BULK_IMPORT_COLUMNS = [
 // data rows sharing the same Client+Tactic into one campaign (its own
 // month rows collected together), same grouping convention as Strategist's
 // own bulk import.
-function accountingParseBulkImport(raw) {
+// `overrides` (keyed by rowNum, 2026-08-12 per Claire -- "add the dropdowns
+// like the strategist so that I don't have to repaste") lets a specific
+// row's client/tactic be forced to a real id picked from a dropdown, or the
+// row dropped entirely, WITHOUT touching the pasted text at all -- re-
+// parsing with the same raw text plus an override is how a correction
+// actually takes effect. Same convention as Strategist's own bulk import.
+function accountingParseBulkImport(raw, overrides = {}) {
   const rows = accountingParseCsvRows(raw);
   if (rows.length < 2) return { error: 'Need a header row plus at least one data row.' };
   const header = rows[0].map(h => h.trim().toLowerCase());
@@ -748,20 +800,34 @@ function accountingParseBulkImport(raw) {
   const groups = new Map(); // identityKey -> { client, service, tacticLabel, flightStart, flightEnd, hasOfflineVisits, billingType, months: [{month, grossBudget}] }
   rows.slice(1).forEach((cols, i) => {
     const rowNum = i + 2;
+    if (overrides[rowNum]?.excluded) return; // removed from the import, per her own review
     const get = (key) => colIndex[key] !== undefined ? (cols[colIndex[key]] || '').trim() : '';
     const clientName = get('client'), tacticName = get('tactic');
     if (!clientName && !tacticName) return; // blank line
-    const client = accountingResolveBulkClient(clientName);
-    const tacticMatch = accountingResolveBulkTactic(tacticName);
+    const clientOverrideId = overrides[rowNum]?.clientId;
+    const serviceOverrideId = overrides[rowNum]?.serviceId;
+    const client = clientOverrideId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientOverrideId) : accountingResolveBulkClient(clientName);
+    const tacticMatch = serviceOverrideId
+      ? (CATALOG_ROWS[serviceOverrideId] ? { service: CATALOG_ROWS[serviceOverrideId], tacticLabel: CATALOG_ROWS[serviceOverrideId].accounting_label || CATALOG_ROWS[serviceOverrideId].label } : null)
+      : accountingResolveBulkTactic(tacticName);
     if (!client) { errors.push({ rowNum, field: 'client', clientName, tacticName }); return; }
     if (!tacticMatch) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
     const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}`;
     if (!groups.has(identityKey)) {
+      // Does this Client+Tactic already exist -- from Strategist's own
+      // order flow, an earlier Accounting Add Service, or a prior Bulk
+      // Import -- ALL_ACCOUNTING_LINES covers every source (2026-08-12,
+      // per Claire: "will it know if something is already in the
+      // strategist portal?"). If so, this group ADDS its pasted months
+      // to that SAME line instead of creating a duplicate one.
+      const existingLine = ALL_ACCOUNTING_LINES.find(l =>
+        l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel);
       groups.set(identityKey, {
         client, service: tacticMatch.service, tacticLabel: tacticMatch.tacticLabel,
         flightStart: get('flight_start') || null, flightEnd: get('flight_end') || null,
         hasOfflineVisits: /^(true|yes|1)$/i.test(get('has_offline_visits')),
         billingType: get('billing_type').toLowerCase() || null,
+        existingLineId: existingLine ? existingLine.id : null,
         months: [],
       });
     }
@@ -780,7 +846,7 @@ function accountingParseBulkImport(raw) {
 function accountingOpenBulkImportForm() {
   const el = document.getElementById('accounting-bulk-import-form');
   const isOpen = el.style.display !== 'none';
-  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; ACCT_BULK_IMPORT_PLAN = null; return; }
+  if (isOpen) { el.style.display = 'none'; el.innerHTML = ''; ACCT_BULK_IMPORT_PLAN = null; ACCT_BULK_IMPORT_OVERRIDES = {}; return; }
   accountingCloseOtherForms('accounting-bulk-import-form');
 
   el.style.display = 'block';
@@ -802,7 +868,7 @@ Fisher & Son Roofing	Website Hosting	2026-01-01		2026-08	149	Recurring"></textar
 let ACCT_BULK_IMPORT_PLAN = null; // set by Preview, consumed by Confirm -- never touched by typing alone
 function accountingPreviewBulkImport() {
   const raw = document.getElementById('acct-bulk-import-text').value;
-  const plan = accountingParseBulkImport(raw);
+  const plan = accountingParseBulkImport(raw, ACCT_BULK_IMPORT_OVERRIDES);
   const resultsEl = document.getElementById('acct-bulk-import-results');
   if (plan.error) {
     resultsEl.innerHTML = `<p style="font-size:12px;color:#B91C1C;margin:0">${esc(plan.error)}</p>`;
@@ -815,13 +881,16 @@ function accountingPreviewBulkImport() {
     <p style="font-size:12.5px;font-weight:600;margin:0 0 8px">${plan.groups.length} campaign(s), ${totalMonths} month row(s) ready to import${plan.errors.length ? `, ${plan.errors.length} row(s) need fixing first` : ''}.</p>`;
   html += plan.groups.map(g => {
     const trackable = accountingIsSpendTrackable(g.service.id);
+    const tag = g.existingLineId
+      ? 'already in the system -- adding to it'
+      : trackable ? 'new campaign' : 'new campaign, accounting-only';
     return `<div style="padding:6px 0;font-size:12px;border-bottom:1px solid var(--border)">
-      <strong>${esc(g.client.name)}</strong> — ${esc(g.tacticLabel)} <span style="color:var(--muted)">(${g.months.length || 0} month(s)${trackable ? '' : ', accounting-only'})</span>
+      <strong>${esc(g.client.name)}</strong> — ${esc(g.tacticLabel)} <span style="color:var(--muted)">(${g.months.length || 0} month(s), ${tag})</span>
     </div>`;
   }).join('');
   if (plan.errors.length) {
-    html += `<p style="font-size:12px;font-weight:600;color:#B91C1C;margin:10px 0 4px">Needs fixing (edit the paste above and Preview again):</p>`;
-    html += plan.errors.map(e => `<div style="font-size:12px;color:#B91C1C;padding:3px 0">Row ${e.rowNum}: ${e.field === 'client' ? 'client' : 'tactic'} "${esc(e.field === 'client' ? e.clientName : e.tacticName)}" not found</div>`).join('');
+    html += `<p style="font-size:12px;font-weight:600;color:#B91C1C;margin:10px 0 4px">Needs fixing -- pick the right one below, or remove the row (no need to re-paste):</p>`;
+    html += plan.errors.map(e => accountingRenderBulkImportErrorRow(e)).join('');
   }
   html += `<div style="margin-top:12px">
     <button onclick="accountingConfirmBulkImport()" ${plan.groups.length ? '' : 'disabled'} style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button>
@@ -829,14 +898,68 @@ function accountingPreviewBulkImport() {
   resultsEl.innerHTML = html;
 }
 
+// One unresolved row's fix-it UI: a "did you mean X?" suggestion (plain
+// edit-distance nearest match, pre-selected but never auto-applied) plus a
+// dropdown of every real option and a Remove-row button -- picking either
+// re-runs Preview against an override, the pasted text is never touched.
+function accountingRenderBulkImportErrorRow(e) {
+  const rawText = e.field === 'client' ? e.clientName : e.tacticName;
+  const suggestion = e.field === 'client' ? accountingSuggestSimilarClient(rawText) : accountingSuggestSimilarTactic(rawText);
+  const suggestionId = suggestion ? (e.field === 'client' ? suggestion.id : suggestion.service.id) : null;
+  const suggestionLabel = suggestion ? (e.field === 'client' ? suggestion.name : suggestion.tacticLabel) : null;
+  const overrideKey = e.field === 'client' ? 'clientId' : 'serviceId';
+  const options = e.field === 'client'
+    ? [...ALL_ACCOUNTING_CLIENTS].sort((a, b) => a.name.localeCompare(b.name))
+        .map(c => `<option value="${esc(c.id)}" ${suggestionId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')
+    : Object.values(CATALOG_ROWS).filter(r => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment)
+        .sort((a, b) => (a.accounting_label || a.label || '').localeCompare(b.accounting_label || b.label || ''))
+        .map(r => `<option value="${esc(r.id)}" ${suggestionId === r.id ? 'selected' : ''}>${esc(r.accounting_label || r.label)}</option>`).join('');
+  return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 0;font-size:12px;color:#B91C1C">
+    <span>Row ${e.rowNum}: ${e.field} "${esc(rawText)}" not found${suggestionLabel ? ` — did you mean "${esc(suggestionLabel)}"?` : ''}</span>
+    <select onchange="accountingSetBulkImportOverride(${e.rowNum}, '${overrideKey}', this.value)" style="font-size:11px;padding:3px 6px;border-radius:5px;border:1px dashed var(--accent);color:var(--text)">
+      <option value="">— Pick the right ${e.field} —</option>
+      ${options}
+    </select>
+    <button onclick="accountingSetBulkImportOverride(${e.rowNum}, 'excluded', true)" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer;color:var(--text)">Remove row</button>
+  </div>`;
+}
+let ACCT_BULK_IMPORT_OVERRIDES = {}; // rowNum -> { clientId?, serviceId?, excluded? }
+function accountingSetBulkImportOverride(rowNum, key, value) {
+  if (!ACCT_BULK_IMPORT_OVERRIDES[rowNum]) ACCT_BULK_IMPORT_OVERRIDES[rowNum] = {};
+  ACCT_BULK_IMPORT_OVERRIDES[rowNum][key] = value;
+  accountingPreviewBulkImport();
+}
+
 async function accountingConfirmBulkImport() {
   if (!ACCT_BULK_IMPORT_PLAN || !ACCT_BULK_IMPORT_PLAN.groups.length) return;
   const { groups } = ACCT_BULK_IMPORT_PLAN;
-  let linesCreated = 0, monthsSaved = 0;
+  let linesCreated = 0, linesMatched = 0, monthsSaved = 0;
   try {
     for (const g of groups) {
-      const trackable = accountingIsSpendTrackable(g.service.id);
       const sortedMonths = [...g.months].sort((a, b) => a.month.localeCompare(b.month));
+      let lineId = g.existingLineId;
+
+      if (lineId) {
+        // Already in the system (Strategist's own order flow, an earlier
+        // Add Service, or a prior Bulk Import) -- add these months to that
+        // SAME line rather than creating a duplicate one (2026-08-12, per
+        // Claire: "will it know if something is already in the strategist
+        // portal?"). Every month goes through accounting_save_campaign_month
+        // here, including the first -- there's no "initial month" concept
+        // for a line that already exists.
+        linesMatched++;
+        for (const m of sortedMonths) {
+          if (m.grossBudget == null) continue;
+          await sb('rpc/accounting_save_campaign_month', { method: 'POST', body: JSON.stringify({
+            p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw,
+            p_campaign_line_id: lineId, p_month: m.month, p_data: { gross_budget: m.grossBudget }
+          }) });
+          monthsSaved++;
+        }
+        continue;
+      }
+
+      const trackable = accountingIsSpendTrackable(g.service.id);
       const firstMonth = sortedMonths[0];
       const data = {
         client_id: g.client.id, group_id: g.client.group_id || null, service_id: g.service.id,
@@ -871,7 +994,7 @@ async function accountingConfirmBulkImport() {
     ACCT_BULK_IMPORT_PLAN = null;
     await fetchAccountingData();
     renderAccountingDashboard();
-    showToast(`Imported ${linesCreated} campaign(s), ${monthsSaved} month(s) saved.`);
+    showToast(`${linesCreated} new campaign(s) created, ${linesMatched} already-existing campaign(s) matched, ${monthsSaved} month(s) saved.`);
   } catch(e) { showToast('Error during bulk import: ' + e.message, 'error'); }
 }
 

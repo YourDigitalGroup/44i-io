@@ -11221,3 +11221,64 @@ containers), not a product bug; added the missing stub div to each. Full
 suite re-run with exit-code checking this time (not just string-matching
 for "false" in the output, which would have missed a crash) — genuinely
 clean.
+
+### 2026-08-12 (cont'd) — Bulk Import now detects already-existing campaigns
+
+Claire asked directly: "will it know if something is already in the
+strategist portal?" Honest answer at the time was no — it would have
+blindly created a duplicate `campaign_lines` row for a Client+Tactic that
+already existed, from Strategist's own order flow, an earlier Add Service,
+or a prior Bulk Import run. Real gap for a tool explicitly meant for "a
+lot of rows" — fixed rather than shipped with it.
+
+Each parsed group now checks `ALL_ACCOUNTING_LINES` (which already
+covers every source, not just Strategist's) for a matching Client+Tactic
+before deciding what to do: if found, its pasted months get added to that
+SAME line via `accounting_save_campaign_month` (every month, including
+what would have been the "first" one — there's no "initial month" concept
+for a line that already exists); only a genuinely new Client+Tactic still
+goes through `accounting_add_campaign_line`. Preview now labels each group
+"already in the system -- adding to it" vs. "new campaign" so it's visible
+before Confirm which is which. Final toast reports both counts separately
+(new campaigns created vs. existing ones matched) instead of one combined
+number.
+
+**Verified**: extended `test-accounting-bulk-import-2026-08-12.js` to
+17/17 -- a Client+Tactic already in `ALL_ACCOUNTING_LINES` is detected at
+parse time, Confirm creates zero new lines for it and saves both its
+pasted months onto the existing line's own id. Re-ran every other test
+file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Bulk Import: "did you mean" suggestions + fix-it dropdowns
+
+Claire, two asks in one message: "Could we add something that notes if
+something looks similar? and add the dropdowns like the strategist so
+that I don't have to repaste?" Both mirror capability the Strategist
+Portal's own bulk import already grew into (its own `overrides` mechanism)
+-- Accounting's version had shipped without it as an explicit, flagged
+scope cut, not an oversight, exactly so this could come back as a real
+follow-up if it turned out to matter.
+
+**Fix-it dropdowns**: `accountingParseBulkImport()` now takes an optional
+`overrides` map (keyed by row number, same convention as Strategist's),
+applied via a new `ACCT_BULK_IMPORT_OVERRIDES` global and `accountingSet
+BulkImportOverride(rowNum, key, value)` -- picking a Client/Tactic from a
+dropdown, or clicking Remove row, re-runs Preview against the SAME pasted
+text with that one row corrected, never touching the textarea itself.
+
+**"Did you mean" suggestions**: new `accountingLevenshtein()` (plain edit-
+distance) powers `accountingSuggestSimilarClient`/`accountingSuggestSimilar
+Tactic` -- finds the nearest real client/tactic to an unresolved row's
+typed text, only surfaced when it's actually CLOSE (threshold scales with
+the typed text's own length, so a short name isn't over-matched to
+something unrelated). Shown as a note next to the row AND pre-selected in
+that row's fix-it dropdown -- but never auto-applied; she still has to
+pick it.
+
+**Verified**: new `test-accounting-bulk-import-overrides-2026-08-12.js`
+(13/13) -- Levenshtein distance is correct on known cases; a close typo
+gets suggested, an unrelated name doesn't; the preview shows the
+suggestion note and a dropdown pre-selecting it, listing every real
+client; picking the dropdown resolves the row and leaves the textarea
+untouched; removing a row produces neither a group nor an error for it.
+Re-ran every other test file across both portals — no regressions.
