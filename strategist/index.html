@@ -1286,18 +1286,16 @@ async function fetchStrategistData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
   const [lines, months, log, rates, clients, reportCache, statusHistory] = await Promise.all([
     sb('rpc/strategist_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
-    // TEMPORARILY back to plain sb() (2026-08-12) -- sbAll's Range-header approach
-    // doesn't work against POST-based RPCs (PostgREST only applies Range pagination
-    // to GET; every request came back identical and ran ~2000 times against
-    // production before Claire caught it). Revert to sbAll once
-    // strategist_get_campaign_months/_optimize_log accept real p_limit/p_offset --
-    // see the SQL note in shared.js's own sbAll comment.
-    sb('rpc/strategist_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
-    sb('rpc/strategist_get_optimize_log', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    // sbAll -- campaign_months, optimize_log, and status_history all now accept
+    // real p_limit/p_offset (paginated-rpc-functions-2026-08-12.sql, run 2026-08-12)
+    // so sbAll's own limit/offset loop in shared.js can paginate past Supabase's
+    // API row cap without depending on any HTTP-level pagination semantics.
+    sbAll('rpc/strategist_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sbAll('rpc/strategist_get_optimize_log', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_budgeted_spend_rates', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_platform_report_cache', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
-    sb('rpc/strategist_get_status_history', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sbAll('rpc/strategist_get_status_history', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
   ]);
   ALL_CAMPAIGN_LINES = lines || [];
   ALL_CAMPAIGN_MONTHS = months || [];
