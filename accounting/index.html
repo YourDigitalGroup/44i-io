@@ -59,8 +59,7 @@
   #page-accounting .acct-status-pill.needs{background:#FBF3C7;color:#8A6D12}
   #page-accounting .acct-status-pill.external{background:#DBEAFE;color:#1E40AF}
   #page-accounting .acct-status-pill.paused{background:#E5E7EB;color:#4B5563}
-  #page-accounting .acct-pending-note{background:#F0F9FF;border:1px solid var(--accent);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:var(--text)}
-  #page-accounting .acct-pending-note strong{font-weight:700}
+  #page-accounting .acct-status-pill.pending{background:#EDE9FE;color:#6D28D9}
 </style>
 </head>
 <body>
@@ -129,12 +128,6 @@
     <div id="accounting-add-service-form" style="display:none;margin-bottom:16px"></div>
     <div id="accounting-bulk-match-form" style="display:none;margin-bottom:16px"></div>
     <div id="accounting-bulk-import-form" style="display:none;margin-bottom:16px"></div>
-
-    <!-- Pending-in-Strategist awareness note (2026-08-12, per Claire: "so
-         there is awareness across the board") -- a Setup-queue campaign has
-         no Gross Budget row yet, so it never shows in the table below at
-         all; this is the only place Accounting can see one exists. -->
-    <div id="accounting-pending-note"></div>
 
     <!-- Summary stat tiles -->
     <div id="accounting-stats" class="acct-stats"></div>
@@ -402,6 +395,10 @@ function accountingRenderDetailCard() {
         <button class="acct-detail-close" onclick="accountingCloseDetailCard()">✕ Close</button>
       </div>
     </div>
+    ${(line.campaign_notes || line.order_line_notes) ? `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#FFFBEB">
+      ${line.campaign_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">IO Campaign Notes</div><div style="font-size:12.5px;color:var(--text);margin-bottom:${line.order_line_notes ? '8px' : '0'}">${esc(line.campaign_notes)}</div>` : ''}
+      ${line.order_line_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">Note on this line</div><div style="font-size:12.5px;color:var(--text)">${esc(line.order_line_notes)}</div>` : ''}
+    </div>` : ''}
     <table>
       <thead><tr><th>Month</th><th class="num">Revenue</th><th class="num">44i Revenue</th><th class="num">Expected Spend</th><th class="num">Actual Spend</th><th>Status</th></tr></thead>
       <tbody>${months.map(m => {
@@ -1007,19 +1004,43 @@ async function accountingConfirmBulkImport() {
 }
 
 function accountingStatusPill(kind, text) {
-  const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external', paused: 'paused' }[kind];
+  const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external', paused: 'paused', pending: 'pending' }[kind];
   return `<span class="acct-status-pill ${cls}">${esc(text)}</span>`;
 }
 // Confirmed = a real actual-spend figure entered for the month, OR a manual
 // confirm from the detail card (for tactics the Strategist Portal never
-// tracks actuals for at all). Either one is sufficient. Paused (2026-08-12,
-// per Claire: "how should we indicate a paused month in the middle of a
-// flight") takes priority over Confirmed/Needs confirmation -- a paused
-// month never needs confirming, it's just not running -- but Billed
-// Externally still wins over Paused (a manually-invoiced tactic can be
-// paused in the ad platform and still get billed).
+// Same keys/labels as the Strategist Portal's own SETUP_BLOCKER_LABELS --
+// duplicated here rather than shared, same "each portal keeps its own copy"
+// convention as everywhere else this session -- so a blocker reads
+// identically in either portal without the two files depending on each
+// other's internals.
+const ACCT_SETUP_BLOCKER_LABELS = {
+  creative: 'Waiting on Creative',
+  platform_access: 'Waiting on Platform Access',
+  intake_form: 'Waiting on Intake Form',
+  pending_website: 'Pending Website',
+};
+// A pending campaign's own pill (2026-08-12, per Claire: "like paused, I
+// want something that notes it is pending and what the blocker is") --
+// one pill per recognized blocker, same visual treatment as Strategist's
+// own strategistSetupBlockerPill. Falls back to a plain "Pending" pill if
+// no blocker is set yet (or none of the ones set are recognized).
+function accountingPendingStatusPill(line) {
+  const blockers = Array.isArray(line.setup_blocker) ? line.setup_blocker.filter(b => ACCT_SETUP_BLOCKER_LABELS[b]) : [];
+  if (!blockers.length) return accountingStatusPill('pending', 'Pending');
+  return `<span style="display:inline-flex;gap:5px;flex-wrap:wrap">${accountingStatusPill('pending', 'Pending')}${blockers.map(b =>
+    `<span class="acct-status-pill" style="background:#FEF3C7;color:#92400E">${esc(ACCT_SETUP_BLOCKER_LABELS[b])}</span>`).join('')}</span>`;
+}
+// tracks actuals for at all). Either one is sufficient. Priority order:
+// Billed Externally > Pending > Paused > Confirmed/Needs confirmation.
+// Pending (2026-08-12, per Claire) sits above Paused -- a campaign that
+// hasn't even started in Strategist yet was never "running" to begin with,
+// so Paused doesn't apply to it; Billed Externally still wins over
+// everything (a manually-invoiced tactic can be billed regardless of its
+// own setup/pause state).
 function accountingLineStatusPill(r) {
   if (r.line.billed_externally) return accountingStatusPill('external', 'Billed externally');
+  if (r.line.status === 'pending') return accountingPendingStatusPill(r.line);
   if (r.paused) return accountingStatusPill('paused', 'Paused');
   if (r.confirmed) return accountingStatusPill('confirmed', 'Confirmed');
   return accountingStatusPill('needs', 'Needs confirmation');
@@ -1027,13 +1048,13 @@ function accountingLineStatusPill(r) {
 // Status text for a rollup PARENT row -- summarizes across all its children
 // rather than picking one child's state, since a split can have some regions
 // confirmed and others not (the mockup's "2 of 3 confirmed" example). Same
-// Billed Externally > Paused > Confirmed priority as the single-line pill --
-// only shows a whole-rollup "Paused" when EVERY region is paused this month,
-// otherwise a partially-paused rollup falls through to the normal
-// confirmed-count summary (a region-specific pause doesn't need its own
-// "X of Y paused" line here -- that detail is visible in the expanded rows).
+// priority as the single-line pill -- only shows a whole-rollup Pending/
+// Paused when EVERY region is in that state, otherwise a partial one falls
+// through to the normal confirmed-count summary (that detail is visible in
+// the expanded rows).
 function accountingRollupStatusPill(r) {
   if (r.children.every(c => c.line.billed_externally)) return accountingStatusPill('external', 'Billed externally');
+  if (r.children.every(c => c.line.status === 'pending')) return accountingPendingStatusPill(r.children[0].line);
   if (r.children.every(c => c.paused)) return accountingStatusPill('paused', 'Paused');
   if (r.confirmedCount === r.totalCount) return accountingStatusPill('confirmed', 'Confirmed');
   if (r.confirmedCount === 0) return accountingStatusPill('needs', 'Needs confirmation');
@@ -1139,6 +1160,16 @@ function accountingSplitInvoiceable(r) {
   }
   if (r.split.fortyfouri == null) return { invoiceable: 0, excluded: 0 };
   return r.line.billed_externally ? { invoiceable: 0, excluded: r.split.fortyfouri } : { invoiceable: r.split.fortyfouri, excluded: 0 };
+}
+
+// A row is "fully pending" when every real campaign it represents is still
+// sitting in Strategist's Setup queue (2026-08-12, per Claire: "their
+// revenues shouldn't be included in the stat tiles until they are active
+// and have spend") -- a rollup only counts as pending when EVERY region is,
+// same all-or-nothing convention already used for Paused/Billed Externally
+// rollup summaries.
+function accountingRowIsPending(r) {
+  return r.isRollup ? r.children.every(c => c.line.status === 'pending') : r.line.status === 'pending';
 }
 
 // "Expected Spend" (2026-08-11, per Claire: it's a genuinely different number
@@ -1325,41 +1356,6 @@ function accountingLineActiveInMonth(line, monthDate) {
   if (line.flight_end && monthKey > accountingMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
   return true;
 }
-// Awareness note (2026-08-12, per Claire: "so there is awareness across
-// the board") for a campaign sitting in Strategist's own Setup queue --
-// status='pending', still waiting on platform/tracking details. These
-// never show in the table below at all (accountingBuildRows requires a
-// real Gross Budget row, and a pending campaign has none yet), so this is
-// the only place Accounting can see one exists before it's activated.
-// Deliberately excludes accounting_only lines -- those never go through
-// Strategist's Setup at all, so "pending in the strategist portal" doesn't
-// apply to them. Respects the Group filter (so switching group context
-// also filters this note) but not the Status filter, which doesn't even
-// offer "pending" as an option -- this is supplementary, not part of the
-// main table's own filtering.
-function accountingRenderPendingNote() {
-  const el = document.getElementById('accounting-pending-note');
-  const pending = ALL_ACCOUNTING_LINES.filter(l =>
-    l.status === 'pending' && !l.accounting_only &&
-    (!accountingGroupFilter || l.group_name === accountingGroupFilter));
-  if (!pending.length) { el.innerHTML = ''; el.className = ''; return; }
-  el.className = 'acct-pending-note';
-  // Surfaces each pending campaign's own IO notes too (2026-08-12, per
-  // Claire: "we should also be able to see any notes from the IO...
-  // sticking with the goal of the IO being the source of truth") -- same
-  // "IO Campaign Notes" (order-wide)/"Note on this line" (per-tactic)
-  // labels the Strategist Portal's own detail panel already uses, so a
-  // note reads identically in both portals.
-  const items = pending.map(l => {
-    const notes = [
-      l.campaign_notes ? `IO Campaign Notes: ${l.campaign_notes}` : null,
-      l.order_line_notes ? `Note on this line: ${l.order_line_notes}` : null,
-    ].filter(Boolean);
-    const noteText = notes.length ? ` (${notes.map(esc).join(' — ')})` : '';
-    return `${esc(l.client_name || '(unknown)')} — ${esc(l.tactic_label || l.service_id || '—')}${noteText}`;
-  }).join('; ');
-  el.innerHTML = `📋 <strong>${pending.length} campaign${pending.length === 1 ? '' : 's'} pending in Strategist Setup</strong> — not yet reflected in revenue: ${items}`;
-}
 function accountingBuildRows() {
   const filtered = ALL_ACCOUNTING_LINES.filter(l => {
     if (accountingGroupFilter && l.group_name !== accountingGroupFilter) return false;
@@ -1383,7 +1379,15 @@ function accountingBuildRows() {
     const confirmed = actualSpend != null || !!monthRow?.confirmed_by;
     const paused = !!monthRow?.paused;
     return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed, paused };
-  }).filter(r => r.gross != null); // no month row for this line/month at all -- nothing to show yet
+  }).filter(r => r.gross != null || r.line.status === 'pending');
+  // A pending campaign still shows as a line item for every month in its
+  // own flight (2026-08-12, per Claire: "I would like there to be line
+  // items for the pending campaigns in whatever months are in their
+  // flight") even with no Gross Budget entered yet -- Strategist hasn't
+  // set it up, so there's often nothing to show numerically, but the ROW
+  // itself (with its own "Pending -- blocked on X" status) shouldn't be
+  // invisible just because the number is missing. Every other status
+  // still requires a real Gross Budget row -- nothing to show otherwise.
 
   const groups = new Map();
   perLine.forEach(r => {
@@ -1460,7 +1464,7 @@ function accountingRenderRow(r) {
           <td></td>
           <td>${esc(c.line.split_label || '(unlabeled split)')}</td>
           <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
-          <td class="num">$${c.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+          <td class="num">${c.gross != null ? '$' + c.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${c.expectedSpend != null ? '$' + c.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${c.actualSpend != null ? '$' + c.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
@@ -1475,7 +1479,7 @@ function accountingRenderRow(r) {
     <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
     <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
-    <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+    <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
@@ -1492,8 +1496,6 @@ function renderAccountingDashboard() {
   groupFilterEl.innerHTML = '<option value="">All Groups</option>' +
     groupNames.map(g => `<option value="${esc(g)}" ${g === accountingGroupFilter ? 'selected' : ''}>${esc(g)}</option>`).join('');
 
-  accountingRenderPendingNote();
-
   const rows = accountingBuildRows();
 
   // Stat tiles (mockup's summary bar) -- computed from the SAME filtered rows
@@ -1508,9 +1510,19 @@ function renderAccountingDashboard() {
   // 44i's revenue to begin with even though the per-row cell still shows the
   // calculated split for reference). Tracked separately as its own tile so
   // the excluded amount doesn't just silently vanish from the summary bar.
-  let totalGross = 0, totalExpectedSpend = 0, totalActualSpend = 0, totalFortyfouri = 0, totalBilledExternally = 0, awaiting = 0;
+  // Pending campaigns are excluded from every stat tile entirely (2026-08-12,
+  // per Claire: "their revenues shouldn't be included in the stat tiles
+  // until they are active and have spend") -- unlike Billed Externally
+  // (which still counts Gross/Expected Spend, only excludes the 44i cut),
+  // a still-pending campaign hasn't started at all, so NONE of its
+  // projected numbers should count yet. The row itself still shows its own
+  // figures if any exist (informational, same as Billed Externally) -- only
+  // the aggregate totals skip it.
+  let totalGross = 0, totalExpectedSpend = 0, totalActualSpend = 0, totalFortyfouri = 0, totalBilledExternally = 0, awaiting = 0, nonPendingCount = 0;
   rows.forEach(r => {
-    totalGross += r.gross;
+    if (accountingRowIsPending(r)) return;
+    nonPendingCount++;
+    totalGross += r.gross || 0;
     if (r.expectedSpend != null) totalExpectedSpend += r.expectedSpend;
     if (r.actualSpend != null) totalActualSpend += r.actualSpend;
     const { invoiceable, excluded } = accountingSplitInvoiceable(r);
@@ -1526,7 +1538,7 @@ function renderAccountingDashboard() {
     stat('Actual Spend', '$' + totalActualSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Billed Externally (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2})) +
-    stat('Awaiting Confirmation', `${awaiting} of ${rows.length}`, awaiting > 0 ? 'warn' : '');
+    stat('Awaiting Confirmation', `${awaiting} of ${nonPendingCount}`, awaiting > 0 ? 'warn' : '');
   // Tint the stat bar with the filtered Group's own brand color -- viewing
   // "All Groups" (mixed data, no single brand color applies) keeps the
   // plain white/border default.
