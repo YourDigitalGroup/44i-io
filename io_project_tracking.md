@@ -12002,3 +12002,16 @@ even though its own frozen `accounting_label` is null; a line item with its
 own frozen `accounting_label` set displays it; a line item whose service_id
 no longer exists in the live catalog at all falls back to its frozen plain
 label rather than showing blank/undefined. `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — Removed the "(flat fee — accounting only)" row tag
+
+Claire: "can we remove the (flat fee- accounting only) note in the
+accounting portal, they now what each is." Removed `accountingBillingTypeTag()`
+entirely and its two call sites (main row, rollup row) -- same kind of
+now-unnecessary inline annotation as the section tag removed earlier today,
+just for `accounting_only` lines instead of section collisions.
+
+**Verified**: re-ran every Accounting/Strategist test from today's session
+(pending line items, IO notes, SEO-tracking exclusion, Addl. Targeting,
+auto-billing-type/amount) -- all still fully passing, confirming no other
+code depended on this tag. `node --check` passes clean.

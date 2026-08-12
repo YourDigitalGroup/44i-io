@@ -1577,23 +1577,12 @@ function accountingBuildRows() {
 // % and Group's $ (YDA) were dropped as their own columns per that same ask
 // -- the cut % is still used internally to compute 44i Revenue, just no
 // longer shown as its own column.
-// Tags a line created straight from an order's flat fee/recurring amount
-// (2026-08-12, per Claire: "track all services ordered, not just tactics
-// with spend") -- these never go through Strategist's Setup queue at all
-// (accounting_only), so this is the only place Claire can tell one apart
-// from a normal Strategist-tracked tactic at a glance. No tag at all for
-// ordinary spend-tracked lines (accounting_only false/undefined).
-function accountingBillingTypeTag(line) {
-  if (!line.accounting_only) return '';
-  const label = line.billing_type === 'one_time' ? 'one-time fee' : 'flat fee';
-  return ` <span style="font-size:10px;color:var(--muted)">(${label} — accounting only)</span>`;
-}
 function accountingRenderRow(r) {
   if (r.isRollup) {
     const expanded = ACCOUNTING_EXPANDED_SPLITS.has(r.key);
     let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')">
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span>${accountingBillingTypeTag(r.line)}</td>
+      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span></td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
       <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
@@ -1626,7 +1615,7 @@ function accountingRenderRow(r) {
   const selected = r.line.id === accountingSelectedLineId;
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')">
     <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
     <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
