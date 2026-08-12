@@ -11544,3 +11544,20 @@ on tables; it doesn't, causing an infinite loop that hit ~2000 requests against
 production before Claire caught it and closed the tab → (4) real fix: explicit
 SQL-level LIMIT/OFFSET parameters on the RPCs themselves, no HTTP-pagination
 assumptions left to be wrong about.
+
+### 2026-08-12 (cont'd) — Loading indicator for the initial dashboard fetch
+
+Claire, right after confirming the real pagination fix worked: "It just took
+longer to load and looked like nothing was happening." Real gap, not just a
+perception issue -- neither portal had ANY loading state anywhere, on any
+fetch, ever; it was never very noticeable while everything fit in one request,
+but `sbAll` now makes several sequential requests on the initial load, and a
+totally blank page with no feedback reads as broken.
+
+Added a plain "Loading…" placeholder into the table wrap, shown right before
+`fetchStrategistData()`/`fetchAccountingData()` in each portal's initial
+`load*Dashboard()` function, replaced automatically once `render*Dashboard()`
+runs. Deliberately scoped to just the initial page load, not every
+`fetchStrategistData()` call after a save — a save already has real content
+underneath it, so the same "empty page, nothing happening" problem doesn't
+apply there. `node --check` passes clean on both files.
