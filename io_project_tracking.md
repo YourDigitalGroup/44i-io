@@ -11248,3 +11248,37 @@ number.
 parse time, Confirm creates zero new lines for it and saves both its
 pasted months onto the existing line's own id. Re-ran every other test
 file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Bulk Import: "did you mean" suggestions + fix-it dropdowns
+
+Claire, two asks in one message: "Could we add something that notes if
+something looks similar? and add the dropdowns like the strategist so
+that I don't have to repaste?" Both mirror capability the Strategist
+Portal's own bulk import already grew into (its own `overrides` mechanism)
+-- Accounting's version had shipped without it as an explicit, flagged
+scope cut, not an oversight, exactly so this could come back as a real
+follow-up if it turned out to matter.
+
+**Fix-it dropdowns**: `accountingParseBulkImport()` now takes an optional
+`overrides` map (keyed by row number, same convention as Strategist's),
+applied via a new `ACCT_BULK_IMPORT_OVERRIDES` global and `accountingSet
+BulkImportOverride(rowNum, key, value)` -- picking a Client/Tactic from a
+dropdown, or clicking Remove row, re-runs Preview against the SAME pasted
+text with that one row corrected, never touching the textarea itself.
+
+**"Did you mean" suggestions**: new `accountingLevenshtein()` (plain edit-
+distance) powers `accountingSuggestSimilarClient`/`accountingSuggestSimilar
+Tactic` -- finds the nearest real client/tactic to an unresolved row's
+typed text, only surfaced when it's actually CLOSE (threshold scales with
+the typed text's own length, so a short name isn't over-matched to
+something unrelated). Shown as a note next to the row AND pre-selected in
+that row's fix-it dropdown -- but never auto-applied; she still has to
+pick it.
+
+**Verified**: new `test-accounting-bulk-import-overrides-2026-08-12.js`
+(13/13) -- Levenshtein distance is correct on known cases; a close typo
+gets suggested, an unrelated name doesn't; the preview shows the
+suggestion note and a dropdown pre-selecting it, listing every real
+client; picking the dropdown resolves the row and leaves the textarea
+untouched; removing a row produces neither a group nor an error for it.
+Re-ran every other test file across both portals — no regressions.
