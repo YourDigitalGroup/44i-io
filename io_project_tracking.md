@@ -11429,3 +11429,56 @@ background color is visible behind the toast either way. Full logged-in views wi
 real data (tables, stat tiles, status pills) were NOT visually checked, since that
 needs a live Supabase session — worth a quick look on the real deployed site to
 confirm nothing reads oddly against the new background.
+
+### 2026-08-12 (cont'd) — Real bug found: Supabase's 1000-row API cap silently truncating campaign_months
+
+Claire ran a Strategist bulk import (67 campaigns matched to existing lines, 63
+platform reports auto-applied, 0 issues reported) but afterward the dashboard —
+even after a hard refresh — showed no budgets/goals for any of the newly-imported
+months, and "Re-check Cached Reports" found nothing either.
+
+**Root cause traced step by step, ruling out each layer in order**: (1) parsed
+the exact pasted rows through `strategistParseBulkImport()` directly — both a
+real Omni Hotel OKC row and a real Ohiya Casino row parsed correctly, tactic
+resolved, month/budget/goal extracted, existing-line match found — no client-side
+parsing bug. (2) Had Claire query `campaign_months` directly for the Ohiya
+campaign, bypassing the app entirely — the row WAS there, saved at the exact
+timestamp of her import, with the exact $1,500/88,235 she'd pasted. The save had
+actually worked. (3) Read both `strategist_save_campaign_month` and
+`strategist_get_campaign_months`'s live definitions (Claire ran
+`pg_get_functiondef`) — both are correct, no swallowed exceptions, no filters.
+(4) `select count(*) from campaign_months` → **2,968 rows** — past Supabase's
+project-level API "Max Rows" cap (default 1000). Every fetch of this table via
+the plain `sb()` helper was silently truncated to whatever the cap allows, with
+no error and no warning — the newest rows (today's import) were the ones landing
+outside the truncated window.
+
+**Fix — real pagination, not just raising the cap** (Claire asked for the
+permanent fix specifically, not a quick dashboard-setting bump, and asked
+whether it risks the database's health — confirmed no: this only changes how the
+client REQUESTS data, nothing about the schema or stored data). New `sbAll()` in
+`shared.js`, next to `sb()`: pages through via the `Range`/`Range-Unit` headers,
+reading PostgREST's own `Content-Range` response header for the real total count
+rather than assuming any particular page size or cap value — so it can't
+silently under-fetch again no matter how large the table grows or what the
+project's cap is set to. Falls back to a "shorter page than requested" heuristic
+only if `Content-Range` isn't present. Swapped in for `campaign_months` in both
+`fetchStrategistData()` and `fetchAccountingData()` (the confirmed bug), plus
+`optimize_log` and `status_history` in Strategist (unbounded logs likely to hit
+the same wall eventually) — defensive, not because they've failed yet.
+
+**Verified**: `test-sbAll-pagination-2026-08-12.js` (scratchpad) — a mocked
+`fetch` simulating a real PostgREST server (server-side caps each page at 1000
+regardless of what's requested, returns a real `Content-Range` header) correctly
+fetches all 2,968 rows across exactly 3 requests, no duplicates, correct last
+row. `test-sbAll-edge-cases-2026-08-12.js` — an empty table (0 rows) makes
+exactly 1 request and stops; a small table (50 rows) makes exactly 1 request; a
+table landing exactly on the cap boundary (1000 rows) makes exactly 1 request
+(doesn't over-fetch an empty extra page). `node --check` passes clean on both
+`strategist/index.html` and `accounting/index.html`.
+
+**Not done, worth flagging**: didn't sweep every other `sb()` call across the
+whole codebase (admin's own lists — groups/services/AEs — grow far slower and
+weren't part of this complaint), and didn't touch the project's actual Max Rows
+setting in Supabase, since the pagination fix makes that setting's value
+irrelevant either way.
