@@ -11813,3 +11813,28 @@ the pairing lookup; the main row shows the new tag. Re-ran
 `test-accounting-exclude-seo-tracking-2026-08-12.js`, and
 `test-accounting-section-tag-2026-08-12.js` -- all still fully passing.
 `node --check` passes clean on both files.
+
+### 2026-08-12 (cont'd) — Removed the section tag; superseded by the accounting_label fix
+
+Claire, seeing it live: "the stuff in parentheses is a little messy, since we
+updated all of the accounting labels we shouldn't need that now correct?"
+Correct, and the redundancy was worse than just "messy" — the catalog-wide
+`accounting_label` disambiguation pass (same session, right after the tag
+was built) already bakes the section directly into the label text for every
+case that was ever actually ambiguous (e.g. `seo-bp`'s label is now literally
+"SEO — Business Pro"), so the tag was showing the same information twice for
+those rows, and pure noise for every other row that was never ambiguous to
+begin with.
+
+Removed `accountingLineSectionTag()` entirely and its three call sites (main
+row, rollup row, detail card title). Left the Add Service dropdown's
+`<optgroup>` section grouping alone — that solves a different problem
+(navigating a long list while picking, not disambiguating an already-visible
+label) and wasn't part of this complaint. `ACCOUNTING_SECTIONS`/
+`accountingSectionLabel()` stay in place since the dropdown still uses them.
+
+**Verified**: `test-accounting-section-tag-2026-08-12.js` now correctly shows
+the tag is gone (deleted, superseded — not a regression, the feature was
+intentionally removed). Re-ran every other Accounting test from today
+(pending line items, IO notes, SEO-tracking exclusion, Addl. Targeting) --
+all still fully passing. `node --check` passes clean.

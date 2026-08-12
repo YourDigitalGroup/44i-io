@@ -386,7 +386,7 @@ function accountingRenderDetailCard() {
   });
 
   el.innerHTML = `<div class="acct-detail-head">
-      <div class="acct-detail-title">${esc(line.client_name || '(unknown)')} — ${esc(line.tactic_label || line.service_id || '—')}${accountingLineSectionTag(line)}</div>
+      <div class="acct-detail-title">${esc(line.client_name || '(unknown)')} — ${esc(line.tactic_label || line.service_id || '—')}</div>
       <div style="display:flex;align-items:center;gap:14px">
         <div class="acct-detail-sub">${esc(line.group_name || '—')} · ${accountingFormatFullFlightRange(line.flight_start, line.flight_end)}</div>
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11.5px;color:var(--muted)">
@@ -1531,27 +1531,12 @@ function accountingBillingTypeTag(line) {
   const label = line.billing_type === 'one_time' ? 'one-time fee' : 'flat fee';
   return ` <span style="font-size:10px;color:var(--muted)">(${label} — accounting only)</span>`;
 }
-// Shows which catalog section a line's tactic belongs to, next to the tactic
-// name itself (2026-08-12, per Claire: "we need it to show up that way in the
-// accounting portal list of services for the month so it is clear what
-// service was ordered. Not just when we add the service") -- several
-// sections reuse the same tier names (Business Builder/Starter/Pro under
-// both SEO and Social Media, etc.), so a bare tactic_label alone can be
-// ambiguous when scanning the month's services. Shown on every row, not just
-// ambiguous ones, for consistency -- no logic to detect which names actually
-// collide, and an always-present section tag reads better than one that
-// appears on some rows and not others with no visible reason why.
-function accountingLineSectionTag(line) {
-  const section = CATALOG_ROWS[line.service_id]?.section;
-  if (!section) return '';
-  return ` <span style="font-size:10px;color:var(--muted)">(${esc(accountingSectionLabel(section))})</span>`;
-}
 function accountingRenderRow(r) {
   if (r.isRollup) {
     const expanded = ACCOUNTING_EXPANDED_SPLITS.has(r.key);
     let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')">
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingLineSectionTag(r.line)} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span>${accountingBillingTypeTag(r.line)}</td>
+      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span>${accountingBillingTypeTag(r.line)}</td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
       <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
@@ -1584,7 +1569,7 @@ function accountingRenderRow(r) {
   const selected = r.line.id === accountingSelectedLineId;
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')">
     <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingLineSectionTag(r.line)}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
     <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
