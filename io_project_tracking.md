@@ -11694,3 +11694,61 @@ Re-ran `test-accounting-pending-lineitems-2026-08-12.js` (still 13/13 after
 today's blocker-relocation update), `test-accounting-detail-card-io-notes-
 2026-08-12.js`, and `test-accounting-exclude-seo-tracking-2026-08-12.js` --
 all still fully passing. `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — Accounting Label audit: catalog-wide disambiguation pass
+
+Claire asked whether the new Accounting-portal section tag made the
+`accounting_label` field redundant. Checked the history first rather than
+guessing: `accounting_label` solves a broader problem than the section tag
+does — it's what Strategist's own dashboard displays (no section-deriving
+logic there), what `create_campaign_lines_from_order()` bakes into every
+NEW campaign line's permanent `tactic_label` at creation time, and what Bulk
+Import matches pasted Tactic names against. The section tag is
+display-only, Accounting-portal-only, derived fresh at render time — it
+doesn't touch stored data at all. Recommended keeping `accounting_label`;
+Claire agreed.
+
+**Full-catalog audit, at her request** ("I think we should update all of the
+services to make sure that their accounting label is correct"). Pulled every
+active service (`id, section, label, accounting_label`) and compared every
+label against every other label across different sections, the same
+collision `accounting_label` was originally built to solve (2026-08-07).
+Found every EXACT label collision already correctly handled from that
+original pass: "Business Pro" (11 sections), "Business Builder"/"Business
+Starter" (seo/sm), "Geotargeting, Keyword, Contextual, Category &
+Retargeting" (nd/nv/pa/pv), "Optional Content Support" (web-mo/web-ot) — all
+already disambiguated. "Offline Visits Tracking" (10 sections, none set) is
+the one deliberate exception from that same original pass — a modifier row
+that always rides alongside its base tactic's already-identified name, never
+appearing standalone, so it was never actually ambiguous.
+
+**Claire caught two real gaps my exact-string-match scan missed**: TLP
+(Targeted Landing Page) and Email Marketing's own Business Builder/Starter/
+Pro tiers use suffixed label text ("Business Pro (11-15 Pages)", "Business
+Builder <2,500", etc.) that isn't textually IDENTICAL to seo/sm's plain
+"Business Pro" — so they never showed up as an exact collision — but they're
+the same underlying tier-naming ambiguity. I flagged the same gap applied to
+Website One-Time's own tiers ("Business Starter\*"/"Business Builder\*"/
+"Business Pro\*") rather than silently including or excluding them; Claire
+confirmed to include those too. Also disambiguated two near-duplicate pairs
+between Website Monthly and Website One-Time that use nearly-identical
+wording (Hosting Only/Hosting Fee, and the Visitor ID tiers, which differ only
+by a "(standalone)" suffix).
+
+**SQL run** (Claire, directly in Supabase SQL editor, both scratchpad-only —
+not committed):
+1. `services.accounting_label` set for 26 ids: `tlp-bs/bb/bp`,
+   `em-bb-2500/em-bb-5000/em-bp-30k/em-bp-30kp`, `w-bs/bb/bp`,
+   `wm-hosting`/`w-hosting`, `wm-ecomm-hosting`/`w-ecomm-hosting`, and the 12
+   Visitor ID variants (`wm-vid200/350/500[e]`, `w-vid200/350/500[e]`) — same
+   "Section — Name" format as the original 22, section names ("Targeted
+   Landing Page", "Email Marketing", "Website Monthly", "Website One-Time")
+   confirmed from the catalog's own real section labels, not guessed.
+2. One-time backfill of `campaign_lines.tactic_label` for the same 26 ids,
+   scoped to only rows where `tactic_label` still exactly matches the
+   service's plain `label` (so nothing manually customized or split gets
+   overwritten) — **ran clean, 0 rows updated**, confirming Claire's own
+   expectation that no real campaigns exist yet on any of these 26 services.
+
+No code changes this pass — purely catalog data, same mechanisms already
+built.
