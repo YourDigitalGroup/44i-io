@@ -374,7 +374,7 @@ function accountingRenderDetailCard() {
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override);
-    const cutPct = accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits, gross);
+    const cutPct = accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
@@ -503,6 +503,16 @@ async function accountingConfirmMonth(lineId, monthStr, confirmed, grossBudget) 
 // 'active', skipping Strategist's queue entirely, since there's no setup
 // step for a flat hosting fee.
 const ACCT_TRACKABLE_FLAT_SERVICE_IDS = ['llo-bp', 'rep-bp'];
+
+// YouTube TV's own +$10 CPM modifier -- own copy of Strategist's
+// ADDL_TARGETING_SERVICE_IDS (per this project's per-portal-copy
+// convention), tracked the same way as Offline Visits Tracking (changes the
+// CPM basis for accounting purposes, no charge to the client), but only ever
+// relevant to this one tactic, unlike Offline Visits Tracking which spans
+// many sections (2026-08-12, per Claire: "Youtube just has the Addl
+// targeting").
+const ACCT_ADDL_TARGETING_SERVICE_IDS = ['yttv-bp'];
+
 function accountingIsSpendTrackable(serviceId) {
   const r = CATALOG_ROWS[serviceId];
   return !!r && (r.pricing_mode === 'spend' || ACCT_TRACKABLE_FLAT_SERVICE_IDS.includes(serviceId));
@@ -511,6 +521,8 @@ function accountingAddServiceTacticChanged() {
   const serviceId = document.getElementById('acct-add-service').value;
   const billingWrap = document.getElementById('acct-add-billing-wrap');
   const helpText = document.getElementById('acct-add-help-text');
+  const addlWrap = document.getElementById('acct-add-addl-targeting-wrap');
+  if (addlWrap) addlWrap.style.display = ACCT_ADDL_TARGETING_SERVICE_IDS.includes(serviceId) ? 'flex' : 'none';
   const trackable = serviceId ? accountingIsSpendTrackable(serviceId) : true;
   billingWrap.style.display = serviceId && !trackable ? 'block' : 'none';
   helpText.textContent = serviceId && !trackable
@@ -582,6 +594,9 @@ function accountingOpenAddServiceForm(prefill) {
         <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
           <input type="checkbox" id="acct-add-has-offline-visits"/> + Offline Visits Tracking
         </label>
+        <label id="acct-add-addl-targeting-wrap" style="display:none;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
+          <input type="checkbox" id="acct-add-has-addl-targeting"/> + Addl. Targeting
+        </label>
         <div id="acct-add-billing-wrap" style="display:none;margin-top:5px">
           <select id="acct-add-billing-type" style="width:100%;padding:6px 8px;border-radius:6px;border:1px dashed var(--accent);font-size:11.5px">
             <option value="recurring">Recurring monthly</option>
@@ -624,6 +639,7 @@ async function accountingSubmitAddService() {
     flight_start: document.getElementById('acct-add-flight-start').value || null,
     flight_end: document.getElementById('acct-add-flight-end').value || null,
     has_offline_visits: document.getElementById('acct-add-has-offline-visits').checked,
+    has_addl_targeting: document.getElementById('acct-add-has-addl-targeting').checked,
     // Non-spend-trackable service (2026-08-12) -- same treatment the order
     // trigger already gives a flat/recurring/one-time item: accounting-only,
     // straight to active, no Strategist Setup step.
@@ -810,6 +826,7 @@ const ACCT_BULK_IMPORT_COLUMNS = [
   { key: 'gross_budget', names: ['gross budget'] },
   { key: 'billing_type', names: ['billing', 'billing type'] },
   { key: 'has_offline_visits', names: ['offline visits', 'offline visits tracking'] },
+  { key: 'has_addl_targeting', names: ['addl targeting', 'addl. targeting', 'additional targeting'] },
 ];
 // Pure parse: paste text in, a plan out, never touches the database. Groups
 // data rows sharing the same Client+Tactic into one campaign (its own
@@ -863,6 +880,7 @@ function accountingParseBulkImport(raw, overrides = {}) {
         client, service: tacticMatch.service, tacticLabel: tacticMatch.tacticLabel,
         flightStart: get('flight_start') || null, flightEnd: get('flight_end') || null,
         hasOfflineVisits: /^(true|yes|1)$/i.test(get('has_offline_visits')),
+        hasAddlTargeting: /^(true|yes|1)$/i.test(get('has_addl_targeting')),
         billingType: get('billing_type').toLowerCase() || null,
         existingLineId: existingLine ? existingLine.id : null,
         months: [],
@@ -1002,6 +1020,7 @@ async function accountingConfirmBulkImport() {
         client_id: g.client.id, group_id: g.client.group_id || null, service_id: g.service.id,
         tactic_label: g.tacticLabel, flight_start: g.flightStart, flight_end: g.flightEnd,
         has_offline_visits: g.hasOfflineVisits,
+        has_addl_targeting: g.hasAddlTargeting,
         accounting_only: !trackable,
         status: trackable ? undefined : 'active',
         billing_type: trackable ? 'spend' : (g.billingType === 'one-time' || g.billingType === 'one_time' ? 'one_time' : 'recurring'),
@@ -1149,8 +1168,14 @@ function accountingEffectiveCutPctTier(serviceId, grossBudget) {
   const tier = tiers.find(t => t.max == null || Number(grossBudget) <= Number(t.max));
   return tier ? Number(tier.cut_pct) : null;
 }
-function accountingEffectiveCutPct(serviceId, groupId, hasOfflineVisits, grossBudget) {
-  if (hasOfflineVisits) {
+// hasModifier -- true when EITHER Offline Visits Tracking OR YouTube TV's
+// Addl. Targeting is checked (2026-08-12). Safe to OR them into one flag:
+// no tactic in this catalog currently offers both as independently
+// toggleable options, so there's no case where the two pairing rates could
+// collide into this single lookup. If that ever changes, this needs a real
+// per-modifier pairing key instead of one flat serviceId -> rate map.
+function accountingEffectiveCutPct(serviceId, groupId, hasModifier, grossBudget) {
+  if (hasModifier) {
     const pairingRate = ACCOUNTING_CUT_RATES.pairing[serviceId];
     if (pairingRate != null) return pairingRate;
   }
@@ -1437,7 +1462,7 @@ function accountingBuildRows() {
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.group_id, monthRow?.in_platform_override);
-    const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits, gross);
+    const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
     // manual confirm from the detail card (for tactics the Strategist Portal
@@ -1559,7 +1584,7 @@ function accountingRenderRow(r) {
   const selected = r.line.id === accountingSelectedLineId;
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')">
     <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingLineSectionTag(r.line)}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingLineSectionTag(r.line)}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
     <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>

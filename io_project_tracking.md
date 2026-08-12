@@ -11752,3 +11752,64 @@ not committed):
 
 No code changes this pass — purely catalog data, same mechanisms already
 built.
+
+### 2026-08-12 (cont'd) — YouTube TV's Addl. Targeting wired into both portals
+
+Claire: "did we workout the addl. Targeting for Youtube ads in either the
+strategists or accounting portal? I know we have the offline tracking
+covered." Checked both files directly -- `yttv-addl` wasn't referenced
+anywhere in either portal, only on the public form. Confirmed with Claire:
+YouTube TV only ever has this one modifier (no Offline Visits option to
+collide with), it's a $0/no-charge CPM adjustment tracked the same way as
+Offline Visits Tracking, and Admin's Accounting Map already has the "(w/
+Addl. Targeting)" pairing rate set up for `yttv-bp` -- so this was purely
+wiring the existing rate into both portals' UI, not new pricing logic.
+
+**New SQL** (`campaign_lines.has_addl_targeting boolean default false`, plus
+`strategist_save_campaign_line`/`strategist_get_campaign_lines`/
+`accounting_get_campaign_lines`/`accounting_add_campaign_line` all updated to
+read/write it, same `case when p_data ? 'field'` pattern as every other
+column added this way) -- run by Claire, success.
+
+**Client-side, both portals** -- own `ADDL_TARGETING_SERVICE_IDS`/
+`ACCT_ADDL_TARGETING_SERVICE_IDS` array (currently just `['yttv-bp']`, kept as
+an array rather than one hardcoded id in case a similar single-tactic
+modifier shows up elsewhere later). Unlike Offline Visits Tracking's checkbox
+(shown unconditionally, since it can apply to many different tactics), the
+new "+ Addl. Targeting" checkbox only reveals itself when the selected/
+existing tactic is YouTube TV:
+- Strategist: `+ New Campaign`'s Tactic dropdown (`strategistImportServiceChanged`
+  now also toggles this checkbox's visibility), the Setup panel (conditionally
+  rendered into the panel's HTML, so `strategistReadSetupFlightAndOffline`
+  guards the read since the element won't exist for other tactics), and the
+  detail panel (conditionally rendered same as Setup). `strategistTacticDisplay`
+  now appends "+ Addl. Targeting" the same way it already does for Offline
+  Visits, and can show both suffixes together if a line somehow had both.
+- Accounting: "+ Add a Service" form (checkbox always in the DOM, just
+  hidden/shown via `accountingAddServiceTacticChanged`, so no null-guard
+  needed on read), and Bulk Import's parser/column list, mirroring
+  `has_offline_visits` exactly in both places.
+- `accountingEffectiveCutPct` now receives `has_offline_visits ||
+  has_addl_targeting` at both call sites, rather than changing the function's
+  own internals -- safe because no tactic in this catalog currently offers
+  both as independently toggleable options, so the two pairing rates can
+  never collide into the same lookup. Flagged in a comment as something that
+  would need a real per-modifier key if that ever changes.
+- Main table row gets a "+Addl. Targeting" tag, same treatment as the
+  existing "+Visits" tag.
+
+**Verified**: new `test-addl-targeting-2026-08-12.js` (scratchpad) -- in
+Strategist: the checkbox is hidden for a non-YTTV tactic and shown for YTTV
+in `+ New Campaign`; `strategistTacticDisplay` correctly appends the suffix
+alone or combined with Offline Visits Tracking; the Setup panel's read
+function doesn't throw when the element doesn't exist (non-YTTV line) and
+correctly reads `true` when it does. In Accounting: same show/hide behavior
+in Add Service; `accountingEffectiveCutPct` returns the plain base rate
+without the modifier and the pairing rate with `has_addl_targeting` alone
+(no `has_offline_visits` involved) confirming the OR logic actually reaches
+the pairing lookup; the main row shows the new tag. Re-ran
+`test-accounting-pending-lineitems-2026-08-12.js`,
+`test-accounting-detail-card-io-notes-2026-08-12.js`,
+`test-accounting-exclude-seo-tracking-2026-08-12.js`, and
+`test-accounting-section-tag-2026-08-12.js` -- all still fully passing.
+`node --check` passes clean on both files.
