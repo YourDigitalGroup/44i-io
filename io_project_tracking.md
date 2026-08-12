@@ -11942,3 +11942,63 @@ Re-ran `test-accounting-pending-lineitems-2026-08-12.js`,
 `test-accounting-exclude-seo-tracking-2026-08-12.js`, and
 `test-addl-targeting-2026-08-12.js` -- all still fully passing. `node
 --check` passes clean.
+
+### 2026-08-12 (cont'd) — Real gap found in a live test: pre-feature order missing its flat-fee line + Order Detail label consistency
+
+Claire ran a real test IO (Blue Dolphin Pools, Aug 7) with a spend service
+(SEM) and a flat/recurring service (Website Monthly's 5-Page) and noticed
+the 5-Page line never showed up in Accounting.
+
+**Root cause, confirmed with real data, not guessed**: pulled the order's
+actual `line_items` (confirmed `recurring: 299, spend: 0` for `wm-5p` --
+exactly what the "track all services ordered" trigger branch needs) and the
+actual `campaign_lines` rows (only the SEM line existed, and even that one
+had `billing_type: null` instead of the current trigger's `'spend'`). Both
+anomalies point to the same explanation: this order was submitted **before**
+the accounting-only-line trigger branch (and the explicit `billing_type:
+'spend'` on the first branch) were added to
+`create_campaign_lines_from_order()` later in this same project. The
+CURRENT trigger is correct; this was stale historical data from before the
+fix existed, not a live bug.
+
+**Backfill run** (Claire, in Supabase SQL editor) rather than resubmitting
+the test order: fixed the SEM line's `billing_type`, and inserted the
+missing `wm-5p` accounting-only line + its `campaign_months` row, built the
+exact same way the current trigger would have.
+
+**Follow-on gap Claire caught in the result**: the backfilled 5-Page line
+showed as plain "5-Page," not "Website Monthly — 5-Page" like its Website
+Monthly siblings (Hosting Only, Optional Content Support, the Visitor ID
+tiers) already show — because `wm-5p` itself was never part of the earlier
+disambiguation passes (it was never actually AMBIGUOUS with anything else,
+so it correctly had no `accounting_label`). Asked Claire whether to fix just
+this one or go for full consistency across the whole section; she chose
+full consistency. Set `accounting_label` for 13 more services: 4 in Website
+Monthly (`wm-1p/5p/10p/ecomm`) and 9 in Website One-Time (`w-custom/module/
+vid-setup/domain/dns/logo/email/ai/ada-hosting`), same "Section — Name"
+format, plus the same scoped `campaign_lines.tactic_label` backfill pattern
+as every other label-audit pass this session.
+
+**Order Detail page + Trello consistency check**: Claire asked to update
+Admin's Order Detail page to show the same disambiguated title Strategist/
+Accounting show, and to verify Trello matches. Found: the Order Detail
+page's Services table was showing `item.label` (the plain client-facing
+name frozen on the order at signing time) -- never `accounting_label` at
+all. Fixed to prefer a LIVE `CATALOG_ROWS` lookup first (so an OLDER order
+retroactively shows a label added to the catalog afterward, like this exact
+order's own `wm-5p` item), falling back to the order's own frozen
+`accounting_label`, then the plain `label`, if the catalog has no live row
+for that service_id anymore (e.g. a since-deactivated service). Checked
+Trello separately: the IO card's own description-building code
+(`index.html`) already preferred `accounting_label` over `label`, built
+2026-08-07 -- already correct going forward, no code gap there. This
+specific test order's actual Trello card is a frozen snapshot from before
+`wm-5p` had a label at all, so it'll still show "5-Page" unless edited by
+hand in Trello -- not a bug, same as the order's own frozen `line_items`.
+
+**Verified**: new `test-admin-order-detail-label-2026-08-12.js` (scratchpad)
+-- a line item with a live catalog match shows the CURRENT catalog label
+even though its own frozen `accounting_label` is null; a line item with its
+own frozen `accounting_label` set displays it; a line item whose service_id
+no longer exists in the live catalog at all falls back to its frozen plain
+label rather than showing blank/undefined. `node --check` passes clean.
