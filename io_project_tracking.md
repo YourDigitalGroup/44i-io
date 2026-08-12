@@ -11838,3 +11838,23 @@ the tag is gone (deleted, superseded — not a regression, the feature was
 intentionally removed). Re-ran every other Accounting test from today
 (pending line items, IO notes, SEO-tracking exclusion, Addl. Targeting) --
 all still fully passing. `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — Strategist's flight range now says "Ongoing", matching Accounting
+
+Claire: "can we update the strategist portal to match the accounting portal
+for ongoing campaigns?" Compared `strategistFormatFlightRange()` against
+Accounting's own `accountingFormatFlightRange()` directly: Accounting already
+shows "Jan '26 – Ongoing" for an open-ended flight (no `flight_end`);
+Strategist fell back to a bare dash with nothing after it ("Jun 1, 26 – —").
+
+One-line fix -- changed the missing-end-date fallback from `'—'` to
+`'Ongoing'`, matching Accounting's wording exactly. Left the rest of
+Strategist's own date formatting untouched (it uses a longer "Jun 1, 26"
+format with the day included vs. Accounting's shorter "Jan '26", plus its own
+separately-solved dash-wrapping fix) -- Claire's ask was specifically about
+ongoing campaigns reading the same way, not a full formatting unification.
+
+**Verified**: new `test-strategist-flight-ongoing-2026-08-12.js` (scratchpad)
+-- an open-ended flight now shows "Ongoing" and never a bare trailing dash; a
+real two-sided date range is unaffected; a campaign with neither date set
+still shows a plain "—". `node --check` passes clean.
