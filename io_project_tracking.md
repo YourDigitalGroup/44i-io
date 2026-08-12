@@ -11329,3 +11329,63 @@ this line") render when present; no empty parentheses for a line with no
 notes at all; Group filter narrows the note; nothing renders (and no
 empty box) when there's no pending campaign at all. Re-ran every other
 test file across both portals — no regressions.
+
+### 2026-08-12 (cont'd) — Pending redesigned as per-row line items, not a banner; IO notes for every campaign
+
+Claire, following up on the pending-note banner just shipped: "I don't
+think I was very clear with my thoughts for this." Real redesign, not a
+tweak — replaces the summary banner entirely (confirmed removing it once
+the per-row version existed) with pending campaigns appearing as actual
+line items in the table itself, matching how every other campaign works.
+
+**Pending line items.** `accountingBuildRows()`'s row-inclusion filter
+(`r.gross != null`) now also lets a `status='pending'` line through even
+with NO Gross Budget data at all yet — Strategist hasn't set it up, so
+there's often nothing to show numerically, but the ROW itself (spanning
+every month in its own flight, via the flight-scope check already built
+this session) shouldn't be invisible just because the number's missing.
+Every dollar column guards for null and shows "—" instead of crashing on
+`.toLocaleString()`. Every OTHER status still requires a real Gross
+Budget row, unchanged.
+
+**Pending + blocker pill.** New `accountingPendingStatusPill(line)` --
+same visual treatment as Strategist's own `strategistSetupBlockerPill`,
+duplicating its `SETUP_BLOCKER_LABELS` map so a blocker reads identically
+in both portals. Priority order in `accountingLineStatusPill`/`Rollup
+StatusPill`: Billed Externally > Pending > Paused > Confirmed/Needs
+confirmation -- Pending sits above Paused because a campaign that hasn't
+even started in Strategist yet was never "running" to begin with.
+
+**Excluded from stat tiles entirely.** Claire: "their revenues shouldn't
+be included in the stat tiles until they are active and have spend."
+Different treatment from Billed Externally (which still counts Gross/
+Expected Spend, only excludes the 44i cut) -- a still-pending campaign
+hasn't started at all, so new `accountingRowIsPending(r)` skips it from
+EVERY stat tile total (Expected Revenue, Expected Spend, Actual Spend,
+44i Revenue) and the Total row, and from both the numerator AND
+denominator of "Awaiting Confirmation" -- the row itself still shows its
+own figures if any exist, only the aggregates skip it.
+
+**IO notes for every campaign, not just pending ones.** Claire: "I would
+like them for every service ordered in the details like when a campaign
+is in setup. So everyone is seeing the same information." The detail
+card now shows the same "IO Campaign Notes"/"Note on this line" blocks
+Strategist's own detail panel already shows, for ANY selected line
+regardless of status -- same markup/labels/colors, so a note reads
+identically in either portal.
+
+**New SQL** (`accounting-pending-lineitems-blocker-2026-08-12.sql`, given
+to Claire) — adds `setup_blocker` to `accounting_get_campaign_lines`
+(order_line_notes/campaign_notes were already added the prior pass).
+
+**Verified**: new `test-accounting-pending-lineitems-2026-08-12.js`
+(11/11) — a pending campaign with zero data still shows as a row with
+dashes; one with real data shows its own figures; blocker labels render
+correctly (multiple at once) or fall back to a plain "Pending" pill with
+none set; an ordinary active line is completely unaffected; stat tiles
+and the Total row both exclude the pending campaigns' numbers, counting
+only the active one. New `test-accounting-detail-card-io-notes-2026-08-
+12.js` (3/3) — an ACTIVE line (not pending) shows both note blocks when
+present, and neither when absent. Deleted `test-accounting-pending-note-
+2026-08-12.js` (tested the now-removed banner, not a regression). Re-ran
+every other test file across both portals — no regressions.
