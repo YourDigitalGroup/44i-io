@@ -54,27 +54,32 @@ async function sb(path, opts={}) {
 // API "Max Rows" cap silently truncating the plain sb() call's response once
 // that table passed the cap (it had grown to 2968 rows). No error, no warning
 // -- the newest rows just never arrived client-side. Use this instead of sb()
-// for any RPC/table whose result set can grow past that cap (campaign facts,
-// audit logs, etc.).
+// for any RPC whose result set can grow past that cap (campaign facts, audit
+// logs, etc.) -- the RPC itself must accept p_limit/p_offset and apply them as
+// real SQL `order by ... limit ... offset ...` (see e.g.
+// paginated-rpc-functions-2026-08-12.sql); this helper just drives that loop.
 //
-// First version of this (still 2026-08-12) assumed the server always returns
-// up to the requested pageSize when more data remains, stopping as soon as a
-// page came back shorter than that -- WRONG, and it re-broke the exact same
-// bug at a different, smaller cutoff: the real per-request cap turned out to
-// be below the 1000 requested here (and/or Content-Range isn't readable
-// client-side -- PostgREST doesn't expose it via CORS by default), so every
-// single page came back "short" relative to 1000, and the old logic read that
-// as "done" after page ONE. Fixed by never trusting page-length-vs-requested
-// as an end signal -- the ONLY thing that proves there's no more data is a
-// genuinely EMPTY page, so that's the sole stopping condition now, regardless
-// of what the server's real per-request cap is or whether Content-Range is
-// visible at all.
+// Two earlier versions of this (still 2026-08-12) tried to paginate via the
+// Range HTTP header instead, on the (wrong) assumption PostgREST would apply
+// it as a LIMIT/OFFSET the same way it does for plain table/view GETs. It
+// doesn't for POST-based RPC calls -- which every RPC in this project uses --
+// so the Range header was silently ignored server-side: every request
+// returned the exact SAME first page regardless of offset, "empty page"
+// could never be reached, and the loop ran ~2000 requests against production
+// before Claire caught it and closed the tab. Real SQL-level LIMIT/OFFSET
+// params sidestep that entirely -- no dependency on REST/HTTP pagination
+// semantics we can't fully control from here. A hard iteration cap is kept
+// anyway as a backstop: if a future RPC is wired up wrong and never returns
+// an empty page, this now fails loudly after a bounded number of requests
+// instead of hammering the database forever.
+const SBALL_MAX_PAGES = 200; // 200k rows at the default pageSize -- far past any real table here
 async function sbAll(path, opts={}, pageSize=1000) {
   const method = opts.method || 'GET';
-  const body = opts.body || undefined;
-  const prefer = (opts.prefer || 'return=representation') + ', count=exact';
-  let all = [], offset = 0;
+  const bodyObj = opts.body ? JSON.parse(opts.body) : {};
+  const prefer = opts.prefer || 'return=representation';
+  let all = [], offset = 0, pages = 0;
   while (true) {
+    if (++pages > SBALL_MAX_PAGES) throw new Error(`sbAll(${path}): stopped after ${SBALL_MAX_PAGES} pages without an empty result -- the RPC likely isn't honoring p_limit/p_offset.`);
     const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
       method,
       headers: {
@@ -82,10 +87,8 @@ async function sbAll(path, opts={}, pageSize=1000) {
         Authorization: 'Bearer ' + SUPABASE_KEY,
         'Content-Type': 'application/json',
         Prefer: prefer,
-        'Range-Unit': 'items',
-        Range: `${offset}-${offset + pageSize - 1}`,
       },
-      body
+      body: JSON.stringify({ ...bodyObj, p_limit: pageSize, p_offset: offset })
     });
     const t = await res.text();
     if (!res.ok) throw new Error('Supabase error ' + res.status + ': ' + t.slice(0,200));
