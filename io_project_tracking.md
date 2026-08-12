@@ -11667,3 +11667,30 @@ pending line with no blockers shows no blocker block in the card. New
 today) and `test-accounting-detail-card-io-notes-2026-08-12.js` re-run clean.
 `node --check` passes on both `strategist/index.html` and
 `accounting/index.html`.
+
+### 2026-08-12 (cont'd) — Section tag shown on every row, not just the Add Service dropdown
+
+Claire clarified the ask went further than the Add Service dropdown grouping
+from earlier: "we need it to show up that way in the accounting portal list
+of services for the month so it is clear what service was ordered. Not just
+when we add the service." `<optgroup>` only works inside a `<select>`, so the
+main table needed its own treatment.
+
+New `accountingLineSectionTag(line)` — looks up `CATALOG_ROWS[line.service_id]
+.section`, resolves it through the same `accountingSectionLabel()` added
+earlier today, and renders a small muted `(SEO)`/`(Social Media)`/etc. tag
+right next to the tactic name. Wired into every place a tactic_label is shown:
+the main single-line row, the rollup row, and the detail card's title. Shown
+on every row unconditionally, not just ones that happen to collide with
+another section's naming — no logic to detect which particular names collide,
+and a tag that appears on some rows and not others with no visible reason why
+would read as more confusing, not less.
+
+**Verified**: new `test-accounting-section-tag-2026-08-12.js` (scratchpad) --
+two different clients each with an identically-named "Business Pro" line from
+two different catalog sections (`seo`/`sm`) now show `(SEO)` and `(Social
+Media)` respectively, in both the main table and the detail card title.
+Re-ran `test-accounting-pending-lineitems-2026-08-12.js` (still 13/13 after
+today's blocker-relocation update), `test-accounting-detail-card-io-notes-
+2026-08-12.js`, and `test-accounting-exclude-seo-tracking-2026-08-12.js` --
+all still fully passing. `node --check` passes clean.
