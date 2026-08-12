@@ -11515,3 +11515,32 @@ all three correctly fetch the complete 2,968-row set. Re-ran
 — both still fully correct (empty/small/exact-boundary tables all fetch
 completely, at the cost of one extra request in the boundary case).
 `node --check` passes clean on `shared.js`.
+
+### 2026-08-12 (cont'd) — Real fix landed: SQL-level pagination, sbAll re-enabled
+
+Claire ran `paginated-rpc-functions-2026-08-12.sql` — adds `p_limit`/`p_offset`
+(both defaulting to "return everything," so nothing else broke) to
+`strategist_get_campaign_months`, `accounting_get_campaign_months`,
+`strategist_get_optimize_log`, and `strategist_get_status_history`, each now
+doing a real `order by ... limit p_limit offset p_offset` in the SQL itself —
+no dependency on HTTP-level Range/Content-Range semantics at all, sidestepping
+the whole class of bug from the last two attempts.
+
+Switched all four fetches (`fetchStrategistData()`, `fetchAccountingData()`)
+back from the emergency `sb()` revert to `sbAll()`, which already sends
+`p_limit`/`p_offset` in the request body (see shared.js) to match. Verified
+via `test-sbAll-limit-offset-2026-08-12.js` (scratchpad) — a mock server that
+honors real limit/offset from the JSON body (matching the new SQL's actual
+behavior, not a guessed HTTP header) correctly and completely fetches a
+2,968-row table, an exact-1000-row boundary case, a 50-row table, and an empty
+table, with the right number of requests each time. `node --check` passes
+clean on both `strategist/index.html` and `accounting/index.html`.
+
+**Full arc of this bug, for anyone reading back**: (1) bulk import silently
+truncated past 1000 rows → (2) fix #1 assumed the server fills every page to
+the requested size, broke identically at a smaller cutoff → (3) fix #2 (Range
+header) assumed PostgREST paginates POST-based RPC calls the way it does GETs
+on tables; it doesn't, causing an infinite loop that hit ~2000 requests against
+production before Claire caught it and closed the tab → (4) real fix: explicit
+SQL-level LIMIT/OFFSET parameters on the RPCs themselves, no HTTP-pagination
+assumptions left to be wrong about.
