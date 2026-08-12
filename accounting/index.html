@@ -386,7 +386,7 @@ function accountingRenderDetailCard() {
   });
 
   el.innerHTML = `<div class="acct-detail-head">
-      <div class="acct-detail-title">${esc(line.client_name || '(unknown)')} — ${esc(line.tactic_label || line.service_id || '—')}</div>
+      <div class="acct-detail-title">${esc(line.client_name || '(unknown)')} — ${esc(line.tactic_label || line.service_id || '—')}${accountingLineSectionTag(line)}</div>
       <div style="display:flex;align-items:center;gap:14px">
         <div class="acct-detail-sub">${esc(line.group_name || '—')} · ${accountingFormatFullFlightRange(line.flight_start, line.flight_end)}</div>
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11.5px;color:var(--muted)">
@@ -395,6 +395,19 @@ function accountingRenderDetailCard() {
         <button class="acct-detail-close" onclick="accountingCloseDetailCard()">✕ Close</button>
       </div>
     </div>
+    ${(() => {
+      // Setup blocker(s) moved here from the main row's inline pills
+      // (2026-08-12, per Claire) -- shown only for a pending line that
+      // actually has one or more blockers set.
+      const blockers = line.status === 'pending' && Array.isArray(line.setup_blocker)
+        ? line.setup_blocker.filter(b => ACCT_SETUP_BLOCKER_LABELS[b]) : [];
+      if (!blockers.length) return '';
+      return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#FEF3C7">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:4px">Pending — Waiting On</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${blockers.map(b =>
+          `<span class="acct-status-pill" style="background:#FDE68A;color:#92400E">${esc(ACCT_SETUP_BLOCKER_LABELS[b])}</span>`).join('')}</div>
+      </div>`;
+    })()}
     ${(line.campaign_notes || line.order_line_notes) ? `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;background:#FFFBEB">
       ${line.campaign_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">IO Campaign Notes</div><div style="font-size:12.5px;color:var(--text);margin-bottom:${line.order_line_notes ? '8px' : '0'}">${esc(line.campaign_notes)}</div>` : ''}
       ${line.order_line_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">Note on this line</div><div style="font-size:12.5px;color:var(--text)">${esc(line.order_line_notes)}</div>` : ''}
@@ -526,9 +539,28 @@ function accountingOpenAddServiceForm(prefill) {
   // is_cpm_adjustment service are meant to be toggled ONTO a real tactic
   // (the "+ Offline Visits Tracking" checkbox right below this dropdown),
   // never picked as a standalone Tactic in their own right.
+  //
+  // Grouped into <optgroup>s by section (2026-08-12, per Claire: "there are
+  // multiple business tiers that don't show the section they are under") --
+  // several sections reuse the same tier naming (Business Builder/Starter/
+  // Pro shows up under SEO, Social Media, etc.), so a flat alphabetical list
+  // left it ambiguous which one a plain "Business Pro" actually was.
   const allServices = Object.values(CATALOG_ROWS)
-    .filter(r => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment)
-    .sort((a, b) => (a.accounting_label || a.label || '').localeCompare(b.accounting_label || b.label || ''));
+    .filter(r => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment);
+  const acctSectionOrder = {};
+  ACCOUNTING_SECTIONS.forEach((s, i) => { acctSectionOrder[s.id] = s.sort_order ?? i; });
+  const acctServicesBySection = new Map();
+  allServices.forEach(r => {
+    const key = r.section || '';
+    if (!acctServicesBySection.has(key)) acctServicesBySection.set(key, []);
+    acctServicesBySection.get(key).push(r);
+  });
+  const acctServiceOptionsHtml = [...acctServicesBySection.keys()]
+    .sort((a, b) => (acctSectionOrder[a] ?? Infinity) - (acctSectionOrder[b] ?? Infinity))
+    .map(key => {
+      const rows = acctServicesBySection.get(key).sort((a, b) => (a.accounting_label || a.label || '').localeCompare(b.accounting_label || b.label || ''));
+      return `<optgroup label="${esc(accountingSectionLabel(key))}">${rows.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}</optgroup>`;
+    }).join('');
   const sortedClients = [...ALL_ACCOUNTING_CLIENTS].sort((a, b) => a.name.localeCompare(b.name));
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;background:#F0F9FF">
@@ -545,7 +577,7 @@ function accountingOpenAddServiceForm(prefill) {
         <label class="lbl">Tactic</label>
         <select id="acct-add-service" onchange="accountingAddServiceTacticChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
           <option value="">— Select —</option>
-          ${allServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
+          ${acctServiceOptionsHtml}
         </select>
         <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
           <input type="checkbox" id="acct-add-has-offline-visits"/> + Offline Visits Tracking
@@ -1025,11 +1057,14 @@ const ACCT_SETUP_BLOCKER_LABELS = {
 // one pill per recognized blocker, same visual treatment as Strategist's
 // own strategistSetupBlockerPill. Falls back to a plain "Pending" pill if
 // no blocker is set yet (or none of the ones set are recognized).
+// Blocker sub-pills moved into the detail card (2026-08-12, per Claire: "move
+// the pending blockers to the details so that those lines don't grow") --
+// a pending campaign waiting on several things at once used to grow the main
+// row's height with wrapping blocker pills; the main table now always shows
+// a plain "Pending" pill, and accountingRenderDetailCard() below shows the
+// full blocker list once you click into that line.
 function accountingPendingStatusPill(line) {
-  const blockers = Array.isArray(line.setup_blocker) ? line.setup_blocker.filter(b => ACCT_SETUP_BLOCKER_LABELS[b]) : [];
-  if (!blockers.length) return accountingStatusPill('pending', 'Pending');
-  return `<span style="display:inline-flex;gap:5px;flex-wrap:wrap">${accountingStatusPill('pending', 'Pending')}${blockers.map(b =>
-    `<span class="acct-status-pill" style="background:#FEF3C7;color:#92400E">${esc(ACCT_SETUP_BLOCKER_LABELS[b])}</span>`).join('')}</span>`;
+  return accountingStatusPill('pending', 'Pending');
 }
 // tracks actuals for at all). Either one is sufficient. Priority order:
 // Billed Externally > Pending > Paused > Confirmed/Needs confirmation.
@@ -1231,8 +1266,19 @@ function accountingTintColor(hex, amount) {
   return `#${[mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
+// Section id -> human label (e.g. 'seo' -> 'SEO'), for the Add Service
+// dropdown's optgroups below -- own copy of admin's own SECTIONS/
+// sectionLabel() pattern (per this project's "each portal keeps its own
+// copy" convention), since accounting/index.html doesn't otherwise need the
+// sections table at all.
+let ACCOUNTING_SECTIONS = [];
+function accountingSectionLabel(id) {
+  return ACCOUNTING_SECTIONS.find(s => s.id === id)?.label || id;
+}
+
 async function fetchAccountingData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
+  if (!ACCOUNTING_SECTIONS.length) ACCOUNTING_SECTIONS = await sb('sections?order=sort_order&select=*') || [];
   const [lines, months, rates, clients] = await Promise.all([
     sb('rpc/accounting_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     // sbAll -- accounting_get_campaign_months now accepts real p_limit/p_offset
@@ -1460,12 +1506,27 @@ function accountingBillingTypeTag(line) {
   const label = line.billing_type === 'one_time' ? 'one-time fee' : 'flat fee';
   return ` <span style="font-size:10px;color:var(--muted)">(${label} — accounting only)</span>`;
 }
+// Shows which catalog section a line's tactic belongs to, next to the tactic
+// name itself (2026-08-12, per Claire: "we need it to show up that way in the
+// accounting portal list of services for the month so it is clear what
+// service was ordered. Not just when we add the service") -- several
+// sections reuse the same tier names (Business Builder/Starter/Pro under
+// both SEO and Social Media, etc.), so a bare tactic_label alone can be
+// ambiguous when scanning the month's services. Shown on every row, not just
+// ambiguous ones, for consistency -- no logic to detect which names actually
+// collide, and an always-present section tag reads better than one that
+// appears on some rows and not others with no visible reason why.
+function accountingLineSectionTag(line) {
+  const section = CATALOG_ROWS[line.service_id]?.section;
+  if (!section) return '';
+  return ` <span style="font-size:10px;color:var(--muted)">(${esc(accountingSectionLabel(section))})</span>`;
+}
 function accountingRenderRow(r) {
   if (r.isRollup) {
     const expanded = ACCOUNTING_EXPANDED_SPLITS.has(r.key);
     let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')">
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span>${accountingBillingTypeTag(r.line)}</td>
+      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingLineSectionTag(r.line)} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span>${accountingBillingTypeTag(r.line)}</td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
       <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
       <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
@@ -1498,7 +1559,7 @@ function accountingRenderRow(r) {
   const selected = r.line.id === accountingSelectedLineId;
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')">
     <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingLineSectionTag(r.line)}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${accountingBillingTypeTag(r.line)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
     <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>

@@ -11622,3 +11622,75 @@ branch) even though they share the same underlying service_id — no risk of
 merging into one campaign line, matching the existing `identityKey`
 disambiguation-by-tactic_label fix from 2026-08-10. `node --check` passes
 clean.
+
+### 2026-08-12 (cont'd) — Corrections after miscommunication on the SEO-tier ask
+
+Claire, after seeing the previous SEO-tier change: "I don't think we were on
+the same page, I don't need those in the strategist dropdown. That list was
+ok." Her original need was ACCOUNTING's own "+ Add a Service" dropdown (which
+already lists every catalog service), not Strategist's Tactic pickers at all.
+
+**Reverted**: `TRACKABLE_FLAT_SERVICE_IDS` in `strategist/index.html` back to
+`['llo-bp', 'rep-bp']` — the `seo-bb`/`seo-bs`/`seo-bp` addition from earlier
+today is undone; Strategist's own dropdowns are untouched from this point on.
+
+**Real ask, addressed**: "there are multiple business tiers that don't show
+the section they are under" — several catalog sections reuse the same tier
+names (Business Builder/Starter/Pro appears under SEO, Social Media, etc.), so
+Accounting's flat alphabetical Tactic list left it ambiguous which section a
+plain "Business Pro" belonged to. Grouped `accountingOpenAddServiceForm()`'s
+service list into `<optgroup>`s by section (new `ACCOUNTING_SECTIONS`/
+`accountingSectionLabel()`, fetched from the `sections` table the same way
+admin's own `sectionLabel()` already does, own copy per this project's
+per-portal-copy convention), sorted by each section's real `sort_order`, not
+alphabetically. Also flagged the Admin Service editor's own "Accounting
+Label" field as a separate, complementary option if she wants labels
+unambiguous everywhere (not just this dropdown) by renaming them directly —
+her call, not acted on without confirmation.
+
+### 2026-08-12 (cont'd) — Pending blockers moved out of the main row
+
+Claire: "can we move the pending blockers to the details so that those lines
+don't grow" — a pending campaign waiting on several things at once grew the
+main row's height with wrapping blocker sub-pills. `accountingPendingStatusPill()`
+now always returns a plain "Pending" pill; the full blocker list (same labels,
+same styling) now shows in `accountingRenderDetailCard()` instead, right above
+the IO notes block, only rendered when the line is actually pending AND has
+blockers set.
+
+**Verified**: updated `test-accounting-pending-lineitems-2026-08-12.js` — main
+row never shows blocker sub-pills regardless of how many are set (was
+previously asserting the OPPOSITE, now correctly stale-updated); confirmed
+the blockers DO show once that line's detail card is opened; confirmed a
+pending line with no blockers shows no blocker block in the card. New
+`test-accounting-exclude-seo-tracking-2026-08-12.js` (from the earlier fix
+today) and `test-accounting-detail-card-io-notes-2026-08-12.js` re-run clean.
+`node --check` passes on both `strategist/index.html` and
+`accounting/index.html`.
+
+### 2026-08-12 (cont'd) — Section tag shown on every row, not just the Add Service dropdown
+
+Claire clarified the ask went further than the Add Service dropdown grouping
+from earlier: "we need it to show up that way in the accounting portal list
+of services for the month so it is clear what service was ordered. Not just
+when we add the service." `<optgroup>` only works inside a `<select>`, so the
+main table needed its own treatment.
+
+New `accountingLineSectionTag(line)` — looks up `CATALOG_ROWS[line.service_id]
+.section`, resolves it through the same `accountingSectionLabel()` added
+earlier today, and renders a small muted `(SEO)`/`(Social Media)`/etc. tag
+right next to the tactic name. Wired into every place a tactic_label is shown:
+the main single-line row, the rollup row, and the detail card's title. Shown
+on every row unconditionally, not just ones that happen to collide with
+another section's naming — no logic to detect which particular names collide,
+and a tag that appears on some rows and not others with no visible reason why
+would read as more confusing, not less.
+
+**Verified**: new `test-accounting-section-tag-2026-08-12.js` (scratchpad) --
+two different clients each with an identically-named "Business Pro" line from
+two different catalog sections (`seo`/`sm`) now show `(SEO)` and `(Social
+Media)` respectively, in both the main table and the detail card title.
+Re-ran `test-accounting-pending-lineitems-2026-08-12.js` (still 13/13 after
+today's blocker-relocation update), `test-accounting-detail-card-io-notes-
+2026-08-12.js`, and `test-accounting-exclude-seo-tracking-2026-08-12.js` --
+all still fully passing. `node --check` passes clean.
