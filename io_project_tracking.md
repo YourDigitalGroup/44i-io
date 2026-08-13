@@ -12779,3 +12779,50 @@ sent to file for visual confirmation. `node --check` clean. Re-ran 5 other
 test files from today's session (color audit, 3-portal audit, follow-up
 fixes, nav buttons/status filter, stat-tile group fill) -- all still fully
 pass.
+
+### 2026-08-13 (cont'd) — Admin UI for Spend Tiers, replacing SQL-only editing
+
+Claire asked where to see/edit the real SEM tier numbers going forward.
+Answer: the flat rate fields (In-Platform %, CPC Low/High, 44i Cut %) are
+editable in Admin → Accounting Map → Edit, but the actual TIERED numbers
+(`spend_tiers`/`in_platform_tiers`) had no admin screen at all -- both
+were SQL-only since the day they were created (2026-08-11/13). Offered to
+build a real editor; she said "go ahead and build that."
+
+**Built**: a "Spend Tiers" block on the Accounting Map edit form (any
+service, not SEM-specific -- same generic mechanism as always), with a
+row per spend band: "Up to $" (blank = and up), "44i Cut %", "In-Platform
+%", and a remove button, plus "+ Add Tier". One combined table for both %s
+even though they're stored in two separate database columns (kept
+separate on purpose -- `in_platform_tiers` has to stay safe to expose to
+the Strategist Portal, `spend_tiers` never can, so they can't be merged
+into one column without breaking that boundary). A row can carry just one
+of the two %s if that's ever needed.
+
+- `adminEditAccounting()` now calls new `adminRenderAccountingTierRows()`,
+  which merges `spend_tiers`/`in_platform_tiers` into rows by matching
+  `max` values (works even if a tier exists in only one array).
+- `adminSaveAccountingMap()` collects the rows back into the two arrays,
+  sorts each ascending by `max` (null/"and up" always last, regardless of
+  the order rows were added in), and always sends both keys -- removing
+  every row sends `null` for both, genuinely clearing tiers and reverting
+  the service back to its flat rate rather than leaving stale tiers
+  behind.
+- SQL (`admin-accounting-tiers-ui-2026-08-13.sql`, sent to Claire):
+  patches `admin_get_accounting_map` and both `admin_save_accounting_map`
+  overloads (with/without `p_pair_with_service_id`) to read/write
+  `spend_tiers`/`in_platform_tiers` -- full bodies rewritten from the
+  actual current versions (recovered from this session's own scratchpad
+  files), not guessed at. These were the only 3 RPCs never touched by
+  either tier column's original migration, which is exactly why there was
+  never an admin UI for them.
+
+**Verified**: new `test-admin-accounting-tiers-2026-08-13.js` (scratchpad)
+-- opens the editor for a mock SEM row with real 2-tier data, confirms it
+renders as exactly 2 merged rows with the right values in each column;
+adds a 3rd row with only a Cut % filled in, saves, and confirms the
+captured payload has that partial row correctly split into just the
+`spend_tiers` array (not `in_platform_tiers`) and the whole set sorted
+with "and up" last regardless of entry order; removes every row and saves
+again, confirms both arrays come back explicitly `null`. All pass.
+`node --check` clean.
