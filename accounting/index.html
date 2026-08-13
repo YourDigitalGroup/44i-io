@@ -290,6 +290,7 @@ let ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} }; // service_id -
 let ACCOUNTING_CUT_TIERS = {}; // service_id -> [{ max, cut_pct }, ...] sorted ascending, e.g. SEM
 let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} }; // for Expected Spend -- same shape as the Strategist Portal's own PLATFORM_CPM_RATES
 let ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // Expected Spend fallback for a service with no Retail CPM (e.g. SEM)
+let ACCOUNTING_IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending, e.g. SEM (2026-08-13, same shape/lookup as ACCOUNTING_CUT_TIERS, kept as its own column/cache)
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
 let ACCOUNTING_EXPANDED_SPLITS = new Set(); // rollup keys currently expanded -- always starts empty on load
@@ -1303,7 +1304,22 @@ function accountingEffectivePlatformCpm(serviceId, groupId) {
   const baseRate = ACCOUNTING_PLATFORM_CPM_RATES.base[serviceId];
   return baseRate != null ? baseRate : null;
 }
-function accountingEffectiveInPlatformPct(serviceId, groupId) {
+// Same spend-tiered lookup as accountingEffectiveCutPctTier() below, kept in
+// its own ACCOUNTING_IN_PLATFORM_TIERS cache/column (2026-08-13: SEM, 50%
+// under $5,000 / 70% at $5,000+) since it has to stay safe to expose to the
+// Strategist Portal too -- unlike ACCOUNTING_CUT_TIERS, which carries
+// cut_pct and must never leave Accounting/Admin.
+function accountingEffectiveInPlatformPctTier(serviceId, grossBudget) {
+  const tiers = ACCOUNTING_IN_PLATFORM_TIERS[serviceId];
+  if (!tiers || !tiers.length || grossBudget == null) return null;
+  const tier = tiers.find(t => t.max == null || Number(grossBudget) <= Number(t.max));
+  return tier ? Number(tier.in_platform_pct) : null;
+}
+// A tiered rate (when configured) replaces the flat base/group rate
+// entirely -- same "tiers win outright" rule as 44i Cut %.
+function accountingEffectiveInPlatformPct(serviceId, groupId, grossBudget) {
+  const tierRate = accountingEffectiveInPlatformPctTier(serviceId, grossBudget);
+  if (tierRate != null) return tierRate;
   const groupRate = groupId ? ACCOUNTING_IN_PLATFORM_PCT_RATES.group[`${groupId}|${serviceId}`] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_IN_PLATFORM_PCT_RATES.base[serviceId];
@@ -1318,7 +1334,7 @@ function accountingComputeExpectedSpend(grossBudget, serviceId, groupId, inPlatf
     const impressions = (Number(grossBudget) / retailCpm) * 1000;
     return impressions * platformCpm / 1000;
   }
-  const pct = accountingEffectiveInPlatformPct(serviceId, groupId);
+  const pct = accountingEffectiveInPlatformPct(serviceId, groupId, grossBudget);
   return pct != null ? Number(grossBudget) * pct / 100 : null;
 }
 
@@ -1373,6 +1389,7 @@ async function fetchAccountingData() {
   ALL_ACCOUNTING_CLIENTS = clients || [];
   ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} };
   ACCOUNTING_CUT_TIERS = {};
+  ACCOUNTING_IN_PLATFORM_TIERS = {};
   ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} };
   ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
@@ -1381,6 +1398,7 @@ async function fetchAccountingData() {
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.base[r.service_id] = Number(r.platform_cpm);
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.base[r.service_id] = Number(r.in_platform_pct);
       if (Array.isArray(r.spend_tiers) && r.spend_tiers.length) ACCOUNTING_CUT_TIERS[r.service_id] = r.spend_tiers;
+      if (Array.isArray(r.in_platform_tiers) && r.in_platform_tiers.length) ACCOUNTING_IN_PLATFORM_TIERS[r.service_id] = r.in_platform_tiers;
     } else if (r.scope === 'group') {
       const key = `${r.group_id}|${r.service_id}`;
       ACCOUNTING_CUT_RATES.group[key] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;

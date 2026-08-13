@@ -12629,3 +12629,100 @@ of this concept in the file now read "SSH Billing" consistently; only the
 internal `billed_externally` column/variable name (never shown to anyone)
 still uses the old wording, which is correct -- it's a data identifier, not
 UI text. `node --check` clean.
+
+### 2026-08-13 (cont'd) — SEM base rates: In-Platform %/CPC Low/High set
+
+Claire asked what the new Budgeted Spend %/In-Platform %/CPC Low/High/
+Setup Fee Split % columns in Accounting Overrides are for; explained each
+(legacy formula input, SEM's no-CPM fallback, the CPC range that drives
+SEM's auto Goal, and the 44i/Group split on SEM Business Pro's $200 setup
+fee respectively), and flagged that In-Platform %/CPC Low/High existed as
+fields but had no real base rate entered yet. She said "go ahead and set
+those SEM rates now."
+
+Used the numbers already confirmed real in the 2026-08-10 audit (not a
+fresh guess) — 39 real historical In-Platform overrides averaged ~50%-of-
+Gross (min 0.500), and 30+ real Goal-range entries matched a $4-$12 CPC
+range exactly, both called out then as "a genuine, consistent rule, not
+noise." Wrote `sem-base-rates-2026-08-13.sql` (scratchpad) setting
+`accounting_map.in_platform_pct = 50`, `cpc_low = 4`, `cpc_high = 12` for
+`sem-bp` (the only service with `retail_cpm = null`, per the mechanism
+built 2026-08-10) and sent it to Claire to run -- no direct DB access this
+session, same as every other data change.
+
+Base rate only -- the same audit noted a few groups clearly run a
+different real In-Platform ratio (avg pulled up to 0.517 by those), which
+still need their own per-group override entered in Accounting Overrides
+separately; not attempted here since that's group-specific data I don't
+have, not a formula decision.
+
+**Not yet run by Claire** -- once run, SEM's In-Platform Budget and Goal
+range will auto-calculate for any group with no override, using the exact
+formulas already built and tested in `test-sem-formula-fallbacks.js`
+(14/14 passing since 2026-08-10).
+
+### 2026-08-13 (cont'd) — In-Platform % is actually tiered too; built real tiering support
+
+Claire, right after the flat-rate SQL above: pasted the real SEM rate
+table again as a reminder, this time drawing out the "Budgeted Spend"
+column -- 50% for the two lower spend bands, 70% at $5,000+. Same $4,999
+break point already used for 44i Cut %'s tiers (built 2026-08-11), but
+In-Platform % had no tiering support at all -- just one flat rate per
+service/group, so the flat 50% I'd just set would have been wrong for any
+SEM account at $5,000+.
+
+Asked Claire directly whether to build real tiering for this (a genuine
+feature add spanning both portals) or park it with a flat rate for now --
+she chose to build it now.
+
+**Real constraint found while planning this**: the existing tiering
+mechanism (`accounting_map.spend_tiers`) carries `cut_pct` -- sensitive
+44i margin data that `strategist_get_budgeted_spend_rates` deliberately
+never exposes (confirmed by reading that RPC's actual current body,
+recovered from this session's own `sem-formula-rates-2026-08-10.sql`).
+Reusing that same column for In-Platform % tiers would have meant either
+leaking `cut_pct` to Strategist or adding fragile per-field stripping
+logic server-side. Used a **separate new column** instead
+(`accounting_map.in_platform_tiers`, jsonb array of `{max,
+in_platform_pct}`, same shape/lookup pattern as `spend_tiers` otherwise) --
+safe to expose to Strategist the same way the flat `in_platform_pct`/
+`cpc_low`/`cpc_high` already are, since it never carries margin data.
+
+**Built** (mirroring the existing cut_pct tiering exactly, in both
+portals' own copies, per this project's per-portal-copy convention):
+- `strategist/index.html`: new `IN_PLATFORM_TIERS` cache, populated from
+  `in_platform_tiers` on base-scope rate rows; new
+  `effectiveInPlatformPctTier(serviceId, grossBudget)`; `effectiveInPlatformPct()`
+  now takes a `grossBudget` param and checks the tier first, falling back
+  to group/base exactly as before when no tier is configured -- a tiered
+  rate REPLACES the flat rate entirely once tiers exist, same rule already
+  documented for 44i Cut %. `computeInPlatformBudget()`'s call site updated
+  to pass `grossBudget` through.
+- `accounting/index.html`: identical shape --
+  `ACCOUNTING_IN_PLATFORM_TIERS`, `accountingEffectiveInPlatformPctTier()`,
+  `accountingEffectiveInPlatformPct()` gains the same `grossBudget` param/
+  tier-first precedence, `accountingComputeExpectedSpend()`'s call site
+  updated (it already had `grossBudget` in scope).
+- SQL (`in-platform-pct-tiers-2026-08-13.sql`, sent to Claire): adds the
+  `in_platform_tiers` column, sets SEM's real tiers
+  (`[{max:4999,in_platform_pct:50},{max:null,in_platform_pct:70}]`), and
+  patches both `strategist_get_budgeted_spend_rates` and
+  `accounting_get_rates` to expose the new column at base scope only (not
+  group-overridable, matching the `spend_tiers` precedent) -- full function
+  bodies rewritten from the actual current versions recovered from this
+  session's own scratchpad files, not guessed at blind.
+
+**Verified**: new `test-in-platform-pct-tiers-2026-08-13.js` (scratchpad) --
+confirms both portals' tier lookups return 50% under $5,000, exactly 70% at
+the $5,000 boundary itself and above, and correctly fall back to the flat
+base rate when no `grossBudget` is available at all; confirms
+`computeInPlatformBudget()`/`accountingComputeExpectedSpend()` produce the
+right dollar amounts through the tier (3000×50%=1500, 6000×70%=4200); confirms
+a manual per-month override still wins over the tiered calc. All pass.
+Re-ran `test-sem-formula-fallbacks.js` (14/14) and
+`test-accounting-expected-spend.js` (7/7) -- both still fully pass with the
+new `grossBudget` parameter added to the function signature, confirming no
+regression to the pre-tiering behavior. `node --check` clean on both
+files.
+
+**Not yet run by Claire**: `in-platform-pct-tiers-2026-08-13.sql`.
