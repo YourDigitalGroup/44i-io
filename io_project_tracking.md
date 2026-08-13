@@ -12234,3 +12234,42 @@ before concluding anything is still broken. The requested full 3-portal
 button/dropdown/editor consistency audit is being held until that's
 confirmed, since auditing against a possibly-stale live view would just
 compound the confusion.
+
+### 2026-08-12 (cont'd) — Real bug confirmed and fixed: stat tiles showed the group's own color, not the brand fill
+
+Claire confirmed PR #215 was actually merged and deployed, so the stat-tile/
+button-color issue in her last screenshot wasn't a deploy lag after all --
+went back and found a real bug for the stat tiles specifically.
+
+**Root cause**: a leftover feature from BEFORE the "filled with brand
+color" redesign -- `renderAccountingDashboard()` was still setting
+`background`/`borderColor` inline on `#accounting-stats` to tint the WHOLE
+stat bar with whichever group is currently filtered (a real, intentional
+feature from 2026-08-11). That made sense when `.acct-stats` was one solid
+bordered strip. Once the tiles were separated into their own individually-
+colored cards this same session, that inline style had nowhere left to
+paint EXCEPT the gaps between tiles and wherever an individual tile's own
+`background:var(--light)` happened not to fully win -- which is exactly why
+Claire saw the filtered group's own brand color (Titan Digital's green)
+bleeding through behind the tiles instead of the intended fixed navy-blue
+fill. Removed the group-tinting lines entirely; tiles now always show the
+same fixed brand colors regardless of which group is filtered.
+
+**Verified**: new `test-accounting-stat-tile-group-tint-2026-08-12.js`
+(scratchpad) -- reproduces Claire's exact scenario (a group filter selected,
+that group's own `group_color` set to green) and confirms the tile's
+COMPUTED background resolves to the fixed navy-blue `--light` token
+(`rgb(234, 241, 248)`), never the group's own green. Re-ran every
+Accounting/Strategist test from today -- all still fully passing. `node
+--check` passes clean.
+
+**Not yet resolved**: the toolbar buttons (+ Add Service/Bulk Match/Bulk
+Import) and Logout still reportedly showing unstyled/uncolored even after
+confirmed merge+deploy. Reviewed the actual current code for both --
+correctly using `var(--accent-dark)`/`.btn-quiet-green` as intended, no
+competing/overriding CSS rule found, no code-level explanation found via
+static review. Asked Claire to try a genuine hard-refresh or incognito
+window specifically on the Accounting page itself (distinct from the
+shared.css caching issue solved earlier this session) before concluding
+there's a real remaining code bug there. The requested full 3-portal audit
+is still on hold pending that.

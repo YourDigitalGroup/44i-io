@@ -1694,14 +1694,17 @@ function renderAccountingDashboard() {
     stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Billed Externally (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Awaiting Confirmation', `${awaiting} of ${nonPendingCount}`, awaiting > 0 ? 'warn' : '');
-  // Tint the stat bar with the filtered Group's own brand color -- viewing
-  // "All Groups" (mixed data, no single brand color applies) keeps the
-  // plain white/border default.
-  const filteredGroupColor = accountingGroupFilter
-    ? ALL_ACCOUNTING_LINES.find(l => l.group_name === accountingGroupFilter)?.group_color
-    : null;
-  statsEl.style.background = accountingTintColor(filteredGroupColor, 0.88) || '#fff';
-  statsEl.style.borderColor = filteredGroupColor || 'var(--border)';
+  // Group-brand-color tinting REMOVED (2026-08-12) -- predates the "filled
+  // with brand color" stat tile redesign and was left setting an inline
+  // background/borderColor on the #accounting-stats container itself, which
+  // is exactly why Claire saw the selected GROUP's own color bleeding
+  // through behind the tiles instead of the intended fixed navy-blue fill:
+  // .acct-stats no longer has a background/border of its own for tiles to
+  // sit on top of, so this leftover inline style was showing straight
+  // through the gaps between tiles. Tiles now always use the same fixed
+  // brand colors regardless of which group is filtered.
+  statsEl.style.background = '';
+  statsEl.style.borderColor = '';
 
   accountingRenderDetailCard();
 
