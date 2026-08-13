@@ -12040,3 +12040,30 @@ default-to-100%-when-no-rate-exists fallback specifically for
 Admin (configuring a Cut % for every flat service) instead of a code change.
 No code touched until this is answered -- business-logic ambiguity, not
 guessed at.
+
+### 2026-08-12 (cont'd) — First pass at "more dynamic" styling using navy/green (awaiting Claire's feedback)
+
+Claire: "it is looking clean but kinda boring... more of the navy and
+green... maybe changing something with the details box that opens in each
+or the buttons." Implemented a first, deliberately small pass rather than a
+sweeping redesign, screenshotted it, and asked whether the direction feels
+right before extending it to Strategist/Admin or touching anything else.
+
+**Button hover-lift (`shared.css`, all 3 portals automatically)** -- every
+button in this app sets its own background inline, so there's no shared
+button class to retrofit without a much larger sweep. Added a `transform`/
+`box-shadow` hover-lift instead, deliberately avoiding `background` entirely
+so it can't be overridden by (or conflict with) any of the hundreds of
+inline-styled buttons across the three files. Excludes `.acct-detail-close`
+and similarly quiet utility buttons, which keep their understated look on
+purpose.
+
+**Detail card gradient stripe (Accounting only so far)** --
+`.acct-detail-card` gets a 3px navy-to-green (`var(--accent-dark)` to
+`var(--accent-green)`) top border via `border-image`, so it doesn't add an
+extra element or affect spacing anywhere this card already renders.
+
+**Not yet done, pending Claire's answer**: same treatment for Strategist's
+and Admin's own detail/editor panels; any further ideas (status pills,
+section headers, stat tiles) explicitly held until she confirms this
+direction is right.
