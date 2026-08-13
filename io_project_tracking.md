@@ -13300,3 +13300,24 @@ pass, confirming the additive `order_id`/`has_addl_targeting` fields
 don't disturb existing behavior.
 
 **Not yet run by Claire**: `order-detail-portal-view-2026-08-13.sql`.
+
+### 2026-08-13 (cont'd) — Real bug: "View Order" failed with "renderOrderDetailModal is not defined"
+
+Claire hit this immediately after the SQL was run. Root cause: `shared.js`
+was edited today to add `renderOrderDetailModal`/`closeOrderDetailModal`,
+but the cache-busting query string on `<script src="../shared.js?v=...">`
+was NOT bumped -- it was already sitting at `20260813` from an earlier fix
+today, so the browser (and any CDN/edge cache) kept serving the
+pre-edit copy of `shared.js` that doesn't have those functions yet, even
+after the new code was deployed. Same root-cause shape as the cache-
+busting fix earlier this session, just missed this time because the
+version string wasn't touched by the order-view commit.
+
+**Fix**: bumped `?v=20260813` to `?v=20260813b` on both `shared.js` and
+`shared.css` references in `strategist/index.html`, `accounting/index.html`,
+and `admin/index.html` (all three share the same file, so all three
+needed the bump even though only Strategist/Accounting use the new
+functions).
+
+**Verified**: `node --check` clean on all three files' extracted
+`<script>` blocks.
