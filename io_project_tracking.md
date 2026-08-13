@@ -12299,3 +12299,56 @@ and navy border. Deleted the previous round's "no tint at all"
 test file (superseded, not a regression -- the whole point changed).
 Re-ran every other Accounting/Strategist test from today -- all still fully
 passing. `node --check` passes clean.
+
+### 2026-08-13 — Full 3-portal color audit: real brand-hex mismatch found and fixed
+
+Claire, kicking off the "full 3-portal audit" she'd asked for: "I want to make
+sure everything is consistent and easy to update across the board... Here are
+the exact color codes: Green - #a2d29c, Light Blue - #629ad0, Navy - #2c4863,
+Ink - #2c4863."
+
+Checked all 4 against `shared.css`'s `:root` tokens. 3 of 4 matched exactly
+(`--brand-color-primary:#629AD0`, `--brand-color-secondary:#2C4863`,
+`--accent-green:#A2D29C`). The 4th didn't: `--accent2:#0F6E56`, a darker teal
+introduced earlier this session for Logout/Close/"All Strategists" -- never
+part of Claire's real 4-color palette, just a placeholder pick that stuck.
+
+Asked Claire directly (contrast concern: the exact pale green reads low-
+contrast as text/border on white) rather than guessing. She chose the
+recommended option: solid `#A2D29C` fill with dark navy text, matching the
+"Confirmed" status-pill pattern already used elsewhere.
+
+Grepped the whole repo for `accent2` first to confirm blast radius -- exactly
+4 real usages, all introduced this session, all safe to change:
+- `shared.css` `.btn-quiet-green` (Logout, and both portals' detail-panel Close)
+- `accounting/index.html` `.acct-detail-close`
+- `strategist/index.html` `#strategist-scope-all` (inline style + its
+  active/inactive JS toggle in `renderStrategistDashboard()`)
+
+Fixed all 4 to the solid-green-fill/navy-text pattern. For the "All
+Strategists" toggle specifically: inactive state is a white background with
+a green border/text outline; active state flips to solid green fill with
+navy text (mirroring how "My Campaigns" already used solid navy fill/white
+text for its own active state, just recolored).
+
+Since `--accent2` was left with zero remaining references anywhere in
+Admin/Strategist/Accounting after this fix, removed the dead variable
+declaration from `shared.css`'s `:root` entirely rather than leaving an
+unused token behind. (The public IO form, `index.html`, still defines its
+own separate never-referenced copy of `--accent2` in its own inline
+stylesheet -- left untouched, out of scope: that file doesn't load
+`shared.css` and isn't part of this internal-tools design system.)
+
+**Verified**: new `test-green-color-fix-2026-08-13.js` (scratchpad) --
+renders Logout, `.acct-detail-close`, and the "All Strategists" button
+(both its default/inactive border and its simulated active state) against
+the real `shared.css` + `accounting/index.html`'s inline `<style>` block;
+asserts computed `background-color`/`color`/`border-color` all resolve to
+exactly `rgb(162, 210, 156)` (#A2D29C) / `rgb(44, 72, 99)` (#2C4863) as
+appropriate. All assertions pass. `node --check` clean on both
+`accounting/index.html` and `strategist/index.html`.
+
+Next: continue the full 3-portal audit itself (buttons/dropdowns/editors
+consistency check) -- this color-hex pass was the first, most concrete part
+of it; Admin in particular still needs the same level of scrutiny Strategist
+and Accounting got during the design-system passes earlier this session.
