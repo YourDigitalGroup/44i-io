@@ -2506,7 +2506,7 @@ function renderMainTable(lines) {
     ['Client', 130], ['Tactic', 150], ['Platform', 140], ['Flight', 95],
     ['Gross Budget', 80], ['In-Platform Budget', 85], ['Actual Spend', 80],
     ['Spend Pacing', 70], ['Goal', 75], ['Actual Perf.', 75], ['Perf. Pacing', 70],
-    ['Optimize Log', 75], ['Notes', 100],
+    ['Optimize Log', 75], ['Notes', 50],
   ];
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1250px">
     <thead><tr style="background:var(--light)">
@@ -2550,7 +2550,7 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px">${actualPerf != null ? Number(actualPerf).toLocaleString() + ' ' + goal.unit : '—'}</td>
         <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>
         <td style="padding:9px 10px">${logCount} ${logCount === 1 ? 'entry' : 'entries'}</td>
-        <td style="padding:9px 10px;color:var(--muted);max-width:160px;overflow-wrap:break-word">${esc(l.setup_notes || '—')}</td>
+        <td style="padding:9px 10px;text-align:center" title="${esc(l.setup_notes || '')}">${l.setup_notes ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--accent-dark)"></span>' : '<span style="color:var(--muted)">—</span>'}</td>
       </tr>`;
     });
   });
