@@ -432,7 +432,7 @@ function accountingRenderDetailCard() {
           <td class="num"${dollarStyle}>${m.actualSpend != null ? '$' + m.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
           <td>
             <div style="display:flex;align-items:center;gap:8px">
-              ${line.billed_externally ? accountingStatusPill('external', 'Billed externally')
+              ${line.billed_externally ? accountingStatusPill('external', 'SSH Billing')
                 : m.paused ? accountingStatusPill('paused', 'Paused')
                 : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
               ${!line.billed_externally && !m.paused ? `<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'};white-space:nowrap">
@@ -1154,7 +1154,7 @@ function accountingPendingStatusPill(line) {
 // everything (a manually-invoiced tactic can be billed regardless of its
 // own setup/pause state).
 function accountingLineStatusPill(r) {
-  if (r.line.billed_externally) return accountingStatusPill('external', 'Billed externally');
+  if (r.line.billed_externally) return accountingStatusPill('external', 'SSH Billing');
   if (r.line.status === 'pending') return accountingPendingStatusPill(r.line);
   if (r.paused) return accountingStatusPill('paused', 'Paused');
   if (r.confirmed) return accountingStatusPill('confirmed', 'Confirmed');
@@ -1168,7 +1168,7 @@ function accountingLineStatusPill(r) {
 // through to the normal confirmed-count summary (that detail is visible in
 // the expanded rows).
 function accountingRollupStatusPill(r) {
-  if (r.children.every(c => c.line.billed_externally)) return accountingStatusPill('external', 'Billed externally');
+  if (r.children.every(c => c.line.billed_externally)) return accountingStatusPill('external', 'SSH Billing');
   if (r.children.every(c => c.line.status === 'pending')) return accountingPendingStatusPill(r.children[0].line);
   if (r.children.every(c => c.paused)) return accountingStatusPill('paused', 'Paused');
   if (r.confirmedCount === r.totalCount) return accountingStatusPill('confirmed', 'Confirmed');
@@ -1684,7 +1684,7 @@ function renderAccountingDashboard() {
     stat('Expected Spend', '$' + totalExpectedSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Actual Spend', '$' + totalActualSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2})) +
-    stat('Billed Externally (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2})) +
+    stat('SSH Billing (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Awaiting Confirmation', `${awaiting} of ${nonPendingCount}`, awaiting > 0 ? 'warn' : '');
 
   accountingRenderDetailCard();
