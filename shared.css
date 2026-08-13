@@ -16,6 +16,17 @@
    large public-form-only stylesheet: .svc-table, modal/step/summary
    styles, the mobile stacked-card responsive rules, etc. Those stay
    index.html's exclusive territory.
+
+   CACHE-BUSTING (2026-08-13): admin/strategist/accounting all load this file
+   as `../shared.css?v=YYYYMMDD` — real bug found after Claire repeatedly saw
+   stale button/dropdown colors in the Accounting portal specifically, even
+   several pushes after they were fixed here, while page-local inline-style
+   fixes in the same commits always showed up immediately. Root cause: this
+   file's URL never changed between deploys, so once a browser cached it, it
+   kept serving the old CSS indefinitely — no amount of redeploying fixes
+   that without a hard refresh. Bump the `?v=` query string in all three
+   portal files' <link>/<script> tags (shared.css AND shared.js) any time
+   either file changes, so the browser is forced to fetch the new version.
    ════════════════════════════════════════════════════════════════ */
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}

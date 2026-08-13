@@ -12563,3 +12563,41 @@ the open header is `rgb(98,154,208)`/white text, the closed headers stay
 transparent/navy text, and the open body is `rgb(234,241,248)`; the
 rendered screenshot itself (sent to Claire) shows the open block clearly
 standing out from the two collapsed ones. `node --check` clean.
+
+### 2026-08-13 (cont'd) — Real root cause found: shared.css was never cache-busted
+
+Claire, after the last two rounds: "Also the cancel and logout buttons are
+still wrong in the accounting portal." This is the THIRD time she's
+reported Logout/Cancel/dropdowns looking unfixed in Accounting specifically
+-- but her screenshot showed the page-local fixes (Group dropdown, Add
+Service/Bulk Match/Bulk Import pills, the removed Status filter) rendering
+correctly, while only the `.btn-quiet-green` styling (Logout, Cancel --
+both defined in `shared.css`, not in `accounting/index.html` itself) still
+showed the old white/green-outline look.
+
+That split is the tell: every fix living directly in a portal's own
+`<style>`/inline markup showed up immediately after each push, but every
+fix living in `shared.css` kept reverting to old styling in Claire's
+browser no matter how many times it was corrected and redeployed. Root
+cause: `admin/index.html`, `strategist/index.html`, and
+`accounting/index.html` all loaded `shared.css`/`shared.js` from a plain
+`../shared.css` URL that never changed between deploys -- so once a
+browser cached that file, it kept serving the stale copy indefinitely.
+Every earlier "deploy lag, try a hard refresh" guess this session was
+partially right for the wrong reason: a hard refresh (which force-bypasses
+cache) would have shown the real fix all along, but a normal reload never
+would have, no matter how long she waited.
+
+**Fix**: added a cache-busting `?v=20260813` query string to all three
+files' `<link href="../shared.css">` and `<script src="../shared.js">`
+tags. Documented directly in `shared.css`'s header comment that this `?v=`
+needs bumping in all three portal files any time `shared.css` or
+`shared.js` changes going forward -- otherwise this exact bug just
+resurfaces the next time either shared file is touched.
+
+**Verified**: `node --check` clean on all three files (query string on a
+resource URL doesn't touch the inline `<script>` block, confirmed by
+re-extracting and checking each). Not independently visually verifiable
+beyond that without a real browser cache to bust — the fix is a cache-
+control mechanism, not a rendering change, so its real proof is that
+Logout/Cancel now update correctly next time `shared.css` changes.
