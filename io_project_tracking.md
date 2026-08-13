@@ -12015,3 +12015,55 @@ just for `accounting_only` lines instead of section collisions.
 (pending line items, IO notes, SEO-tracking exclusion, Addl. Targeting,
 auto-billing-type/amount) -- all still fully passing, confirming no other
 code depended on this tag. `node --check` passes clean.
+
+### 2026-08-12 (cont'd) — PARKED: what counts as 44i Revenue for a flat/accounting-only line with no Cut %?
+
+Claire noticed the "Billed Externally (excl.)" stat tile showed $0 for
+Website Monthly's 5-Page ($299 revenue, marked Billed Externally). Root
+cause explained, not fixed yet: "44i Revenue" is always computed as
+`Gross × Cut %`, and `wm-5p` -- like every flat/accounting-only service
+added via the "track all services ordered" work -- has no Cut % configured
+in the Accounting Map at all (these were never part of the original
+ad-spend rate setup). So its 44i Revenue is genuinely unknown (shown as a
+dash), and `accountingSplitInvoiceable()` correctly excludes $0 of an
+unknown amount -- consistent, but clearly not what Claire expects to see.
+
+**Real open question, parked pending her boss's answer**: for a flat/
+accounting-only line with no group revenue split concept (Website Hosting, a
+page package, etc.), should the FULL Gross amount default to counting as
+44i Revenue (100% or nothing, no Cut % needed), or does every one of these
+flat services genuinely need its own real Cut % configured in the
+Accounting Map first, same requirement as an ad-spend tactic? This decides
+whether `accountingSplitRevenue`/`accountingEffectiveCutPct` need a
+default-to-100%-when-no-rate-exists fallback specifically for
+`accounting_only` lines, or whether the real fix is a data-entry task in
+Admin (configuring a Cut % for every flat service) instead of a code change.
+No code touched until this is answered -- business-logic ambiguity, not
+guessed at.
+
+### 2026-08-12 (cont'd) — First pass at "more dynamic" styling using navy/green (awaiting Claire's feedback)
+
+Claire: "it is looking clean but kinda boring... more of the navy and
+green... maybe changing something with the details box that opens in each
+or the buttons." Implemented a first, deliberately small pass rather than a
+sweeping redesign, screenshotted it, and asked whether the direction feels
+right before extending it to Strategist/Admin or touching anything else.
+
+**Button hover-lift (`shared.css`, all 3 portals automatically)** -- every
+button in this app sets its own background inline, so there's no shared
+button class to retrofit without a much larger sweep. Added a `transform`/
+`box-shadow` hover-lift instead, deliberately avoiding `background` entirely
+so it can't be overridden by (or conflict with) any of the hundreds of
+inline-styled buttons across the three files. Excludes `.acct-detail-close`
+and similarly quiet utility buttons, which keep their understated look on
+purpose.
+
+**Detail card gradient stripe (Accounting only so far)** --
+`.acct-detail-card` gets a 3px navy-to-green (`var(--accent-dark)` to
+`var(--accent-green)`) top border via `border-image`, so it doesn't add an
+extra element or affect spacing anywhere this card already renders.
+
+**Not yet done, pending Claire's answer**: same treatment for Strategist's
+and Admin's own detail/editor panels; any further ideas (status pills,
+section headers, stat tiles) explicitly held until she confirms this
+direction is right.

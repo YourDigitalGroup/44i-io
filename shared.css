@@ -57,6 +57,19 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
    off-white and --card is white, so cards read as raised without a harsh outline. */
 .card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
 
+/* Button hover-lift (2026-08-12, per Claire: "it is looking clean but kinda boring" --
+   first pass at more dynamic styling using the brand navy/green). Every button in
+   this app sets its own background inline (no shared button class exists to retrofit
+   without a much larger sweep), so this deliberately styles only what an inline
+   `style="background:..."` can't override — transform and box-shadow, not color —
+   giving every button in Admin/Strategist/Accounting a consistent lift-on-hover
+   without touching a single existing color. Excludes .acct-detail-close and similar
+   plain utility buttons that already have their own quieter, deliberately understated
+   look — this is for the real call-to-action buttons. */
+button:not(.acct-detail-close){transition:transform .12s ease, box-shadow .12s ease}
+button:not(.acct-detail-close):hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(44,72,99,.25)}
+button:not(.acct-detail-close):active{transform:translateY(0)}
+
 /* Field labels */
 label.lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
 
