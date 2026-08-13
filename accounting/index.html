@@ -26,8 +26,6 @@
      drop downs look different than the strategists portal... make those navy") --
      matches the same navy-bordered pill treatment now also applied to Strategist's
      own group/pacing filters below, so both portals' filters finally look the same. */
-  #page-accounting .acct-filter-btn{display:flex;align-items:center;gap:5px;border:1.5px solid var(--accent-dark);border-radius:999px;padding:6px 12px 6px 14px;font-size:11.5px;letter-spacing:.03em;color:var(--accent-dark);background:#fff}
-  #page-accounting .acct-filter-btn select{background:transparent;color:var(--accent-dark);border:none;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding-right:2px}
   /* Separated stat tiles, not one fused strip (2026-08-12, per Claire: "make the
      stat tiles separated instead of attached") -- each tile is now its own rounded
      card with a real gap between them, matching the reference screenshot's distinct
@@ -103,7 +101,7 @@
     <div class="acct-header">
       <div id="accounting-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
-        <a id="accounting-admin-portal-link" href="../admin/index.html" onclick="adminPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Admin →</a>
+        <button id="accounting-admin-portal-link" onclick="adminPortalHandoff();location.href='../admin/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Admin →</button>
         <button onclick="accountingLogout()" class="btn-quiet-green">Logout</button>
       </div>
     </div>
@@ -116,19 +114,9 @@
         <button onclick="accountingShiftMonth(1)">›</button>
       </div>
       <div class="acct-filters">
-        <label class="acct-filter-btn">Group:
-          <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)">
-            <option value="">All Groups</option>
-          </select>
-        </label>
-        <label class="acct-filter-btn">Status:
-          <select id="accounting-status-filter" onchange="accountingSetStatusFilter(this.value)">
-            <option value="">All Lines</option>
-            <option value="active">Active</option>
-            <option value="paused">Paused</option>
-            <option value="complete">Complete</option>
-          </select>
-        </label>
+        <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer">
+          <option value="">All Groups</option>
+        </select>
         <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
         <button onclick="accountingOpenBulkMatchForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Match</button>
         <button onclick="accountingOpenBulkImportForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
@@ -243,7 +231,7 @@ function showAccountingPanel(show) {
     // link to a real accounting user would just dead-end them (carried over from
     // the original scaffold, 2026-08-07).
     const adminLink = document.getElementById('accounting-admin-portal-link');
-    if (adminLink) adminLink.style.display = currentAccountingUser.role === 'super' ? 'inline' : 'none';
+    if (adminLink) adminLink.style.display = currentAccountingUser.role === 'super' ? 'inline-block' : 'none';
     loadAccountingDashboard();
   }
 }
@@ -304,7 +292,6 @@ let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} }; // for Expected Spe
 let ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // Expected Spend fallback for a service with no Retail CPM (e.g. SEM)
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
-let accountingStatusFilter = ''; // '' = All Lines, matching the mockup's default -- was 'active'-only before this pass
 let ACCOUNTING_EXPANDED_SPLITS = new Set(); // rollup keys currently expanded -- always starts empty on load
 let accountingSelectedLineId = null; // drives the per-campaign detail card below the stat tiles
 
@@ -1205,12 +1192,6 @@ function accountingSetGroupFilter(groupName) {
   accountingSelectedLineId = null;
   renderAccountingDashboard();
 }
-function accountingSetStatusFilter(status) {
-  accountingStatusFilter = status;
-  accountingSelectedLineId = null;
-  renderAccountingDashboard();
-}
-
 // Real gap found live (2026-08-11, Claire cross-checking against her revenue
 // spreadsheet): every "w/Visits" tactic came out wrong -- e.g. Geofencing is
 // 45% normally but 45.59% with Offline Visits Tracking. This isn't a new
@@ -1525,7 +1506,6 @@ function accountingBuildRows() {
   const filtered = ALL_ACCOUNTING_LINES.filter(l => {
     if (ACCOUNTING_EXCLUDED_TACTIC_LABELS.includes(l.tactic_label)) return false;
     if (accountingGroupFilter && l.group_name !== accountingGroupFilter) return false;
-    if (accountingStatusFilter && l.status !== accountingStatusFilter) return false;
     if (!accountingLineActiveInMonth(l, accountingCurrentMonth)) return false;
     return true;
   });

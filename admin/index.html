@@ -31,8 +31,8 @@
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
-        <a id="admin-strategist-portal-link" href="../strategist/index.html" onclick="strategistPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Strategist Portal →</a>
-        <a id="admin-accounting-portal-link" href="../accounting/index.html" onclick="accountingPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Accounting Portal →</a>
+        <button id="admin-strategist-portal-link" onclick="strategistPortalHandoff();location.href='../strategist/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Strategist Portal →</button>
+        <button id="admin-accounting-portal-link" onclick="accountingPortalHandoff();location.href='../accounting/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Accounting Portal →</button>
         <button onclick="adminLogout()" class="btn-quiet-green">Logout</button>
       </div>
     </div>
@@ -1789,12 +1789,12 @@ function showAdmin(show) {
     // super (2026-08-04, per Claire — supers test/use both portals, so it should be
     // one click away, not just for the restricted-view role).
     const strategistLink = document.getElementById('admin-strategist-portal-link');
-    if (strategistLink) strategistLink.style.display = (isStrategist || currentAdminUser?.role === 'super') ? 'inline' : 'none';
+    if (strategistLink) strategistLink.style.display = (isStrategist || currentAdminUser?.role === 'super') ? 'inline-block' : 'none';
     // Accounting has no visibility here at all (attemptAdminLogin rejects that role
     // outright), so this link only ever makes sense for a super admin testing/using
     // both portals — no restricted-view role to show it to, unlike the strategist link.
     const accountingLink = document.getElementById('admin-accounting-portal-link');
-    if (accountingLink) accountingLink.style.display = currentAdminUser?.role === 'super' ? 'inline' : 'none';
+    if (accountingLink) accountingLink.style.display = currentAdminUser?.role === 'super' ? 'inline-block' : 'none';
     ['groups','clients','map','sections','intake','ae','legal','notifications','reconcile','users','accounting'].forEach(s => {
       const tab = document.getElementById('section-tab-' + s);
       if (tab) tab.style.display = isStrategist ? 'none' : '';
