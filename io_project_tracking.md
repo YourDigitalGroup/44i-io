@@ -13321,3 +13321,38 @@ functions).
 
 **Verified**: `node --check` clean on all three files' extracted
 `<script>` blocks.
+
+### 2026-08-13 (cont'd) — Real gap: no way to add a general note once a campaign's out of Setup
+
+Claire: "we have a notes section in the strategists portal but no way to
+add notes, just the optimize log." Confirmed: the main pacing table's
+"Notes" column displays `setup_notes`, but the only place that field
+could ever be TYPED INTO was the Setup-panel textarea (`renderSetupPanel`),
+which only renders for lines still in the Pending/Setup queue. The moment
+a campaign is activated, "Notes" becomes permanently read-only -- the
+Optimize log in the detail panel was the only actual add-a-note mechanism
+left, which is a different thing (dated, timestamped change entries, not
+a running note).
+
+**Fix**: added an editable "Notes" textarea to the campaign detail panel
+(`renderStrategistDetailPanel` -- the panel used for Active/Paused/
+Complete lines, not just Setup), writing to the exact same `setup_notes`
+column via the same generic `strategistSaveLine`/`strategist_save_
+campaign_line` RPC every other field in that panel already uses. No
+schema change, no new RPC -- `setup_notes` was already a plain, freely-
+writable column; it just had no UI reachable outside the Setup queue.
+Kept the label as plain "Notes" here (not "Setup Notes") since it's now
+usable at any status, matching the main table's own column header.
+
+**Verified**: new `test-strategist-detail-notes-2026-08-13.js`
+(scratchpad, Playwright, real detail-panel render function, mock lines)
+-- 7 checks, all pass: the textarea renders and pre-fills from an
+existing note, its `onchange` saves `setup_notes` via `strategistSaveLine`
+with `reload:false` (matching every other field in this panel), a `null`
+note renders as an empty textarea rather than the literal string "null",
+the field appears for a Paused line too (not gated to Active), and a note
+containing `</textarea><script>...` renders escaped rather than breaking
+out of the textarea or executing. Re-ran 3 existing Setup-panel tests
+(`test-setup-blocker.js`, `test-multi-blocker.js`,
+`test-setup-panel-collapse.js`) -- all still pass, confirming the Setup
+queue's own `setup_notes` save path is untouched. `node --check` clean.
