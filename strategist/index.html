@@ -1959,7 +1959,7 @@ function renderSetupPanel(l) {
         </div>
       </div>
       <div id="setup-body-${l.id}" style="${isExpanded ? '' : 'display:none'}">
-      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px;font-size:12px">
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:12px;font-size:12px">
         <div><label class="lbl">Client</label><div>${esc(client)}</div></div>
         <div><label class="lbl">Tactic</label>${(() => {
           const variants = strategistTacticVariantOptions(l);
@@ -1991,6 +1991,14 @@ function renderSetupPanel(l) {
           }
           const cpm = effectivePlatformCpm(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
           return cpm != null ? '$' + Number(cpm).toFixed(2) : '— (not set)';
+        })()}</div></div>
+        <!-- Expected Goal (2026-08-13, per Claire -- wanted here too, same computeGoal()
+             already driving the Goal column/field in the main table and Detail panel.
+             Clicks for SEM (off its CPC range), impressions for everything else (off
+             Platform CPM) -- same auto-calculation, just surfaced before activation too. -->
+        <div><label class="lbl">Goal</label><div>${(() => {
+          const goal = computeGoal(l, monthRow);
+          return goal.value != null ? goal.display + ' ' + goal.unit : (goal.manual ? '— (enter manually)' : '—');
         })()}</div></div>
       </div>
       <div style="display:flex;gap:16px;margin-bottom:12px">
