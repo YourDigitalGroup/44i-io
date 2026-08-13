@@ -12102,3 +12102,47 @@ pure-CSS change touched no logic. `node --check` passes clean.
 **Not yet done**: same rounding pass on Strategist's and Admin's own
 cards/detail panels -- held until Claire confirms this direction on
 Accounting first.
+
+### 2026-08-12 (cont'd) — Third pass: navy/green in the right places, separated stat tiles
+
+Claire, liking the rounded-card direction: "we are still missing the navy
+and green details. maybe we change some of the buttons that are lighter to
+those colors like the close, and log out? Could we make the stat tiles
+separated instead of attached? ...the group and status drop downs look
+different than the strategists portal. Maybe we make those navy and the
+logout and close green on all of the portals?"
+
+**Logout + Close -> green outline pill.** New shared `.btn-quiet-green`
+class in `shared.css` (outline style, not solid -- matches the reference
+screenshot's own secondary-button treatment; a quiet dismiss/logout action
+shouldn't suddenly read as a solid primary "go" button just because it has
+real brand color now) applied to all 3 portals' Logout buttons, replacing
+their identical repeated inline style with one class that keeps them in
+sync automatically. Accounting's `.acct-detail-close` restyled the same way
+directly (already its own portal-scoped class). Both were previously
+excluded from the global hover-lift (back when they were plain gray/quiet)
+-- removed that exclusion now that they're real colored buttons, so every
+button in the app lifts on hover consistently.
+
+**Group/Status filters -> navy pill, unified across portals.** Accounting's
+`.acct-filter-btn` and Strategist's own group/pacing `<select>` elements
+(previously two different ad-hoc styles -- Accounting wrapped in a bordered
+box with a text prefix, Strategist a bare bordered select) now both use the
+same navy-bordered (`var(--accent-dark)`), fully-rounded pill treatment.
+Didn't touch the structural difference (Accounting's "Group:"/"Status:"
+text prefix, which Strategist doesn't have) -- Claire's ask was about color/
+shape consistency, not information architecture.
+
+**Stat tiles separated, not fused.** `.acct-stats` was one continuous
+bordered strip with `border-left` dividers between tiles; now a plain grid
+with real gaps, and each `.acct-stat` is its own rounded, shadowed card --
+matching the reference screenshot's distinct boxes rather than one bar.
+
+**Verified**: re-screenshotted the full top bar + stats + detail card
+together (`screenshot-dynamic-design-v2-2026-08-12.js`, scratchpad) --
+confirmed navy pill filters, green outline Logout/Close, and clearly
+separated stat cards all render correctly together. Re-ran every
+Accounting AND Strategist test from today's session (13 files across both
+portals) -- all still fully passing, confirming these were pure CSS/class
+changes with zero logic impact. `node --check` passes clean on all three
+portal files.

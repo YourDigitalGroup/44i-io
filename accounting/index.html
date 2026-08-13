@@ -22,11 +22,18 @@
   #page-accounting .acct-month-nav button{background:var(--light);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 11px;cursor:pointer;font-size:14px}
   #page-accounting .acct-month-label{font-weight:700;font-size:15px;min-width:120px;text-align:center;color:var(--text)}
   #page-accounting .acct-filters{display:flex;gap:10px}
-  #page-accounting .acct-filter-btn{display:flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:6px;padding:6px 10px 6px 12px;font-size:11.5px;letter-spacing:.03em;color:var(--muted);background:#fff}
-  #page-accounting .acct-filter-btn select{background:transparent;color:var(--text);border:none;font-family:inherit;font-size:11.5px;cursor:pointer;padding-right:2px}
-  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border:1px solid var(--border);border-radius:18px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05)}
-  #page-accounting .acct-stat{padding:14px 20px}
-  #page-accounting .acct-stat + .acct-stat{border-left:1px solid var(--border)}
+  /* Navy border + full pill shape (2026-08-12, per Claire: "the group and status
+     drop downs look different than the strategists portal... make those navy") --
+     matches the same navy-bordered pill treatment now also applied to Strategist's
+     own group/pacing filters below, so both portals' filters finally look the same. */
+  #page-accounting .acct-filter-btn{display:flex;align-items:center;gap:5px;border:1.5px solid var(--accent-dark);border-radius:999px;padding:6px 12px 6px 14px;font-size:11.5px;letter-spacing:.03em;color:var(--accent-dark);background:#fff}
+  #page-accounting .acct-filter-btn select{background:transparent;color:var(--accent-dark);border:none;font-family:inherit;font-size:11.5px;font-weight:600;cursor:pointer;padding-right:2px}
+  /* Separated stat tiles, not one fused strip (2026-08-12, per Claire: "make the
+     stat tiles separated instead of attached") -- each tile is now its own rounded
+     card with a real gap between them, matching the reference screenshot's distinct
+     boxes rather than one bar with divider lines. */
+  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}
+  #page-accounting .acct-stat{padding:14px 20px;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 1px 2px rgba(20,40,60,.05)}
   #page-accounting .acct-stat-label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   #page-accounting .acct-stat-value{font-size:22px;font-weight:700;color:var(--text)}
   #page-accounting .acct-stat-value.warn{color:#B45309}
@@ -39,7 +46,7 @@
   #page-accounting .acct-detail-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:8px}
   #page-accounting .acct-detail-title{font-weight:700;font-size:14px;color:var(--text)}
   #page-accounting .acct-detail-sub{color:var(--muted);font-size:12px}
-  #page-accounting .acct-detail-close{background:var(--light);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 9px;font-size:11px;cursor:pointer}
+  #page-accounting .acct-detail-close{background:#fff;border:1.5px solid var(--accent2);color:var(--accent2);padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer}
   /* max-height (2026-08-12, per Claire: "sticky headers not working") --
      overflow:auto alone makes this div its OWN scroll container for sticky
      purposes, but with no height limit it never actually scrolls internally
@@ -92,7 +99,7 @@
       <div id="accounting-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
         <a id="accounting-admin-portal-link" href="../admin/index.html" onclick="adminPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Admin →</a>
-        <button onclick="accountingLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
+        <button onclick="accountingLogout()" class="btn-quiet-green">Logout</button>
       </div>
     </div>
 
