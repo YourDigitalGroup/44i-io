@@ -291,6 +291,7 @@ let ACCOUNTING_CUT_TIERS = {}; // service_id -> [{ max, cut_pct }, ...] sorted a
 let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} }; // for Expected Spend -- same shape as the Strategist Portal's own PLATFORM_CPM_RATES
 let ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // Expected Spend fallback for a service with no Retail CPM (e.g. SEM)
 let ACCOUNTING_IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending, e.g. SEM (2026-08-13, same shape/lookup as ACCOUNTING_CUT_TIERS, kept as its own column/cache)
+let ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} }; // service_id -> pct, group_id|service_id -> pct -- the split % for a service's own auto-add setup fee (accounting_map.setup_fee_cut_pct), can differ from that service's regular 44i Cut %
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
 let ACCOUNTING_EXPANDED_SPLITS = new Set(); // rollup keys currently expanded -- always starts empty on load
@@ -379,7 +380,13 @@ function accountingRenderDetailCard() {
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting);
-    const cutPct = accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross);
+    // Setup fee lines split at the Setup Fee Split % instead of the tactic's
+    // regular 44i Cut % (2026-08-13) -- they're not spend-tiered or modifier-
+    // paired, so the tier/pairing lookups inside accountingEffectiveCutPct
+    // don't apply and would just be dead code for this billing_type anyway.
+    const cutPct = line.billing_type === 'setup_fee'
+      ? accountingEffectiveSetupFeeCutPct(line.service_id, line.group_id)
+      : accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
@@ -1243,6 +1250,19 @@ function accountingEffectiveCutPct(serviceId, groupId, hasModifier, grossBudget)
   return baseRate != null ? baseRate : null;
 }
 
+// The split % for a service's OWN auto-add setup fee (2026-08-13) --
+// deliberately separate from accountingEffectiveCutPct above, since Admin's
+// "Setup Fee Split %" field can be a different ratio than that service's
+// regular 44i Cut % (confirmed 2026-07-30 for SEM's $200 fee: 50/50, not
+// SEM's regular split). No tier/pairing concept here -- a setup fee is a
+// flat one-time amount, never spend-tiered or modifier-paired.
+function accountingEffectiveSetupFeeCutPct(serviceId, groupId) {
+  const groupRate = groupId ? ACCOUNTING_SETUP_FEE_CUT_RATES.group[`${groupId}|${serviceId}`] : undefined;
+  if (groupRate != null) return groupRate;
+  const baseRate = ACCOUNTING_SETUP_FEE_CUT_RATES.base[serviceId];
+  return baseRate != null ? baseRate : null;
+}
+
 // 44i's $ = Gross Budget x Cut % ; Group's $ (YDA) = the remainder of Gross --
 // confirmed rule (100 - Cut % is always the Group's share, per Admin's own
 // "Group's cut (YDA) is always 100% minus this" note). Returns nulls (not 0s)
@@ -1402,11 +1422,13 @@ async function fetchAccountingData() {
   ACCOUNTING_IN_PLATFORM_TIERS = {};
   ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} };
   ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
+  ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
     if (r.scope === 'base') {
       ACCOUNTING_CUT_RATES.base[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.base[r.service_id] = Number(r.platform_cpm);
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.base[r.service_id] = Number(r.in_platform_pct);
+      if (r.setup_fee_cut_pct != null) ACCOUNTING_SETUP_FEE_CUT_RATES.base[r.service_id] = Number(r.setup_fee_cut_pct);
       if (Array.isArray(r.spend_tiers) && r.spend_tiers.length) ACCOUNTING_CUT_TIERS[r.service_id] = r.spend_tiers;
       if (Array.isArray(r.in_platform_tiers) && r.in_platform_tiers.length) ACCOUNTING_IN_PLATFORM_TIERS[r.service_id] = r.in_platform_tiers;
     } else if (r.scope === 'group') {
@@ -1414,6 +1436,7 @@ async function fetchAccountingData() {
       ACCOUNTING_CUT_RATES.group[key] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.group[key] = Number(r.platform_cpm);
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.group[key] = Number(r.in_platform_pct);
+      if (r.setup_fee_cut_pct != null) ACCOUNTING_SETUP_FEE_CUT_RATES.group[key] = Number(r.setup_fee_cut_pct);
     } else if (r.scope === 'pairing') {
       ACCOUNTING_CUT_RATES.pairing[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.pairing[r.service_id] = Number(r.platform_cpm);
@@ -1449,11 +1472,15 @@ async function fetchAccountingData() {
 // of lines. 'one_time' fees are the one deliberate exception -- they never
 // carry forward regardless of budget_varies_by_month, since they only
 // ever happened in the one month they were billed.
+// 'hosting_proration'/'setup_fee' (2026-08-13) are one-time in exactly the
+// same sense 'one_time' is -- each only ever happened in the single month it
+// was billed -- so they're excluded from carry-forward the same way.
+const ACCOUNTING_ONE_TIME_BILLING_TYPES = ['one_time', 'hosting_proration', 'setup_fee'];
 function accountingMonthRowFor(lineId, monthDate) {
   const key = accountingMonthKey(monthDate);
   const exact = ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === lineId && m.month.slice(0, 7) === key);
   const line = ALL_ACCOUNTING_LINES.find(l => l.id === lineId);
-  const carriesForward = line && line.billing_type !== 'one_time' && !line.budget_varies_by_month;
+  const carriesForward = line && !ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(line.billing_type) && !line.budget_varies_by_month;
 
   // Same edge case Strategist's own monthRowFor() already handles: a real
   // row can exist for this exact month with actual_spend/confirmed_by set
@@ -1545,7 +1572,9 @@ function accountingBuildRows() {
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting);
-    const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross);
+    const cutPct = l.billing_type === 'setup_fee'
+      ? accountingEffectiveSetupFeeCutPct(l.service_id, l.group_id)
+      : accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
     // manual confirm from the detail card (for tactics the Strategist Portal
