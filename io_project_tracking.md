@@ -12481,3 +12481,49 @@ button resolves to green-fill/navy-text, and both selects resolve to
 `border-radius:999px` with a navy border. All pass. `node --check` clean on
 both `admin/index.html` and `accounting/index.html`. Re-ran every prior
 color/audit test from today -- all still fully pass, no regressions.
+
+### 2026-08-13 (cont'd) — Removed Accounting's Status filter; portal-nav links are now real buttons
+
+Claire, reviewing a screenshot of the current dashboard: "Could we remove
+the Group: and Status: from the dropdowns? And I don't think we really
+need the status one because we should always see all lines." Plus: "Could
+we also make buttons for the go to admin, strategist and accounting
+links?"
+
+**Status filter removed entirely** (not just hidden) -- `accountingStatusFilter`
+was already defaulting to `''` (all statuses), so dropping the control just
+locks in the behavior that was already the default. Removed the `<select
+id="accounting-status-filter">` and its wrapping label, the
+`accountingSetStatusFilter()` function, the `accountingStatusFilter`
+variable, and the now-always-true filter check in `accountingBuildRows()`
+-- not left in as dead code.
+
+**"Group:" label dropped**, but the dropdown itself stays -- rebuilt as a
+standalone `<select>` carrying the navy pill styling directly (no more
+wrapping `<label class="acct-filter-btn">`), matching how Strategist's own
+Group filter is built (just a plain pill select, no label prefix). The
+now-unused `.acct-filter-btn` CSS rule (only ever used by these two labels)
+was removed too.
+
+**Cross-portal "Go to X" links -> real buttons.** These were plain `<a>`
+text links (light blue, no border, `text-decoration:none`) in all three
+files: Admin -> Strategist, Admin -> Accounting, Strategist -> Admin,
+Accounting -> Admin. Converted all four to real `<button>` elements (navy
+outline pill, matching every other secondary button) that fire the
+existing sessionStorage handoff function on click and then navigate via
+`location.href` -- same handoff behavior as before (unchanged: which roles
+see which link is still gated by the same JS in each portal's
+`showAdmin()`/equivalent, just the visible-state value changed from
+`'inline'` to `'inline-block'` to suit a real button element). Did NOT add
+any new routes (e.g. Strategist <-> Accounting directly) -- Claire's ask
+named the links that already exist across the app; scope stayed to
+restyling those, not building new navigation paths.
+
+**Verified**: new `test-nav-buttons-status-filter-2026-08-13.js`
+(scratchpad) -- confirms `#accounting-status-filter` and
+`accountingSetStatusFilter`/`accountingStatusFilter` no longer exist
+anywhere in the loaded script, the Group select resolves to a
+`999px`-radius navy-bordered pill, and the portal-nav link renders as a
+real `<button>` element. All pass. `node --check` clean on all three
+files. Re-ran the stat-tile and green-color-fix regression tests from
+earlier today -- still fully pass.
