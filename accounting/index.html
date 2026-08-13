@@ -169,7 +169,7 @@
     <input type="password" id="accounting-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkAccountingPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
     <div id="accounting-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
     <div style="display:flex;gap:9px">
-      <button onclick="checkAccountingPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
+      <button onclick="checkAccountingPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
     </div>
   </div>
 </div>
@@ -677,8 +677,8 @@ function accountingOpenAddServiceForm(prefill) {
     </div>
     <p id="acct-add-help-text" style="font-size:11px;color:var(--muted);margin:0 0 12px">This creates the campaign as "Campaign Setup" (Pending) in the Strategist Portal, same as any other new order -- Strategist fills in platform/tracking details from there. It will not show up as Active in Accounting until Strategist activates it.</p>
     <div style="display:flex;gap:10px">
-      <button onclick="accountingSubmitAddService()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Service</button>
-      <button onclick="accountingOpenAddServiceForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="accountingSubmitAddService()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Service</button>
+      <button onclick="accountingOpenAddServiceForm()" class="btn-quiet-green">Cancel</button>
     </div>
   </div>`;
 }
@@ -757,8 +757,8 @@ function accountingOpenBulkMatchForm() {
     <p style="font-size:11px;color:var(--muted);margin:0 0 10px">Paste rows from your own tracking sheet as <strong>Client, Tactic, Gross Budget</strong> (Gross Budget is optional -- one row per line, tab or comma separated). Nothing here is sent anywhere except back to your own browser -- this only checks it against campaigns already loaded in this portal, for the month currently showing in the top bar (${esc(accountingMonthLabel(accountingCurrentMonth))}).</p>
     <textarea id="acct-bulk-match-input" rows="6" placeholder="Tassel Ridge Winery&#9;FB/IG Ads&#9;750&#10;Fisher &amp; Son Roofing&#9;Website" style="width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:12px">
-      <button onclick="accountingRunBulkMatch()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Check Matches</button>
-      <button onclick="accountingOpenBulkMatchForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="accountingRunBulkMatch()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Check Matches</button>
+      <button onclick="accountingOpenBulkMatchForm()" class="btn-quiet-green">Cancel</button>
     </div>
     <div id="acct-bulk-match-results"></div>
   </div>`;
@@ -797,7 +797,7 @@ function accountingRunBulkMatch() {
     if (client) {
       return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
         <span>⚠️ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">client found, this tactic isn't tracked yet</span></span>
-        <button onclick='accountingOpenAddServiceForm({clientId:"${esc(client.id)}"})' style="padding:4px 10px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">+ Add</button>
+        <button onclick='accountingOpenAddServiceForm({clientId:"${esc(client.id)}"})' style="padding:4px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">+ Add</button>
       </div>`;
     }
     return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">❌ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">client not found -- add the client in Admin first</span></div>`;
@@ -987,8 +987,8 @@ Tassel Ridge Winery	FB/IG Ads	2026-08-01	2027-01-31	2026-08	1500
 Tassel Ridge Winery	FB/IG Ads	2026-08-01	2027-01-31	2026-09	1500
 Fisher & Son Roofing	Website Hosting	2026-01-01		2026-08	149	Recurring"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:10px">
-      <button onclick="accountingPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
-      <button onclick="accountingOpenBulkImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="accountingPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
+      <button onclick="accountingOpenBulkImportForm()" class="btn-quiet-green">Cancel</button>
     </div>
     <div id="acct-bulk-import-results"></div>
   </div>`;
@@ -1022,7 +1022,7 @@ function accountingPreviewBulkImport() {
     html += plan.errors.map(e => accountingRenderBulkImportErrorRow(e)).join('');
   }
   html += `<div style="margin-top:12px">
-    <button onclick="accountingConfirmBulkImport()" ${plan.groups.length ? '' : 'disabled'} style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button>
+    <button onclick="accountingConfirmBulkImport()" ${plan.groups.length ? '' : 'disabled'} style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button>
   </div></div>`;
   resultsEl.innerHTML = html;
 }

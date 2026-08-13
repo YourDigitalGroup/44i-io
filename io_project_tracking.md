@@ -12352,3 +12352,75 @@ Next: continue the full 3-portal audit itself (buttons/dropdowns/editors
 consistency check) -- this color-hex pass was the first, most concrete part
 of it; Admin in particular still needs the same level of scrutiny Strategist
 and Accounting got during the design-system passes earlier this session.
+
+### 2026-08-13 (cont'd) — Full 3-portal audit: buttons, dropdowns, and panels applied
+
+Claire: "Go ahead and apply all of these now" -- approving the audit findings
+above. Admin had the least design-system work applied of the three portals
+(only its Logout button and Order Detail label had been touched all
+session); Strategist/Accounting had a handful of leftover light-blue spots
+missed during the earlier design passes.
+
+**Admin** (the bulk of this pass -- ~90 spots across 5 categories, applied
+via a targeted script rather than one-by-one since the same handful of old
+patterns repeated dozens of times):
+- 16 Cancel/Close/Dismiss buttons -> shared `.btn-quiet-green` class (solid
+  green fill, navy text), including the login modal's Cancel (kept its
+  `flex:1` layout) and the reconcile screen's Dismiss (kept its
+  `margin-left:4px`).
+- 27 primary Save/"+ New X" buttons -> solid navy fill (was light blue).
+- 6 secondary/toolbar buttons ("Import from Trello" x2, "↺ Auto" x4) -> navy
+  outline pill (was plain gray outline).
+- 39 `<select>` dropdowns across every form/filter -> navy outline pill,
+  matching Strategist's filter/status selects (was plain gray outline).
+- 14 form/detail panels (Group/Client/Service/Section/Intake/AE/Strategist/
+  User/Accounting edit forms, Order Detail, Client Import, Workflow Manager,
+  Hosting Settings) -> white background, 18px radius, drop shadow -- the
+  real `.card` treatment (was a flat `#F8FAFC` gray box, no shadow).
+- Both the initial-render active-tab color and the two JS functions that
+  toggle it on click (`adminSection()`, `adminTab()`) switched from light
+  blue to navy, so clicking between tabs stays consistent with the new look.
+
+**Strategist** (smaller cleanup -- the design passes earlier this session
+had already covered most of the file):
+- "+ New Campaign" / "Paste Platform Report" / "Bulk Import (CSV)" / "Split
+  into Multiple Campaigns" -> navy outline (were light-blue outline).
+- 7 Cancel buttons across every import/paste/split/status-change form ->
+  `.btn-quiet-green` (were gray fill or gray outline).
+- 9 primary confirm/save buttons (Enter, Add Campaign, Match & Update,
+  Preview, Confirm Import, Confirm & Activate, Save Split, Save [status],
+  Add [log entry]) -> navy fill (were light-blue fill).
+- 8 import/bulk-fix-it `<select>`s (client/tactic/status pickers in the
+  bulk-import error list, plus the login name select) -> navy outline pill,
+  matching every other select in the file. Left the two dashed-border
+  selects (inline tactic-variant/platform pickers) alone -- that dashed
+  style is a deliberate "click to set" placeholder affordance, not a plain
+  dropdown, so it's a different pattern on purpose, not an inconsistency.
+
+**Accounting** (only a few spots the original audit missed on a lighter
+pass -- caught during a final full-file grep before calling this done):
+- 4 Cancel buttons (Add Service, Bulk Match, Bulk Import forms) ->
+  `.btn-quiet-green` (were gray fill).
+- 6 primary buttons (Enter, Add Service, Check Matches, the small "+ Add"
+  on client rows, Preview, Confirm Import) -> navy fill (were light-blue
+  fill).
+
+Left alone on purpose: semantic status-pill colors (red/green/amber/blue
+used for Confirmed/error/warning states) -- those aren't brand-color
+mismatches, they're intentional meaning-carrying colors and were already
+consistent between Strategist and Accounting. Also left the ~78 buttons
+across the three files that hardcode their own `border-radius` (mostly
+6-8px) -- cosmetically fine today since `shared.css`'s global
+`button{border-radius:999px !important}` rule already overrides them at
+render time, but flagged as dead/misleading inline CSS worth a future
+cleanup pass, not urgent.
+
+**Verified**: `node --check` passes clean on all three files. New
+`test-3portal-audit-2026-08-13.js` (scratchpad) renders one button/select/
+panel from each fixed category against the real `shared.css` and asserts
+computed `background-color`/`color`/`border-color`/`border-radius`/
+`box-shadow` all match the new design system exactly -- all pass. Re-ran
+`test-accounting-stat-tile-group-fill-v2-2026-08-12.js` and
+`test-green-color-fix-2026-08-13.js` (yesterday's/this morning's fixes) --
+both still fully pass, confirming this pass didn't regress anything already
+fixed.
