@@ -12273,3 +12273,29 @@ window specifically on the Accounting page itself (distinct from the
 shared.css caching issue solved earlier this session) before concluding
 there's a real remaining code bug there. The requested full 3-portal audit
 is still on hold pending that.
+
+### 2026-08-12 (cont'd) — Stat tiles: group-color fill, correctly on each tile this time
+
+Claire, after the container-tinting fix: "I still want them to be the brand
+color, but I want each tile to have it, not across the background... I want
+their individual fill to match each groups brand color." Confirmed this
+means reinstating group-color tinting -- just correctly this time.
+
+Moved the tint from the shared `#accounting-stats` container onto each
+individual `.acct-stat` tile's own inline `background`/`border-color`
+(computed once per render as `filteredGroupColor`/`tileFill`/`tileBorder`,
+same `accountingTintColor()` helper as before). Falls back to the fixed
+navy-border/light-blue-fill look when viewing "All Groups" (mixed data, no
+single brand color applies) -- same fallback the original feature always
+had, just now living on the right element.
+
+**Verified**: new `test-accounting-stat-tile-group-fill-v2-2026-08-12.js`
+(scratchpad) -- with a group filtered (green brand color), each tile's
+computed background tints toward that green and its border matches the
+group's color exactly, while the shared container itself has no background
+of its own (so nothing can leak through the gaps between tiles again);
+switching to "All Groups" correctly falls back to the fixed light-blue fill
+and navy border. Deleted the previous round's "no tint at all"
+test file (superseded, not a regression -- the whole point changed).
+Re-ran every other Accounting/Strategist test from today -- all still fully
+passing. `node --check` passes clean.

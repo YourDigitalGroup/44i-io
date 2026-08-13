@@ -1685,7 +1685,19 @@ function renderAccountingDashboard() {
     totalBilledExternally += excluded;
     if (accountingRowNeedsConfirmation(r)) awaiting++;
   });
-  const stat = (label, value, cls) => `<div class="acct-stat"><div class="acct-stat-label">${esc(label)}</div><div class="acct-stat-value${cls ? ' ' + cls : ''}">${value}</div></div>`;
+  // Group-brand-color tinting, take 2 (2026-08-12) -- the first version tinted
+  // the shared #accounting-stats CONTAINER, which leaked the group's color
+  // through the gaps between tiles once they became individually-boxed cards
+  // (removed earlier today). Claire confirmed she still wants the group's own
+  // brand color on the tiles -- just correctly, on each tile's OWN background
+  // this time, not the container. Falls back to the fixed navy/light-blue
+  // look when viewing "All Groups" (mixed data, no single brand color applies).
+  const filteredGroupColor = accountingGroupFilter
+    ? ALL_ACCOUNTING_LINES.find(l => l.group_name === accountingGroupFilter)?.group_color
+    : null;
+  const tileFill = accountingTintColor(filteredGroupColor, 0.82) || 'var(--light)';
+  const tileBorder = filteredGroupColor || 'var(--accent-dark)';
+  const stat = (label, value, cls) => `<div class="acct-stat" style="background:${esc(tileFill)};border-color:${esc(tileBorder)}"><div class="acct-stat-label">${esc(label)}</div><div class="acct-stat-value${cls ? ' ' + cls : ''}">${value}</div></div>`;
   const statsEl = document.getElementById('accounting-stats');
   statsEl.innerHTML =
     stat('Expected Revenue', '$' + totalGross.toLocaleString(undefined, {maximumFractionDigits:2})) +
@@ -1694,17 +1706,6 @@ function renderAccountingDashboard() {
     stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Billed Externally (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2})) +
     stat('Awaiting Confirmation', `${awaiting} of ${nonPendingCount}`, awaiting > 0 ? 'warn' : '');
-  // Group-brand-color tinting REMOVED (2026-08-12) -- predates the "filled
-  // with brand color" stat tile redesign and was left setting an inline
-  // background/borderColor on the #accounting-stats container itself, which
-  // is exactly why Claire saw the selected GROUP's own color bleeding
-  // through behind the tiles instead of the intended fixed navy-blue fill:
-  // .acct-stats no longer has a background/border of its own for tiles to
-  // sit on top of, so this leftover inline style was showing straight
-  // through the gaps between tiles. Tiles now always use the same fixed
-  // brand colors regardless of which group is filtered.
-  statsEl.style.background = '';
-  statsEl.style.borderColor = '';
 
   accountingRenderDetailCard();
 
