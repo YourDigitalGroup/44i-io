@@ -30,7 +30,7 @@
      stat tiles separated instead of attached") -- each tile is now its own rounded
      card with a real gap between them, matching the reference screenshot's distinct
      boxes rather than one bar with divider lines. */
-  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}
+  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
   /* Filled + bordered with brand color (2026-08-12, per Claire: "could we have each
      of them bordered and filled in with the brand color") -- was plain white before,
      same as every other card, so the tiles didn't read as their own distinct thing.
@@ -40,6 +40,11 @@
   #page-accounting .acct-stat-label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   #page-accounting .acct-stat-value{font-size:22px;font-weight:700;color:var(--text)}
   #page-accounting .acct-stat-value.warn{color:#B45309}
+  /* Smaller "of which $X is awaiting confirmation" sub-line (2026-08-13, per
+     Claire -- replacing the old standalone "Awaiting Confirmation" tile, which
+     only showed a count, with a dollar sub-total under each of the 3 tiles it
+     actually affects). */
+  #page-accounting .acct-stat-sub{font-size:10.5px;font-weight:600;color:#8A6D12;margin-top:4px}
   /* Softer, more rounded card (2026-08-12, per Claire, reacting to the first pass'
      gradient stripe: "that makes it look less smooth, the edges look sharp... I would
      like it to be more dynamic like this" -- pointing at 44idigital.com's own hero,
@@ -1308,6 +1313,17 @@ function accountingRowIsPending(r) {
   return r.isRollup ? r.children.every(c => c.line.status === 'pending') : r.line.status === 'pending';
 }
 
+// A row is "fully paused" the same all-or-nothing way a rollup counts as
+// pending above (2026-08-13, per Claire -- a paused campaign isn't running
+// that month either, same reasoning already applied to Pending, so it's
+// excluded from the stat tiles the same way). Uses the exact same `paused`
+// flag already driving the table's own "Paused" status pill
+// (accountingLineStatusPill), so what's labeled Paused and what's excluded
+// as Paused can never disagree.
+function accountingRowIsPaused(r) {
+  return r.isRollup ? r.children.every(c => c.paused) : r.paused;
+}
+
 // "Expected Spend" (2026-08-11, per Claire: it's a genuinely different number
 // from Actual Spend, needs its own column) -- exactly the Strategist Portal's
 // own In-Platform Budget formula: Budgeted Impressions (Gross ÷ Retail CPM ×
@@ -1710,18 +1726,33 @@ function renderAccountingDashboard() {
   // a still-pending campaign hasn't started at all, so NONE of its
   // projected numbers should count yet. The row itself still shows its own
   // figures if any exist (informational, same as Billed Externally) -- only
-  // the aggregate totals skip it.
-  let totalGross = 0, totalExpectedSpend = 0, totalActualSpend = 0, totalFortyfouri = 0, totalBilledExternally = 0, awaiting = 0, nonPendingCount = 0;
+  // the aggregate totals skip it. Paused (2026-08-13, per Claire) is excluded
+  // the same way -- a paused campaign isn't running that month either.
+  //
+  // Needs Confirmation is handled differently, on purpose: unlike Pending/
+  // Paused, a needs-confirmation row IS active and presumably really
+  // spending -- excluding it from Expected Revenue/Expected Spend/44i
+  // Revenue would understate real active business just because nobody's
+  // clicked Confirm yet. Instead it stays counted in the main totals, with
+  // its own portion of each surfaced as a smaller sub-total under the
+  // relevant tile (replacing the old standalone "Awaiting Confirmation"
+  // count-only tile) so it's visible without hiding real numbers.
+  let totalGross = 0, totalExpectedSpend = 0, totalActualSpend = 0, totalFortyfouri = 0, totalBilledExternally = 0;
+  let awaitingGross = 0, awaitingExpectedSpend = 0, awaitingFortyfouri = 0;
   rows.forEach(r => {
     if (accountingRowIsPending(r)) return;
-    nonPendingCount++;
+    if (accountingRowIsPaused(r)) return;
     totalGross += r.gross || 0;
     if (r.expectedSpend != null) totalExpectedSpend += r.expectedSpend;
     if (r.actualSpend != null) totalActualSpend += r.actualSpend;
     const { invoiceable, excluded } = accountingSplitInvoiceable(r);
     totalFortyfouri += invoiceable;
     totalBilledExternally += excluded;
-    if (accountingRowNeedsConfirmation(r)) awaiting++;
+    if (accountingRowNeedsConfirmation(r)) {
+      awaitingGross += r.gross || 0;
+      if (r.expectedSpend != null) awaitingExpectedSpend += r.expectedSpend;
+      awaitingFortyfouri += invoiceable;
+    }
   });
   // Group-brand-color tinting, take 2 (2026-08-12) -- the first version tinted
   // the shared #accounting-stats CONTAINER, which leaked the group's color
@@ -1735,15 +1766,19 @@ function renderAccountingDashboard() {
     : null;
   const tileFill = accountingTintColor(filteredGroupColor, 0.82) || 'var(--light)';
   const tileBorder = filteredGroupColor || 'var(--accent-dark)';
-  const stat = (label, value, cls) => `<div class="acct-stat" style="background:${esc(tileFill)};border-color:${esc(tileBorder)}"><div class="acct-stat-label">${esc(label)}</div><div class="acct-stat-value${cls ? ' ' + cls : ''}">${value}</div></div>`;
+  const stat = (label, value, cls, sub) => `<div class="acct-stat" style="background:${esc(tileFill)};border-color:${esc(tileBorder)}"><div class="acct-stat-label">${esc(label)}</div><div class="acct-stat-value${cls ? ' ' + cls : ''}">${value}</div>${sub ? `<div class="acct-stat-sub">${esc(sub)}</div>` : ''}</div>`;
   const statsEl = document.getElementById('accounting-stats');
+  // "Awaiting Confirmation" is no longer its own tile (2026-08-13, per Claire)
+  // -- each of the 3 tiles it actually affects gets its own smaller sub-total
+  // instead ("$X awaiting confirmation"), so the real number stays visible
+  // instead of being replaced by a bare count.
+  const awaitingSub = amt => amt > 0 ? '$' + amt.toLocaleString(undefined, {maximumFractionDigits:2}) + ' awaiting confirmation' : '';
   statsEl.innerHTML =
-    stat('Expected Revenue', '$' + totalGross.toLocaleString(undefined, {maximumFractionDigits:2})) +
-    stat('Expected Spend', '$' + totalExpectedSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
+    stat('Expected Revenue', '$' + totalGross.toLocaleString(undefined, {maximumFractionDigits:2}), '', awaitingSub(awaitingGross)) +
+    stat('Expected Spend', '$' + totalExpectedSpend.toLocaleString(undefined, {maximumFractionDigits:2}), '', awaitingSub(awaitingExpectedSpend)) +
     stat('Actual Spend', '$' + totalActualSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
-    stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2})) +
-    stat('SSH Billing (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2})) +
-    stat('Awaiting Confirmation', `${awaiting} of ${nonPendingCount}`, awaiting > 0 ? 'warn' : '');
+    stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2}), '', awaitingSub(awaitingFortyfouri)) +
+    stat('SSH Billing (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2}));
 
   accountingRenderDetailCard();
 

@@ -13130,3 +13130,56 @@ correctly return `null` for a later month with no explicit row, while
 fully pass.
 
 **Not yet run by Claire**: `hosting-setup-fee-capture-2026-08-13.sql`.
+
+### 2026-08-13 (cont'd) — Stat tiles: Paused excluded; Awaiting Confirmation redesigned as sub-totals
+
+Claire noticed the stat tiles excluded Pending/SSH Billing but not
+Paused or Needs Confirmation. Talked through the distinction before
+touching code: Paused genuinely isn't running that month (same as
+Pending), but Needs Confirmation IS active and presumably really
+spending -- excluding it from Expected Revenue/44i Revenue would
+understate real business just because nobody clicked Confirm yet.
+Proposed excluding Paused the same way Pending already is, and instead
+of excluding Needs Confirmation, making it visible without hiding real
+numbers. First proposal (clickable drill-down) -- Claire proposed
+something simpler instead: smaller sub-totals nested under Expected
+Revenue/Expected Spend/44i Revenue specifically, replacing the old
+standalone count-only "Awaiting Confirmation" tile.
+
+**Built**:
+- New `accountingRowIsPaused(r)` (rollup-aware, mirrors
+  `accountingRowIsPending`), added to the same exclusion check in
+  `renderAccountingDashboard()`'s stat-tile accumulation loop --
+  Paused rows now skip Gross/Expected Spend/Actual Spend/44i Revenue
+  entirely, same treatment as Pending. Uses the exact same `paused`
+  flag already driving the table's own "Paused" status pill, so what's
+  labeled Paused and what's excluded from the tiles can never disagree.
+- Removed the standalone "Awaiting Confirmation" tile (6 tiles -> 5,
+  grid updated). Added `awaitingGross`/`awaitingExpectedSpend`/
+  `awaitingFortyfouri` accumulators (same loop, using the existing
+  `accountingRowNeedsConfirmation()` check) and a smaller
+  `.acct-stat-sub` line under each of the 3 affected tiles reading "$X
+  awaiting confirmation" -- omitted entirely when nothing's awaiting,
+  so a fully-confirmed month shows clean tiles with no empty sub-line.
+  Actual Spend and SSH Billing don't get a sub-line -- an unconfirmed
+  row's Actual Spend is already null by construction (nothing to
+  subtract), and SSH Billing lines are never "needs confirmation" in
+  the first place.
+- Cleaned up the now-dead `awaiting`/`nonPendingCount` counters (only
+  ever fed the removed tile) rather than leaving unused variables
+  behind.
+
+**Verified**: new `test-stat-tile-paused-awaiting-2026-08-13.js`
+(scratchpad) -- 3 lines (confirmed/paused/needs-confirmation) -- confirms
+Expected Revenue correctly excludes the paused line's $500 entirely
+(shows $1,800, not $2,300), the sub-total under it correctly shows only
+the unconfirmed line's $800, 44i Revenue reflects only the two active
+lines, and the standalone tile is gone. Also caught and fixed a stale
+regression test (`test-accounting-stats-and-detail-card.js`) that had
+been broken since the Status-filter removal earlier today
+(`accountingStatusFilter` no longer exists) -- updated its now-outdated
+awaiting-confirmation assertions for the new sub-total design (a
+fully-confirmed scenario correctly shows no standalone tile and no
+"awaiting confirmation" text anywhere) while it was already being
+touched. All pass. `node --check` clean. Re-ran 4 other test files from
+today -- all still fully pass.
