@@ -640,14 +640,14 @@ function accountingOpenAddServiceForm(prefill) {
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
       <div>
         <label class="lbl">Client</label>
-        <select id="acct-add-client" onchange="accountingAddServiceTacticChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+        <select id="acct-add-client" onchange="accountingAddServiceTacticChanged()" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
           ${sortedClients.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}" ${prefill && prefill.clientId === c.id ? 'selected' : ''}>${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('')}
         </select>
       </div>
       <div>
         <label class="lbl">Tactic</label>
-        <select id="acct-add-service" onchange="accountingAddServiceTacticChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+        <select id="acct-add-service" onchange="accountingAddServiceTacticChanged()" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
           ${acctServiceOptionsHtml}
         </select>
