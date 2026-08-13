@@ -12146,3 +12146,54 @@ Accounting AND Strategist test from today's session (13 files across both
 portals) -- all still fully passing, confirming these were pure CSS/class
 changes with zero logic impact. `node --check` passes clean on all three
 portal files.
+
+### 2026-08-12 (cont'd) — Fourth pass: toolbar buttons, stat tile fill, month arrows, scope toggle, panel contrast
+
+Claire tested live and sent real screenshots. Her Logout button still showed
+the OLD plain gray/sharp style even though the Close button right next to it
+in the same screenshot correctly showed the new green pill -- both were in
+the same commit, so this points to the live site being a build behind (PR
+#215 not fully merged/deployed at the moment she tested), not a real gap in
+that specific change. Flagged to her directly rather than silently
+re-doing work that was probably already correct in the code.
+
+Real, new gaps her screenshots did surface (fixed this pass):
+
+1. **Accounting's 3 toolbar buttons** (+ Add Service, Bulk Match, Bulk Import
+   (CSV)) were still plain blue outline (`var(--accent)`), never touched by
+   the earlier navy/green passes since they weren't Logout/Close/filters.
+   Switched to the same navy outline pill as the filter dropdowns.
+2. **Stat tiles** ("could we have each of them bordered and filled in with
+   the brand color") -- were plain white with a thin gray border even after
+   being separated into individual cards last pass. Now `var(--light)` (a
+   light accent-blue tint, not a full-saturation navy fill -- six tiles in a
+   row at full brand color reads busy in a way the reference's one big card
+   doesn't) with a 1.5px navy border.
+3. **Month nav arrows** (‹ ›), both portals -- were plain gray, now navy
+   outline matching everything else.
+4. **Strategist's "My Campaigns"/"All Strategists" toggle** -- these were
+   `<span>` elements, not real `<button>`s, which is exactly why they never
+   picked up the pill-radius/hover-lift rules ("make them round and react
+   like the other pill buttons" -- literal cause, not just a missed color).
+   Converted to real `<button>` elements. Each side of this 2-way toggle
+   gets its own brand color: navy for My Campaigns, green (`--accent2`) for
+   All Strategists -- solid fill when active, matching outline when not.
+5. **Strategist's Campaign Setup and Campaign Detail panels** ("it blends in
+   right now... more distinguishable... like in the accounting portal") --
+   both used a near-white `#FAFCFE`/`#fff` background with a thin border and
+   NO shadow at all, against a `#F6F6F8` page background barely different in
+   tone -- functionally invisible elevation. Matched Accounting's own
+   `.acct-detail-card` treatment exactly: `border-radius:18px`,
+   `box-shadow:var(--shadow-lg)`. Also recolored the Detail panel's own
+   Close button to the shared `.btn-quiet-green` class for consistency
+   (previously plain gray, missed in the earlier Close/Logout pass since
+   this is a SEPARATE close button on the campaign detail panel, not the
+   same element).
+
+**Verified**: re-screenshotted Accounting's full top bar (`screenshot-
+dynamic-design-v2-2026-08-12.js`, scratchpad, updated) -- confirmed navy
+toolbar buttons and filled/bordered stat tiles both render correctly
+together. Re-ran all 8 Accounting/Strategist test files from today's
+session -- all still fully passing, confirming these were pure CSS/tag/
+color changes with zero logic impact. `node --check` passes clean on both
+files.
