@@ -2650,6 +2650,18 @@ function renderStrategistDetailPanel() {
     </div>
     <div id="status-reason-${l.id}" style="display:none;margin:-6px 0 14px"></div>
 
+    <!-- General Notes (2026-08-13, per Claire -- the main table's own "Notes" column
+         shows setup_notes, but the only place that field could ever be EDITED was the
+         Setup panel, which only renders while a line is still pending -- once activated,
+         "Notes" became permanently read-only with no way to add to it, leaving only the
+         Optimize log below as an actual add-a-note mechanism. Same column (setup_notes),
+         same strategist_save_campaign_line RPC already used for every other field in
+         this panel -- just exposed here too so it stays editable at every status. -->
+    <div style="margin-bottom:14px">
+      <label class="lbl">Notes</label>
+      <textarea id="detail-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px" placeholder="General notes about this campaign" onchange="strategistSaveLine('${l.id}', {setup_notes: this.value}, false)">${esc(l.setup_notes || '')}</textarea>
+    </div>
+
     <!-- Platform CPM, read-only (2026-08-13, per Claire -- strategists asked to be able
          to see this). Same effectivePlatformCpm() lookup (Admin's Accounting Map, with
          a group/pairing override winning if one's set) already driving In-Platform Budget
