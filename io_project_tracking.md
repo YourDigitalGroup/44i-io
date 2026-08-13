@@ -12601,3 +12601,31 @@ re-extracting and checking each). Not independently visually verifiable
 beyond that without a real browser cache to bust — the fix is a cache-
 control mechanism, not a rendering change, so its real proof is that
 Logout/Cancel now update correctly next time `shared.css` changes.
+
+### 2026-08-13 (cont'd) — "Billed Externally" renamed to "SSH Billing"
+
+Claire: "could we update the title for the Billed Externally to say SSH
+Billing, both in the stat tile and pill?" Renamed exactly those two
+surfaces in `accounting/index.html`: the stat tile label ("Billed
+Externally (excl.)" -> "SSH Billing (excl.)") and all 3 call sites of the
+`accountingStatusPill('external', 'Billed externally')` status pill ->
+`'SSH Billing'`.
+
+Left everything else using the old wording untouched, since it wasn't
+asked for: the underlying `billed_externally` column/variable names (an
+internal identifier, not user-facing text), and the toggle checkbox's own
+label ("Billed externally", next to the checkbox that turns this on for a
+campaign) -- that one's arguably the same user-facing concept and now
+reads inconsistently with the pill it controls, so flagged to Claire
+rather than changed silently.
+
+**Verified**: `node --check` clean; grepped the file afterward to confirm
+all 3 pill call sites and the 1 stat label now say "SSH Billing" and
+nothing user-facing still says the old name in those two specific spots.
+
+Claire confirmed the checkbox label should change too -- updated it from
+"Billed externally" to "SSH Billing" as well. All 5 user-facing occurrences
+of this concept in the file now read "SSH Billing" consistently; only the
+internal `billed_externally` column/variable name (never shown to anyone)
+still uses the old wording, which is correct -- it's a data identifier, not
+UI text. `node --check` clean.
