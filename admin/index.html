@@ -1216,6 +1216,20 @@
             <input type="number" step="0.01" id="admin-accounting-setup-fee-cut-pct" placeholder="e.g. 50" oninput="updateAccountingSetupFeePreview()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             <p id="admin-accounting-setup-fee-preview" style="font-size:11px;color:var(--muted);margin-top:4px">Split: —</p>
           </div>
+          <!-- Spend Tiers (2026-08-13) -- previously SQL-only (accounting_map.spend_tiers/
+               in_platform_tiers, added 2026-08-11/13). Rate looked up against the month's
+               own Gross Budget; when any tier row is set for a %, it REPLACES the flat
+               rate above entirely for that %, same rule already documented for 44i Cut %.
+               One combined table for both 44i Cut % and In-Platform % since they share the
+               same spend breakpoints in every real case so far -- saves as two separate
+               columns underneath (never merged into one, so In-Platform %'s tiers stay safe
+               to expose to the Strategist Portal, unlike 44i Cut %'s). -->
+          <div id="admin-accounting-tiers-block" style="margin-bottom:12px;padding:14px;background:#fff;border-radius:8px;border:1px solid var(--border)">
+            <p style="font-size:11px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Spend Tiers <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional, e.g. SEM</span></p>
+            <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Looked up against each month's Gross Budget. Leave "Up to $" blank on a row to mean "and up" — only makes sense on the last row. Leave a % blank on a row to leave that rate untiered for that band (falls back to the flat rate above). Remove every row to go back to a flat rate entirely.</p>
+            <div id="admin-accounting-tiers-rows"></div>
+            <button type="button" onclick="adminAddAccountingTierRow()" style="margin-top:4px;padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">+ Add Tier</button>
+          </div>
           <div style="display:flex;gap:10px">
             <button onclick="adminSaveAccountingMap()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
             <button onclick="adminCancelAccountingEdit()" class="btn-quiet-green">Cancel</button>
@@ -4217,8 +4231,40 @@ function adminEditAccounting(serviceId, pairWithServiceId) {
     document.getElementById('admin-accounting-setup-fee-cut-pct').value = '';
     setupFeeBlock.style.display = 'none';
   }
+  adminRenderAccountingTierRows(a?.spend_tiers, a?.in_platform_tiers);
   document.getElementById('admin-accounting-form').style.display = 'block';
   document.getElementById('admin-accounting-form').scrollIntoView({behavior:'smooth'});
+}
+
+// Merges the two separate tier arrays (kept as separate DB columns -- see the
+// block comment above the form markup) into one combined set of rows by
+// matching `max` values, since every real service configured so far shares
+// the same spend breakpoints for both. A tier present in only one array still
+// renders correctly (its other % input just starts blank).
+function adminRenderAccountingTierRows(spendTiers, inPlatformTiers) {
+  const container = document.getElementById('admin-accounting-tiers-rows');
+  container.innerHTML = '';
+  const maxes = new Set();
+  (spendTiers || []).forEach(t => maxes.add(t.max));
+  (inPlatformTiers || []).forEach(t => maxes.add(t.max));
+  const sorted = [...maxes].sort((a, b) => (a == null ? Infinity : a) - (b == null ? Infinity : b));
+  sorted.forEach(max => {
+    const cutTier = (spendTiers || []).find(t => t.max === max);
+    const inPlatTier = (inPlatformTiers || []).find(t => t.max === max);
+    adminAddAccountingTierRow(max, cutTier?.cut_pct, inPlatTier?.in_platform_pct);
+  });
+}
+function adminAddAccountingTierRow(max, cutPct, inPlatformPct) {
+  const container = document.getElementById('admin-accounting-tiers-rows');
+  const row = document.createElement('div');
+  row.className = 'acct-tier-row';
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  row.innerHTML = `
+    <input type="number" step="0.01" value="${max ?? ''}" placeholder="Up to $ (blank = and up)" class="tier-max" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+    <input type="number" step="0.01" value="${cutPct ?? ''}" placeholder="44i Cut %" class="tier-cut" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+    <input type="number" step="0.01" value="${inPlatformPct ?? ''}" placeholder="In-Platform %" class="tier-inplat" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+    <button type="button" onclick="this.closest('.acct-tier-row').remove()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:12px;cursor:pointer" title="Remove this tier">✕</button>`;
+  container.appendChild(row);
 }
 
 function adminCancelAccountingEdit() {
@@ -4239,6 +4285,27 @@ async function adminSaveAccountingMap() {
   // configured, so this naturally saves as null for services where it doesn't apply.
   const setupFeeCutVal = document.getElementById('admin-accounting-setup-fee-cut-pct').value;
 
+  // Tiers -- collected from the "Spend Tiers" block's rows, split back into
+  // the two separate columns (spend_tiers/in_platform_tiers) they're saved
+  // as. A row's % is only included in the array for that % if it's actually
+  // filled in, so one row can carry just a Cut % tier, just an In-Platform %
+  // tier, or both. Always sent (even as an empty array -> null), so removing
+  // every row genuinely clears tiers and reverts the service to its flat
+  // rate, rather than silently leaving old tiers in place.
+  const tierRows = Array.from(document.querySelectorAll('#admin-accounting-tiers-rows .acct-tier-row'));
+  const spendTiers = [], inPlatformTiers = [];
+  tierRows.forEach(row => {
+    const maxVal = row.querySelector('.tier-max').value;
+    const cutVal2 = row.querySelector('.tier-cut').value;
+    const inPlatVal = row.querySelector('.tier-inplat').value;
+    const max = maxVal === '' ? null : parseFloat(maxVal);
+    if (cutVal2 !== '') spendTiers.push({ max, cut_pct: parseFloat(cutVal2) });
+    if (inPlatVal !== '') inPlatformTiers.push({ max, in_platform_pct: parseFloat(inPlatVal) });
+  });
+  const byMaxAsc = (a, b) => (a.max == null ? Infinity : a.max) - (b.max == null ? Infinity : b.max);
+  spendTiers.sort(byMaxAsc);
+  inPlatformTiers.sort(byMaxAsc);
+
   const payload = {
     fortyfouri_cut_pct: cutVal === '' ? null : parseFloat(cutVal),
     budgeted_spend_pct: budgetedVal === '' ? null : parseFloat(budgetedVal),
@@ -4246,7 +4313,9 @@ async function adminSaveAccountingMap() {
     setup_fee_cut_pct: setupFeeCutVal === '' ? null : parseFloat(setupFeeCutVal),
     in_platform_pct: inPlatformPctVal === '' ? null : parseFloat(inPlatformPctVal),
     cpc_low: cpcLowVal === '' ? null : parseFloat(cpcLowVal),
-    cpc_high: cpcHighVal === '' ? null : parseFloat(cpcHighVal)
+    cpc_high: cpcHighVal === '' ? null : parseFloat(cpcHighVal),
+    spend_tiers: spendTiers.length ? spendTiers : null,
+    in_platform_tiers: inPlatformTiers.length ? inPlatformTiers : null
   };
   try {
     await sb('rpc/admin_save_accounting_map', {
