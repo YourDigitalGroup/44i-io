@@ -286,3 +286,68 @@ function showToast(msg, type='success') {
   t.className = 'toast show ' + type;
   setTimeout(() => t.className = 'toast', 8000);
 }
+
+// ── Read-only order-detail modal, shared by Strategist and Accounting
+// (2026-08-13, per Claire: "order view can be open to anyone with access to
+// the strategist and accounting portals" -- a lightweight alternative to
+// Admin's own Order Detail view, which is gated to roles that can log into
+// /admin at all, e.g. a real accounting-role login can't). Each portal
+// fetches the order via its OWN RPC (strategist_get_order_detail /
+// accounting_get_order_detail) and just calls this to render it -- pure
+// display, no portal-specific business logic, so it lives here instead of
+// being duplicated per portal. Deliberately a smaller field set than
+// Admin's full Order Detail (no Trello sync status, AM-help flags, intake
+// responses, hosting-choice detail, or the signature block) -- just what a
+// strategist/accounting person actually needs: client/group/AE, IO/campaign
+// dates, every line item, and any special instructions.
+// Requires `<div id="shared-order-modal">...<div id="shared-order-modal-body">`
+// in the page (both portals have one).
+function renderOrderDetailModal(order) {
+  const modal = document.getElementById('shared-order-modal');
+  const body = document.getElementById('shared-order-modal-body');
+  if (!modal || !body) return;
+  const fmtDate = s => {
+    if (!s) return '—';
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+  const fmtMoney = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+  const items = Array.isArray(order.line_items) ? order.line_items : [];
+  const rows = items.map(item => {
+    const amtParts = [];
+    if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
+    if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
+    if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
+    const label = item.accounting_label || item.label || item.service_id || '—';
+    return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(label)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="3" style="padding:14px;text-align:center;color:var(--muted)">No line items on record.</td></tr>';
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;font-size:12.5px">
+      <div><strong>Client:</strong> ${esc(order.client_name || '—')}</div>
+      <div><strong>Group:</strong> ${esc(order.group_name || '—')}</div>
+      <div><strong>AE:</strong> ${esc(order.ae_name || '—')}</div>
+      <div><strong>IO Date:</strong> ${fmtDate(order.io_date)}</div>
+      <div><strong>Campaign Start:</strong> ${fmtDate(order.campaign_start)}</div>
+      <div><strong>Campaign End:</strong> ${fmtDate(order.campaign_end)}</div>
+      <div><strong>One-Time Total:</strong> ${fmtMoney(order.total_onetime)}</div>
+      <div><strong>Monthly Total:</strong> ${fmtMoney(order.total_monthly)}/mo</div>
+    </div>
+    ${order.campaign_notes ? `<p style="font-size:11px;color:var(--muted);margin-bottom:12px"><strong>Campaign Notes:</strong> ${esc(order.campaign_notes)}</p>` : ''}
+    <p style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Services Ordered</p>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">
+      <thead><tr style="background:var(--light)"><th style="padding:6px 10px;text-align:left">Service</th><th style="padding:6px 10px;text-align:left">Amount</th><th style="padding:6px 10px;text-align:left">Notes</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${order.special_instructions ? `<div style="padding:10px 12px;background:#FFF7ED;border-left:3px solid #F59E0B;border-radius:5px"><div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Special Instructions</div><div style="font-size:12px;color:#78350F">${esc(order.special_instructions)}</div></div>` : ''}
+  `;
+  modal.style.display = 'flex';
+}
+function closeOrderDetailModal() {
+  const modal = document.getElementById('shared-order-modal');
+  if (modal) modal.style.display = 'none';
+}

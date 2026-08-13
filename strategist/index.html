@@ -98,6 +98,19 @@
   </div>
 </div>
 
+<!-- Read-only order-detail modal (2026-08-13) -- shared markup/render logic
+     with Accounting's own copy of this same block, via shared.js's
+     renderOrderDetailModal()/closeOrderDetailModal(). -->
+<div id="shared-order-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:18px;padding:24px 28px;width:600px;max-height:80vh;overflow:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <p style="font-size:14px;font-weight:700;color:var(--text)">Order Detail</p>
+      <button onclick="closeOrderDetailModal()" class="btn-quiet-green">✕ Close</button>
+    </div>
+    <div id="shared-order-modal-body"></div>
+  </div>
+</div>
+
 <!-- STRATEGIST LOGIN MODAL — same shape as /admin's, scoped to strategist/super roles
      only (super included so James/Jon can log in to test this as it's built, per the
      existing "James stays a super admin for now" arrangement). -->
@@ -1941,6 +1954,7 @@ function renderSetupPanel(l) {
         <strong style="font-size:13.5px"><span style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</strong>
         <div style="display:flex;align-items:center;gap:8px">
           ${strategistSetupBlockerPill(l)}
+          ${l.order_id ? `<button onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">View Order</button>` : ''}
           <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:20px;background:var(--light);color:var(--muted)">Pending</span>
         </div>
       </div>
@@ -2564,6 +2578,23 @@ function strategistCloseDetailPanel() {
   renderStrategistDashboard();
 }
 
+// Fetches and shows the read-only order-detail modal (2026-08-13) --
+// scoped to a single order via strategist_get_order_detail, not the bulk
+// admin order list. Rendering itself lives in shared.js
+// (renderOrderDetailModal) since it's identical to Accounting's own copy.
+async function strategistViewOrder(orderId) {
+  if (!orderId) return;
+  try {
+    const order = await sb('rpc/strategist_get_order_detail', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_order_id: orderId })
+    });
+    renderOrderDetailModal(order);
+  } catch (e) {
+    showToast('Could not load order: ' + e.message, 'error');
+  }
+}
+
 // ── ROW DETAIL PANEL ──────────────────────────────────────────────
 function renderStrategistDetailPanel() {
   const panel = document.getElementById('strategist-detail-panel');
@@ -2591,6 +2622,7 @@ function renderStrategistDetailPanel() {
         <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSavePlatformCampaignName('${l.id}', this.value)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
+        ${l.order_id ? `<button onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
         <button onclick="strategistCloseDetailPanel()" class="btn-quiet-green">✕ Close</button>
       </div>
     </div>

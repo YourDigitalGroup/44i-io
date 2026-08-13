@@ -13226,3 +13226,77 @@ confirmed amounts render with 2 decimals throughout. New
 resolves to `rgb(81, 112, 141)` -- exactly `--muted`, not the old mustard.
 `node --check` clean. Re-ran 5 other test files from today -- all still
 fully pass.
+
+### 2026-08-13 (cont'd) — "View Order" link added to Strategist and Accounting, using each portal's own login
+
+Claire, on a link to the IO from each campaign line: "order view can be
+open to anyone with access to the strategist and accounting portals."
+This ruled out just reusing Admin's own Order Detail view, since that's
+gated to roles that can log into `/admin` at all (a real
+`accounting`-role login can't get into Admin per `attemptAdminLogin` --
+Admin access is `super`/specific admin roles only). Built a separate,
+lightweight, READ-ONLY order view instead, reachable from within each
+portal using ITS OWN existing login, not Admin's.
+
+**New RPCs** (`order-detail-portal-view-2026-08-13.sql`, sent to Claire,
+not yet run):
+- `strategist_get_order_detail(p_name, p_pw, p_order_id)` /
+  `accounting_get_order_detail(p_name, p_pw, p_order_id)` -- single-order
+  lookup, gated to `strategist`/`super` and `accounting`/`super`
+  respectively (same role-check pattern as every other RPC). Deliberately
+  a SMALLER field set than Admin's full Order Detail view -- client/
+  group/AE names, IO/campaign dates, every line item, and special
+  instructions, but no Trello sync status, AM-help flags, intake form
+  responses, hosting-choice detail, or the signature block. Those didn't
+  seem essential to "see what was ordered" for a strategist/accounting
+  person -- flagging this scope call explicitly in case Claire wants more
+  fields added later.
+- Patched `strategist_get_campaign_lines` and `accounting_get_campaign_
+  lines` to return `order_id` (already present in the strategist one;
+  missing from the accounting one) so both portals' "View Order" buttons
+  have something to call the new RPC with.
+
+**Bonus bug fix, found while touching these same two RPCs (unrelated to
+the order-link feature itself):** neither RPC had ever returned
+`has_addl_targeting` -- only `has_offline_visits`. The YouTube TV
+"+ Addl. Targeting" checkbox writes that column correctly, but since it
+was never read back, it silently reverted to unchecked on every page
+reload in both Strategist and Accounting, even though the database value
+was right the whole time. Added `has_addl_targeting` to both RPCs'
+returned JSON alongside the `order_id` fix, since these were the exact
+same functions already being patched.
+
+**Front end**: added a shared `#shared-order-modal` (identical markup in
+both `strategist/index.html` and `accounting/index.html`) plus
+`renderOrderDetailModal(order)` / `closeOrderDetailModal()` in
+`shared.js` -- pure display logic, byte-for-byte identical between the
+two portals, so it lives in the shared file rather than being duplicated
+(matches shared.js's existing scope: only genuinely shared, non-business-
+logic code). Each portal has its own thin fetch wrapper
+(`strategistViewOrder(orderId)` / `accountingViewOrder(orderId)`) that
+calls its own RPC with its own logged-in credentials, then hands the
+result to the shared renderer. A "View Order" button (only shown when
+`order_id` is present) was added to: Strategist's Setup-queue row header,
+Strategist's Detail panel header, and Accounting's Detail card header.
+
+**Verified**: `node --check` clean on `shared.js`, `strategist/index.html`,
+and `accounting/index.html` (extracted `<script>` blocks). New
+`test-order-detail-modal-2026-08-13.js` (scratchpad, Playwright, real
+`shared.js` + real modal markup, mock order data) -- 18 checks, all pass:
+modal becomes visible on render and hidden on close, client/group/AE/
+dates/campaign notes/special instructions/line items all populate
+correctly, dollar amounts format with 2 decimals, a null-heavy order
+renders placeholders ("—", "No line items on record") without throwing,
+and a client name containing `<img src=x onerror=...>` renders escaped
+(no injected markup) -- confirms `esc()` is applied to every user-
+supplied field in the modal, not just some of them. Re-ran 5 existing
+regression tests that touch the same RPCs' shapes or nearby rendering
+code (`test-platform-cpm-pairing-2026-08-13.js`,
+`test-stat-tile-paused-awaiting-2026-08-13.js`,
+`test-setup-fee-split-2026-08-13.js`,
+`test-strategist-platform-cpm-detail-2026-08-13.js`,
+`test-strategist-setup-platform-cpm-2026-08-13.js`) -- all still fully
+pass, confirming the additive `order_id`/`has_addl_targeting` fields
+don't disturb existing behavior.
+
+**Not yet run by Claire**: `order-detail-portal-view-2026-08-13.sql`.
