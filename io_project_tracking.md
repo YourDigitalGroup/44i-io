@@ -13003,3 +13003,53 @@ underneath it. New `measure-final-2026-08-13.js` -- confirms
 `scrollHeight === innerHeight` exactly for both portals' real markup. All
 pass. `node --check` clean on both files. Re-ran 7 other test files from
 today's session -- all still fully pass.
+
+### 2026-08-13 (cont'd) — Real gap found and fixed: Offline Visits Tracking never transferred from the IO to either portal
+
+Claire asked to confirm ordering a service + Offline Visits Tracking on
+the IO transfers correctly to both portals. Checked rather than assuming
+-- traced the actual order-to-campaign-line trigger
+(`create_campaign_lines_from_order()`) and confirmed it did NOT. Offline
+Visits Tracking/Addl. Targeting are ordered as their own $0 line items
+(modifier/`is_cpm_adjustment` services -- e.g. `td-offline` paired with
+`td-bp`, `sda-offline` with `sda-bp`, `yttv-addl` with `yttv-bp`, each
+pairing already named via `accounting_map.pair_with_service_id`). Because
+they carry zero spend/fee/recurring, the trigger's three existing
+branches (spend>0, SEO tracking-only, flat fee/recurring>0) all skip
+them entirely -- no line ever got created for the modifier itself, AND
+nothing ever set `has_offline_visits`/`has_addl_targeting` on the actual
+tactic's own line. The flag only ever got set if a strategist manually
+checked the box after noticing the client had ordered it -- nothing
+carried it through automatically. Reported this honestly rather than
+just confirming "yes" -- Claire said "go ahead and fix that."
+
+**Fix**: added a second pass to `create_campaign_lines_from_order()`,
+after the existing line-creation loop. For each ordered item that's a
+modifier (`services.is_cpm_adjustment`), looks up which tactic(s)
+`accounting_map.pair_with_service_id` says it's meant to pair with --
+not hardcoded to any specific service, same generic mechanism the
+pairing feature itself already uses. If that tactic was ALSO ordered in
+the same order (so it got a real `campaign_lines` row from the first
+pass), flips the matching flag: `has_addl_targeting` for `yttv-bp`
+specifically (mirrors `ADDL_TARGETING_SERVICE_IDS` in both portals' own
+JS), `has_offline_visits` for every other tactic. A modifier ordered with
+no matching tactic in the same order is a safe no-op.
+
+**Verified**: since this is a Postgres trigger I can't execute directly,
+wrote `simulate-offline-visits-trigger-2026-08-13.py` (scratchpad) -- a
+plain-Python replica of the exact pairing algorithm -- and ran it against
+5 scenarios before sending real SQL: tactic + its own modifier ordered
+together (flag flips correctly); YTTV + Addl Targeting (flips
+`has_addl_targeting`, not `has_offline_visits`); a modifier ordered alone
+with no matching tactic (no-op, no crash); a tactic ordered without its
+modifier (flags stay false); and a multi-tactic order where only one
+tactic's modifier was also ordered (no cross-contamination onto the
+other two). All 5 pass. Sent
+`offline-visits-order-pairing-2026-08-13.sql` to Claire -- full function
+body rewritten from the actual current version (recovered from this
+session's own `accounting-track-all-ordered-services-2026-08-12.sql`),
+not guessed at blind. Flagged that this only affects new orders going
+forward -- offered a backfill for already-placed orders if she wants
+one.
+
+**Not yet run by Claire**: `offline-visits-order-pairing-2026-08-13.sql`.
