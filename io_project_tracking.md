@@ -12850,3 +12850,26 @@ override ($25.00, confirming the override correctly wins), and SEM
 --check` clean. Re-ran `test-sem-formula-fallbacks.js` and
 `test-in-platform-pct-tiers-2026-08-13.js` -- both still fully pass, no
 regression to the underlying lookup this reuses.
+
+### 2026-08-13 (cont'd) — Same, added to Campaign Setup; SEM shows its CPC range instead
+
+Claire: "can we add it to the campaign setup as well. For SEM we can put
+the CPC range." Added a 6th column to `renderSetupPanel()`'s existing
+Client/Tactic/Flight/Gross Budget/In-Platform Budget grid. For every
+service except SEM it shows "Platform CPM: $X.XX" (same
+`effectivePlatformCpm()` lookup as the Detail panel's new line). For SEM
+specifically (`service_id === 'sem-bp'`) the column relabels to "CPC
+Range" and shows `effectiveCpcRange()`'s low–high instead -- SEM has no
+Platform CPM concept at all (no Retail CPM to derive one from), so its CPC
+range is the equivalent reference number: the one that actually drives
+its Goal, the same role Platform CPM plays for every other service's
+In-Platform Budget.
+
+**Verified**: new `test-strategist-setup-platform-cpm-2026-08-13.js`
+(scratchpad) -- renders the real Setup panel for a normal service (shows
+"$20.00"), for SEM (label correctly switches to "CPC Range", shows
+"$4–$12"), and for a service with no rate configured at all (shows "— (not
+set)", no crash). All pass. `node --check` clean. Re-ran
+`test-sem-formula-fallbacks.js`, `test-in-platform-pct-tiers-2026-08-13.js`,
+and the Detail panel's own new test from moments ago -- all still fully
+pass.
