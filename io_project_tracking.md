@@ -12527,3 +12527,39 @@ anywhere in the loaded script, the Group select resolves to a
 real `<button>` element. All pass. `node --check` clean on all three
 files. Re-ran the stat-tile and green-color-fix regression tests from
 earlier today -- still fully pass.
+
+### 2026-08-13 (cont'd) — Service editor's collapsible sections: open one now looks distinct
+
+Claire, from a screenshot of the Service editor's Basics/Pricing
+Details/Behavior & Workflow blocks: "Could we also update these edit
+blocks in the admin portal for all editors to be more dynamic? Maybe make
+the headers light blue and then shaded so each section look distinct when
+it is open?"
+
+Checked scope first rather than guessing how far "all editors" reached --
+this collapsible-section pattern (`.svc-form-group`, a `<details>`/
+`<summary>` per group) only exists on the Service editor; every other
+editor (Group, Client, Section, Intake Form, AE, Strategist, User,
+Accounting Map) is a flat field list with no section headers at all, so
+"all editors" couldn't literally apply the same way everywhere without a
+much bigger restructuring job. Asked Claire directly; she confirmed:
+restyle just the Service editor's existing 3 sections, not restructure the
+other 8 editors into sections too.
+
+The real problem with the old style: open vs. closed headers were
+identical except for the caret's rotation -- nothing else signaled which
+section was expanded. Recolored `.svc-form-group` in `admin/index.html`'s
+`<style>` block: closed headers stay plain white background/navy text;
+the OPEN header now fills solid light blue (`--brand-color-primary`,
+#629AD0) with white text and a white caret, and its body switches from
+white to the same light-blue tint (`--light`, #EAF1F8) used elsewhere in
+the app for subtle shading -- so the expanded section now reads as one
+solid colored block, distinct from the two collapsed white ones sitting
+above/below it.
+
+**Verified**: new `screenshot-svc-form-group-2026-08-13.js` (scratchpad)
+renders all 3 blocks with Basics open -- confirms via computed styles that
+the open header is `rgb(98,154,208)`/white text, the closed headers stay
+transparent/navy text, and the open body is `rgb(234,241,248)`; the
+rendered screenshot itself (sent to Claire) shows the open block clearly
+standing out from the two collapsed ones. `node --check` clean.

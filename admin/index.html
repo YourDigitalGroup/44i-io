@@ -10,15 +10,25 @@
   /* Service editor grouping (2026-07-10) — admin-only, so kept here rather than
      shared.css (see that file's own scope-discipline note: admin markup is otherwise
      inline-styled by design). Collapses the Service editor's growing field count into
-     three named groups instead of one long unbroken list. */
-  .svc-form-group{border:1px solid var(--border);border-radius:8px;margin-bottom:12px;background:#fff}
-  .svc-form-group summary{padding:10px 14px;font-size:12.5px;font-weight:700;color:var(--text);cursor:pointer;list-style:none;user-select:none}
+     three named groups instead of one long unbroken list.
+
+     Recolored 2026-08-13 per Claire: the three headers (Basics/Pricing Details/
+     Behavior & Workflow) all looked identical whether open or closed — only the
+     caret direction changed — so nothing made the open one "look distinct." Closed
+     headers stay plain white/navy-text; the OPEN header fills solid light blue
+     (--brand-color-primary) with white text/caret, and its body gets a light-blue-
+     tinted background (--light) instead of white, so the expanded section reads as
+     a raised, colored block at a glance instead of blending into the rest of the
+     page. */
+  .svc-form-group{border:1px solid var(--border);border-radius:12px;margin-bottom:12px;background:#fff;overflow:hidden}
+  .svc-form-group summary{padding:11px 14px;font-size:12.5px;font-weight:700;color:var(--accent-dark);cursor:pointer;list-style:none;user-select:none;transition:background .15s,color .15s}
   .svc-form-group summary::-webkit-details-marker{display:none}
   .svc-form-group summary::before{content:'▸';display:inline-block;width:14px;color:var(--muted);transition:transform .15s}
-  .svc-form-group[open] summary::before{transform:rotate(90deg)}
+  .svc-form-group[open] summary::before{transform:rotate(90deg);color:#fff}
   .svc-form-group > div:not(summary){padding:14px 14px 2px}
   .svc-form-group summary:first-child{border-bottom:1px solid transparent}
-  .svc-form-group[open] summary{border-bottom:1px solid var(--border)}
+  .svc-form-group[open] summary{background:var(--brand-color-primary);color:#fff;border-bottom:none}
+  .svc-form-group[open] > div:not(summary){background:var(--light)}
 </style>
 </head>
 <body>
