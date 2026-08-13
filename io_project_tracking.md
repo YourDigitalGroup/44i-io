@@ -12826,3 +12826,27 @@ captured payload has that partial row correctly split into just the
 with "and up" last regardless of entry order; removes every row and saves
 again, confirms both arrays come back explicitly `null`. All pass.
 `node --check` clean.
+
+### 2026-08-13 (cont'd) — Platform CPM shown (read-only) in Strategist's campaign detail
+
+Claire, passing along a request from the strategists: they wanted to be
+able to see what the Platform CPM actually is for a campaign, without
+needing Admin access. Added a read-only line to
+`renderStrategistDetailPanel()` -- "Platform CPM: $X.XX" -- right below
+the Flight Start/End/Status row, using the exact same
+`effectivePlatformCpm(serviceId, groupId)` lookup that already drives
+In-Platform Budget further down the same panel (group override wins if
+one's set for that service, else the base rate from Admin's Accounting
+Map). Not an input -- just text, no save wiring, matching the ask ("as a
+non editable field"). Shows "— (not set for this service)" for a service
+with no Retail CPM at all (e.g. SEM, which uses In-Platform % instead and
+has no Platform CPM concept to show).
+
+**Verified**: new `test-strategist-platform-cpm-detail-2026-08-13.js`
+(scratchpad) -- renders the real detail panel for 3 cases: a service on
+its plain base rate ($20.00), the same service for a group with its own
+override ($25.00, confirming the override correctly wins), and SEM
+(correctly blank/not-set, since it has no Retail CPM). All pass. `node
+--check` clean. Re-ran `test-sem-formula-fallbacks.js` and
+`test-in-platform-pct-tiers-2026-08-13.js` -- both still fully pass, no
+regression to the underlying lookup this reuses.
