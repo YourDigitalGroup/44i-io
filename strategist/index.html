@@ -2586,6 +2586,16 @@ function renderStrategistDetailPanel() {
     </div>
     <div id="status-reason-${l.id}" style="display:none;margin:-6px 0 14px"></div>
 
+    <!-- Platform CPM, read-only (2026-08-13, per Claire -- strategists asked to be able
+         to see this). Same effectivePlatformCpm() lookup (Admin's Accounting Map, with
+         a group override winning if one's set) already driving In-Platform Budget below
+         -- shown here purely for reference, never editable from this portal. Blank for a
+         service with no Retail CPM at all (e.g. SEM), which uses In-Platform % instead. -->
+    <div style="margin:-6px 0 14px;font-size:11.5px;color:var(--muted)">Platform CPM: <strong style="color:var(--text)">${(() => {
+      const cpm = effectivePlatformCpm(l.service_id, l.group_id);
+      return cpm != null ? '$' + Number(cpm).toFixed(2) : '— (not set for this service)';
+    })()}</strong></div>
+
     ${statusHistory.length ? `<div style="margin-bottom:14px">
       <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Status history</p>
       ${statusHistory.map(h => `<div style="display:flex;align-items:baseline;gap:10px;padding:4px 0;font-size:12px">
