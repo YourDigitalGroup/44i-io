@@ -19,7 +19,7 @@
   #page-accounting .acct-header{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--border)}
   #page-accounting .acct-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px}
   #page-accounting .acct-month-nav{display:flex;align-items:center;gap:10px}
-  #page-accounting .acct-month-nav button{background:var(--light);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 11px;cursor:pointer;font-size:14px}
+  #page-accounting .acct-month-nav button{background:#fff;border:1.5px solid var(--accent-dark);color:var(--accent-dark);padding:5px 11px;cursor:pointer;font-size:14px}
   #page-accounting .acct-month-label{font-weight:700;font-size:15px;min-width:120px;text-align:center;color:var(--text)}
   #page-accounting .acct-filters{display:flex;gap:10px}
   /* Navy border + full pill shape (2026-08-12, per Claire: "the group and status
@@ -33,7 +33,12 @@
      card with a real gap between them, matching the reference screenshot's distinct
      boxes rather than one bar with divider lines. */
   #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:18px}
-  #page-accounting .acct-stat{padding:14px 20px;background:#fff;border:1px solid var(--border);border-radius:14px;box-shadow:0 1px 2px rgba(20,40,60,.05)}
+  /* Filled + bordered with brand color (2026-08-12, per Claire: "could we have each
+     of them bordered and filled in with the brand color") -- was plain white before,
+     same as every other card, so the tiles didn't read as their own distinct thing.
+     Light accent-blue tint, not a solid navy fill -- six tiles in a row reads busy at
+     full brand-color saturation the way the reference's one big card doesn't. */
+  #page-accounting .acct-stat{padding:14px 20px;background:var(--light);border:1.5px solid var(--accent-dark);border-radius:14px}
   #page-accounting .acct-stat-label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   #page-accounting .acct-stat-value{font-size:22px;font-weight:700;color:var(--text)}
   #page-accounting .acct-stat-value.warn{color:#B45309}
@@ -124,9 +129,9 @@
             <option value="complete">Complete</option>
           </select>
         </label>
-        <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
-        <button onclick="accountingOpenBulkMatchForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Match</button>
-        <button onclick="accountingOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
+        <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
+        <button onclick="accountingOpenBulkMatchForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Match</button>
+        <button onclick="accountingOpenBulkImportForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
       </div>
     </div>
 
