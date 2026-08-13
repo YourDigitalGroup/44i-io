@@ -47,7 +47,7 @@
             <option value="good">🟢 Good</option>
           </select>
           <button id="strategist-scope-mine" onclick="strategistSetScope('mine')" style="padding:6px 12px;border:1.5px solid var(--accent-dark);cursor:pointer;font-weight:600">My Campaigns</button>
-          <button id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border:1.5px solid var(--accent2);cursor:pointer;font-weight:600">All Strategists</button>
+          <button id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border:1.5px solid var(--accent-green);cursor:pointer;font-weight:600">All Strategists</button>
           <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
           <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
           <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
@@ -1824,8 +1824,8 @@ function renderStrategistDashboard() {
   // --accent/--light version used, just recolored.
   document.getElementById('strategist-scope-mine').style.background = strategistScope === 'mine' ? 'var(--accent-dark)' : '#fff';
   document.getElementById('strategist-scope-mine').style.color = strategistScope === 'mine' ? '#fff' : 'var(--accent-dark)';
-  document.getElementById('strategist-scope-all').style.background = strategistScope === 'all' ? 'var(--accent2)' : '#fff';
-  document.getElementById('strategist-scope-all').style.color = strategistScope === 'all' ? '#fff' : 'var(--accent2)';
+  document.getElementById('strategist-scope-all').style.background = strategistScope === 'all' ? 'var(--accent-green)' : '#fff';
+  document.getElementById('strategist-scope-all').style.color = strategistScope === 'all' ? 'var(--accent-dark)' : 'var(--accent-green)';
 
   // Same scoping as visibleCampaignLines() above, so the tab's own count badge
   // always matches what actually renders when you click into it.
