@@ -153,6 +153,19 @@
   </div>
 </div>
 
+<!-- Read-only order-detail modal (2026-08-13) -- shared markup/render logic
+     with Strategist's own copy of this same block, via shared.js's
+     renderOrderDetailModal()/closeOrderDetailModal(). -->
+<div id="shared-order-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:18px;padding:24px 28px;width:600px;max-height:80vh;overflow:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <p style="font-size:14px;font-weight:700;color:var(--text)">Order Detail</p>
+      <button onclick="closeOrderDetailModal()" class="btn-quiet-green">✕ Close</button>
+    </div>
+    <div id="shared-order-modal-body"></div>
+  </div>
+</div>
+
 <!-- ACCOUNTING LOGIN MODAL — same shape as /strategist's, scoped to
      accounting/super roles only. -->
 <div id="accounting-login-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
@@ -357,6 +370,23 @@ function accountingCloseDetailCard() {
   accountingSelectedLineId = null;
   renderAccountingDashboard();
 }
+
+// Fetches and shows the read-only order-detail modal (2026-08-13) --
+// scoped to a single order via accounting_get_order_detail, not the bulk
+// admin order list. Rendering itself lives in shared.js
+// (renderOrderDetailModal) since it's identical to Strategist's own copy.
+async function accountingViewOrder(orderId) {
+  if (!orderId) return;
+  try {
+    const order = await sb('rpc/accounting_get_order_detail', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw, p_order_id: orderId })
+    });
+    renderOrderDetailModal(order);
+  } catch (e) {
+    showToast('Could not load order: ' + e.message, 'error');
+  }
+}
 // A row still needs attention if it isn't fully confirmed and isn't (fully)
 // billed externally -- drives both the table's own status pill logic (already
 // built) and the "Awaiting Confirmation" stat tile below.
@@ -413,6 +443,7 @@ function accountingRenderDetailCard() {
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11.5px;color:var(--muted)">
           <input type="checkbox" ${line.billed_externally ? 'checked' : ''} onchange="accountingToggleBilledExternally('${line.id}', this.checked)"/> SSH Billing
         </label>
+        ${line.order_id ? `<button onclick="accountingViewOrder('${esc(line.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
         <button class="acct-detail-close" onclick="accountingCloseDetailCard()">✕ Close</button>
       </div>
     </div>
