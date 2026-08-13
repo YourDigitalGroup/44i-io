@@ -13356,3 +13356,29 @@ out of the textarea or executing. Re-ran 3 existing Setup-panel tests
 (`test-setup-blocker.js`, `test-multi-blocker.js`,
 `test-setup-panel-collapse.js`) -- all still pass, confirming the Setup
 queue's own `setup_notes` save path is untouched. `node --check` clean.
+
+### 2026-08-13 (cont'd) — Notes column: dot indicator instead of raw text
+
+Immediate follow-up, Claire: "the column is very narrow right now.
+Should we just make it visual that there is something in the notes
+section?" Confirmed the problem -- the Notes column was only 100px wide
+but rendered the full raw note text wrapped into a 160px box, so any real
+note (now that notes are actually editable everywhere, see above) would
+blow up that row's height in the main table.
+
+**Fix**: replaced the raw text with the same kind of glance-only indicator
+the adjacent Optimize Log column already uses (a count, not the log
+itself) -- a small filled dot when `setup_notes` has content, a plain
+dash when it doesn't. The full note text is still there on hover (native
+`title` tooltip on the cell) and, more importantly, fully readable/
+editable in the row's own detail panel (today's earlier fix). Narrowed
+the column's header width from 100px to 50px to match.
+
+**Verified**: new `test-strategist-notes-indicator-2026-08-13.js`
+(scratchpad, Playwright, real `renderMainTable`, mock lines) -- 7 checks,
+all pass: a line with a note shows the dot and NOT the raw text inline,
+the full text is still reachable via the title attribute, a line with no
+note shows a plain dash with no dot, and a note containing
+`<script>...</script>` renders escaped into the tooltip rather than
+executing. Re-ran `test-strategist-detail-notes-2026-08-13.js` (today's
+earlier Notes-field test) -- still fully passes. `node --check` clean.
