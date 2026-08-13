@@ -229,6 +229,7 @@ let PLATFORM_CPM_RATES = { base: {}, group: {} }; // service_id -> $CPM, and gro
 // formula (services.retail_cpm is null for SEM -- there was no formula at
 // all, just a manual override every month).
 let IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // % of Gross Budget, used when a service has no retail_cpm
+let IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending -- e.g. SEM (2026-08-13, mirrors ACCOUNTING_CUT_TIERS' shape but kept as its own column since it must never carry cut_pct, which stays accounting/admin-only)
 let CPC_RATES = { base: {}, group: {} }; // { low, high } $ CPC, used for a clicks-based service's Goal range
 let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, data}] } -- last paste per platform, overwritten each time
 let strategistScope = 'mine';               // 'mine' | 'all'
@@ -1336,12 +1337,14 @@ async function fetchStrategistData() {
   ALL_STATUS_HISTORY = statusHistory || [];
   PLATFORM_CPM_RATES = { base: {}, group: {} };
   IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
+  IN_PLATFORM_TIERS = {};
   CPC_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
     const cpc = (r.cpc_low != null || r.cpc_high != null) ? { low: r.cpc_low, high: r.cpc_high } : null;
     if (r.scope === 'base') {
       PLATFORM_CPM_RATES.base[r.service_id] = r.platform_cpm;
       IN_PLATFORM_PCT_RATES.base[r.service_id] = r.in_platform_pct;
+      if (Array.isArray(r.in_platform_tiers) && r.in_platform_tiers.length) IN_PLATFORM_TIERS[r.service_id] = r.in_platform_tiers;
       if (cpc) CPC_RATES.base[r.service_id] = cpc;
     } else {
       PLATFORM_CPM_RATES.group[r.group_id + '|' + r.service_id] = r.platform_cpm;
@@ -1423,10 +1426,26 @@ function effectivePlatformCpm(serviceId, groupId) {
   return PLATFORM_CPM_RATES.base[serviceId] != null ? Number(PLATFORM_CPM_RATES.base[serviceId]) : null;
 }
 
+// A spend-tiered rate (2026-08-13: SEM, 50% under $5,000 / 70% at $5,000+)
+// looked up against the month's own Gross Budget -- same tier shape/lookup
+// pattern as accountingEffectiveCutPctTier() in the Accounting Portal, just
+// kept in its own IN_PLATFORM_TIERS cache/column since this one has to be
+// safe to expose here (no cut_pct anywhere in it).
+function effectiveInPlatformPctTier(serviceId, grossBudget) {
+  const tiers = IN_PLATFORM_TIERS[serviceId];
+  if (!tiers || !tiers.length || grossBudget == null) return null;
+  const tier = tiers.find(t => t.max == null || Number(grossBudget) <= Number(t.max));
+  return tier ? Number(tier.in_platform_pct) : null;
+}
 // Same resolution order as effectivePlatformCpm -- fills the gap for a service
 // with no Retail CPM (2026-08-10: SEM), where In-Platform Budget otherwise has
-// no formula to compute from at all.
-function effectiveInPlatformPct(serviceId, groupId) {
+// no formula to compute from at all. A tiered rate (when configured) REPLACES
+// the flat base/group rate entirely, same "tiers win outright" rule already
+// used for 44i Cut % -- a group override becomes moot once tiers exist for
+// that service (documented gap, not silently invented).
+function effectiveInPlatformPct(serviceId, groupId, grossBudget) {
+  const tierRate = effectiveInPlatformPctTier(serviceId, grossBudget);
+  if (tierRate != null) return tierRate;
   const groupKey = groupId + '|' + serviceId;
   if (IN_PLATFORM_PCT_RATES.group[groupKey] != null) return Number(IN_PLATFORM_PCT_RATES.group[groupKey]);
   return IN_PLATFORM_PCT_RATES.base[serviceId] != null ? Number(IN_PLATFORM_PCT_RATES.base[serviceId]) : null;
@@ -1474,7 +1493,7 @@ function computeInPlatformBudget(grossBudget, serviceId, groupId) {
     // otherwise there's no formula to compute from, and every month needs a
     // fully manual override. In-Platform % (Admin -> Accounting Map) fills
     // that gap directly off Gross Budget instead of going through impressions.
-    const pct = effectiveInPlatformPct(serviceId, groupId);
+    const pct = effectiveInPlatformPct(serviceId, groupId, grossBudget);
     if (grossBudget != null && pct != null) return Number(grossBudget) * pct / 100;
     return null;
   }
