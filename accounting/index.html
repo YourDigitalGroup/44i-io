@@ -43,8 +43,12 @@
   /* Smaller "of which $X is awaiting confirmation" sub-line (2026-08-13, per
      Claire -- replacing the old standalone "Awaiting Confirmation" tile, which
      only showed a count, with a dollar sub-total under each of the 3 tiles it
-     actually affects). */
-  #page-accounting .acct-stat-sub{font-size:10.5px;font-weight:600;color:#8A6D12;margin-top:4px}
+     actually affects). Plain muted gray, not the mustard "needs confirmation"
+     status-pill color -- Claire: "I don't like the color... it doesn't look
+     clean across the groups" (the mustard read muddy against several groups'
+     own tinted tile backgrounds; muted gray stays clean/neutral against any
+     of them, same as every other tile's own label text). */
+  #page-accounting .acct-stat-sub{font-size:10.5px;font-weight:600;color:var(--muted);margin-top:4px}
   /* Softer, more rounded card (2026-08-12, per Claire, reacting to the first pass'
      gradient stripe: "that makes it look less smooth, the edges look sharp... I would
      like it to be more dynamic like this" -- pointing at 44idigital.com's own hero,
@@ -439,10 +443,10 @@ function accountingRenderDetailCard() {
           const dollarStyle = m.paused ? ' style="color:var(--muted)"' : '';
           return `<tr>
           <td${dollarStyle}><strong>${esc(m.label)}</strong></td>
-          <td class="num"${dollarStyle}>${m.gross != null ? '$' + m.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num"${dollarStyle}>${m.split.fortyfouri != null ? '$' + m.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num"${dollarStyle}>${m.expectedSpend != null ? '$' + m.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num"${dollarStyle}>${m.actualSpend != null ? '$' + m.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num"${dollarStyle}>${m.gross != null ? '$' + m.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+          <td class="num"${dollarStyle}>${m.split.fortyfouri != null ? '$' + m.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+          <td class="num"${dollarStyle}>${m.expectedSpend != null ? '$' + m.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+          <td class="num"${dollarStyle}>${m.actualSpend != null ? '$' + m.actualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
           <td>
             <div style="display:flex;align-items:center;gap:8px">
               ${line.billed_externally ? accountingStatusPill('external', 'SSH Billing')
@@ -583,7 +587,7 @@ function accountingAddServiceTacticChanged() {
       isOneTime ? 'One-time fee' : 'Recurring monthly';
     const amount = accountingDerivedAmount(serviceId, clientId);
     document.getElementById('acct-add-amount-derived').textContent =
-      amount != null ? `$${amount.toLocaleString(undefined,{maximumFractionDigits:2})}${isOneTime ? '' : '/mo'}` : 'Not set in the catalog -- add it in Admin first';
+      amount != null ? `$${amount.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}${isOneTime ? '' : '/mo'}` : 'Not set in the catalog -- add it in Admin first';
   }
   helpText.textContent = serviceId && !trackable
     ? 'This creates an Accounting-only line, same as the IO would for a flat/recurring/one-time service -- Strategist never sees this one, there’s no setup step for it.'
@@ -790,7 +794,7 @@ function accountingRunBulkMatch() {
       const hasDiscrepancy = pastedGross != null && !isNaN(pastedGross) && systemGross != null && Math.abs(pastedGross - systemGross) > 0.01;
 
       if (hasDiscrepancy) {
-        return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">⚠️ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:#8A6D12">Gross Budget mismatch: your sheet says $${pastedGross.toLocaleString(undefined,{maximumFractionDigits:2})}, system says $${systemGross.toLocaleString(undefined,{maximumFractionDigits:2})} for ${esc(accountingMonthLabel(accountingCurrentMonth))}</span></div>`;
+        return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">⚠️ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:#8A6D12">Gross Budget mismatch: your sheet says $${pastedGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}, system says $${systemGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})} for ${esc(accountingMonthLabel(accountingCurrentMonth))}</span></div>`;
       }
       return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">✅ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">already in the system</span></div>`;
     }
@@ -1655,10 +1659,10 @@ function accountingRenderRow(r) {
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
       <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span></td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
-      <td class="num">$${r.gross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-      <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-      <td class="num">${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-      <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+      <td class="num">$${r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+      <td class="num">${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+      <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
       <td>${accountingRollupStatusPill(r)}</td>
     </tr>`;
     if (expanded) {
@@ -1673,10 +1677,10 @@ function accountingRenderRow(r) {
           <td></td>
           <td>${esc(c.line.split_label || '(unlabeled split)')}</td>
           <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
-          <td class="num">${c.gross != null ? '$' + c.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num">${c.expectedSpend != null ? '$' + c.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-          <td class="num">${c.actualSpend != null ? '$' + c.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+          <td class="num">${c.gross != null ? '$' + c.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+          <td class="num">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+          <td class="num">${c.expectedSpend != null ? '$' + c.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+          <td class="num">${c.actualSpend != null ? '$' + c.actualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
           <td>${accountingLineStatusPill(c)}</td>
         </tr>`;
       });
@@ -1688,10 +1692,10 @@ function accountingRenderRow(r) {
     <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
     <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
-    <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-    <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-    <td class="num">${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
-    <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{maximumFractionDigits:2}) : '—'}</td>
+    <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+    <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+    <td class="num">${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+    <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td>${accountingLineStatusPill(r)}</td>
   </tr>`;
 }
@@ -1729,14 +1733,15 @@ function renderAccountingDashboard() {
   // the aggregate totals skip it. Paused (2026-08-13, per Claire) is excluded
   // the same way -- a paused campaign isn't running that month either.
   //
-  // Needs Confirmation is handled differently, on purpose: unlike Pending/
-  // Paused, a needs-confirmation row IS active and presumably really
-  // spending -- excluding it from Expected Revenue/Expected Spend/44i
-  // Revenue would understate real active business just because nobody's
-  // clicked Confirm yet. Instead it stays counted in the main totals, with
-  // its own portion of each surfaced as a smaller sub-total under the
-  // relevant tile (replacing the old standalone "Awaiting Confirmation"
-  // count-only tile) so it's visible without hiding real numbers.
+  // Needs Confirmation (2026-08-13, per Claire: "take those awaiting
+  // confirmation numbers out of the totals so it accurately reflects what
+  // the confirmed revenue is") -- the 3 stat tiles below now show CONFIRMED
+  // revenue only, with the unconfirmed portion broken out underneath as its
+  // own smaller sub-total instead of folded into the headline number. Only
+  // the TILES exclude it -- totalGross/totalExpectedSpend/totalFortyfouri
+  // themselves stay the full figures, since the table's own Total row (and
+  // every individual row) still shows its real number regardless of
+  // confirmation status, same as Billed Externally rows always have.
   let totalGross = 0, totalExpectedSpend = 0, totalActualSpend = 0, totalFortyfouri = 0, totalBilledExternally = 0;
   let awaitingGross = 0, awaitingExpectedSpend = 0, awaitingFortyfouri = 0;
   rows.forEach(r => {
@@ -1770,15 +1775,16 @@ function renderAccountingDashboard() {
   const statsEl = document.getElementById('accounting-stats');
   // "Awaiting Confirmation" is no longer its own tile (2026-08-13, per Claire)
   // -- each of the 3 tiles it actually affects gets its own smaller sub-total
-  // instead ("$X awaiting confirmation"), so the real number stays visible
-  // instead of being replaced by a bare count.
-  const awaitingSub = amt => amt > 0 ? '$' + amt.toLocaleString(undefined, {maximumFractionDigits:2}) + ' awaiting confirmation' : '';
+  // instead ("$X awaiting confirmation"), so the excluded amount stays
+  // visible even though the headline number no longer includes it.
+  const acctMoney = amt => amt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const awaitingSub = amt => amt > 0 ? '$' + acctMoney(amt) + ' awaiting confirmation' : '';
   statsEl.innerHTML =
-    stat('Expected Revenue', '$' + totalGross.toLocaleString(undefined, {maximumFractionDigits:2}), '', awaitingSub(awaitingGross)) +
-    stat('Expected Spend', '$' + totalExpectedSpend.toLocaleString(undefined, {maximumFractionDigits:2}), '', awaitingSub(awaitingExpectedSpend)) +
-    stat('Actual Spend', '$' + totalActualSpend.toLocaleString(undefined, {maximumFractionDigits:2})) +
-    stat('44i Revenue', '$' + totalFortyfouri.toLocaleString(undefined, {maximumFractionDigits:2}), '', awaitingSub(awaitingFortyfouri)) +
-    stat('SSH Billing (excl.)', '$' + totalBilledExternally.toLocaleString(undefined, {maximumFractionDigits:2}));
+    stat('Expected Revenue', '$' + acctMoney(totalGross - awaitingGross), '', awaitingSub(awaitingGross)) +
+    stat('Expected Spend', '$' + acctMoney(totalExpectedSpend - awaitingExpectedSpend), '', awaitingSub(awaitingExpectedSpend)) +
+    stat('Actual Spend', '$' + acctMoney(totalActualSpend)) +
+    stat('44i Revenue', '$' + acctMoney(totalFortyfouri - awaitingFortyfouri), '', awaitingSub(awaitingFortyfouri)) +
+    stat('SSH Billing (excl.)', '$' + acctMoney(totalBilledExternally));
 
   accountingRenderDetailCard();
 
@@ -1829,10 +1835,10 @@ function renderAccountingDashboard() {
         <td>Total</td>
         <td></td>
         <td></td>
-        <td class="num">$${totalGross.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td class="num">$${totalFortyfouri.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td class="num">$${totalExpectedSpend.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
-        <td class="num">$${totalActualSpend.toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td class="num">$${totalGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+        <td class="num">$${totalFortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+        <td class="num">$${totalExpectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+        <td class="num">$${totalActualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
         <td></td>
       </tr>
     </tfoot>

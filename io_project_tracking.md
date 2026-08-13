@@ -13183,3 +13183,46 @@ fully-confirmed scenario correctly shows no standalone tile and no
 "awaiting confirmation" text anywhere) while it was already being
 touched. All pass. `node --check` clean. Re-ran 4 other test files from
 today -- all still fully pass.
+
+### 2026-08-13 (cont'd) — Awaiting Confirmation now excluded from totals; color and formatting fixes
+
+Three follow-ups on the tiles just shipped:
+
+**1. Exclude unconfirmed amounts from the headline totals too.** Claire:
+"take those awaiting confirmation numbers out of the totals so it
+accurately reflects what the confirmed revenue is." Reversed the earlier
+design (keep counted + call out separately) per her explicit call --
+Expected Revenue/Expected Spend/44i Revenue now show
+`total - awaiting` as the headline number, with the excluded amount still
+shown in the smaller sub-line underneath (so it doesn't just silently
+disappear, same principle as SSH Billing's own "(excl.)" tile). Only the
+3 TILES changed -- `totalGross`/`totalExpectedSpend`/`totalFortyfouri`
+themselves stay untouched, since the table's own Total row and every
+individual row still show their real number regardless of confirmation
+status, same as a Billed Externally row always has.
+
+**2. Sub-line color.** Claire: "I don't like the color of the awaiting
+confirmation it doesn't look clean across the groups." It was using the
+same mustard (#8A6D12) as the "Needs confirmation" status pill, which
+read muddy against several groups' own tinted tile backgrounds. Switched
+to plain `var(--muted)` -- the same neutral gray-blue every other tile's
+own label already uses, so it stays clean against any group's tint.
+
+**3. Currency formatting.** Claire: "if the cents end in 0 it doesn't
+show the 0, I think it should be consistent." Every dollar amount in
+Accounting used `{maximumFractionDigits:2}` alone, which drops trailing
+zeros ($800 instead of $800.00). Added `minimumFractionDigits:2`
+alongside it everywhere in the file (23 more sites beyond the stat tiles
+themselves -- the main table, rollup rows, detail card, bulk-match
+mismatch warnings, the derived-amount preview in "+ Add a Service") so
+every dollar figure in this portal now consistently shows exactly 2
+decimals.
+
+**Verified**: updated `test-stat-tile-paused-awaiting-2026-08-13.js` for
+the new exclude-from-totals behavior (Expected Revenue now shows only the
+confirmed $1,000, not $1,800; 44i Revenue shows $500, not $900) and
+confirmed amounts render with 2 decimals throughout. New
+`check-sub-color.js` (scratchpad) confirms the sub-line's computed color
+resolves to `rgb(81, 112, 141)` -- exactly `--muted`, not the old mustard.
+`node --check` clean. Re-ran 5 other test files from today -- all still
+fully pass.
