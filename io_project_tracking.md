@@ -13053,3 +13053,80 @@ forward -- offered a backfill for already-placed orders if she wants
 one.
 
 **Not yet run by Claire**: `offline-visits-order-pairing-2026-08-13.sql`.
+
+### 2026-08-13 (cont'd) — Full IO-to-portal audit: 2 more real gaps found and fixed
+
+Claire asked for a full audit of everything transferring from the IO to
+both portals, to be safe -- declined a backfill for the offline-visits
+fix ("I don't think we need the backlog query"), but wanted the broader
+sweep. Delegated the systematic comparison (every field the IO submits
+per line item vs. every field `create_campaign_lines_from_order()`
+actually reads) to a research agent, then independently verified its two
+strongest findings myself before touching anything.
+
+**Found, same shape as the Offline Visits bug**: `prorated_hosting_amt`
+(the "we'll host it" proration charge) and `setup_fee_amt` (SEM's
+auto-add $200-under-threshold fee, and any future service configured the
+same way) are both computed PER LINE ITEM on the IO, but only ever get
+summed into the order's overall `total_onetime` -- never read by the
+trigger, never became a `campaign_lines`/`campaign_months` row. Confirmed
+independently by reading `promptHosting()`/`calcProration()`
+(`index.html:1415-1477`) and `getSetupFeeInfo()` (`index.html:5795-5801`)
+myself -- both amounts are tied to the SAME line item as their host
+tactic (not a separate service), confirming the fix belongs in the
+trigger, not a new pairing lookup like the offline-visits fix needed.
+
+Asked Claire two things before building: (1) fix both now vs. explain
+first -- she said fix now; (2) a related discovery -- Admin's "Setup Fee
+Split %" config (`accounting_map.setup_fee_cut_pct`, built 2026-07-30)
+has genuinely never been consumed anywhere in `accounting/index.html` --
+the config UI shipped but the calculation that would use it was never
+built. She said yes, build that too.
+
+**Fixed**:
+- SQL (`hosting-setup-fee-capture-2026-08-13.sql`, sent to Claire):
+  extends `create_campaign_lines_from_order()` with two more per-item
+  branches (alongside the existing spend/SEO/flat-fee ones) -- each
+  creates its own one-time, accounting-only line tagged with a new
+  `billing_type` value (`'hosting_proration'` / `'setup_fee'`, distinct
+  from the existing `'one_time'`) so Accounting can tell them apart from
+  an ordinary flat-priced service.
+- `accounting/index.html`: new `ACCOUNTING_SETUP_FEE_CUT_RATES`
+  base+group cache (already returned by `accounting_get_rates` for both
+  scopes since 2026-07-30 -- confirmed by re-reading that RPC's real
+  body, no RPC patch needed here) and
+  `accountingEffectiveSetupFeeCutPct(serviceId, groupId)`, mirroring
+  `accountingEffectiveCutPct()`'s shape but with no tier/pairing concept
+  (a setup fee is a flat one-time amount, never spend-tiered or
+  modifier-paired). Both of the two real 44i-Revenue-split call sites
+  (main table + detail card) now pick this instead of the regular cut %
+  specifically for `billing_type === 'setup_fee'` lines.
+- **Real bug caught before shipping**: `accountingMonthRowFor()`'s
+  carry-forward check was `billing_type !== 'one_time'` -- since the two
+  brand-new billing_type values aren't literally the string `'one_time'`,
+  they would have incorrectly carried their one-time dollar amount
+  forward every month after the first, exactly like the flat-fee
+  carry-forward bug fixed back on 2026-08-12 for a different set of
+  lines. Fixed by switching to a small `ACCOUNTING_ONE_TIME_BILLING_TYPES`
+  whitelist array instead of a single string comparison, so this can't
+  silently miss a future one-time type again either.
+
+**Verified**: since the trigger itself can't be executed here, wrote two
+plain-language simulations before sending real SQL --
+`simulate-hosting-setupfee-trigger-2026-08-13.py` confirms all 5 branches
+(spend/SEO/flat-fee/hosting/setup-fee) fire independently and the
+"deliberate accepted overlap" pattern (e.g. SEM under threshold gets
+BOTH a real spend line AND its own setup-fee line) works correctly, and
+that an all-$0 modifier item still creates nothing here (handled by the
+separate pairing pass only). New
+`test-setup-fee-split-2026-08-13.js` (scratchpad, real code, not a
+simulation) confirms: the setup-fee split correctly overrides the
+regular cut % only for `billing_type === 'setup_fee'` lines (a normal
+spend line is unaffected); base vs. group override resolution works;
+and -- the carry-forward fix specifically -- both new billing types
+correctly return `null` for a later month with no explicit row, while
+`'recurring'` (unchanged) still correctly carries forward. All pass.
+`node --check` clean. Re-ran 5 other test files from today -- all still
+fully pass.
+
+**Not yet run by Claire**: `hosting-setup-fee-capture-2026-08-13.sql`.
