@@ -12622,3 +12622,10 @@ rather than changed silently.
 **Verified**: `node --check` clean; grepped the file afterward to confirm
 all 3 pill call sites and the 1 stat label now say "SSH Billing" and
 nothing user-facing still says the old name in those two specific spots.
+
+Claire confirmed the checkbox label should change too -- updated it from
+"Billed externally" to "SSH Billing" as well. All 5 user-facing occurrences
+of this concept in the file now read "SSH Billing" consistently; only the
+internal `billed_externally` column/variable name (never shown to anyone)
+still uses the old wording, which is correct -- it's a data identifier, not
+UI text. `node --check` clean.
