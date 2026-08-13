@@ -12197,3 +12197,40 @@ together. Re-ran all 8 Accounting/Strategist test files from today's
 session -- all still fully passing, confirming these were pure CSS/tag/
 color changes with zero logic impact. `node --check` passes clean on both
 files.
+
+### 2026-08-12 (cont'd) — Strategist as the reference standard: Re-check button + editor dropdowns
+
+Claire: "I think the strategist portal is the one that has everything the
+way I want it. With 2 edits. can the recheck cached reports be the same as
+the my campaigns button, the navy fill and can we update the dropdowns in
+the editors to match the group and all pacing style?"
+
+**"Re-check Cached Reports"** -- was a plain light-gray button, now a solid
+navy fill matching My Campaigns' own active state.
+
+**Editor dropdowns -> navy pill**, matching the Group/All Pacing filter
+style exactly: `strategistPlatformSelectHtml()` (the shared Platform
+`<select>` used in both the Setup panel and the Detail panel), the Setup
+panel's own tactic-variant select, the Detail panel's tactic-variant select
+(previously a dashed border, used elsewhere in this app as an "override/
+optional" visual cue -- not preserved here since this is a real required
+choice, not an override), and the Detail panel's Status select. Scoped
+specifically to the two "editor" surfaces (Campaign Setup, Campaign Detail)
+Claire named -- did not touch the main table's own inline platform select
+or the + New Campaign import form's dropdowns, which are a different
+context.
+
+**Verified**: re-ran all 4 relevant Strategist test files (flight-ongoing,
+setup-grouped, sticky-close, addl-targeting) -- all still fully passing.
+`node --check` passes clean.
+
+**Flagged separately, not yet resolved**: Claire's screenshot showed
+Logout still in its old plain style even though Close (same commit) showed
+correctly, and the stat tiles showing the GROUP's own brand color tint
+instead of the intended navy-blue fill -- both point to the live site
+lagging behind what's actually merged into `main`, not a gap in the pushed
+code. Asked Claire to confirm PR #215's merge status and try a hard refresh
+before concluding anything is still broken. The requested full 3-portal
+button/dropdown/editor consistency audit is being held until that's
+confirmed, since auditing against a possibly-stale live view would just
+compound the confusion.
