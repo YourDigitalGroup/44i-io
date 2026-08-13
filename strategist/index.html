@@ -223,7 +223,7 @@ let ALL_CAMPAIGN_MONTHS = [];
 let ALL_OPTIMIZE_LOG = [];
 let ALL_STATUS_HISTORY = [];
 let ALL_STRATEGIST_CLIENTS = []; // {id, name, group_id, group_name} — for the "+ New Campaign" import picker
-let PLATFORM_CPM_RATES = { base: {}, group: {} }; // service_id -> $CPM, and group_id|service_id -> $CPM
+let PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} }; // service_id -> $CPM, group_id|service_id -> $CPM, and (offline-visits/addl-targeting pairing) service_id -> $CPM
 // Same base+group-override shape as PLATFORM_CPM_RATES, for the two new rate
 // fields added 2026-08-10 to plug SEM's missing In-Platform Budget/Goal
 // formula (services.retail_cpm is null for SEM -- there was no formula at
@@ -1335,7 +1335,7 @@ async function fetchStrategistData() {
   ALL_OPTIMIZE_LOG = log || [];
   ALL_STRATEGIST_CLIENTS = clients || [];
   ALL_STATUS_HISTORY = statusHistory || [];
-  PLATFORM_CPM_RATES = { base: {}, group: {} };
+  PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} };
   IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
   IN_PLATFORM_TIERS = {};
   CPC_RATES = { base: {}, group: {} };
@@ -1346,6 +1346,8 @@ async function fetchStrategistData() {
       IN_PLATFORM_PCT_RATES.base[r.service_id] = r.in_platform_pct;
       if (Array.isArray(r.in_platform_tiers) && r.in_platform_tiers.length) IN_PLATFORM_TIERS[r.service_id] = r.in_platform_tiers;
       if (cpc) CPC_RATES.base[r.service_id] = cpc;
+    } else if (r.scope === 'pairing') {
+      if (r.platform_cpm != null) PLATFORM_CPM_RATES.pairing[r.service_id] = r.platform_cpm;
     } else {
       PLATFORM_CPM_RATES.group[r.group_id + '|' + r.service_id] = r.platform_cpm;
       IN_PLATFORM_PCT_RATES.group[r.group_id + '|' + r.service_id] = r.in_platform_pct;
@@ -1420,7 +1422,20 @@ async function loadStrategistDashboard() {
 // resolution order as the admin Accounting Overrides tab (group override wins, else
 // the base accounting_map rate). Never exposes 44i Cut %/Fixed Cut/Setup Fee Split —
 // this dashboard only ever needs Platform CPM.
-function effectivePlatformCpm(serviceId, groupId) {
+// hasModifier -- true when EITHER Offline Visits Tracking OR YouTube TV's Addl.
+// Targeting is checked (2026-08-13, per Claire: "we will also need to update
+// the CPM if offline tracking is added" -- Admin's Accounting Map has
+// supported a per-pairing Platform CPM override since the pairing mechanism
+// itself was built [2026-07-31, for 44i Cut %], but Platform CPM's OWN
+// pairing value was never actually looked up anywhere until now, same real
+// gap already fixed for 44i Cut % via accountingEffectiveCutPct's own
+// pairing check). Pairing wins outright over group/base, same precedence as
+// the cut % pairing rate.
+function effectivePlatformCpm(serviceId, groupId, hasModifier) {
+  if (hasModifier) {
+    const pairingRate = PLATFORM_CPM_RATES.pairing[serviceId];
+    if (pairingRate != null) return Number(pairingRate);
+  }
   const groupKey = groupId + '|' + serviceId;
   if (PLATFORM_CPM_RATES.group[groupKey] != null) return Number(PLATFORM_CPM_RATES.group[groupKey]);
   return PLATFORM_CPM_RATES.base[serviceId] != null ? Number(PLATFORM_CPM_RATES.base[serviceId]) : null;
@@ -1485,9 +1500,9 @@ function budgetedImpressions(grossBudget, serviceId) {
 // live, never stored, same derived-vs-stored principle as everywhere else in this
 // project. Platform CPM is a real number entered per service/group (Admin →
 // Accounting Map / Accounting Overrides), not derived from a flat %.
-function computeInPlatformBudget(grossBudget, serviceId, groupId) {
+function computeInPlatformBudget(grossBudget, serviceId, groupId, hasModifier) {
   const impressions = budgetedImpressions(grossBudget, serviceId);
-  const platformCpm = effectivePlatformCpm(serviceId, groupId);
+  const platformCpm = effectivePlatformCpm(serviceId, groupId, hasModifier);
   if (impressions == null || platformCpm == null) {
     // Fallback for a service with no Retail CPM at all (2026-08-10: SEM) --
     // otherwise there's no formula to compute from, and every month needs a
@@ -1507,10 +1522,10 @@ function computeInPlatformBudget(grossBudget, serviceId, groupId) {
 // In-Platform Budget (like Gross Budget) is itself a per-month figure — lives on
 // campaign_months, not campaign_lines. Every call site that used to call
 // computeInPlatformBudget() directly on a monthRow now goes through this instead.
-function effectiveInPlatformBudget(monthRow, serviceId, groupId) {
+function effectiveInPlatformBudget(monthRow, serviceId, groupId, hasModifier) {
   if (!monthRow) return null;
   if (monthRow.in_platform_override != null) return Number(monthRow.in_platform_override);
-  return computeInPlatformBudget(monthRow.gross_budget, serviceId, groupId);
+  return computeInPlatformBudget(monthRow.gross_budget, serviceId, groupId, hasModifier);
 }
 
 // Goal: impressions for every platform except SEM (Goal = Budgeted Impressions =
@@ -1708,7 +1723,7 @@ function pacingPillHtml(pct) {
 // computable yet -- e.g. a campaign with no actuals entered this month.
 function strategistLinePacingSegment(l) {
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
-  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
+  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
   const goal = computeGoal(l, monthRow);
   const spendPacing = pacingPct(monthRow.actual_spend, inPlatform, l.flight_start, l.flight_end, strategistCurrentMonth);
   const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
@@ -1911,7 +1926,7 @@ function renderSetupPanels(lines) {
 function renderSetupPanel(l) {
     const client = l.client_name || '(unknown client)';
     const monthRow = setupBudgetRowFor(l.id) || {};
-    const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
+    const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
     const monthRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month));
     const isExpanded = STRATEGIST_EXPANDED_SETUP_LINES.has(l.id);
     // Solid white + a real shadow, not the old near-invisible #FAFCFE-on-#F6F6F8
@@ -1956,7 +1971,7 @@ function renderSetupPanel(l) {
             const cpc = effectiveCpcRange(l.service_id, l.group_id);
             return cpc ? '$' + cpc.low + '–$' + cpc.high : '— (not set)';
           }
-          const cpm = effectivePlatformCpm(l.service_id, l.group_id);
+          const cpm = effectivePlatformCpm(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
           return cpm != null ? '$' + Number(cpm).toFixed(2) : '— (not set)';
         })()}</div></div>
       </div>
@@ -2490,7 +2505,7 @@ function renderMainTable(lines) {
     html += `<tr style="background:${esc(bg)}"><td class="sticky-group-td" colspan="13" style="position:sticky;z-index:2;background:${esc(bg)};padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:${fg}">${esc(groupName)}</td></tr>`;
     byGroup[groupName].rows.forEach(l => {
       const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
-      const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
+      const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
       const goal = computeGoal(l, monthRow);
       const spendPacing = pacingPct(monthRow.actual_spend, inPlatform, l.flight_start, l.flight_end, strategistCurrentMonth);
       const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
@@ -2554,7 +2569,7 @@ function renderStrategistDetailPanel() {
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
   const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
   const statusHistory = ALL_STATUS_HISTORY.filter(h => h.campaign_line_id === l.id);
-  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id);
+  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
   const goal = computeGoal(l, monthRow);
 
   panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:18px;padding:16px 18px;background:#fff;box-shadow:var(--shadow-lg)">
@@ -2605,7 +2620,7 @@ function renderStrategistDetailPanel() {
          -- shown here purely for reference, never editable from this portal. Blank for a
          service with no Retail CPM at all (e.g. SEM), which uses In-Platform % instead. -->
     <div style="margin:-6px 0 14px;font-size:11.5px;color:var(--muted)">Platform CPM: <strong style="color:var(--text)">${(() => {
-      const cpm = effectivePlatformCpm(l.service_id, l.group_id);
+      const cpm = effectivePlatformCpm(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
       return cpm != null ? '$' + Number(cpm).toFixed(2) : '— (not set for this service)';
     })()}</strong></div>
 
@@ -2640,7 +2655,7 @@ function renderStrategistDetailPanel() {
         <span style="width:85px">Impr.</span>
       </div>
       ${ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month)).map(m => {
-        const autoInPlatform = computeInPlatformBudget(m.gross_budget, l.service_id, l.group_id);
+        const autoInPlatform = computeInPlatformBudget(m.gross_budget, l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
         const autoGoal = computeGoal(l, { ...m, goal_override: null });
         return `
         <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--border)">

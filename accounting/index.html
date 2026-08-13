@@ -288,7 +288,7 @@ let ALL_ACCOUNTING_MONTHS = [];
 let ALL_ACCOUNTING_CLIENTS = []; // {id, name, group_id, group_name} -- for the Add Service picker and Bulk Match lookups
 let ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} }; // service_id -> pct, group_id|service_id -> pct, and (offline-visits pairing) service_id -> pct
 let ACCOUNTING_CUT_TIERS = {}; // service_id -> [{ max, cut_pct }, ...] sorted ascending, e.g. SEM
-let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} }; // for Expected Spend -- same shape as the Strategist Portal's own PLATFORM_CPM_RATES
+let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} }; // for Expected Spend -- same shape as the Strategist Portal's own PLATFORM_CPM_RATES
 let ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // Expected Spend fallback for a service with no Retail CPM (e.g. SEM)
 let ACCOUNTING_IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending, e.g. SEM (2026-08-13, same shape/lookup as ACCOUNTING_CUT_TIERS, kept as its own column/cache)
 let accountingCurrentMonth = new Date();
@@ -378,7 +378,7 @@ function accountingRenderDetailCard() {
     const monthRow = accountingLineActiveInMonth(line, d) ? accountingMonthRowFor(line.id, d) : null;
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
-    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override);
+    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting);
     const cutPct = accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
@@ -1298,7 +1298,17 @@ function accountingRowIsPending(r) {
 // it). A per-month manual override (campaign_months.in_platform_override --
 // the same column the Strategist Portal writes to) always wins, same
 // "override wins" rule used everywhere else in this project.
-function accountingEffectivePlatformCpm(serviceId, groupId) {
+// hasModifier -- same OR-merge as accountingEffectiveCutPct's own hasModifier
+// param (2026-08-13, per Claire: "we will also need to update the CPM if
+// offline tracking is added" -- Platform CPM's own pairing override existed
+// in Admin's Accounting Map since the pairing mechanism was built, but was
+// never actually looked up here; only the cut % pairing rate was). Pairing
+// wins outright over group/base, same precedence as the cut % pairing rate.
+function accountingEffectivePlatformCpm(serviceId, groupId, hasModifier) {
+  if (hasModifier) {
+    const pairingRate = ACCOUNTING_PLATFORM_CPM_RATES.pairing[serviceId];
+    if (pairingRate != null) return pairingRate;
+  }
   const groupRate = groupId ? ACCOUNTING_PLATFORM_CPM_RATES.group[`${groupId}|${serviceId}`] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_PLATFORM_CPM_RATES.base[serviceId];
@@ -1325,11 +1335,11 @@ function accountingEffectiveInPlatformPct(serviceId, groupId, grossBudget) {
   const baseRate = ACCOUNTING_IN_PLATFORM_PCT_RATES.base[serviceId];
   return baseRate != null ? baseRate : null;
 }
-function accountingComputeExpectedSpend(grossBudget, serviceId, groupId, inPlatformOverride) {
+function accountingComputeExpectedSpend(grossBudget, serviceId, groupId, inPlatformOverride, hasModifier) {
   if (inPlatformOverride != null) return Number(inPlatformOverride);
   if (grossBudget == null) return null;
   const retailCpm = CATALOG_ROWS[serviceId]?.retail_cpm != null ? Number(CATALOG_ROWS[serviceId].retail_cpm) : null;
-  const platformCpm = accountingEffectivePlatformCpm(serviceId, groupId);
+  const platformCpm = accountingEffectivePlatformCpm(serviceId, groupId, hasModifier);
   if (retailCpm != null && platformCpm != null) {
     const impressions = (Number(grossBudget) / retailCpm) * 1000;
     return impressions * platformCpm / 1000;
@@ -1390,7 +1400,7 @@ async function fetchAccountingData() {
   ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} };
   ACCOUNTING_CUT_TIERS = {};
   ACCOUNTING_IN_PLATFORM_TIERS = {};
-  ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {} };
+  ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} };
   ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
     if (r.scope === 'base') {
@@ -1406,6 +1416,7 @@ async function fetchAccountingData() {
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.group[key] = Number(r.in_platform_pct);
     } else if (r.scope === 'pairing') {
       ACCOUNTING_CUT_RATES.pairing[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
+      if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.pairing[r.service_id] = Number(r.platform_cpm);
     }
   });
 }
@@ -1533,7 +1544,7 @@ function accountingBuildRows() {
     const monthRow = accountingMonthRowFor(l.id, accountingCurrentMonth);
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
-    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.group_id, monthRow?.in_platform_override);
+    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting);
     const cutPct = accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
