@@ -12950,3 +12950,56 @@ rerun after adding the label swap, but it was only run once, before the
 Setup-panel-only version). Now confirms the Detail panel's SEM case shows
 the "CPC Range" label with the real $4–$12 values, matching Setup. All 5
 tests re-run this round still pass.
+
+### 2026-08-13 (cont'd) — Sticky group band in Campaign Setup; real fix for residual page scroll
+
+Two more asks: "can we add the header freeze for the campaign set up as
+well?" and "even though we added all of the scrolling options you can
+still scroll up and down a little on the actual page, can we remove that
+since we don't need to do that anymore?" (confirmed: Strategist and
+Accounting both do this, Admin doesn't).
+
+**Campaign Setup sticky group band**: `#strategist-setup-panel` (the
+pending-campaigns queue, grouped by client group with a colored band per
+group) had no bounded scroll container at all, unlike the main pacing
+table's `#strategist-table-wrap`. Gave it the same
+`overflow:auto;max-height:70vh` treatment, and made each group's colored
+band `position:sticky;top:0` so it stays visible while scrolling through
+that group's cards -- same concept as the main table's sticky group
+banner, just simpler here since there's no `<thead>` to offset below (the
+band itself IS the header in this view).
+
+**Residual page scroll -- real, fixable CSS bug, not something to just
+paper over.** Measured it directly rather than guessing: rendered each
+portal's real markup at a fixed viewport and compared
+`document.documentElement.scrollHeight` to `window.innerHeight` -- both
+Strategist and Accounting came back 24px taller than the viewport with
+zero data loaded, i.e. before any of today's bounded-scroll wraps even
+had content to worry about. Root cause: `#page-strategist`'s child
+`.card` has an inline `margin:24px auto` (top+bottom), and
+`#page-accounting`'s child `.acct-wrap` has `margin:24px auto 0` -- in
+both cases neither wrapper (`#page-strategist`/`#page-accounting`) has
+any border or padding of its own, so per the CSS spec that top margin
+"collapses through" the wrapper and escapes all the way out to the page's
+own scrollable height, adding 24px nobody actually asked for. Admin's own
+`.card` never had this since it only carries `margin-bottom` (no top
+margin) -- confirmed that's exactly why Claire only saw this on
+Strategist/Accounting.
+
+**Fix**: added `padding-top:1px` to `#page-strategist` and
+`#page-accounting` specifically (not shared.css, not `.card` itself, not
+Admin) -- a nonzero padding on the parent is the standard, spec-correct
+way to stop a child's margin from collapsing through it, and 1px is
+visually imperceptible. Verified this exact fix directly: before, both
+portals measured `scrollHeight: 924` against `innerHeight: 900`; after,
+both measured exactly `900`/`900` -- zero residual scroll, real markup,
+not a synthetic approximation.
+
+**Verified**: new `test-strategist-setup-sticky-2026-08-13.js`
+(scratchpad) -- renders 20 real setup cards under one group band, scrolls
+the wrap's own `scrollTop` by 500px, confirms the band's on-screen
+position is identical before/after while a card visibly moved out from
+underneath it. New `measure-final-2026-08-13.js` -- confirms
+`scrollHeight === innerHeight` exactly for both portals' real markup. All
+pass. `node --check` clean on both files. Re-ran 7 other test files from
+today's session -- all still fully pass.
