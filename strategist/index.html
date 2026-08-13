@@ -48,9 +48,9 @@
           </select>
           <button id="strategist-scope-mine" onclick="strategistSetScope('mine')" style="padding:6px 12px;border:1.5px solid var(--accent-dark);cursor:pointer;font-weight:600">My Campaigns</button>
           <button id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border:1.5px solid var(--accent-green);cursor:pointer;font-weight:600">All Strategists</button>
-          <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
-          <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
-          <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
+          <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
+          <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
+          <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
           <button onclick="strategistRecheckCachedReports()" style="padding:6px 14px;border:1.5px solid var(--accent-dark);background:var(--accent-dark);color:#fff;cursor:pointer;font-weight:600;font-size:12px">Re-check Cached Reports</button>
         </div>
       </div>
@@ -102,13 +102,13 @@
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
     <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Access</h3>
     <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
-    <select id="strategist-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
+    <select id="strategist-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
       <option value="">— Select your name —</option>
     </select>
     <input type="password" id="strategist-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkStrategistPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
     <div id="strategist-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
     <div style="display:flex;gap:9px">
-      <button onclick="checkStrategistPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
+      <button onclick="checkStrategistPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
     </div>
   </div>
 </div>
@@ -408,14 +408,14 @@ function strategistOpenImportForm() {
       <div>
         <label class="lbl">Client</label>
         <input type="text" id="import-client-search" oninput="strategistFilterClientOptions()" placeholder="Search clients…" style="width:100%;padding:6px 8px;border-radius:6px 6px 0 0;border:1px solid var(--border);border-bottom:none;font-size:12px"/>
-        <select id="import-client" style="width:100%;padding:7px 8px;border-radius:0 0 6px 6px;border:1px solid var(--border);font-size:12.5px">
+        <select id="import-client" style="width:100%;padding:7px 8px;border-radius:0 0 6px 6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
           ${ALL_STRATEGIST_CLIENTS.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('')}
         </select>
       </div>
       <div>
         <label class="lbl">Tactic</label>
-        <select id="import-service" onchange="strategistImportServiceChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+        <select id="import-service" onchange="strategistImportServiceChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
           ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
           ${SEO_TRACKING_ONLY_TACTICS.map((t, i) => `<option value="__seo_track_${i}__">${esc(t.tacticLabel)}</option>`).join('')}
@@ -434,7 +434,7 @@ function strategistOpenImportForm() {
       </div>
       <div>
         <label class="lbl">Status</label>
-        <select id="import-status" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+        <select id="import-status" style="width:100%;padding:7px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="active" selected>Active</option>
           <option value="paused">Paused</option>
           <option value="complete">Complete</option>
@@ -465,8 +465,8 @@ function strategistOpenImportForm() {
     </div>
     <p style="font-size:11px;color:var(--muted);margin:0 0 12px">This creates the campaign as of the current month. Once it's in the list, click into it to add any past months' budgets/actuals you want on record — as far back as makes sense for this one. If split, everything above except the platform applies to the first split only — each split gets its own exact title, entered right on its own row.</p>
     <div style="display:flex;gap:10px">
-      <button onclick="strategistSubmitImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Campaign</button>
-      <button onclick="strategistOpenImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="strategistSubmitImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Campaign</button>
+      <button onclick="strategistOpenImportForm()" class="btn-quiet-green">Cancel</button>
     </div>
   </div>`;
 }
@@ -679,8 +679,8 @@ function strategistOpenPasteReportForm() {
 Ridgeline Dental - SEM - July	1540	350	92000
 Northside Auto - Prospecting	560	0	150000"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:10px">
-      <button onclick="strategistMatchPastedReport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Match &amp; Update</button>
-      <button onclick="strategistOpenPasteReportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="strategistMatchPastedReport()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Match &amp; Update</button>
+      <button onclick="strategistOpenPasteReportForm()" class="btn-quiet-green">Cancel</button>
     </div>
     <div id="paste-report-results"></div>
   </div>`;
@@ -873,8 +873,8 @@ Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region1_Larkwood	Region 1	
 Larkwood Automotive	Social Ads	Facebook Ads	SocialAds_Region2_Larkwood	Region 2	active	2026-08-01	2026-12-31	2026-08	2000
 Thistlebrook Clinic	SEM	Google Ads			pending							Waiting on client sign-off on ad copy	creative; platform_access"></textarea>
     <div style="display:flex;gap:10px;margin-bottom:10px">
-      <button onclick="strategistPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
-      <button onclick="strategistOpenBulkImportForm()" style="padding:7px 16px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="strategistPreviewBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Preview</button>
+      <button onclick="strategistOpenBulkImportForm()" class="btn-quiet-green">Cancel</button>
     </div>
     <div id="bulk-import-results"></div>
   </div>`;
@@ -1160,19 +1160,19 @@ function strategistRenderBulkPreview() {
     let message, fixSelect;
     if (e.field === 'client') {
       message = `no client matches "${esc(e.clientName)}"`;
-      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'clientId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right client —</option>${clientOptions}</select>`;
+      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'clientId', this.value)" style="padding:5px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11.5px"><option value="">— Pick the right client —</option>${clientOptions}</select>`;
     } else if (e.field === 'tactic') {
       message = `no tactic matches "${esc(e.tacticName)}"`;
-      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'serviceId', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right tactic —</option>${tacticOptions}</select>`;
+      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'serviceId', this.value)" style="padding:5px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11.5px"><option value="">— Pick the right tactic —</option>${tacticOptions}</select>`;
     } else if (e.field === 'setup_blocker') {
       message = `"${esc(e.blockerRaw)}" isn't a real setup blocker`;
-      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'setupBlocker', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right blocker —</option>${blockerOptions}</select>`;
+      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'setupBlocker', this.value)" style="padding:5px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11.5px"><option value="">— Pick the right blocker —</option>${blockerOptions}</select>`;
     } else {
       // status -- only pending/active/paused/complete are recognized anywhere in
       // this portal; anything else (a typo, wrong capitalization) saves fine but
       // is then invisible on every tab, so it's caught here instead.
       message = `"${esc(e.statusRaw)}" isn't a real status`;
-      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'status', this.value)" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"><option value="">— Pick the right status —</option>${statusOptions}</select>`;
+      fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'status', this.value)" style="padding:5px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11.5px"><option value="">— Pick the right status —</option>${statusOptions}</select>`;
     }
     return `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border)">
       <span style="font-size:11.5px;color:#B91C1C">Row ${e.rowNum}: ${message}</span>
@@ -1190,7 +1190,7 @@ function strategistRenderBulkPreview() {
       <tbody>${rowsHtml}</tbody>
     </table></div>` : ''}
     ${plan.errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 4px">${plan.errors.length} row(s) need a fix before they'll import:</p><div style="margin-bottom:10px">${errorsHtml}</div>` : ''}
-    ${plan.groups.size ? `<div style="display:flex;gap:10px"><button id="bulk-import-confirm-btn" onclick="strategistConfirmBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button></div>` : ''}
+    ${plan.groups.size ? `<div style="display:flex;gap:10px"><button id="bulk-import-confirm-btn" onclick="strategistConfirmBulkImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button></div>` : ''}
   `;
 }
 
@@ -1975,9 +1975,9 @@ function renderSetupPanel(l) {
       <textarea id="setup-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px;margin-bottom:12px" placeholder="What's this waiting on before it can go live?">${esc(l.setup_notes || '')}</textarea>
       <div id="split-form-${l.id}" style="display:none;margin-bottom:12px"></div>
       <div style="display:flex;gap:10px">
-        <button onclick="strategistConfirmActivate('${l.id}')" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm &amp; Activate</button>
-        <button onclick="strategistSaveDraft('${l.id}')" style="padding:8px 16px;border-radius:7px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Save Draft</button>
-        <button onclick="strategistOpenSplitForm('${l.id}')" style="padding:8px 16px;border-radius:7px;background:#fff;border:1px solid var(--accent);color:var(--accent);font-size:12.5px;font-weight:600;cursor:pointer">Split into Multiple Campaigns</button>
+        <button onclick="strategistConfirmActivate('${l.id}')" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm &amp; Activate</button>
+        <button onclick="strategistSaveDraft('${l.id}')" class="btn-quiet-green">Save Draft</button>
+        <button onclick="strategistOpenSplitForm('${l.id}')" style="padding:8px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px;font-weight:600;cursor:pointer">Split into Multiple Campaigns</button>
       </div>
       </div>
     </div>`;
@@ -2018,8 +2018,8 @@ function strategistOpenSplitForm(lineId) {
     </div>
     <button onclick="strategistAddSplitRow('${lineId}')" style="margin:6px 0 12px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);font-size:11px;cursor:pointer">+ Add split</button>
     <div style="display:flex;gap:10px">
-      <button onclick="strategistSaveSplit('${lineId}')" style="padding:7px 14px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Save Split</button>
-      <button onclick="strategistOpenSplitForm('${lineId}')" style="padding:7px 14px;border-radius:7px;background:var(--light);border:1px solid var(--border);font-size:12.5px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="strategistSaveSplit('${lineId}')" style="padding:7px 14px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Save Split</button>
+      <button onclick="strategistOpenSplitForm('${lineId}')" class="btn-quiet-green">Cancel</button>
     </div>
   </div>`;
   if (titleInput) { titleInput.disabled = true; titleInput.title = 'Set separately per split below'; }
@@ -2316,8 +2316,8 @@ function strategistOpenStatusChangeReason(lineId, newStatus, oldStatus) {
   el.innerHTML = `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--light)">
     <span style="font-size:11.5px;color:var(--muted)">Why the change? <span style="font-style:italic">(optional)</span></span>
     <input type="text" id="status-reason-input-${lineId}" style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px" onkeydown="if(event.key==='Enter')strategistConfirmStatusChange('${lineId}','${newStatus}','${oldStatus}')"/>
-    <button onclick="strategistConfirmStatusChange('${lineId}','${newStatus}','${oldStatus}')" style="padding:5px 12px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:11.5px;font-weight:600;cursor:pointer">Save</button>
-    <button onclick="strategistCancelStatusChange('${lineId}','${oldStatus}')" style="padding:5px 12px;border-radius:6px;background:#fff;border:1px solid var(--border);font-size:11.5px;cursor:pointer">Cancel</button>
+    <button onclick="strategistConfirmStatusChange('${lineId}','${newStatus}','${oldStatus}')" style="padding:5px 12px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:11.5px;font-weight:600;cursor:pointer">Save</button>
+    <button onclick="strategistCancelStatusChange('${lineId}','${oldStatus}')" class="btn-quiet-green" style="padding:5px 12px;font-size:11.5px">Cancel</button>
   </div>`;
   document.getElementById('status-reason-input-' + lineId).focus();
 }
@@ -2639,7 +2639,7 @@ function renderStrategistDetailPanel() {
         <input type="text" id="log-note-${l.id}" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
       </div>
       <input type="hidden" id="log-edit-id-${l.id}"/>
-      <button onclick="strategistSaveLogEntry('${l.id}')" style="padding:7px 14px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Add</button>
+      <button onclick="strategistSaveLogEntry('${l.id}')" style="padding:7px 14px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Add</button>
     </div>
   </div>`;
 }

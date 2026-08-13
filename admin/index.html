@@ -39,7 +39,7 @@
 
     <!-- Top-level section tabs: Groups | Orders -->
     <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
-      <button id="section-tab-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Groups</button>
+      <button id="section-tab-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent-dark);background:transparent;color:var(--accent-dark);cursor:pointer">Groups</button>
       <button id="section-tab-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
       <button id="section-tab-clients" onclick="adminSection('clients')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Clients</button>
       <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Services</button>
@@ -68,16 +68,16 @@
       <div id="admin-group-list" style="margin-bottom:20px;order:2">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <p style="font-size:13px;font-weight:700;color:var(--text)">Groups</p>
-          <button onclick="adminNewGroup()" style="padding:7px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">+ New Group</button>
+          <button onclick="adminNewGroup()" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">+ New Group</button>
         </div>
         <div id="admin-groups-table"></div>
       </div>
 
       <!-- Group edit form — tabbed -->
-      <div id="admin-group-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);overflow:hidden;order:1;margin-bottom:20px">
+      <div id="admin-group-form" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;order:1;margin-bottom:20px">
         <!-- Tab bar -->
         <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
-          <button id="tab-btn-info" onclick="adminTab('info')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer">Group Info</button>
+          <button id="tab-btn-info" onclick="adminTab('info')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--accent-dark);background:transparent;color:var(--accent-dark);cursor:pointer">Group Info</button>
           <button id="tab-btn-pricing" onclick="adminTab('pricing')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Custom Pricing</button>
           <button id="tab-btn-accounting-override" onclick="adminTab('accounting-override')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Accounting Overrides</button>
         </div>
@@ -94,7 +94,7 @@
                 <label class="lbl">IO Slug <span style="font-weight:400;text-transform:none;letter-spacing:0">— auto-generated, override if needed</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
                   <input type="text" id="admin-slug" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';const sp=document.getElementById('slug-preview');if(sp)sp.textContent=this.value||'...';checkGroupSlugCollision()"/>
-                  <button type="button" onclick="regenerateSlug()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
+                  <button type="button" onclick="regenerateSlug()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
                 </div>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">URL: io.yourdigitalgroupresources.com/<span id="slug-preview" style="color:var(--accent);font-weight:600">...</span></p>
                 <p id="admin-slug-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ Another group already uses this slug — its link would stop working. Please choose a different one.</p>
@@ -113,7 +113,7 @@
                    portal at all, so there's no realistic "not in the list yet" case
                    the way there is for AEs/clients. -->
               <label class="lbl">Account Manager</label>
-              <select id="admin-am-picker" onchange="applyAmPick(this.value)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+              <select id="admin-am-picker" onchange="applyAmPick(this.value)" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                 <option value="">— Select AM —</option>
               </select>
               <p style="font-size:10px;color:var(--muted);margin-top:4px">Not listed? Add them under the Users tab first (role: Account Manager), then come back here.</p>
@@ -136,17 +136,17 @@
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl">Digital Strategist <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— default for every client in this group</span></label>
-                <select id="admin-group-digital-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-group-digital-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">— None —</option>
                 </select>
               </div>
               <div>
                 <label class="lbl">Social Strategist</label>
-                <select id="admin-group-social-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+                <select id="admin-group-social-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
               </div>
               <div>
                 <label class="lbl">Web Strategist</label>
-                <select id="admin-group-web-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+                <select id="admin-group-web-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -181,7 +181,7 @@
               </div>
               <div>
                 <label class="lbl">Has KOC <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— enables kick-off call scheduling</span></label>
-                <select id="admin-has-koc" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px">
+                <select id="admin-has-koc" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px">
                   <option value="true">Yes — KOC required for applicable products</option>
                   <option value="false">No — skip KOC for all products</option>
                 </select>
@@ -208,8 +208,8 @@
           </div>
 
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-            <button onclick="adminCancelEdit()" style="padding:9px 18px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Cancel</button>
-            <button onclick="adminSaveGroup()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Group</button>
+            <button onclick="adminCancelEdit()" class="btn-quiet-green">Cancel</button>
+            <button onclick="adminSaveGroup()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Group</button>
           </div>
         </div>
       </div>
@@ -224,7 +224,7 @@
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;margin-bottom:14px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
             <div>
               <label class="lbl">Group</label>
-              <select id="orders-filter-group" onchange="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:inherit;background:#fff">
+              <select id="orders-filter-group" onchange="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-family:inherit;background:#fff">
                 <option value="">All groups</option>
               </select>
             </div>
@@ -234,7 +234,7 @@
             </div>
             <div>
               <label class="lbl">Date Range</label>
-              <select id="orders-filter-date" onchange="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:inherit;background:#fff">
+              <select id="orders-filter-date" onchange="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-family:inherit;background:#fff">
                 <option value="all">All time</option>
                 <option value="7">Last 7 days</option>
                 <option value="30">Last 30 days</option>
@@ -255,10 +255,10 @@
         </div>
 
         <!-- Order detail panel (read-only for Phase 1) -->
-        <div id="admin-order-detail" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-top:16px">
+        <div id="admin-order-detail" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-top:16px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
             <p style="font-size:14px;font-weight:700;color:var(--text)" id="admin-order-detail-title">Order Detail</p>
-            <button onclick="closeOrderDetail()" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px;cursor:pointer">✕ Close</button>
+            <button onclick="closeOrderDetail()" class="btn-quiet-green">✕ Close</button>
           </div>
           <div id="admin-order-detail-body"></div>
         </div>
@@ -275,14 +275,14 @@
         <div style="order:1;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap">
           <p style="font-size:13px;font-weight:700;color:var(--text)">Clients</p>
           <div style="display:flex;gap:8px">
-            <button onclick="openClientImportPanel()" style="padding:7px 16px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">Import from Trello</button>
-            <button onclick="adminNewClient()" style="padding:7px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">+ New Client</button>
+            <button onclick="openClientImportPanel()" style="padding:7px 16px;border-radius:7px;background:#fff;color:var(--accent-dark);border:1.5px solid var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer">Import from Trello</button>
+            <button onclick="adminNewClient()" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">+ New Client</button>
           </div>
         </div>
 
         <div style="order:2;display:grid;grid-template-columns:1fr 220px;gap:10px;margin-bottom:16px">
           <input type="text" id="clients-filter-search" placeholder="Search by client name, contact, or city..." oninput="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
-          <select id="clients-filter-group" onchange="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;background:#fff">
+          <select id="clients-filter-group" onchange="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;font-family:inherit;background:#fff">
             <option value="">All groups</option>
           </select>
         </div>
@@ -290,22 +290,22 @@
         <!-- Import-from-Trello panel — scans a group's board for lists with no linked
              client yet, lets Claire uncheck any that aren't real clients (templates,
              archived reference lists, etc.) before bulk-creating bare client records. -->
-        <div id="admin-client-import-panel" style="order:3;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:20px">
+        <div id="admin-client-import-panel" style="order:3;display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:20px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Import Clients from Trello</p>
           <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">
             <div>
               <label class="lbl">Group</label>
-              <select id="client-import-group" style="padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff;min-width:220px"></select>
+              <select id="client-import-group" style="padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff;min-width:220px"></select>
             </div>
-            <button onclick="scanClientImportCandidates()" style="padding:9px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Scan Board</button>
-            <button onclick="closeClientImportPanel()" style="padding:9px 16px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="scanClientImportCandidates()" style="padding:9px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Scan Board</button>
+            <button onclick="closeClientImportPanel()" class="btn-quiet-green">Cancel</button>
           </div>
           <div id="admin-client-import-results"></div>
         </div>
 
         <!-- Edit form (order:4) so it opens above the table (order:5) regardless of
              DOM source order, same pattern as Groups/Services/Sections/Intake/AEs. -->
-        <div id="admin-client-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:20px;order:4">
+        <div id="admin-client-form" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:20px;order:4">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-client-form-title">New Client</p>
           <input type="hidden" id="admin-client-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -315,7 +315,7 @@
             </div>
             <div>
               <label class="lbl">Group</label>
-              <select id="admin-client-group" onchange="refreshClientStrategistDefaults()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <select id="admin-client-group" onchange="refreshClientStrategistDefaults()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -351,15 +351,15 @@
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl">Digital Strategist Override</label>
-              <select id="admin-client-digital-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <select id="admin-client-digital-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
             <div>
               <label class="lbl">Social Strategist Override</label>
-              <select id="admin-client-social-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <select id="admin-client-social-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
             <div>
               <label class="lbl">Web Strategist Override</label>
-              <select id="admin-client-web-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <select id="admin-client-web-strategist" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
           </div>
           <p style="font-size:10px;color:var(--muted);margin-top:-6px;margin-bottom:16px">Every client inherits their group's strategist assignments by default (set on the Group editor) — only pick something here if THIS client specifically needs a different person. Whichever strategist ends up assigned (group default or this override) gets tagged on this client's Trello tactic cards, alongside the AM/AE, for any service carrying a matching Strategist Discipline.</p>
@@ -370,8 +370,8 @@
             </div>
           </div>
           <div style="display:flex;gap:10px">
-            <button onclick="adminSaveClient()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Client</button>
-            <button onclick="adminCancelClientEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="adminSaveClient()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Client</button>
+            <button onclick="adminCancelClientEdit()" class="btn-quiet-green">Cancel</button>
           </div>
         </div>
 
@@ -393,7 +393,7 @@
           <div style="display:flex;gap:8px">
             <button id="admin-workflows-btn" onclick="toggleWorkflowManager()" style="padding:8px 16px;border-radius:7px;background:#fff;color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚙ Workflows</button>
             <button id="admin-hosting-settings-btn" onclick="toggleHostingSettings()" style="padding:8px 16px;border-radius:7px;background:#fff;color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚙ Hosting Proration</button>
-            <button id="admin-new-service-btn" onclick="adminNewService()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Service</button>
+            <button id="admin-new-service-btn" onclick="adminNewService()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Service</button>
           </div>
         </div>
 
@@ -403,12 +403,12 @@
              lets a super admin rename or delete one everywhere it's used in one action —
              instead of opening every service that uses it individually. Creating a NEW
              workflow still happens inline on the Service edit form's Workflow dropdown. -->
-        <div id="admin-workflow-manager" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-workflow-manager" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Manage Workflows</p>
           <p style="font-size:11px;color:var(--muted);margin-bottom:14px">A workflow is the category that groups several services into ONE Trello tactic (e.g. all 4 Digital Advertising services share the workflow "Digital Advertising" so buying more than one still only creates one card). Renaming or deleting here updates every service using that workflow at once.</p>
           <div id="admin-workflow-rows"></div>
           <div style="display:flex;gap:10px;margin-top:10px">
-            <button onclick="toggleWorkflowManager()" style="padding:9px 18px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Close</button>
+            <button onclick="toggleWorkflowManager()" class="btn-quiet-green">Close</button>
           </div>
         </div>
 
@@ -418,18 +418,18 @@
              index.html). The dollar FEE itself is NOT set here — it's always the real
              price of the matching standalone hosting service (w-hosting/w-ecomm-hosting),
              edited like any other service's Default Price above. -->
-        <div id="admin-hosting-settings" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-hosting-settings" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Hosting Proration Settings</p>
           <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Controls the "starts in N days" timing and wording shown when an AE chooses standalone hosting for a Website site-tier package. The dollar fee itself comes from that hosting service's own Default Price, above — nothing to set here for pricing.</p>
           <div id="admin-hosting-settings-rows"></div>
           <div style="display:flex;gap:10px;margin-top:10px">
-            <button onclick="adminSaveHostingSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Hosting Settings</button>
-            <button onclick="toggleHostingSettings()" style="padding:9px 18px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Close</button>
+            <button onclick="adminSaveHostingSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Hosting Settings</button>
+            <button onclick="toggleHostingSettings()" class="btn-quiet-green">Close</button>
           </div>
         </div>
 
         <!-- Service create/edit form — hidden until New/Edit is clicked -->
-        <div id="admin-service-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-service-form" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px" id="admin-service-form-title">New Service</p>
           <p style="font-size:11px;color:var(--muted);margin-bottom:16px" id="admin-service-form-subtitle"></p>
           <input type="hidden" id="admin-svc-original-id"/>
@@ -441,7 +441,7 @@
                 <label class="lbl">Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Section + Label, override if needed. Cannot be changed after creation.</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
                   <input type="text" id="admin-svc-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkServiceIdCollision()"/>
-                  <button type="button" onclick="regenerateServiceId()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
+                  <button type="button" onclick="regenerateServiceId()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
                 </div>
                 <p id="admin-svc-id-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ A service with this ID already exists — please choose a different one.</p>
               </div>
@@ -462,7 +462,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl">Section</label>
-                <select id="admin-svc-section" onchange="onServiceSectionChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+                <select id="admin-svc-section" onchange="onServiceSectionChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <p id="admin-svc-section-note" style="font-size:10px;color:var(--muted);margin-top:4px"></p>
               </div>
               <div>
@@ -473,7 +473,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:4px">
               <div>
                 <label class="lbl">Pricing Mode</label>
-                <select id="admin-svc-pricing-mode" onchange="onPricingModeChange(true)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-pricing-mode" onchange="onPricingModeChange(true)" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="flat">Flat fee</option>
                   <option value="per_unit">Per-unit (needs a quantity)</option>
                   <option value="modifier">Modifier (add-on to a parent total)</option>
@@ -486,7 +486,7 @@
               </div>
               <div>
                 <label class="lbl">Billing Type</label>
-                <select id="admin-svc-billing" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-billing" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="one_time">One-Time</option>
                   <option value="monthly">Monthly</option>
                   <option value="yearly">Yearly</option>
@@ -501,7 +501,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div id="admin-svc-unit-wrap">
                 <label class="lbl">Unit <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only used if Pricing Mode is Per-unit</span></label>
-                <select id="admin-svc-unit" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-unit" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">—</option>
                   <option value="hour">hour (shows as "Per Hour")</option>
                   <option value="hr">hr (shows as "Per Hr")</option>
@@ -531,7 +531,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl">Exclusivity Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— services in the same group become single-select (checking one unchecks the others), like the Business Starter/Builder/Pro tiers</span></label>
-                <select id="admin-svc-exclusivity" onchange="onExclusivityGroupChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+                <select id="admin-svc-exclusivity" onchange="onExclusivityGroupChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-exclusivity-new" placeholder="e.g. new-service-tier" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a broken duplicate tier. New group names auto-suggest as "<em>section</em>-tier" (e.g. seo-tier, sm-tier, em-tier) — the established convention.</p>
               </div>
@@ -543,7 +543,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
               <div>
                 <label class="lbl">Tier Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only for services that are one option within a tiered package group (Exclusivity Group above). Used to classify which package tier a client selected. Leave blank for anything not part of a tier group.</span></label>
-                <select id="admin-svc-tier" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-tier" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">None</option>
                   <option value="starter">Starter</option>
                   <option value="builder">Builder</option>
@@ -552,7 +552,7 @@
               </div>
               <div>
                 <label class="lbl">Pricing Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— controls how this service is grouped/labeled on the Custom Pricing screen. Leave "None" for the normal case (uses its Section's own name).</span></label>
-                <select id="admin-svc-pricing-group" onchange="onPricingGroupChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+                <select id="admin-svc-pricing-group" onchange="onPricingGroupChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-pricing-group-new" placeholder="e.g. Visitor IDs" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
@@ -563,7 +563,7 @@
             <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl">Subsection <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Video/Streaming TV/Audio, which each have several mini-tables under one section (e.g. "YouTube Video", "Native Video"). Leave "None" for every other section.</span></label>
-                <select id="admin-svc-subsection" onchange="onSubsectionChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+                <select id="admin-svc-subsection" onchange="onSubsectionChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-subsection-new" placeholder="e.g. New Sub-Table Name" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a new, disconnected mini-table instead of joining the intended one. Options are scoped to the currently-selected Section.</p>
               </div>
@@ -571,7 +571,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl">Hosting Prompt <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only the 4 Website site-tier services use this; it pops the hosting-setup modal when checked. Leave "None" for everything else.</span></label>
-                <select id="admin-svc-hosting-prompt" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-hosting-prompt" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">None</option>
                   <option value="1p">1-page (Business Starter)</option>
                   <option value="5p">5-page (Business Builder)</option>
@@ -591,20 +591,20 @@
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl">KOC Requirement</label>
-                <select id="admin-svc-koc" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-koc" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="none">None</option>
                   <option value="required">Required</option>
                 </select>
               </div>
               <div>
                 <label class="lbl">Intake Form</label>
-                <select id="admin-svc-intake" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-intake" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">None</option>
                 </select>
               </div>
               <div>
                 <label class="lbl">Workflow <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which tactic this belongs to on Trello. Services sharing a workflow are treated as ONE tactic (one shared card, not a duplicate per service). Leave "None" if this service shouldn't create any Trello card on its own.</span></label>
-                <select id="admin-svc-workflow" onchange="onWorkflowChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+                <select id="admin-svc-workflow" onchange="onWorkflowChange()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-workflow-new" placeholder="e.g. Website" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently splitting one tactic into two.</p>
               </div>
@@ -616,7 +616,7 @@
                   <input type="checkbox" id="admin-svc-multi-strategist" onchange="onMultiStrategistToggle()"/> Multiple Strategists Needed?
                 </label>
                 <div id="admin-svc-strategist-single-wrap">
-                  <select id="admin-svc-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                  <select id="admin-svc-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                     <option value="">None</option>
                     <option value="digital">Digital</option>
                     <option value="social">Social</option>
@@ -637,7 +637,7 @@
               </div>
               <div>
                 <label class="lbl">Template Type</label>
-                <select id="admin-svc-trello-template-type" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-trello-template-type" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="list">List (copy every card in it)</option>
                   <option value="card">Single Card (copy just this one)</option>
                 </select>
@@ -646,7 +646,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;padding-top:12px;border-top:1px solid var(--border)">
               <div>
                 <label class="lbl">Auto-Add Setup Fee <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— spend-based services only</span></label>
-                <select id="admin-svc-auto-setup" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+                <select id="admin-svc-auto-setup" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="false">No</option>
                   <option value="true">Yes — auto-add when spend is under the threshold</option>
                 </select>
@@ -669,8 +669,8 @@
           </details>
 
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-            <button onclick="adminCancelServiceEdit()" style="padding:9px 18px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:13px;cursor:pointer">Cancel</button>
-            <button onclick="adminSaveService()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Service</button>
+            <button onclick="adminCancelServiceEdit()" class="btn-quiet-green">Cancel</button>
+            <button onclick="adminSaveService()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Service</button>
           </div>
         </div>
 
@@ -678,7 +678,7 @@
         <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:14px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
           <div>
             <label class="lbl">Section</label>
-            <select id="map-filter-section" onchange="renderSuggestedMap()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:inherit;background:#fff">
+            <select id="map-filter-section" onchange="renderSuggestedMap()" style="width:100%;padding:7px 9px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-family:inherit;background:#fff">
               <option value="">All sections</option>
             </select>
           </div>
@@ -705,10 +705,10 @@
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Sections — Public Form Layout</p>
             <p style="font-size:11px;color:var(--muted)">Drag ⠿ to reorder. A section's table shape (Spend column or not, single vs. multi-table) is figured out automatically from the services inside it — nothing to set here.</p>
           </div>
-          <button id="admin-new-section-btn" onclick="adminNewSection()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Section</button>
+          <button id="admin-new-section-btn" onclick="adminNewSection()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Section</button>
         </div>
 
-        <div id="admin-section-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-section-form" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px" id="admin-section-form-title">New Section</p>
           <p style="font-size:11px;color:var(--muted);margin-bottom:16px">A brand-new section starts empty — add services to it afterward through the Services editor above.</p>
           <input type="hidden" id="admin-sec-original-id"/>
@@ -754,7 +754,7 @@
               <label class="lbl">Section ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Label, override if needed. Must match exactly what's used as each service's Section value; cannot be changed after creation.</span></label>
               <div style="display:flex;gap:8px;align-items:center">
                 <input type="text" id="admin-sec-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkSectionIdCollision()"/>
-                <button type="button" onclick="regenerateSectionId()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
+                <button type="button" onclick="regenerateSectionId()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
               </div>
               <p id="admin-sec-id-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ A section with this ID already exists — please choose a different one.</p>
             </div>
@@ -766,8 +766,8 @@
             </div>
           </div>
           <div style="display:flex;gap:10px">
-            <button onclick="adminSaveSection()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Section</button>
-            <button onclick="adminCancelSectionEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="adminSaveSection()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Section</button>
+            <button onclick="adminCancelSectionEdit()" class="btn-quiet-green">Cancel</button>
           </div>
         </div>
 
@@ -781,10 +781,10 @@
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Intake Forms</p>
             <p style="font-size:11px;color:var(--muted)">The follow-up questions an AE fills in after selecting a service that needs one (Website SEO, TLP, etc). Assign a form to a service from the Services editor's "Intake Form" dropdown.</p>
           </div>
-          <button id="admin-new-intake-btn" onclick="adminNewIntakeForm()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Intake Form</button>
+          <button id="admin-new-intake-btn" onclick="adminNewIntakeForm()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Intake Form</button>
         </div>
 
-        <div id="admin-intake-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-intake-form" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px" id="admin-intake-form-title">New Intake Form</p>
           <p style="font-size:11px;color:var(--muted);margin-bottom:16px">A brand-new form starts empty — add sections and questions below, then assign it to a service from the Services editor.</p>
           <input type="hidden" id="admin-intake-original-id"/>
@@ -797,7 +797,7 @@
               <label class="lbl">Form ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Title, override if needed. Cannot be changed after creation.</span></label>
               <div style="display:flex;gap:8px;align-items:center">
                 <input type="text" id="admin-intake-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkIntakeFormIdCollision()"/>
-                <button type="button" onclick="regenerateIntakeFormId()" style="padding:9px 12px;border-radius:7px;border:1px solid var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--muted)">↺ Auto</button>
+                <button type="button" onclick="regenerateIntakeFormId()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
               </div>
               <p id="admin-intake-id-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ A form with this ID already exists — please choose a different one.</p>
             </div>
@@ -807,8 +807,8 @@
           <button type="button" onclick="intakeAddSection()" style="margin-top:4px;padding:7px 14px;border-radius:7px;border:1px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--accent)">+ Add Section</button>
 
           <div style="display:flex;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-            <button onclick="adminSaveIntakeForm()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Intake Form</button>
-            <button onclick="adminCancelIntakeFormEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="adminSaveIntakeForm()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Intake Form</button>
+            <button onclick="adminCancelIntakeFormEdit()" class="btn-quiet-green">Cancel</button>
           </div>
         </div>
 
@@ -823,13 +823,13 @@
             <p style="font-size:11px;color:var(--muted)">Powers the AE picker on the public form — selecting a name autofills their Trello handle instead of retyping it every submission.</p>
           </div>
           <div style="display:flex;gap:8px">
-            <button onclick="openAeImportPanel()" style="padding:8px 16px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Import from Trello</button>
-            <button id="admin-new-ae-btn" onclick="adminNewAe()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New AE</button>
+            <button onclick="openAeImportPanel()" style="padding:8px 16px;border-radius:7px;background:#fff;color:var(--accent-dark);border:1.5px solid var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Import from Trello</button>
+            <button id="admin-new-ae-btn" onclick="adminNewAe()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New AE</button>
           </div>
         </div>
 
         <div style="margin-bottom:16px;max-width:280px">
-          <select id="ae-filter-group" onchange="renderAdminAeList()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;background:#fff">
+          <select id="ae-filter-group" onchange="renderAdminAeList()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;font-family:inherit;background:#fff">
             <option value="">All groups</option>
           </select>
         </div>
@@ -839,20 +839,20 @@
              board's members include the AM (and possibly super admins), not just AEs, so
              this is deliberately not an auto-import — Claire unchecks anyone who isn't
              actually an AE for that group before anything gets created. -->
-        <div id="admin-ae-import-panel" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-ae-import-panel" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Import AEs from Trello Board Members</p>
           <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">
             <div>
               <label class="lbl">Group</label>
-              <select id="ae-import-group" style="padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff;min-width:220px"></select>
+              <select id="ae-import-group" style="padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff;min-width:220px"></select>
             </div>
-            <button onclick="scanAeImportCandidates()" style="padding:9px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Scan Board Members</button>
-            <button onclick="closeAeImportPanel()" style="padding:9px 16px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="scanAeImportCandidates()" style="padding:9px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Scan Board Members</button>
+            <button onclick="closeAeImportPanel()" class="btn-quiet-green">Cancel</button>
           </div>
           <div id="admin-ae-import-results"></div>
         </div>
 
-        <div id="admin-ae-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-ae-form" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-ae-form-title">New AE</p>
           <input type="hidden" id="admin-ae-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -872,7 +872,7 @@
             </div>
             <div>
               <label class="lbl">Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— this AE only appears in the picker for this group's form</span></label>
-              <select id="admin-ae-group" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff"></select>
+              <select id="admin-ae-group" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
@@ -882,8 +882,8 @@
             </div>
           </div>
           <div style="display:flex;gap:10px">
-            <button onclick="adminSaveAe()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save AE</button>
-            <button onclick="adminCancelAeEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="adminSaveAe()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save AE</button>
+            <button onclick="adminCancelAeEdit()" class="btn-quiet-green">Cancel</button>
           </div>
         </div>
 
@@ -903,10 +903,10 @@
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Strategists</p>
             <p style="font-size:11px;color:var(--muted)">Digital/social/web fulfillment team, assigned per client on the Client Profile editor — tagged automatically on Trello tactic cards based on each service's Strategist Discipline.</p>
           </div>
-          <button id="admin-new-strategist-btn" onclick="adminNewStrategist()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Strategist</button>
+          <button id="admin-new-strategist-btn" onclick="adminNewStrategist()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Strategist</button>
         </div>
 
-        <div id="admin-strategist-form" style="display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-strategist-form" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-strategist-form-title">New Strategist</p>
           <input type="hidden" id="admin-strategist-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -926,15 +926,15 @@
             </div>
             <div>
               <label class="lbl">Discipline <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Social or Web only; Digital strategists are added under Users instead (role: Strategist), since they log into the Strategist Portal and already have a full profile there</span></label>
-              <select id="admin-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+              <select id="admin-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                 <option value="social">Social</option>
                 <option value="web">Web</option>
               </select>
             </div>
           </div>
           <div style="display:flex;gap:10px">
-            <button onclick="adminSaveStrategist()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Strategist</button>
-            <button onclick="adminCancelStrategistEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="adminSaveStrategist()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Strategist</button>
+            <button onclick="adminCancelStrategistEdit()" class="btn-quiet-green">Cancel</button>
           </div>
         </div>
 
@@ -1032,7 +1032,7 @@
           </div>
         </div>
 
-        <button id="admin-legal-save-btn" onclick="adminSaveLegalContent()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Legal Text</button>
+        <button id="admin-legal-save-btn" onclick="adminSaveLegalContent()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Legal Text</button>
       </div><!-- /section-legal -->
 
       <!-- ── SECTION: Notifications (always-BCC recipients, global — every group's emails) ── -->
@@ -1053,7 +1053,7 @@
           <textarea id="notif-always_bcc_recipients" rows="3" placeholder="name@44interactive.com, name2@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;resize:vertical"></textarea>
         </div>
 
-        <button id="admin-notifications-save-btn" onclick="adminSaveNotificationSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Notifications</button>
+        <button id="admin-notifications-save-btn" onclick="adminSaveNotificationSettings()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Notifications</button>
       </div><!-- /section-notifications -->
 
       <!-- ── SECTION: Reconcile Lists (one-time cleanup, super-admin only) ── -->
@@ -1068,7 +1068,7 @@
           real submission will create one normally.
         </p>
 
-        <button id="admin-reconcile-scan-btn" onclick="loadAdminReconcile()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:16px">Scan for Mismatches</button>
+        <button id="admin-reconcile-scan-btn" onclick="loadAdminReconcile()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:16px">Scan for Mismatches</button>
 
         <div id="admin-reconcile-table"></div>
       </div><!-- /section-reconcile -->
@@ -1083,10 +1083,10 @@
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Users</p>
             <p style="font-size:11px;color:var(--muted)">Login accounts for this admin portal — Super Admins and Account Managers. Restricted to super admins.</p>
           </div>
-          <button onclick="adminNewUser()" style="padding:8px 16px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New User</button>
+          <button onclick="adminNewUser()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New User</button>
         </div>
 
-        <div id="admin-user-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-user-form" style="order:2;display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-user-form-title">New User</p>
           <input type="hidden" id="admin-user-original-name"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -1096,7 +1096,7 @@
             </div>
             <div>
               <label class="lbl">Role</label>
-              <select id="admin-user-role" onchange="adminUserRoleChanged()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;background:#fff">
+              <select id="admin-user-role" onchange="adminUserRoleChanged()" style="width:100%;padding:9px 11px;border-radius:7px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                 <option value="am">Account Manager</option>
                 <option value="super">Super Admin</option>
                 <option value="strategist">Strategist</option>
@@ -1125,8 +1125,8 @@
             </div>
           </div>
           <div style="display:flex;gap:10px">
-            <button onclick="adminSaveUser()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save User</button>
-            <button onclick="adminCancelUserEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="adminSaveUser()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save User</button>
+            <button onclick="adminCancelUserEdit()" class="btn-quiet-green">Cancel</button>
           </div>
         </div>
 
@@ -1140,7 +1140,7 @@
           <p style="font-size:11px;color:var(--muted)">One row per service — 44i's cut, and the rates that drive the Strategist Portal. Restricted to super admins. Retail CPM and 44i CPM are shown for reference but not editable here — they're always computed live from Retail CPM (Services tab) × the cut % below. Platform CPM is a real entered rate (below), not computed — confirmed 2026-08-05 that the old "Retail CPM × Budgeted Spend %" approximation didn't match how strategists actually price a campaign.</p>
         </div>
 
-        <div id="admin-accounting-form" style="order:2;display:none;background:#F8FAFC;border-radius:10px;border:1px solid var(--border);padding:20px;margin-bottom:16px">
+        <div id="admin-accounting-form" style="order:2;display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:16px" id="admin-accounting-form-title">Accounting Map — Service</p>
           <input type="hidden" id="admin-accounting-service-id"/>
           <input type="hidden" id="admin-accounting-pair-with-id"/>
@@ -1192,8 +1192,8 @@
             <p id="admin-accounting-setup-fee-preview" style="font-size:11px;color:var(--muted);margin-top:4px">Split: —</p>
           </div>
           <div style="display:flex;gap:10px">
-            <button onclick="adminSaveAccountingMap()" style="padding:9px 22px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
-            <button onclick="adminCancelAccountingEdit()" style="padding:9px 22px;border-radius:7px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+            <button onclick="adminSaveAccountingMap()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+            <button onclick="adminCancelAccountingEdit()" class="btn-quiet-green">Cancel</button>
           </div>
         </div>
 
@@ -1209,14 +1209,14 @@
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
     <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Admin Access</h3>
     <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
-    <select id="admin-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
+    <select id="admin-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
       <option value="">— Select your name —</option>
     </select>
     <input type="password" id="admin-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkAdminPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
     <div id="admin-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
     <div style="display:flex;gap:9px">
-      <button onclick="closeAdminLogin()" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#F9FAFB;font-size:13px;cursor:pointer">Cancel</button>
-      <button onclick="checkAdminPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
+      <button onclick="closeAdminLogin()" class="btn-quiet-green" style="flex:1">Cancel</button>
+      <button onclick="checkAdminPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
     </div>
   </div>
 </div>
@@ -1460,12 +1460,12 @@ async function adminTab(tab) {
   document.getElementById('tab-info').style.display     = tab==='info'    ? 'block' : 'none';
   document.getElementById('tab-pricing').style.display  = tab==='pricing' ? 'block' : 'none';
   document.getElementById('tab-accounting-override').style.display = tab==='accounting-override' ? 'block' : 'none';
-  document.getElementById('tab-btn-info').style.borderBottomColor    = tab==='info'    ? 'var(--accent)' : 'transparent';
-  document.getElementById('tab-btn-pricing').style.borderBottomColor = tab==='pricing' ? 'var(--accent)' : 'transparent';
-  document.getElementById('tab-btn-accounting-override').style.borderBottomColor = tab==='accounting-override' ? 'var(--accent)' : 'transparent';
-  document.getElementById('tab-btn-info').style.color    = tab==='info'    ? 'var(--accent)' : 'var(--muted)';
-  document.getElementById('tab-btn-pricing').style.color = tab==='pricing' ? 'var(--accent)' : 'var(--muted)';
-  document.getElementById('tab-btn-accounting-override').style.color = tab==='accounting-override' ? 'var(--accent)' : 'var(--muted)';
+  document.getElementById('tab-btn-info').style.borderBottomColor    = tab==='info'    ? 'var(--accent-dark)' : 'transparent';
+  document.getElementById('tab-btn-pricing').style.borderBottomColor = tab==='pricing' ? 'var(--accent-dark)' : 'transparent';
+  document.getElementById('tab-btn-accounting-override').style.borderBottomColor = tab==='accounting-override' ? 'var(--accent-dark)' : 'transparent';
+  document.getElementById('tab-btn-info').style.color    = tab==='info'    ? 'var(--accent-dark)' : 'var(--muted)';
+  document.getElementById('tab-btn-pricing').style.color = tab==='pricing' ? 'var(--accent-dark)' : 'var(--muted)';
+  document.getElementById('tab-btn-accounting-override').style.color = tab==='accounting-override' ? 'var(--accent-dark)' : 'var(--muted)';
   if (tab === 'pricing') renderPricingFields();
   if (tab === 'accounting-override') {
     // Accounting Overrides needs the same base Accounting Map data the Accounting Map
@@ -1820,8 +1820,8 @@ function adminSection(section) {
     if (panel) panel.style.display = s !== section ? 'none' : ((s === 'groups' || s === 'clients' || s === 'users' || s === 'accounting') ? 'flex' : 'block');
     const tab = document.getElementById('section-tab-' + s);
     if (tab) {
-      tab.style.borderBottomColor = (s === section) ? 'var(--accent)' : 'transparent';
-      tab.style.color = (s === section) ? 'var(--accent)' : 'var(--muted)';
+      tab.style.borderBottomColor = (s === section) ? 'var(--accent-dark)' : 'transparent';
+      tab.style.color = (s === section) ? 'var(--accent-dark)' : 'var(--muted)';
     }
   });
   // Load data for the active section
@@ -2078,7 +2078,7 @@ function renderWorkflowManagerRows() {
       <span style="font-size:12.5px;color:var(--text)">${esc(wf)}</span>
       <span style="font-size:12px;color:var(--muted)">${counts[wf]} service${counts[wf] !== 1 ? 's' : ''}</span>
       <input type="text" data-workflow-rename="${esc(wf)}" placeholder="type a new name to rename" style="padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
-      <button onclick="adminRenameWorkflow('${esc(wf)}')" style="width:100%;padding:7px 4px;border-radius:6px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Rename</button>
+      <button onclick="adminRenameWorkflow('${esc(wf)}')" style="width:100%;padding:7px 4px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Rename</button>
       <button onclick="adminDeleteWorkflow('${esc(wf)}')" style="width:100%;padding:7px 4px;border-radius:6px;background:#fff;color:#EF4444;border:1px solid #EF4444;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Delete</button>
     </div>
   `).join('');
@@ -3083,7 +3083,7 @@ function renderIntakeFormEditor() {
               <input type="text" data-field-key-input="${sIdx}-${fIdx}" placeholder="key" value="${esc(field.key || '')}"
                 oninput="intakeFieldKeyChange(${sIdx}, ${fIdx}, this.value)"
                 style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:11px;font-family:monospace;color:var(--muted)"/>
-              <select onchange="intakeFieldTypeChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px;background:#fff">
+              <select onchange="intakeFieldTypeChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;background:#fff">
                 ${INTAKE_FIELD_TYPES.map(t => `<option value="${t.value}" ${field.type===t.value?'selected':''}>${t.label}</option>`).join('')}
               </select>
               <button type="button" onclick="intakeRemoveField(${sIdx}, ${fIdx})" title="Remove question" style="padding:6px;border-radius:5px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:14px;cursor:pointer;line-height:1">✕</button>
@@ -3128,7 +3128,7 @@ function renderIntakeFormEditor() {
             <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end">
               <div>
                 <label style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px">Only show if…</label>
-                <select onchange="intakeFieldShowIfKeyChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px;background:#fff">
+                <select onchange="intakeFieldShowIfKeyChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;background:#fff">
                   <option value="">Always show</option>
                   ${otherFields.map(f => `<option value="${esc(f.key)}" ${field.showIf?.key === f.key ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}
                 </select>
@@ -3136,7 +3136,7 @@ function renderIntakeFormEditor() {
               ${field.showIf ? (
                 showIfSource && showIfSource.options.length
                   ? `<div>
-                      <select onchange="intakeFieldShowIfValueChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px;background:#fff">
+                      <select onchange="intakeFieldShowIfValueChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:5px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;background:#fff">
                         <option value="">— which option? —</option>
                         ${showIfSource.options.map(o => `<option value="${esc(o)}" ${field.showIf.includes === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
                       </select>
@@ -4316,7 +4316,7 @@ async function scanAeImportCandidates() {
         ${esc(m.fullName || m.username)} <span style="color:var(--muted);font-family:monospace;font-size:11px">@${esc(m.username)}</span>
       </label>`;
     });
-    html += `</div><button id="ae-import-selected-btn" onclick="importSelectedAes('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
+    html += `</div><button id="ae-import-selected-btn" onclick="importSelectedAes('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
     resultsEl.innerHTML = html;
   } catch(e) {
     resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Error scanning board members: ${esc(e.message)}</p>`;
@@ -4576,12 +4576,12 @@ function renderAdminReconcile() {
       <td style="padding:8px 10px;font-weight:600">${esc(client.name)}</td>
       <td style="padding:8px 10px">${esc(group?.name || '—')}</td>
       <td style="padding:8px 10px">
-        <select id="reconcile-select-${idx}" style="width:100%;max-width:320px;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;background:#fff">${options.join('')}</select>
+        <select id="reconcile-select-${idx}" style="width:100%;max-width:320px;padding:6px 9px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;background:#fff">${options.join('')}</select>
         ${confidenceBadge}
       </td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">
         <button onclick="confirmReconcileRow(${idx})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #BFDBFE;background:#EFF6FF;color:#1d4ed8">Confirm</button>
-        <button onclick="dismissReconcileRow(${idx})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--light);color:var(--muted);margin-left:4px">Dismiss</button>
+        <button onclick="dismissReconcileRow(${idx})" class="btn-quiet-green" style="margin-left:4px">Dismiss</button>
       </td>
     </tr>`;
   });
@@ -4872,7 +4872,7 @@ async function scanClientImportCandidates() {
         ${esc(l.name)} ${archivedBadge}
       </label>`;
     });
-    html += `</div><button id="client-import-selected-btn" onclick="importSelectedClients('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
+    html += `</div><button id="client-import-selected-btn" onclick="importSelectedClients('${esc(groupId)}')" style="padding:8px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Import Selected</button>`;
     resultsEl.innerHTML = html;
   } catch(e) {
     resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Error scanning board: ${esc(e.message)}</p>`;
