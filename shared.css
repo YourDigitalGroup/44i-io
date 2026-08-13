@@ -68,13 +68,23 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
    retrofit without a much larger sweep), so border-radius is forced with !important
    here — a narrow, purely-cosmetic shape override, not fighting any real inline
    color/business logic — while background stays untouched everywhere. Hover-lift
-   (transform/box-shadow, neither ever set inline) applies to every button except
-   .acct-detail-close and similarly quiet utility buttons, which keep their
-   deliberately understated look and motion. */
-button{border-radius:999px !important}
-button:not(.acct-detail-close){transition:transform .12s ease, box-shadow .12s ease}
-button:not(.acct-detail-close):hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(44,72,99,.25)}
-button:not(.acct-detail-close):active{transform:translateY(0)}
+   (transform/box-shadow, neither ever set inline) now applies to every single
+   button, including .acct-detail-close/Logout — those two were excluded here at
+   first, back when they were still plain gray/quiet, but now that they're real
+   green outline buttons (see .btn-quiet-green below) there's no more reason for
+   them to sit still while every other button lifts on hover. */
+button{border-radius:999px !important;transition:transform .12s ease, box-shadow .12s ease}
+button:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(44,72,99,.25)}
+button:active{transform:translateY(0)}
+
+/* Quiet green outline button (2026-08-12, per Claire: "we are still missing the
+   navy and green details... change some of the buttons that are lighter to those
+   colors like the close, and log out" -- Logout appears with the identical inline
+   style in all 3 portals; this replaces that repeated inline style with one shared
+   class so all 3 stay in sync automatically. Outline style (not solid), matching the
+   reference screenshot's own secondary-button treatment -- a quiet action shouldn't
+   read as a solid, primary "go" button just because it now has real brand color. */
+.btn-quiet-green{background:#fff;border:1.5px solid var(--accent2);color:var(--accent2);padding:5px 16px;cursor:pointer;font-size:12px;font-weight:600}
 
 /* Field labels */
 label.lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}

@@ -24,7 +24,7 @@
       <div id="strategist-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
         <a id="strategist-admin-portal-link" href="../admin/index.html" onclick="adminPortalHandoff()" style="display:none;font-size:12px;font-weight:600;color:var(--accent);text-decoration:none">Go to Admin →</a>
-        <button onclick="strategistLogout()" style="background:var(--light);border:1px solid var(--border);color:var(--muted);padding:5px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">Logout</button>
+        <button onclick="strategistLogout()" class="btn-quiet-green">Logout</button>
       </div>
     </div>
 
@@ -37,10 +37,10 @@
           <button onclick="strategistShiftMonth(1)" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--light);cursor:pointer;font-size:13px">›</button>
         </div>
         <div style="display:flex;gap:10px;align-items:center;font-size:12px">
-          <select id="strategist-group-filter" onchange="strategistSetGroupFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
+          <select id="strategist-group-filter" onchange="strategistSetGroupFilter(this.value)" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer">
             <option value="">All Groups</option>
           </select>
-          <select id="strategist-pacing-filter" onchange="strategistSetPacingFilter(this.value)" style="padding:6px 10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer">
+          <select id="strategist-pacing-filter" onchange="strategistSetPacingFilter(this.value)" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer">
             <option value="">All Pacing</option>
             <option value="risk">🔴 Risk</option>
             <option value="warn">🟡 Watch</option>
