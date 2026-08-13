@@ -13382,3 +13382,29 @@ note shows a plain dash with no dot, and a note containing
 `<script>...</script>` renders escaped into the tooltip rather than
 executing. Re-ran `test-strategist-detail-notes-2026-08-13.js` (today's
 earlier Notes-field test) -- still fully passes. `node --check` clean.
+
+### 2026-08-13 (cont'd) — Expected Goal added to Campaign Setup too
+
+Claire, following up on the SEM CPC spreadsheet screenshot ("just
+something I am trying to make sure is calculated"): "Could we add the
+expected goal to the campaign setup as well?" Same pattern as the
+Platform CPM/CPC Range addition earlier today -- the Goal number
+(`computeGoal()`) was already shown in the main pacing table and the
+campaign Detail panel, but not in the Setup queue's own panel, so there
+was no way to see the expected goal before a campaign was even activated.
+
+**Fix**: added a 7th field to `renderSetupPanel`'s info grid (widened
+`grid-template-columns` from `repeat(6,1fr)` to `repeat(7,1fr)`), right
+after Platform CPM/CPC Range -- same `computeGoal(l, monthRow)` call
+already used everywhere else, so it's clicks off the CPC range for SEM,
+impressions off Platform CPM for everything else, with no new logic.
+
+**Verified**: new `test-strategist-setup-goal-2026-08-13.js` (scratchpad,
+Playwright, real `renderSetupPanel`, mock lines) -- 5 checks, all pass:
+a non-SEM line with a $1,000 budget shows an impressions number, a SEM
+line with the same $1,000 budget shows "83–250 clicks" (matches Claire's
+own spreadsheet screenshot exactly: $1,000/$12 = 83, $1,000/$4 = 250), a
+line with no budget entered yet shows a plain em-dash rather than
+blank/NaN, and the grid is confirmed at 7 columns with Goal rendering
+after CPM/CPC Range. Re-ran 4 existing Setup-panel tests -- all still
+pass. `node --check` clean.
