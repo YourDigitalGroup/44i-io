@@ -29,6 +29,21 @@
   .svc-form-group summary:first-child{border-bottom:1px solid transparent}
   .svc-form-group[open] summary{background:var(--brand-color-primary);color:#fff;border-bottom:none}
   .svc-form-group[open] > div:not(summary){background:var(--light)}
+
+  /* Sticky table headers (2026-08-13), per Claire: "freeze the headers like we did
+     in the strategist and accounting portals." Every list table here (Groups,
+     Clients, Services, Sections, Intake Forms, AEs, Strategists, Users, Accounting
+     Map, etc.) shares the identical <thead><tr style="background:var(--light)"> +
+     unstyled <th> markup, so one scoped rule covers all of them instead of editing
+     each table's inline styles individually. <th> needs its OWN explicit background
+     here (not just inheriting the row's) -- position:sticky pulls it out of normal
+     stacking, and body rows would show through a transparent header as the table
+     scrolls underneath it otherwise. Unlike Accounting's table, nothing here sits
+     inside an extra overflow:auto wrapper div, so this works directly against the
+     page's own scroll -- the same simpler case Strategist's table already was
+     (both portals' outer .card already has overflow:hidden and that never broke
+     Strategist's sticky header, confirmed empirically before rolling this out). */
+  #page-admin table thead th{position:sticky;top:0;z-index:3;background:var(--light)}
 </style>
 </head>
 <body>
@@ -80,7 +95,7 @@
           <p style="font-size:13px;font-weight:700;color:var(--text)">Groups</p>
           <button onclick="adminNewGroup()" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">+ New Group</button>
         </div>
-        <div id="admin-groups-table"></div>
+        <div id="admin-groups-table" style="overflow:auto;max-height:70vh"></div>
       </div>
 
       <!-- Group edit form — tabbed -->
@@ -259,7 +274,7 @@
             </div>
           </div>
 
-          <div id="admin-orders-table">
+          <div id="admin-orders-table" style="overflow:auto;max-height:70vh">
             <p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading orders…</p>
           </div>
         </div>
@@ -385,7 +400,7 @@
           </div>
         </div>
 
-        <div id="admin-clients-table" style="order:5"></div>
+        <div id="admin-clients-table" style="order:5;overflow:auto;max-height:70vh"></div>
       </div><!-- /section-clients -->
 
       <!-- ── SECTION: Suggested Map (standard catalog — now editable) ── -->
@@ -703,7 +718,7 @@
             </label>
           </div>
         </div>
-        <div id="admin-map-table">
+        <div id="admin-map-table" style="overflow:auto;max-height:70vh">
           <p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading catalog…</p>
         </div>
       </div><!-- /section-map -->
@@ -781,7 +796,7 @@
           </div>
         </div>
 
-        <div id="admin-sections-table"></div>
+        <div id="admin-sections-table" style="overflow:auto;max-height:70vh"></div>
       </div><!-- /section-sections -->
 
       <!-- ── SECTION: Intake Forms ── -->
@@ -822,7 +837,7 @@
           </div>
         </div>
 
-        <div id="admin-intake-table"></div>
+        <div id="admin-intake-table" style="overflow:auto;max-height:70vh"></div>
       </div><!-- /section-intake -->
 
       <!-- ── SECTION: AEs (roster + Trello handle, for form autofill) ── -->
@@ -897,7 +912,7 @@
           </div>
         </div>
 
-        <div id="admin-ae-table"></div>
+        <div id="admin-ae-table" style="overflow:auto;max-height:70vh"></div>
       </div><!-- /section-ae -->
 
       <!-- ── SECTION: Strategists (digital/social/web roster, global — not group-scoped,
@@ -948,7 +963,7 @@
           </div>
         </div>
 
-        <div id="admin-strategist-table"></div>
+        <div id="admin-strategist-table" style="overflow:auto;max-height:70vh"></div>
       </div><!-- /section-strategists -->
 
       <!-- ── SECTION: Legal Text (Agreement & Disclaimers, global — same for every group) ── -->
@@ -1080,7 +1095,7 @@
 
         <button id="admin-reconcile-scan-btn" onclick="loadAdminReconcile()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;margin-bottom:16px">Scan for Mismatches</button>
 
-        <div id="admin-reconcile-table"></div>
+        <div id="admin-reconcile-table" style="overflow:auto;max-height:70vh"></div>
       </div><!-- /section-reconcile -->
 
       <!-- ── SECTION: Users (login accounts — admin_users, super-admin only) ── -->
@@ -1140,7 +1155,7 @@
           </div>
         </div>
 
-        <div id="admin-users-table" style="order:3"></div>
+        <div id="admin-users-table" style="order:3;overflow:auto;max-height:70vh"></div>
       </div><!-- /section-users -->
 
       <!-- ── SECTION: Accounting Map (margin/spend-allocation data, super-admin only) ── -->
@@ -1207,7 +1222,7 @@
           </div>
         </div>
 
-        <div id="admin-accounting-table" style="order:3"></div>
+        <div id="admin-accounting-table" style="order:3;overflow:auto;max-height:70vh"></div>
       </div><!-- /section-accounting -->
 
     </div>

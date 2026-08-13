@@ -12726,3 +12726,56 @@ regression to the pre-tiering behavior. `node --check` clean on both
 files.
 
 **Not yet run by Claire**: `in-platform-pct-tiers-2026-08-13.sql`.
+
+### 2026-08-13 (cont'd) — Sticky headers, now on the Admin side too
+
+Claire: "can we freeze the headers like we did in the strategist and
+accounting portals?" -- referring to Admin's 11 list tables (Groups,
+Orders, Clients, Services, Sections, Intake Forms, AEs, Strategists,
+Reconcile, Users, Accounting Map), none of which had this yet.
+
+**First attempt was wrong, caught before shipping it.** Read the
+2026-08-11/12 tracking entries and (mis-)concluded Strategist's sticky
+header "just worked" without needing a bounded-height scroll wrapper,
+unlike Accounting's -- so tried a CSS-only fix (`position:sticky` on every
+`<thead> th` inside `#page-admin`). Re-read the 2026-08-12 entry itself
+before shipping ("gave BOTH wraps a bounded max-height:70vh") and grepped
+Strategist's actual markup to confirm: `#strategist-table-wrap` already
+has `overflow-x:auto;overflow-y:auto;max-height:70vh` -- Strategist needed
+the exact same bounded-wrapper fix as Accounting, I'd just misread which
+entry described the before-vs-after state. Verified the CSS-only approach
+really doesn't work with a real Playwright scroll test first (per the
+2026-08-12 postmortem's own lesson: check that a header actually stays
+pinned, not just that `position:sticky` is set) -- it failed exactly as
+that postmortem predicted: the header scrolled away with the page instead
+of sticking, because `.card`'s own `overflow:hidden` (shared.css, wraps
+every portal's whole page) becomes the sticky containing block once
+nothing INSIDE it is a genuinely bounded/scrolling box.
+
+**Real fix**: added `overflow:auto;max-height:70vh` directly to each of
+Admin's 11 static list-wrapper divs (`#admin-groups-table`,
+`#admin-orders-table`, `#admin-clients-table`, `#admin-map-table`,
+`#admin-sections-table`, `#admin-intake-table`, `#admin-ae-table`,
+`#admin-strategist-table`, `#admin-reconcile-table`, `#admin-users-table`,
+`#admin-accounting-table`) -- merged into whatever inline style each
+already had (several carry `order:N` for flex layout), not replaced. Plus
+one shared CSS rule (`#page-admin table thead th{position:sticky;top:0;
+z-index:3;background:var(--light)}`) covering every table's header cells
+at once, since they all share identical markup -- with an explicit
+background on the `<th>` itself (not just inherited from the row), since a
+sticky cell needs its own opaque background or body rows show through as
+they scroll underneath it. Left the two small non-list tables (Order
+Detail's line-items table, a handful of rows) alone -- not a scrolling
+list, out of scope.
+
+**Verified**: new `test-admin-sticky-headers-2026-08-13.js` (scratchpad) --
+renders the real wrapper-div markup + the real extracted `<style>` block,
+scrolls the wrapper's own `scrollTop` by 400px, and confirms the header
+cell's on-screen position is IDENTICAL before and after while a body row
+visibly moved out from underneath it -- not just that the CSS property is
+set. Also rendered a real screenshot (scrolled 250px) showing "Group/
+Client" still pinned at the top while the visible rows read Group 8+,
+sent to file for visual confirmation. `node --check` clean. Re-ran 5 other
+test files from today's session (color audit, 3-portal audit, follow-up
+fixes, nav buttons/status filter, stat-tile group fill) -- all still fully
+pass.
