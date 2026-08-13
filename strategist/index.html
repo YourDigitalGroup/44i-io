@@ -51,7 +51,7 @@
           <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
           <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
           <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--accent);background:#fff;color:var(--accent);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
-          <button onclick="strategistRecheckCachedReports()" style="padding:6px 14px;border-radius:7px;border:1px solid var(--border);background:var(--light);color:var(--text);cursor:pointer;font-weight:600;font-size:12px">Re-check Cached Reports</button>
+          <button onclick="strategistRecheckCachedReports()" style="padding:6px 14px;border:1.5px solid var(--accent-dark);background:var(--accent-dark);color:#fff;cursor:pointer;font-weight:600;font-size:12px">Re-check Cached Reports</button>
         </div>
       </div>
 
@@ -294,7 +294,7 @@ const STRATEGIST_DEFAULT_METRIC_TILES = [
 function strategistPlatformSelectHtml(baseId, currentValue, selectWidth) {
   const isKnown = PLATFORM_OPTIONS.includes(currentValue);
   const isOther = currentValue && !isKnown;
-  return `<select id="${baseId}" onchange="strategistPlatformSelectChanged('${baseId}')" style="width:${selectWidth};padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px">
+  return `<select id="${baseId}" onchange="strategistPlatformSelectChanged('${baseId}')" style="width:${selectWidth};padding:6px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
     <option value="">— Select —</option>
     ${PLATFORM_OPTIONS.map(p => `<option value="${esc(p)}" ${p === currentValue ? 'selected' : ''}>${esc(p)}</option>`).join('')}
     <option value="__other__" ${isOther ? 'selected' : ''}>Other…</option>
@@ -1912,7 +1912,7 @@ function renderSetupPanel(l) {
         <div><label class="lbl">Tactic</label>${(() => {
           const variants = strategistTacticVariantOptions(l);
           if (!variants) return `<div>${esc(strategistTacticDisplay(l))}</div>`;
-          return `<select id="setup-tactic-variant-${l.id}" style="width:100%;padding:4px 6px;border-radius:6px;border:1px solid var(--border);font-size:12px">
+          return `<select id="setup-tactic-variant-${l.id}" style="width:100%;padding:4px 6px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px">
             <option value="" ${!variants.includes(l.tactic_label) ? 'selected' : ''}>— Choose which one —</option>
             ${variants.map(v => `<option value="${esc(v)}" ${l.tactic_label === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
           </select>`;
@@ -2530,7 +2530,7 @@ function renderStrategistDetailPanel() {
       <strong style="font-size:13px">${esc(l.client_name || '(unknown)')} / ${(() => {
         const variants = strategistTacticVariantOptions(l);
         if (!variants) return esc(strategistTacticDisplay(l));
-        return `<select id="detail-tactic-variant-${l.id}" onchange="strategistSaveLine('${l.id}', {tactic_label: this.value}, false)" style="padding:3px 6px;border-radius:6px;border:1px dashed var(--border);font-size:12.5px;font-weight:700;background:#fff">
+        return `<select id="detail-tactic-variant-${l.id}" onchange="strategistSaveLine('${l.id}', {tactic_label: this.value}, false)" style="padding:3px 6px;border-radius:999px;border:1.5px solid var(--accent-dark);font-size:12.5px;font-weight:700;color:var(--accent-dark);background:#fff">
           <option value="" ${!variants.includes(l.tactic_label) ? 'selected' : ''}>— Choose which one —</option>
           ${variants.map(v => `<option value="${esc(v)}" ${l.tactic_label === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
         </select>`;
@@ -2557,7 +2557,7 @@ function renderStrategistDetailPanel() {
         <input type="checkbox" ${l.has_addl_targeting ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_addl_targeting: this.checked})"/> + Addl. Targeting
       </label>` : ''}
       <label class="lbl" style="margin:0">Status</label>
-      <select id="status-select-${l.id}" onchange="strategistOpenStatusChangeReason('${l.id}', this.value, '${l.status}')" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px;font-weight:600">
+      <select id="status-select-${l.id}" onchange="strategistOpenStatusChangeReason('${l.id}', this.value, '${l.status}')" style="padding:5px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px;font-weight:600">
         <option value="active" ${l.status === 'active' ? 'selected' : ''}>Active</option>
         <option value="paused" ${l.status === 'paused' ? 'selected' : ''}>Paused</option>
         <option value="complete" ${l.status === 'complete' ? 'selected' : ''}>Complete</option>
