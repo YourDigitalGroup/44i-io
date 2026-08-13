@@ -12629,3 +12629,34 @@ of this concept in the file now read "SSH Billing" consistently; only the
 internal `billed_externally` column/variable name (never shown to anyone)
 still uses the old wording, which is correct -- it's a data identifier, not
 UI text. `node --check` clean.
+
+### 2026-08-13 (cont'd) — SEM base rates: In-Platform %/CPC Low/High set
+
+Claire asked what the new Budgeted Spend %/In-Platform %/CPC Low/High/
+Setup Fee Split % columns in Accounting Overrides are for; explained each
+(legacy formula input, SEM's no-CPM fallback, the CPC range that drives
+SEM's auto Goal, and the 44i/Group split on SEM Business Pro's $200 setup
+fee respectively), and flagged that In-Platform %/CPC Low/High existed as
+fields but had no real base rate entered yet. She said "go ahead and set
+those SEM rates now."
+
+Used the numbers already confirmed real in the 2026-08-10 audit (not a
+fresh guess) — 39 real historical In-Platform overrides averaged ~50%-of-
+Gross (min 0.500), and 30+ real Goal-range entries matched a $4-$12 CPC
+range exactly, both called out then as "a genuine, consistent rule, not
+noise." Wrote `sem-base-rates-2026-08-13.sql` (scratchpad) setting
+`accounting_map.in_platform_pct = 50`, `cpc_low = 4`, `cpc_high = 12` for
+`sem-bp` (the only service with `retail_cpm = null`, per the mechanism
+built 2026-08-10) and sent it to Claire to run -- no direct DB access this
+session, same as every other data change.
+
+Base rate only -- the same audit noted a few groups clearly run a
+different real In-Platform ratio (avg pulled up to 0.517 by those), which
+still need their own per-group override entered in Accounting Overrides
+separately; not attempted here since that's group-specific data I don't
+have, not a formula decision.
+
+**Not yet run by Claire** -- once run, SEM's In-Platform Budget and Goal
+range will auto-calculate for any group with no override, using the exact
+formulas already built and tested in `test-sem-formula-fallbacks.js`
+(14/14 passing since 2026-08-10).
