@@ -12424,3 +12424,60 @@ computed `background-color`/`color`/`border-color`/`border-radius`/
 `test-green-color-fix-2026-08-13.js` (yesterday's/this morning's fixes) --
 both still fully pass, confirming this pass didn't regress anything already
 fixed.
+
+### 2026-08-13 (cont'd) — Follow-up round: a real gap in Accounting, plus three new Admin asks
+
+Claire's review of the audit pass above: "Some of the accounting settings
+didn't update. The logout and cancel buttons and the drop downs are still
+not matching, either in the + add service or the group and status." Plus
+three new asks: change the Custom Pricing/Accounting Override highlight
+color to navy ("easier to see"), make Admin's editor dropdowns match
+Strategist's, and turn the "Edit" buttons green.
+
+**Real bug found in Accounting**: the "+ Add Service" form's own Client and
+Tactic dropdowns (`#acct-add-client`/`#acct-add-service`,
+`accountingOpenAddServiceForm()`) were never touched by the earlier pass --
+that pass only recolored the page-level Cancel/primary buttons, not this
+form's own two `<select>`s, which were still plain gray. Fixed both to the
+navy pill. Checked Logout, the form's Cancel button, and the Group/Status
+filter dropdowns at the top of the dashboard -- all three already carry the
+correct green/navy styling in the actual file (Logout/Cancel already use
+`.btn-quiet-green`; the Group/Status filters already use the navy
+`.acct-filter-btn` pill). If those still look unchanged on Claire's end
+after this push, it's very likely the GitHub Actions deploy hadn't finished
+yet when she checked -- worth a hard refresh / re-check rather than a code
+fix, since the code for those three is already correct.
+
+**Real gap found in Admin's own selects**: the earlier pass recolored every
+`<select>`'s border/text to navy but left its original `border-radius`
+(mostly 6-8px) untouched -- Strategist's own selects are all a full pill
+(999px). Fixed all 39 of them to `border-radius:999px`, so Admin's
+dropdowns are now shape-for-shape identical to Strategist's, not just
+same-colored.
+
+**Override highlight -> navy** (Custom Pricing tab, Accounting Overrides
+tab): `OVERRIDE_ROW_STYLE`/`OVERRIDE_INPUT_STYLE`/`CUSTOM_BADGE` (shared
+constants used by both tabs) were tinting overridden rows/inputs with a
+pale blue (`#EAF6FC`, an old `--accent-dim` value never defined as a real
+token) and light-blue text/badge fill. Switched to a navy tint
+(`rgba(44,72,99,.10)` background, `var(--accent-dark)` border/text/badge
+fill) -- clearly darker and easier to spot in a long list, per Claire's
+ask. Also updated the two inline JS toggles (`onPriceInput()`,
+`onAccountingInputInput()`-equivalent) that set the same colors live as she
+types, so the override highlight stays consistent whether it's rendered
+fresh or toggled by typing/clearing a value.
+
+**"Edit" buttons -> green**: all 12 row-action buttons across Admin that
+say "Edit" (or "Override"/"Set Up" on rows without a value yet -- Services,
+Sections, Intake Forms, AEs, Strategists, Users, Clients, Groups, and the
+Accounting Map's per-tactic buttons) switched from the old gray-fill style
+to the shared `.btn-quiet-green` class, matching Cancel/Close/Logout.
+
+**Verified**: new `test-followup-fixes-2026-08-13.js` (scratchpad) --
+renders the override-highlight background, an Edit button, and both an
+Admin and Accounting select against the real `shared.css`; asserts the
+highlight resolves to the navy tint (not the old pale blue), the Edit
+button resolves to green-fill/navy-text, and both selects resolve to
+`border-radius:999px` with a navy border. All pass. `node --check` clean on
+both `admin/index.html` and `accounting/index.html`. Re-ran every prior
+color/audit test from today -- all still fully pass, no regressions.
