@@ -54,18 +54,24 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 
 /* Cards — the admin panel wraps its entire content in a single .card. Shadow uses the
    ported mockup's soft layered shadow (2026-08-12) — needed now that --bg is a warm
-   off-white and --card is white, so cards read as raised without a harsh outline. */
-.card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
+   off-white and --card is white, so cards read as raised without a harsh outline.
+   Radius bumped 12px -> 18px same day, second pass (see button note below) — softer,
+   more rounded corners matching 44idigital.com's own hero, not sharp/hard edges. */
+.card{background:var(--card);border-radius:18px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
 
-/* Button hover-lift (2026-08-12, per Claire: "it is looking clean but kinda boring" --
-   first pass at more dynamic styling using the brand navy/green). Every button in
-   this app sets its own background inline (no shared button class exists to retrofit
-   without a much larger sweep), so this deliberately styles only what an inline
-   `style="background:..."` can't override — transform and box-shadow, not color —
-   giving every button in Admin/Strategist/Accounting a consistent lift-on-hover
-   without touching a single existing color. Excludes .acct-detail-close and similar
-   plain utility buttons that already have their own quieter, deliberately understated
-   look — this is for the real call-to-action buttons. */
+/* Button styling (2026-08-12, per Claire: "it is looking clean but kinda boring" --
+   revised same day after seeing the first pass' gradient-stripe card accent read as
+   "less smooth... the edges look sharp": "I would like it to be more dynamic like
+   this," pointing at 44idigital.com's own hero — fully rounded pill buttons, solid
+   color blocks, no hard edges or thin gradient lines anywhere). Every button in this
+   app sets its own background/padding inline (no shared button class exists to
+   retrofit without a much larger sweep), so border-radius is forced with !important
+   here — a narrow, purely-cosmetic shape override, not fighting any real inline
+   color/business logic — while background stays untouched everywhere. Hover-lift
+   (transform/box-shadow, neither ever set inline) applies to every button except
+   .acct-detail-close and similarly quiet utility buttons, which keep their
+   deliberately understated look and motion. */
+button{border-radius:999px !important}
 button:not(.acct-detail-close){transition:transform .12s ease, box-shadow .12s ease}
 button:not(.acct-detail-close):hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(44,72,99,.25)}
 button:not(.acct-detail-close):active{transform:translateY(0)}

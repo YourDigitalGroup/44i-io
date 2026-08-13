@@ -24,17 +24,18 @@
   #page-accounting .acct-filters{display:flex;gap:10px}
   #page-accounting .acct-filter-btn{display:flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:6px;padding:6px 10px 6px 12px;font-size:11.5px;letter-spacing:.03em;color:var(--muted);background:#fff}
   #page-accounting .acct-filter-btn select{background:transparent;color:var(--text);border:none;font-family:inherit;font-size:11.5px;cursor:pointer;padding-right:2px}
-  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05)}
+  #page-accounting .acct-stats{display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border:1px solid var(--border);border-radius:18px;margin-bottom:18px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05)}
   #page-accounting .acct-stat{padding:14px 20px}
   #page-accounting .acct-stat + .acct-stat{border-left:1px solid var(--border)}
   #page-accounting .acct-stat-label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   #page-accounting .acct-stat-value{font-size:22px;font-weight:700;color:var(--text)}
   #page-accounting .acct-stat-value.warn{color:#B45309}
-  /* Navy-to-green top accent stripe (2026-08-12, per Claire: "it is looking clean but
-     kinda boring... using the colors from our website. Like more of the navy and
-     green") -- border-image draws it right along the existing top border rather than
-     an extra element, so it can't throw off spacing/height anywhere this card renders. */
-  #page-accounting .acct-detail-card{background:#fff;border:1px solid var(--border);border-top:3px solid;border-image:linear-gradient(90deg,var(--accent-dark),var(--accent-green)) 1;border-radius:8px;padding:16px 18px;margin-bottom:18px;box-shadow:0 1px 2px rgba(20,40,60,.05)}
+  /* Softer, more rounded card (2026-08-12, per Claire, reacting to the first pass'
+     gradient stripe: "that makes it look less smooth, the edges look sharp... I would
+     like it to be more dynamic like this" -- pointing at 44idigital.com's own hero,
+     all soft rounded pill shapes and solid color blocks, no thin gradient lines or hard
+     edges). Bigger radius + a deeper, softer shadow instead of a border accent. */
+  #page-accounting .acct-detail-card{background:#fff;border:1px solid var(--border);border-radius:18px;padding:18px 20px;margin-bottom:18px;box-shadow:var(--shadow-lg)}
   #page-accounting .acct-detail-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;flex-wrap:wrap;gap:8px}
   #page-accounting .acct-detail-title{font-weight:700;font-size:14px;color:var(--text)}
   #page-accounting .acct-detail-sub{color:var(--muted);font-size:12px}

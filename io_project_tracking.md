@@ -12067,3 +12067,38 @@ extra element or affect spacing anywhere this card already renders.
 and Admin's own detail/editor panels; any further ideas (status pills,
 section headers, stat tiles) explicitly held until she confirms this
 direction is right.
+
+### 2026-08-12 (cont'd) — Second pass: softer, fully-rounded pill shapes, no sharp edges
+
+Claire, reacting to the first pass' gradient stripe: "that makes it look
+less smooth, the edges look sharp." Shared a screenshot of 44idigital.com's
+own hero as the concrete reference — fully rounded pill buttons, solid color
+blocks (no thin gradient lines), generously rounded cards. "I would like it
+to be more dynamic like this... clean but not polished."
+
+**Removed** the gradient-stripe `border-image` from Accounting's detail
+card entirely -- replaced with a bigger radius (18px) and the existing
+`--shadow-lg` token instead of a colored line.
+
+**Global button shape (`shared.css`, all 3 portals)** -- `border-radius:999px
+!important` on every `button`. Needed `!important` specifically because
+every button in this app sets its own padding/background inline with no
+shared class to retrofit otherwise -- a narrow, purely-cosmetic shape
+override, not touching any color/business logic. Hover-lift from the first
+pass kept as-is (transform/box-shadow only, never set inline, so it never
+needed `!important`).
+
+**Card radius bumped 12px -> 18px** (`shared.css` `.card`, used by
+Admin/Strategist/Accounting) and Accounting's own stat bar (`.acct-stats`,
+8px -> 18px) for the same consistently-rounded language throughout.
+
+**Verified**: re-screenshotted Accounting's detail card -- confirmed
+visibly rounder corners, gradient stripe gone, Close button now a proper
+pill shape. Re-ran every Accounting/Strategist test from today's session
+(pending line items, IO notes, SEO-tracking exclusion, Addl. Targeting,
+auto-billing-type/amount) -- all still fully passing, confirming the
+pure-CSS change touched no logic. `node --check` passes clean.
+
+**Not yet done**: same rounding pass on Strategist's and Admin's own
+cards/detail panels -- held until Claire confirms this direction on
+Accounting first.
