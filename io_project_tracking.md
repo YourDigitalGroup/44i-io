@@ -12873,3 +12873,57 @@ set)", no crash). All pass. `node --check` clean. Re-ran
 `test-sem-formula-fallbacks.js`, `test-in-platform-pct-tiers-2026-08-13.js`,
 and the Detail panel's own new test from moments ago -- all still fully
 pass.
+
+### 2026-08-13 (cont'd) — Real gap found: Platform CPM's pairing override was never actually used
+
+Claire: "We will also need to update the CPM if offline tracking is
+added." Investigated rather than treating this as display-only --
+Admin's Accounting Map has supported a per-pairing Platform CPM override
+since the pairing mechanism itself was built (2026-07-31, for 44i Cut %:
+editing a service "w/ Offline Visits Tracking" or "w/ Addl. Targeting"
+gets its own accounting_map row, with its own Platform CPM field on that
+form). But neither portal's `effectivePlatformCpm()`
+/`accountingEffectivePlatformCpm()` ever actually checked for a pairing
+rate -- only the cut % lookup did. That means if a real, different
+Platform CPM had ever been entered for a paired combo, it was being
+silently ignored everywhere: not just in the two read-only displays added
+minutes ago, but in the REAL In-Platform Budget/Expected Spend numbers
+both portals compute every month.
+
+**Fixed, not just the display**:
+- `strategist/index.html`: `PLATFORM_CPM_RATES` gains a `pairing` scope;
+  `effectivePlatformCpm(serviceId, groupId, hasModifier)`,
+  `computeInPlatformBudget()`, and `effectiveInPlatformBudget()` all gained
+  a `hasModifier` param, checked first (pairing wins outright over group/
+  base, same precedence as the existing cut % pairing rate). All 7 real
+  call sites (pacing calc, the "all strategists" table, the two new CPM
+  display lines, Setup/Detail panels' In-Platform Budget, and the monthly-
+  history auto-calc) now pass `l.has_offline_visits || l.has_addl_targeting`
+  -- the exact same OR-merge Accounting already used for its own cut %
+  pairing check.
+- `accounting/index.html`: identical shape --
+  `ACCOUNTING_PLATFORM_CPM_RATES.pairing`,
+  `accountingEffectivePlatformCpm(serviceId, groupId, hasModifier)`,
+  `accountingComputeExpectedSpend()` gains the same param, both of its real
+  call sites (the two Expected Spend calculations) updated.
+- SQL (`platform-cpm-pairing-2026-08-13.sql`, sent to Claire): adds a brand
+  new `'pairing'` scope to `strategist_get_budgeted_spend_rates` (never had
+  one before, exposes only `platform_cpm` -- no cut_pct, stays safe for
+  Strategist) and extends `accounting_get_rates`'s EXISTING pairing scope
+  (which only carried `fortyfouri_cut_pct`) to also carry `platform_cpm`.
+
+**Verified**: new `test-platform-cpm-pairing-2026-08-13.js` (scratchpad) --
+confirms in both portals that with no modifier checked, group beats base
+as before; with a modifier checked, the pairing rate wins outright even
+over a group override; and the real budget math
+(`computeInPlatformBudget()`/`accountingComputeExpectedSpend()`) produces
+correctly different dollar amounts with vs. without the modifier. All
+pass. `node --check` clean on both files. Re-ran
+`test-sem-formula-fallbacks.js`, `test-accounting-expected-spend.js`,
+`test-in-platform-pct-tiers-2026-08-13.js`, and both of today's new
+Platform CPM display tests -- all still fully pass, confirming no
+regression to any of the calculations this touches.
+
+**Not yet run by Claire**: `platform-cpm-pairing-2026-08-13.sql`. Until
+it's run, both portals will keep ignoring any pairing-specific Platform
+CPM already entered in Admin, same as before this fix.
