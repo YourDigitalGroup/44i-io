@@ -2616,10 +2616,15 @@ function renderStrategistDetailPanel() {
 
     <!-- Platform CPM, read-only (2026-08-13, per Claire -- strategists asked to be able
          to see this). Same effectivePlatformCpm() lookup (Admin's Accounting Map, with
-         a group override winning if one's set) already driving In-Platform Budget below
-         -- shown here purely for reference, never editable from this portal. Blank for a
-         service with no Retail CPM at all (e.g. SEM), which uses In-Platform % instead. -->
-    <div style="margin:-6px 0 14px;font-size:11.5px;color:var(--muted)">Platform CPM: <strong style="color:var(--text)">${(() => {
+         a group/pairing override winning if one's set) already driving In-Platform Budget
+         below -- shown here purely for reference, never editable from this portal. SEM has
+         no Platform CPM at all (no Retail CPM to derive one from), so its CPC range is
+         shown instead -- same swap as the Setup panel's own version of this line. -->
+    <div style="margin:-6px 0 14px;font-size:11.5px;color:var(--muted)">${l.service_id === 'sem-bp' ? 'CPC Range' : 'Platform CPM'}: <strong style="color:var(--text)">${(() => {
+      if (l.service_id === 'sem-bp') {
+        const cpc = effectiveCpcRange(l.service_id, l.group_id);
+        return cpc ? '$' + cpc.low + '–$' + cpc.high : '— (not set)';
+      }
       const cpm = effectivePlatformCpm(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
       return cpm != null ? '$' + Number(cpm).toFixed(2) : '— (not set for this service)';
     })()}</strong></div>

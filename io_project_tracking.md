@@ -12927,3 +12927,26 @@ regression to any of the calculations this touches.
 **Not yet run by Claire**: `platform-cpm-pairing-2026-08-13.sql`. Until
 it's run, both portals will keep ignoring any pairing-specific Platform
 CPM already entered in Admin, same as before this fix.
+
+### 2026-08-13 (cont'd) — Real bug: SEM's CPC range only showed in Setup, not Detail
+
+Claire: "the range is showing in the campaign set up but not in active
+campaigns." Real gap, not a data/deploy issue -- the SEM-vs-everything-
+else label swap ("CPC Range" instead of "Platform CPM", showing
+`effectiveCpcRange()` instead) was only ever added to
+`renderSetupPanel()` earlier today. `renderStrategistDetailPanel()`
+(what actually shows once a campaign goes Active, i.e. "active
+campaigns") kept the unconditional "Platform CPM" line with no SEM check
+at all -- so a SEM campaign there just always showed "— (not set for this
+service)", the flat-CPM fallback message that's correct for a real "no
+rate configured" case but not for SEM's own real range. Added the exact
+same `l.service_id === 'sem-bp'` branch to the Detail panel that the Setup
+panel already had.
+
+**Verified**: updated `test-strategist-platform-cpm-detail-2026-08-13.js`
+to check for the real behavior (previously the test's own regex only ever
+matched the old "Platform CPM" label, so it would have caught this if
+rerun after adding the label swap, but it was only run once, before the
+Setup-panel-only version). Now confirms the Detail panel's SEM case shows
+the "CPC Range" label with the real $4–$12 values, matching Setup. All 5
+tests re-run this round still pass.
