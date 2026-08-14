@@ -211,12 +211,30 @@ select.qty-field{background-image:none;padding-right:3px}
    on the table's shape class (money / monthly / fee / spend) so a CPM is never
    mislabelled as a Fee. */
 @media (max-width: 600px) {
+  /* Header (2026-08-14, per Claire -- "the logo kinda crowds the Insertion Order on
+     Mobile"): the desktop layout puts the logo chip and title side by side via
+     justify-content:space-between with no wrapping, which reads fine once there's
+     enough width for both to breathe -- on a narrow phone they're forced right next
+     to each other with barely any gap. Stacking them (logo above, title below, both
+     left-aligned) removes the competition for horizontal space entirely instead of
+     trying to shrink either one further. */
+  .header { flex-direction: column; align-items: flex-start; gap: 14px; padding: 20px; }
+  .header-title { text-align: left; }
+
   .svc-table-scroll { overflow-x: visible; }   /* stacked cards below don't need the scroll wrapper */
   .svc-table { table-layout: auto; }
   .svc-table colgroup, .svc-table col { display: none; }
   .svc-table thead { display: none; }                 /* column headers don't apply per-card */
   .svc-table, .svc-table tbody, .svc-table tr, .svc-table td { display: block; width: 100%; }
   .svc-table tr {
+    /* width: auto (2026-08-14, per Claire -- found live on a real phone, a card's
+       right edge wasn't visible without a horizontal swipe): the shared rule above
+       sets width:100%, then this rule ALSO adds an 8px-each-side margin -- box-sizing:
+       border-box (global reset) only keeps padding/border inside the box, it never
+       absorbs margin, so the card's true rendered width became 100% + 16px, wider
+       than its own container. width:auto lets a block element's normal box-model
+       math account for the margin itself, landing at exactly the intended width. */
+    width: auto;
     border: 1px solid var(--border);
     border-radius: 9px;
     margin: 10px 8px;
@@ -317,6 +335,11 @@ select.qty-field{background-image:none;padding-right:3px}
   .summary-table thead { display: none; }
   .summary-table, .summary-table tbody, .summary-table tr, .summary-table td { display: block; width: 100%; }
   .summary-table tr {
+    /* width: auto (2026-08-14, per Claire -- confirmed live: right edge of a card
+       not visible without a swipe). Same fix/reasoning as .svc-table tr above --
+       width:100% plus an 8px-each-side margin renders 16px wider than the
+       container; box-sizing:border-box doesn't help since it never absorbs margin. */
+    width: auto;
     border: 1px solid var(--border);
     border-radius: 9px;
     margin: 10px 8px;
@@ -341,13 +364,26 @@ select.qty-field{background-image:none;padding-right:3px}
      bordered "card" every other .summary-table tr gets above, so it reads as a
      category label rather than another selected service. */
   .summary-table tr.rs-section-row {
-    border: none; background: transparent; margin: 14px 8px 2px; padding: 0 4px;
+    /* width: auto -- same width:100%-plus-margin overflow bug as .summary-table tr
+       above, would apply here too since this also carries a horizontal margin. */
+    width: auto;
+    /* Sticky + solid background (2026-08-14, per Claire -- wanted the section label
+       to stay visible while scrolling through that section's cards, and a way to
+       collapse it once done). Needs a real (non-transparent) background now that it
+       sits fixed over scrolling content, not the original transparent version, which
+       only worked when it scrolled past normally. top:0 sticks it to the very top of
+       the page's own scroll -- there's no other fixed header on this page to clear. */
+    position: sticky; top: 0; z-index: 3;
+    border: none; background: var(--card, #fff); margin: 14px 8px 2px; padding: 6px 4px;
+    cursor: pointer;
   }
   .summary-table tr.rs-section-row:first-child { margin-top: 4px; }
   .summary-table tr.rs-section-row td {
     font-size: 10px; font-weight: 700; color: var(--accent);
-    text-transform: uppercase; letter-spacing: .06em; padding: 0;
+    text-transform: uppercase; letter-spacing: .06em;
+    background: var(--light); border-radius: 6px; padding: 6px 10px;
   }
+  .rs-chevron { display: inline-block; width: 10px; }
 
   /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
      At 2-up, "Authorized By (Full Legal Name)" wraps to 2 lines while "Title / Role"
@@ -526,7 +562,6 @@ select.qty-field{background-image:none;padding-right:3px}
     </div>
     <div class="header-title">
       <h1>Insertion Order</h1>
-      <p id="header-version">Loading…</p>
     </div>
   </div>
 
@@ -2406,7 +2441,6 @@ function applyGroupBranding(group) {
   const logo = document.getElementById('group-logo');
   const chip = document.getElementById('logo-chip');
   const header = document.getElementById('header');
-  const titleEl = document.getElementById('header-version');
 
   // Apply logo — sits on a fixed, neutral (near-white) chip rather than directly on the
   // brand-colored header (2026-07-08). REPLACES the old luminance-based invert-to-white
@@ -2445,11 +2479,6 @@ function applyGroupBranding(group) {
     // background. A raw RGB triplet (not a fixed-alpha rgba string like --light) since
     // the two shadows use different alphas (0.3 / 0.25) and can't share one fixed value.
     document.documentElement.style.setProperty('--accent-rgb', hexToRgbTriplet(group.brand_color));
-  }
-
-  // Show group name in header subtitle
-  if (titleEl && group.name) {
-    titleEl.textContent = group.name + ' · Insertion Order';
   }
 }
 
@@ -3267,6 +3296,18 @@ function goStep(n) {
 // picks up decimals now, instead of being silently rounded away.
 function fmt(n) { return n ? '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}) : '—'; }
 
+// Tracks which section headers are collapsed on the Step 3 Selected Services
+// Summary (2026-08-14, per Claire -- wanted a way to close a section once done
+// checking it, and have the header stick while scrolling through a long one).
+// Keyed by section id, survives across buildReview() re-renders (a plain local
+// var inside the function would reset to "all expanded" every time).
+let reviewCollapsedSections = new Set();
+function toggleReviewSection(sectionId) {
+  if (reviewCollapsedSections.has(sectionId)) reviewCollapsedSections.delete(sectionId);
+  else reviewCollapsedSections.add(sectionId);
+  buildReview();
+}
+
 function buildReview() {
   let oneTime = 0, monthly = 0, count = 0;
   const rows = [];
@@ -3288,7 +3329,12 @@ function buildReview() {
   SECTIONS.forEach(secDef => {
     const sec = secDef.id;
     if (!grouped[sec]) return;
-    rows.push(`<tr class="rs-section-row"><td colspan="5">${esc(secDef.label)}</td></tr>`);
+    const isCollapsed = reviewCollapsedSections.has(sec);
+    // display:none on every item row while collapsed -- count/totals below are
+    // computed from `selected` regardless, so collapsing is purely visual and
+    // never changes what's actually been selected or what it costs.
+    const itemRowStyle = isCollapsed ? 'display:none' : '';
+    rows.push(`<tr class="rs-section-row" onclick="toggleReviewSection('${esc(sec)}')"><td colspan="5"><span class="rs-chevron">${isCollapsed ? '▸' : '▾'}</span> ${esc(secDef.label)}</td></tr>`);
     grouped[sec].forEach(([id, data]) => {
     count++;
     // (data.qty || 1) is a safe no-op multiplier for every non-per-unit item — qty is
@@ -3349,18 +3395,18 @@ function buildReview() {
     // formatISOToMMDDYY() converts back for display, same helper the date inputs
     // themselves use).
     const flightDisplay = flightDisplayFor(id, data, formatISOToMMDDYY);
-    rows.push(`<tr><td class="rs-service">${esc(data.label)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
+    rows.push(`<tr style="${itemRowStyle}"><td class="rs-service">${esc(data.label)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Add prorated hosting line if applicable
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
       const h = hostingChoices[id];
       oneTime += h.proratedAmt;
-      rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td class="rs-fee" style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">${h.note}</td></tr>`);
+      rows.push(`<tr style="background:#F0FDF4;${itemRowStyle}"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td class="rs-fee" style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">${h.note}</td></tr>`);
     }
     // Add auto setup-fee line if this service's spend is under its configured threshold
     const setupFeeInfo = getSetupFeeInfo(id, data.spend || 0);
     if (setupFeeInfo) {
       oneTime += setupFeeInfo.amount;
-      rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="rs-fee" style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
+      rows.push(`<tr style="background:#F0FDF4;${itemRowStyle}"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="rs-fee" style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
     }
     });
   });
