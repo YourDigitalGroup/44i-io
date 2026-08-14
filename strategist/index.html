@@ -433,7 +433,7 @@ function strategistOpenImportForm() {
       </div>
       <div>
         <label class="lbl">Tactic</label>
-        <select id="import-service" onchange="strategistImportServiceChanged()" style="width:100%;padding:7px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
+        <select id="import-service" onchange="strategistImportServiceChanged()" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
           ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
           ${SEO_TRACKING_ONLY_TACTICS.map((t, i) => `<option value="__seo_track_${i}__">${esc(t.tacticLabel)}</option>`).join('')}
@@ -452,8 +452,16 @@ function strategistOpenImportForm() {
       </div>
       <div>
         <label class="lbl">Status</label>
-        <select id="import-status" style="width:100%;padding:7px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
+        <select id="import-status" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="active" selected>Active</option>
+          <!-- Pending (2026-08-14, per Claire -- strategists are ready to use this
+               portal exclusively now, but the public IO form isn't live yet, so this
+               is the only way to get a not-yet-set-up campaign into the Setup queue
+               in the meantime, one at a time, without needing the Bulk Import CSV
+               flow for it). Routes into the Setup queue exactly like a Bulk Import
+               or real order-trigger "pending" row already does -- no new status-
+               handling logic needed, this was already a fully generic value. -->
+          <option value="pending">Pending</option>
           <option value="paused">Paused</option>
           <option value="complete">Complete</option>
         </select>

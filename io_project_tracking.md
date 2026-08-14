@@ -13618,3 +13618,36 @@ New doc (replaces the earlier single-topic one):
 https://docs.google.com/document/d/1Tj0f523fv4OdhdnawoAlA_hThtG64FBIwhvVliB0zUA/edit
 
 No code changes — still a discussion doc, nothing built or decided yet.
+
+### 2026-08-14 (cont'd) — "+ New Campaign" gets a Pending option; two dropdowns fixed to pill style
+
+Claire: her strategists are ready to use the Strategist Portal exclusively
+now, but the public IO form isn't live yet — she wants a way to mark a
+campaign Pending from "+ New Campaign" (one at a time) instead of having
+to use the Bulk Import CSV flow for that in the meantime.
+
+**Fix**: added a "Pending" option to `#import-status` in
+`strategistOpenImportForm()`. No new status-handling logic needed —
+`pending` was already a fully generic, already-supported status value
+(used by Bulk Import and the real order-insert trigger); it already
+routes into the Setup queue via existing generic status-based rendering.
+Kept "Active" as the default selected option, matching the form's
+original intent (importing already-running campaigns) — Pending is just
+now also available for the "not set up yet, IO isn't live" case.
+
+**Also fixed**: Claire noticed some dropdowns in this form didn't get the
+portal's pill-style border. The Platform dropdown already used it (its
+own shared helper), but Tactic and Status were both still on plain 6px-
+radius corners — a leftover inconsistency, not a recent regression.
+Both switched to `border-radius:999px` to match.
+
+**Verified**: new `test-new-campaign-pending-pill-2026-08-14.js`
+(scratchpad, Playwright, real `strategistOpenImportForm()`) — 6 checks,
+all pass: Status dropdown has a Pending option labeled correctly, Active
+is still the default, Tactic and Status now render with pill radius, and
+Platform's pill radius (already correct) didn't regress. Re-ran 3
+existing regression tests touching this same form
+(`test-import-split.js`, `test-split-campaigns.js`,
+`test-bulk-import-status.js`) — all still pass. `node --check` clean.
+
+No SQL for this entry — frontend only.
