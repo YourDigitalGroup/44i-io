@@ -452,7 +452,7 @@ function strategistOpenImportForm() {
       </div>
       <div>
         <label class="lbl">Status</label>
-        <select id="import-status" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
+        <select id="import-status" onchange="strategistImportStatusChanged()" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="active" selected>Active</option>
           <!-- Pending (2026-08-14, per Claire -- strategists are ready to use this
                portal exclusively now, but the public IO form isn't live yet, so this
@@ -465,6 +465,23 @@ function strategistOpenImportForm() {
           <option value="paused">Paused</option>
           <option value="complete">Complete</option>
         </select>
+      </div>
+      <!-- Blocker/Notes (2026-08-14, per Claire -- if it's going straight to the Setup
+           queue anyway, let a strategist fill these in right here instead of having to
+           immediately reopen it from the Setup queue to do the exact same thing. Same
+           SETUP_BLOCKER_LABELS checklist + setup-blocker-cb class + Setup Notes textarea
+           as the real Setup panel, so strategistReadSetupBlockers() reads it identically. -->
+      <div id="import-pending-fields" style="display:none;grid-column:span 4">
+        <label class="lbl">What's this waiting on? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— check all that apply</span></label>
+        <div id="import-setup-blocker" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px">
+          ${Object.entries(SETUP_BLOCKER_LABELS).map(([key, label]) => {
+            const short = (SETUP_BLOCKER_CHECKBOX_HINTS[key]?.short) || label.replace(/^Waiting on /, '');
+            const hint = SETUP_BLOCKER_CHECKBOX_HINTS[key]?.hint || '';
+            return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="${esc(key)}"/> ${esc(short)}${hint}</label>`;
+          }).join('')}
+        </div>
+        <label class="lbl">Setup Notes</label>
+        <textarea id="import-setup-notes" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px" placeholder="What's this waiting on before it can go live?"></textarea>
       </div>
       <div>
         <label class="lbl">Flight Start</label>
@@ -516,6 +533,15 @@ const ADDL_TARGETING_SERVICE_IDS = ['yttv-bp'];
 // the "+ Addl. Targeting" checkbox's visibility right below it (2026-08-12) --
 // unlike Offline Visits Tracking's checkbox (always shown, since it can apply
 // to many different tactics), this one only makes sense for YouTube TV.
+// Shows the Blocker/Notes fields only while Status is Pending -- they're
+// meaningless for a campaign going straight to Active/Paused/Complete, same
+// "only relevant fields get filled in" principle as admin/index.html's own
+// context-based field visibility.
+function strategistImportStatusChanged() {
+  const isPending = document.getElementById('import-status').value === 'pending';
+  document.getElementById('import-pending-fields').style.display = isPending ? 'block' : 'none';
+}
+
 function strategistImportServiceChanged() {
   const wrap = document.getElementById('import-tactic-variant-wrap');
   const serviceId = document.getElementById('import-service').value;
@@ -583,6 +609,11 @@ async function strategistSubmitImport() {
   const hasOfflineVisits = document.getElementById('import-has-offline-visits').checked;
   const hasAddlTargeting = document.getElementById('import-has-addl-targeting').checked;
   const isSplit = document.getElementById('import-split-toggle').checked;
+  // Only meaningful (and only shown) while Status is Pending -- same
+  // strategistReadSetupBlockers() reading pattern the real Setup panel uses,
+  // just against #import-setup-blocker instead of a real line id's own container.
+  const setupBlockers = [...document.querySelectorAll('#import-setup-blocker .setup-blocker-cb:checked')].map(el => el.value);
+  const setupNotes = document.getElementById('import-setup-notes').value.trim();
 
   if (!clientId || !serviceId) { showToast('Pick a client and a tactic.', 'error'); return; }
 
@@ -607,7 +638,8 @@ async function strategistSubmitImport() {
         platform: platform || null, platform_campaign_name: isSplit ? null : (platformCampaignName || null),
         flight_start: flightStart, flight_end: flightEnd,
         status, assigned_strategist: currentStrategistUser.name, has_offline_visits: hasOfflineVisits,
-        has_addl_targeting: hasAddlTargeting
+        has_addl_targeting: hasAddlTargeting,
+        ...(status === 'pending' ? { setup_blocker: setupBlockers.length ? setupBlockers : null, setup_notes: setupNotes || null } : {})
       }
     }) });
     if (isSplit) {

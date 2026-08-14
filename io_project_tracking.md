@@ -13651,3 +13651,35 @@ existing regression tests touching this same form
 `test-bulk-import-status.js`) — all still pass. `node --check` clean.
 
 No SQL for this entry — frontend only.
+
+### 2026-08-14 (cont'd) — "+ New Campaign" can set Blocker/Notes for a Pending campaign inline
+
+Direct follow-up, Claire: since Pending already routes straight to the
+Setup queue, can Blocker/Notes be filled in right there in "+ New
+Campaign" instead of having to immediately reopen it from the Setup
+queue to do the same thing?
+
+**Fix**: added the same "What's this waiting on?" checklist (reusing
+`SETUP_BLOCKER_LABELS`/`SETUP_BLOCKER_CHECKBOX_HINTS`, same
+`.setup-blocker-cb` class) and a Setup Notes textarea to the import form,
+shown only while Status = Pending (`strategistImportStatusChanged()`,
+toggled on the Status dropdown's `onchange`). `strategistSubmitImport()`
+reads both the same way the real Setup panel's
+`strategistReadSetupBlockers()` does, and only includes `setup_blocker`/
+`setup_notes` in the save payload when status is actually `pending` —
+an Active/Paused/Complete submission never sends those keys at all, so
+nothing stray can carry over.
+
+**Verified**: new
+`test-new-campaign-pending-blocker-notes-2026-08-14.js` (scratchpad,
+Playwright, real `strategistOpenImportForm()`/`strategistSubmitImport()`)
+— 8 checks, all pass: the fields are hidden by default (Active), appear
+when Status switches to Pending, hide again when switched back, a
+Pending submission's captured RPC payload has the right `status`,
+`setup_blocker` (array with the checked box), and `setup_notes` text, and
+a normal Active submission omits both keys entirely rather than sending
+empty/stale values. Re-ran 4 existing regression tests touching this
+same form and the pill-style fix from earlier today — all still pass.
+`node --check` clean.
+
+No SQL for this entry — frontend only.
