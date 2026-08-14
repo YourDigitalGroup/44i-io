@@ -13575,3 +13575,46 @@ Claire ran it — verify query confirms `tlp-bs: 5`, `tlp-bb: 10`,
 page cap in the Service editor (shown only when Intake Form = "TLP") and
 it takes effect on the public intake form immediately, no code change or
 deploy needed — closing the drift-risk item flagged 2026-08-13.
+
+### 2026-08-14 (cont'd) — Two more design topics added to the cancellation/edit-IO doc
+
+Claire asked to add two more topics to the cancellation/edit-a-submitted-
+IO design doc, since they need the same group of people. Note: the
+available Google Drive tooling can create files but not edit an existing
+Doc in place, so this became a new combined doc rather than an in-place
+append — the earlier single-topic doc is now superseded.
+
+**Topic 2 — MS Farm Bureau multi-AE/county client structure** (from a
+prior team conversation, not previously logged anywhere). Investigated
+the real Trello/client data model to ground it: Trello is 1 List per
+CLIENT record (`clients.trello_list_id`), not per AE — so "MS Farm
+Bureau - Laura/YEN" being its own Trello List means that AE/county
+grouping is already its own separate `clients` row today. There's no
+county/sub-client hierarchy in the schema; every client is flat. The
+existing split-campaign feature doesn't help here — it only divides an
+already-created campaign line within ONE client, post-signature; it
+can't split one incoming IO across multiple client records. Real fork
+for the team: keep today's shape (each county/agent its own client
+record, matching Trello) and just smooth the multi-submission workflow,
+or move to a real parent/sub-client structure (bigger schema change,
+would also require rethinking how Trello Lists get created).
+
+**Topic 3 — full-campaign budget vs. monthly budget** (from a
+conversation with Bronson French, not previously logged). Real gap: reps
+enter a dollar amount into a "Monthly" budget field that's sometimes
+actually meant as the FULL campaign budget for a short, non-repeating
+campaign (e.g. $1,500 for one 30-day campaign, not $1,500/month).
+Bronson's hard example: an event spanning 8/31-9/30 — would $1,500 split
+as $50 August / $1,450 September by day count? Unresolved, and
+explicitly flagged as needing accounting's input before deciding. Two
+directions floated, neither decided: (1) a rep-facing checkbox meaning
+"this is the whole campaign's budget, not monthly," or (2) collect one
+full-campaign number and have the system auto-prorate it across the
+calendar months it touches by day count — the same shape of math as the
+existing hosting-proration logic and the cancellation billing question
+in Topic 1.
+
+New doc (replaces the earlier single-topic one):
+https://docs.google.com/document/d/1Tj0f523fv4OdhdnawoAlA_hThtG64FBIwhvVliB0zUA/edit
+
+No code changes — still a discussion doc, nothing built or decided yet.
