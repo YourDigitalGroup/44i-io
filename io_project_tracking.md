@@ -13499,3 +13499,155 @@ pre-existing, unrelated result in `test-prefill-months.js` predates this
 session and doesn't touch either changed function). `node --check` clean.
 
 No SQL for this entry — both fixes are frontend-only.
+
+### 2026-08-14 (cont'd) — TLP page cap made catalog-driven (frontend done; DB/RPC patch pending)
+
+Follow-up to the TLP item flagged above. Claire: "will making this change
+allow the hardcoded Intake form to update if a page count changes in the
+service editor?" — confirmed yes, that's the whole point, and she asked
+to build it. Scoped and built the frontend half:
+
+- **Public form** (`index.html`): `TLP_CAPS` (the hardcoded `{'tlp-bs':5,
+  'tlp-bb':10,'tlp-bp':15}` map) is gone. New `tlpPageCap(serviceId)`
+  reads `CATALOG_ROWS[serviceId].tlp_page_cap` instead — the single
+  lookup point every TLP reference in the file now goes through
+  (`renderTlpGrid()`, the "does this service get a grid at all" check,
+  and the intake-completeness check). `TLP_TIER_NAMES`/`TLP_SOFT_MIN`
+  deliberately left alone, per the agreed scope (tier display names and
+  the "suggest a smaller tier" nudge are separate, lower-drift-risk
+  hardcoded pieces, not what was asked about).
+- **Admin** (`admin/index.html`): new "TLP Page Cap" number field, shown
+  only when a service's Intake Form is set to "TLP" (`onServiceIntakeChange()`,
+  same show/hide-by-context pattern as `onPricingModeChange()`'s Spend
+  Minimum field) — hidden and force-cleared for every other service.
+  Load/save wired the same way `spend_minimum` already is, including the
+  same "hard guarantee, forced null unless applicable" pattern for
+  `tlp_page_cap` in the save payload.
+
+**Still pending — the database side.** `services.tlp_page_cap` doesn't
+exist yet, and `admin_save_service()` doesn't know about it either.
+Rather than guess at that RPC's current body (it's been patched several
+times this project — tactic_variants, strategist_disciplines, etc. — and
+this project's own convention is to always pull the LIVE definition
+before touching a function like this, not trust a possibly-stale
+scratchpad copy), asked Claire to run
+`select pg_get_functiondef('admin_save_service'::regproc);` so the patch
+can be written against what's actually live. **Until that SQL is written
+and run, the new admin field and the catalog-driven cap lookup are both
+inert — the column doesn't exist, so `tlp_page_cap` reads as
+`undefined` for every service, meaning the TLP grid won't render at all
+for tlp-bs/bb/bp until this ships.** This is fine on this feature branch
+(not live until merged to main) but the SQL must land before/alongside
+this frontend code reaching production, not after.
+
+**Verified (frontend only, DB-independent)**: new
+`test-tlp-catalog-cap-2026-08-14.js` (scratchpad, Playwright, real
+`tlpPageCap()`/`renderTlpGrid()` against mock `CATALOG_ROWS`) — 5 checks,
+all pass: an unknown service id returns `undefined` without throwing, the
+live catalog value is read correctly, a changed catalog value is
+reflected with no code change, the grid itself renders using the live
+cap, and `tlp-custom` is confirmed unaffected (still driven by the AE's
+typed page count). New `test-admin-tlp-cap-field-2026-08-14.js`
+(scratchpad, Playwright, real `onServiceIntakeChange()`) — 5 checks, all
+pass: field hidden by default, shows on selecting TLP, hides and clears
+on an active switch away from TLP, and shows without clearing when
+opening an existing TLP service for edit. `node --check` clean on both
+files.
+
+**Not yet run by Claire**: the `pg_get_functiondef` lookup above — needed
+before the actual schema + RPC patch can be written.
+
+### 2026-08-14 (cont'd) — TLP page cap: DB/RPC patch run, feature complete
+
+Claire ran `pg_get_functiondef('admin_save_service'::regproc)` — matched
+the scratchpad copy from 2026-08-10 exactly, confirming it was safe to
+patch directly rather than guess. Wrote and gave `tlp-page-cap-2026-08-14.sql`:
+adds `services.tlp_page_cap integer`, backfills the 3 known tiers (5/10/15,
+matching today's about-to-be-removed hardcoded values so nothing changes
+on the live form until an admin actually edits one), and patches
+`admin_save_service()` to accept `tlp_page_cap` in both its insert and
+update branches (same optional-numeric-field pattern as `spend_minimum`).
+
+Claire ran it — verify query confirms `tlp-bs: 5`, `tlp-bb: 10`,
+`tlp-bp: 15`, exactly as expected.
+
+**Feature complete end to end**: an admin can now change a TLP tier's
+page cap in the Service editor (shown only when Intake Form = "TLP") and
+it takes effect on the public intake form immediately, no code change or
+deploy needed — closing the drift-risk item flagged 2026-08-13.
+
+### 2026-08-14 (cont'd) — Two more design topics added to the cancellation/edit-IO doc
+
+Claire asked to add two more topics to the cancellation/edit-a-submitted-
+IO design doc, since they need the same group of people. Note: the
+available Google Drive tooling can create files but not edit an existing
+Doc in place, so this became a new combined doc rather than an in-place
+append — the earlier single-topic doc is now superseded.
+
+**Topic 2 — MS Farm Bureau multi-AE/county client structure** (from a
+prior team conversation, not previously logged anywhere). Investigated
+the real Trello/client data model to ground it: Trello is 1 List per
+CLIENT record (`clients.trello_list_id`), not per AE — so "MS Farm
+Bureau - Laura/YEN" being its own Trello List means that AE/county
+grouping is already its own separate `clients` row today. There's no
+county/sub-client hierarchy in the schema; every client is flat. The
+existing split-campaign feature doesn't help here — it only divides an
+already-created campaign line within ONE client, post-signature; it
+can't split one incoming IO across multiple client records. Real fork
+for the team: keep today's shape (each county/agent its own client
+record, matching Trello) and just smooth the multi-submission workflow,
+or move to a real parent/sub-client structure (bigger schema change,
+would also require rethinking how Trello Lists get created).
+
+**Topic 3 — full-campaign budget vs. monthly budget** (from a
+conversation with Bronson French, not previously logged). Real gap: reps
+enter a dollar amount into a "Monthly" budget field that's sometimes
+actually meant as the FULL campaign budget for a short, non-repeating
+campaign (e.g. $1,500 for one 30-day campaign, not $1,500/month).
+Bronson's hard example: an event spanning 8/31-9/30 — would $1,500 split
+as $50 August / $1,450 September by day count? Unresolved, and
+explicitly flagged as needing accounting's input before deciding. Two
+directions floated, neither decided: (1) a rep-facing checkbox meaning
+"this is the whole campaign's budget, not monthly," or (2) collect one
+full-campaign number and have the system auto-prorate it across the
+calendar months it touches by day count — the same shape of math as the
+existing hosting-proration logic and the cancellation billing question
+in Topic 1.
+
+New doc (replaces the earlier single-topic one):
+https://docs.google.com/document/d/1Tj0f523fv4OdhdnawoAlA_hThtG64FBIwhvVliB0zUA/edit
+
+No code changes — still a discussion doc, nothing built or decided yet.
+
+### 2026-08-14 (cont'd) — "+ New Campaign" gets a Pending option; two dropdowns fixed to pill style
+
+Claire: her strategists are ready to use the Strategist Portal exclusively
+now, but the public IO form isn't live yet — she wants a way to mark a
+campaign Pending from "+ New Campaign" (one at a time) instead of having
+to use the Bulk Import CSV flow for that in the meantime.
+
+**Fix**: added a "Pending" option to `#import-status` in
+`strategistOpenImportForm()`. No new status-handling logic needed —
+`pending` was already a fully generic, already-supported status value
+(used by Bulk Import and the real order-insert trigger); it already
+routes into the Setup queue via existing generic status-based rendering.
+Kept "Active" as the default selected option, matching the form's
+original intent (importing already-running campaigns) — Pending is just
+now also available for the "not set up yet, IO isn't live" case.
+
+**Also fixed**: Claire noticed some dropdowns in this form didn't get the
+portal's pill-style border. The Platform dropdown already used it (its
+own shared helper), but Tactic and Status were both still on plain 6px-
+radius corners — a leftover inconsistency, not a recent regression.
+Both switched to `border-radius:999px` to match.
+
+**Verified**: new `test-new-campaign-pending-pill-2026-08-14.js`
+(scratchpad, Playwright, real `strategistOpenImportForm()`) — 6 checks,
+all pass: Status dropdown has a Pending option labeled correctly, Active
+is still the default, Tactic and Status now render with pill radius, and
+Platform's pill radius (already correct) didn't regress. Re-ran 3
+existing regression tests touching this same form
+(`test-import-split.js`, `test-split-campaigns.js`,
+`test-bulk-import-status.js`) — all still pass. `node --check` clean.
+
+No SQL for this entry — frontend only.

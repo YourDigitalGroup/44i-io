@@ -623,7 +623,7 @@
               </div>
               <div>
                 <label class="lbl">Intake Form</label>
-                <select id="admin-svc-intake" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
+                <select id="admin-svc-intake" onchange="onServiceIntakeChange(true)" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">None</option>
                 </select>
               </div>
@@ -632,6 +632,12 @@
                 <select id="admin-svc-workflow" onchange="onWorkflowChange()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-workflow-new" placeholder="e.g. Website" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently splitting one tactic into two.</p>
+              </div>
+            </div>
+            <div id="admin-svc-tlp-cap-wrap" style="display:none;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="lbl">TLP Page Cap <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for TLP tiers. Max pages the intake grid allows for this tier; the client-facing intake form always reads this live, so changing it here takes effect immediately with no code change.</span></label>
+                <input type="number" step="1" min="1" id="admin-svc-tlp-cap" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
@@ -5031,6 +5037,22 @@ function populateServiceIntakeDropdown(current) {
   sel.innerHTML = '<option value="">None</option>' +
     ids.map(id => `<option value="${esc(id)}">${esc(INTAKE_FORMS[id]?.title || id)}</option>`).join('');
   sel.value = current || '';
+  onServiceIntakeChange(false);
+}
+
+// Shows the TLP Page Cap field only when Intake Form is set to "tlp" -- same
+// show/hide-on-context pattern as PRICING_MODE_FIELDS above, so the field doesn't
+// clutter the editor for the ~90+ other services that have nothing to do with TLP.
+// fromUserAction only clears the value on an ACTIVE switch away from tlp, not when
+// simply opening an existing service for edit (same reasoning as onPricingModeChange).
+function onServiceIntakeChange(fromUserAction) {
+  const isTlp = document.getElementById('admin-svc-intake').value === 'tlp';
+  const wrap = document.getElementById('admin-svc-tlp-cap-wrap');
+  if (wrap) wrap.style.display = isTlp ? 'grid' : 'none';
+  if (!isTlp && fromUserAction) {
+    const input = document.getElementById('admin-svc-tlp-cap');
+    if (input) input.value = '';
+  }
 }
 
 // Populates the Exclusivity Group dropdown from groups that ALREADY EXIST in the real
@@ -5326,7 +5348,7 @@ function adminNewService() {
   ['admin-svc-id','admin-svc-label','admin-svc-accounting-label','admin-svc-tactic-variants','admin-svc-sort','admin-svc-price',
    'admin-svc-modifier','admin-svc-cpm',
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
-   'admin-svc-spend-min','admin-svc-trello-template-ref'].forEach(id => {
+   'admin-svc-spend-min','admin-svc-tlp-cap','admin-svc-trello-template-ref'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
@@ -5411,6 +5433,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-setup-threshold').value = s.setup_fee_threshold ?? '';
   document.getElementById('admin-svc-fee-note').value = s.fee_note || '';
   document.getElementById('admin-svc-spend-min').value = s.spend_minimum ?? '';
+  document.getElementById('admin-svc-tlp-cap').value = s.tlp_page_cap ?? '';
   document.getElementById('admin-svc-hosting-prompt').value = s.hosting_prompt_type || '';
   document.getElementById('admin-svc-standalone-hosting').value = s.standalone_hosting_service_id || '';
   document.getElementById('admin-svc-auto-select').value = s.auto_select_service_id || '';
@@ -5470,6 +5493,7 @@ async function adminSaveService() {
   const cpmVal = document.getElementById('admin-svc-cpm').value;
   const sortVal = document.getElementById('admin-svc-sort').value;
   const spendMinVal = document.getElementById('admin-svc-spend-min').value;
+  const tlpCapVal = document.getElementById('admin-svc-tlp-cap').value;
 
   // Hard guarantee, independent of onPricingModeChange()'s field-hiding: whatever the
   // final Pricing Mode is, a field that mode doesn't use is saved as null, never
@@ -5482,6 +5506,10 @@ async function adminSaveService() {
   const isCpmAdjustmentFinal = pricingModeVal === 'modifier' && document.getElementById('admin-svc-cpm-adjustment').checked;
   const retailCpmFinal = pricingModeVal === 'spend' ? (cpmVal === '' ? null : parseFloat(cpmVal)) : null;
   const spendMinimumFinal = pricingModeVal === 'spend' ? (spendMinVal === '' ? null : parseFloat(spendMinVal)) : null;
+  // Same hard-guarantee pattern as spend_minimum above: forced null whenever Intake
+  // Form isn't "tlp", regardless of whatever's still sitting in the (hidden) input.
+  const intakeFormVal = document.getElementById('admin-svc-intake').value || null;
+  const tlpPageCapFinal = intakeFormVal === 'tlp' ? (tlpCapVal === '' ? null : parseInt(tlpCapVal, 10)) : null;
 
   // Exclusivity group: either the picked existing group, or the typed new-group name if
   // "+ Create a new group..." was selected — see populateServiceExclusivityDropdown()
@@ -5551,7 +5579,8 @@ async function adminSaveService() {
     retail_cpm: retailCpmFinal,
     koc_requirement: document.getElementById('admin-svc-koc').value,
     strategist_disciplines: strategistDisciplinesFinal,
-    intake_form_id: document.getElementById('admin-svc-intake').value || null,
+    intake_form_id: intakeFormVal,
+    tlp_page_cap: tlpPageCapFinal,
     workflow: workflowVal,
     trello_template_ref: document.getElementById('admin-svc-trello-template-ref').value.trim() || null,
     trello_template_type: document.getElementById('admin-svc-trello-template-type').value,
