@@ -13951,3 +13951,60 @@ further.
 without it, and the header lays out as `column` on a 390px mobile
 viewport vs. `row` on a 1200px desktop viewport (manually re-confirmed).
 `node --check` clean.
+
+### 2026-08-14 (cont'd) — Sticky section headers didn't actually stick; two real bugs found, one trade-off flagged
+
+Claire: only thing that didn't work from the last round was the sticky
+section headers on mobile (collapse/overflow/header fixes all confirmed
+working). Diagnosed with a real Playwright test that walks every
+ancestor from the sticky row up to `<html>` checking computed overflow —
+`position: sticky` silently does nothing if ANY ancestor's overflow isn't
+genuinely 'visible' on both axes, so this test finds the exact element(s)
+still blocking it instead of guessing.
+
+**Bug 1 (fixed): `.card`'s overflow:hidden.** Used everywhere else to
+clip a card-head's square corners into the card's own rounded ones — but
+it was disabling sticky for anything inside ANY card, including the
+brand-new section headers. Scoped a fix to just the Selected Services
+Summary card specifically (`#review-summary-card{overflow:visible}` +
+giving that card's own `.card-head` its own top-corner rounding, so it
+doesn't need the parent's clip anymore) rather than touching the shared
+`.card` rule every other card on the page still needs.
+
+**Bug 2 (fixed): a real regression in `.summary-table-scroll`'s own
+mobile override.** The 2026-08-07 fix comment right above this rule
+explicitly says "!important guarantees this override wins" — but the
+actual rule had no `!important` at all, so the later (in file order),
+non-media `.summary-table-scroll{overflow-x:auto}` base rule was winning
+again on mobile at equal specificity, silently reverting a previously-
+fixed bug. Also: `overflow-x:visible` alone was never enough for sticky
+regardless — per the CSS Overflow spec, when only one axis is 'visible'
+and the other isn't explicitly set, the 'visible' one gets silently
+corrected to 'auto' (still a scroll-container boundary as far as sticky
+is concerned) — `overflow-y` was never set here at all. Fixed by adding
+`!important` back (restoring the documented intent) and adding an
+explicit `overflow-y: visible !important` alongside it.
+
+**Remaining, NOT fixed — needs Claire's call, real trade-off**: `.wrap`
+(the outer container wrapping the ENTIRE form, every step) also has
+`overflow:hidden`, and is the one remaining ancestor still blocking full
+sticky. Its own code comment states its purpose plainly: "a hard
+max-width:900px with overflow:hidden... guarantees content ACTUALLY fits
+within it" — a page-wide safety net against any element on any step
+overflowing horizontally, not something scoped to just this one card.
+Verified there's no smaller/safer middle ground (splitting `.wrap`'s
+axes so only the vertical one relaxes doesn't work — the same visible/
+auto correction from Bug 2 defeats it). Disabling it fully would finish
+sticky but removes that page-wide safety net everywhere, not just here —
+flagged to Claire rather than deciding unilaterally, since the two real
+bugs just fixed were what the safety net was actually needed for; asked
+whether she wants that trade-off accepted for full sticky support.
+
+**Verified**: new `test-sticky-ancestor-check-2026-08-14.js` (scratchpad,
+Playwright) — walks the real ancestor chain and confirms exactly which
+elements block sticky at each step; confirms `.card`/`.summary-table-
+scroll` are no longer blockers after the fixes above, `.wrap` still is.
+Re-ran `test-mobile-card-width-fix-2026-08-14.js`,
+`test-review-section-collapse-2026-08-14.js`, and `test-review-section-
+headers-2026-08-14.js` — all still pass, confirming the earlier fixes
+are unaffected. `node --check` clean.
