@@ -5171,7 +5171,18 @@ function printIO() {
   const win = window.open('', '_blank');
   win.document.write(html);
   win.document.close();
-  setTimeout(() => win.print(), 600);
+  // Waits for the group logo image and any webfonts to actually finish loading before
+  // printing, instead of guessing at a fixed delay (2026-08-14) -- a slow-loading logo
+  // or font could previously print before either was ready. Still falls back to a
+  // capped timeout so a broken image URL (which never fires load OR error in some
+  // browsers) can't leave the print dialog stuck waiting forever.
+  const imgs = Array.from(win.document.images);
+  const imgsReady = imgs.length
+    ? Promise.all(imgs.map(img => img.complete ? Promise.resolve() : new Promise(res => { img.onload = img.onerror = res; })))
+    : Promise.resolve();
+  const fontsReady = win.document.fonts?.ready || Promise.resolve();
+  const timeoutFallback = new Promise(res => setTimeout(res, 3000));
+  Promise.race([Promise.all([imgsReady, fontsReady]), timeoutFallback]).then(() => win.print());
 }
 
 // ── PDF PAGINATION (content-aware) ──────────────────────────────
@@ -5540,6 +5551,12 @@ function loadDraft() {
     // Re-apply the standalone hosting lock so a restored draft doesn't show a
     // standalone hosting fee as selectable when it shouldn't be (or vice versa).
     updateStandaloneHostingLocks();
+    // toggle() refreshes these two after every checkbox change, but restoring a
+    // draft sets `selected` directly without going through toggle() -- without this,
+    // a restored draft with an intake/KOC-requiring service showed a stale badge
+    // until the user checked/unchecked something to trigger a real refresh.
+    updateIntakeStatusCard();
+    updateKocCard();
 
     // Restore KOC booking state (Step 3)
     if (d.kocCalOpened) {

@@ -13408,3 +13408,94 @@ line with no budget entered yet shows a plain em-dash rather than
 blank/NaN, and the grid is confirmed at 7 columns with Goal rendering
 after CPM/CPC Range. Re-ran 4 existing Setup-panel tests -- all still
 pass. `node --check` clean.
+
+### 2026-08-13 (cont'd) — Section-row campaign variant cleanup: closed out
+
+Ran `find-variant-campaigns-2026-08-10.sql` (still outstanding from
+2026-08-10) to double-check Claire's manual variant-picking work was
+actually complete. The report itself just lists every campaign on the 5
+"which one is it" services (Local Targeting: Geo/CRM/Event, Targeted
+Display: Custom/Site) — it doesn't filter to only-unresolved ones, so
+"zero rows" was never going to happen; had to check each of the 109 rows
+returned against its own `tactic_variants` options list by hand (same
+match Strategist's own dropdown uses to decide whether a value's already
+picked). Found exactly one still on the old ambiguous combined label:
+**R&R Farm Equipment**, "Geofencing or 1st Party Addressable" (should be
+one specific option). Claire updated it via the Strategist detail panel's
+variant dropdown. **All 5 section services are now fully resolved across
+every existing campaign** — this line item from the 2026-08-10 batch is
+closed.
+
+### 2026-08-13 (cont'd) — All outstanding SQL migrations confirmed run
+
+Claire double-checked all 7 SQL files still flagged "not yet run by
+Claire" as of this session's earlier outstanding-items audit. Re-ran the
+5 I had exact saved text for (`sem-formula-rates-2026-08-10`,
+`in-platform-pct-tiers-2026-08-13`, `platform-cpm-pairing-2026-08-13`,
+`offline-visits-order-pairing-2026-08-13` — superseded by the next one,
+`hosting-setup-fee-capture-2026-08-13` — a strict superset of the offline-
+visits one for `create_campaign_lines_from_order()`) — no errors. For the
+2 older ones I didn't have exact saved text for (`enforce-spend-minimum-
+2026-07-17`, `logo-dark-bg-2026-07-18`), ran a verification query instead
+of reconstructing them blind — confirmed both already applied:
+`services.enforce_spend_minimum` exists, `groups.logo_dark_bg` exists,
+and `admin_save_group` correctly persists it.
+
+**Every SQL migration flagged as outstanding is now confirmed applied.**
+No SQL migrations remain pending as of this entry.
+
+### 2026-08-14 — Closing out the small/low-priority bugs list
+
+Went through the "small, still-open items" list with Claire. Checked each
+against current code rather than assuming the old list was still
+accurate:
+
+- **Duplicate clients from typos** — already resolved, just not by the
+  originally-described fix. `checkClientNameMatch()` (built 2026-07-14)
+  does real fuzzy matching (Levenshtein distance + stripping "Inc"/"LLC"/
+  etc. suffixes) and warns with a one-click "Use existing client" link.
+  No action needed.
+- **Notes field on Step 2 not wrapping** — also already resolved; it's an
+  auto-growing `<textarea>` (`autoGrowNotesField`), not the single-line
+  `<input>` the old item described.
+- **Contract-term footnote symbols unexplained** — turned out to be a
+  non-issue; a legend for ‡/◊/§ already exists both on-screen and on the
+  printed IO document.
+- **`loadDraft()` doesn't refresh the intake/KOC status badge** —
+  confirmed still real, now fixed. `toggle()` (a normal checkbox click)
+  calls `updateIntakeStatusCard()`/`updateKocCard()` after every change;
+  `loadDraft()` restores `selected{}` directly without going through
+  `toggle()`, so those two never ran, leaving a stale badge until the
+  user clicked something else. Added both calls right after `loadDraft()`
+  finishes restoring the draft.
+- **`printIO()`'s fixed 600ms delay before printing** — confirmed still
+  real, now fixed. Replaced the guessed delay with actually waiting on
+  the group logo image(s) and `document.fonts.ready` in the print
+  window, so a slow-loading logo or webfont can no longer get clipped out
+  of the printed IO. Kept a 3-second fallback timeout (`Promise.race`) so
+  a broken image URL that never fires `load` or `error` can't leave the
+  print dialog stuck waiting forever.
+- **TLP page-count tiers still hardcoded** (`TLP_CAPS`/`TLP_TIER_NAMES`)
+  — confirmed still real, left open. Fixing this properly needs an actual
+  schema change (a new column on `services`, e.g. a page-cap field, plus
+  admin UI to edit it) rather than a quick JS touch-up — flagged to
+  Claire as a bigger lift than the other items on this list; left parked
+  rather than silently scope-creeping into a migration.
+
+**Verified**: new `test-loaddraft-badge-refresh-2026-08-14.js` (scratchpad,
+Playwright, real `loadDraft()` against a seeded `localStorage` draft) — 4
+checks, all pass: a draft with a selected service restores correctly and
+both `updateIntakeStatusCard()`/`updateKocCard()` are confirmed called
+afterward (previously neither was). New
+`test-printio-wait-for-load-2026-08-14.js` (scratchpad, Playwright, real
+`printIO()` against a stubbed print window) — 3 checks, all pass: print
+does not fire before a slow-loading image finishes, the 3-second fallback
+still fires print if an image never resolves at all, and an
+already-loaded image prints promptly rather than waiting out the full
+fallback for no reason. Re-ran 3 existing regression tests
+(`test-pdf-pagination.js`, `test-prefill-full-flight.js`,
+`test-prefill-months.js`) — all still behave the same as before (one
+pre-existing, unrelated result in `test-prefill-months.js` predates this
+session and doesn't touch either changed function). `node --check` clean.
+
+No SQL for this entry — both fixes are frontend-only.
