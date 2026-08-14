@@ -13408,3 +13408,20 @@ line with no budget entered yet shows a plain em-dash rather than
 blank/NaN, and the grid is confirmed at 7 columns with Goal rendering
 after CPM/CPC Range. Re-ran 4 existing Setup-panel tests -- all still
 pass. `node --check` clean.
+
+### 2026-08-13 (cont'd) — Section-row campaign variant cleanup: closed out
+
+Ran `find-variant-campaigns-2026-08-10.sql` (still outstanding from
+2026-08-10) to double-check Claire's manual variant-picking work was
+actually complete. The report itself just lists every campaign on the 5
+"which one is it" services (Local Targeting: Geo/CRM/Event, Targeted
+Display: Custom/Site) — it doesn't filter to only-unresolved ones, so
+"zero rows" was never going to happen; had to check each of the 109 rows
+returned against its own `tactic_variants` options list by hand (same
+match Strategist's own dropdown uses to decide whether a value's already
+picked). Found exactly one still on the old ambiguous combined label:
+**R&R Farm Equipment**, "Geofencing or 1st Party Addressable" (should be
+one specific option). Claire updated it via the Strategist detail panel's
+variant dropdown. **All 5 section services are now fully resolved across
+every existing campaign** — this line item from the 2026-08-10 batch is
+closed.
