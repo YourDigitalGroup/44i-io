@@ -14008,3 +14008,53 @@ Re-ran `test-mobile-card-width-fix-2026-08-14.js`,
 `test-review-section-collapse-2026-08-14.js`, and `test-review-section-
 headers-2026-08-14.js` — all still pass, confirming the earlier fixes
 are unaffected. `node --check` clean.
+
+### 2026-08-14 (cont'd) — Sticky headers: tested for real instead of skipping on the trade-off alone
+
+Claire, after the trade-off writeup: wanted it actually tested rather
+than skipped outright, since collapsing without a visible section label
+risks someone forgetting which section they're in — and reiterated
+everything's revertible via git regardless.
+
+**Removed both remaining blockers**: `.wrap`'s `overflow:hidden` (the
+page-wide safety net) and `.summary-table-scroll`'s desktop-only
+`overflow-x:auto` (the table's own narrow-window safety net). Confirmed
+with `test-sticky-ancestor-check-2026-08-14.js` that sticky now
+genuinely works end to end — 0 blocking ancestors, and an actual
+`window.scrollBy()` test confirms the header visually stays pinned near
+the top instead of scrolling away with its cards.
+
+**Then stress-tested the exact scenario each removed safety net
+existed for**, rather than assuming removing them was fine:
+- `test-narrow-desktop-overflow-2026-08-14.js` — a genuinely narrow
+  desktop window (601/650/700/900px) with a long Notes value. Found a
+  REAL regression: a single long unbroken token (e.g. a raw URL with no
+  spaces) caused 15px of horizontal overflow at 601px once the safety
+  net was gone — normal word-wrap can't break an unbroken string, and
+  `.summary-table td` never had `overflow-wrap:anywhere` (unlike Step
+  2's `.svc-table`, which already does, and the printed IO document's
+  own services table, which also already does). Fixed at the actual
+  root cause — added `overflow-wrap:anywhere` to `.summary-table td` —
+  rather than re-adding the scrollbar that was just hiding the same
+  problem. Re-ran the same test after the fix: 0px overflow at every
+  width, including with the same long-URL stress content.
+- Same class of risk exists for the Client Info Recap grid (also
+  renders free-typed values as plain text) — proactively added the same
+  `overflow-wrap:anywhere` fix there too and verified with a new
+  `test-client-recap-overflow-2026-08-14.js` (a 601px window with an
+  85-character unbroken business name) — 0px overflow.
+
+**Verified**: all 8 test files from today's mobile/PDF work re-run
+together — `test-sticky-ancestor-check`, `test-mobile-card-width-fix`,
+`test-review-section-collapse`, `test-review-section-headers`,
+`test-header-cleanup`, `test-narrow-desktop-overflow`,
+`test-client-recap-overflow`, `test-pdf-totals-box-zone` — all still
+pass. `node --check` clean.
+
+**Net result**: sticky + collapsible section headers now fully work on
+both mobile and web. The real trade-off flagged earlier turned out to
+be worth taking — stress-testing surfaced one genuine gap it would have
+exposed (unbroken long text in two places lacking `overflow-wrap`), and
+that gap is now fixed at its actual root cause rather than papered over
+by a scrollbar, which is arguably more robust than the state before any
+of today's changes.
