@@ -13556,3 +13556,22 @@ files.
 
 **Not yet run by Claire**: the `pg_get_functiondef` lookup above — needed
 before the actual schema + RPC patch can be written.
+
+### 2026-08-14 (cont'd) — TLP page cap: DB/RPC patch run, feature complete
+
+Claire ran `pg_get_functiondef('admin_save_service'::regproc)` — matched
+the scratchpad copy from 2026-08-10 exactly, confirming it was safe to
+patch directly rather than guess. Wrote and gave `tlp-page-cap-2026-08-14.sql`:
+adds `services.tlp_page_cap integer`, backfills the 3 known tiers (5/10/15,
+matching today's about-to-be-removed hardcoded values so nothing changes
+on the live form until an admin actually edits one), and patches
+`admin_save_service()` to accept `tlp_page_cap` in both its insert and
+update branches (same optional-numeric-field pattern as `spend_minimum`).
+
+Claire ran it — verify query confirms `tlp-bs: 5`, `tlp-bb: 10`,
+`tlp-bp: 15`, exactly as expected.
+
+**Feature complete end to end**: an admin can now change a TLP tier's
+page cap in the Service editor (shown only when Intake Form = "TLP") and
+it takes effect on the public intake form immediately, no code change or
+deploy needed — closing the drift-risk item flagged 2026-08-13.
