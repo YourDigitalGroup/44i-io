@@ -253,7 +253,7 @@ select.qty-field{background-image:none;padding-right:3px}
   .svc-table { table-layout: auto; }
   .svc-table colgroup, .svc-table col { display: none; }
   .svc-table thead { display: none; }                 /* column headers don't apply per-card */
-  .svc-table, .svc-table tbody, .svc-table tr, .svc-table td { display: block; width: 100%; }
+  .svc-table, .svc-table tbody, .svc-table td { display: block; width: 100%; }
   .svc-table tr {
     /* width: auto (2026-08-14, per Claire -- found live on a real phone, a card's
        right edge wasn't visible without a horizontal swipe): the shared rule above
@@ -263,6 +263,19 @@ select.qty-field{background-image:none;padding-right:3px}
        than its own container. width:auto lets a block element's normal box-model
        math account for the margin itself, landing at exactly the intended width. */
     width: auto;
+    /* display:flex + flex-wrap (2026-08-14, per Claire -- "is there any way we can
+       make [the service blocks] smaller without losing all of the information?"):
+       every field used to be its own full-width block (label line + value line),
+       stacked one under another -- Fee, Frequency, [Spend], Start Date, End Date,
+       Notes, each on its own pair of lines regardless of how short its value
+       actually is. Switching the row itself to a flex container lets short fields
+       (Fee/Frequency, Start/End Date) sit two-to-a-line instead, using the same
+       label-above-value cell markup and CSS unchanged -- just letting cells that
+       fit share a line via flex-basis below, rather than laying every <td> out as
+       its own 100%-wide block. Nothing is removed, only laid out more densely. */
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 10px;
     border: 1px solid var(--border);
     border-radius: 9px;
     margin: 10px 8px;
@@ -282,19 +295,24 @@ select.qty-field{background-image:none;padding-right:3px}
      other field's left-aligned value in that same vertical stack. */
   .svc-table td.svc-freq { text-align: left; }
 
-  /* Checkbox cell → sits inline to the LEFT of the service name (matches desktop) */
+  /* Checkbox cell → sits inline to the LEFT of the service name (matches desktop).
+     flex:0 0 auto (2026-08-14) -- a flex item now (the row itself is display:flex
+     above), so it keeps its own natural (checkbox + padding) width instead of
+     stretching or shrinking to share space with its neighbor. */
   .svc-table td:first-child {
-    display: inline-block;
-    width: auto;
+    flex: 0 0 auto;
     padding: 0 10px 0 0;
     vertical-align: middle;
   }
   .svc-table td:first-child input[type=checkbox] { width: 22px; height: 22px; vertical-align: middle; }
 
-  /* Service-name cell (2nd) → the card title, sits inline next to the checkbox */
+  /* Service-name cell (2nd) → the card title, sits inline next to the checkbox.
+     flex:1 1 auto (2026-08-14) -- grows to fill the rest of the first line (same
+     line as the checkbox), which is also what pushes every field cell after it
+     onto its own new line via flex-wrap, exactly like before. */
   .svc-table td:nth-child(2) {
-    display: inline-block;
-    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
     font-weight: 600; font-size: 13.5px; margin-bottom: 2px;
     vertical-align: middle;
   }
@@ -312,18 +330,31 @@ select.qty-field{background-image:none;padding-right:3px}
     text-transform: uppercase; letter-spacing: .05em; margin-top: 6px; margin-bottom: 1px;
   }
 
+  /* Fee/Frequency paired side-by-side (2026-08-14) -- both are short values (e.g.
+     "$500", "Monthly") that never needed a full line to themselves; calc(50% - 5px)
+     each (half the row width minus half the 10px column-gap) puts them on the same
+     line instead of two separate stacked lines, with nothing about either field
+     changed except how much horizontal room it's given. */
+  .svc-table td.svc-fee, .svc-table td.svc-freq { flex: 1 1 calc(50% - 5px); }
   .svc-table td.svc-fee::before  { content: 'Fee'; }
   .svc-table td.svc-freq::before { content: 'Frequency'; }
+  .svc-table td:last-child { flex: 1 1 100%; }
   .svc-table td:last-child::before { content: 'Notes'; }
   .svc-table td:last-child textarea.notes-field { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; }
 
-  /* Spend cell (ad tables) — labelled + full-width input */
+  /* Spend cell (ad tables) — labelled + full-width input. Kept on its own full-width
+     line (not paired) since it's a live numeric input the AE actually types into —
+     wants a comfortable tap target, not a half-width square. */
+  .svc-table td.c-spend-cell { flex: 1 1 100%; }
   .svc-table td.c-spend-cell::before { content: 'Spend'; }
   .svc-table td input[type=number] { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 13px; text-align: left; }
 
   /* Per-tactic flight dates (2026-08-06) — same labelled-stack pattern as Fee/Spend.
      Length dropped in favor of both dates being directly typed (see
-     updateTacticDate()) — no Length cell to label on mobile either. */
+     updateTacticDate()) — no Length cell to label on mobile either.
+     Paired side-by-side (2026-08-14) — same reasoning as Fee/Frequency above; a date
+     input is compact enough that two fit comfortably on one line. */
+  .svc-table td.svc-start-cell, .svc-table td.svc-end-cell { flex: 1 1 calc(50% - 5px); }
   .svc-table td.svc-start-cell::before { content: 'Start Date'; }
   .svc-table td.svc-end-cell::before { content: 'End Date'; }
   .svc-table td.svc-start-cell input,
@@ -341,10 +372,15 @@ select.qty-field{background-image:none;padding-right:3px}
      the desktop table's column alignment need doesn't apply once cells stack, so it's
      simplest to just not show it there at all. */
   .svc-table td.svc-end-na { display: none; }
+  /* Give Start Date its own full line when there's no End Date next to it to pair
+     with (2026-08-14) -- otherwise it'd sit at only half the row's width (from the
+     rule above) with an empty gap where End used to be, now that End is hidden. */
+  .svc-table td.svc-start-cell:has(+ .svc-end-na) { flex: 1 1 100%; }
   /* Modifier/add-on row's single "Uses tactic's dates" note (2026-08-07) — small and
      centered on desktop reads oddly full-width/block on mobile; left-align and match
-     the other fields' spacing instead. */
-  .svc-table td.svc-modifier-date-cell { text-align: left !important; padding-top: 6px; }
+     the other fields' spacing instead. Full-width (2026-08-14) — it's a standalone
+     note, not a value meant to pair with a neighboring field. */
+  .svc-table td.svc-modifier-date-cell { flex: 1 1 100%; text-align: left !important; padding-top: 6px; }
 
   /* Selected Services Summary (Review page) — same stacked-card treatment as
      .svc-table above (2026-08-07, per Claire — "people won't think to scroll" is a
