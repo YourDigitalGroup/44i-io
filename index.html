@@ -47,6 +47,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 
 /* Cards */
 .card{background:var(--card);border-radius:12px;border:1px solid var(--border);margin-bottom:16px;overflow:hidden;box-shadow:0 1px 2px rgba(20,40,60,.05),0 10px 24px rgba(20,40,60,.06)}
+/* #review-summary-card overrides .card's overflow:hidden (2026-08-14, per Claire --
+   the sticky section headers didn't actually stick on a real phone). Root cause:
+   position:sticky can't escape ANY ancestor whose overflow isn't 'visible' -- .card's
+   overflow:hidden (used everywhere else to clip a card-head's square corners into the
+   card's own rounded ones) was silently disabling it. Scoped to just this one card by
+   ID rather than touching the shared .card rule, since every other card on the page
+   still needs that clipping and has no sticky content inside it. card-head needs its
+   own top-corner rounding now, since it can no longer rely on the parent's clip. */
+#review-summary-card{overflow:visible}
+#review-summary-card>.card-head{border-radius:12px 12px 0 0}
 .card-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);background:#F5F8FA}
 .card-head h3{font-size:13px;font-weight:700;letter-spacing:.01em}
 /* Title + note (2026-08-07, see the JS-side comment above this markup for why) —
@@ -330,7 +340,20 @@ select.qty-field{background-image:none;padding-right:3px}
      drawn past ~390px of actual phone screen — exactly a "scroll right into
      blank" symptom. !important guarantees this override wins regardless of
      where either rule sits in the file. */
-  .summary-table-scroll { overflow-x: visible; }
+  /* !important + explicit overflow-y (2026-08-14, per Claire -- sticky section
+     headers weren't actually sticking on a real phone): two real bugs found here.
+     First, this rule had silently lost the !important the 2026-08-07 fix above
+     describes -- the base (non-media) `.summary-table-scroll{overflow-x:auto}`
+     rule sits LATER in this file, so at equal specificity it was winning on mobile
+     again despite this override, exactly the regression that comment warns about.
+     Second, overflow-x:visible alone isn't enough for sticky to work: per the CSS
+     Overflow spec, if only one axis is 'visible' while the other isn't, the
+     'visible' one gets silently corrected to 'auto' -- overflow-y was never set at
+     all here, so it defaulted into that correction. position:sticky treats 'auto'
+     the same as any other non-visible value (still a scroll-container boundary),
+     so BOTH axes need to be genuinely, explicitly visible for it to escape this
+     element. */
+  .summary-table-scroll { overflow-x: visible !important; overflow-y: visible !important; }
   .summary-table { min-width: 0 !important; table-layout: auto; }
   .summary-table thead { display: none; }
   .summary-table, .summary-table tbody, .summary-table tr, .summary-table td { display: block; width: 100%; }
@@ -809,7 +832,7 @@ select.qty-field{background-image:none;padding-right:3px}
     </div>
 
     <!-- Summary table -->
-    <div class="card">
+    <div class="card" id="review-summary-card">
       <div class="card-head"><h3>Selected Services Summary</h3></div>
       <div class="summary-table-scroll" style="padding:0">
         <table class="summary-table" id="summary-table">
