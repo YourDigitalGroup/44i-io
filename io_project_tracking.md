@@ -13730,3 +13730,38 @@ Confirmed the exact row via a two-step select-then-update (id
 `12148b15-f2d0-4cb7-9ec8-be378bad58c8`), Claire ran
 `update campaign_lines set status = 'pending' where id = '...'` — now
 correctly shows in the Campaign Setup queue instead of Paused.
+
+### 2026-08-14 (cont'd) — Trello bot account: claude-proxy switched off James Lather's token
+
+Claire: a new dedicated Trello bot account was created and a new
+`TRELLO_BOT_TOKEN` secret added to the `claude-proxy` Edge Function's
+environment, to stop every Trello API call this system makes from
+authorizing as James Lather's personal account.
+
+Asked Claire to paste the live Edge Function source first (same
+pull-before-patch discipline as every RPC change this session) rather
+than guess at it — this Edge Function lives only in Supabase, not this
+repo, so there was no local copy to check against. Confirmed the current
+auth reads `Deno.env.get("TRELLO_KEY")` + `Deno.env.get("TRELLO_TOKEN")`.
+
+**Fix**: exactly one functional line changed — `TRELLO_TOKEN` now reads
+from `TRELLO_BOT_TOKEN` instead. `TRELLO_KEY` is untouched (it's Trello's
+app-level key, not tied to any specific authorizing user, so the new bot
+account doesn't need a new key, only a new token). Gave Claire the full
+updated file (`claude-proxy-index-2026-08-14.ts`) to paste into the
+Supabase dashboard and redeploy — every other target (send_email,
+upload_group_logo, all 16 `trello_*` cases) is untouched.
+
+**Important operational flag, not yet confirmed**: every Trello API call
+this system makes authorizes as whichever account owns the token — so
+the new bot account needs to actually be a MEMBER of every client/group
+board the system touches (same board-membership requirement already
+documented for the AM/AE card-tagging feature). If the bot hasn't been
+added to a given board yet, every Trello action for that board (list
+lookups, card creation, comments, everything) will start failing the
+moment this redeploys, not just member-tagging specifically. Worth
+confirming the bot's been added everywhere James had access before (or
+immediately after) redeploying.
+
+**Not yet confirmed by Claire**: the Edge Function redeploy itself, and
+the board-membership check above.
