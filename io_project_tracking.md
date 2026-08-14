@@ -13707,3 +13707,142 @@ left blank rather than an empty string. Re-ran 4 existing Setup-panel
 regression tests — all still pass. `node --check` clean.
 
 No SQL for this entry — frontend only.
+
+### 2026-08-14 (cont'd) — Recommendation added to Topic 3 of the design doc; one Paused campaign fixed to Pending
+
+**Design doc**: gave Claire an opinion on Topic 3 (full-campaign vs.
+monthly budget) when asked. Recommended Option 2 (collect a full-campaign
+number, auto-prorate by day count) over Option 1 (a rep-facing checkbox)
+-- Bronson's own objection to Option 1 ("the reps aren't going to do
+that") is the strongest argument against it, and Option 2 reuses the
+same day-count math already trusted for hosting proration. Also noted
+this likely resolves the doc's "lump sum vs. monthly pieces" open
+question in Option 2's favor, since both portals already store budgets
+as one row per calendar month regardless. Rebuilt the doc with this
+added to Topic 3 (same in-place-edit limitation as before — new link
+supersedes the last one):
+https://docs.google.com/document/d/1EZ-ZM-GFozaBe486CjVajxYTVhlhhNnfPux3GqYhq_M/edit
+
+**Data fix**: one real campaign (Blue Dolphin Pools / 44i / SEM / Google
+Ads / flight start 2026-09-01) had been set to Paused by a strategist as
+a workaround before today's Pending option existed in "+ New Campaign."
+Confirmed the exact row via a two-step select-then-update (id
+`12148b15-f2d0-4cb7-9ec8-be378bad58c8`), Claire ran
+`update campaign_lines set status = 'pending' where id = '...'` — now
+correctly shows in the Campaign Setup queue instead of Paused.
+
+### 2026-08-14 (cont'd) — Trello bot account: claude-proxy switched off James Lather's token
+
+Claire: a new dedicated Trello bot account was created and a new
+`TRELLO_BOT_TOKEN` secret added to the `claude-proxy` Edge Function's
+environment, to stop every Trello API call this system makes from
+authorizing as James Lather's personal account.
+
+Asked Claire to paste the live Edge Function source first (same
+pull-before-patch discipline as every RPC change this session) rather
+than guess at it — this Edge Function lives only in Supabase, not this
+repo, so there was no local copy to check against. Confirmed the current
+auth reads `Deno.env.get("TRELLO_KEY")` + `Deno.env.get("TRELLO_TOKEN")`.
+
+**Fix**: exactly one functional line changed — `TRELLO_TOKEN` now reads
+from `TRELLO_BOT_TOKEN` instead. `TRELLO_KEY` is untouched (it's Trello's
+app-level key, not tied to any specific authorizing user, so the new bot
+account doesn't need a new key, only a new token). Gave Claire the full
+updated file (`claude-proxy-index-2026-08-14.ts`) to paste into the
+Supabase dashboard and redeploy — every other target (send_email,
+upload_group_logo, all 16 `trello_*` cases) is untouched.
+
+**Important operational flag, not yet confirmed**: every Trello API call
+this system makes authorizes as whichever account owns the token — so
+the new bot account needs to actually be a MEMBER of every client/group
+board the system touches (same board-membership requirement already
+documented for the AM/AE card-tagging feature). If the bot hasn't been
+added to a given board yet, every Trello action for that board (list
+lookups, card creation, comments, everything) will start failing the
+moment this redeploys, not just member-tagging specifically. Worth
+confirming the bot's been added everywhere James had access before (or
+immediately after) redeploying.
+
+**Not yet confirmed by Claire**: the Edge Function redeploy itself, and
+the board-membership check above.
+
+### 2026-08-14 (cont'd) — Several stale catalog questions closed out; mobile checklist given
+
+Went through the remaining unblocked (not waiting on the 3-topic team
+conversation) outstanding items with Claire. Resolved:
+
+- **Real Platform CPM values in Admin's Accounting Map** — confirmed
+  already entered by Claire.
+- **`hulu-bp`/`amz-bp` missing an intake form** — confirmed intentional,
+  not a gap.
+- **`yttv-addl` billing type** — confirmed correct: no charge, purely a
+  CPM-basis adjustment.
+- **KOC requirements catalog-wide** — confirmed by Claire's AM, no longer
+  an open item.
+- **Manual billing-only revenue entry for Accounting** — Claire believed
+  this was already built; verified against the real file rather than
+  taking it at face value (per this project's own working convention) —
+  confirmed true: `accountingOpenAddServiceForm()` ("+ Add Service") and
+  `accountingOpenBulkImportForm()` ("Bulk Import (CSV)"), both built
+  2026-08-11/12, let Accounting add a revenue line individually or in
+  bulk with no order behind it. No gap here after all.
+
+**Still open — mobile checklist given to Claire to test on a real
+device** (not something verifiable via code alone or desktop dev-tools
+emulation, particularly the signature canvas): Step 1's Campaign Length
+dropdown and Step 3's date field(s) not clipped on a real phone screen;
+the intake modal (e.g. the TLP grid or a Website intake form) usable on
+a phone — readable, scrollable, tappable; and the signature canvas
+actually usable with a real finger on a touchscreen (smooth line
+drawing, Clear/Undo reachable). All three predate the bigger 2026-08-07
+live mobile-testing round and were never explicitly re-confirmed either
+way afterward.
+
+### 2026-08-14 (cont'd) — Mobile checklist results; Selected Services Summary missing section headers
+
+Claire tested the checklist above on a real phone. Results:
+- **Campaign Length dropdown** — moot; it was removed entirely when
+  campaign dates moved to per-service-line dates. Not a bug, just a
+  stale item from before that architecture change.
+- **Step 3 date fields, intake modals, signature canvas** — all confirmed
+  working correctly on a real device.
+- **Real gap found**: the Step 3 "Selected Services Summary" table shows
+  each selected service (e.g. "Business Starter," "Business Pro") with
+  no section label above it — on a phone's stacked-card layout this
+  reads as a bare name with zero category context, though the underlying
+  cause is NOT mobile-specific: `buildReview()` never grouped by section
+  at all, on desktop OR mobile, unlike the printed IO document
+  (`buildIoDocumentHtml()`), which already groups by section with its
+  own header rows and subtotals. Desktop just made the gap less
+  noticeable since more page context is visible at once.
+- Also flagged: slight residual horizontal scroll on this page on mobile
+  — not yet root-caused, see below.
+
+**Fix**: `buildReview()` now groups `selected` by section and iterates
+`SECTIONS` (not hardcoded) the same way the printed document already
+does, inserting a `<tr class="rs-section-row">` header before each
+section's items. Added matching CSS for both the desktop table (light
+background, small caps label, matching the printed doc's own
+`.section-row` look) and the existing mobile stacked-card layout (no
+border/card treatment, just a small caps label above its group).
+
+**Verified**: new `test-review-section-headers-2026-08-14.js`
+(scratchpad, Playwright, real `buildReview()`, mock `selected`/
+`SECTIONS`) — 6 checks, all pass: both section headers render, each
+appears before its own group's items (not after or duplicated), the
+item count and dollar totals are unaffected ($850 one-time / $798/mo,
+matching Claire's own screenshot numbers exactly). No existing
+regression test covers `buildReview()` specifically. `node --check`
+clean.
+
+**Not yet fixed — needs more specifics before touching**: (1) the
+residual horizontal scroll on this same page on mobile — asked Claire
+for more detail rather than guessing at a second, unrelated fix; (2) the
+printed/downloaded IO PDF "cut at an odd point" between the services
+table and the totals/terms page — this uses a completely different,
+already content-aware screenshot+slice pagination system (see the
+2026-08-07 entry on `paginateImageIntoPdf`/`computeUnsafeZonesMm`), and
+without knowing exactly what's wrong (content actually split mid-row vs.
+just unused whitespace before the page break) a blind fix risks making
+it worse — asked Claire what specifically looks wrong before proposing
+a change.
