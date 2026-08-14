@@ -13884,3 +13884,70 @@ symptom is reasoned, not verified — the full screenshot+jsPDF pipeline
 can't be run headlessly here to see exact pixel-level before/after.
 Asked Claire to regenerate the same test IO's PDF after this deploys and
 report whether the totals now land where expected.
+
+### 2026-08-14 (cont'd) — Real mobile overflow bug found and fixed; sticky/collapsible section headers; header cleanup
+
+Claire confirmed the horizontal scroll was real on a live phone (left edge
+of a service card visible, right edge not) and gave two more requests in
+the same message.
+
+**Real bug found: mobile card overflow.** Both `.svc-table tr` (Step 2)
+and `.summary-table tr` (Step 3, today's new section-header row too) set
+`width: 100%` (from a shared block-display rule) while ALSO carrying an
+8px-each-side horizontal margin. The page's global reset
+(`*{box-sizing:border-box}`) only keeps padding/border inside an
+element's declared width — it never absorbs margin — so each card's true
+rendered footprint was `100% + 16px`, genuinely wider than its container
+on every browser, not a Safari-only quirk. My own earlier Playwright
+test at 390px/375px missed it because `.card`'s `overflow:hidden`
+clips the excess in Chromium without necessarily preventing an outer
+scroll, and/or Chromium's exact overflow-propagation behavior here
+differs subtly from what Claire's real device showed — either way, the
+underlying CSS math was provably wrong regardless of any one browser's
+rendering. Fixed by changing `width: 100%` to `width: auto` on both
+`.svc-table tr` and `.summary-table tr` (plus the new `.rs-section-row`,
+which has the identical pattern) — `width: auto` lets a block element's
+normal box model account for margin correctly.
+
+**Verified**: new `test-mobile-card-width-fix-2026-08-14.js` (scratchpad,
+Playwright, real CSS + `buildReview()`) measures a real card's true outer
+box (border-box width + margins) against its container's width at
+390px — confirms exactly 0px of overflow after the fix (was
+mathematically guaranteed to be 16px before it). `node --check` clean.
+
+**Sticky + collapsible section headers.** Claire: wants the section
+label to stay visible while scrolling through that section's cards, and
+a way to close a section once done with it. Added `reviewCollapsedSections`
+(module-level `Set`, survives across re-renders) and
+`toggleReviewSection(id)` — clicking a section header toggles it in/out
+of the set and re-runs `buildReview()`; every item row in that section
+gets `display:none` while collapsed. Totals/item count are computed from
+`selected` regardless of collapse state, so collapsing is purely visual,
+never changes what's actually been selected. Header row gets
+`position: sticky; top: 0` (mobile only, matching the stacked-card
+layout this was asked for) with a solid background (can't stay
+transparent once it's stuck over scrolling content) and a chevron
+(▾ expanded / ▸ collapsed).
+
+**Verified**: new `test-review-section-collapse-2026-08-14.js` — 8
+checks, all pass: chevron flips correctly, collapsing one section hides
+only its own item rows (a different section's rows stay visible),
+totals/item count are unaffected by collapse state, and toggling again
+correctly re-expands. `node --check` clean.
+
+**Header cleanup.** Claire: the subtitle under "Insertion Order"
+(`#header-version`, showing "{Group Name} · Insertion Order") is
+redundant — group name already appears via the logo — and on mobile the
+logo crowds the title with no room to breathe (fine on desktop, which
+has more width to spread out in). Removed `#header-version` entirely
+(markup + the `applyGroupBranding()` code that set its text) for both
+web and mobile. Added a mobile-only rule stacking the logo above the
+title (`flex-direction: column`) instead of forcing them side by side,
+removing the crowding rather than trying to shrink either element
+further.
+
+**Verified**: new `test-header-cleanup-2026-08-14.js` — confirms
+`#header-version` no longer exists, `applyGroupBranding()` runs cleanly
+without it, and the header lays out as `column` on a 390px mobile
+viewport vs. `row` on a 1200px desktop viewport (manually re-confirmed).
+`node --check` clean.
