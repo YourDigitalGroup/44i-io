@@ -14126,3 +14126,89 @@ again blind.
 `test-header-cleanup`, `test-narrow-desktop-overflow`, `test-client-
 recap-overflow`, and `test-pdf-totals-box-zone` — all still pass
 unchanged after the revert.
+
+### 2026-08-14 (cont'd) — Sticky headers, take two: per-section scrollable boxes
+
+Claire pushed back on giving up: "I have to believe there is a way to
+make each section its own scrollable table like we did with the other
+portals" — pointing directly at Admin and Strategist, which both already
+have reliable sticky headers in this same codebase. Went and looked at
+exactly how those work rather than guessing again:
+
+- **Admin**: every one of its 11 list tables lives inside its own
+  `<div style="overflow:auto;max-height:70vh">`, with
+  `#page-admin table thead th{position:sticky;top:0}`.
+- **Strategist**: the main table lives in
+  `<div style="overflow-x:auto;overflow-y:auto;max-height:70vh">`, with
+  sticky `<th>` column headers AND a sticky `sticky-group-td` group-band
+  `<td>` — the closest analog to what the Selected Services Summary
+  needs (a sticky *label*, not just column headers).
+
+The common thread: every one of these lives inside a genuinely
+**bounded, independently-scrolling container** (`overflow:auto` +
+`max-height`), not the unbounded page-level scroll the earlier (failed)
+attempt relied on. `position:sticky`'s "stick range" is bounded by the
+*nearest ancestor that's an actual scroll container* — bound that
+ancestor tightly (a small box) instead of leaving it as the whole page,
+and the browser has a small, well-defined space to keep the header
+pinned inside, which is a much better-supported pattern cross-browser
+than page-wide sticky ever was.
+
+**Restructured `buildReview()`** so each section renders as its own box
+instead of contributing rows to one shared table:
+```html
+<div class="rs-section-scroll">
+  <div class="rs-section-head" onclick="toggleReviewSection('tlp')">▾ Targeted Landing Pages</div>
+  <table class="summary-table">...that section's rows only...</table>
+</div>
+```
+`.rs-section-scroll{max-height:400px (340px on mobile);overflow:auto;
+border:1px solid var(--border);border-radius:9px}` — the bounded
+scrolling ancestor. `.rs-section-head{position:sticky;top:0;z-index:2;
+background:var(--light)}` — critically, this header is a **plain div
+and the box's first child**, not a table row and not nested inside a
+`<td>`. That second part matters: the earlier failed fix attempt tried
+sticky on a div nested inside a `<td>`, which only gets that tiny `<td>`
+as its containing block and has no room to actually stick. Living as a
+direct child of `.rs-section-scroll` gives it that box's whole height as
+room to move, matching how Strategist's `sticky-group-td` gets the whole
+table/tbody as its effective range.
+
+Collapsing a section now removes its `<table>` from the DOM entirely
+(rather than `display:none` on every row) — simpler, and there's nothing
+to scroll in an empty box anyway. `<div id="summary-body">` replaced the
+old single shared `<table id="summary-table">` in the markup; the old
+page-wide `.summary-table-scroll` wrapper and its `.wrap`/`.card`
+overflow overrides are gone since the outer page no longer needs to
+allow anything to escape it — each section handles its own scroll
+independently now.
+
+**Verified with a genuine scroll-and-measure test** (not just
+`getComputedStyle().position === 'sticky'`, the mistake that gave false
+confidence last time): built a section with 10 items (enough to
+genuinely exceed 400px and need internal scrolling), scrolled the BOX
+itself (`box.scrollTop = 200`), and measured the header's position
+relative to its OWN box's top before/after. Confirmed pinned (within 2px)
+at both 390px (mobile) and 900px (desktop) viewport widths, for a
+section that scrolls and one that doesn't, with the header immediately
+following it in visual order. Also re-verified: collapsing removes only
+that section's table (other sections untouched), totals/item count
+still unaffected by collapsing, no page-level horizontal overflow
+introduced at 390px or 900px, and every other previously-passing test
+(`test-mobile-card-width-fix`, `test-review-section-headers`,
+`test-header-cleanup`, `test-narrow-desktop-overflow`, `test-client-
+recap-overflow`, `test-pdf-totals-box-zone`) still passes unchanged.
+`test-review-section-collapse` was rewritten to match the new markup
+shape (table removed vs. rows hidden) — same functional guarantees,
+updated assertions.
+
+**Confidence level, stated honestly**: this is verified correct in
+headless Chromium via real scroll behavior, not just a CSS property
+check — a meaningfully stronger test than what gave false confidence
+last time. But the earlier page-wide attempt ALSO passed every Chromium
+test and still failed live on a real phone (a genuine Safari-specific
+gap). The architecture this time is fundamentally different — it copies
+an already-proven-in-production pattern (Admin/Strategist) rather than
+inventing a new one — which is real reason for more confidence, not just
+"tested harder." Still, this needs Claire's live-device confirmation
+before it's called done.
