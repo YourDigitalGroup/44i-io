@@ -73,6 +73,23 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .chevron.expanded{transform:rotate(90deg)}
 .card-body{padding:0}
 
+/* Step 2 service-catalog section cards (2026-08-14, per Claire -- "make each
+   section its own scrollable table like we did with the other portals," same
+   request already applied to the Step 3 Selected Services Summary): a section
+   like Website can expand to dozens of rows across several sub-tables, and
+   scrolling down through them loses the section's own header/badge/chevron off
+   the top of the screen -- exactly the same problem the Summary had, just for a
+   different table. Scoped to `.svc-section-card` specifically (not the shared
+   `.card` rule, which is also used for Client Information, Campaign Dates, etc. --
+   those don't want a scroll cap). overflow:auto (not hidden) so this box both
+   still clips to its own border-radius on the corners AND becomes the bounded
+   scrolling ancestor .card-head's position:sticky sticks relative to -- the same
+   Admin/Strategist/Step-3-Summary pattern: the sticky element must be the box's
+   own child, not a farther ancestor's, and the box must be a genuine (bounded)
+   scroll container for sticky to reliably engage cross-browser. */
+.svc-section-card{max-height:60vh;overflow:auto}
+.svc-section-card .card-head{position:sticky;top:0;z-index:2}
+
 /* Form fields */
 .field-group{display:grid;gap:12px;padding:18px}
 .field-group.cols2{grid-template-columns:1fr 1fr}
@@ -226,6 +243,11 @@ select.qty-field{background-image:none;padding-right:3px}
      trying to shrink either one further. */
   .header { flex-direction: column; align-items: flex-start; gap: 14px; padding: 20px; }
   .header-title { text-align: left; }
+
+  /* Smaller cap on a shorter phone screen -- 60vh (the desktop value) would eat
+     almost the whole visible viewport on a phone, leaving barely any of the page
+     around it visible at once. */
+  .svc-section-card { max-height: 50vh; }
 
   .svc-table-scroll { overflow-x: visible; }   /* stacked cards below don't need the scroll wrapper */
   .svc-table { table-layout: auto; }
@@ -6450,7 +6472,7 @@ function renderSectionCards() {
           </tbody>
         </table></div>`;
     }
-    return `<div class="card">
+    return `<div class="card svc-section-card">
       <div class="card-head" onclick="toggleSection('${esc(sec.id)}')">
         <div class="card-head-text">
           <h3>${sec.icon ? esc(sec.icon) + ' ' : ''}${esc(sec.label)}</h3>
