@@ -14263,3 +14263,54 @@ Information) are completely unaffected — still `overflow:hidden`, no
 max-height, exactly as before; collapsing after having scrolled still
 correctly hides the body; no page-level horizontal overflow introduced
 at either width.
+
+### 2026-08-14 (cont'd) — Compacting the Step 2 mobile service cards
+
+Claire, after confirming the in-section scrolling now works on both web
+and mobile: "Could we relook at the service blocks on mobile, is there
+anyway we can make then smaller without loosing all of the information?"
+— the individual stacked-card rows in Step 2 (Website, SEO, etc.), not
+the scrolling box itself.
+
+Each field (Fee, Frequency, Spend, Start Date, End Date) was its own
+full-width block — label line, then value line, one under another —
+regardless of how short the value actually was ("$499" and "Monthly"
+each got a full phone-width line to themselves). Rather than shrinking
+fonts/padding (which would start to hurt readability), paired the fields
+that are genuinely short enough to share a line:
+
+- **Fee + Frequency** side by side (both short values, e.g. "$499" /
+  "Monthly")
+- **Start Date + End Date** side by side (two compact date inputs)
+- **Spend** kept on its own full-width line — it's a live number input the
+  AE actually types into, wants a real tap target, not a squeezed half
+  box
+- **Notes** and the modifier/add-on "Uses tactic's dates" note stay
+  full-width too — free text needs the room
+
+Mechanism: switched `.svc-table tr` (mobile only) from `display:block` to
+`display:flex;flex-wrap:wrap`, then gave each cell a `flex-basis` instead
+of the previous blanket `width:100%` — `calc(50% - 5px)` for the paired
+cells (accounting for the 10px gap between them), `100%` for cells that
+stay full-width. flex-wrap automatically pushes each new "line" of cells
+down once the current line's widths sum to 100%, so cell DOM order alone
+determines the grouping — no JS changes needed, same markup, same
+labels, same values. One edge case handled with `:has()`: a one-time
+cost's End Date is hidden entirely (shows a lone "—" otherwise), which
+would've left Start Date sitting at half-width with an empty gap where
+End used to be — `.svc-start-cell:has(+ .svc-end-na){flex:1 1 100%}`
+gives it the full line back in that specific case.
+
+**Verified** by rendering one real row of each of the four actual row
+shapes this table produces (normal recurring service, one-time cost,
+ad-spend service with a Spend column, modifier/add-on row) and measuring
+actual computed positions/widths — confirmed Fee+Frequency and
+Start+End Date genuinely land on the same line (not just visually close),
+every value and label is still present and visible (not accidentally
+`display:none`d chasing "smaller"), the one-time row's Start Date
+correctly reclaims the full line, Spend stays full-width, and the
+modifier note stays full-width with its explanatory text intact. Also
+measured real height: a normal service card (checkbox+name, Fee+Freq
+paired, Start+End paired, Notes) dropped from 334px to 252px — about
+25% shorter — with nothing removed, only laid out more densely. No
+page-level horizontal overflow introduced at 390px.
