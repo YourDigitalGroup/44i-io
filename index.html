@@ -336,21 +336,8 @@ select.qty-field{background-image:none;padding-right:3px}
      drawn past ~390px of actual phone screen — exactly a "scroll right into
      blank" symptom. !important guarantees this override wins regardless of
      where either rule sits in the file. */
-  /* !important + explicit overflow-y (2026-08-14, per Claire -- sticky section
-     headers weren't actually sticking on a real phone): two real bugs found here.
-     First, this rule had silently lost the !important the 2026-08-07 fix above
-     describes -- the base (non-media) `.summary-table-scroll{overflow-x:auto}`
-     rule sits LATER in this file, so at equal specificity it was winning on mobile
-     again despite this override, exactly the regression that comment warns about.
-     Second, overflow-x:visible alone isn't enough for sticky to work: per the CSS
-     Overflow spec, if only one axis is 'visible' while the other isn't, the
-     'visible' one gets silently corrected to 'auto' -- overflow-y was never set at
-     all here, so it defaulted into that correction. position:sticky treats 'auto'
-     the same as any other non-visible value (still a scroll-container boundary),
-     so BOTH axes need to be genuinely, explicitly visible for it to escape this
-     element. */
-  .summary-table-scroll { overflow-x: visible !important; overflow-y: visible !important; }
   .summary-table { min-width: 0 !important; table-layout: auto; }
+  .rs-section-scroll { max-height: 340px; }
   .summary-table thead { display: none; }
   .summary-table, .summary-table tbody, .summary-table tr, .summary-table td { display: block; width: 100%; }
   .summary-table tr {
@@ -379,29 +366,6 @@ select.qty-field{background-image:none;padding-right:3px}
   .summary-table td.rs-recurring::before { content: 'Recurring'; }
   .summary-table td.rs-flight::before { content: 'Flight'; }
   .summary-table td.rs-notes::before { content: 'Notes'; }
-  /* Section header row (2026-08-14) -- needs its own look, distinct from the white
-     bordered "card" every other .summary-table tr gets above, so it reads as a
-     category label rather than another selected service. */
-  .summary-table tr.rs-section-row {
-    /* width: auto -- same width:100%-plus-margin overflow bug as .summary-table tr
-       above, would apply here too since this also carries a horizontal margin. */
-    width: auto;
-    /* position:sticky tried and reverted (2026-08-14) -- confirmed live on a real
-       phone it never actually stuck, despite passing in headless Chromium testing
-       (a genuine cross-browser gap, not something a quick CSS tweak fixed -- see
-       io_project_tracking.md for what was tried). Collapsing a section once you're
-       done with it, plus the label always being directly above its own cards in
-       normal flow, covers most of the same real need without it. */
-    border: none; background: transparent; margin: 14px 8px 2px; padding: 0 4px;
-    cursor: pointer;
-  }
-  .summary-table tr.rs-section-row:first-child { margin-top: 4px; }
-  .summary-table tr.rs-section-row td {
-    font-size: 10px; font-weight: 700; color: var(--accent);
-    text-transform: uppercase; letter-spacing: .06em;
-    background: var(--light); border-radius: 6px; padding: 6px 10px;
-  }
-  .rs-chevron { display: inline-block; width: 10px; }
 
   /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
      At 2-up, "Authorized By (Full Legal Name)" wraps to 2 lines while "Title / Role"
@@ -476,23 +440,32 @@ select.qty-field{background-image:none;padding-right:3px}
 .total-item .lbl{font-size:10px;opacity:.7;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
 
 /* Summary table */
-/* FIXED (2026-08-07, per Claire on mobile — Notes was cut off): same root cause as
-   the earlier svc-table Notes fix — the card clips overflow, and this table has no
-   responsive handling at all. Scrolls horizontally within its own box instead of
-   letting the card clip it; min-width keeps every column readable rather than the
-   browser squeezing all 5 into whatever narrow width is available. */
-/* overflow-x:auto restored (2026-08-14) -- was changed to visible to let sticky
-   escape on desktop too; reverted alongside .wrap above once sticky itself was
-   confirmed not reliably achievable in the current table markup. */
-.summary-table-scroll{overflow-x:auto}
+/* Each section now renders as its own bounded, independently-scrolling box
+   (2026-08-14, per Claire -- "make each section its own scrollable table like we
+   did with the other portals"). This is the exact same pattern Admin
+   (`overflow:auto;max-height:70vh` wrappers with `position:sticky` thead th) and
+   Strategist (`overflow-x:auto;overflow-y:auto;max-height:70vh` + a sticky
+   group-band td) already use successfully -- a genuinely bounded scroll container
+   is what makes position:sticky reliable cross-browser; the earlier attempt at ONE
+   page-wide sticky header relied on unbounded page scroll instead, and was
+   confirmed live on a real phone to never actually stick despite passing every
+   headless Chromium test (see io_project_tracking.md for the full writeup).
+   max-width:560px worth of columns can still need horizontal scroll on a narrow
+   window -- overflow:auto (not overflow-x:auto) handles both axes since this box
+   now also owns the vertical scroll a tall section needs. */
+.rs-section-scroll{max-height:400px;overflow:auto;border:1px solid var(--border);border-radius:9px;margin-bottom:14px}
+.rs-section-scroll:last-child{margin-bottom:0}
+/* The header is a plain div and the FIRST child inside .rs-section-scroll, not a
+   table row -- so its position:sticky containing block is that box's own small
+   scrollport, not the page. (A sticky element can only stick relative to its
+   nearest ancestor that's an actual scroll container -- see io_project_tracking.md
+   for the earlier, failed attempt that got this backwards.) */
+.rs-section-head{position:sticky;top:0;z-index:2;background:var(--light);padding:8px 14px;font-size:10.5px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
+.rs-chevron{display:inline-block;width:10px}
 .summary-table{width:100%;min-width:560px;border-collapse:collapse;font-size:13px}
 .summary-table th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
 .summary-table td{padding:9px 14px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
 .summary-table tr:last-child td{border-bottom:none}
-/* Section header row (2026-08-14) -- same grouping the printed IO document already
-   does, just missing here; a service like "Business Pro" reads with zero context
-   without the category label above it. */
-.summary-table tr.rs-section-row td{background:var(--light);font-size:10.5px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);padding:7px 14px}
 
 /* Buttons */
 .btn{padding:11px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .2s}
@@ -832,12 +805,7 @@ select.qty-field{background-image:none;padding-right:3px}
     <!-- Summary table -->
     <div class="card">
       <div class="card-head"><h3>Selected Services Summary</h3></div>
-      <div class="summary-table-scroll" style="padding:0">
-        <table class="summary-table" id="summary-table">
-          <thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead>
-          <tbody id="summary-body"></tbody>
-        </table>
-      </div>
+      <div style="padding:12px" id="summary-body"></div>
     </div>
 
     <!-- Client info recap -->
@@ -3331,7 +3299,7 @@ function toggleReviewSection(sectionId) {
 
 function buildReview() {
   let oneTime = 0, monthly = 0, count = 0;
-  const rows = [];
+  const sectionBoxes = [];
   const workflows = new Set();
 
   // Grouped by section, same as buildIoDocumentHtml()'s printed version (2026-08-14,
@@ -3351,11 +3319,15 @@ function buildReview() {
     const sec = secDef.id;
     if (!grouped[sec]) return;
     const isCollapsed = reviewCollapsedSections.has(sec);
-    // display:none on every item row while collapsed -- count/totals below are
-    // computed from `selected` regardless, so collapsing is purely visual and
-    // never changes what's actually been selected or what it costs.
-    const itemRowStyle = isCollapsed ? 'display:none' : '';
-    rows.push(`<tr class="rs-section-row" onclick="toggleReviewSection('${esc(sec)}')"><td colspan="5"><span class="rs-chevron">${isCollapsed ? '▸' : '▾'}</span> ${esc(secDef.label)}</td></tr>`);
+    // Each section gets its own bounded, independently-scrolling box (2026-08-14, per
+    // Claire -- "make each section its own scrollable table like we did with the other
+    // portals") -- same overflow:auto;max-height container Admin/Strategist already use
+    // successfully for sticky headers, replacing the earlier attempt at ONE page-wide
+    // sticky header, which was confirmed live on a real phone to never actually stick
+    // (a genuine cross-browser gap page-level position:sticky ran into -- see
+    // io_project_tracking.md). Scoping the sticky header to its own small scrolling box,
+    // exactly like Admin/Strategist's proven pattern, sidesteps that gap entirely.
+    const rows = [];
     grouped[sec].forEach(([id, data]) => {
     count++;
     // (data.qty || 1) is a safe no-op multiplier for every non-per-unit item — qty is
@@ -3416,26 +3388,34 @@ function buildReview() {
     // formatISOToMMDDYY() converts back for display, same helper the date inputs
     // themselves use).
     const flightDisplay = flightDisplayFor(id, data, formatISOToMMDDYY);
-    rows.push(`<tr style="${itemRowStyle}"><td class="rs-service">${esc(data.label)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
+    rows.push(`<tr><td class="rs-service">${esc(data.label)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Add prorated hosting line if applicable
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
       const h = hostingChoices[id];
       oneTime += h.proratedAmt;
-      rows.push(`<tr style="background:#F0FDF4;${itemRowStyle}"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td class="rs-fee" style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">${h.note}</td></tr>`);
+      rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td class="rs-fee" style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">${h.note}</td></tr>`);
     }
     // Add auto setup-fee line if this service's spend is under its configured threshold
     const setupFeeInfo = getSetupFeeInfo(id, data.spend || 0);
     if (setupFeeInfo) {
       oneTime += setupFeeInfo.amount;
-      rows.push(`<tr style="background:#F0FDF4;${itemRowStyle}"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="rs-fee" style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
+      rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="rs-fee" style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
     }
     });
+    // The section label lives INSIDE the scrolling box, as the box's first child, so
+    // its position:sticky has that box's own scrollport as its containing block --
+    // NOT the page. This is the one part the earlier page-wide attempt got backwards
+    // (a sticky div nested a level too deep inside a <td> ended up with almost no room
+    // to visually stick at all -- see io_project_tracking.md for that failed attempt).
+    // While collapsed, the table is left out entirely rather than hidden with
+    // display:none -- there's nothing to scroll, so no box is needed at all.
+    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')"><span class="rs-chevron">${isCollapsed ? '▸' : '▾'}</span> ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table"><thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
   });
 
   document.getElementById('total-onetime').textContent = fmt(oneTime);
   document.getElementById('total-monthly').textContent = fmt(monthly) + '/mo';
   document.getElementById('total-items').textContent = count;
-  document.getElementById('summary-body').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">No services selected</td></tr>';
+  document.getElementById('summary-body').innerHTML = sectionBoxes.length ? sectionBoxes.join('') : '<div style="text-align:center;color:var(--muted);padding:20px">No services selected</div>';
 
   // Workflows
   const chips = [...workflows].map(w => `<span class="chip green">${w}</span>`).join('');
