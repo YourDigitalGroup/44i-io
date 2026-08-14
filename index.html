@@ -1706,7 +1706,12 @@ function removeBypass(formKey) {
 // AM decision and it loads no intake today).
 // ════════════════════════════════════════════════════════════════
 
-const TLP_CAPS = { 'tlp-bs': 5, 'tlp-bb': 10, 'tlp-bp': 15 };
+// Page caps now come live from CATALOG_ROWS[id].tlp_page_cap (2026-08-14) --
+// was a hardcoded snapshot here, meaning a cap change in the admin Service
+// editor never actually reached the intake form. tlpPageCap() below is the
+// one lookup point every TLP reference in this file goes through, so there's
+// nowhere left for a hardcoded number to silently drift from the catalog.
+function tlpPageCap(serviceId) { return CATALOG_ROWS[serviceId]?.tlp_page_cap; }
 const TLP_TIER_NAMES = { 'tlp-bs': 'Business Starter', 'tlp-bb': 'Business Builder', 'tlp-bp': 'Business Pro' };
 // Soft-minimum thresholds: under this many pages, gently suggest a smaller tier may fit.
 // Starter has no smaller tier, so no reminder. Builder < 6 → Starter; Pro < 11 → Builder.
@@ -1718,13 +1723,13 @@ let tlpSoftReminderAcknowledged = false; // once true, don't re-nag on re-save i
 
 function renderTlpGrid(serviceId, existing) {
   // tlp-custom (2026-07-14, per Claire): no fixed tier, so its cap comes from the AE's
-  // own "how many pages were quoted?" entry instead of the TLP_CAPS lookup. Persisted as
+  // own "how many pages were quoted?" entry instead of the catalog lookup. Persisted as
   // tlp_custom_quoted_pages (see serializeTlpGrid()) so it survives a reopen the same way
   // every other TLP field does.
   const isCustom = serviceId === 'tlp-custom';
   const f = existing.fields || {};
   const customPageCount = f.tlp_custom_quoted_pages || '';
-  const cap = isCustom ? (parseInt(customPageCount, 10) || 0) : TLP_CAPS[serviceId];
+  const cap = isCustom ? (parseInt(customPageCount, 10) || 0) : tlpPageCap(serviceId);
   const tierName = isCustom ? 'Custom' : TLP_TIER_NAMES[serviceId];
 
   // Restore from saved fields if present, else fresh
@@ -2024,7 +2029,7 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
   // "how many pages were quoted?" entry (see renderTlpGrid()). Minimum is a
   // soft reminder (fixed tiers only). Serializes to readable string fields
   // on save.
-  if (cfg.intake === 'tlp' && (TLP_CAPS[serviceId] || serviceId === 'tlp-custom')) {
+  if (cfg.intake === 'tlp' && (tlpPageCap(serviceId) || serviceId === 'tlp-custom')) {
     html += renderTlpGrid(serviceId, existing);
   }
 
@@ -2096,7 +2101,7 @@ function saveIntakeForm() {
   }
 
   // Check if fully completed (all fields have values) or partial
-  // tlp-custom (2026-07-14) now gets a real grid too — the "!TLP_CAPS[sid]" escape hatch
+  // tlp-custom (2026-07-14) now gets a real grid too — the "!tlpPageCap(sid)" escape hatch
   // that used to let it skip the tlpGridFilled requirement no longer applies to it.
   // A field hidden by an unmet showIf (2026-08-06) isn't required for completeness
   // -- e.g. the "If Book an Appointment" follow-up shouldn't block completion for
@@ -2106,7 +2111,7 @@ function saveIntakeForm() {
     .filter(f => !f.optional)
     .filter(f => intakeConditionMetFromValue(f.showIf, f.showIf ? fields[f.showIf.key] : ''));
   const filledCount = allFields.filter(f => fields[f.key]).length;
-  const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !(TLP_CAPS[sid] || sid === 'tlp-custom') || tlpGridFilled);
+  const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !(tlpPageCap(sid) || sid === 'tlp-custom') || tlpGridFilled);
 
   intakeData[formKey] = {
     fields,

@@ -13499,3 +13499,60 @@ pre-existing, unrelated result in `test-prefill-months.js` predates this
 session and doesn't touch either changed function). `node --check` clean.
 
 No SQL for this entry — both fixes are frontend-only.
+
+### 2026-08-14 (cont'd) — TLP page cap made catalog-driven (frontend done; DB/RPC patch pending)
+
+Follow-up to the TLP item flagged above. Claire: "will making this change
+allow the hardcoded Intake form to update if a page count changes in the
+service editor?" — confirmed yes, that's the whole point, and she asked
+to build it. Scoped and built the frontend half:
+
+- **Public form** (`index.html`): `TLP_CAPS` (the hardcoded `{'tlp-bs':5,
+  'tlp-bb':10,'tlp-bp':15}` map) is gone. New `tlpPageCap(serviceId)`
+  reads `CATALOG_ROWS[serviceId].tlp_page_cap` instead — the single
+  lookup point every TLP reference in the file now goes through
+  (`renderTlpGrid()`, the "does this service get a grid at all" check,
+  and the intake-completeness check). `TLP_TIER_NAMES`/`TLP_SOFT_MIN`
+  deliberately left alone, per the agreed scope (tier display names and
+  the "suggest a smaller tier" nudge are separate, lower-drift-risk
+  hardcoded pieces, not what was asked about).
+- **Admin** (`admin/index.html`): new "TLP Page Cap" number field, shown
+  only when a service's Intake Form is set to "TLP" (`onServiceIntakeChange()`,
+  same show/hide-by-context pattern as `onPricingModeChange()`'s Spend
+  Minimum field) — hidden and force-cleared for every other service.
+  Load/save wired the same way `spend_minimum` already is, including the
+  same "hard guarantee, forced null unless applicable" pattern for
+  `tlp_page_cap` in the save payload.
+
+**Still pending — the database side.** `services.tlp_page_cap` doesn't
+exist yet, and `admin_save_service()` doesn't know about it either.
+Rather than guess at that RPC's current body (it's been patched several
+times this project — tactic_variants, strategist_disciplines, etc. — and
+this project's own convention is to always pull the LIVE definition
+before touching a function like this, not trust a possibly-stale
+scratchpad copy), asked Claire to run
+`select pg_get_functiondef('admin_save_service'::regproc);` so the patch
+can be written against what's actually live. **Until that SQL is written
+and run, the new admin field and the catalog-driven cap lookup are both
+inert — the column doesn't exist, so `tlp_page_cap` reads as
+`undefined` for every service, meaning the TLP grid won't render at all
+for tlp-bs/bb/bp until this ships.** This is fine on this feature branch
+(not live until merged to main) but the SQL must land before/alongside
+this frontend code reaching production, not after.
+
+**Verified (frontend only, DB-independent)**: new
+`test-tlp-catalog-cap-2026-08-14.js` (scratchpad, Playwright, real
+`tlpPageCap()`/`renderTlpGrid()` against mock `CATALOG_ROWS`) — 5 checks,
+all pass: an unknown service id returns `undefined` without throwing, the
+live catalog value is read correctly, a changed catalog value is
+reflected with no code change, the grid itself renders using the live
+cap, and `tlp-custom` is confirmed unaffected (still driven by the AE's
+typed page count). New `test-admin-tlp-cap-field-2026-08-14.js`
+(scratchpad, Playwright, real `onServiceIntakeChange()`) — 5 checks, all
+pass: field hidden by default, shows on selecting TLP, hides and clears
+on an active switch away from TLP, and shows without clearing when
+opening an existing TLP service for edit. `node --check` clean on both
+files.
+
+**Not yet run by Claire**: the `pg_get_functiondef` lookup above — needed
+before the actual schema + RPC patch can be written.
