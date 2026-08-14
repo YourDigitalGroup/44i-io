@@ -14212,3 +14212,54 @@ an already-proven-in-production pattern (Admin/Strategist) rather than
 inventing a new one — which is real reason for more confidence, not just
 "tested harder." Still, this needs Claire's live-device confirmation
 before it's called done.
+
+### 2026-08-14 (cont'd) — Same in-section scrolling, but for Step 2's catalog sections
+
+Claire clarified: "I think we were talking about two different things. I
+like what you did on step three and I want to keep it. But I was talking
+about the sections in step 2 that I wanted the in section scrolling." So
+Step 3's Selected Services Summary is confirmed done and being kept as-
+is — this entry is a SEPARATE change for Step 2 (the actual service-
+selection sections: Website, SEO, Video, etc.), applying the same idea to
+a different part of the page.
+
+Step 2's sections were already collapsible cards (`renderSectionCards()`
+in the JS, `toggleSection()`) — each one a `<div class="card">` with a
+clickable `.card-head` (title + badge + chevron) and a `.card-body` that
+expands to a `<table class="svc-table">` (or several sub-tables, for
+Video/Streaming TV/Audio). The problem: a section like Website can expand
+to dozens of rows across multiple sub-tables, and scrolling down through
+them pushes the header — and with it, the "N selected" badge and the
+knowledge of which section you're even looking at — off the top of the
+screen. Same underlying problem the Step 3 Summary had, different table.
+
+**Applied the identical fix, scoped narrowly**: added a new
+`svc-section-card` class to just these generated section cards (NOT the
+shared `.card` rule used everywhere else on the page — Client
+Information, Campaign Dates, etc. don't want this and don't get it).
+```css
+.svc-section-card{max-height:60vh;overflow:auto}       /* 50vh on mobile */
+.svc-section-card .card-head{position:sticky;top:0;z-index:2}
+```
+Because `.card-head` is already the FIRST child inside `.card`/
+`.svc-section-card` (a sibling of `.card-body`, both children of the same
+div), making the outer div itself the bounded `overflow:auto` scroll
+container — rather than introducing a new wrapper element — was enough:
+`.card-head`'s sticky containing block becomes that box's own scrollport
+directly, no restructuring of the existing card markup needed. Same
+principle as the Step 3 fix (sticky element must be a direct child of a
+genuinely bounded scroll container), just applied to markup that already
+had the right shape.
+
+**Verified with the same real scroll-and-measure discipline**: built a
+Website section with 25 rows (enough to exceed 60vh), expanded it via
+`toggleSection()`, scrolled the section card itself (`card.scrollTop =
+200`), and measured the header's position relative to its OWN card's top
+before/after — pinned within 2px. Confirmed at both 900px desktop and
+390px mobile widths (50vh cap on mobile, confirmed via `getComputedStyle`
+resolving to the shorter pixel value at that viewport height). Also
+confirmed: other `.card` blocks on the page (tested against Client
+Information) are completely unaffected — still `overflow:hidden`, no
+max-height, exactly as before; collapsing after having scrolled still
+correctly hides the body; no page-level horizontal overflow introduced
+at either width.
