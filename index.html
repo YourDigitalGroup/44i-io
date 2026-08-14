@@ -25,7 +25,14 @@ input,select,textarea,button{font-family:inherit}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
 
 /* Layout */
-.wrap{max-width:900px;margin:0 auto;padding:32px 24px 80px;overflow:hidden}
+/* overflow:hidden removed (2026-08-14, TESTING per Claire -- wanted to actually try
+   sticky section headers rather than skip them on the trade-off alone). This was the
+   whole-page horizontal-overflow safety net; removing it is what lets position:sticky
+   escape all the way to the real page scroll. If this reintroduces a visible
+   horizontal-scroll bug anywhere else in the form, revert this one line (git handles
+   the rest) -- max-width:900px alone still caps how wide .wrap itself can get, this
+   only removes the CLIPPING of anything that manages to overflow past that. */
+.wrap{max-width:900px;margin:0 auto;padding:32px 24px 80px}
 
 /* Header */
 .header{background:#1C9BD7;padding:28px 36px;border-radius:14px;margin-bottom:32px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 4px 32px rgba(var(--accent-rgb),.3);position:relative;overflow:hidden}
@@ -486,10 +493,18 @@ select.qty-field{background-image:none;padding-right:3px}
    responsive handling at all. Scrolls horizontally within its own box instead of
    letting the card clip it; min-width keeps every column readable rather than the
    browser squeezing all 5 into whatever narrow width is available. */
-.summary-table-scroll{overflow-x:auto}
+/* overflow-x:visible (2026-08-14, TESTING per Claire — needed so position:sticky on
+   the section headers can escape this element on desktop too, not just mobile. Real
+   trade-off: this table has min-width:560px, so a genuinely narrow desktop/tablet
+   window (below ~610px) will no longer get its own horizontal scrollbar here — it'll
+   overflow the page instead, same fallback shape mobile's stacked layout already
+   uses successfully. Stress-tested at exactly that narrow-width range before
+   shipping (see io_project_tracking.md); revert this one line if it turns out to be
+   worse in practice than testing suggested. */
+.summary-table-scroll{overflow-x:visible}
 .summary-table{width:100%;min-width:560px;border-collapse:collapse;font-size:13px}
 .summary-table th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
-.summary-table td{padding:9px 14px;border-bottom:1px solid var(--border)}
+.summary-table td{padding:9px 14px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
 .summary-table tr:last-child td{border-bottom:none}
 /* Section header row (2026-08-14) -- same grouping the printed IO document already
    does, just missing here; a service like "Business Pro" reads with zero context
@@ -3464,7 +3479,7 @@ function buildReview() {
     ['KOC', [document.getElementById('koc-date').value, document.getElementById('koc-time').value].filter(Boolean).join(' at ') || '—'],
   ];
   document.getElementById('client-recap').innerHTML = recap.map(([k,v]) =>
-    `<div><span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${k}</span><p style="font-size:13px;margin-top:3px">${esc(v)}</p></div>`
+    `<div><span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${k}</span><p style="font-size:13px;margin-top:3px;overflow-wrap:anywhere">${esc(v)}</p></div>`
   ).join('');
 }
 
