@@ -13683,3 +13683,27 @@ same form and the pill-style fix from earlier today — all still pass.
 `node --check` clean.
 
 No SQL for this entry — frontend only.
+
+### 2026-08-14 (cont'd) — Reference link to the live campaign added to Campaign Setup
+
+Same shape as the Platform CPM/Goal additions earlier today: the
+"Reference link to the live campaign" field (`platform_url`) already
+existed in the Detail panel, but a Pending campaign never reaches that
+panel (Campaign Setup renders its own panels instead), so there was no
+way to set it before activation.
+
+**Fix**: added the field to `renderSetupPanel`, right next to "Exact
+campaign title in the ad platform." Wired into both `strategistConfirm
+Activate` and `strategistSaveDraft` the same way `platform_campaign_name`
+already is — reads `#setup-platform-url-${lineId}`, saves to the same
+`platform_url` column via `strategistSaveLine`.
+
+**Verified**: new `test-setup-panel-reference-link-2026-08-14.js`
+(scratchpad, Playwright, real `renderSetupPanel`/`strategistConfirm
+Activate`/`strategistSaveDraft`) — 4 checks, all pass: the field renders
+and pre-fills from an existing `platform_url`, Confirm & Activate sends
+the typed value in the save payload, and Save Draft sends `null` when
+left blank rather than an empty string. Re-ran 4 existing Setup-panel
+regression tests — all still pass. `node --check` clean.
+
+No SQL for this entry — frontend only.
