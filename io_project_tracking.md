@@ -13707,3 +13707,26 @@ left blank rather than an empty string. Re-ran 4 existing Setup-panel
 regression tests — all still pass. `node --check` clean.
 
 No SQL for this entry — frontend only.
+
+### 2026-08-14 (cont'd) — Recommendation added to Topic 3 of the design doc; one Paused campaign fixed to Pending
+
+**Design doc**: gave Claire an opinion on Topic 3 (full-campaign vs.
+monthly budget) when asked. Recommended Option 2 (collect a full-campaign
+number, auto-prorate by day count) over Option 1 (a rep-facing checkbox)
+-- Bronson's own objection to Option 1 ("the reps aren't going to do
+that") is the strongest argument against it, and Option 2 reuses the
+same day-count math already trusted for hosting proration. Also noted
+this likely resolves the doc's "lump sum vs. monthly pieces" open
+question in Option 2's favor, since both portals already store budgets
+as one row per calendar month regardless. Rebuilt the doc with this
+added to Topic 3 (same in-place-edit limitation as before — new link
+supersedes the last one):
+https://docs.google.com/document/d/1EZ-ZM-GFozaBe486CjVajxYTVhlhhNnfPux3GqYhq_M/edit
+
+**Data fix**: one real campaign (Blue Dolphin Pools / 44i / SEM / Google
+Ads / flight start 2026-09-01) had been set to Paused by a strategist as
+a workaround before today's Pending option existed in "+ New Campaign."
+Confirmed the exact row via a two-step select-then-update (id
+`12148b15-f2d0-4cb7-9ec8-be378bad58c8`), Claire ran
+`update campaign_lines set status = 'pending' where id = '...'` — now
+correctly shows in the Campaign Setup queue instead of Paused.
