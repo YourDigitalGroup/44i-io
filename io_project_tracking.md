@@ -13425,3 +13425,21 @@ one specific option). Claire updated it via the Strategist detail panel's
 variant dropdown. **All 5 section services are now fully resolved across
 every existing campaign** — this line item from the 2026-08-10 batch is
 closed.
+
+### 2026-08-13 (cont'd) — All outstanding SQL migrations confirmed run
+
+Claire double-checked all 7 SQL files still flagged "not yet run by
+Claire" as of this session's earlier outstanding-items audit. Re-ran the
+5 I had exact saved text for (`sem-formula-rates-2026-08-10`,
+`in-platform-pct-tiers-2026-08-13`, `platform-cpm-pairing-2026-08-13`,
+`offline-visits-order-pairing-2026-08-13` — superseded by the next one,
+`hosting-setup-fee-capture-2026-08-13` — a strict superset of the offline-
+visits one for `create_campaign_lines_from_order()`) — no errors. For the
+2 older ones I didn't have exact saved text for (`enforce-spend-minimum-
+2026-07-17`, `logo-dark-bg-2026-07-18`), ran a verification query instead
+of reconstructing them blind — confirmed both already applied:
+`services.enforce_spend_minimum` exists, `groups.logo_dark_bg` exists,
+and `admin_save_group` correctly persists it.
+
+**Every SQL migration flagged as outstanding is now confirmed applied.**
+No SQL migrations remain pending as of this entry.
