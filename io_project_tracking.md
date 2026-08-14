@@ -13765,3 +13765,35 @@ immediately after) redeploying.
 
 **Not yet confirmed by Claire**: the Edge Function redeploy itself, and
 the board-membership check above.
+
+### 2026-08-14 (cont'd) — Several stale catalog questions closed out; mobile checklist given
+
+Went through the remaining unblocked (not waiting on the 3-topic team
+conversation) outstanding items with Claire. Resolved:
+
+- **Real Platform CPM values in Admin's Accounting Map** — confirmed
+  already entered by Claire.
+- **`hulu-bp`/`amz-bp` missing an intake form** — confirmed intentional,
+  not a gap.
+- **`yttv-addl` billing type** — confirmed correct: no charge, purely a
+  CPM-basis adjustment.
+- **KOC requirements catalog-wide** — confirmed by Claire's AM, no longer
+  an open item.
+- **Manual billing-only revenue entry for Accounting** — Claire believed
+  this was already built; verified against the real file rather than
+  taking it at face value (per this project's own working convention) —
+  confirmed true: `accountingOpenAddServiceForm()` ("+ Add Service") and
+  `accountingOpenBulkImportForm()` ("Bulk Import (CSV)"), both built
+  2026-08-11/12, let Accounting add a revenue line individually or in
+  bulk with no order behind it. No gap here after all.
+
+**Still open — mobile checklist given to Claire to test on a real
+device** (not something verifiable via code alone or desktop dev-tools
+emulation, particularly the signature canvas): Step 1's Campaign Length
+dropdown and Step 3's date field(s) not clipped on a real phone screen;
+the intake modal (e.g. the TLP grid or a Website intake form) usable on
+a phone — readable, scrollable, tappable; and the signature canvas
+actually usable with a real finger on a touchscreen (smooth line
+drawing, Clear/Undo reachable). All three predate the bigger 2026-08-07
+live mobile-testing round and were never explicitly re-confirmed either
+way afterward.
