@@ -13846,3 +13846,41 @@ without knowing exactly what's wrong (content actually split mid-row vs.
 just unused whitespace before the page break) a blind fix risks making
 it worse — asked Claire what specifically looks wrong before proposing
 a change.
+
+### 2026-08-14 (cont'd) — Mobile overflow: couldn't reproduce; PDF totals-box: real bug found and fixed
+
+**Mobile horizontal scroll on Step 3.** Claire clarified: a noticeable
+swipe on the Selected Services Summary cards specifically, edge of a
+card not visible without scrolling. Rendered the real card (exact
+`.wrap > .card > .summary-table-scroll > table` markup, real CSS, real
+`buildReview()` output) at both 390px and 375px viewports — the two most
+common iPhone widths — including stress content (a hosting-proration
+sub-line, a long note) to try to trigger it. Found zero horizontal
+overflow in either case. Asked Claire to retest on the current deploy
+(the section-header fix earlier today changed spacing in this exact
+card) and, if still present, what exactly gets revealed by the swipe —
+not fixing blind since the cause could be a different element on the
+page entirely (e.g. Client Info Recap below it), not this card.
+
+**PDF pagination — totals box.** Claire: totals landed on page 2 with
+visible room left on page 1. Found a real, confirmable bug in the
+content-aware pagination system (`computeUnsafeZonesMm`): its "don't
+split this" selector included `.totals-row`, a class that doesn't exist
+anywhere in the actual generated document — the real element wrapping
+One-Time Charges/Monthly Recurring/First Month Total is `.totals-box`.
+Stale/renamed class, dead selector, confirmed via a live query
+(`document.querySelector('.totals-row')` returns null against the real
+generated markup). Fixed both the print CSS (`.totals-row` →
+`.totals-box`) and the pagination JS's own selector string to match.
+
+**Honesty check**: this fix makes the totals box a single protected unit
+where before it had no real box-level protection (only whatever the
+generic `tr` selector caught for its individual rows) — a genuine
+correctness improvement, confirmed via `test-pdf-totals-box-zone-
+2026-08-14.js` (2/2 checks: old selector matched nothing against real
+markup; new selector correctly zones the whole box). Whether this is
+THE cause of Claire's specific "wasted space before the page break"
+symptom is reasoned, not verified — the full screenshot+jsPDF pipeline
+can't be run headlessly here to see exact pixel-level before/after.
+Asked Claire to regenerate the same test IO's PDF after this deploys and
+report whether the totals now land where expected.

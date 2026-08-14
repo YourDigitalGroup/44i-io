@@ -4983,7 +4983,7 @@ function buildIoDocumentHtml() {
     tfoot{display:table-footer-group}
     tr,.no-break{page-break-inside:avoid}
     .section-row td{page-break-after:avoid}
-    .subtotal-row,.totals-row{page-break-inside:avoid}
+    .subtotal-row,.totals-box{page-break-inside:avoid}
     .sig-section{page-break-inside:avoid}
     .legal{page-break-inside:auto}
     .doc-footer{page-break-inside:avoid}
@@ -5246,7 +5246,12 @@ function printIO() {
 function computeUnsafeZonesMm(iframeDoc, imgWidthMm) {
   const bodyWidthCss = iframeDoc.body.scrollWidth;
   const mmPerCssPx = imgWidthMm / bodyWidthCss;
-  const selector = 'tr, .no-break, .section-row, .subtotal-row, .totals-row, .sig-section, .doc-footer';
+  // .totals-row (2026-08-14, per Claire -- "totals landed on page 2 with room left on
+  // page 1"): was a stale class name that matched nothing in the actual generated
+  // document (the real element is .totals-box, wrapping the One-Time/Monthly/First
+  // Month Total rows) -- meaning the totals box had no real atomic protection at all,
+  // just whatever the generic `tr` selector happened to catch for its individual rows.
+  const selector = 'tr, .no-break, .section-row, .subtotal-row, .totals-box, .sig-section, .doc-footer';
   return Array.from(iframeDoc.querySelectorAll(selector))
     .map(el => {
       const r = el.getBoundingClientRect();
