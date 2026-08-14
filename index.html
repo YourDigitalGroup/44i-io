@@ -337,6 +337,17 @@ select.qty-field{background-image:none;padding-right:3px}
   .summary-table td.rs-recurring::before { content: 'Recurring'; }
   .summary-table td.rs-flight::before { content: 'Flight'; }
   .summary-table td.rs-notes::before { content: 'Notes'; }
+  /* Section header row (2026-08-14) -- needs its own look, distinct from the white
+     bordered "card" every other .summary-table tr gets above, so it reads as a
+     category label rather than another selected service. */
+  .summary-table tr.rs-section-row {
+    border: none; background: transparent; margin: 14px 8px 2px; padding: 0 4px;
+  }
+  .summary-table tr.rs-section-row:first-child { margin-top: 4px; }
+  .summary-table tr.rs-section-row td {
+    font-size: 10px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: .06em; padding: 0;
+  }
 
   /* Date Signed/Title/Name signer row (Step 3) — switched from 2-up to a SINGLE column.
      At 2-up, "Authorized By (Full Legal Name)" wraps to 2 lines while "Title / Role"
@@ -421,6 +432,10 @@ select.qty-field{background-image:none;padding-right:3px}
 .summary-table th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
 .summary-table td{padding:9px 14px;border-bottom:1px solid var(--border)}
 .summary-table tr:last-child td{border-bottom:none}
+/* Section header row (2026-08-14) -- same grouping the printed IO document already
+   does, just missing here; a service like "Business Pro" reads with zero context
+   without the category label above it. */
+.summary-table tr.rs-section-row td{background:var(--light);font-size:10.5px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);padding:7px 14px}
 
 /* Buttons */
 .btn{padding:11px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .2s}
@@ -3257,7 +3272,24 @@ function buildReview() {
   const rows = [];
   const workflows = new Set();
 
+  // Grouped by section, same as buildIoDocumentHtml()'s printed version (2026-08-14,
+  // per Claire -- on a phone's stacked-card layout a bare "Business Starter" or
+  // "Business Pro" row with no section above it reads with zero context; this table
+  // never grouped by section at all, on desktop OR mobile, it just happened to be less
+  // noticeable on desktop's wider layout. Iterating SECTIONS (not a hardcoded list)
+  // gives the on-screen order for free, matching the live form's own section order.
+  const grouped = {};
   Object.entries(selected).forEach(([id, data]) => {
+    const sec = data.section || 'other';
+    if (!grouped[sec]) grouped[sec] = [];
+    grouped[sec].push([id, data]);
+  });
+
+  SECTIONS.forEach(secDef => {
+    const sec = secDef.id;
+    if (!grouped[sec]) return;
+    rows.push(`<tr class="rs-section-row"><td colspan="5">${esc(secDef.label)}</td></tr>`);
+    grouped[sec].forEach(([id, data]) => {
     count++;
     // (data.qty || 1) is a safe no-op multiplier for every non-per-unit item — qty is
     // only ever set on per-unit services (see toggle()), so this preserves existing
@@ -3330,6 +3362,7 @@ function buildReview() {
       oneTime += setupFeeInfo.amount;
       rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="rs-fee" style="font-size:11px;color:#166534">${fmt(setupFeeInfo.amount)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">Auto-applied — campaign spend is below the minimum.</td></tr>`);
     }
+    });
   });
 
   document.getElementById('total-onetime').textContent = fmt(oneTime);

@@ -13797,3 +13797,52 @@ actually usable with a real finger on a touchscreen (smooth line
 drawing, Clear/Undo reachable). All three predate the bigger 2026-08-07
 live mobile-testing round and were never explicitly re-confirmed either
 way afterward.
+
+### 2026-08-14 (cont'd) — Mobile checklist results; Selected Services Summary missing section headers
+
+Claire tested the checklist above on a real phone. Results:
+- **Campaign Length dropdown** — moot; it was removed entirely when
+  campaign dates moved to per-service-line dates. Not a bug, just a
+  stale item from before that architecture change.
+- **Step 3 date fields, intake modals, signature canvas** — all confirmed
+  working correctly on a real device.
+- **Real gap found**: the Step 3 "Selected Services Summary" table shows
+  each selected service (e.g. "Business Starter," "Business Pro") with
+  no section label above it — on a phone's stacked-card layout this
+  reads as a bare name with zero category context, though the underlying
+  cause is NOT mobile-specific: `buildReview()` never grouped by section
+  at all, on desktop OR mobile, unlike the printed IO document
+  (`buildIoDocumentHtml()`), which already groups by section with its
+  own header rows and subtotals. Desktop just made the gap less
+  noticeable since more page context is visible at once.
+- Also flagged: slight residual horizontal scroll on this page on mobile
+  — not yet root-caused, see below.
+
+**Fix**: `buildReview()` now groups `selected` by section and iterates
+`SECTIONS` (not hardcoded) the same way the printed document already
+does, inserting a `<tr class="rs-section-row">` header before each
+section's items. Added matching CSS for both the desktop table (light
+background, small caps label, matching the printed doc's own
+`.section-row` look) and the existing mobile stacked-card layout (no
+border/card treatment, just a small caps label above its group).
+
+**Verified**: new `test-review-section-headers-2026-08-14.js`
+(scratchpad, Playwright, real `buildReview()`, mock `selected`/
+`SECTIONS`) — 6 checks, all pass: both section headers render, each
+appears before its own group's items (not after or duplicated), the
+item count and dollar totals are unaffected ($850 one-time / $798/mo,
+matching Claire's own screenshot numbers exactly). No existing
+regression test covers `buildReview()` specifically. `node --check`
+clean.
+
+**Not yet fixed — needs more specifics before touching**: (1) the
+residual horizontal scroll on this same page on mobile — asked Claire
+for more detail rather than guessing at a second, unrelated fix; (2) the
+printed/downloaded IO PDF "cut at an odd point" between the services
+table and the totals/terms page — this uses a completely different,
+already content-aware screenshot+slice pagination system (see the
+2026-08-07 entry on `paginateImageIntoPdf`/`computeUnsafeZonesMm`), and
+without knowing exactly what's wrong (content actually split mid-row vs.
+just unused whitespace before the page break) a blind fix risks making
+it worse — asked Claire what specifically looks wrong before proposing
+a change.
