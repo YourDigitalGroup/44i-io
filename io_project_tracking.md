@@ -14058,3 +14058,71 @@ exposed (unbroken long text in two places lacking `overflow-wrap`), and
 that gap is now fixed at its actual root cause rather than papered over
 by a scrollbar, which is arguably more robust than the state before any
 of today's changes.
+
+### 2026-08-14 (cont'd) — Sticky section headers: didn't actually work live, reverted after real investigation
+
+Claire confirmed live on a real device that sticky still didn't work on
+EITHER platform, after a hard refresh, testing against the deployed
+branch.
+
+**Ruled out deployment/caching as the cause.** Checked directly via
+`git log origin/main` — the branch was merged (PR #265, 16:19 local) and
+includes the exact commit under test; the FTP-deploy GitHub Action
+triggers automatically on push to `main`. The code that was live really
+was the code being tested.
+
+**Diagnosed a real, likely cause**: `position: sticky` applied directly
+to a `<tr>` element is a long-standing WebKit/Safari reliability issue,
+even when `display: block` is forced (as this mobile layout already
+does to fake a stacked-card look) -- Chromium is more lenient here,
+which is exactly why every automated Playwright test today passed
+despite the real bug.
+
+**First fix attempt made it WORSE, caught before shipping.** Tried
+moving the sticky positioning onto a plain `<div>` nested inside the
+`<td>` instead of the `<tr>` itself, reasoning that a genuinely non-table
+element would sidestep the WebKit quirk entirely. Re-ran the same
+Playwright sticky test used all day (`test-sticky-ancestor-check-2026-
+08-14.js`) BEFORE assuming this worked, and it caught a new,
+different failure immediately: a `<div>` nested that deep only gets its
+own `<td>`'s box as its sticky containing block (essentially zero extra
+height beyond its own content), so it had no room to visually "stick" at
+all -- confirmed regressed even in Chromium, which is worse than the
+original (at least the `<tr>` version worked in one browser). This is
+exactly why "test the actual behavior, not just that a property applied"
+matters -- `getComputedStyle().position === 'sticky'` was true in both
+attempts; only a real scroll-and-measure test caught that the second one
+didn't actually work.
+
+**Reverted rather than continue guessing without a real Safari to test
+against.** The properly-correct fix (grouping each section into its own
+`<tbody>`, matching the well-supported "sticky per-group table header"
+pattern) is a real, non-trivial restructuring of how this table's rows
+get generated, and doing it blind — with no way to verify on an actual
+Safari engine from here — risked another round of "looks fixed, isn't."
+Reverted all three sticky-enabling pieces: `.wrap`'s and `.summary-table-
+scroll`'s overflow safety nets (both restored to their original hidden/
+auto values), `#review-summary-card`'s overflow override (removed, no
+longer needed), and `position: sticky` itself off `.rs-section-row`.
+
+**Kept everything that WAS confirmed working**: section labels, the
+collapse/expand toggle, the `width:auto` overflow fix, the header
+cleanup, and both `overflow-wrap:anywhere` fixes (Notes column + Client
+Info Recap) -- none of those depended on the sticky work and all remain
+verified via their own tests, re-run clean after this revert.
+
+**Where this leaves Claire's stated concern** ("don't want anyone to
+forget which section they opened"): the label sits directly above its
+own section's cards in normal document flow either way, and collapsing
+a section once you're done with it means you never need to scroll past
+it not remembering what it was -- covers most of the practical need
+without genuine sticky. True sticky headers remain possible via the
+tbody-per-section restructuring above, but need to be built and tested
+properly (ideally against a real Safari device) rather than attempted
+again blind.
+
+**Verified**: `node --check` clean. Re-ran `test-mobile-card-width-fix`,
+`test-review-section-collapse`, `test-review-section-headers`,
+`test-header-cleanup`, `test-narrow-desktop-overflow`, `test-client-
+recap-overflow`, and `test-pdf-totals-box-zone` — all still pass
+unchanged after the revert.
