@@ -1827,6 +1827,7 @@ function renderAccountingDashboard() {
   const wrap = document.getElementById('accounting-table-wrap');
   if (!rows.length) {
     wrap.innerHTML = '<p style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No campaigns with a budget entered for this month yet.</p>';
+    fitAccountingTableHeight();
     return;
   }
 
@@ -1880,7 +1881,29 @@ function renderAccountingDashboard() {
     </tfoot>
   </table>`;
   applyStickyGroupOffset('accounting-table-wrap');
+  fitAccountingTableHeight();
 }
+
+// Sizes #accounting-table-wrap's max-height to whatever vertical room is actually
+// left in the viewport (2026-08-17, per Claire), replacing the flat CSS
+// max-height:70vh -- the header bar/topbar/stat tiles above it add up to more or
+// less room depending on how many stat tiles render, so a fixed 70vh guess left
+// the page a few px taller than most windows, needing its own tiny scrollbar even
+// though nothing inside it needed to move. Same live-measurement approach as
+// strategist's fitStrategistScrollBoxes()/applyStickyGroupOffset(). The 40px
+// reserved below the box is .acct-wrap's own bottom padding -- the space still
+// needed after the box for the page to end cleanly instead of the box touching
+// the very bottom of the viewport.
+function fitAccountingTableHeight() {
+  const box = document.getElementById('accounting-table-wrap');
+  if (!box) return;
+  const top = box.getBoundingClientRect().top + window.scrollY;
+  const fit = Math.max(200, window.innerHeight - top - 40);
+  box.style.maxHeight = Math.min(fit, window.innerHeight * 0.7) + 'px';
+}
+window.addEventListener('resize', () => {
+  if (typeof currentAccountingUser !== 'undefined' && currentAccountingUser) fitAccountingTableHeight();
+});
 
 // Sticky header row + sticky "current group" banner while scrolling a long
 // table (2026-08-11, per Claire). The group banner's sticky offset has to sit
