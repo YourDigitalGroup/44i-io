@@ -6,6 +6,23 @@
 <title>44i Strategist Portal</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="../shared.css?v=20260813b"/>
+<style>
+  /* Sticky header bar (2026-08-17) -- same root cause and fix as /admin's identical
+     issue found the same day: the outer Logout/Admin-link bar scrolled away with the
+     rest of the page on any long Strategist view, and shared.css's `.card` has
+     `overflow:hidden`, which per spec makes `.card` the containing scrollport for any
+     sticky descendant -- but `.card` itself never scrolls (its height is auto, fitting
+     its content; the page scrolls, not `.card`), so position:sticky bound to it just
+     tracks the page scroll 1:1 instead of clamping at top:0. `.card`'s own table
+     (`#strategist-table-wrap`) isn't affected by this, since it has its OWN bounded
+     `overflow:auto;max-height:70vh` wrapper closer to its thead -- a real internal
+     scroll container, which is why that thead's sticky already worked correctly.
+     `overflow:visible` on `.card` here only affects the outer page-level scroll
+     behavior, not that inner bounded wrapper. Rounding the header bar's own top
+     corners replaces the corner-clipping `.card`'s overflow:hidden used to provide. */
+  #strategist-card{overflow:visible}
+  #strategist-header-bar{position:sticky;top:0;z-index:11;border-radius:18px 18px 0 0}
+</style>
 </head>
 <body>
 
@@ -19,8 +36,8 @@
      logic scope waiting on its own review, same as everything else parked in
      io_project_tracking.md. -->
 <div id="page-strategist" style="display:none;padding-top:1px">
-  <div class="card" style="max-width:1500px;margin:24px auto;padding-bottom:20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
+  <div class="card" id="strategist-card" style="max-width:1500px;margin:24px auto;padding-bottom:20px">
+    <div id="strategist-header-bar" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="strategist-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
         <button id="strategist-admin-portal-link" onclick="adminPortalHandoff();location.href='../admin/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Admin →</button>

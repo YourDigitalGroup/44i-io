@@ -16,7 +16,12 @@
      card -- structural pieces from the mockup that v2 didn't have yet. -->
 <style>
   #page-accounting .acct-wrap{max-width:1180px;margin:24px auto 0;padding:0 16px 40px}
-  #page-accounting .acct-header{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+  /* Sticky header bar (2026-08-17) -- same "Logout button disappears while scrolling"
+     bug found and fixed the same day in /admin and /strategist. This page has no
+     `.card` wrapper (no shared overflow:hidden to fight, unlike those two), so it
+     only needs position:sticky here plus an explicit background -- otherwise table
+     rows scrolling underneath would show through a transparent sticky header. */
+  #page-accounting .acct-header{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:11;background:var(--bg)}
   #page-accounting .acct-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px}
   #page-accounting .acct-month-nav{display:flex;align-items:center;gap:10px}
   #page-accounting .acct-month-nav button{background:#fff;border:1.5px solid var(--accent-dark);color:var(--accent-dark);padding:5px 11px;cursor:pointer;font-size:14px}
