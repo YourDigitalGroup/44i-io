@@ -6307,17 +6307,19 @@ function renderPriceCells() {
       const existingVal = selected[id]?.quotedPriceEntered
         ? (isOneTime ? selected[id].fee : selected[id].recurring)
         : '';
-      // Fits inside the shared .c-fee column — the column's own 12px-each-side cell
-      // padding (.svc-table td) eats into whatever the column's total width is, and
-      // the cell itself has overflow:hidden + text-overflow:ellipsis (.svc-table
-      // td.right), so anything wider than the remaining usable width gets silently
-      // clipped with a trailing "…" rather than wrapping or visibly overflowing.
-      // .c-fee is 100px (2026-08-07 — widened back from a too-tight 80px by
-      // reclaiming space from the Service column instead, see the col.c-fee
-      // comment above), leaving ~76px usable — 60px fits comfortably with real
-      // margin, without the input reading as a tiny sliver next to the rest of
-      // the row.
-      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quote $" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" style="width:60px;padding:2px 4px;font-size:11px;border:1px solid var(--border);border-radius:5px;text-align:right" title="Quoted Price"/>`;
+      // FIXED (2026-08-14, per Claire — "the quote box is small on the mobile site,
+      // I think we had the same issue on the web version"): this used to hardcode
+      // width:60px/padding:2px 4px/font-size:11px inline, which — being an inline
+      // style — overrides the shared `.svc-table td input[type=number]` rule
+      // (width:100%, properly sized padding/font per breakpoint) that every OTHER
+      // numeric input in this table already relies on, including the genuinely
+      // comparable Spend input right next to it. That shared rule already fills
+      // whatever room the Fee cell actually has — 100px minus padding on desktop,
+      // roughly half the card's width now that Fee/Frequency pair up on mobile
+      // (see the mobile media query) — so it was never necessary to hardcode a
+      // smaller size at all; doing so just left real, unused space next to a
+      // needlessly tiny box on every screen size.
+      feeTd.innerHTML = `<input type="number" class="quoted-price-field" placeholder="Quote $" value="${existingVal !== '' ? esc(String(existingVal)) : ''}" onchange="updateQuotedPrice(this,'${esc(id)}')" title="Quoted Price"/>`;
     } else if (r.pricing_mode === 'per_unit') {
       // .c-fee's fixed column width (shared by every table) can't fit "$175 ×
       // [box]" on one line — was wrapping awkwardly/inconsistently by accident.
