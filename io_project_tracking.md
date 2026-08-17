@@ -14756,3 +14756,78 @@ every browser/version has that native fallback), but its live
 verification here is necessarily "doesn't break anything and computes
 the right value," not "reproduced and fixed the exact failure" — worth
 Claire confirming live that the editors now open fully visible.
+
+## 2026-08-17 (cont'd) — Full-page scroll remaining on Orders/Services/Legal Text
+
+Claire: "There are a few tabs on the admin portal that have full page
+scroll still. Orders. Services. Legal Text." Every OTHER tab (Groups,
+Clients, Sections, Intake Forms, AEs, Strategists, Users, Accounting
+Map, Reconcile Lists) already fit one viewport by coincidence — their
+own above-the-table content (a title + one button) is short. Orders has
+a filter bar above its table and an order-detail panel below it; Services
+has a multi-paragraph description plus 3 collapsible panels (Workflows,
+Hosting Proration, the Service editor itself) above its table; Legal
+Text had no bounded box at all — just 5 field-group blocks of textareas
+stacked directly in the page, nothing to shrink.
+
+**Fix, generalized to every tab at once** rather than three individual
+patches: new `fitAdminTableHeight()` (paralleling Strategist's
+`fitStrategistScrollBoxes()`/Accounting's `fitAccountingTableHeight()`
+added earlier today) iterates every tab's own `overflow:auto;max-
+height:70vh` box (`ADMIN_SCROLL_BOX_IDS`) and live-measures how much
+viewport room is actually left below it, same pattern as those two.
+Wired into `adminSection()` (covers switching tabs) plus a
+`ResizeObserver` on the new `#admin-content-area` wrapper (covers every
+OTHER way a section's height can change without switching tabs —
+opening/closing an editor form, Services' Workflows/Hosting Proration
+panels, an Order's detail view — without hunting down and calling this
+at each of those many individual toggle call sites individually) plus
+`resize`.
+
+**The trailing-space calculation had to be smarter than Strategist/
+Accounting's flat constant**: those two always have their box as the
+literal last thing on the page, so a flat "40px for the page's own
+bottom padding" buffer was exactly right. Admin's boxes don't all share
+that shape — Orders' order-detail panel and Legal Text's Save button
+both sit AFTER the box, and Groups/Clients/Users/Accounting Map
+additionally reorder their edit form ABOVE their table via flex `order`,
+so "next DOM sibling" isn't reliably "what's visually below." Solved by
+measuring live instead of assuming a shape: temporarily set the box's
+`max-height` to `none`, compare its own natural bottom edge to its
+containing `<div id="section-*">`'s actual rendered bottom edge (whatever
+that gap is — nothing, an order detail, a Save button — falls out of
+the measurement automatically), then restore the constrained height.
+
+**Legal Text got a real structural change, only after asking first**:
+it had no bounded box at all, a materially different shape than every
+other tab (a form, not a list), so this was a real design choice, not
+an obvious extension of the other tabs' fix. Asked Claire whether to
+wrap it the same way or leave it as an ordinary scrolling form; she
+chose to match the others. New `admin-legal-table` div (same
+`overflow:auto;max-height:70vh` pattern) now wraps the 5 field-group
+blocks (Non-Cancellation, Intellectual Property, Service-Specific
+Terms, Digital Advertising, Checkbox Labels); the title/description/
+read-only-note stay outside it (always visible, unaffected by scroll)
+and the Save button now sits below it with its own `margin-top:20px`
+for breathing room. Unlike Groups/Clients (where the editor FORM is a
+separate block from the bounded LIST box below it), Legal Text has no
+separate list — the bounded box here wraps the form's own field groups
+directly, with just the Save button living outside it.
+
+**Verified** live in a headless browser across every affected tab, with
+fabricated 40-row tables/panels standing in for real data (network
+calls fail offline in this environment, so real Supabase-backed loaders
+were stubbed the same way as earlier today's tests): Groups, Clients,
+Orders (list only), Services (list only), and Legal Text all measure
+exactly 0px of page overflow now. Two edge cases still show a small
+residual page scroll by design, not by bug: Orders with its detail
+panel open (177px, a fabricated 20-paragraph detail — genuinely more
+content than one screen can hold even with the table shrunk to its
+200px floor) and Services with its edit form open (41px, same
+reasoning — that form has 3 collapsible groups of fields and is simply
+taller than one viewport). Both keep the sticky header/Logout reachable
+throughout, matching how a plain long form is expected to behave
+anywhere else on the web — shrinking the table box below a usable
+200px floor to force zero scroll in these two cases would make the box
+itself useless, so this was left as the reasonable trade-off rather
+than chased further. `node --check` clean.
