@@ -14579,3 +14579,72 @@ inline scripts. Not verified: real Supabase-backed login/data flow (this
 environment has no live credentials) — the bypass exercises the same
 DOM/CSS that a real login reaches, but the login path itself wasn't
 exercised end-to-end.
+
+## 2026-08-17 (cont'd) — Sticky fix regression: ghost header row in Admin's tables
+
+Claire, after the fix above deployed: "The page scroll is fixed on the
+admin but something happened to the headers." Screenshot showed a
+duplicate/ghost header row appearing mid-table (e.g. a second "GROUP /
+SLUG / ACCOUNT MANAGER / ..." row sandwiched between real data rows),
+plus a blank light-colored bar where the real header should have been.
+
+**Root cause: the fix above was built on a wrong assumption about
+Admin's tables.** Its comment claimed Admin's tables have "nothing...
+inside an extra overflow:auto wrapper div, so this works directly
+against the page's own scroll" — unlike Accounting/Strategist. That was
+false: every single Admin list (`admin-groups-table`, `admin-orders-
+table`, `admin-clients-table`, `admin-map-table`, `admin-sections-
+table`, `admin-intake-table`, `admin-ae-table`, `admin-strategist-
+table`, `admin-reconcile-table`, `admin-users-table`, `admin-accounting-
+table`) has always had its own `overflow:auto;max-height:70vh` wrapper —
+identical to Accounting's `.acct-table-wrap` and Strategist's
+`#strategist-table-wrap`. So each table's `thead` was already sticky
+relative to ITS OWN genuinely-scrolling 70vh box, correctly, the whole
+time — completely unrelated to the header-bar/tabs-bar fix. Setting the
+thead's `top` to `var(--admin-sticky-offset)` (the header+tabs height,
+~109px) pushed its sticky point to a fixed 109px down from each table's
+OWN scrollport top — a scrollport that never moves relative to the page
+(only the whole bounded box moves as the page scrolls past it) — so the
+`<th>` cells visually "escaped" to a spot 109px into the table while
+their parent `<tr>`'s own background stayed at the row's normal
+in-flow position, producing the blank bar (row background, no visible
+content) followed by a "ghost" duplicate (the actual header text/
+background, sitting wherever that fixed 109px offset happened to land
+inside the table).
+
+**Fix**: reverted `#page-admin table thead th`'s `top` back to plain
+`0` — correct for a `thead` sticky within its own bounded wrapper,
+exactly like Accounting/Strategist's tables always were. Removed the
+now-unrelated `--admin-sticky-offset` CSS variable and the line in
+`applyAdminStickyOffsets()` that set it; that function now only
+measures the header bar's height to position the tabs bar, which is all
+it was ever needed for. Corrected both CSS comment blocks to state the
+real wrapper structure and explicitly warn against re-introducing this
+offset onto the thead rule. The header-bar/tabs-bar sticky fix itself
+(the actual page-scroll bug Claire originally reported) is untouched
+and still correct — Claire confirmed "Strategist portal is ok" and "The
+page scroll is fixed on the admin" in the same message reporting this
+regression.
+
+**Verified**: reproduced live in a headless browser with a real 40-row
+fabricated Groups table (network calls stubbed since this environment
+has no Supabase credentials) — before the revert, scrolling produced
+the exact reported symptom (a second "Account Manager" header cell
+findable in the DOM at a location distinct from the real one, sitting
+174px+109px into the table). After the revert: exactly one such cell,
+positioned correctly at the table wrapper's own top and confirmed to
+stay pinned there (`top` unchanged) while scrolling 500px inside the
+table's own `overflow:auto` box directly (not the outer page) — the
+scenario that actually exercises this table's real sticky behavior.
+`node --check` clean.
+
+**Also raised, not yet resolved**: Claire separately noted Accounting's
+page can still scroll "a little bit." Compared two screenshots she sent
+of the same scroll position before/after — header, stat tiles, and
+table are pixel-identical between them; the sticky header itself isn't
+moving. Likely just a few px of harmless slack from total page content
+being marginally taller than the viewport. She also flagged a thin dark
+hairline visible at the very top edge in the scrolled screenshot,
+possibly a sticky-positioning compositing seam (a known minor Chrome
+rendering quirk) — asked her to confirm whether that's visible live on
+her screen or just a screenshot artifact before investigating further.
