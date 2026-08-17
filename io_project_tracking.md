@@ -14353,3 +14353,63 @@ to 76px (fills its Fee cell's full usable width, matching the column's
 real capacity); mobile grew to 145px (fills its half of the paired
 Fee/Frequency line) — more than double the old fixed size. `node --check`
 clean; no other code path referenced the old 60px value.
+
+## 2026-08-17 — Strategist portal: "when were these numbers updated" banner
+
+Claire, while still doing manual platform-report uploads: "I updated them
+this morning but it would be nice for the strategists to know when
+numbers were updated." Talked through the shape first — a single overall
+"last updated" line risked misleading a strategist, since she pastes
+each platform separately on its own cadence (a global timestamp would
+just reflect whichever platform happened to be pasted most recently, not
+whether THAT strategist's platform is actually fresh). She confirmed:
+one banner, but showing each platform's own time — "the only ones I
+update currently are Google, Facebook, Simpli.fi, and The Trade Desk."
+
+**No schema change needed.** `platform_report_cache` already has an
+`updated_at` column (added `platform-report-cache-2026-08-06.sql`,
+already run) — this reuses data that's already being written every time
+Claire pastes a report, nothing new to track.
+
+**`strategist/index.html`:** new `PLATFORM_REPORT_FRESHNESS_PLATFORMS`
+constant (`['Google Ads', 'Facebook Ads', 'Simpli.fi', 'The Trade Desk']`)
+— a fixed, ordered list rather than "whatever's in the cache," so the
+banner always shows all 4 in the same order, including any not yet
+pasted at all (shows "Not yet uploaded" in muted text rather than
+silently omitting that platform). New `#strategist-report-freshness-
+banner` div, placed at the very top of the portal's content area (above
+the month-picker/scope-toggle bar). New `renderPlatformReportFreshnessBanner()`
+reads straight from `PLATFORM_REPORT_CACHE` and formats each platform's
+`updated_at` with the same date/time format the status-history log
+already uses elsewhere in this portal, for visual consistency. Wired
+into `fetchStrategistData()` (called once, right after
+`PLATFORM_REPORT_CACHE` is rebuilt) rather than at each of its ~14 call
+sites individually, so the banner refreshes automatically on every normal
+page load and every save. `PLATFORM_REPORT_CACHE`'s per-platform object
+now also carries `updated_at` (previously only `report_month`/`rows`
+were kept from the RPC response).
+
+**Verified** (new `test-strategist-report-freshness-banner-2026-08-17.js`):
+all 4 platforms render in the fixed order regardless of cache
+order/presence; a platform with a real cached `updated_at` shows its
+correctly-formatted timestamp; a platform whose cache entry exists but
+is missing `updated_at` falls back to "Not yet uploaded" instead of
+crashing or showing "Invalid Date"; a platform with no cache entry at
+all also shows "Not yet uploaded". `node --check` clean.
+
+**One thing to verify live, not just in this test**: `strategist_get_
+platform_report_cache` was already described as returning "all rows" of
+the small cache table, which — if it's a plain `select *`/`returns setof
+platform_report_cache` — should already include `updated_at` in its
+response with zero SQL changes needed; the test above only confirms the
+front end handles both cases (present and missing) correctly, not which
+case is actually true live. **After this deploys, check the banner for
+Google/Facebook/Simpli.fi/Trade Desk shows real times, not "Not yet
+uploaded," for platforms already pasted.** If any of them show "Not yet
+uploaded" despite having real data, the RPC itself needs
+`updated_at` added to its return columns — send over its current
+definition (Supabase dashboard → Database → Functions →
+`strategist_get_platform_report_cache` → view definition) rather than
+having it rewritten blind, since its exact current auth/validation logic
+isn't visible from this codebase (no SQL files are checked into this
+repo — only summarized in this doc).
