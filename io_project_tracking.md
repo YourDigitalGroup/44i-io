@@ -14831,3 +14831,70 @@ anywhere else on the web — shrinking the table box below a usable
 200px floor to force zero scroll in these two cases would make the box
 itself useless, so this was left as the reasonable trade-off rather
 than chased further. `node --check` clean.
+
+## 2026-08-17 (cont'd) — Fixed a regression: Pricing/Accounting opened to bottom of list
+
+Claire: "When you open Pricing and Accounting editors in groups, it
+opens to the bottom of the list" — a real regression from the fix just
+above. The Pricing/Accounting buttons on a group row call
+`adminEditGroup(id)` (which ends in a `scrollIntoView({behavior:
+'smooth'})` targeting `admin-group-form`), then 200ms later
+`adminTab('pricing')`, which renders a potentially very long list of
+every service's price fields INSIDE that same form — growing
+`#admin-content-area` and firing the `ResizeObserver` from the fix
+above, while the smooth-scroll animation from 200ms earlier could still
+be in flight.
+
+`fitAdminTableHeight()`'s trailing-space calculation was, at that
+point, briefly setting the relevant box's `max-height` to `'none'` (to
+measure its natural unclamped size) and restoring it right after — a
+real, if momentary, layout change. Landing that mid-animation could
+throw off where the browser's in-flight smooth-scroll actually settled,
+matching "opens to the bottom of the list" (most likely the Groups
+list itself, sitting below the now-taller form, if the page happened
+to grow tall enough during that brief window for the animation to
+resolve there instead of at the form).
+
+**Fix, in two steps**: first tried swapping the `max-height:'none'`
+measurement for reading `box.scrollHeight` instead (which reports an
+element's full unclamped content height with zero style mutation,
+overflow:auto keeps content laid out even while visually clipped) —
+this reintroduced a *different* bug (Legal Text and Orders' detail-open
+case each showed non-zero overflow again), because it compared the
+box's **natural** (would-be-unclamped) bottom edge against the
+section's **current** (already-clamped) rendered bottom edge — an
+apples-to-oranges mismatch. Realized the actual fix needs neither
+`scrollHeight` nor a style mutation at all: `section.bottom - box.
+bottom`, using the box's plain CURRENT (already-clamped) bounding rect,
+is mathematically invariant to whatever height the box currently
+happens to be — shrinking or growing the box shifts everything after
+it by the exact same amount, so the gap between the section's bottom
+edge and the box's bottom edge never changes regardless of the box's
+own current max-height. No mutation needed to compute it correctly.
+
+**Verified**: re-ran the full Groups/Clients/Orders/Services/Legal Text
+regression suite from the fix above — all five unchanged (0px overflow
+on the "just browsing" cases, same expected residual scroll on the two
+oversized-form edge cases). Then reproduced the exact reported
+scenario live: fabricated a 60-service catalog (so `renderPricingFields
+()` actually produces a long list, matching what triggers the bug),
+scrolled the Groups list down, and called `adminEditGroup('g20')`
+followed by `adminTab('pricing')` 200ms later — sampled scroll position
+across the whole animation + tab-switch window. The form settles at
+`top: 132` (comfortably clear of the sticky bars) within 300ms and
+stays there through the tab switch and after, with the Pricing tab
+correctly showing — no jump to the bottom of the list at any sampled
+point. `node --check` clean.
+
+**Also asked about, not yet resolved**: Claire also reported the
+Accounting Map's SEM entry appears to have lost its Spend Tiers (added
+2026-08-13, `be1fc4c`). Checked every diff from today's session against
+that code (`adminEditAccounting()`/`adminRenderAccountingTierRows()`,
+~line 4333-4459) — nothing from any of today's changes touches it, so
+this isn't a side effect of the scroll/sticky work. Most likely either
+a genuine data issue (tiers not actually saved, or stored in a shape
+the front end doesn't expect) or something not yet diagnosed — no
+Supabase access from this environment, so the next step is the same
+pattern as the earlier freshness-banner RPC bug: confirm which service
+row (exact `service_id`) and check `accounting_map.spend_tiers`/
+`in_platform_tiers` for it directly in the Supabase SQL Editor.
