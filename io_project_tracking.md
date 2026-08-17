@@ -14314,3 +14314,42 @@ measured real height: a normal service card (checkbox+name, Fee+Freq
 paired, Start+End paired, Notes) dropped from 334px to 252px — about
 25% shorter — with nothing removed, only laid out more densely. No
 page-level horizontal overflow introduced at 390px.
+
+### 2026-08-14 (cont'd) — Quote box too small on both mobile and web
+
+Claire, screenshot in hand: "The quote box is small on the mobile site,
+I think we had the same issue on the web version." This is the "Quote $"
+input a QUR (Quote Upon Request) service shows in its Fee column once
+checked — a live number field, not static text, since the price isn't
+set until an AE actually quotes it.
+
+Root cause: `generateCatalogRowHtml()`'s QUR branch hardcoded
+`style="width:60px;padding:2px 4px;font-size:11px;...;text-align:right"`
+directly inline on the `<input>`. An inline style beats any class rule
+regardless of specificity or media query, so this completely overrode
+the shared `.svc-table td input[type=number]` rule that every OTHER
+numeric input in this table (the Spend field, right next door) already
+relies on for correctly-responsive sizing — that shared rule already
+sets `width:100%` and fills whatever room the cell actually has (~76px
+usable on desktop's 100px Fee column, roughly half the card once
+Fee/Frequency pair up on mobile per the compacting change above). The
+old comment even reasoned through why 60px "fits comfortably" — it
+did fit, it just left real unused space on every screen size once
+nothing else in that column was still using tiny fixed pixel values.
+
+**Fix**: removed the inline width/padding/font-size/text-align entirely,
+letting the input inherit the same shared sizing rule the Spend input
+already uses. Desktop text-align:right and mobile text-align:left both
+already fall out of that same shared rule (`.svc-table td input[type=
+number]` sets text-align:right at desktop widths, the mobile media query
+override sets text-align:left) — so removing the inline override also
+fixes a smaller inconsistency: the hardcoded text-align:right had been
+forcing the box right-aligned even on mobile, where every other paired
+field (including Frequency right next to it) is left-aligned.
+
+**Verified**: rendered a QUR row at both 900px and 390px widths and
+measured the actual input box — desktop grew from the old hardcoded 60px
+to 76px (fills its Fee cell's full usable width, matching the column's
+real capacity); mobile grew to 145px (fills its half of the paired
+Fee/Frequency line) — more than double the old fixed size. `node --check`
+clean; no other code path referenced the old 60px value.
