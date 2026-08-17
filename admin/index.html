@@ -2068,17 +2068,28 @@ function fitAdminTableHeight() {
     // in their section (just #admin-content-area's own 20px bottom padding after
     // it), but Orders has its (sometimes-open, sometimes-tall) order-detail panel
     // below its table, and Legal Text has its Save button below its field groups.
-    // Measured live off the section's actual rendered bottom edge vs. the box's own
-    // NATURAL (unclamped) bottom edge, rather than guessing a flat constant per tab
-    // -- correct regardless of what does or doesn't follow the box, and regardless
-    // of DOM order vs. visual order (Groups/Clients/Users/Accounting reorder their
-    // form above their table via flex `order`, so "next sibling in the DOM" isn't
-    // reliably "what's visually below").
+    // Measured live off the section's rendered bottom edge vs. the box's CURRENT
+    // (already-clamped) bottom edge, rather than guessing a flat constant per tab --
+    // correct regardless of what does or doesn't follow the box, and regardless of
+    // DOM order vs. visual order (Groups/Clients/Users/Accounting reorder their form
+    // above their table via flex `order`, so "next sibling in the DOM" isn't
+    // reliably "what's visually below"). This diff is invariant to the box's own
+    // current height -- shrinking/growing the box shifts everything after it by the
+    // same amount, so section.bottom - box.bottom always reports the same trailing-
+    // content size regardless of what max-height the box currently happens to have.
+    // An earlier version of this function briefly set the box's max-height to 'none'
+    // to measure its natural size, then restored it -- that mutation, however brief,
+    // is a real (if momentary) layout change. Found live 2026-08-17, per Claire
+    // ("Pricing and Accounting editors in Groups open to the bottom of the list"):
+    // those buttons open the group editor via a scrollIntoView({behavior:'smooth'})
+    // that's still animating ~200ms later when adminTab() renders the (often long)
+    // pricing/override fields list, growing #admin-content-area and firing the
+    // ResizeObserver below mid-animation -- landing the smooth-scroll wherever the
+    // page's momentarily-taller layout put it instead of the intended form. Turned
+    // out the mutation wasn't even necessary -- this plain diff needs no style
+    // changes to compute at all.
     const section = box.closest('[id^="section-"]');
-    const prevMaxHeight = box.style.maxHeight;
-    box.style.maxHeight = 'none';
-    const afterBox = section ? Math.max(20, (section.getBoundingClientRect().bottom) - (box.getBoundingClientRect().bottom)) + 36 : 56;
-    box.style.maxHeight = prevMaxHeight;
+    const afterBox = section ? Math.max(20, section.getBoundingClientRect().bottom - box.getBoundingClientRect().bottom) + 36 : 56;
     const fit = Math.max(200, window.innerHeight - top - afterBox);
     box.style.maxHeight = Math.min(fit, window.innerHeight * 0.7) + 'px';
   });
