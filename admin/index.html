@@ -38,12 +38,18 @@
      each table's inline styles individually. <th> needs its OWN explicit background
      here (not just inheriting the row's) -- position:sticky pulls it out of normal
      stacking, and body rows would show through a transparent header as the table
-     scrolls underneath it otherwise. Unlike Accounting's table, nothing here sits
-     inside an extra overflow:auto wrapper div, so this works directly against the
-     page's own scroll -- the same simpler case Strategist's table already was
-     (both portals' outer .card already has overflow:hidden and that never broke
-     Strategist's sticky header, confirmed empirically before rolling this out). */
-  #page-admin table thead th{position:sticky;top:var(--admin-sticky-offset,0px);z-index:3;background:var(--light)}
+     scrolls underneath it otherwise. Each list already sits inside its own
+     `id="admin-*-table"` div with `overflow:auto;max-height:70vh` -- a genuinely
+     bounded, independently-scrolling box, same pattern as Accounting/Strategist --
+     so `top:0` here is relative to THAT div's own scrollport, not the outer page.
+     (2026-08-17 correction: an earlier version of this comment claimed there was no
+     such wrapper and this worked "directly against the page's own scroll" -- that
+     was wrong; every one of these tables has always had this wrapper. Don't give
+     this rule a nonzero `top` to account for the header bar/tabs bar below -- doing
+     that for a few hours produced a real bug, a "ghost" second header rendering
+     mid-table, because it pushed the sticky point somewhere that's meaningless
+     relative to a scrollport that isn't the page's.) */
+  #page-admin table thead th{position:sticky;top:0;z-index:3;background:var(--light)}
 
   /* Sticky header bar + section tabs (2026-08-17), per Claire: scrolling any long
      section (Groups/Clients/Services/etc.) scrolled the user badge/Logout/portal-
@@ -51,27 +57,24 @@
      with the rest of the page -- there was no way back to another section or to log
      out without scrolling back up first. Both bars now stick to the top of the page's
      own scroll, stacked in DOM order (header bar first, tabs bar right below it).
-     The tabs bar's `top` offset and the table thead's `--admin-sticky-offset` are
-     both set from JS (applyAdminStickyOffsets(), called after login and on resize)
-     rather than hardcoded, since the header bar's real height depends on content/
-     viewport width rather than being fixed -- same reasoning as strategist's
-     applyStickyGroupOffset() measuring its header row live instead of guessing a
-     pixel value.
+     The tabs bar's `top` offset is set from JS (applyAdminStickyOffsets(), called
+     after login and on resize) rather than hardcoded, since the header bar's real
+     height depends on content/viewport width rather than being fixed -- same
+     reasoning as strategist's applyStickyGroupOffset() measuring its header row live
+     instead of guessing a pixel value. This offset is unrelated to the table thead
+     rule above -- each table scrolls in its own bounded box (see that rule's
+     comment), never against these two bars, so there's nothing to stack it with.
 
-     Building this surfaced that the thead sticky rule above never actually worked:
      `.card` (shared.css) has `overflow:hidden`, and per the CSS spec ANY ancestor
      with overflow other than `visible` becomes the containing scrollport for a
      sticky descendant -- but `.card` itself never scrolls (its own scrollTop is
-     always 0; the page scrolls, not `.card`), so a sticky element bound to `.card`
-     has nothing to react to and just scrolls away with the page, exactly like a
-     plain relatively-positioned element. Verified this live with a real long table
-     in a headless browser: the thead's `top` tracked the scroll delta 1:1 instead
-     of clamping at 0. `overflow:visible` on `.card`, scoped to this page only, is
-     what actually makes CSS position:sticky work against the page's own scroll --
-     the "confirmed empirically" note above must have been eyeballed over too short
-     a scroll distance to notice. `.card`'s rounded top corners relied on that
-     overflow:hidden to clip square-cornered children to match -- given back here by
-     rounding the header bar's own top corners to the same radius instead. */
+     always 0; the page scrolls, not `.card`), so these two bars, direct children of
+     `.card` with no bounded wrapper any closer, had nothing to react to and just
+     scrolled away with the page like plain relatively-positioned elements.
+     `overflow:visible` on `.card`, scoped to this page only, fixes that. `.card`'s
+     rounded top corners relied on that overflow:hidden to clip square-cornered
+     children to match -- given back here by rounding the header bar's own top
+     corners to the same radius instead. */
   #page-admin .card{overflow:visible}
   #admin-header-bar{position:sticky;top:0;z-index:11;border-radius:18px 18px 0 0}
   #admin-tabs-bar{position:sticky;z-index:10}
@@ -1883,20 +1886,19 @@ function showAdmin(show) {
   }
 }
 
-// Measures the live rendered height of the sticky header bar and tabs bar so the
-// tabs bar can sit directly below the header bar, and every table's sticky <thead>
-// can sit directly below both, with no gap and no overlap. Re-run on resize since
-// the header bar can wrap onto a second line on a narrow viewport (long strategist/
-// admin names, long role labels) -- same live-measurement approach as strategist's
-// applyStickyGroupOffset(), not a hardcoded pixel guess.
+// Measures the live rendered height of the sticky header bar so the tabs bar can sit
+// directly below it with no gap and no overlap. Re-run on resize since the header bar
+// can wrap onto a second line on a narrow viewport (long strategist/admin names, long
+// role labels) -- same live-measurement approach as strategist's
+// applyStickyGroupOffset(), not a hardcoded pixel guess. Deliberately doesn't touch
+// any table's sticky thead -- each table scrolls inside its own bounded
+// overflow:auto;max-height:70vh div (see the CSS comment above this bar's rule),
+// never against this bar, so there's nothing here for a table header to stack with.
 function applyAdminStickyOffsets() {
   const header = document.getElementById('admin-header-bar');
   const tabs = document.getElementById('admin-tabs-bar');
   if (!header || !tabs) return;
-  const headerHeight = header.getBoundingClientRect().height;
-  tabs.style.top = headerHeight + 'px';
-  const totalHeight = headerHeight + tabs.getBoundingClientRect().height;
-  document.getElementById('page-admin').style.setProperty('--admin-sticky-offset', totalHeight + 'px');
+  tabs.style.top = header.getBoundingClientRect().height + 'px';
 }
 window.addEventListener('resize', () => {
   if (document.getElementById('page-admin').style.display !== 'none') applyAdminStickyOffsets();
