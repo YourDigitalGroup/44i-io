@@ -2036,8 +2036,35 @@ function renderStrategistDashboard() {
   document.getElementById('strategist-setup-panel').innerHTML = strategistStatusTab === 'pending' ? renderSetupPanels(lines) : '';
   document.getElementById('strategist-table-wrap').innerHTML = strategistStatusTab === 'pending' ? '' : renderMainTable(lines);
   applyStickyGroupOffset('strategist-table-wrap');
+  fitStrategistScrollBoxes();
   renderStrategistDetailPanel();
 }
+
+// Sizes #strategist-table-wrap/#strategist-setup-panel's max-height to whatever
+// vertical room is actually left in the viewport (2026-08-17, per Claire -- both
+// boxes had a flat max-height:70vh, which left the page a few px taller than most
+// windows: enough content above the box here [header bar, freshness banner, month/
+// scope bar, status tabs] varies by what's shown, so a fixed 70vh guess couldn't
+// account for it and the whole page ended up needing its own tiny scrollbar even
+// though nothing inside it needed to move). Measures each box's live position
+// (getBoundingClientRect + scrollY, so it's correct regardless of current scroll
+// position) rather than hardcoding, same live-measurement approach as
+// applyStickyGroupOffset()/admin's applyAdminStickyOffsets(). The 44px reserved
+// below the box is #strategist-card's own padding-bottom (20px) + its bottom
+// margin (24px) -- the space still needed after the box for the card to end
+// cleanly instead of the box touching the very bottom of the viewport.
+function fitStrategistScrollBoxes() {
+  ['strategist-table-wrap', 'strategist-setup-panel'].forEach(id => {
+    const box = document.getElementById(id);
+    if (!box || box.offsetParent === null) return;
+    const top = box.getBoundingClientRect().top + window.scrollY;
+    const fit = Math.max(200, window.innerHeight - top - 44);
+    box.style.maxHeight = Math.min(fit, window.innerHeight * 0.7) + 'px';
+  });
+}
+window.addEventListener('resize', () => {
+  if (currentStrategistUser) fitStrategistScrollBoxes();
+});
 
 // ── CAMPAIGN SETUP (Pending queue) ───────────────────────────────
 // Grouped by client's group, alphabetical, with the same colored group-band

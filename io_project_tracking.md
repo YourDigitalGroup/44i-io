@@ -14648,3 +14648,49 @@ hairline visible at the very top edge in the scrolled screenshot,
 possibly a sticky-positioning compositing seam (a known minor Chrome
 rendering quirk) — asked her to confirm whether that's visible live on
 her screen or just a screenshot artifact before investigating further.
+
+## 2026-08-17 (cont'd) — Removed Strategist/Accounting's tiny page scrollbar
+
+Claire sent two screenshots at the same scroll position, before/after —
+confirmed they were pixel-identical (the sticky header genuinely wasn't
+moving), so the "little bit" of page scroll she could still do on both
+portals wasn't the header-bar fix failing. She then compared to Admin,
+which shows no page scrollbar at all, and asked to make Strategist/
+Accounting match rather than leave the harmless inconsistency.
+
+**Why Admin didn't have it**: Admin's "Groups" section only has a title
++ "New Group" button above its bounded `overflow:auto;max-height:70vh`
+table box, so total page height comfortably clears the viewport already
+— nothing to fix there. Strategist and Accounting both stack more above
+their own equivalent boxes (freshness banner + month/scope bar for
+Strategist; stat tiles + topbar for Accounting), and both boxes had a
+flat, hardcoded `max-height:70vh` that didn't account for that — pushing
+total page height a few px past most windows' viewport height, hence a
+scrollbar with almost no travel.
+
+**Fix**: replaced the flat `70vh` on `#strategist-table-wrap` (and
+`#strategist-setup-panel`, same box for the Campaign Setup tab) and
+`#accounting-table-wrap` with a live-measured max-height — new
+`fitStrategistScrollBoxes()` / `fitAccountingTableHeight()`, called
+after every render and on window `resize`. Each measures its own box's
+real position (`getBoundingClientRect().top + window.scrollY`, correct
+regardless of current scroll position) and sets `max-height` to exactly
+what's left in the viewport below it, minus the space the page still
+needs afterward (44px for Strategist's `#strategist-card` bottom
+padding+margin; 40px for Accounting's `.acct-wrap` bottom padding) —
+capped at the original `70vh` as an upper bound, so on a very tall
+monitor the box never grows larger than it used to, only shrinks when
+the content above/below it actually needs the room. Same live-
+measurement philosophy as `applyStickyGroupOffset()`/Admin's
+`applyAdminStickyOffsets()` — no hardcoded pixel guess.
+
+**Verified**: live in a headless browser with fabricated realistic
+content (freshness banner + 40-row table for Strategist; 5 stat tiles +
+40-row table for Accounting) — `document.documentElement.scrollHeight`
+exactly equals `window.innerHeight` after the fit runs on both portals
+(zero overflow, matching Admin's already-correct behavior). Re-checked
+after simulating a `resize` to a shorter window (650px) — still zero
+overflow, confirming the box actually shrinks rather than just fitting
+by coincidence at one window size. This only ever sets `max-height`, so
+it can't interact with each table's separate `position:sticky` thead
+styling. `node --check` clean on both files.
