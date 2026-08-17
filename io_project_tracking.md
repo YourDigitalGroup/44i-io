@@ -14487,3 +14487,95 @@ front-end change needed — `strategist/index.html` already read
 **Verified live** by Claire: re-ran the function, refreshed the
 strategist portal, banner now shows real timestamps for the platforms
 pasted that morning instead of "Not yet uploaded."
+
+## 2026-08-17 (cont'd) — Header bar scrolled away in Admin/Strategist/Accounting
+
+Claire: "you can still scroll the main page on the admin portal so you
+can scroll and have the logout button and strategist and accounting
+buttons disappear." The top bar (user badge, Go to Strategist/Accounting
+Portal links, Logout) was never made sticky when the section tabs and
+table headers were — it's a plain block that scrolls with the rest of
+the page on any section with enough rows.
+
+**Root cause was two layers, not one.** Fixing Admin's header bar
+surfaced that its `#page-admin table thead th{position:sticky}` rule
+(added 2026-08-13, "confirmed empirically") **never actually worked
+either** — verified live in a headless browser with a real long table:
+the thead's `top` tracked scroll 1:1 instead of clamping at 0. Cause:
+shared.css's `.card` has `overflow:hidden`. Per the CSS spec, any
+ancestor with overflow other than `visible` becomes the containing
+scrollport for a `position:sticky` descendant — but `.card` has no
+`max-height`, so it's exactly as tall as its content and never scrolls
+internally (the page scrolls, `.card`'s own scrollTop never moves). A
+sticky element bound to a container that never scrolls has nothing to
+react to and just moves with the page — indistinguishable from
+`position:static`. This is the exact same mechanism Accounting hit
+2026-08-12 ("sticky headers not working" — fixed there by giving
+`.acct-table-wrap` a real `max-height:70vh` so it became a genuine
+scrolling panel) and Strategist hit the same day for its own table wrap
+— but neither of those fixes carried over to Admin's tables, and nobody
+had reason to re-check them once Strategist's fix shipped and its portal
+*looked* fine on casual scrolling.
+
+**Per-portal state, checked before fixing anything:**
+- **Admin**: broken both ways — outer header bar not sticky at all, AND
+  every table's `thead` sticky silently inert due to `.card`'s
+  `overflow:hidden`.
+- **Strategist**: outer header bar not sticky (same bug as Admin) — but
+  its main table (`#strategist-table-wrap`) already has its own bounded
+  `overflow:auto;max-height:70vh` wrapper *closer* to the `thead` than
+  `.card`, so that inner sticky already worked correctly and needed no
+  change.
+- **Accounting**: outer header bar (`.acct-header`) not sticky — but this
+  page has no `.card`/`overflow:hidden` ancestor to fight (`.acct-wrap`
+  is a plain unstyled-overflow div), so its fix is the simple case: just
+  add `position:sticky` directly, no root-cause CSS to touch.
+
+**Fix, all three pages:**
+- **`admin/index.html`**: new `#admin-header-bar` and `#admin-tabs-bar`
+  ids on the two existing top rows, both `position:sticky` (header at
+  `top:0`, tabs bar's `top` set to the header's live measured height).
+  `#page-admin .card{overflow:visible}` restores real sticky behavior
+  against the page's own scroll — replaces the corner-clipping that
+  `overflow:hidden` used to provide by rounding `#admin-header-bar`'s own
+  top corners to match `.card`'s `18px` radius instead. New
+  `applyAdminStickyOffsets()` measures the header bar's and tabs bar's
+  live rendered heights (not hardcoded — same reasoning as strategist's
+  existing `applyStickyGroupOffset()`) and writes the combined height to
+  a `--admin-sticky-offset` CSS variable that `#page-admin table thead
+  th`'s `top` now reads, so every table's header sticks directly below
+  both bars with no gap and no overlap. Called after login and on
+  `resize`.
+- **`strategist/index.html`**: new `#strategist-card` and
+  `#strategist-header-bar` ids; `#strategist-card{overflow:visible}` +
+  `#strategist-header-bar{position:sticky;top:0}` with matching
+  top-corner rounding. No JS changes — no second sticky bar to offset
+  against here, and the table's own internal sticky header is unaffected
+  since it lives inside a genuinely separate scroll container.
+- **`accounting/index.html`**: `.acct-header` gets `position:sticky;
+  top:0;background:var(--bg)` directly in its existing CSS rule — the
+  explicit background is needed since this page has no white card panel
+  behind it (flat page background), so a transparent sticky header would
+  let scrolling rows show through underneath it.
+
+**Verified** — no automated test suite covers layout/CSS behavior in
+this project, and none of this is expressible as a plain function test,
+so verification was done live in a headless Chromium browser (Playwright
+is preinstalled in this environment) rather than skipped: for each
+portal, bypassed real login by setting the `current*User` global and
+calling `show*Panel(true)` directly, forced enough content height to
+make the page genuinely scroll, scrolled 2000px, and read
+`getBoundingClientRect()` on the Logout button and (Admin only) a real
+`<thead>` in a 200-row test table before and after. All three: header
+bar's `top` was `0`/~`10px` after scrolling instead of tracking the
+scroll delta 1:1. Admin's table header landed exactly at the computed
+`--admin-sticky-offset` (`~109px`, matching header+tabs height) with no
+overlap. Screenshotted the rounded top-left corner on Admin and
+Strategist at a viewport wide enough to actually show the curve (both
+pages' `.card` spans the full narrow test viewport otherwise) — corners
+render cleanly, no square-corner artifact from removing
+`overflow:hidden`. `node --check` clean on all three files' extracted
+inline scripts. Not verified: real Supabase-backed login/data flow (this
+environment has no live credentials) — the bypass exercises the same
+DOM/CSS that a real login reaches, but the login path itself wasn't
+exercised end-to-end.

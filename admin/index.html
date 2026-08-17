@@ -43,7 +43,38 @@
      page's own scroll -- the same simpler case Strategist's table already was
      (both portals' outer .card already has overflow:hidden and that never broke
      Strategist's sticky header, confirmed empirically before rolling this out). */
-  #page-admin table thead th{position:sticky;top:0;z-index:3;background:var(--light)}
+  #page-admin table thead th{position:sticky;top:var(--admin-sticky-offset,0px);z-index:3;background:var(--light)}
+
+  /* Sticky header bar + section tabs (2026-08-17), per Claire: scrolling any long
+     section (Groups/Clients/Services/etc.) scrolled the user badge/Logout/portal-
+     switch buttons and the section tabs bar right off the top of the screen along
+     with the rest of the page -- there was no way back to another section or to log
+     out without scrolling back up first. Both bars now stick to the top of the page's
+     own scroll, stacked in DOM order (header bar first, tabs bar right below it).
+     The tabs bar's `top` offset and the table thead's `--admin-sticky-offset` are
+     both set from JS (applyAdminStickyOffsets(), called after login and on resize)
+     rather than hardcoded, since the header bar's real height depends on content/
+     viewport width rather than being fixed -- same reasoning as strategist's
+     applyStickyGroupOffset() measuring its header row live instead of guessing a
+     pixel value.
+
+     Building this surfaced that the thead sticky rule above never actually worked:
+     `.card` (shared.css) has `overflow:hidden`, and per the CSS spec ANY ancestor
+     with overflow other than `visible` becomes the containing scrollport for a
+     sticky descendant -- but `.card` itself never scrolls (its own scrollTop is
+     always 0; the page scrolls, not `.card`), so a sticky element bound to `.card`
+     has nothing to react to and just scrolls away with the page, exactly like a
+     plain relatively-positioned element. Verified this live with a real long table
+     in a headless browser: the thead's `top` tracked the scroll delta 1:1 instead
+     of clamping at 0. `overflow:visible` on `.card`, scoped to this page only, is
+     what actually makes CSS position:sticky work against the page's own scroll --
+     the "confirmed empirically" note above must have been eyeballed over too short
+     a scroll distance to notice. `.card`'s rounded top corners relied on that
+     overflow:hidden to clip square-cornered children to match -- given back here by
+     rounding the header bar's own top corners to the same radius instead. */
+  #page-admin .card{overflow:visible}
+  #admin-header-bar{position:sticky;top:0;z-index:11;border-radius:18px 18px 0 0}
+  #admin-tabs-bar{position:sticky;z-index:10}
 </style>
 </head>
 <body>
@@ -53,7 +84,7 @@
 <!-- ADMIN PANEL -->
 <div id="page-admin" style="display:none">
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
+    <div id="admin-header-bar" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
         <button id="admin-strategist-portal-link" onclick="strategistPortalHandoff();location.href='../strategist/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Strategist Portal →</button>
@@ -63,7 +94,7 @@
     </div>
 
     <!-- Top-level section tabs: Groups | Orders -->
-    <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
+    <div id="admin-tabs-bar" style="display:flex;border-bottom:1px solid var(--border);background:#fff">
       <button id="section-tab-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent-dark);background:transparent;color:var(--accent-dark);cursor:pointer">Groups</button>
       <button id="section-tab-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
       <button id="section-tab-clients" onclick="adminSection('clients')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Clients</button>
@@ -1846,10 +1877,30 @@ function showAdmin(show) {
     });
     // Default to Orders for a strategist (their only visible tab), Groups for everyone else
     adminSection(isStrategist ? 'orders' : 'groups');
+    applyAdminStickyOffsets();
   } else {
     if (wrap) wrap.style.display = 'block';
   }
 }
+
+// Measures the live rendered height of the sticky header bar and tabs bar so the
+// tabs bar can sit directly below the header bar, and every table's sticky <thead>
+// can sit directly below both, with no gap and no overlap. Re-run on resize since
+// the header bar can wrap onto a second line on a narrow viewport (long strategist/
+// admin names, long role labels) -- same live-measurement approach as strategist's
+// applyStickyGroupOffset(), not a hardcoded pixel guess.
+function applyAdminStickyOffsets() {
+  const header = document.getElementById('admin-header-bar');
+  const tabs = document.getElementById('admin-tabs-bar');
+  if (!header || !tabs) return;
+  const headerHeight = header.getBoundingClientRect().height;
+  tabs.style.top = headerHeight + 'px';
+  const totalHeight = headerHeight + tabs.getBoundingClientRect().height;
+  document.getElementById('page-admin').style.setProperty('--admin-sticky-offset', totalHeight + 'px');
+}
+window.addEventListener('resize', () => {
+  if (document.getElementById('page-admin').style.display !== 'none') applyAdminStickyOffsets();
+});
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
 function adminSection(section) {
