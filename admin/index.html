@@ -78,6 +78,15 @@
   #page-admin .card{overflow:visible}
   #admin-header-bar{position:sticky;top:0;z-index:11;border-radius:18px 18px 0 0}
   #admin-tabs-bar{position:sticky;z-index:10}
+
+  /* scroll-margin-top for every editor/detail-view target (2026-08-17) -- see
+     applyAdminStickyOffsets()'s comment. Every `*-form`/`admin-order-detail` id is
+     a scrollIntoView({block:'start'}) target somewhere in this file; this is a CSS
+     attribute selector on the `-form` suffix rather than one rule per id, so a
+     future new editor following the same `id="admin-whatever-form"` + scrollIntoView
+     convention gets this for free. The +12px is breathing room so the form's title
+     isn't flush against the sticky bars' bottom edge. */
+  #page-admin [id$="-form"], #page-admin #admin-order-detail{scroll-margin-top:calc(var(--admin-sticky-offset, 0px) + 12px)}
 </style>
 </head>
 <body>
@@ -1894,11 +1903,21 @@ function showAdmin(show) {
 // any table's sticky thead -- each table scrolls inside its own bounded
 // overflow:auto;max-height:70vh div (see the CSS comment above this bar's rule),
 // never against this bar, so there's nothing here for a table header to stack with.
+// Also sets --admin-sticky-offset, consumed by the scroll-margin-top rule below --
+// every editor's scrollIntoView() aligns its form's top edge with the page's literal
+// top, with no awareness that the sticky header+tabs bars now permanently cover that
+// strip. Without this, opening any editor (Groups/Clients/Services/etc.) or an Order's
+// detail view scrolled the form's own title and first fields directly behind the bars,
+// requiring a manual scroll-up to see them (found live 2026-08-17, per Claire, right
+// after the header-bar fix above -- "I have to scroll up" -- across every editor, not
+// just Clients, since they all share the same scrollIntoView({block:'start'}) pattern).
 function applyAdminStickyOffsets() {
   const header = document.getElementById('admin-header-bar');
   const tabs = document.getElementById('admin-tabs-bar');
   if (!header || !tabs) return;
-  tabs.style.top = header.getBoundingClientRect().height + 'px';
+  const headerHeight = header.getBoundingClientRect().height;
+  tabs.style.top = headerHeight + 'px';
+  document.getElementById('page-admin').style.setProperty('--admin-sticky-offset', (headerHeight + tabs.getBoundingClientRect().height) + 'px');
 }
 window.addEventListener('resize', () => {
   if (document.getElementById('page-admin').style.display !== 'none') applyAdminStickyOffsets();

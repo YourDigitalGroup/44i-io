@@ -22,6 +22,9 @@
      only needs position:sticky here plus an explicit background -- otherwise table
      rows scrolling underneath would show through a transparent sticky header. */
   #page-accounting .acct-header{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px;margin-bottom:16px;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:11;background:var(--bg)}
+  /* scroll-margin-top for the detail card's scrollIntoView() target (2026-08-17) --
+     see fitAccountingTableHeight()'s comment for why this is needed. */
+  #page-accounting #accounting-detail-card{scroll-margin-top:calc(var(--accounting-sticky-offset, 0px) + 12px)}
   #page-accounting .acct-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px}
   #page-accounting .acct-month-nav{display:flex;align-items:center;gap:10px}
   #page-accounting .acct-month-nav button{background:#fff;border:1.5px solid var(--accent-dark);color:var(--accent-dark);padding:5px 11px;cursor:pointer;font-size:14px}
@@ -1900,6 +1903,14 @@ function fitAccountingTableHeight() {
   const top = box.getBoundingClientRect().top + window.scrollY;
   const fit = Math.max(200, window.innerHeight - top - 40);
   box.style.maxHeight = Math.min(fit, window.innerHeight * 0.7) + 'px';
+  // --accounting-sticky-offset feeds the scroll-margin-top rule (2026-08-17, per
+  // Claire -- same bug and fix as /admin's identical scrollIntoView issue found the
+  // same day): opening the detail card via accountingSelectLine()'s
+  // scrollIntoView({block:'start'}) aligned its top edge with the page's literal
+  // top, which the sticky header bar now permanently covers, hiding the card's own
+  // title/first fields until scrolled up manually.
+  const header = document.querySelector('#page-accounting .acct-header');
+  if (header) document.querySelector('#page-accounting .acct-wrap').style.setProperty('--accounting-sticky-offset', header.getBoundingClientRect().height + 'px');
 }
 window.addEventListener('resize', () => {
   if (typeof currentAccountingUser !== 'undefined' && currentAccountingUser) fitAccountingTableHeight();
