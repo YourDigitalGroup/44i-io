@@ -122,7 +122,7 @@
       <button id="section-tab-accounting" onclick="adminSection('accounting')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Accounting Map<span id="accounting-missing-badge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:10px"></span></button>
     </div>
 
-    <div style="padding:20px">
+    <div style="padding:20px" id="admin-content-area">
 
       <!-- ── SECTION: Groups ── -->
       <div id="section-groups" style="display:flex;flex-direction:column">
@@ -1030,6 +1030,7 @@
           Legal text is view-only for your role — only a super admin can save changes here.
         </div>
 
+        <div id="admin-legal-table" style="overflow:auto;max-height:70vh">
         <div style="display:flex;flex-direction:column;gap:20px;margin-bottom:20px">
           <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff">
             <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Non-Cancellation</p>
@@ -1105,8 +1106,9 @@
             </div>
           </div>
         </div>
+        </div><!-- /admin-legal-table -->
 
-        <button id="admin-legal-save-btn" onclick="adminSaveLegalContent()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Legal Text</button>
+        <button id="admin-legal-save-btn" onclick="adminSaveLegalContent()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer;margin-top:20px">Save Legal Text</button>
       </div><!-- /section-legal -->
 
       <!-- ── SECTION: Notifications (always-BCC recipients, global — every group's emails) ── -->
@@ -2039,7 +2041,57 @@ function adminSection(section) {
       loadAdminAccountingMap();
     }
   }
+  fitAdminTableHeight();
 }
+
+// Sizes every tab's bounded overflow:auto;max-height:70vh list box to whatever
+// vertical room is actually left in the viewport (2026-08-17, per Claire -- "There
+// are a few tabs on the admin portal that have full page scroll still: Orders,
+// Services, Legal Text"). Groups/Clients/etc. happened to already fit one viewport
+// because their own above-the-table content (title + one button) is short; Orders
+// has a filter bar plus an order-detail panel below its table, and Services has a
+// multi-paragraph description plus 3 collapsible panels above its table -- both
+// tall enough to push the flat 70vh guess past most windows, same root cause and
+// same fix already applied to Strategist/Accounting's table wraps earlier today.
+// Only ever touches whichever box is actually visible (offsetParent check) -- only
+// one section shows at a time. Legal Text had no bounded box at all (plain stacked
+// textareas, no list to bound) -- asked Claire whether it should get one like every
+// other tab or stay a normal full-page-scrolling form; she chose to match the
+// others, so `admin-legal-table` now wraps its 5 field groups the same way.
+const ADMIN_SCROLL_BOX_IDS = ['admin-groups-table', 'admin-orders-table', 'admin-clients-table', 'admin-map-table', 'admin-sections-table', 'admin-intake-table', 'admin-ae-table', 'admin-strategist-table', 'admin-reconcile-table', 'admin-users-table', 'admin-accounting-table', 'admin-legal-table'];
+function fitAdminTableHeight() {
+  ADMIN_SCROLL_BOX_IDS.forEach(id => {
+    const box = document.getElementById(id);
+    if (!box || box.offsetParent === null) return;
+    const top = box.getBoundingClientRect().top + window.scrollY;
+    // What's needed AFTER this box varies by tab -- most tabs' box is the last thing
+    // in their section (just #admin-content-area's own 20px bottom padding after
+    // it), but Orders has its (sometimes-open, sometimes-tall) order-detail panel
+    // below its table, and Legal Text has its Save button below its field groups.
+    // Measured live off the section's actual rendered bottom edge vs. the box's own
+    // NATURAL (unclamped) bottom edge, rather than guessing a flat constant per tab
+    // -- correct regardless of what does or doesn't follow the box, and regardless
+    // of DOM order vs. visual order (Groups/Clients/Users/Accounting reorder their
+    // form above their table via flex `order`, so "next sibling in the DOM" isn't
+    // reliably "what's visually below").
+    const section = box.closest('[id^="section-"]');
+    const prevMaxHeight = box.style.maxHeight;
+    box.style.maxHeight = 'none';
+    const afterBox = section ? Math.max(20, (section.getBoundingClientRect().bottom) - (box.getBoundingClientRect().bottom)) + 36 : 56;
+    box.style.maxHeight = prevMaxHeight;
+    const fit = Math.max(200, window.innerHeight - top - afterBox);
+    box.style.maxHeight = Math.min(fit, window.innerHeight * 0.7) + 'px';
+  });
+}
+window.addEventListener('resize', () => {
+  if (document.getElementById('page-admin').style.display !== 'none') fitAdminTableHeight();
+});
+// Catches every other way a section's above-the-table content can change height
+// without going through adminSection() itself -- opening/closing an editor form,
+// the Services tab's Workflows/Hosting Proration panels, an Order's detail view,
+// etc. -- rather than hunting down and calling fitAdminTableHeight() at each of
+// those many individual toggle call sites.
+new ResizeObserver(() => fitAdminTableHeight()).observe(document.getElementById('admin-content-area'));
 
 async function loadAdminGroups() {
   try {
