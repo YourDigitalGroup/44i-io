@@ -14694,3 +14694,65 @@ overflow, confirming the box actually shrinks rather than just fitting
 by coincidence at one window size. This only ever sets `max-height`, so
 it can't interact with each table's separate `position:sticky` thead
 styling. `node --check` clean on both files.
+
+## 2026-08-17 (cont'd) — Editors opening with their top hidden under sticky bars
+
+Claire: "When I go to edit a client the editor doesn't show all the
+whole editor, I have to scroll up. I am guessing this is the same issue
+across all editors and when you open details" — correct guess. Every
+editor/detail view in all three portals opens via
+`element.scrollIntoView({behavior:'smooth', block:'start'})`, which
+aligns the target's top edge with the literal top of the page — with no
+inherent knowledge that the sticky header (and, on Admin, tabs) bar
+added earlier today now permanently covers that top strip. Depending on
+the browser, that leaves the editor's own title/first fields rendered
+directly underneath the sticky bars, invisible until scrolled up
+manually.
+
+**Fix**: standard CSS `scroll-margin-top`, the property that exists
+specifically for this — it tells `scrollIntoView` (and fragment/anchor
+scrolling) to leave that much room above the target instead of flush-
+aligning it. Applied to every such target:
+- **`admin/index.html`**: `#page-admin [id$="-form"], #page-admin
+  #admin-order-detail{scroll-margin-top:calc(var(--admin-sticky-offset,
+  0px) + 12px)}` — an attribute-selector on the `-form` id suffix
+  instead of one rule per id, since every current editor (Groups,
+  Clients, Services, Sections, Intake Forms, AEs, Strategists, Users,
+  Accounting Map) already follows that `id="admin-*-form"` convention,
+  so a future editor built the same way gets this for free.
+  `applyAdminStickyOffsets()` (already measuring the header+tabs height
+  for the tabs bar's own `top`) now also writes that combined height to
+  `--admin-sticky-offset`, reusing the CSS variable name from the
+  reverted table-thead attempt earlier today for a purpose it's
+  actually correct for this time.
+- **`strategist/index.html`**: `#strategist-detail-panel{scroll-margin-
+  top:calc(var(--strategist-sticky-offset, 0px) + 12px)}` —
+  `fitStrategistScrollBoxes()` now also measures `#strategist-header-
+  bar`'s height into `--strategist-sticky-offset`.
+- **`accounting/index.html`**: `#page-accounting #accounting-detail-
+  card{scroll-margin-top:calc(var(--accounting-sticky-offset, 0px) +
+  12px)}` — `fitAccountingTableHeight()` now also measures `.acct-
+  header`'s height into `--accounting-sticky-offset`.
+
+All three reuse the "measure live, don't hardcode" pattern already
+established by `applyStickyGroupOffset()` — none of these bar heights
+are fixed pixel values (Admin's header bar in particular can wrap to a
+second line on a narrow viewport), so a hardcoded guess would drift.
+
+**Verified, with an honest caveat**: confirmed live in a headless
+browser (Chromium 141) that opening Admin's Client editor from deep in
+a scrolled list lands its form well clear of the sticky bars (a 221px
+gap above it, comfortably past the ~123px `scroll-margin-top` value
+computed) — and confirmed the same CSS variables/`scroll-margin-top`
+values compute correctly for Strategist's detail panel and Accounting's
+detail card. Caveat: this specific Chromium version turned out to
+**already** avoid scrolling content under sticky ancestors on its own
+(recent Chromium versions added this natively) — forcing `scroll-
+margin-top` to a literal `0px` in a control test still produced the
+same clear landing spot, so this test environment can't demonstrate
+the actual "before" failure Claire saw. `scroll-margin-top` is still
+the standards-correct fix and the right thing to have explicitly (not
+every browser/version has that native fallback), but its live
+verification here is necessarily "doesn't break anything and computes
+the right value," not "reproduced and fixed the exact failure" — worth
+Claire confirming live that the editors now open fully visible.
