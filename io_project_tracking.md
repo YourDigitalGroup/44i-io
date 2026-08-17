@@ -14898,3 +14898,63 @@ Supabase access from this environment, so the next step is the same
 pattern as the earlier freshness-banner RPC bug: confirm which service
 row (exact `service_id`) and check `accounting_map.spend_tiers`/
 `in_platform_tiers` for it directly in the Supabase SQL Editor.
+
+**Resolved** — same RPC-column pattern as the freshness banner bug.
+`admin_get_accounting_map`'s `jsonb_build_object` never selected
+`spend_tiers`/`in_platform_tiers` at all (confirmed via `pg_get_
+functiondef`), even though the row itself (`sem-bp`, confirmed via
+direct `select` — `[{"max":4999,"cut_pct":75},{"max":null,"cut_pct":
+85}]` etc.) was fully intact the whole time. Data was never lost; the
+RPC just wasn't handing it to the front end. Fixed the same way as the
+freshness banner: Claire ran a `create or replace function` adding
+those two keys to the `jsonb_build_object` call, same signature/
+security definer/search_path as the live version. Verified live by
+Claire: tiers show again.
+
+## 2026-08-17 (cont'd) — Real fix for Pricing/Accounting opening at the wrong scroll position
+
+The fix two entries up didn't actually fix it: Claire reported back
+"Pricing still opens at the bottom of the editor, accounting will open
+at the top of the editor once and then it opens at the bottom of the
+editor" — the "once and then" was the tell that this was a genuine
+timing race, not something `fitAdminTableHeight()`'s calculation could
+ever fix (that fix was real and still correct, just addressing a
+different bug).
+
+**Root cause, confirmed live with simulated network delay**: the
+Pricing/Accounting buttons on a group row have called `adminEditGroup
+(id); setTimeout(() => adminTab('pricing'), 200)` since long before
+today — a bet that `adminEditGroup()` (which `await`s real staff-
+roster/strategist-roster network calls) finishes within 200ms, so the
+delayed `adminTab('pricing')` call fires AFTER and overrides this
+function's own hardcoded `adminTab('info')` reset at its very end. On
+a fast connection this bet pays off and it looks fine. Reproduced the
+losing case with `ensureStaffRosterLoaded`/`ensureStrategistsLoaded`
+stubbed to a simulated 400-800ms delay (closer to a real, non-instant
+network): the 200ms timeout's `adminTab('pricing')` fires first
+(briefly showing the long pricing list, confirmed via `tab-pricing`
+`display` flipping to `'block'`), then `adminEditGroup()` finishes and
+its own `adminTab('info')` resets back to Info — but the `scrollIntoView`
+already ran against the taller Pricing-tab layout the form had a moment
+earlier, so the scroll position doesn't retract when the form shrinks
+back down to Info-tab height, landing well past the now-shorter form.
+This bug has always existed in this exact code shape; it just got much
+more visible once today's sticky-header work removed the extra
+scrollable slack that used to make a slightly-wrong landing spot less
+noticeable.
+
+**Fix**: removed the race instead of tuning the timeout. `adminEditGroup
+(id, initialTab)` now takes the desired tab directly and calls `adminTab
+(initialTab || 'info')` itself, in the correct place, in the correct
+final order — no more racing against its own reset. The Pricing/
+Accounting buttons now call `adminEditGroup('${id}','pricing')` /
+`adminEditGroup('${id}','accounting-override')` directly, no `setTimeout`
+at all.
+
+**Verified**: re-ran the same delayed-network reproduction (bumped to
+800ms per call, 1.6s total — slower than the original repro) against
+the fixed code: the form now stays hidden the entire time data is
+loading (no flash of the wrong tab), then appears exactly once, already
+showing the Pricing tab, correctly scrolled to `top: 132` (clear of the
+sticky bars) — no flip back to Info, no scroll misalignment, regardless
+of how slow the simulated network is. `node --check` clean.
