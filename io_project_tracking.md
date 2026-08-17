@@ -14413,3 +14413,53 @@ definition (Supabase dashboard → Database → Functions →
 having it rewritten blind, since its exact current auth/validation logic
 isn't visible from this codebase (no SQL files are checked into this
 repo — only summarized in this doc).
+
+## 2026-08-17 (cont'd) — Cleaning up LLO/Reputation Mgmt.'s "nothing to track" rows
+
+Claire, while waiting on a GitHub outage to merge the banner above:
+"For LLO, LLO (SEO), Reputation Mgmt., Rep Monitoring (SEO)... there
+isn't anything to really track (clicks, impressions, costs) should we
+put them in a separate place or update their lines so it looks a little
+cleaner?" Talked through both options she raised: a separate
+place/section would fragment the "My Campaigns"/"All Strategists" and
+group-filter views strategists already rely on for their whole workload,
+and these 4 tactics still genuinely use Optimize Log and Notes — they
+belong in the same list. Recommended the lower-risk row cleanup instead;
+Claire agreed: "Go with the collapsed-row cleanup."
+
+**What a flat-fee row looked like before**: Platform showed a live
+"— Select —" dropdown that never applied (no ad platform to pick), and
+Gross Budget/In-Platform Budget/Actual Spend/Spend Pacing/Goal/Actual
+Perf./Perf. Pacing all just showed "—" — 8 columns of dead weight on
+every single one of these rows, every month.
+
+**`strategist/index.html`**: new `isFlatFeeNoMetricsLine(line)` helper —
+matches by `service_id` for the two catalog-backed tactics (`llo-bp`,
+`rep-bp`, already in `TRACKABLE_FLAT_SERVICE_IDS`) and by `tactic_label`
+for the two SEO-trigger-only ones (`LLO (SEO)`, `Rep Monitoring (SEO)`),
+which can't be matched by `service_id` since both share `seo-bp` as an
+inert placeholder — same placeholder a REAL SEO campaign also uses, so
+matching had to be tactic_label-specific there, not "any seo-bp line."
+`renderMainTable()` now branches per row: Platform collapses to a plain
+muted "—" (no editable dropdown) instead of the always-irrelevant picker,
+and Gross Budget through Perf. Pacing (7 columns) collapse into one
+`colspan="7"` cell reading "Flat-fee tracking only — no platform spend
+to track." Flight, Optimize Log, and Notes are all left completely
+untouched — Flight is still meaningful (when the tactic started/ended)
+and strategists genuinely log optimizations/notes against these tactics
+despite there being no numbers to pace against.
+
+**Verified** (new `test-strategist-flat-fee-row-cleanup-2026-08-17.js`):
+all 4 tactics collapse correctly (no Platform dropdown, shows the
+explanatory message, total column span across the row still sums to 13
+so the table stays aligned with its header) via both matching paths
+(service_id for LLO/Reputation Mgmt., tactic_label for the two SEO
+variants); a real ad-spend campaign is completely unaffected (still has
+its live Platform dropdown, real pacing pills, no merged cell); and —
+the case most likely to break silently — a genuine SEO campaign sharing
+the same `seo-bp` placeholder service_id as the two SEO-trigger-only
+tactics is correctly NOT collapsed, since only its `tactic_label`
+("SEO Business Pro", not "LLO (SEO)"/"Rep Monitoring (SEO)") is checked.
+Re-ran `test-strategist-notes-indicator`, `test-strategist-flight-
+ongoing`, and `test-strategist-platform-cpm-detail` — all still pass
+unchanged. `node --check` clean. No SQL — frontend-only change.

@@ -1020,6 +1020,26 @@ const SEO_TRACKING_ONLY_TACTICS = [
   { tacticLabel: 'Rep Monitoring (SEO)', serviceId: 'seo-bp' },
 ];
 
+// These same 4 tactics (2026-08-17, per Claire: "there isn't anything to really
+// track [for LLO, LLO (SEO), Reputation Mgmt., Rep Monitoring (SEO)]... update
+// their lines so it looks a little cleaner") have no platform, budget, or
+// performance numbers at all -- carrying no spend/budget of their own is exactly
+// why they're in TRACKABLE_FLAT_SERVICE_IDS/SEO_TRACKING_ONLY_TACTICS above.
+// renderMainTable() uses this to collapse the Gross Budget/In-Platform Budget/
+// Actual Spend/Spend Pacing/Goal/Actual Perf./Perf. Pacing columns (which would
+// otherwise just be 7 "—"s in a row) into one plain explanatory cell, and to
+// swap the editable Platform dropdown for a plain dash -- Optimize Log and Notes
+// stay fully real and untouched, since strategists genuinely use both for these.
+// Matched by service_id for the two catalog-backed tactics (llo-bp/rep-bp) and by
+// tactic_label for the two SEO-trigger-only ones, which all share seo-bp as an
+// inert placeholder service_id (see SEO_TRACKING_ONLY_TACTICS's own comment) and
+// so can't be told apart from a real SEO campaign by service_id alone.
+const FLAT_FEE_NO_METRICS_TACTIC_LABELS = ['LLO (SEO)', 'Rep Monitoring (SEO)'];
+function isFlatFeeNoMetricsLine(line) {
+  return TRACKABLE_FLAT_SERVICE_IDS.includes(line.service_id) ||
+    FLAT_FEE_NO_METRICS_TACTIC_LABELS.includes(line.tactic_label);
+}
+
 // Returns { service, tacticLabel } or null. Checks the catalog's own combined
 // label first, then falls back to searching every spend service's
 // tactic_variants -- the 5 "which one is it" services (e.g. "Event or
@@ -2632,25 +2652,42 @@ function renderMainTable(lines) {
       const perfPacing = pacingPct(actualPerf, goal.value, l.flight_start, l.flight_end, strategistCurrentMonth);
       const logCount = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id).length;
       const selected = strategistSelectedLineId === l.id;
-      html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
-        <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
-        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
-        <td style="padding:9px 10px" onclick="event.stopPropagation()">
+      // Flat-fee tactics (LLO, Reputation Mgmt., LLO (SEO), Rep Monitoring (SEO))
+      // carry no platform, budget, or performance numbers at all (2026-08-17, per
+      // Claire -- "there isn't anything to really track... update their lines so
+      // it looks a little cleaner"): a real Platform picker plus 7 columns of
+      // "—" every single time was just noise for these. Platform collapses to a
+      // plain dash (nothing to pick), and Gross Budget through Perf. Pacing
+      // collapse into one explanatory cell instead of 7 empty ones. Flight stays
+      // a real column (still meaningful — when this tactic started/ended), and
+      // Optimize Log/Notes stay fully real and untouched, since strategists
+      // genuinely use both for these tactics.
+      const noMetrics = isFlatFeeNoMetricsLine(l);
+      const platformCellHtml = noMetrics
+        ? `<td style="padding:9px 10px;color:var(--muted)">—</td>`
+        : `<td style="padding:9px 10px" onclick="event.stopPropagation()">
           <select onclick="event.stopPropagation()" onchange="if(this.value==='__other__'){this.nextElementSibling.style.display='inline-block';this.nextElementSibling.focus();}else{this.nextElementSibling.style.display='none';strategistSaveLine('${l.id}', {platform: this.value}, false);}" style="width:100%;min-width:132px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px">
             <option value="">— Select —</option>
             ${PLATFORM_OPTIONS.map(p => `<option value="${esc(p)}" ${p === l.platform ? 'selected' : ''}>${esc(p)}</option>`).join('')}
             <option value="__other__" ${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'selected' : ''}>Other…</option>
           </select>
           <input type="text" value="${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? esc(l.platform) : ''}" placeholder="Platform" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="display:${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'inline-block' : 'none'};width:100%;min-width:132px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px;margin-top:2px"/>
-        </td>
-        <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
-        <td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
+        </td>`;
+      const metricsCellsHtml = noMetrics
+        ? `<td colspan="7" style="padding:9px 10px;color:var(--muted);font-style:italic;text-align:center">Flat-fee tracking only — no platform spend to track</td>`
+        : `<td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${monthRow.actual_spend != null ? '$' + Number(monthRow.actual_spend).toLocaleString() : '—'}</td>
         <td style="padding:9px 10px">${pacingPillHtml(spendPacing)}</td>
         <td style="padding:9px 10px">${goal.value != null ? goal.display + ' ' + goal.unit : (goal.manual ? '— (enter manually)' : '—')}</td>
         <td style="padding:9px 10px">${actualPerf != null ? Number(actualPerf).toLocaleString() + ' ' + goal.unit : '—'}</td>
-        <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>
+        <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>`;
+      html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
+        <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
+        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
+        ${platformCellHtml}
+        <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
+        ${metricsCellsHtml}
         <td style="padding:9px 10px">${logCount} ${logCount === 1 ? 'entry' : 'entries'}</td>
         <td style="padding:9px 10px;text-align:center" title="${esc(l.setup_notes || '')}">${l.setup_notes ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--accent-dark)"></span>' : '<span style="color:var(--muted)">—</span>'}</td>
       </tr>`;
