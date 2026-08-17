@@ -14463,3 +14463,27 @@ tactics is correctly NOT collapsed, since only its `tactic_label`
 Re-ran `test-strategist-notes-indicator`, `test-strategist-flight-
 ongoing`, and `test-strategist-platform-cpm-detail` — all still pass
 unchanged. `node --check` clean. No SQL — frontend-only change.
+
+## 2026-08-17 (cont'd) — Freshness banner fix: RPC wasn't returning `updated_at`
+
+Claire merged the banner above, pasted reports for all 4 platforms, and
+the banner still showed "Not yet uploaded" for everything — exactly the
+live-verification risk flagged in the entry above. She pulled the live
+definition of `strategist_get_platform_report_cache` via
+`pg_get_functiondef` in the Supabase SQL Editor: its `jsonb_build_object`
+only selected `platform`, `report_month`, and `rows` — `updated_at` was
+never in the return payload at all, so the front end's "cache entry
+exists but `updated_at` is missing" fallback was firing every time,
+regardless of how recently a report had actually been pasted.
+
+**Fix (SQL only, run directly by Claire via the SQL Editor — no repo
+file, consistent with this project's existing pattern of no SQL checked
+in):** `create or replace function` with the same signature/language/
+`security definer`/`search_path` as the live version, adding
+`'updated_at', prc.updated_at` to the `jsonb_build_object` call. No
+front-end change needed — `strategist/index.html` already read
+`cache.updated_at` from the RPC response; it just had nothing to read.
+
+**Verified live** by Claire: re-ran the function, refreshed the
+strategist portal, banner now shows real timestamps for the platforms
+pasted that morning instead of "Not yet uploaded."
