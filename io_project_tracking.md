@@ -14353,3 +14353,113 @@ to 76px (fills its Fee cell's full usable width, matching the column's
 real capacity); mobile grew to 145px (fills its half of the paired
 Fee/Frequency line) — more than double the old fixed size. `node --check`
 clean; no other code path referenced the old 60px value.
+
+## 2026-08-17 — Strategist portal: "when were these numbers updated" banner
+
+Claire, while still doing manual platform-report uploads: "I updated them
+this morning but it would be nice for the strategists to know when
+numbers were updated." Talked through the shape first — a single overall
+"last updated" line risked misleading a strategist, since she pastes
+each platform separately on its own cadence (a global timestamp would
+just reflect whichever platform happened to be pasted most recently, not
+whether THAT strategist's platform is actually fresh). She confirmed:
+one banner, but showing each platform's own time — "the only ones I
+update currently are Google, Facebook, Simpli.fi, and The Trade Desk."
+
+**No schema change needed.** `platform_report_cache` already has an
+`updated_at` column (added `platform-report-cache-2026-08-06.sql`,
+already run) — this reuses data that's already being written every time
+Claire pastes a report, nothing new to track.
+
+**`strategist/index.html`:** new `PLATFORM_REPORT_FRESHNESS_PLATFORMS`
+constant (`['Google Ads', 'Facebook Ads', 'Simpli.fi', 'The Trade Desk']`)
+— a fixed, ordered list rather than "whatever's in the cache," so the
+banner always shows all 4 in the same order, including any not yet
+pasted at all (shows "Not yet uploaded" in muted text rather than
+silently omitting that platform). New `#strategist-report-freshness-
+banner` div, placed at the very top of the portal's content area (above
+the month-picker/scope-toggle bar). New `renderPlatformReportFreshnessBanner()`
+reads straight from `PLATFORM_REPORT_CACHE` and formats each platform's
+`updated_at` with the same date/time format the status-history log
+already uses elsewhere in this portal, for visual consistency. Wired
+into `fetchStrategistData()` (called once, right after
+`PLATFORM_REPORT_CACHE` is rebuilt) rather than at each of its ~14 call
+sites individually, so the banner refreshes automatically on every normal
+page load and every save. `PLATFORM_REPORT_CACHE`'s per-platform object
+now also carries `updated_at` (previously only `report_month`/`rows`
+were kept from the RPC response).
+
+**Verified** (new `test-strategist-report-freshness-banner-2026-08-17.js`):
+all 4 platforms render in the fixed order regardless of cache
+order/presence; a platform with a real cached `updated_at` shows its
+correctly-formatted timestamp; a platform whose cache entry exists but
+is missing `updated_at` falls back to "Not yet uploaded" instead of
+crashing or showing "Invalid Date"; a platform with no cache entry at
+all also shows "Not yet uploaded". `node --check` clean.
+
+**One thing to verify live, not just in this test**: `strategist_get_
+platform_report_cache` was already described as returning "all rows" of
+the small cache table, which — if it's a plain `select *`/`returns setof
+platform_report_cache` — should already include `updated_at` in its
+response with zero SQL changes needed; the test above only confirms the
+front end handles both cases (present and missing) correctly, not which
+case is actually true live. **After this deploys, check the banner for
+Google/Facebook/Simpli.fi/Trade Desk shows real times, not "Not yet
+uploaded," for platforms already pasted.** If any of them show "Not yet
+uploaded" despite having real data, the RPC itself needs
+`updated_at` added to its return columns — send over its current
+definition (Supabase dashboard → Database → Functions →
+`strategist_get_platform_report_cache` → view definition) rather than
+having it rewritten blind, since its exact current auth/validation logic
+isn't visible from this codebase (no SQL files are checked into this
+repo — only summarized in this doc).
+
+## 2026-08-17 (cont'd) — Cleaning up LLO/Reputation Mgmt.'s "nothing to track" rows
+
+Claire, while waiting on a GitHub outage to merge the banner above:
+"For LLO, LLO (SEO), Reputation Mgmt., Rep Monitoring (SEO)... there
+isn't anything to really track (clicks, impressions, costs) should we
+put them in a separate place or update their lines so it looks a little
+cleaner?" Talked through both options she raised: a separate
+place/section would fragment the "My Campaigns"/"All Strategists" and
+group-filter views strategists already rely on for their whole workload,
+and these 4 tactics still genuinely use Optimize Log and Notes — they
+belong in the same list. Recommended the lower-risk row cleanup instead;
+Claire agreed: "Go with the collapsed-row cleanup."
+
+**What a flat-fee row looked like before**: Platform showed a live
+"— Select —" dropdown that never applied (no ad platform to pick), and
+Gross Budget/In-Platform Budget/Actual Spend/Spend Pacing/Goal/Actual
+Perf./Perf. Pacing all just showed "—" — 8 columns of dead weight on
+every single one of these rows, every month.
+
+**`strategist/index.html`**: new `isFlatFeeNoMetricsLine(line)` helper —
+matches by `service_id` for the two catalog-backed tactics (`llo-bp`,
+`rep-bp`, already in `TRACKABLE_FLAT_SERVICE_IDS`) and by `tactic_label`
+for the two SEO-trigger-only ones (`LLO (SEO)`, `Rep Monitoring (SEO)`),
+which can't be matched by `service_id` since both share `seo-bp` as an
+inert placeholder — same placeholder a REAL SEO campaign also uses, so
+matching had to be tactic_label-specific there, not "any seo-bp line."
+`renderMainTable()` now branches per row: Platform collapses to a plain
+muted "—" (no editable dropdown) instead of the always-irrelevant picker,
+and Gross Budget through Perf. Pacing (7 columns) collapse into one
+`colspan="7"` cell reading "Flat-fee tracking only — no platform spend
+to track." Flight, Optimize Log, and Notes are all left completely
+untouched — Flight is still meaningful (when the tactic started/ended)
+and strategists genuinely log optimizations/notes against these tactics
+despite there being no numbers to pace against.
+
+**Verified** (new `test-strategist-flat-fee-row-cleanup-2026-08-17.js`):
+all 4 tactics collapse correctly (no Platform dropdown, shows the
+explanatory message, total column span across the row still sums to 13
+so the table stays aligned with its header) via both matching paths
+(service_id for LLO/Reputation Mgmt., tactic_label for the two SEO
+variants); a real ad-spend campaign is completely unaffected (still has
+its live Platform dropdown, real pacing pills, no merged cell); and —
+the case most likely to break silently — a genuine SEO campaign sharing
+the same `seo-bp` placeholder service_id as the two SEO-trigger-only
+tactics is correctly NOT collapsed, since only its `tactic_label`
+("SEO Business Pro", not "LLO (SEO)"/"Rep Monitoring (SEO)") is checked.
+Re-ran `test-strategist-notes-indicator`, `test-strategist-flight-
+ongoing`, and `test-strategist-platform-cpm-detail` — all still pass
+unchanged. `node --check` clean. No SQL — frontend-only change.

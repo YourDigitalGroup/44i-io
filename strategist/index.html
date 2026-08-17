@@ -29,6 +29,18 @@
     </div>
 
     <div style="padding:16px 20px 0">
+      <!-- Platform report freshness banner (2026-08-17, per Claire -- "it would be
+           nice for the strategists to know when numbers were updated" for the
+           platforms she manually pastes reports for). One banner, not per-platform
+           badges scattered around the page -- shows all 4 platforms Claire actually
+           updates, each with its own last-updated time, so a strategist can tell
+           WHICH platform's numbers might be stale without needing to guess from a
+           single overall "last updated" timestamp that could just reflect whichever
+           platform happened to be pasted most recently. Populated by
+           renderPlatformReportFreshnessBanner(), called every time
+           fetchStrategistData() refreshes PLATFORM_REPORT_CACHE. -->
+      <div id="strategist-report-freshness-banner" style="margin-bottom:14px;padding:9px 16px;background:var(--light);border:1px solid var(--border);border-radius:8px;font-size:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center"></div>
+
       <!-- Top bar: month picker + My Campaigns/All Strategists scope toggle -->
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:10px">
@@ -248,7 +260,14 @@ let PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} }; // service_id -> 
 let IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // % of Gross Budget, used when a service has no retail_cpm
 let IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending -- e.g. SEM (2026-08-13, mirrors ACCOUNTING_CUT_TIERS' shape but kept as its own column since it must never carry cut_pct, which stays accounting/admin-only)
 let CPC_RATES = { base: {}, group: {} }; // { low, high } $ CPC, used for a clicks-based service's Goal range
-let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, data}] } -- last paste per platform, overwritten each time
+let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, data}], updated_at } -- last paste per platform, overwritten each time
+// The 4 platforms Claire currently pastes manual reports for (2026-08-17, per
+// Claire: "the only ones I update currently are Google, Facebook, Simpli.fi, and
+// The Trade Desk"). Fixed, ordered list rather than "whatever's in the cache" --
+// the freshness banner always shows all 4 in the same order, including any that
+// haven't been pasted at all yet (a strategist should see "not yet uploaded" for
+// one of these, not have it silently missing from the banner).
+const PLATFORM_REPORT_FRESHNESS_PLATFORMS = ['Google Ads', 'Facebook Ads', 'Simpli.fi', 'The Trade Desk'];
 let strategistScope = 'mine';               // 'mine' | 'all'
 let strategistGroupFilter = '';              // '' = all groups, else a group_name
 let strategistPacingFilter = '';             // '' = all, else 'good' | 'warn' | 'risk' -- worse of spend/perf pacing
@@ -713,6 +732,30 @@ const REPORT_COLUMN_SYNONYMS = {
   campaign_to_date_budget_pacing_pct: ['campaign to date budget pacing'],
 };
 
+// Renders the "when were these numbers updated" banner (2026-08-17, per Claire).
+// Reads straight from PLATFORM_REPORT_CACHE (populated in fetchStrategistData()
+// from strategist_get_platform_report_cache), so it's always in sync with
+// whatever was actually last pasted -- no separate tracking needed. A platform
+// with no cache entry at all (or a cache entry whose updated_at didn't come back
+// from the RPC) shows "Not yet uploaded" in muted text rather than a blank gap or
+// a misleading date, so it's clear that specific platform's freshness is unknown
+// rather than that it's simply always been fresh.
+function renderPlatformReportFreshnessBanner() {
+  const el = document.getElementById('strategist-report-freshness-banner');
+  if (!el) return;
+  el.innerHTML = PLATFORM_REPORT_FRESHNESS_PLATFORMS.map((platform, i) => {
+    const cache = PLATFORM_REPORT_CACHE[platform];
+    // Same date/time format already used for the status-history log timestamps
+    // elsewhere in this portal, for visual consistency.
+    const label = cache && cache.updated_at
+      ? new Date(cache.updated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : 'Not yet uploaded';
+    const valueColor = cache && cache.updated_at ? 'var(--text)' : 'var(--muted)';
+    const divider = i > 0 ? '<span style="color:var(--border)">·</span>' : '';
+    return `${divider}<span style="white-space:nowrap"><strong style="font-weight:700;color:var(--text)">${esc(platform)}:</strong> <span style="color:${valueColor}">${esc(label)}</span></span>`;
+  }).join('');
+}
+
 function strategistOpenPasteReportForm() {
   const el = document.getElementById('strategist-paste-report-form');
   const isOpen = el.style.display !== 'none';
@@ -976,6 +1019,26 @@ const SEO_TRACKING_ONLY_TACTICS = [
   { tacticLabel: 'LLO (SEO)', serviceId: 'seo-bp' },
   { tacticLabel: 'Rep Monitoring (SEO)', serviceId: 'seo-bp' },
 ];
+
+// These same 4 tactics (2026-08-17, per Claire: "there isn't anything to really
+// track [for LLO, LLO (SEO), Reputation Mgmt., Rep Monitoring (SEO)]... update
+// their lines so it looks a little cleaner") have no platform, budget, or
+// performance numbers at all -- carrying no spend/budget of their own is exactly
+// why they're in TRACKABLE_FLAT_SERVICE_IDS/SEO_TRACKING_ONLY_TACTICS above.
+// renderMainTable() uses this to collapse the Gross Budget/In-Platform Budget/
+// Actual Spend/Spend Pacing/Goal/Actual Perf./Perf. Pacing columns (which would
+// otherwise just be 7 "—"s in a row) into one plain explanatory cell, and to
+// swap the editable Platform dropdown for a plain dash -- Optimize Log and Notes
+// stay fully real and untouched, since strategists genuinely use both for these.
+// Matched by service_id for the two catalog-backed tactics (llo-bp/rep-bp) and by
+// tactic_label for the two SEO-trigger-only ones, which all share seo-bp as an
+// inert placeholder service_id (see SEO_TRACKING_ONLY_TACTICS's own comment) and
+// so can't be told apart from a real SEO campaign by service_id alone.
+const FLAT_FEE_NO_METRICS_TACTIC_LABELS = ['LLO (SEO)', 'Rep Monitoring (SEO)'];
+function isFlatFeeNoMetricsLine(line) {
+  return TRACKABLE_FLAT_SERVICE_IDS.includes(line.service_id) ||
+    FLAT_FEE_NO_METRICS_TACTIC_LABELS.includes(line.tactic_label);
+}
 
 // Returns { service, tacticLabel } or null. Checks the catalog's own combined
 // label first, then falls back to searching every spend service's
@@ -1412,7 +1475,8 @@ async function fetchStrategistData() {
     }
   });
   PLATFORM_REPORT_CACHE = {};
-  (reportCache || []).forEach(r => { PLATFORM_REPORT_CACHE[r.platform] = { report_month: r.report_month, rows: r.rows || [] }; });
+  (reportCache || []).forEach(r => { PLATFORM_REPORT_CACHE[r.platform] = { report_month: r.report_month, rows: r.rows || [], updated_at: r.updated_at || null }; });
+  renderPlatformReportFreshnessBanner();
   await strategistSweepFlightEndedCampaigns();
 }
 
@@ -2588,25 +2652,42 @@ function renderMainTable(lines) {
       const perfPacing = pacingPct(actualPerf, goal.value, l.flight_start, l.flight_end, strategistCurrentMonth);
       const logCount = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id).length;
       const selected = strategistSelectedLineId === l.id;
-      html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
-        <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
-        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
-        <td style="padding:9px 10px" onclick="event.stopPropagation()">
+      // Flat-fee tactics (LLO, Reputation Mgmt., LLO (SEO), Rep Monitoring (SEO))
+      // carry no platform, budget, or performance numbers at all (2026-08-17, per
+      // Claire -- "there isn't anything to really track... update their lines so
+      // it looks a little cleaner"): a real Platform picker plus 7 columns of
+      // "—" every single time was just noise for these. Platform collapses to a
+      // plain dash (nothing to pick), and Gross Budget through Perf. Pacing
+      // collapse into one explanatory cell instead of 7 empty ones. Flight stays
+      // a real column (still meaningful — when this tactic started/ended), and
+      // Optimize Log/Notes stay fully real and untouched, since strategists
+      // genuinely use both for these tactics.
+      const noMetrics = isFlatFeeNoMetricsLine(l);
+      const platformCellHtml = noMetrics
+        ? `<td style="padding:9px 10px;color:var(--muted)">—</td>`
+        : `<td style="padding:9px 10px" onclick="event.stopPropagation()">
           <select onclick="event.stopPropagation()" onchange="if(this.value==='__other__'){this.nextElementSibling.style.display='inline-block';this.nextElementSibling.focus();}else{this.nextElementSibling.style.display='none';strategistSaveLine('${l.id}', {platform: this.value}, false);}" style="width:100%;min-width:132px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px">
             <option value="">— Select —</option>
             ${PLATFORM_OPTIONS.map(p => `<option value="${esc(p)}" ${p === l.platform ? 'selected' : ''}>${esc(p)}</option>`).join('')}
             <option value="__other__" ${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'selected' : ''}>Other…</option>
           </select>
           <input type="text" value="${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? esc(l.platform) : ''}" placeholder="Platform" onclick="event.stopPropagation()" onchange="strategistSaveLine('${l.id}', {platform: this.value}, false)" style="display:${l.platform && !PLATFORM_OPTIONS.includes(l.platform) ? 'inline-block' : 'none'};width:100%;min-width:132px;padding:4px 6px;border-radius:5px;border:1px dashed var(--accent);font-size:11px;margin-top:2px"/>
-        </td>
-        <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
-        <td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
+        </td>`;
+      const metricsCellsHtml = noMetrics
+        ? `<td colspan="7" style="padding:9px 10px;color:var(--muted);font-style:italic;text-align:center">Flat-fee tracking only — no platform spend to track</td>`
+        : `<td style="padding:9px 10px">${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</td>
         <td style="padding:9px 10px">${monthRow.actual_spend != null ? '$' + Number(monthRow.actual_spend).toLocaleString() : '—'}</td>
         <td style="padding:9px 10px">${pacingPillHtml(spendPacing)}</td>
         <td style="padding:9px 10px">${goal.value != null ? goal.display + ' ' + goal.unit : (goal.manual ? '— (enter manually)' : '—')}</td>
         <td style="padding:9px 10px">${actualPerf != null ? Number(actualPerf).toLocaleString() + ' ' + goal.unit : '—'}</td>
-        <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>
+        <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>`;
+      html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
+        <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
+        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
+        ${platformCellHtml}
+        <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
+        ${metricsCellsHtml}
         <td style="padding:9px 10px">${logCount} ${logCount === 1 ? 'entry' : 'entries'}</td>
         <td style="padding:9px 10px;text-align:center" title="${esc(l.setup_notes || '')}">${l.setup_notes ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--accent-dark)"></span>' : '<span style="color:var(--muted)">—</span>'}</td>
       </tr>`;
