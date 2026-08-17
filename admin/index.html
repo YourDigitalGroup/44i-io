@@ -6157,8 +6157,8 @@ function renderAdminGroups() {
         <td style="padding:10px 12px;color:var(--muted);font-size:11px;font-family:monospace">${g.trello_board_id ? esc(g.trello_board_id.slice(0,8))+'...' : '—'}</td>
         <td style="padding:10px 12px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
           <button onclick="adminEditGroup('${esc(g.id)}')" class="btn-quiet-green">Edit</button>
-          ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}');setTimeout(()=>adminTab('pricing'),200)" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Pricing</button>`}
-          ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}');setTimeout(()=>adminTab('accounting-override'),200)" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Accounting</button>`}
+          ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}','pricing')" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Pricing</button>`}
+          ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}','accounting-override')" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Accounting</button>`}
           ${deactivateBtn}
         </td>
       </tr>`;
@@ -6368,7 +6368,20 @@ async function adminNewGroup() {
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
 }
 
-async function adminEditGroup(id) {
+// `initialTab` (2026-08-17, per Claire — "Pricing and Accounting editors in
+// Groups open to the bottom of the editor"): the Pricing/Accounting buttons used
+// to call adminEditGroup(id) then setTimeout(() => adminTab('pricing'), 200),
+// betting this function (which awaits real staff-roster/strategist-roster
+// network calls) would finish within 200ms so the delayed adminTab() call would
+// win and override this function's own adminTab('info') reset at the end. On a
+// slower connection the order inverts: the delayed call fires first (briefly
+// showing Pricing), then this function finishes and its own adminTab('info')
+// resets back to Info -- but the scrollIntoView already ran against the taller
+// Pricing-tab layout, so the scroll position doesn't retract when the form
+// shrinks back down, landing well past the now-shorter form. Passing the
+// desired tab in directly and switching to it here, in the correct final order,
+// removes the race entirely instead of tuning the timeout.
+async function adminEditGroup(id, initialTab) {
   const g = allGroups.find(x => x.id === id);
   if (!g) return;
   document.getElementById('admin-form-title').textContent = 'Edit Group — ' + g.name;
@@ -6420,7 +6433,7 @@ async function adminEditGroup(id) {
   if (pricingTabBtn2) pricingTabBtn2.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
   const acctOverrideTabBtn2 = document.getElementById('tab-btn-accounting-override');
   if (acctOverrideTabBtn2) acctOverrideTabBtn2.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
-  adminTab('info');
+  adminTab(initialTab || 'info');
   document.getElementById('admin-group-form').style.display = 'block';
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
 }
