@@ -15053,3 +15053,64 @@ earlier today (Admin's 7-case suite, Strategist's and Accounting's
 basic fit checks) against the final code -- all identical results, no
 regressions from adding the two new observers. `node --check` clean on
 both files.
+
+## 2026-08-17 (cont'd) — Accessibility/UX audit of the client-facing form
+
+Claire asked whether the public IO form (`index.html`) had any of the
+same scroll/sticky bugs found across the three portals today. It
+doesn't — `index.html` already solved this exact class of problem on
+2026-08-14 (see that entry) with a different, simpler, non-JS-dependent
+approach (fixed `max-height:400px` per-section boxes, sticky header as
+the literal first child), which structurally can't have the "forgot to
+recalculate after a toggle" bug the portals had.
+
+She then asked for a broader accessibility/ease-of-use/visual-clarity
+sweep, scoped to the client form first (portals to follow as a separate
+pass, per her call). Ran a full audit via subagent, then personally
+verified the highest-impact claims against the real file before
+presenting anything (label associations, the unlabeled-checkbox
+markup, the unfocusable section-toggle divs, the silent validation
+branch, and the contrast math for the Submit button and header
+subtitle — computed by hand: white on `--accent` (`#1C9BD7`) is
+~3.1:1, the header subtitle's `rgba(255,255,255,.65)` is ~2.1:1, both
+under the 4.5:1 minimum for normal text). All confirmed accurate.
+
+**Findings, not yet acted on** (published as an artifact for Claire to
+review and prioritize — 14 distinct findings across 3 blocking, 6
+should-fix, 5 polish):
+
+- **Blocking** (a screen-reader or keyboard-only user cannot complete
+  the form at all): no `<label for>`/`id` pairing anywhere in the file
+  (every text/email/date field across Client Info, Campaign Dates,
+  Signer Info, and every intake question); every service checkbox
+  across all 17 sections has no accessible name (checkbox and label
+  text are separate, unrelated `<td>`s); every section-toggle/step-
+  switcher/Review-accordion is a plain `<div onclick>` with zero
+  `tabindex`/`role`/keyboard handler anywhere in the file — a keyboard
+  user cannot open a single service section.
+- **Should fix**: validation errors (the toast, the red-border missing-
+  field state) are visual-only, never announced via `aria-live`/
+  `aria-invalid`; Submit button and header subtitle both fail contrast
+  (see math above); the Step 2→3 spend/date validation branch blocks
+  navigation with zero message at all (every other validation path on
+  the form does call `showToast()` — this one doesn't); three different
+  required-field markers coexist, and the fields Step 1 actually
+  enforces (AE name, business name, contact email, city) carry none of
+  them; mobile checkbox tap target is ~22px and isolated from the
+  service name next to it (same root cause/fix as the checkbox-label
+  finding above).
+- **Polish**: heading levels skip from `<h1>` straight to `<h3>`
+  everywhere, no `<h2>` in the form itself; signature preview `<img>`
+  has no `alt`; one raw Unicode chevron (▸/▾) survived in the Review
+  page's section toggles even though the tracking doc already documents
+  replacing this exact glyph everywhere else (2026-08-14ish — several
+  mobile browsers substitute a colorful "media player" icon for it,
+  caught live on Claire's phone); dense 11px unbroken-paragraph legal
+  text where a short list would read far more easily before someone
+  signs.
+
+**Not yet decided**: which of these Claire wants fixed, in what order,
+and whether any (the required-field convention, the contrast/palette
+choice) need her sign-off as a visual decision rather than a pure bug
+fix. Nothing in `index.html` has been changed as part of this entry —
+audit only.
