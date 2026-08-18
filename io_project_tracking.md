@@ -15198,3 +15198,83 @@ attribute changes with zero visual impact. `node --check` clean.
 (contrast, the silent Step 2→3 validation block, required-field
 convention, mobile tap targets, the leftover chevron glyph, dense legal
 text) are all still open, per Claire's "blocking ones first."
+
+## 2026-08-17 (cont'd) — Fixed 4 of 5 should-fix findings; contrast held for a decision
+
+Claire: "Fix the should-fix ones too." Four of the five were unambiguous
+fixes; the fifth (Submit button/header contrast) is a real visual/brand
+decision with several genuinely different-looking valid directions
+(darken the existing blue vs. keep the blue and darken the button text
+vs. a different accent entirely), so that one's held for Claire's input
+rather than picked silently — asked her directly after finishing the
+other four.
+
+**Validation errors were visual-only, never announced.** Added
+`role="status" aria-live="polite"` to `#toast` (screen readers now hear
+every toast, not just see it). Found that `.field-missing` (the CSS
+class the audit cited) is actually **dead CSS** — grepped the whole
+file and it's never applied by any JS; the real mechanism every
+required-field check uses is `.spend-missing`, toggled at ~10 separate
+call sites. Added one shared `markFieldMissing(el, bad)` helper
+(toggles the class AND `aria-invalid` together) and replaced every one
+of those ~10 raw `classList` calls with it, rather than pairing
+`setAttribute` calls at each site individually where a future one could
+be added without it.
+
+**Step 2→3 silently blocked with no message at all** when spend or a
+start date was missing — every other validation path on the form calls
+`showToast()`, this one didn't. Added specific messages ("Please enter
+the required ad spend for: X, Y" / "Please enter a start date for: X,
+Y", naming the actual services) to both branches, consistent with how
+`validateStep1()` already names its own missing fields.
+
+**Three different required-field conventions coexisted, and the fields
+Step 1 actually enforces had none of them.** Added one shared
+`.lbl-required::after{content:' *';color:#EF4444}` CSS class (same red,
+same "* " suffix already used by KOC Date/Time's hardcoded inline spans
+and the intake-modal's own `.modal-field.required` mechanism — visually
+identical, just reusable directly on any label without a wrapper div).
+Converted KOC Date/Time off their inline spans onto the shared class,
+and added it to the four fields Step 1's `validateStep1()` actually
+requires (AE name, business name, email, city) — previously
+indistinguishable from genuinely optional fields like Phone. Left the
+intake-modal's own `.modal-field.required` mechanism itself untouched
+(admin-configurable per question, a different and more involved system
+than a plain static label) since its visible output already matches.
+
+**Mobile checkbox tap target was ~22px and isolated from the service
+name next to it** — same root cause as the blocking checkbox-labeling
+fix from the previous entry, finished properly here: upgraded the
+`aria-labelledby` association to a real `<label for="svc-chk-{id}">`
+wrapping the service name, so the whole name is now tappable/clickable,
+not just the small checkbox. This surfaced a real bug while testing:
+`renderPriceCells()` runs once at page load specifically to refresh
+each row's service name live from the catalog (so a Supabase label
+edit shows up without a hardcoded HTML update) — its `serviceTd.innerHTML
+= esc(r.label)` rewrite was overwriting the freshly-added `<label>`
+wrapper right back to plain text, silently reverting the fix the moment
+the page loaded. Fixed there too, keeping the `.minimum-note` div and
+the `row-intake-link` button (appended later by `updateIntakeRowLinks()`)
+as the label's siblings rather than children, so clicking either can't
+also toggle the checkbox.
+
+**Verified** live in a headless browser, with real Supabase requests
+intercepted via `page.route()` and fulfilled with fake catalog data
+(same technique as the blocking-fixes entry): confirmed `#toast`'s
+`role`/`aria-live` attributes; confirmed all 6 required-marker labels
+(4 Step 1 fields + KOC Date/Time) carry the class and the browser's own
+computed `::after` content is `" *"`; clicked a service row's `<label>`
+text (not the checkbox itself) via Playwright's real `.click()` and
+confirmed the checkbox toggled; drove `goStep(3)` with a service
+selected but no start date, confirmed the toast fired with the correct
+specific message, `role="status"`, and that the date input's
+`aria-invalid` flipped to `"true"` — then fixed the date and confirmed
+`aria-invalid` cleared back to `"false"`. Screenshotted Step 1 and an
+expanded service row afterward — required asterisks now visible where
+they should be, service-row text renders pixel-identical to before
+(label wrapping doesn't change plain-text layout). `node --check`
+clean.
+
+**Still open**: the Submit button/header contrast fix (needs Claire's
+direction on which visual approach) and the two polish items not
+covered by "should fix" (leftover chevron glyph, dense legal text).
