@@ -14958,3 +14958,35 @@ loading (no flash of the wrong tab), then appears exactly once, already
 showing the Pricing tab, correctly scrolled to `top: 132` (clear of the
 sticky bars) — no flip back to Info, no scroll misalignment, regardless
 of how slow the simulated network is. `node --check` clean.
+
+## 2026-08-17 (cont'd) — Strategist table box stuck condensed after closing a detail panel
+
+Claire: "When I open a campaign detail and then close it the page
+becomes condensed." Root cause was a call-order bug in
+`renderStrategistDashboard()`: `fitStrategistScrollBoxes()` ran BEFORE
+`renderStrategistDetailPanel()`, but the detail panel sits above
+`#strategist-table-wrap` in the page, so its height is part of what the
+fit function measures as "everything before the box." Opening a
+campaign detail calls `renderStrategistDashboard()` while the panel is
+still empty (about to be populated), so the fit runs against the
+panel's stale EMPTY state — the table box doesn't shrink at all to make
+room. Closing does the reverse: the fit runs while the panel's OLD
+(still-open, non-empty) content is still in the DOM, so it shrinks the
+box as if the panel were still open — and since nothing else re-
+triggers a refit afterward, it stays wrongly condensed.
+
+**Fix**: swapped the two calls' order — `renderStrategistDetailPanel()`
+now runs first, so `fitStrategistScrollBoxes()` always measures the
+panel's actual current (already-updated) state, open or closed.
+
+**Verified**, including confirming this was a real, reproducible bug
+and not a guess: stubbed `renderMainTable()`/`renderStrategistDetailPanel
+()` with simplified stand-ins (a 220px block standing in for real detail
+content) to isolate the height math from the real render functions'
+heavy data dependencies, then drove the actual `strategistSelectLine()`/
+`strategistCloseDetailPanel()` functions. On the pre-fix code: opening
+left the box completely unchanged (482px, measured before the panel
+populated) and closing left it stuck at 262px — genuinely condensed,
+matching Claire's report exactly. On the fixed code: opening correctly
+shrinks to 262px, closing correctly restores to 482px. `node --check`
+clean.

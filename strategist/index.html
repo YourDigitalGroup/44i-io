@@ -2039,8 +2039,15 @@ function renderStrategistDashboard() {
   document.getElementById('strategist-setup-panel').innerHTML = strategistStatusTab === 'pending' ? renderSetupPanels(lines) : '';
   document.getElementById('strategist-table-wrap').innerHTML = strategistStatusTab === 'pending' ? '' : renderMainTable(lines);
   applyStickyGroupOffset('strategist-table-wrap');
-  fitStrategistScrollBoxes();
+  // renderStrategistDetailPanel() MUST run before fitStrategistScrollBoxes() (2026-08-17,
+  // per Claire -- "when I open a campaign detail and then close it the page becomes
+  // condensed"): the detail panel sits above #strategist-table-wrap, so its own height
+  // is part of what fitStrategistScrollBoxes() measures as "everything before the box."
+  // Fitting first (the original order) meant closing the panel shrank the table box
+  // based on the panel's stale, about-to-be-cleared (still "open") height -- and with
+  // nothing else re-triggering a refit afterward, it stayed wrongly condensed.
   renderStrategistDetailPanel();
+  fitStrategistScrollBoxes();
 }
 
 // Sizes #strategist-table-wrap/#strategist-setup-panel's max-height to whatever
