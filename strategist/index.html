@@ -59,7 +59,7 @@
            platform happened to be pasted most recently. Populated by
            renderPlatformReportFreshnessBanner(), called every time
            fetchStrategistData() refreshes PLATFORM_REPORT_CACHE. -->
-      <div id="strategist-report-freshness-banner" style="margin-bottom:14px;padding:9px 16px;background:var(--light);border:1px solid var(--border);border-radius:8px;font-size:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center"></div>
+      <div id="strategist-report-freshness-banner" role="status" aria-live="polite" style="margin-bottom:14px;padding:9px 16px;background:var(--light);border:1px solid var(--border);border-radius:8px;font-size:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center"></div>
 
       <!-- Top bar: month picker + My Campaigns/All Strategists scope toggle -->
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
@@ -152,7 +152,7 @@
      existing "James stays a super admin for now" arrangement). -->
 <div id="strategist-login-modal" role="dialog" aria-modal="true" aria-labelledby="strategist-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
-    <div style="font-size:32px;margin-bottom:12px">🔒</div>
+    <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔒</div>
     <h3 id="strategist-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Access</h3>
     <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
     <select id="strategist-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
@@ -467,7 +467,7 @@ function strategistOpenImportForm() {
     <strong style="font-size:13px;display:block;margin-bottom:10px">Import a campaign already running from the old IO system</strong>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
       <div>
-        <label class="lbl">Client</label>
+        <label class="lbl" for="import-client">Client</label>
         <input type="text" id="import-client-search" oninput="strategistFilterClientOptions()" placeholder="Search clients…" style="width:100%;padding:6px 8px;border-radius:6px 6px 0 0;border:1px solid var(--border);border-bottom:none;font-size:12px"/>
         <select id="import-client" style="width:100%;padding:7px 8px;border-radius:0 0 6px 6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
@@ -475,7 +475,7 @@ function strategistOpenImportForm() {
         </select>
       </div>
       <div>
-        <label class="lbl">Tactic</label>
+        <label class="lbl" for="import-service">Tactic</label>
         <select id="import-service" onchange="strategistImportServiceChanged()" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
           ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
@@ -490,11 +490,11 @@ function strategistOpenImportForm() {
         </label>
       </div>
       <div>
-        <label class="lbl">Platform</label>
+        <label class="lbl" for="import-platform">Platform</label>
         ${strategistPlatformSelectHtml('import-platform', '', '100%')}
       </div>
       <div>
-        <label class="lbl">Status</label>
+        <label class="lbl" for="import-status">Status</label>
         <select id="import-status" onchange="strategistImportStatusChanged()" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="active" selected>Active</option>
           <!-- Pending (2026-08-14, per Claire -- strategists are ready to use this
@@ -515,27 +515,27 @@ function strategistOpenImportForm() {
            SETUP_BLOCKER_LABELS checklist + setup-blocker-cb class + Setup Notes textarea
            as the real Setup panel, so strategistReadSetupBlockers() reads it identically. -->
       <div id="import-pending-fields" style="display:none;grid-column:span 4">
-        <label class="lbl">What's this waiting on? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— check all that apply</span></label>
-        <div id="import-setup-blocker" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px">
+        <label class="lbl" id="import-setup-blocker-label">What's this waiting on? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— check all that apply</span></label>
+        <div id="import-setup-blocker" role="group" aria-labelledby="import-setup-blocker-label" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px">
           ${Object.entries(SETUP_BLOCKER_LABELS).map(([key, label]) => {
             const short = (SETUP_BLOCKER_CHECKBOX_HINTS[key]?.short) || label.replace(/^Waiting on /, '');
             const hint = SETUP_BLOCKER_CHECKBOX_HINTS[key]?.hint || '';
             return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="${esc(key)}"/> ${esc(short)}${hint}</label>`;
           }).join('')}
         </div>
-        <label class="lbl">Setup Notes</label>
+        <label class="lbl" for="import-setup-notes">Setup Notes</label>
         <textarea id="import-setup-notes" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px" placeholder="What's this waiting on before it can go live?"></textarea>
       </div>
       <div>
-        <label class="lbl">Flight Start</label>
+        <label class="lbl" for="import-flight-start">Flight Start</label>
         <input type="date" id="import-flight-start" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
       <div>
-        <label class="lbl">Flight End</label>
+        <label class="lbl" for="import-flight-end">Flight End</label>
         <input type="date" id="import-flight-end" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
       <div style="grid-column:span 2">
-        <label class="lbl">Current Gross Budget</label>
+        <label class="lbl" for="import-gross-budget">Current Gross Budget</label>
         <div id="import-budget-single">
           <input type="number" id="import-gross-budget" placeholder="$/mo" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
         </div>
@@ -545,7 +545,7 @@ function strategistOpenImportForm() {
         <div id="import-budget-split" style="display:none;margin-top:8px"></div>
       </div>
       <div id="import-title-single-wrap" style="grid-column:span 2">
-        <label class="lbl">Exact campaign title in the ad platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— used to match this campaign when you paste a platform report below</span></label>
+        <label class="lbl" for="import-platform-campaign-name">Exact campaign title in the ad platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— used to match this campaign when you paste a platform report below</span></label>
         <input id="import-platform-campaign-name" style="width:100%;padding:7px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
     </div>
@@ -775,7 +775,7 @@ function renderPlatformReportFreshnessBanner() {
       ? new Date(cache.updated_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
       : 'Not yet uploaded';
     const valueColor = cache && cache.updated_at ? 'var(--text)' : 'var(--muted)';
-    const divider = i > 0 ? '<span style="color:var(--border)">·</span>' : '';
+    const divider = i > 0 ? '<span aria-hidden="true" style="color:var(--border)">·</span>' : '';
     return `${divider}<span style="white-space:nowrap"><strong style="font-weight:700;color:var(--text)">${esc(platform)}:</strong> <span style="color:${valueColor}">${esc(label)}</span></span>`;
   }).join('');
 }
@@ -2137,7 +2137,7 @@ function renderSetupPanel(l) {
     // in right now" -- matches Accounting's own .acct-detail-card treatment).
     return `<div style="border:1px solid var(--border);border-radius:18px;padding:16px 18px;margin-bottom:16px;background:#fff;box-shadow:var(--shadow-lg)">
       <div onclick="strategistToggleSetupPanel('${l.id}')" role="button" tabindex="0" aria-expanded="${isExpanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistToggleSetupPanel('${l.id}')}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${isExpanded ? '10px' : '0'};cursor:pointer">
-        <h3 style="display:inline;margin:0;font-size:13.5px;font-weight:700"><span style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</h3>
+        <h3 style="display:inline;margin:0;font-size:13.5px;font-weight:700"><span aria-hidden="true" style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</h3>
         <div style="display:flex;align-items:center;gap:8px">
           ${strategistSetupBlockerPill(l)}
           ${l.order_id ? `<button onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">View Order</button>` : ''}

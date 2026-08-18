@@ -15754,3 +15754,65 @@ toggles correctly on `adminSection()` calls; Strategist's 4 status tabs
 report the same; both heading conversions screenshot identically to
 their pre-fix layout. `node --check` clean on every inline script in
 all four HTML files plus `shared.js`.
+
+## 2026-08-18 — Strategist's New Campaign form labels, and the polish tier
+
+Closes the item flagged (not fixed) at the end of the should-fix pass,
+plus the audit's remaining 3 polish findings.
+
+**Strategist's New Campaign form (`strategistOpenImportForm()`), 9
+fields.** Client, Tactic, Platform, Status, Setup Notes, Flight Start,
+Flight End, Current Gross Budget, and the "Exact campaign title" field
+all had the same unwired `<label class="lbl">` bug already fixed
+elsewhere — wired all 9 `for=` attributes. "Client" targets the actual
+`import-client` select, not the `import-client-search` filter box above
+it — same "point at the field that actually holds the value, not
+whichever one happens to be textually first" call made for Accounting's
+identical Client/search-box pairing earlier. "What's this waiting on?"
+checkbox group isn't a single-field label — no `for` target makes
+sense for a group of independent checkboxes — so it got
+`role="group"`/`aria-labelledby` instead (pointing at the label, now
+given an `id`), the standard ARIA pattern for exactly this case.
+
+**Not done, still flagged**: the "Paste Platform Report" form (Report
+month, Platform — 2 fields) and the read-only Campaign Setup summary
+labels inside the detail panel have the same gap but weren't part of
+this specific ask ("the New Campaign form"); still open if wanted.
+
+**Polish (all 3 findings).**
+- Decorative 🔒 emoji on all three portals' login modals: added
+  `aria-hidden="true"` so it isn't announced redundantly before the
+  "Admin/Strategist/Accounting Access" heading.
+- Strategist's platform-report freshness banner had no `aria-live` —
+  added `role="status" aria-live="polite"` (the toast itself already
+  got this in the blocking pass; this is the separate persistent
+  freshness summary above it). The "·" divider between freshness
+  entries and the ▾/▸ expand-state triangle both got `aria-hidden=
+  "true"` — the state itself is still conveyed via `aria-expanded` on
+  the actual toggle control, so hiding the glyph loses nothing.
+- Accounting's dead `.warn` CSS class (defined, never applied since
+  every `stat()` call passes an empty class): **left alone, not
+  guessed at** — wiring it up would mean inventing what "this number
+  looks concerning" should mean (a spend threshold? a specific negative
+  value? something else?), which is a business-logic call for Claire,
+  not something to decide unprompted. Flagging it here as a parked
+  decision rather than fixing it silently, same reasoning as every
+  other business-logic ambiguity in this doc.
+- Accounting's near-edge no-brand-color fallback contrast (previously
+  4.55:1, one shade from failing): turned out to already be fixed as a
+  side effect of the should-fix pass's `accountingContrastTextColor()`
+  rewrite — recomputed it against the CURRENT function and it now picks
+  dark text at 13.19:1, comfortably clear of the edge. No code change
+  needed; confirmed by direct calculation, not assumed.
+
+**Verified live**: all 9 New Campaign form labels resolve via
+`.control`; the checkbox group's `role="group"`/`aria-labelledby`
+target exists and matches; the lock emoji's `aria-hidden` and the
+freshness banner's `role`/`aria-live` both confirmed present in the
+DOM. `node --check` clean on all three portal files.
+
+**This closes every finding from the portal accessibility/UX audit**
+except the two explicitly-parked items above (the dead `.warn` class,
+business-logic call for Claire; and the New Campaign form's sibling
+Paste Platform Report/read-only summary labels, out of this specific
+ask's scope but flagged as still open).
