@@ -303,10 +303,17 @@ function showToast(msg, type='success') {
 // Requires `<div id="shared-order-modal">...<div id="shared-order-modal-body">`
 // in the page (both portals have one).
 let sharedOrderModalLastFocus = null; // set on open, restored on close -- see closeOrderDetailModal()
-function renderOrderDetailModal(order) {
+// `sections` (2026-08-18, per Claire -- "do the same for the view order in Strategist
+// and Accounting" after Admin's own Order Detail got section-grouping + per-service
+// dates): optional array of {id, label, sort_order} from each portal's own sections
+// fetch (own-copy convention, same as Accounting's ACCOUNTING_SECTIONS/Strategist's new
+// STRATEGIST_SECTIONS) -- omit it and this renders exactly as before (flat list, no
+// dates), so no caller breaks if it's ever left out.
+function renderOrderDetailModal(order, sections) {
   const modal = document.getElementById('shared-order-modal');
   const body = document.getElementById('shared-order-modal-body');
   if (!modal || !body) return;
+  sections = Array.isArray(sections) ? sections : [];
   const fmtDate = s => {
     if (!s) return '—';
     const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
@@ -314,18 +321,33 @@ function renderOrderDetailModal(order) {
   };
   const fmtMoney = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   const items = Array.isArray(order.line_items) ? order.line_items : [];
-  const rows = items.map(item => {
-    const amtParts = [];
-    if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
-    if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
-    if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
-    const label = item.accounting_label || item.label || item.service_id || '—';
-    return `<tr>
-      <td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(label)}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="3" style="padding:14px;text-align:center;color:var(--muted)">No line items on record.</td></tr>';
+
+  const sectionOrderIndex = {};
+  sections.forEach((s, i) => { sectionOrderIndex[s.id] = s.sort_order ?? i; });
+  const sectionLabel = id => sections.find(s => s.id === id)?.label || id || 'Other';
+  const bySection = {};
+  items.forEach(item => { (bySection[item.section || ''] = bySection[item.section || ''] || []).push(item); });
+  const orderedSectionIds = Object.keys(bySection).sort((a, b) =>
+    (sectionOrderIndex[a] ?? Infinity) - (sectionOrderIndex[b] ?? Infinity));
+
+  const rows = orderedSectionIds.map(sec => {
+    const header = `<tr><td colspan="5" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
+    const itemRows = bySection[sec].map(item => {
+      const amtParts = [];
+      if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
+      if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
+      if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
+      const label = item.accounting_label || item.label || item.service_id || '—';
+      return `<tr>
+        <td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(label)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || order.campaign_start)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || order.campaign_end)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td>
+      </tr>`;
+    }).join('');
+    return header + itemRows;
+  }).join('') || '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--muted)">No line items on record.</td></tr>';
 
   body.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;font-size:12.5px">
@@ -341,7 +363,7 @@ function renderOrderDetailModal(order) {
     ${order.campaign_notes ? `<p style="font-size:11px;color:var(--muted);margin-bottom:12px"><strong>Campaign Notes:</strong> ${esc(order.campaign_notes)}</p>` : ''}
     <p style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Services Ordered</p>
     <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">
-      <thead><tr style="background:var(--light)"><th style="padding:6px 10px;text-align:left">Service</th><th style="padding:6px 10px;text-align:left">Amount</th><th style="padding:6px 10px;text-align:left">Notes</th></tr></thead>
+      <thead><tr style="background:var(--light)"><th style="padding:6px 10px;text-align:left">Service</th><th style="padding:6px 10px;text-align:left">Start</th><th style="padding:6px 10px;text-align:left">End</th><th style="padding:6px 10px;text-align:left">Amount</th><th style="padding:6px 10px;text-align:left">Notes</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     ${order.special_instructions ? `<div style="padding:10px 12px;background:#FFF7ED;border-left:3px solid #F59E0B;border-radius:5px"><div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Special Instructions</div><div style="font-size:12px;color:#78350F">${esc(order.special_instructions)}</div></div>` : ''}
