@@ -2823,14 +2823,21 @@ function strategistCloseDetailPanel() {
 // scoped to a single order via strategist_get_order_detail, not the bulk
 // admin order list. Rendering itself lives in shared.js
 // (renderOrderDetailModal) since it's identical to Accounting's own copy.
+// Section id -> human label, own copy of admin's SECTIONS/sectionLabel() pattern
+// (per this project's "each portal keeps its own copy" convention, same as
+// Accounting's ACCOUNTING_SECTIONS) -- loaded lazily here since strategist/index.html
+// otherwise has no reason to fetch the sections table at all.
+let STRATEGIST_SECTIONS = [];
+
 async function strategistViewOrder(orderId) {
   if (!orderId) return;
   try {
+    if (!STRATEGIST_SECTIONS.length) STRATEGIST_SECTIONS = await sb('sections?order=sort_order&select=*') || [];
     const order = await sb('rpc/strategist_get_order_detail', {
       method: 'POST',
       body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_order_id: orderId })
     });
-    renderOrderDetailModal(order);
+    renderOrderDetailModal(order, STRATEGIST_SECTIONS);
   } catch (e) {
     showToast('Could not load order: ' + e.message, 'error');
   }

@@ -15937,3 +15937,43 @@ with distinct start/end dates) and confirmed via the actual rendered
 table text that both section headers appear in the right order and each
 service line shows its own correct dates, not the order-wide ones.
 `node --check` clean.
+
+## 2026-08-18 — Same section/date treatment for Strategist and Accounting's own "view order"
+
+Claire asked for the identical fix on Strategist's and Accounting's
+own order-detail view. Both actually share ONE implementation —
+`renderOrderDetailModal()` in `shared.js`, called by
+`strategistViewOrder()`/`accountingViewOrder()` — so this was one
+change, not two.
+
+Added an optional `sections` parameter (an array of `{id, label,
+sort_order}`) to `renderOrderDetailModal()`: groups `line_items` by
+`item.section` in that order, inserts the same divider-row markup
+Admin's own Order Detail now uses, and adds Start/End columns reading
+each item's own `start_date`/`end_date`. Left the parameter optional
+and defaulted to `[]` (flat list, no dates) so nothing breaks if some
+future caller doesn't pass it.
+
+Accounting already had its own `ACCOUNTING_SECTIONS`/
+`accountingSectionLabel()` (built earlier, own-copy convention) — just
+wired its existing array into the call. Strategist had no section
+concept at all before this, so added its own `STRATEGIST_SECTIONS`,
+lazy-loaded the first time `strategistViewOrder()` runs, matching the
+exact same "own copy, loaded on demand" pattern.
+
+**A test-harness bug caught before it became a false result**: the
+first live-test run showed section headers as the raw ids ("web"/
+"sem") instead of their real labels ("Website"/"SEM") in both portals —
+looked like a real bug at first. Root cause was in the test itself:
+Playwright matches routes most-recently-registered-first, and the
+specific `**/rest/v1/sections**` mock had been registered BEFORE the
+broad `**/rest/v1/**` catch-all, so the catch-all intercepted the
+sections request first every time. Reordering the two route
+registrations (catch-all first, specific route second) fixed the test
+immediately, and the real section labels rendered correctly — confirms
+this was a fixture-ordering mistake, not a code bug.
+
+**Verified live** in both portals with the corrected test: section
+headers render as their real labels, in the right order, and each line
+item shows its own start/end dates. `node --check` clean on `shared.js`,
+`strategist/index.html`, and `accounting/index.html`.
