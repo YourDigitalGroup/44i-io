@@ -619,9 +619,9 @@ select.qty-field{background-image:none;padding-right:3px}
 
   <!-- Step indicators -->
   <div class="steps" id="steps-nav">
-    <div class="step active" id="step-1" onclick="goStep(1)"><span class="step-num">Step 1</span><span class="step-label">Client Info</span></div>
-    <div class="step" id="step-2" onclick="goStep(2)"><span class="step-num">Step 2</span><span class="step-label">Services</span></div>
-    <div class="step" id="step-3" onclick="goStep(3)"><span class="step-num">Step 3</span><span class="step-label">Review & Submit</span></div>
+    <div class="step active" id="step-1" onclick="goStep(1)" role="button" tabindex="0" aria-current="step" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goStep(1)}"><span class="step-num">Step 1</span><span class="step-label">Client Info</span></div>
+    <div class="step" id="step-2" onclick="goStep(2)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goStep(2)}"><span class="step-num">Step 2</span><span class="step-label">Services</span></div>
+    <div class="step" id="step-3" onclick="goStep(3)" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goStep(3)}"><span class="step-num">Step 3</span><span class="step-label">Review & Submit</span></div>
   </div>
 
   <!-- STEP 1: Client Info -->
@@ -647,22 +647,22 @@ select.qty-field{background-image:none;padding-right:3px}
         </div>
         <div style="display:flex;flex-direction:column;gap:12px">
           <div id="ae-picker-wrap" style="display:none">
-            <label class="lbl">I am… <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— picks your name and fills in your Trello handle below. Not listed? Just type your info in the fields below instead.</span></label>
+            <label class="lbl" for="ae-picker">I am… <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— picks your name and fills in your Trello handle below. Not listed? Just type your info in the fields below instead.</span></label>
             <select id="ae-picker" onchange="applyAePick(this.value)">
               <option value="">— Select your name —</option>
             </select>
           </div>
           <div>
-            <label class="lbl">Digital Account Executive</label>
+            <label class="lbl" for="ae-name">Digital Account Executive</label>
             <input type="text" id="ae-name" placeholder="AE full name"/>
             <p id="ae-name-locked-hint" style="display:none;margin-top:6px;font-size:11px;color:var(--muted)">🔒 Locked — switch back to "— New AE —" above to enter a different name.</p>
           </div>
           <div>
-            <label class="lbl">AE Trello Handle <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— e.g. @johndoe</span></label>
+            <label class="lbl" for="ae-trello">AE Trello Handle <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— e.g. @johndoe</span></label>
             <input type="text" id="ae-trello" placeholder="@trellohandle"/>
           </div>
           <div>
-            <label class="lbl">Market <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— autofills when a roster AE is picked, but always editable in case it's missing or the AE's market has changed</span></label>
+            <label class="lbl" for="ae-market">Market <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— autofills when a roster AE is picked, but always editable in case it's missing or the AE's market has changed</span></label>
             <!-- Market (2026-08-06, ALWAYS editable per Claire 2026-08-06 — an earlier
                  version disabled this until a real AE was picked, but that meant there
                  was no way to fill in a missing market for an existing AE, or correct
@@ -680,7 +680,7 @@ select.qty-field{background-image:none;padding-right:3px}
       <div class="card-head"><h3>Client Information</h3></div>
       <div class="field-group" id="client-picker-wrap" style="display:none">
         <div>
-          <label class="lbl">Returning Client? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— picks an existing client and fills in their info below. New client? Leave this as "New Client" and just fill in the fields.</span></label>
+          <label class="lbl" for="client-picker">Returning Client? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— picks an existing client and fills in their info below. New client? Leave this as "New Client" and just fill in the fields.</span></label>
           <select id="client-picker" onchange="applyClientPick(this.value)">
             <option value="">— New Client —</option>
           </select>
@@ -688,7 +688,7 @@ select.qty-field{background-image:none;padding-right:3px}
       </div>
       <div class="field-group">
         <div>
-          <label class="lbl">Business Name</label>
+          <label class="lbl" for="biz-name">Business Name</label>
           <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()"/>
           <p id="biz-name-locked-hint" style="display:none;margin-top:6px;font-size:11px;color:var(--muted)">🔒 Locked — editing an existing client's name here risks creating a duplicate client/Trello list instead of updating this one. Switch back to "— New Client —" above to use a different name, or correct this client's name in the admin portal's Client Profiles editor.</p>
           <div id="biz-name-match-warning" style="display:none;margin-top:6px;padding:8px 10px;border-radius:8px;background:#FFF7ED;border:1px solid #FED7AA;font-size:13px;color:#9A3412"></div>
@@ -696,31 +696,31 @@ select.qty-field{background-image:none;padding-right:3px}
       </div>
       <div class="field-group cols2">
         <div>
-          <label class="lbl">Contact Name(s)</label>
+          <label class="lbl" for="contact-name">Contact Name(s)</label>
           <input type="text" id="contact-name" placeholder="Primary contact"/>
         </div>
         <div>
-          <label class="lbl">Phone</label>
+          <label class="lbl" for="contact-phone">Phone</label>
           <input type="tel" id="contact-phone" placeholder="(000) 000-0000" oninput="fmtPhone(this)" maxlength="14"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
-          <label class="lbl">Email</label>
+          <label class="lbl" for="contact-email">Email</label>
           <input type="email" id="contact-email" placeholder="client@email.com"/>
         </div>
         <div>
-          <label class="lbl">Website URL</label>
+          <label class="lbl" for="website-url">Website URL</label>
           <input type="text" id="website-url" placeholder="https://"/>
         </div>
       </div>
       <div class="field-group cols2">
         <div>
-          <label class="lbl">City / Service Area</label>
+          <label class="lbl" for="city">City / Service Area</label>
           <input type="text" id="city" placeholder="City, State"/>
         </div>
         <div>
-          <label class="lbl">Business Type</label>
+          <label class="lbl" for="biz-type">Business Type</label>
           <input type="text" id="biz-type" placeholder="e.g. Flooring Retailer"/>
         </div>
       </div>
@@ -735,13 +735,13 @@ select.qty-field{background-image:none;padding-right:3px}
            (the signing date, not a campaign date) and Campaign Notes stay here. -->
       <div class="field-group">
         <div>
-          <label class="lbl">IO Date</label>
+          <label class="lbl" for="io-date">IO Date</label>
           <input type="date" id="io-date"/>
         </div>
       </div>
       <div class="field-group">
         <div>
-          <label class="lbl">Campaign Notes</label>
+          <label class="lbl" for="campaign-notes">Campaign Notes</label>
           <textarea id="campaign-notes" rows="2" placeholder="Any notes about campaign dates, start conditions, or special scheduling..."></textarea>
         </div>
       </div>
@@ -777,7 +777,7 @@ select.qty-field{background-image:none;padding-right:3px}
       <div class="card-head"><h3>Special Instructions</h3></div>
       <div class="field-group">
         <div>
-          <label class="lbl">Special Instructions / Notes</label>
+          <label class="lbl" for="special-instructions">Special Instructions / Notes</label>
           <textarea id="special-instructions" placeholder="Any special instructions, custom agreements, or notes..."></textarea>
         </div>
       </div>
@@ -829,11 +829,11 @@ select.qty-field{background-image:none;padding-right:3px}
           <p id="koc-lock-msg" style="font-size:11px;color:#92400E;margin-bottom:12px">⬆ Open the calendar above first to unlock these fields</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
-              <label class="lbl">KOC Date <span style="color:#EF4444">*</span></label>
+              <label class="lbl" for="koc-date">KOC Date <span style="color:#EF4444">*</span></label>
               <input type="date" id="koc-date" disabled/>
             </div>
             <div>
-              <label class="lbl">KOC Time <span style="color:#EF4444">*</span></label>
+              <label class="lbl" for="koc-time">KOC Time <span style="color:#EF4444">*</span></label>
               <select id="koc-time" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px">
                 <option value="">Select time...</option>
                 <option value="7:00 AM">7:00 AM</option><option value="7:30 AM">7:30 AM</option>
@@ -920,15 +920,15 @@ select.qty-field{background-image:none;padding-right:3px}
         <!-- Signer info -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
           <div>
-            <label class="lbl">Authorized By (Full Legal Name)</label>
+            <label class="lbl" for="auth-name">Authorized By (Full Legal Name)</label>
             <input type="text" id="auth-name" placeholder="Full legal name" oninput="updateTypedSig(this.value)"/>
           </div>
           <div>
-            <label class="lbl">Title / Role</label>
+            <label class="lbl" for="auth-title">Title / Role</label>
             <input type="text" id="auth-title" placeholder="CEO, Owner, etc."/>
           </div>
           <div>
-            <label class="lbl">Date Signed</label>
+            <label class="lbl" for="auth-date">Date Signed</label>
             <input type="date" id="auth-date"/>
           </div>
         </div>
@@ -2062,13 +2062,21 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
       // generated key stays short and based on the real question text.
       const descHtml = field.description ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(field.description)}</div>` : '';
 
+      // intake-label-* ids + aria-labelledby (2026-08-17) -- a bare <label> with no
+      // `for` doesn't associate with anything; these questions cover a whole
+      // radio/checkbox GROUP rather than one single control anyway, so each group
+      // gets role="group" + aria-labelledby pointing at its own question text
+      // instead. The individual radio/checkbox options were already correctly
+      // wrapped in their own <label>s.
+      const groupLabelId = `intake-label-${esc(cfg.intake)}-${esc(field.key)}`;
       if (field.type === 'textarea') {
-        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}<textarea data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
+        const fieldId = `intake-${esc(cfg.intake)}-${esc(field.key)}`;
+        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label for="${fieldId}">${field.label}</label>${descHtml}<textarea id="${fieldId}" data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
       } else if (field.type === 'radio') {
         const opts = field.options.map(o =>
           `<label><input type="radio" name="intake-${cfg.intake}-${field.key}" value="${o}" ${val===o?'checked':''}/> ${o}</label>`
         ).join('');
-        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}<div class="radio-group">${opts}</div></div>`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label id="${groupLabelId}">${field.label}</label>${descHtml}<div class="radio-group" role="group" aria-labelledby="${groupLabelId}">${opts}</div></div>`;
       } else if (field.type === 'checkbox') {
         // Multi-select ("choose any that apply") -- stored as a readable comma-
         // joined string of the checked labels, same "readable string, not a raw
@@ -2078,7 +2086,7 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         const opts = field.options.map(o =>
           `<label><input type="checkbox" data-checkbox-key="${field.key}" data-form="${cfg.intake}" value="${o}" ${checkedList.includes(o)?'checked':''}/> ${o}</label>`
         ).join('');
-        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}<div class="radio-group">${opts}</div></div>`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label id="${groupLabelId}">${field.label}</label>${descHtml}<div class="radio-group" role="group" aria-labelledby="${groupLabelId}">${opts}</div></div>`;
       } else if (field.type === 'select_fill_in') {
         // Select + fill-in: a single-choice question where ONE OR MORE of its own
         // options reveal an inline text fill-in when picked (e.g. picking
@@ -2092,11 +2100,12 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         ).join('');
         const fillInVal = existing.fields?.[field.key + '_fill_in'] || '';
         const fillInVisible = (field.fillInOptions || []).includes(val);
+        const fillInId = `intake-${esc(cfg.intake)}-${esc(field.key)}-fill-in`;
         html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}>
-          <label>${field.label}</label>${descHtml}<div class="radio-group">${opts}</div>
+          <label id="${groupLabelId}">${field.label}</label>${descHtml}<div class="radio-group" role="group" aria-labelledby="${groupLabelId}">${opts}</div>
           <div data-fill-in-for="${esc(field.key)}" data-fill-in-form="${esc(cfg.intake)}" data-fill-in-triggers="${esc(JSON.stringify(field.fillInOptions || []))}" style="margin-top:8px;display:${fillInVisible ? '' : 'none'}">
-            <label>${field.fillInLabel || 'Details'}</label>
-            <input type="text" data-key="${field.key}_fill_in" data-form="${cfg.intake}" value="${fillInVal.replace(/"/g,'&quot;')}"/>
+            <label for="${fillInId}">${field.fillInLabel || 'Details'}</label>
+            <input type="text" id="${fillInId}" data-key="${field.key}_fill_in" data-form="${cfg.intake}" value="${fillInVal.replace(/"/g,'&quot;')}"/>
           </div>
         </div>`;
       } else if (field.type === 'list') {
@@ -2104,14 +2113,16 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
         // six products/services"). Stored as one readable numbered string in
         // field.key, same convention as select_fill_in above and the TLP grid.
         const listVals = intakeParseListValue(val, field.max);
-        const inputs = listVals.map((v, i) =>
-          `<div><label style="font-size:10px;color:var(--muted);text-transform:none;font-weight:400">${i+1}</label><input type="text" data-list-key="${field.key}" data-list-index="${i}" data-form="${cfg.intake}" value="${v.replace(/"/g,'&quot;')}"/></div>`
-        ).join('');
-        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px">${inputs}</div>
+        const inputs = listVals.map((v, i) => {
+          const itemId = `intake-${esc(cfg.intake)}-${esc(field.key)}-${i}`;
+          return `<div><label for="${itemId}" style="font-size:10px;color:var(--muted);text-transform:none;font-weight:400">${i+1}</label><input type="text" id="${itemId}" data-list-key="${field.key}" data-list-index="${i}" data-form="${cfg.intake}" value="${v.replace(/"/g,'&quot;')}"/></div>`;
+        }).join('');
+        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label id="${groupLabelId}">${field.label}</label>${descHtml}
+          <div role="group" aria-labelledby="${groupLabelId}" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px">${inputs}</div>
         </div>`;
       } else {
-        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label>${field.label}</label>${descHtml}<input type="${field.type}" data-key="${field.key}" data-form="${cfg.intake}" value="${(val||'').replace(/"/g,'&quot;')}"/></div>`;
+        const fieldId = `intake-${esc(cfg.intake)}-${esc(field.key)}`;
+        html += `<div class="${fieldClass}" style="${wrapStyle}"${showIfAttrs}><label for="${fieldId}">${field.label}</label>${descHtml}<input type="${field.type}" id="${fieldId}" data-key="${field.key}" data-form="${cfg.intake}" value="${(val||'').replace(/"/g,'&quot;')}"/></div>`;
       }
     });
     html += '</div></div>';
@@ -2689,9 +2700,14 @@ function recheckAllServiceOverlaps() {
 function toggleSection(id) {
   const sec = document.getElementById('sec-' + id);
   const chev = document.getElementById('chevron-' + id);
+  const head = document.getElementById('head-' + id);
   const expand = sec.style.display === 'none';
   sec.style.display = expand ? 'block' : 'none';
   if (chev) chev.classList.toggle('expanded', expand);
+  // Keeps the toggle announced correctly to screen readers (2026-08-17) -- this
+  // header is a div with a click/keydown handler, not a native <button>, so nothing
+  // marks its open/closed state unless this function does it explicitly.
+  if (head) head.setAttribute('aria-expanded', expand ? 'true' : 'false');
 }
 
 // ── SERVICE TOGGLE ────────────────────────────────────────────
@@ -3328,6 +3344,11 @@ function goStep(n) {
   ['step-1','step-2','step-3'].forEach((s,i) => {
     const el = document.getElementById(s);
     el.className = 'step' + (i+1 === n ? ' active' : (i+1 < n ? ' done' : ''));
+    // aria-current="step" announces the active step to screen readers -- these are
+    // clickable divs, not native tabs/links, so nothing marks the current one unless
+    // this loop does it explicitly (2026-08-17).
+    if (i+1 === n) el.setAttribute('aria-current', 'step');
+    else el.removeAttribute('aria-current');
   });
   currentStep = n;
   document.body.scrollTop = 0;
@@ -3467,7 +3488,7 @@ function buildReview() {
     // to visually stick at all -- see io_project_tracking.md for that failed attempt).
     // While collapsed, the table is left out entirely rather than hidden with
     // display:none -- there's nothing to scroll, so no box is needed at all.
-    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')"><span class="rs-chevron">${isCollapsed ? '▸' : '▾'}</span> ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table"><thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
+    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}"><span class="rs-chevron">${isCollapsed ? '▸' : '▾'}</span> ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table"><thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
   });
 
   document.getElementById('total-onetime').textContent = fmt(oneTime);
@@ -6146,10 +6167,15 @@ function generateCatalogRowHtml(r, hasSpendCol) {
       <td class="svc-start-cell"><input type="date" id="svc-start-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','start_date')"/></td>
       <td class="svc-end-cell"><input type="date" id="svc-end-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','end_date')"/></td>`;
   }
+  // aria-labelledby (2026-08-17) -- the checkbox and the service name are separate
+  // <td>s, not a <label>/<input> pair, so a screen reader announced every single
+  // service on the form as an unnamed "checkbox, not checked" with no way to tell
+  // one tactic from another. Pointing the checkbox at the label cell's own id fixes
+  // that without changing the table's actual layout/columns.
   return `
     <tr data-id="${esc(r.id)}">
-      <td><input type="checkbox" onchange="${onchange}"/></td>
-      <td>${esc(r.label)}</td>
+      <td><input type="checkbox" onchange="${onchange}" aria-labelledby="svc-label-${esc(r.id)}"/></td>
+      <td id="svc-label-${esc(r.id)}">${esc(r.label)}</td>
       ${spendCell}
       ${dateCells}
       <td><textarea class="notes-field" placeholder="Notes..." rows="1" oninput="autoGrowNotesField(this)"></textarea></td>
@@ -6511,7 +6537,7 @@ function renderSectionCards() {
         </table></div>`;
     }
     return `<div class="card svc-section-card">
-      <div class="card-head" onclick="toggleSection('${esc(sec.id)}')">
+      <div id="head-${esc(sec.id)}" class="card-head" onclick="toggleSection('${esc(sec.id)}')" role="button" tabindex="0" aria-expanded="false" aria-controls="sec-${esc(sec.id)}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleSection('${esc(sec.id)}')}">
         <div class="card-head-text">
           <h3>${sec.icon ? esc(sec.icon) + ' ' : ''}${esc(sec.label)}</h3>
           ${headerNote}

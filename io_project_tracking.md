@@ -15053,3 +15053,148 @@ earlier today (Admin's 7-case suite, Strategist's and Accounting's
 basic fit checks) against the final code -- all identical results, no
 regressions from adding the two new observers. `node --check` clean on
 both files.
+
+## 2026-08-17 (cont'd) — Accessibility/UX audit of the client-facing form
+
+Claire asked whether the public IO form (`index.html`) had any of the
+same scroll/sticky bugs found across the three portals today. It
+doesn't — `index.html` already solved this exact class of problem on
+2026-08-14 (see that entry) with a different, simpler, non-JS-dependent
+approach (fixed `max-height:400px` per-section boxes, sticky header as
+the literal first child), which structurally can't have the "forgot to
+recalculate after a toggle" bug the portals had.
+
+She then asked for a broader accessibility/ease-of-use/visual-clarity
+sweep, scoped to the client form first (portals to follow as a separate
+pass, per her call). Ran a full audit via subagent, then personally
+verified the highest-impact claims against the real file before
+presenting anything (label associations, the unlabeled-checkbox
+markup, the unfocusable section-toggle divs, the silent validation
+branch, and the contrast math for the Submit button and header
+subtitle — computed by hand: white on `--accent` (`#1C9BD7`) is
+~3.1:1, the header subtitle's `rgba(255,255,255,.65)` is ~2.1:1, both
+under the 4.5:1 minimum for normal text). All confirmed accurate.
+
+**Findings, not yet acted on** (published as an artifact for Claire to
+review and prioritize — 14 distinct findings across 3 blocking, 6
+should-fix, 5 polish):
+
+- **Blocking** (a screen-reader or keyboard-only user cannot complete
+  the form at all): no `<label for>`/`id` pairing anywhere in the file
+  (every text/email/date field across Client Info, Campaign Dates,
+  Signer Info, and every intake question); every service checkbox
+  across all 17 sections has no accessible name (checkbox and label
+  text are separate, unrelated `<td>`s); every section-toggle/step-
+  switcher/Review-accordion is a plain `<div onclick>` with zero
+  `tabindex`/`role`/keyboard handler anywhere in the file — a keyboard
+  user cannot open a single service section.
+- **Should fix**: validation errors (the toast, the red-border missing-
+  field state) are visual-only, never announced via `aria-live`/
+  `aria-invalid`; Submit button and header subtitle both fail contrast
+  (see math above); the Step 2→3 spend/date validation branch blocks
+  navigation with zero message at all (every other validation path on
+  the form does call `showToast()` — this one doesn't); three different
+  required-field markers coexist, and the fields Step 1 actually
+  enforces (AE name, business name, contact email, city) carry none of
+  them; mobile checkbox tap target is ~22px and isolated from the
+  service name next to it (same root cause/fix as the checkbox-label
+  finding above).
+- **Polish**: heading levels skip from `<h1>` straight to `<h3>`
+  everywhere, no `<h2>` in the form itself; signature preview `<img>`
+  has no `alt`; one raw Unicode chevron (▸/▾) survived in the Review
+  page's section toggles even though the tracking doc already documents
+  replacing this exact glyph everywhere else (2026-08-14ish — several
+  mobile browsers substitute a colorful "media player" icon for it,
+  caught live on Claire's phone); dense 11px unbroken-paragraph legal
+  text where a short list would read far more easily before someone
+  signs.
+
+**Not yet decided**: which of these Claire wants fixed, in what order,
+and whether any (the required-field convention, the contrast/palette
+choice) need her sign-off as a visual decision rather than a pure bug
+fix. Nothing in `index.html` has been changed as part of this entry —
+audit only.
+
+## 2026-08-17 (cont'd) — Fixed the 3 blocking accessibility findings
+
+Claire: "Fix the blocking ones first." All three from the audit above
+addressed — pure additions (`for`/`id`/`role`/`tabindex`/`aria-*`), no
+existing markup structure, styling, or behavior touched.
+
+**No `<label for>`/`id` pairing anywhere** — added matching `for`/`id`
+pairs to all 20 static text/email/date/select/textarea labels on Steps
+1-3 (Group & Account Info, Client Information, Campaign Dates, Signer
+Info) except two genuine non-matches left alone on purpose: "Group" at
+line 640 labels a read-only display `<div>`, not an input; "Signature"
+at line 938 labels a compound draw/type widget (a canvas plus two
+buttons), not a single control — a real accessible-signature-pad
+redesign is a separate, deeper task the original audit didn't actually
+flag, out of scope here. Also fixed the dynamically-generated intake-
+form field renderer (`index.html:~2065-2124`, one shared function
+behind every service's intake modal) — text/date/textarea fields now
+get generated `id`s matched to their labels; the radio/checkbox GROUP
+questions (which label a whole group of options, not one control) get
+`role="group"` + `aria-labelledby` instead, since a `<label for>` can
+only ever point at one element — the individual radio/checkbox options
+inside those groups were already correctly wrapped in their own
+`<label>`s and didn't need changing.
+
+**Every service checkbox had no accessible name** — the checkbox and
+service-name text are separate table cells generated by the one shared
+`generateCatalogRowHtml()` (confirmed via grep this is the only place
+this markup is generated, covering both single-table and multi-table
+sections — same function serves all 17 catalog sections). Added
+`aria-labelledby` on the checkbox pointing at a new `id` on the label
+cell — screen readers now announce the actual service name instead of
+an anonymous "checkbox, not checked," with zero change to the table's
+layout/columns (deliberately not restructured into a `<label>`-wrapped
+row, which would also improve mobile tap targets per the audit's
+Ease-of-Use finding — parking that as a separate, slightly riskier
+layout change rather than bundling it into the blocking fix).
+
+**No section/step/Review toggle was keyboard-operable** — three
+separate render sites, same treatment: `role="button" tabindex="0"
+aria-expanded` (or `aria-current="step"` for the Step 1/2/3 nav, the
+more specific ARIA construct meant for exactly this "current step in a
+process" pattern rather than a full tablist implementation) plus an
+`onkeydown` handler firing the same function the `onclick` already
+calls on Enter/Space. `toggleSection()` and the Step-nav's active-class
+loop in `goStep()` now also update the `aria-expanded`/`aria-current`
+attribute directly, since those two mutate an already-rendered element
+in place rather than re-rendering it; the Review page's toggle
+(`toggleReviewSection()`) needed no equivalent JS change since it calls
+`buildReview()`, which regenerates that markup fresh (with the correct
+`aria-expanded` baked in from `isCollapsed`) on every toggle.
+
+**Verified** live in a headless browser — intercepted the real Supabase
+`services`/`intake_forms`/`hosting_proration_settings`/`sections`
+requests with `page.route()` fulfilling fake catalog data, so the
+actual `loadCatalog()`/`renderSectionCards()`/`renderAllSectionRows()`
+functions ran for real rather than being stubbed out (this file wipes
+its own page and shows an error screen if the catalog fetch fails,
+which its `showCatalogError()` genuinely does when the real network
+call 404s in this offline environment — first test attempt hit exactly
+that and had to be redone with the route mock). Confirmed: all 20
+static labels resolve via `document.querySelector('label[for="..."]')`;
+a fabricated service's checkbox `aria-labelledby` resolves to the
+correct label cell's `id` with matching text; a section header's
+`role`/`tabindex`/`aria-expanded` are present before any interaction;
+`.focus()` + a real `Enter` keypress opens the section and flips
+`aria-expanded` to `true`, a follow-up `Space` keypress closes it again
+and flips it back — genuine keyboard events dispatched through
+Playwright, not a direct function call standing in for one; the Step
+1→2 nav keyboard test initially "failed" only because the fabricated
+test data didn't satisfy `validateStep1()` (a correct, unrelated
+guard) — filling in the four actually-required fields first and
+re-running confirmed a real `Enter` keypress on the Step 2 tab
+correctly navigates and updates `aria-current`; the Review page's
+toggle was confirmed the same way (collapsed a genuinely-rendered
+section via keyboard, table removed, `aria-expanded` flipped to
+`false`). Screenshotted Step 1 and an expanded service section
+afterward — pixel-identical to before, confirming these are additive
+attribute changes with zero visual impact. `node --check` clean.
+
+**Not done, and not asked for**: the should-fix and polish findings
+(contrast, the silent Step 2→3 validation block, required-field
+convention, mobile tap targets, the leftover chevron glyph, dense legal
+text) are all still open, per Claire's "blocking ones first."
