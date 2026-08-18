@@ -15493,3 +15493,167 @@ the raw brand yellow. `node --check` clean.
 
 Next up, per Claire's request: the same accessibility/ease-of-use/
 visual-clarity sweep for the Admin, Strategist, and Accounting portals.
+
+## 2026-08-18 — Portal accessibility/UX audit, blocking fixes (Admin)
+
+Ran the same audit process as the client form on all three internal
+portals (Admin, Strategist, Accounting) — one independent read-only
+review agent per portal, findings verified by hand (contrast math,
+grep) before trusting them, then published as an artifact report for
+Claire ("Portal Accessibility Audit," 34 findings: 19 blocking, 12
+should-fix, 3 polish). Claire asked to fix the blocking tier first.
+This entry covers Admin's 9 blocking findings; Strategist's and
+Accounting's are logged separately once done.
+
+**Toast announcements (shared across all three portals).** `#toast` in
+Admin, Strategist, and Accounting had no `role`/`aria-live`, unlike the
+client form's own toast (already fixed in an earlier session). Added
+`role="status" aria-live="polite"` to all three — one fix, three files.
+
+**103 form labels never wired to their fields.** Every `<label
+class="lbl">` in Admin used a sibling `<input>` with no `for=`
+attribute — a screen reader announced "edit text, blank" for nearly
+every field in the app (Groups, Clients, Services, Sections, Intake
+Forms, AEs, Strategists, Accounting Map). Fixed with a script that
+paired each label with the next non-hidden `id=` in its markup window;
+17 cases where more than one id fell in that window were checked by
+hand (all correct — the extra id belonged to a preview/`<datalist>`/
+unrelated nearby field, not a second candidate) plus one genuine
+outlier (Logo) that needed a manual override to point at the visible
+file input rather than its hidden storage field. One more label already
+had its own `id` (`admin-user-password-label`, used to swap its text at
+runtime) but still lacked `for` — same fix. Verified every one of the
+104 resulting `for=` targets actually exists in the DOM (`label.control`
+resolves, not just a matching id string) — 104/104 pass.
+
+**Login modal had no accessible name at all.** The name `<select>` and
+password `<input>` were only described by a preceding `<p>`, never
+linked. Added `aria-label` to both plus `aria-describedby` back to that
+paragraph, and `role="alert"` on the error message so a screen reader
+hears "Incorrect password" the moment it appears instead of needing to
+go looking for it.
+
+**Login error text and one accordion header both failed contrast on
+their literal, non-configurable colors.** `#EF4444` error text on white
+measured 3.76:1 — changed to `#B3261E` (6.54:1). Claire's own 2026-08-13
+"open section reads as a raised colored block" styling put white text on
+the fixed `--brand-color-primary` (`#629AD0`) — 2.98:1, worse than the
+form's own default-blue bug from yesterday. Changed to `#0B2436` (5.34:1)
+— keeps the colored-block look, just with readable ink instead of white.
+
+**The same brand blue used as text on white/near-white, 5 places.**
+IO slug preview, "+ Add Section"/"+ Add Question" buttons, pricing-tab
+subsection headers, Services table section dividers — all `2.98:1`.
+Swapped to `var(--accent-dark)` (`#2C4863`, already the established
+"readable ink over this brand palette" variable used elsewhere in this
+file for select borders/text) — verified 9.48:1 on white, 8.62:1 on the
+`#EEF5FB` tint used in one of the five spots.
+
+**Inactive-row dimming failed contrast in 7 tables — and turned out to
+be pure redundant styling.** `opacity:0.5` on a whole inactive row
+(Services, Sections, Intake Forms, AEs, Strategists, Users, Accounting
+Map) dims every child's already fairly tight color further — computed
+that even the row's OWN best-case text (`var(--muted)`, 4.97:1 at full
+strength) can't survive ANY opacity reduction and stay above 4.5:1, so
+there was no dimming amount that both looked dimmed and stayed
+readable. Checked what the dimming was actually for before touching it:
+every one of these rows already shows a plain-text "INACTIVE" badge and
+a "Reactivate" button — the state is fully conveyed without the fade.
+Removed the opacity, kept the `#FAFAFA` tint alone. While in this exact
+code, also found and fixed the INACTIVE/ARCHIVED badge's own contrast
+failure (`#6B7280` on `#E5E7EB`, 3.90:1) — same category of bug, same
+lines, same fix pass; changed to `#4B5563` (6.10:1).
+
+**Muted helper text at `opacity:.8`** (the Logo "— for white/light
+lettering" note) dropped an already-borderline `var(--muted)` below
+4.5:1 for no visual gain worth the cost — removed the opacity.
+
+**No keyboard way to reorder Sections or Intake Form content.**
+Services already solves this with a plain `Sort Order` number field
+wired to the existing `sort_order` column — Sections and Intake Forms
+never got the same escape hatch, so a keyboard-only admin could reorder
+one content type but not the other two. Sections: added the identical
+`Sort Order` field/pattern, wired into `adminNewSection`/
+`adminEditSection`/`adminSaveSection` (typing a value overrides the
+existing "append at +10" auto-behavior on new sections; leaving it
+blank keeps that behavior unchanged). Intake Forms' internal section/
+question order is a different case — a plain in-memory JS array inside
+one form's draft, not a DB column a number field could target — so
+added `intakeMoveSection()`/`intakeMoveField()` with ▲/▼ buttons next
+to each existing drag handle instead, disabled at each end of its list,
+refocusing the moved item's own button after a move so repeated presses
+keep working on the same item.
+
+**Verified live** in a headless browser: all 105 `label.lbl[for]`
+elements resolve via `.control` (0 broken); login modal's select/input
+report the expected `aria-label`s; `adminEditSection()` correctly
+populates the new Sort Order field from an existing section's
+`sort_order`; `intakeMoveSection()`/`intakeMoveField()` correctly
+reorder their in-memory arrays and their Up/Down buttons correctly
+disable at the first/last position; the accordion header's computed
+style resolves to `rgb(11,36,54)` text on `rgb(98,154,208)` background,
+matching the intended fix. `node --check` clean on every inline script
+in the file.
+
+## 2026-08-18 — Portal accessibility/UX audit, blocking fixes (Strategist + Accounting)
+
+Same audit, same tier, covering the remaining two portals.
+
+**Strategist (6 blocking).** The accent blue (`#629AD0`) used as link text
+on white in 3 spots (bulk-import matcher's "Create new," the "View in
+[platform] ↗" link, the optimize-log "Edit" link) — swapped to
+`var(--accent-dark)`. The "Edit"/"Delete" log-entry links were `<a>`
+tags with no `href`, so no tab stop and no Enter/Space activation —
+added `href="#"` + `event.preventDefault()` so they behave like real
+links; Delete's own red (`#EF4444`, 3.76:1) also got the same `#B3261E`
+fix as Admin's login error. The "All Strategists" toggle used
+`--accent-green` (a pale fill meant for a solid active background) as
+its own inactive-state text/border color — 1.72:1. Rather than darken
+the shared `--accent-green` itself (which would also dim the active
+state's already-fine 5.53:1 fill), added a second variable,
+`--accent-green-text` (`#2F6B2A`, 6.45:1 on white), for this
+text-on-light direction only — same "second variable for the opposite
+contrast direction" pattern as `--accent-on-light` in the client form.
+`strategistContrastTextColor()` used uncorrected "perceived brightness"
+math instead of real WCAG relative luminance — rewrote it to mirror the
+client form's `pickReadableTextColor()` (try both candidates, return
+whichever actually clears 4.5:1, fall back to whichever is closer for
+the rare color where neither can). The Campaign Setup panel header
+(`<div onclick>`) and the main pacing table's row (`<tr onclick>`) had
+no keyboard path at all — added `role="button" tabindex="0"` and an
+Enter/Space `onkeydown` handler to both, matching the pattern already
+used in `index.html`.
+
+**Accounting (4 blocking).** All three row-click patterns (rollup
+toggle, child row, plain row) got the same keyboard treatment as
+Strategist's table row. The "Add a service" form's 5 labels (Client,
+Tactic, Flight Start, Flight End, Current Gross Budget) had no `for=` —
+wired all 5. `accountingContrastTextColor()` turned out to be an
+independent copy of Strategist's exact same flawed-formula bug rather
+than a shared function — rewrote it the same way. Both status pills
+(`Confirmed` #2E7D42/#DDF2DE at 4.32:1, `Needs confirmation`
+#8A6D12/#FBF3C7 at 4.38:1) failed on their literal default colors, used
+on every single campaign line — darkened to `#1F5C30` (6.77:1) and
+`#6E5109` (6.59:1).
+
+**Verified live** in a headless browser: `strategistContrastTextColor`/
+`accountingContrastTextColor` on the exact brand colors the audit
+flagged as failing (`#4F86C6`, `#4A90D9`) now pick the best available
+option per real WCAG math (confirmed against a from-scratch Python
+contrast calculation, not trusted from the browser test alone — an
+early version of the in-page verification script had its own bug
+stripping a `#` before re-parsing a hex string, which briefly looked
+like a regression; the Python cross-check caught that it wasn't one).
+`--accent-green-text` resolves to `#2F6B2A` and the "All Strategists"
+button's computed style picks it up correctly in both states. All 5
+Accounting "Add a service" labels resolve via `.control` once the form
+is actually rendered (they don't exist in the static DOM — Playwright
+needed to call `accountingOpenAddServiceForm()` first). Both pills'
+computed colors match the new hex values exactly. `role="button"` +
+keyboard markers confirmed present at all 5 previously-mouse-only
+elements across both files. `node --check` clean on every inline script
+in both files.
+
+**This closes every BLOCKING finding from the portal audit** (19 total
+across Admin/Strategist/Accounting). Should-fix and polish tiers are
+still open, pending Claire's direction on whether/when to do them.

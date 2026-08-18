@@ -29,7 +29,7 @@
 </head>
 <body>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <!-- STRATEGIST PANEL — scaffold only (2026-07-18). No real strategist features yet;
      this is just the same login-gated shell pattern as /admin, sharing shared.js/
@@ -79,7 +79,7 @@
             <option value="good">🟢 Good</option>
           </select>
           <button id="strategist-scope-mine" onclick="strategistSetScope('mine')" style="padding:6px 12px;border:1.5px solid var(--accent-dark);cursor:pointer;font-weight:600">My Campaigns</button>
-          <button id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border:1.5px solid var(--accent-green);cursor:pointer;font-weight:600">All Strategists</button>
+          <button id="strategist-scope-all" onclick="strategistSetScope('all')" style="padding:6px 12px;border:1.5px solid var(--accent-green-text);color:var(--accent-green-text);cursor:pointer;font-weight:600">All Strategists</button>
           <button onclick="strategistOpenImportForm()" style="padding:6px 14px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ New Campaign</button>
           <button onclick="strategistOpenPasteReportForm()" style="padding:6px 14px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Paste Platform Report</button>
           <button onclick="strategistOpenBulkImportForm()" style="padding:6px 14px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
@@ -1272,7 +1272,7 @@ function strategistRenderBulkPreview() {
           return `${m.month} ($${m.grossBudget || '—'}${extras.length ? ', ' + extras.join(', ') : ''})`;
         }).join(', ')
       : '—';
-    const action = g.existingLineId ? '<span style="color:#0F766E;font-weight:600">Match existing</span>' : '<span style="color:var(--accent);font-weight:600">Create new</span>';
+    const action = g.existingLineId ? '<span style="color:#0F766E;font-weight:600">Match existing</span>' : '<span style="color:var(--accent-dark);font-weight:600">Create new</span>';
     const blockerLabels = Array.isArray(g.setup_blocker) ? g.setup_blocker.map(b => SETUP_BLOCKER_LABELS[b]).filter(Boolean) : [];
     const waitingOn = [blockerLabels.join(', ') || null, g.setup_notes].filter(Boolean).join(' — ');
     return `<tr style="border-bottom:1px solid var(--border)">
@@ -1999,8 +1999,13 @@ function renderStrategistDashboard() {
   // --accent/--light version used, just recolored.
   document.getElementById('strategist-scope-mine').style.background = strategistScope === 'mine' ? 'var(--accent-dark)' : '#fff';
   document.getElementById('strategist-scope-mine').style.color = strategistScope === 'mine' ? '#fff' : 'var(--accent-dark)';
+  // Inactive state uses --accent-green-text (a darkened variant), not --accent-green
+  // itself (2026-08-18, accessibility audit) -- the pale --accent-green measures
+  // only 1.72:1 as text/border on white. Active state is unaffected: --accent-dark
+  // text on the pale --accent-green fill already passes at 5.53:1.
   document.getElementById('strategist-scope-all').style.background = strategistScope === 'all' ? 'var(--accent-green)' : '#fff';
-  document.getElementById('strategist-scope-all').style.color = strategistScope === 'all' ? 'var(--accent-dark)' : 'var(--accent-green)';
+  document.getElementById('strategist-scope-all').style.color = strategistScope === 'all' ? 'var(--accent-dark)' : 'var(--accent-green-text)';
+  document.getElementById('strategist-scope-all').style.borderColor = strategistScope === 'all' ? 'var(--accent-green)' : 'var(--accent-green-text)';
 
   // Same scoping as visibleCampaignLines() above, so the tab's own count badge
   // always matches what actually renders when you click into it.
@@ -2126,7 +2131,7 @@ function renderSetupPanel(l) {
     // (2026-08-12, per Claire: "campaign setup and campaign details... it blends
     // in right now" -- matches Accounting's own .acct-detail-card treatment).
     return `<div style="border:1px solid var(--border);border-radius:18px;padding:16px 18px;margin-bottom:16px;background:#fff;box-shadow:var(--shadow-lg)">
-      <div onclick="strategistToggleSetupPanel('${l.id}')" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${isExpanded ? '10px' : '0'};cursor:pointer">
+      <div onclick="strategistToggleSetupPanel('${l.id}')" role="button" tabindex="0" aria-expanded="${isExpanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistToggleSetupPanel('${l.id}')}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${isExpanded ? '10px' : '0'};cursor:pointer">
         <strong style="font-size:13.5px"><span style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</strong>
         <div style="display:flex;align-items:center;gap:8px">
           ${strategistSetupBlockerPill(l)}
@@ -2660,14 +2665,30 @@ async function strategistSaveDraft(lineId) {
 }
 
 // ── MAIN PACING TABLE ────────────────────────────────────────────
-// Picks readable text (near-black or near-white) against an arbitrary hex background
-// — the same relative-luminance approach browsers/design tools use for contrast, so a
-// group's own brand color (which can be light or dark) never renders unreadable text.
+// Picks readable text (near-black or near-white) against an arbitrary hex background.
+// Rewritten 2026-08-18 (accessibility audit) -- the original used uncorrected
+// "perceived brightness" ((0.299r+0.587g+0.114b)/255 > 0.6 ? dark : white), not real
+// WCAG relative luminance, so its 0.6 cutoff wasn't calibrated to any actual contrast
+// ratio. A plausible mid-blue group color like #4F86C6 scored 0.49 there (picks white)
+// but only reaches 3.78:1 real contrast, failing AA. This version tries both real
+// candidates and returns whichever actually clears 4.5:1 (same approach as the client
+// form's pickReadableTextColor()), falling back to whichever is closer for the rare
+// color where neither can.
 function strategistContrastTextColor(hex) {
   if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return '#0E5D82';
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
-  const luminance = (0.299*r + 0.587*g + 0.114*b) / 255;
-  return luminance > 0.6 ? '#1F2937' : '#FFFFFF';
+  const relLuminance = (h) => {
+    const c = [1,3,5].map(i => parseInt(h.slice(i,i+2),16) / 255);
+    const [r,g,b] = c.map(v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4));
+    return 0.2126*r + 0.7152*g + 0.0722*b;
+  };
+  const contrast = (l1,l2) => (Math.max(l1,l2)+0.05) / (Math.min(l1,l2)+0.05);
+  const bgLum = relLuminance(hex);
+  const white = 1.0, dark = relLuminance('#1F2937');
+  const whiteContrast = contrast(bgLum, white);
+  const darkContrast = contrast(bgLum, dark);
+  if (whiteContrast >= 4.5 && whiteContrast >= darkContrast) return '#FFFFFF';
+  if (darkContrast >= 4.5) return '#1F2937';
+  return whiteContrast > darkContrast ? '#FFFFFF' : '#1F2937';
 }
 
 // Sticky header row + sticky "current group" banner while scrolling a long
@@ -2754,7 +2775,7 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px">${goal.value != null ? goal.display + ' ' + goal.unit : (goal.manual ? '— (enter manually)' : '—')}</td>
         <td style="padding:9px 10px">${actualPerf != null ? Number(actualPerf).toLocaleString() + ' ' + goal.unit : '—'}</td>
         <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>`;
-      html += `<tr onclick="strategistSelectLine('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
+      html += `<tr onclick="strategistSelectLine('${l.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistSelectLine('${l.id}')}" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
         <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
         <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
         ${platformCellHtml}
@@ -2832,7 +2853,7 @@ function renderStrategistDetailPanel() {
         <input id="detail-split-label-${l.id}" value="${esc(l.split_label || '')}" placeholder="Split label (e.g. Region 1) — blank if not split" onchange="strategistSaveSplitLabel('${l.id}', this.value)" style="width:170px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSavePlatformCampaignName('${l.id}', this.value)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
-        ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
+        ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent-dark)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
         ${l.order_id ? `<button onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
         <button onclick="strategistCloseDetailPanel()" class="btn-quiet-green">✕ Close</button>
       </div>
@@ -2945,8 +2966,8 @@ function renderStrategistDetailPanel() {
       <span style="font-family:monospace;font-size:11px;color:var(--muted);width:80px;flex:none">${esc(o.entry_date)}</span>
       <span style="font-size:12.5px;flex:1">${esc(o.note)}</span>
       <span style="flex:none;display:flex;gap:8px">
-        <a onclick="strategistEditLogEntry('${l.id}','${o.id}')" style="font-size:11px;font-weight:600;color:var(--accent);cursor:pointer">Edit</a>
-        <a onclick="strategistDeleteLogEntry('${o.id}')" style="font-size:11px;font-weight:600;color:#EF4444;cursor:pointer">Delete</a>
+        <a href="#" onclick="event.preventDefault();strategistEditLogEntry('${l.id}','${o.id}')" style="font-size:11px;font-weight:600;color:var(--accent-dark);cursor:pointer">Edit</a>
+        <a href="#" onclick="event.preventDefault();strategistDeleteLogEntry('${o.id}')" style="font-size:11px;font-weight:600;color:#B3261E;cursor:pointer">Delete</a>
       </span>
     </div>`).join('') || '<p style="font-size:12px;color:var(--muted)">No entries yet.</p>'}
 
