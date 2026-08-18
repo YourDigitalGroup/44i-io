@@ -15595,4 +15595,65 @@ style resolves to `rgb(11,36,54)` text on `rgb(98,154,208)` background,
 matching the intended fix. `node --check` clean on every inline script
 in the file.
 
-Strategist and Accounting blocking fixes are next.
+## 2026-08-18 — Portal accessibility/UX audit, blocking fixes (Strategist + Accounting)
+
+Same audit, same tier, covering the remaining two portals.
+
+**Strategist (6 blocking).** The accent blue (`#629AD0`) used as link text
+on white in 3 spots (bulk-import matcher's "Create new," the "View in
+[platform] ↗" link, the optimize-log "Edit" link) — swapped to
+`var(--accent-dark)`. The "Edit"/"Delete" log-entry links were `<a>`
+tags with no `href`, so no tab stop and no Enter/Space activation —
+added `href="#"` + `event.preventDefault()` so they behave like real
+links; Delete's own red (`#EF4444`, 3.76:1) also got the same `#B3261E`
+fix as Admin's login error. The "All Strategists" toggle used
+`--accent-green` (a pale fill meant for a solid active background) as
+its own inactive-state text/border color — 1.72:1. Rather than darken
+the shared `--accent-green` itself (which would also dim the active
+state's already-fine 5.53:1 fill), added a second variable,
+`--accent-green-text` (`#2F6B2A`, 6.45:1 on white), for this
+text-on-light direction only — same "second variable for the opposite
+contrast direction" pattern as `--accent-on-light` in the client form.
+`strategistContrastTextColor()` used uncorrected "perceived brightness"
+math instead of real WCAG relative luminance — rewrote it to mirror the
+client form's `pickReadableTextColor()` (try both candidates, return
+whichever actually clears 4.5:1, fall back to whichever is closer for
+the rare color where neither can). The Campaign Setup panel header
+(`<div onclick>`) and the main pacing table's row (`<tr onclick>`) had
+no keyboard path at all — added `role="button" tabindex="0"` and an
+Enter/Space `onkeydown` handler to both, matching the pattern already
+used in `index.html`.
+
+**Accounting (4 blocking).** All three row-click patterns (rollup
+toggle, child row, plain row) got the same keyboard treatment as
+Strategist's table row. The "Add a service" form's 5 labels (Client,
+Tactic, Flight Start, Flight End, Current Gross Budget) had no `for=` —
+wired all 5. `accountingContrastTextColor()` turned out to be an
+independent copy of Strategist's exact same flawed-formula bug rather
+than a shared function — rewrote it the same way. Both status pills
+(`Confirmed` #2E7D42/#DDF2DE at 4.32:1, `Needs confirmation`
+#8A6D12/#FBF3C7 at 4.38:1) failed on their literal default colors, used
+on every single campaign line — darkened to `#1F5C30` (6.77:1) and
+`#6E5109` (6.59:1).
+
+**Verified live** in a headless browser: `strategistContrastTextColor`/
+`accountingContrastTextColor` on the exact brand colors the audit
+flagged as failing (`#4F86C6`, `#4A90D9`) now pick the best available
+option per real WCAG math (confirmed against a from-scratch Python
+contrast calculation, not trusted from the browser test alone — an
+early version of the in-page verification script had its own bug
+stripping a `#` before re-parsing a hex string, which briefly looked
+like a regression; the Python cross-check caught that it wasn't one).
+`--accent-green-text` resolves to `#2F6B2A` and the "All Strategists"
+button's computed style picks it up correctly in both states. All 5
+Accounting "Add a service" labels resolve via `.control` once the form
+is actually rendered (they don't exist in the static DOM — Playwright
+needed to call `accountingOpenAddServiceForm()` first). Both pills'
+computed colors match the new hex values exactly. `role="button"` +
+keyboard markers confirmed present at all 5 previously-mouse-only
+elements across both files. `node --check` clean on every inline script
+in both files.
+
+**This closes every BLOCKING finding from the portal audit** (19 total
+across Admin/Strategist/Accounting). Should-fix and polish tiers are
+still open, pending Claire's direction on whether/when to do them.

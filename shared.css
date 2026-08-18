@@ -45,6 +45,12 @@
   --accent-rgb:98,154,208;
   --accent-dark:var(--brand-color-secondary);
   --accent-green:#A2D29C;
+  /* --accent-green-text (2026-08-18, accessibility audit) -- --accent-green itself
+     is a pale fill color meant for a solid button background (5.53:1 with
+     --accent-dark text on top of it, which is fine); used directly as TEXT/border
+     color on white instead -- the "All Strategists" toggle's inactive state -- it
+     only measures 1.72:1. This darker variant is for that direction only. */
+  --accent-green-text:#2F6B2A;
   --accent-blue:#B1CCE7;
   --warn:#F59E0B;
   --bg:#F6F6F8;
