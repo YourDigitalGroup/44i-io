@@ -791,11 +791,11 @@ function strategistOpenPasteReportForm() {
     <strong style="font-size:13px;display:block;margin-bottom:6px">Paste a platform report</strong>
     <div style="display:flex;gap:16px;margin-bottom:10px">
       <div>
-        <label class="lbl">Report month <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which month this report's numbers apply to, NOT the month you're currently viewing</span></label>
+        <label class="lbl" for="paste-report-month">Report month <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which month this report's numbers apply to, NOT the month you're currently viewing</span></label>
         <input type="month" id="paste-report-month" value="${defaultMonthValue}" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
       </div>
       <div>
-        <label class="lbl">Platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only campaigns set to this platform will be matched</span></label>
+        <label class="lbl" for="paste-report-platform">Platform <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only campaigns set to this platform will be matched</span></label>
         ${strategistPlatformSelectHtml('paste-report-platform', '', '200px')}
       </div>
     </div>
@@ -2150,17 +2150,17 @@ function renderSetupPanel(l) {
         <div><label class="lbl">Tactic</label>${(() => {
           const variants = strategistTacticVariantOptions(l);
           if (!variants) return `<div>${esc(strategistTacticDisplay(l))}</div>`;
-          return `<select id="setup-tactic-variant-${l.id}" style="width:100%;padding:4px 6px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px">
+          return `<select id="setup-tactic-variant-${l.id}" aria-label="Tactic variant" style="width:100%;padding:4px 6px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px">
             <option value="" ${!variants.includes(l.tactic_label) ? 'selected' : ''}>— Choose which one —</option>
             ${variants.map(v => `<option value="${esc(v)}" ${l.tactic_label === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
           </select>`;
         })()}</div>
         <div>
-          <label class="lbl">Flight</label>
+          <label class="lbl" id="setup-flight-label-${l.id}">Flight</label>
           <div style="display:flex;align-items:center;gap:4px">
-            <input type="date" id="setup-flight-start-${l.id}" value="${esc(l.flight_start || '')}" style="width:100%;padding:4px 5px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+            <input type="date" id="setup-flight-start-${l.id}" value="${esc(l.flight_start || '')}" aria-label="Flight start date" style="width:100%;padding:4px 5px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
             <span style="color:var(--muted)">–</span>
-            <input type="date" id="setup-flight-end-${l.id}" value="${esc(l.flight_end || '')}" placeholder="Ongoing" style="width:100%;padding:4px 5px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+            <input type="date" id="setup-flight-end-${l.id}" value="${esc(l.flight_end || '')}" placeholder="Ongoing" aria-label="Flight end date" style="width:100%;padding:4px 5px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
           </div>
         </div>
         <div><label class="lbl">Gross Budget</label><div>$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo</div></div>
@@ -2189,11 +2189,11 @@ function renderSetupPanel(l) {
       </div>
       <div style="display:flex;gap:16px;margin-bottom:12px">
         <div>
-          <label class="lbl">Platform</label>
+          <label class="lbl" for="setup-platform-${l.id}">Platform</label>
           ${strategistPlatformSelectHtml('setup-platform-' + l.id, l.platform || '', '160px')}
         </div>
         <div>
-          <label class="lbl">Exact campaign title in the ad platform</label>
+          <label class="lbl" for="setup-platform-campaign-name-${l.id}">Exact campaign title in the ad platform</label>
           <input id="setup-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Used to match a pasted report" style="width:260px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
         </div>
         <!-- Reference link to the live campaign (2026-08-14, per Claire -- existed in
@@ -2201,7 +2201,7 @@ function renderSetupPanel(l) {
              so there was no way to set it before activation. Same field/column
              (platform_url) as the Detail panel's own copy. -->
         <div>
-          <label class="lbl">Reference link to the live campaign</label>
+          <label class="lbl" for="setup-platform-url-${l.id}">Reference link to the live campaign</label>
           <input id="setup-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="https://..." style="width:260px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
         </div>
       </div>
@@ -2230,15 +2230,15 @@ function renderSetupPanel(l) {
         ${l.campaign_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">IO Campaign Notes</div><div style="font-size:12.5px;color:var(--text);margin-bottom:${l.order_line_notes ? '8px' : '0'}">${esc(l.campaign_notes)}</div>` : ''}
         ${l.order_line_notes ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#92400E;margin-bottom:2px">Note on this line</div><div style="font-size:12.5px;color:var(--text)">${esc(l.order_line_notes)}</div>` : ''}
       </div>` : ''}
-      <label class="lbl">What's this waiting on? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— check all that apply</span></label>
-      <div id="setup-blocker-${l.id}" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px">
+      <label class="lbl" id="setup-blocker-label-${l.id}">What's this waiting on? <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— check all that apply</span></label>
+      <div id="setup-blocker-${l.id}" role="group" aria-labelledby="setup-blocker-label-${l.id}" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px">
         ${Object.entries(SETUP_BLOCKER_LABELS).map(([key, label]) => {
           const short = (SETUP_BLOCKER_CHECKBOX_HINTS[key]?.short) || label.replace(/^Waiting on /, '');
           const hint = SETUP_BLOCKER_CHECKBOX_HINTS[key]?.hint || '';
           return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" class="setup-blocker-cb" value="${esc(key)}" ${Array.isArray(l.setup_blocker) && l.setup_blocker.includes(key) ? 'checked' : ''}/> ${esc(short)}${hint}</label>`;
         }).join('')}
       </div>
-      <label class="lbl">Setup Notes</label>
+      <label class="lbl" for="setup-notes-${l.id}">Setup Notes</label>
       <textarea id="setup-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px;margin-bottom:12px" placeholder="What's this waiting on before it can go live?">${esc(l.setup_notes || '')}</textarea>
       <div id="split-form-${l.id}" style="display:none;margin-bottom:12px"></div>
       <div style="display:flex;gap:10px">
@@ -2865,9 +2865,9 @@ function renderStrategistDetailPanel() {
     </div>
 
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-      <label class="lbl" style="margin:0">Flight Start</label>
+      <label class="lbl" style="margin:0" for="detail-flight-start-${l.id}">Flight Start</label>
       <input type="date" id="detail-flight-start-${l.id}" value="${esc(l.flight_start || '')}" onchange="strategistSaveLine('${l.id}', {flight_start: this.value || null}, false)" style="padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:12px"/>
-      <label class="lbl" style="margin:0">Flight End</label>
+      <label class="lbl" style="margin:0" for="detail-flight-end-${l.id}">Flight End</label>
       <input type="date" id="detail-flight-end-${l.id}" value="${esc(l.flight_end || '')}" placeholder="Ongoing" onchange="strategistSaveLine('${l.id}', {flight_end: this.value || null}, false)" style="padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:12px"/>
       <span style="font-size:11px;color:var(--muted);margin-right:8px">Blank End = ongoing/no end date</span>
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-right:8px">
@@ -2876,7 +2876,7 @@ function renderStrategistDetailPanel() {
       ${ADDL_TARGETING_SERVICE_IDS.includes(l.service_id) ? `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-right:8px">
         <input type="checkbox" ${l.has_addl_targeting ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_addl_targeting: this.checked})"/> + Addl. Targeting
       </label>` : ''}
-      <label class="lbl" style="margin:0">Status</label>
+      <label class="lbl" style="margin:0" for="status-select-${l.id}">Status</label>
       <select id="status-select-${l.id}" onchange="strategistOpenStatusChangeReason('${l.id}', this.value, '${l.status}')" style="padding:5px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px;font-weight:600">
         <option value="active" ${l.status === 'active' ? 'selected' : ''}>Active</option>
         <option value="paused" ${l.status === 'paused' ? 'selected' : ''}>Paused</option>
@@ -2895,7 +2895,7 @@ function renderStrategistDetailPanel() {
          same strategist_save_campaign_line RPC already used for every other field in
          this panel -- just exposed here too so it stays editable at every status. -->
     <div style="margin-bottom:14px">
-      <label class="lbl">Notes</label>
+      <label class="lbl" for="detail-notes-${l.id}">Notes</label>
       <textarea id="detail-notes-${l.id}" rows="2" style="width:100%;padding:8px 10px;border-radius:7px;border:1px solid var(--border);font-size:12.5px" placeholder="General notes about this campaign" onchange="strategistSaveLine('${l.id}', {setup_notes: this.value}, false)">${esc(l.setup_notes || '')}</textarea>
     </div>
 

@@ -15812,7 +15812,60 @@ freshness banner's `role`/`aria-live` both confirmed present in the
 DOM. `node --check` clean on all three portal files.
 
 **This closes every finding from the portal accessibility/UX audit**
-except the two explicitly-parked items above (the dead `.warn` class,
-business-logic call for Claire; and the New Campaign form's sibling
-Paste Platform Report/read-only summary labels, out of this specific
-ask's scope but flagged as still open).
+except the one explicitly-parked item above (the dead `.warn` class,
+business-logic call for Claire).
+
+## 2026-08-18 — The two remaining flagged label gaps, closed
+
+Claire asked for the two items flagged-but-not-fixed above. Both done.
+
+**Paste Platform Report form** (`strategistOpenPasteReportForm()`):
+wired `for=` on "Report month" and "Platform" — same fix as every
+other unwired label this session.
+
+**Campaign Setup panel's real fields** — going through the whole
+pending-queue panel (`renderSetupPanel()`) rather than just the two
+originally-cited labels, since that's the actual scope of what was
+flagged: "Platform," "Exact campaign title in the ad platform,"
+"Reference link to the live campaign," and "Setup Notes" all got
+`for=`. "Flight" covers TWO date inputs (start and end) under one
+label — `for` can only target one, so each input got its own
+`aria-label` ("Flight start/end date") instead, leaving the visible
+"Flight" text as-is. The Tactic field conditionally swaps in a real
+`<select>` when a service has variants (e.g. multiple SEM tiers) but
+shares its "Tactic" label with the plain-text case shown otherwise —
+gave the select its own `aria-label="Tactic variant"` rather than
+trying to force one shared `for` target to cover both states. The
+"What's this waiting on?" checkbox group got the same `role="group"`/
+`aria-labelledby` pattern already used for its twin in the New Campaign
+form. The Notes field similarly got `for=`.
+
+**Checked but correctly left alone**: "Client," "Gross Budget,"
+"In-Platform Budget," Platform CPM/CPC Range, and "Goal" in this same
+panel are label-plus-plain-text pairs with no actual form control
+behind them — `for=` has nothing to point at, and WCAG's label
+requirement only applies to real controls (inputs/selects/textareas),
+not static value displays. Read linearly, "Gross Budget" immediately
+followed by its dollar value already conveys the pairing correctly to
+a screen reader with no ambiguity. Confirmed this by re-reading the
+actual markup rather than assuming every `<label>` needs a `for` — not
+every one of them was ever a real bug.
+
+**Also fixed the Detail panel's own copies** of Flight Start, Flight
+End, Status, and Notes (`renderStrategistDetailPanel()`, shown once a
+campaign is Active/Paused/Complete rather than Pending) — same
+unlabeled-field bug, same fix, found while confirming the Setup panel's
+Flight/Status/Notes fields weren't the only copies of this pattern in
+the file.
+
+**Verified live**: both Paste Platform Report labels, all 4 Setup-panel
+real-control labels, the Tactic variant select's `aria-label`, both
+Flight date inputs' `aria-label`s, the blocker checkbox group's
+`role`/`aria-labelledby`, and all 4 Detail-panel labels all resolve
+correctly via `.control`/direct attribute checks in a headless browser.
+`node --check` clean.
+
+**This closes every fixable finding from the portal accessibility/UX
+audit.** The one remaining open item — Accounting's dead `.warn` CSS
+class — stays parked as a business-logic decision for Claire, not
+something to guess at.
