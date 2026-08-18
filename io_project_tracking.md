@@ -15426,3 +15426,70 @@ disclaimer blocks). `node --check` clean.
 all 3 blocking, all 5 should-fix (well, 6 counting the header/button
 contrast as two related findings), and both polish items are now
 addressed.
+
+## 2026-08-18 — Step-nav contrast fix missed in the earlier pass, plus 4 more instances of the same gap
+
+Claire caught this from a live screenshot: with a client group's brand
+color set to a pastel yellow, the "STEP 1 / Client Info" text in the
+step navigator was white-on-yellow and nearly illegible. The earlier
+2026-08-17 contrast pass (`--accent-text`, `pickReadableTextColor()`)
+fixed `.header-title` and the Submit/Next buttons but never audited
+every place `--accent`/`--accent-dark` gets used as a text color — the
+step nav was simply missed.
+
+Investigating found this is actually two distinct contrast problems
+living in the same area, not one:
+
+- `.step.active` uses the brand color as a **background** with fixed
+  white text — same failure direction as the buttons/header, so it now
+  uses `--accent-text` (white or dark ink, whichever the brand color
+  needs) instead of a hardcoded `#fff`.
+- `.step.done` uses the brand color itself as **text** on a fixed light
+  background (`#E0F2FE`) — the opposite direction. Fixing this needed a
+  new mechanism: `ensureReadableOnLight()`, which darkens the brand
+  color (preserving its hue/saturation, same approach as the button fix)
+  just enough to clear 4.5:1, rather than swapping to an unrelated ink
+  color.
+- `.step-num`'s `opacity:.6` compounded both problems — computed that
+  blending either fixed candidate color at 60% opacity dropped contrast
+  well below 4.5:1 in most cases even when the full-opacity color would
+  have passed. Removed the opacity; the existing font-size/case/spacing
+  differences already carry the visual hierarchy `.step-num` was going
+  for.
+
+Rather than stop at `.step`, grepped the whole file for every remaining
+`color:var(--accent)`/`var(--accent-dark)` usage and found 4 more
+instances of the identical "brand color as text on a light background"
+bug: `.section-head`, `.rs-section-head`, `.modal-section-title`, and
+the inline style on the "📋 Edit Intake" row-link button. Confirmed via
+contrast math that even the form's **default** blue fails here
+(3.1:1 on white) — this was a live, pre-existing bug, not only a
+custom-branding edge case. All 4 now use the same `--accent-on-light`
+variable as `.step.done`.
+
+**A mistake caught and fixed during verification**: `ensureReadableOnLight()`
+originally targeted 4.5:1 against pure white, but `.step.done`'s actual
+background is `#E0F2FE` — slightly darker than white (0.865 vs 1.0
+relative luminance) — so several brand colors, including the form's own
+default blue, cleared 4.5:1 against white but only reached 3.9–4.2:1
+against the real `#E0F2FE` background. Live contrast testing across 7
+brand colors (`#1C9BD7`, `#FCD34D`, `#0F172A`, `#7C3AED`, `#EF4444`,
+`#FFFFFF`, `#000000`) caught this before it shipped. Fixed by targeting
+`#E0F2FE` directly instead of white — it's the darkest background any
+caller of this function actually sits on, so clearing 4.5:1 against it
+guarantees at least that much everywhere else too.
+
+**Verified** live in a headless browser across all 7 test colors:
+every one of `.step.active`, `.step.done`, `.section-head`,
+`.rs-section-head`, and `.modal-section-title` now clears 4.5:1, with
+one known, pre-existing, out-of-scope exception — `.step.active` with
+pure red (`#EF4444`) lands at 4.23:1, a documented inherent limit of
+`pickReadableTextColor()` for certain awkward-luminance backgrounds
+where neither white nor dark ink can reach 4.5:1 (same class of edge
+case the function's own comment already calls out for red). Screenshot
+of the yellow-branded step nav confirms Step 1 (active) now renders
+dark, legible text and Step 2 (done) renders a darkened gold instead of
+the raw brand yellow. `node --check` clean.
+
+Next up, per Claire's request: the same accessibility/ease-of-use/
+visual-clarity sweep for the Admin, Strategist, and Accounting portals.

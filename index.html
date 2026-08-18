@@ -21,6 +21,17 @@
      in sync by pickReadableTextColor() every time the background changes. Default
      here covers the color above, before any group's own branding loads. */
   --accent-text:#0B2436;
+  /* --accent-on-light (2026-08-17): for every spot that uses the group's brand
+     color as TEXT on a light/white-ish background (.step.done, .section-head,
+     .rs-section-head, .modal-section-title, the "Edit Intake" row link) rather
+     than as a background with light/dark text on top -- a completely different
+     failure mode --accent-text doesn't cover. Found while double-checking the
+     contrast fix was actually complete: the DEFAULT blue itself already fails
+     here (3.1:1 on white), before any group's own color even enters into it.
+     ensureReadableOnLight() darkens the same hue only as much as needed to
+     clear 4.5:1, rather than swapping to a fixed unrelated color. Default value
+     here is that function's own output for the accent above. */
+  --accent-on-light:#167aaa;
   --accent2:#0F6E56;
   --warn:#F59E0B;
   --bg:#fff;
@@ -63,9 +74,21 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 .steps{display:flex;gap:0;margin-bottom:32px;border-radius:10px;overflow:hidden;border:1px solid var(--border)}
 .step{flex:1;padding:12px 16px;text-align:center;cursor:pointer;border-right:1px solid var(--border);background:var(--card);transition:all .2s}
 .step:last-child{border-right:none}
-.step.active{background:var(--accent);color:#fff}
-.step.done{background:#E0F2FE;color:var(--accent)}
-.step-num{font-size:10px;font-weight:700;opacity:.6;display:block;margin-bottom:2px;letter-spacing:.06em;text-transform:uppercase}
+/* color: var(--accent-text)/var(--accent-on-light), not a hardcoded #fff/var(--accent)
+   (2026-08-17, found live by Claire looking at a real group's yellow branding right
+   after the earlier contrast fix -- these two rules were missed the first pass).
+   .active is the same "text on a colored background" case as the header/buttons;
+   .done is the OTHER direction (the brand color used as text on a light background),
+   which needed ensureReadableOnLight() instead since white text would never work
+   against a near-white background regardless of the brand color. */
+.step.active{background:var(--accent);color:var(--accent-text)}
+.step.done{background:#E0F2FE;color:var(--accent-on-light)}
+/* opacity removed (2026-08-17) -- combined with either color above, .6 opacity
+   dropped contrast below 4.5:1 in most cases even when the base color passed at
+   full opacity (confirmed by hand for several sample brand colors). The step number
+   and label are still visually distinct via the existing size/case/spacing
+   difference, same reasoning as the header title/subtitle fix. */
+.step-num{font-size:10px;font-weight:700;display:block;margin-bottom:2px;letter-spacing:.06em;text-transform:uppercase}
 .step-label{font-size:11px;font-weight:700;letter-spacing:.02em}
 
 /* Cards */
@@ -505,7 +528,7 @@ select.qty-field{background-image:none;padding-right:3px}
   }
 }
 
-.section-head{background:var(--light);padding:8px 12px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border);margin-top:10px}
+.section-head{background:var(--light);padding:8px 12px;font-size:10px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid var(--border);margin-top:10px}
 .minimum-note{font-size:10px;color:var(--muted);font-style:italic}
 
 /* Totals */
@@ -535,7 +558,7 @@ select.qty-field{background-image:none;padding-right:3px}
    scrollport, not the page. (A sticky element can only stick relative to its
    nearest ancestor that's an actual scroll container -- see io_project_tracking.md
    for the earlier, failed attempt that got this backwards.) */
-.rs-section-head{position:sticky;top:0;z-index:2;background:var(--light);padding:8px 14px;font-size:10.5px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
+.rs-section-head{position:sticky;top:0;z-index:2;background:var(--light);padding:8px 14px;font-size:10.5px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
 .rs-chevron{display:inline-block;width:10px}
 .summary-table{width:100%;min-width:560px;border-collapse:collapse;font-size:13px}
 .summary-table th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
@@ -593,7 +616,7 @@ select.qty-field{background-image:none;padding-right:3px}
 .modal-body{padding:20px 24px}
 .modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;bottom:0;background:#fff}
 .modal-section{margin-bottom:20px}
-.modal-section-title{font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.modal-section-title{font-size:10px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
 .modal-grid{display:grid;gap:12px}
 .modal-grid.cols2{grid-template-columns:1fr 1fr}
 .modal-field label{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
@@ -2315,7 +2338,7 @@ function updateIntakeRowLinks() {
     let label, style;
     if (data.completed) {
       label = '📋 Edit Intake';
-      style = 'color:var(--accent);background:var(--light);border:1px solid var(--border)';
+      style = 'color:var(--accent-on-light);background:var(--light);border:1px solid var(--border)';
     } else if (data.bypassed) {
       label = '✋ View KOC';
       style = 'color:#92400E;background:#FFF7ED;border:1px solid #FED7AA';
@@ -2594,7 +2617,65 @@ function applyGroupBranding(group) {
     // (the approach already used elsewhere in this project, e.g. Strategist's
     // strategistContrastTextColor()) isn't reliable enough here.
     document.documentElement.style.setProperty('--accent-text', pickReadableTextColor(group.brand_color));
+    // --accent-on-light (2026-08-17) -- see its own :root comment. Covers the OTHER
+    // direction of the same underlying problem: the group's brand color used as TEXT
+    // on a light background, not as a background with text on top.
+    document.documentElement.style.setProperty('--accent-on-light', ensureReadableOnLight(group.brand_color));
   }
+}
+
+// Darkens `hex` (preserving its hue/saturation, same "minimal change, not a swap to
+// an unrelated color" approach used for the button colors earlier today) just enough
+// to reach 4.5:1 against a light background, for every spot that uses the group's
+// brand color as TEXT on white/near-white rather than as a colored background (2026-
+// 08-17, per the accessibility/UX audit follow-up -- found while checking the earlier
+// contrast fix was actually complete that .step.done, .section-head, .rs-section-
+// head, .modal-section-title, and the "Edit Intake" row link all have this same gap,
+// and the DEFAULT blue itself already fails it at 3.1:1, before any group's own
+// color is even involved). Already-dark/saturated-enough colors pass through
+// unchanged on the first check.
+function ensureReadableOnLight(hex) {
+  if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return '#0B2436';
+  const relLuminance = (h) => {
+    const c = [1,3,5].map(i => parseInt(h.slice(i,i+2),16) / 255);
+    const [r,g,b] = c.map(v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4));
+    return 0.2126*r + 0.7152*g + 0.0722*b;
+  };
+  // Target #E0F2FE (the .step.done chip background), not pure white -- it's the
+  // darkest background any of this function's callers actually sit on. Found via
+  // live contrast testing (2026-08-17): targeting white let colors through that
+  // read only 3.9-4.2:1 against #E0F2FE, including the form's own default blue.
+  const bgLuminance = relLuminance('#E0F2FE');
+  const contrastVsWhite = (h) => (bgLuminance + 0.05) / (relLuminance(h) + 0.05);
+  if (contrastVsWhite(hex) >= 4.5) return hex;
+  const r = parseInt(hex.slice(1,3),16)/255, g = parseInt(hex.slice(3,5),16)/255, b = parseInt(hex.slice(5,7),16)/255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  let h = 0, s = 0;
+  const l0 = (max+min)/2;
+  const d = max-min;
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2*l0-1));
+    if (max === r) h = ((g-b)/d) % 6;
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  const hslToHex = (h,s,l) => {
+    const c = (1 - Math.abs(2*l-1)) * s;
+    const x = c * (1 - Math.abs((h/60) % 2 - 1));
+    const m = l - c/2;
+    let [r1,g1,b1] = h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+    const toHex = v => Math.round((v+m)*255).toString(16).padStart(2,'0');
+    return '#' + toHex(r1) + toHex(g1) + toHex(b1);
+  };
+  // Step lightness down until contrast clears 4.5:1 -- 40 steps of a color's full
+  // lightness range is finer than this ever needs in practice (the loop typically
+  // exits within a handful of steps for any realistic brand color).
+  for (let l = l0; l >= 0; l -= 0.02) {
+    const candidate = hslToHex(h, s, l);
+    if (contrastVsWhite(candidate) >= 4.5) return candidate;
+  }
+  return '#0B2436';
 }
 
 // Picks whichever of white or a dark ink actually reads clearly against an arbitrary
