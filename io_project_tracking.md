@@ -15892,3 +15892,21 @@ wrap:wrap;gap:8px`) instead of a single tight underlined strip.
 changed), and both bars screenshot as expected — full rounded pills,
 same shape as the other pill controls already in each toolbar.
 `node --check` clean on both files.
+
+## 2026-08-18 — Removed stale "Length" row from Admin's Order Detail view
+
+Claire asked whether the Orders tab was ever updated after the per-tactic-
+dates migration to stop showing an order-wide length/dates. Checked both
+sides: `index.html`'s `updateDerivedCampaignSummary()` already handles
+Start/End correctly — they're auto-derived (earliest start / latest end
+across all selected line items) into hidden fields specifically so
+existing consumers like this Admin view keep getting a real value. But
+`campaign_length` was deliberately left blank at that same time, per its
+own code comment — "per-tactic lengths can differ, so a single order-wide
+length no longer means anything" — and Admin's `viewOrderDetail()` was
+never updated to match. It still showed a "Length" row, which has
+rendered as "—" for every single order submitted since that migration,
+with no way to ever show anything else again.
+
+Removed the row. Start/End stay, since they're still real, meaningful
+data. `node --check` clean.

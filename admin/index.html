@@ -6109,7 +6109,6 @@ function viewOrderDetail(orderId) {
         <div style="font-size:12px;line-height:1.7">
           <div><strong>Start:</strong> ${fmtDate(o.campaign_start)}</div>
           <div><strong>End:</strong> ${fmtDate(o.campaign_end)}</div>
-          <div><strong>Length:</strong> ${o.campaign_length ? esc(o.campaign_length) + ' months' : '—'}</div>
           <div><strong>One-Time:</strong> ${fmtMoney(o.total_onetime)}</div>
           <div><strong>Monthly:</strong> ${fmtMoney(o.total_monthly)}/mo</div>
           ${o.campaign_notes ? '<div style="margin-top:6px;font-size:11px;color:var(--muted)"><strong>Notes:</strong> ' + esc(o.campaign_notes) + '</div>' : ''}
