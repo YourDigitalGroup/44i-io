@@ -48,7 +48,7 @@
       </div>
     </div>
 
-    <div style="padding:16px 20px 0">
+    <div style="padding:16px 20px 0" id="strategist-content-area">
       <!-- Platform report freshness banner (2026-08-17, per Claire -- "it would be
            nice for the strategists to know when numbers were updated" for the
            platforms she manually pastes reports for). One banner, not per-platform
@@ -2039,8 +2039,15 @@ function renderStrategistDashboard() {
   document.getElementById('strategist-setup-panel').innerHTML = strategistStatusTab === 'pending' ? renderSetupPanels(lines) : '';
   document.getElementById('strategist-table-wrap').innerHTML = strategistStatusTab === 'pending' ? '' : renderMainTable(lines);
   applyStickyGroupOffset('strategist-table-wrap');
-  fitStrategistScrollBoxes();
+  // renderStrategistDetailPanel() MUST run before fitStrategistScrollBoxes() (2026-08-17,
+  // per Claire -- "when I open a campaign detail and then close it the page becomes
+  // condensed"): the detail panel sits above #strategist-table-wrap, so its own height
+  // is part of what fitStrategistScrollBoxes() measures as "everything before the box."
+  // Fitting first (the original order) meant closing the panel shrank the table box
+  // based on the panel's stale, about-to-be-cleared (still "open") height -- and with
+  // nothing else re-triggering a refit afterward, it stayed wrongly condensed.
   renderStrategistDetailPanel();
+  fitStrategistScrollBoxes();
 }
 
 // Sizes #strategist-table-wrap/#strategist-setup-panel's max-height to whatever
@@ -2076,6 +2083,16 @@ function fitStrategistScrollBoxes() {
 window.addEventListener('resize', () => {
   if (currentStrategistUser) fitStrategistScrollBoxes();
 });
+// Catches every other way the content above the table/setup boxes can change
+// height without going through renderStrategistDashboard() -- opening/closing
+// the Import Campaign, Paste Platform Report, or Bulk Import forms (2026-08-17,
+// found auditing for other instances of the same bug as the detail-panel fix
+// above: none of those three toggle functions called fitStrategistScrollBoxes()
+// either, so opening one could overflow the page again and closing one could
+// leave a box wrongly condensed, same shape as the bug just fixed, just via a
+// different trigger). Same "observe the container, don't hunt every call site"
+// approach as admin's identical ResizeObserver on #admin-content-area.
+new ResizeObserver(() => { if (currentStrategistUser) fitStrategistScrollBoxes(); }).observe(document.getElementById('strategist-content-area'));
 
 // ── CAMPAIGN SETUP (Pending queue) ───────────────────────────────
 // Grouped by client's group, alphabetical, with the same colored group-band

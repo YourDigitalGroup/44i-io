@@ -14958,3 +14958,98 @@ loading (no flash of the wrong tab), then appears exactly once, already
 showing the Pricing tab, correctly scrolled to `top: 132` (clear of the
 sticky bars) — no flip back to Info, no scroll misalignment, regardless
 of how slow the simulated network is. `node --check` clean.
+
+## 2026-08-17 (cont'd) — Strategist table box stuck condensed after closing a detail panel
+
+Claire: "When I open a campaign detail and then close it the page
+becomes condensed." Root cause was a call-order bug in
+`renderStrategistDashboard()`: `fitStrategistScrollBoxes()` ran BEFORE
+`renderStrategistDetailPanel()`, but the detail panel sits above
+`#strategist-table-wrap` in the page, so its height is part of what the
+fit function measures as "everything before the box." Opening a
+campaign detail calls `renderStrategistDashboard()` while the panel is
+still empty (about to be populated), so the fit runs against the
+panel's stale EMPTY state — the table box doesn't shrink at all to make
+room. Closing does the reverse: the fit runs while the panel's OLD
+(still-open, non-empty) content is still in the DOM, so it shrinks the
+box as if the panel were still open — and since nothing else re-
+triggers a refit afterward, it stays wrongly condensed.
+
+**Fix**: swapped the two calls' order — `renderStrategistDetailPanel()`
+now runs first, so `fitStrategistScrollBoxes()` always measures the
+panel's actual current (already-updated) state, open or closed.
+
+**Verified**, including confirming this was a real, reproducible bug
+and not a guess: stubbed `renderMainTable()`/`renderStrategistDetailPanel
+()` with simplified stand-ins (a 220px block standing in for real detail
+content) to isolate the height math from the real render functions'
+heavy data dependencies, then drove the actual `strategistSelectLine()`/
+`strategistCloseDetailPanel()` functions. On the pre-fix code: opening
+left the box completely unchanged (482px, measured before the panel
+populated) and closing left it stuck at 262px — genuinely condensed,
+matching Claire's report exactly. On the fixed code: opening correctly
+shrinks to 262px, closing correctly restores to 482px. `node --check`
+clean.
+
+## 2026-08-17 (cont'd) — Audited every portal for the same class of bug
+
+Claire: "Can you check the other tabs and portals for similar bugs" —
+after the detail-panel condense fix above. Worth distinguishing two
+different mechanisms that came out of today's sticky-header work:
+
+- **Admin** calls `fitAdminTableHeight()` from exactly one place
+  (`adminSection()`) plus a `ResizeObserver` on `#admin-content-area`
+  that reactively re-fits whenever ANYTHING inside it changes size --
+  opening/closing a form, a section switch, an Order's detail panel,
+  the Services tab's Workflows/Hosting Proration panels, all of it,
+  without needing to call the fit function from each of those
+  individual toggle sites. Because it's reactive rather than sequenced,
+  Admin was structurally immune to the exact bug just fixed in
+  Strategist -- confirmed by re-running the full Groups/Clients/Orders/
+  Services/Legal Text regression suite from earlier today unchanged (all
+  still pass identically).
+- **Strategist and Accounting** never got that same reactive net --
+  each only called its fit function from one explicit spot
+  (`renderStrategistDashboard()` / `renderAccountingDashboard()`), which
+  is exactly what let the detail-panel bug happen in the first place.
+
+**Audited every toggle above each portal's bounded table for the same
+gap** (anything that shows/hides content between the sticky header and
+the table, the same shape as the detail panel): found three more in
+each portal that never called the fit function at all --
+**Strategist**: `strategistOpenImportForm()`, `strategistOpenPasteReportForm
+()`, `strategistOpenBulkImportForm()`. **Accounting**:
+`accountingOpenAddServiceForm()`, `accountingOpenBulkMatchForm()`,
+`accountingOpenBulkImportForm()`. All six have the same shape as the
+bug just fixed: opening one doesn't shrink the table box to make room
+(the full-page-scroll bug returns), and closing one doesn't grow it
+back (stays wrongly condensed) -- just via a different trigger than the
+one Claire happened to report.
+
+**Fix, matching Admin's already-proven pattern instead of patching six
+individual functions**: added the same kind of `ResizeObserver` to both
+portals -- new `#strategist-content-area` id on the div wrapping
+everything from the freshness banner through the table (observed by a
+new `ResizeObserver` calling `fitStrategistScrollBoxes()`), and
+Accounting's existing `.acct-wrap` container observed the same way
+calling `fitAccountingTableHeight()`. Neither portal needed its six
+individual toggle functions touched at all -- the observer reacts to
+the DOM change regardless of which function caused it, the same "watch
+the container, don't hunt every call site" reasoning Admin's version
+already used, and it protects any future toggle built the same way for
+free too.
+
+**Verified**, including confirming each bug was real before claiming
+the fix: reproduced live on the pre-fix code first (`git stash` back to
+before this fix) -- opening Strategist's Import Campaign form (a
+fabricated 344px-tall stand-in) left the table box completely unchanged
+at 482px instead of shrinking; confirmed this is exactly the "page
+overflows again" failure mode. Re-ran the same scenario on the fixed
+code: table box correctly shrinks to its 200px floor while the form is
+open and restores to 482px on close. Ran the equivalent test against
+Accounting's Add Service form (a 300px stand-in): same shrink/restore
+pattern confirmed. Re-ran every fit-related regression test written
+earlier today (Admin's 7-case suite, Strategist's and Accounting's
+basic fit checks) against the final code -- all identical results, no
+regressions from adding the two new observers. `node --check` clean on
+both files.
