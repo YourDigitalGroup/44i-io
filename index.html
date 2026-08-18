@@ -11,6 +11,16 @@
   --accent:#1C9BD7;
   --accent-rgb:28,155,215;
   --accent-dark:#1580B5;
+  /* --accent-text (2026-08-17, per the accessibility/UX audit): white text on this
+     blue is only ~3.1:1 contrast, below the 4.5:1 minimum for normal text -- and the
+     header/primary-button color isn't even fixed, applyGroupBranding() below
+     overwrites --accent/--accent-dark to each CLIENT GROUP's own admin-picked
+     brand_color, which could be light, dark, or anything in between. A single
+     hardcoded replacement hex can't fix that; this token holds whichever of white or
+     a dark ink actually reads clearly against whatever --accent currently is, kept
+     in sync by pickReadableTextColor() every time the background changes. Default
+     here covers the color above, before any group's own branding loads. */
+  --accent-text:#0B2436;
   --accent2:#0F6E56;
   --warn:#F59E0B;
   --bg:#fff;
@@ -38,9 +48,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 
 .header-logo{height:44px;max-width:170px;object-fit:contain;display:block}
 .logo-chip{background:rgba(255,255,255,.95);border-radius:10px;padding:8px 18px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
-.header-title{color:#fff;text-align:right}
+/* color: var(--accent-text) (2026-08-17, per the accessibility/UX audit) -- was a
+   flat #fff, ~3.1:1 against the default brand blue and potentially much worse
+   against an arbitrary client group's own brand_color (applyGroupBranding() can set
+   the header to genuinely any color an admin picked). The subtitle used to fade this
+   further via rgba(...,.65) for visual hierarchy, which made a borderline color
+   actively fail (~2.1:1) -- hierarchy comes from the size/weight difference already
+   present between h1 and p instead now, so the subtitle stays fully legible. */
+.header-title{color:var(--accent-text);text-align:right}
 .header-title h1{font-family:'Montserrat',sans-serif;font-size:26px;font-weight:800;letter-spacing:-.5px}
-.header-title p{font-size:12px;color:rgba(255,255,255,.65);margin-top:3px}
+.header-title p{font-size:12px;color:var(--accent-text);margin-top:3px}
 
 /* Steps */
 .steps{display:flex;gap:0;margin-bottom:32px;border-radius:10px;overflow:hidden;border:1px solid var(--border)}
@@ -527,10 +544,19 @@ select.qty-field{background-image:none;padding-right:3px}
 
 /* Buttons */
 .btn{padding:11px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .2s}
-.btn-primary{background:var(--accent);color:#fff}
+/* color: var(--accent-text) (2026-08-17, per the accessibility/UX audit) -- was a
+   flat #fff, same underlying issue and fix as .header-title above (this button's
+   background is also whatever the current group's brand_color is). */
+.btn-primary{background:var(--accent);color:var(--accent-text)}
 .btn-primary:hover{background:var(--accent-dark)}
 .btn-secondary{background:var(--light);color:var(--text);border:1px solid var(--border)}
-.btn-success{background:#10B981;color:#fff}
+/* Darkened from #10B981 (2026-08-17, per the audit) -- that green only reached
+   ~2.5:1 against white text, the worst of the three contrast findings (this is the
+   Submit button, the single most important click on the page) since it's a fixed
+   color independent of any group's branding -- no dynamic text-color logic needed,
+   just a darker green with the same hue/character. */
+.btn-success{background:#0B815A;color:#fff}
+.btn-success:hover{background:#096546}
 .btn-row{display:flex;justify-content:space-between;align-items:center;margin-top:24px;gap:12px}
 
 /* Legal */
@@ -2545,7 +2571,41 @@ function applyGroupBranding(group) {
     // background. A raw RGB triplet (not a fixed-alpha rgba string like --light) since
     // the two shadows use different alphas (0.3 / 0.25) and can't share one fixed value.
     document.documentElement.style.setProperty('--accent-rgb', hexToRgbTriplet(group.brand_color));
+    // --accent-text (2026-08-17) -- keeps white/dark button and header text choosing
+    // itself correctly no matter which group's brand color is currently active. See
+    // pickReadableTextColor()'s own comment for why a simple brightness threshold
+    // (the approach already used elsewhere in this project, e.g. Strategist's
+    // strategistContrastTextColor()) isn't reliable enough here.
+    document.documentElement.style.setProperty('--accent-text', pickReadableTextColor(group.brand_color));
   }
+}
+
+// Picks whichever of white or a dark ink actually reads clearly against an arbitrary
+// hex background, using real WCAG relative-luminance contrast math rather than a flat
+// perceived-brightness threshold (2026-08-17, per the accessibility/UX audit). A
+// simple "luminance > 0.6 ? dark : white" threshold -- the pattern already used
+// elsewhere in this project for group-colored badges -- gets this specific case
+// wrong: it picks white for both this form's default brand blue (#1C9BD7, actual
+// contrast only 3.1:1) and for red (#EF4444, 3.76:1), both below the 4.5:1 minimum.
+// Tries both candidates and returns whichever genuinely passes 4.5:1 against `bg`,
+// falling back to whichever is closer if truly neither can (an extremely unusual
+// brand color, e.g. a mid-gray) -- always the best available choice rather than a
+// wrong guess from a threshold that doesn't reflect actual contrast.
+function pickReadableTextColor(bgHex) {
+  if (!bgHex || !/^#[0-9a-fA-F]{6}$/.test(bgHex)) return '#0B2436';
+  const relLuminance = (hex) => {
+    const c = [1,3,5].map(i => parseInt(hex.slice(i,i+2),16) / 255);
+    const [r,g,b] = c.map(v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4));
+    return 0.2126*r + 0.7152*g + 0.0722*b;
+  };
+  const contrast = (l1,l2) => (Math.max(l1,l2)+0.05) / (Math.min(l1,l2)+0.05);
+  const bgLum = relLuminance(bgHex);
+  const white = 1.0, dark = relLuminance('#0B2436');
+  const whiteContrast = contrast(bgLum, white);
+  const darkContrast = contrast(bgLum, dark);
+  if (whiteContrast >= 4.5 && whiteContrast >= darkContrast) return '#FFFFFF';
+  if (darkContrast >= 4.5) return '#0B2436';
+  return whiteContrast > darkContrast ? '#FFFFFF' : '#0B2436';
 }
 
 // hexLuminance() removed (2026-07-08) — was ONLY used by the invert-to-white logic this

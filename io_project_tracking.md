@@ -15278,3 +15278,83 @@ clean.
 **Still open**: the Submit button/header contrast fix (needs Claire's
 direction on which visual approach) and the two polish items not
 covered by "should fix" (leftover chevron glyph, dense legal text).
+
+## 2026-08-17 (cont'd) — Fixed the contrast finding, the real way
+
+Asked Claire which visual direction she wanted for the low-contrast
+Submit button/header text (darken the blue vs. keep the blue and darken
+the text vs. something else); she said "whatever you think will be best
+with all of the client colors" — so investigated what "all of the
+client colors" actually means here before touching anything, since the
+honest answer turned out to be more involved than either option
+proposed.
+
+**The header/primary-button color isn't fixed at all.** `applyGroupBranding()`
+(`index.html:~2537-2548`) overwrites `--accent` AND `--accent-dark` to
+each client GROUP's own admin-picked `brand_color` — every group can
+have a genuinely different header/button color, light or dark or
+anything between, set from the admin portal's color picker with no
+contrast validation at all. A single hardcoded replacement hex (either
+proposed direction) would only ever fix the ONE default blue shown
+before a real group loads; it would do nothing for the actual common
+case in production, which is a real client's own brand color.
+
+**Checked whether this project already had a pattern for this** (it
+does — good instinct, but the existing one isn't reliable enough to
+reuse as-is): Strategist's `strategistContrastTextColor()` picks white
+or dark text via a flat perceived-brightness threshold
+(`luminance > 0.6 ? dark : white`). Tested it against 8 sample colors
+including this form's own actual default blue — it fails for 2 of the
+8, including picking white for `#1C9BD7` itself (3.13:1, the exact bug
+being fixed) and for a saturated red (3.76:1). A simpler perceived-
+brightness heuristic isn't the same thing as measuring real contrast,
+and this specific blue happens to sit right where that gap matters.
+
+**Fix**: new `pickReadableTextColor(bgHex)` in `index.html`, using
+actual WCAG relative-luminance contrast math (same formula this
+session's contrast calculations have used all day) instead of a flat
+threshold — computes real contrast for both a white and a dark-ink
+candidate against the given background and returns whichever clears
+4.5:1 (or whichever is closer, as a graceful fallback, on the rare
+background where literally neither black nor white can reach it — e.g.
+a fully saturated mid-red; an inherent two-color-scheme limit, not a
+bug). New `--accent-text` CSS variable holds the live result: seeded in
+`:root` with the correct value for the default blue (`#0B2436`, 5.09:1)
+so the form is compliant even before any group loads, then kept in
+sync by `applyGroupBranding()` calling the new function every time a
+group's `brand_color` is applied. `.header-title`/`.header-title p`
+and `.btn-primary` now read `color:var(--accent-text)` instead of a
+hardcoded `#fff` — the header subtitle's old `rgba(255,255,255,.65)`
+fade is gone too (it was independently making an already-borderline
+color actively fail, ~2.1:1); visual hierarchy between the title and
+subtitle now comes from the existing size/weight difference instead.
+`.btn-success` (the Submit button specifically) needed a different,
+simpler fix — it's a fixed green, `#10B981` (~2.5:1, actually the worst
+of the three original findings), completely independent of any group's
+branding — just darkened directly to `#0B815A` (4.88:1) with a new
+hover state, no dynamic logic needed.
+
+**Verified**: computed exact contrast ratios by hand (Python, WCAG
+formula) for the original failing combinations before touching
+anything — confirmed white-on-`#1C9BD7` at 3.13:1, the header
+subtitle's faded white at 2.14:1, and `.btn-success` at 2.54:1, all
+below the 4.5:1 minimum. Live in a headless browser: confirmed the
+default `--accent-text` (`#0B2436`) computes to 5.09:1 against the
+unchanged default blue; ran `pickReadableTextColor()` against 10 test
+colors spanning light/dark/saturated (pastel yellow, near-black, pure
+white, saturated purple/red/pink, muted teal, gray) — 9 of 10 clear
+4.5:1, the one exception (`#EF4444`, a saturated red — neither black
+nor white alone can reach 4.5:1 against it, function picks the closer
+option at 4.23:1 rather than the worse alternative at 3.76:1) is a
+disclosed, inherent limitation rather than a silent gap. Screenshotted
+the header rendering three different simulated `brand_color` values
+(the default blue, a light pastel yellow, a dark navy) — dark text
+correctly chosen for the two light backgrounds, white correctly chosen
+for the dark one, all clearly legible. Re-ran every accessibility/
+should-fix regression test from the two entries above afterward — all
+still pass unchanged, confirming this didn't disturb anything else.
+`node --check` clean.
+
+**All should-fix findings now closed.** Remaining open items are both
+polish-tier (leftover chevron glyph on the Review page, dense legal
+text) — not requested yet.
