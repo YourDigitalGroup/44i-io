@@ -302,6 +302,7 @@ function showToast(msg, type='success') {
 // dates, every line item, and any special instructions.
 // Requires `<div id="shared-order-modal">...<div id="shared-order-modal-body">`
 // in the page (both portals have one).
+let sharedOrderModalLastFocus = null; // set on open, restored on close -- see closeOrderDetailModal()
 function renderOrderDetailModal(order) {
   const modal = document.getElementById('shared-order-modal');
   const body = document.getElementById('shared-order-modal-body');
@@ -346,8 +347,18 @@ function renderOrderDetailModal(order) {
     ${order.special_instructions ? `<div style="padding:10px 12px;background:#FFF7ED;border-left:3px solid #F59E0B;border-radius:5px"><div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Special Instructions</div><div style="font-size:12px;color:#78350F">${esc(order.special_instructions)}</div></div>` : ''}
   `;
   modal.style.display = 'flex';
+  // Focus management (2026-08-18, accessibility audit) -- this modal had no
+  // role="dialog"/focus handling at all, so a keyboard user tabbing from the page
+  // behind it could walk straight through the still-visible table underneath.
+  // Remembers what had focus so closing returns it there, and moves focus into the
+  // modal's own Close button (Escape handling lives on the modal's own onkeydown,
+  // added alongside this in the markup, since both portals share this same block).
+  sharedOrderModalLastFocus = document.activeElement;
+  document.getElementById('shared-order-modal-close')?.focus();
 }
 function closeOrderDetailModal() {
   const modal = document.getElementById('shared-order-modal');
   if (modal) modal.style.display = 'none';
+  if (sharedOrderModalLastFocus && document.body.contains(sharedOrderModalLastFocus)) sharedOrderModalLastFocus.focus();
+  sharedOrderModalLastFocus = null;
 }

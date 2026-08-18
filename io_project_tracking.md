@@ -15657,3 +15657,162 @@ in both files.
 **This closes every BLOCKING finding from the portal audit** (19 total
 across Admin/Strategist/Accounting). Should-fix and polish tiers are
 still open, pending Claire's direction on whether/when to do them.
+
+## 2026-08-18 — Portal accessibility/UX audit, should-fix fixes
+
+**Shared (all three portals).** `shared.css`'s `input:focus`/`select:
+focus`/`textarea:focus` outline used `var(--accent)` (2.98:1 on white) —
+below the 3:1 WCAG 1.4.11 minimum for a focus indicator. Changed to
+`var(--accent-dark)` (9.48:1). One fix, three portals.
+
+**Admin.** The two icon-only "✕ Remove" buttons (Intake Form question,
+Accounting-map spend tier) relied on `title` alone, which isn't a
+screen reader's accessible name — added matching `aria-label`. Added
+`alt` to the two `<img>`s that had none (group logo preview, client
+signature — the latter is real proof-of-signing content, not
+decoration). The heading-structure gap (one real `<h3>` in the whole
+6,600-line app) turned out to be better solved as a real ARIA tablist
+than as bolted-on `<h2>`s: this app already IS a tab interface (13
+sections, one panel visible at a time, switched by the top bar) — Admin
+tabs got the real `role="tablist"`/`role="tab"`/`role="tabpanel"`
+pattern, `aria-selected` wired into the existing `adminSection()`
+toggle function, and `aria-controls` linking each tab to its panel.
+Adding a parallel heading system would have just duplicated these same
+13 labels in a second, disconnected navigation structure.
+
+**Strategist.** Same fixes as Admin's icon buttons pattern doesn't
+apply here (no bare-title-only buttons), but the month-nav `‹`/`›`
+buttons got the same missing-`aria-label` fix as Accounting's identical
+control. The Monthly History table's Gross/In-Platform/Goal/Actual
+Spend/Clicks/Impressions inputs (a plain flex-row layout, not a real
+`<table>`, so no `<th>`/`<td>` association was possible) each got an
+`aria-label` naming both the column and the specific month it's for
+(e.g. "Gross budget for Aug 2026") — was previously an unlabeled
+sequence of blank number fields to a screen reader. The "This month's
+numbers" metric tile inputs got the same treatment. Two directly
+adjacent `<label>`s (the Optimize Log's own Date/"What was changed"
+add-entry fields) were also missing `for=` — fixed alongside, same bug
+class. The status-tab bar (Campaign Setup/Active/Paused/Complete) got
+the same real ARIA tablist pattern as Admin's section tabs. The
+Campaign Setup queue's own "Campaign Setup — Client / Tactic" label and
+the campaign detail panel's "Client / Tactic" label, "This month's
+numbers," "Monthly history," and "Optimize log" section labels were
+converted from `<strong>`/`<p>` to real `<h3>`/`<h4>` headings — unlike
+the tab bars, this is genuinely a document a screen-reader user would
+want to skim by heading, not a tab switcher. Verified via screenshot
+that both heading conversions (one sitting inline in a flex row next to
+an icon span, one as a flex-item sibling of an action-buttons div) have
+zero visual effect — flexbox already blockifies any child regardless of
+its own `display` value, so `<h3 style="display:inline">` renders
+identically to the `<strong>` it replaced.
+
+**Found but NOT fixed — flagging for a separate pass, not fixing
+silently**: while checking Strategist's labels, found the New
+Campaign/Bulk Import forms (lines ~466-546, "Client," "Tactic,"
+"Platform," "Status," "Setup Notes," "Flight Start/End," "Current Gross
+Budget," etc.) have the same unwired-`<label>` bug as everything already
+fixed in Admin and Accounting's own Add-a-Service form — roughly 15
+more instances, none of which the original audit agent caught for this
+file. This is a real, same-category bug, but it's meaningfully more
+scope than the should-fix item that led me to it, so it's flagged here
+rather than fixed without asking, per the "don't expand scope
+unprompted" rule — happy to do it next if wanted.
+
+**Accounting.** Month-nav buttons: same `aria-label` fix as Strategist.
+The group filter, name-select, and password field on the group filter
+bar/login modal had no accessible name (`aria-label` added to all
+three, password field's login instructions also linked via
+`aria-describedby`, matching Admin's earlier login-modal fix). Also
+swapped its `#EF4444` error text for the same `#B3261E` used everywhere
+else and added `role="alert"` — this file hadn't gotten that specific
+fix yet even though Admin and Strategist both had. The group-name
+banner row was a plain `<td colspan="8">` — changed to
+`<th scope="colgroup">` so it reads as a real section header over the
+rows beneath it, not an ordinary (and bizarrely 8-wide) data cell.
+
+**Both order-detail modal and all three login modals** got `role=
+"dialog"`/`aria-modal="true"`/`aria-labelledby` (pointing at each
+modal's own heading). The order-detail modal — shared between
+Strategist and Accounting via `shared.js`'s `renderOrderDetailModal()`/
+`closeOrderDetailModal()` — also got real focus management: opening it
+now moves focus to its own Close button, and closing it restores focus
+to whatever had it before (verified live: focus starts on a trigger
+button, moves to the modal's Close button on open, and returns to the
+original trigger on close), plus `onkeydown="if(event.key==='Escape')
+closeOrderDetailModal()"` on the modal's own container. The three login
+modals got the dialog role/label wiring only, not the same full focus-
+trap treatment — they gate the whole app before most other content
+exists to tab into, a meaningfully lower-risk case than a modal that
+opens over an already-populated table.
+
+**Verified live** in a headless browser: all `aria-label`s resolve to
+the expected accessible names; both dialog modals report `role=
+"dialog"` with a resolvable `aria-labelledby` target; the order-detail
+modal's open/close focus handoff works exactly as designed; Admin's 13
+tabs/panels are correctly `aria-controls`-linked and `aria-selected`
+toggles correctly on `adminSection()` calls; Strategist's 4 status tabs
+report the same; both heading conversions screenshot identically to
+their pre-fix layout. `node --check` clean on every inline script in
+all four HTML files plus `shared.js`.
+
+## 2026-08-18 — Strategist's New Campaign form labels, and the polish tier
+
+Closes the item flagged (not fixed) at the end of the should-fix pass,
+plus the audit's remaining 3 polish findings.
+
+**Strategist's New Campaign form (`strategistOpenImportForm()`), 9
+fields.** Client, Tactic, Platform, Status, Setup Notes, Flight Start,
+Flight End, Current Gross Budget, and the "Exact campaign title" field
+all had the same unwired `<label class="lbl">` bug already fixed
+elsewhere — wired all 9 `for=` attributes. "Client" targets the actual
+`import-client` select, not the `import-client-search` filter box above
+it — same "point at the field that actually holds the value, not
+whichever one happens to be textually first" call made for Accounting's
+identical Client/search-box pairing earlier. "What's this waiting on?"
+checkbox group isn't a single-field label — no `for` target makes
+sense for a group of independent checkboxes — so it got
+`role="group"`/`aria-labelledby` instead (pointing at the label, now
+given an `id`), the standard ARIA pattern for exactly this case.
+
+**Not done, still flagged**: the "Paste Platform Report" form (Report
+month, Platform — 2 fields) and the read-only Campaign Setup summary
+labels inside the detail panel have the same gap but weren't part of
+this specific ask ("the New Campaign form"); still open if wanted.
+
+**Polish (all 3 findings).**
+- Decorative 🔒 emoji on all three portals' login modals: added
+  `aria-hidden="true"` so it isn't announced redundantly before the
+  "Admin/Strategist/Accounting Access" heading.
+- Strategist's platform-report freshness banner had no `aria-live` —
+  added `role="status" aria-live="polite"` (the toast itself already
+  got this in the blocking pass; this is the separate persistent
+  freshness summary above it). The "·" divider between freshness
+  entries and the ▾/▸ expand-state triangle both got `aria-hidden=
+  "true"` — the state itself is still conveyed via `aria-expanded` on
+  the actual toggle control, so hiding the glyph loses nothing.
+- Accounting's dead `.warn` CSS class (defined, never applied since
+  every `stat()` call passes an empty class): **left alone, not
+  guessed at** — wiring it up would mean inventing what "this number
+  looks concerning" should mean (a spend threshold? a specific negative
+  value? something else?), which is a business-logic call for Claire,
+  not something to decide unprompted. Flagging it here as a parked
+  decision rather than fixing it silently, same reasoning as every
+  other business-logic ambiguity in this doc.
+- Accounting's near-edge no-brand-color fallback contrast (previously
+  4.55:1, one shade from failing): turned out to already be fixed as a
+  side effect of the should-fix pass's `accountingContrastTextColor()`
+  rewrite — recomputed it against the CURRENT function and it now picks
+  dark text at 13.19:1, comfortably clear of the edge. No code change
+  needed; confirmed by direct calculation, not assumed.
+
+**Verified live**: all 9 New Campaign form labels resolve via
+`.control`; the checkbox group's `role="group"`/`aria-labelledby`
+target exists and matches; the lock emoji's `aria-hidden` and the
+freshness banner's `role`/`aria-live` both confirmed present in the
+DOM. `node --check` clean on all three portal files.
+
+**This closes every finding from the portal accessibility/UX audit**
+except the two explicitly-parked items above (the dead `.warn` class,
+business-logic call for Claire; and the New Campaign form's sibling
+Paste Platform Report/read-only summary labels, out of this specific
+ask's scope but flagged as still open).
