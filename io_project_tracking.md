@@ -15910,3 +15910,30 @@ with no way to ever show anything else again.
 
 Removed the row. Start/End stay, since they're still real, meaningful
 data. `node --check` clean.
+
+## 2026-08-18 — Order Detail's Services table: section dividers + per-service dates
+
+Two related asks: group the Services table by catalog section like the
+Services (Catalog) and Suggested Map tabs already do (divider row per
+section, same `orderedSectionIds`/`sectionLabel()` pattern, same visual
+style), and show each service's OWN start/end dates instead of no
+per-service date visibility at all.
+
+The data was already there and unused — `line_items` already carries
+`section` (used elsewhere, just not for grouping here) and `start_date`/
+`end_date` per item (stored per-tactic since the 2026-08-06 migration,
+same fields `create_campaign_lines_from_order` already reads to seed
+each campaign line's own flight dates). This was purely a display gap,
+not a data gap: grouped `li` by `item.section`, ordered by the same
+live `SECTIONS.sort_order` the Catalog tab uses, inserted the identical
+divider row markup, and added Start/End columns reading `item.start_date`/
+`item.end_date` (falling back to the order-wide `campaign_start`/
+`campaign_end` only for pre-migration orders that never got per-line
+dates written).
+
+**Verified live**: rendered a two-section, two-service fake order
+(Website Monthly 5-Page in "Website," SEM Business Pro in "SEM," each
+with distinct start/end dates) and confirmed via the actual rendered
+table text that both section headers appear in the right order and each
+service line shows its own correct dates, not the order-wide ones.
+`node --check` clean.
