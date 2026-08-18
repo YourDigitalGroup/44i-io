@@ -574,6 +574,14 @@ select.qty-field{background-image:none;padding-right:3px}
 .modal-field input,.modal-field textarea,.modal-field select{width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit}
 .modal-field textarea{min-height:60px;resize:vertical}
 .modal-field.required label::after{content:' *';color:#EF4444}
+/* One shared required-field marker (2026-08-17, per the accessibility/UX audit)
+   for labels outside the intake-modal system above -- KOC Date/Time used to
+   hardcode their own inline "<span style=color:#EF4444>*</span>", and Step 1's
+   actually-required fields (AE name, business name, email, city) had no marker
+   at all, so a field looked exactly as optional as Phone or Website URL until
+   the user tried to leave and got a red-border surprise. Same red, same "* "
+   suffix as the mechanism above -- just usable directly on any label. */
+.lbl-required::after{content:' *';color:#EF4444}
 .radio-group{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}
 .radio-group label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;font-weight:400;text-transform:none;letter-spacing:0}
 .radio-group input{width:14px;height:14px}
@@ -605,7 +613,7 @@ select.qty-field{background-image:none;padding-right:3px}
 </head>
 <body>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <div class="wrap">
   <div class="header" id="header" style="background:#94A3B8">
@@ -653,7 +661,7 @@ select.qty-field{background-image:none;padding-right:3px}
             </select>
           </div>
           <div>
-            <label class="lbl" for="ae-name">Digital Account Executive</label>
+            <label class="lbl lbl-required" for="ae-name">Digital Account Executive</label>
             <input type="text" id="ae-name" placeholder="AE full name"/>
             <p id="ae-name-locked-hint" style="display:none;margin-top:6px;font-size:11px;color:var(--muted)">🔒 Locked — switch back to "— New AE —" above to enter a different name.</p>
           </div>
@@ -688,7 +696,7 @@ select.qty-field{background-image:none;padding-right:3px}
       </div>
       <div class="field-group">
         <div>
-          <label class="lbl" for="biz-name">Business Name</label>
+          <label class="lbl lbl-required" for="biz-name">Business Name</label>
           <input type="text" id="biz-name" placeholder="Client business name" oninput="onBizNameEdited()"/>
           <p id="biz-name-locked-hint" style="display:none;margin-top:6px;font-size:11px;color:var(--muted)">🔒 Locked — editing an existing client's name here risks creating a duplicate client/Trello list instead of updating this one. Switch back to "— New Client —" above to use a different name, or correct this client's name in the admin portal's Client Profiles editor.</p>
           <div id="biz-name-match-warning" style="display:none;margin-top:6px;padding:8px 10px;border-radius:8px;background:#FFF7ED;border:1px solid #FED7AA;font-size:13px;color:#9A3412"></div>
@@ -706,7 +714,7 @@ select.qty-field{background-image:none;padding-right:3px}
       </div>
       <div class="field-group cols2">
         <div>
-          <label class="lbl" for="contact-email">Email</label>
+          <label class="lbl lbl-required" for="contact-email">Email</label>
           <input type="email" id="contact-email" placeholder="client@email.com"/>
         </div>
         <div>
@@ -716,7 +724,7 @@ select.qty-field{background-image:none;padding-right:3px}
       </div>
       <div class="field-group cols2">
         <div>
-          <label class="lbl" for="city">City / Service Area</label>
+          <label class="lbl lbl-required" for="city">City / Service Area</label>
           <input type="text" id="city" placeholder="City, State"/>
         </div>
         <div>
@@ -829,11 +837,11 @@ select.qty-field{background-image:none;padding-right:3px}
           <p id="koc-lock-msg" style="font-size:11px;color:#92400E;margin-bottom:12px">⬆ Open the calendar above first to unlock these fields</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div>
-              <label class="lbl" for="koc-date">KOC Date <span style="color:#EF4444">*</span></label>
+              <label class="lbl lbl-required" for="koc-date">KOC Date</label>
               <input type="date" id="koc-date" disabled/>
             </div>
             <div>
-              <label class="lbl" for="koc-time">KOC Time <span style="color:#EF4444">*</span></label>
+              <label class="lbl lbl-required" for="koc-time">KOC Time</label>
               <select id="koc-time" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px">
                 <option value="">Select time...</option>
                 <option value="7:00 AM">7:00 AM</option><option value="7:30 AM">7:30 AM</option>
@@ -2643,7 +2651,7 @@ function flightDisplayFor(id, data, fmt) {
 
 function updateTacticDate(input, id, which) {
   const iso = input.value || null;
-  input.classList.remove('spend-missing');
+  markFieldMissing(input, false);
   if (selected[id]) selected[id][which] = iso;
   if (iso) autoCheckIfNeeded(id);
   checkServiceDateOverlap(id);
@@ -2786,7 +2794,7 @@ function toggle(cb, id) {
     const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
     if (spendInput) {
       spendInput.value = '';
-      spendInput.classList.remove('spend-missing');
+      markFieldMissing(spendInput, false);
       const warn = row.querySelector('.spend-min-warn');
       if (warn) warn.remove();
     }
@@ -2852,7 +2860,7 @@ function updateSpend(input, id) {
   autoCheckIfNeeded(id);
   if (selected[id]) selected[id].spend = parseFloat(input.value) || 0;
   // Clear the required highlight once a value is entered
-  if (parseFloat(input.value) > 0) input.classList.remove('spend-missing');
+  if (parseFloat(input.value) > 0) markFieldMissing(input, false);
   // Show below-minimum warning inline
   const min = SPEND_MINIMUMS[id];
   const val = parseFloat(input.value) || 0;
@@ -3204,7 +3212,7 @@ function validateStep1() {
     const el = document.getElementById(id);
     const val = (el?.value || '').trim();
     const bad = !val || (id === 'contact-email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val));
-    el?.classList.toggle('spend-missing', bad);
+    markFieldMissing(el, bad);
     if (bad) {
       missingLabels.push(label);
       if (!firstMissing) firstMissing = el;
@@ -3285,7 +3293,7 @@ function goStep(n) {
       return CATALOG_ROWS[id]?.enforce_spend_minimum && d.spend < min;
     });
     // Clear previous highlights
-    document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
+    document.querySelectorAll('.spend-missing').forEach(el => markFieldMissing(el, false));
     if (spendProblems.length > 0) {
       // Highlight each problem spend input and open its section
       spendProblems.forEach(([id, d]) => {
@@ -3293,7 +3301,7 @@ function goStep(n) {
         if (!row) return;
         const input = row.querySelector('input[type=number]');
         if (input) {
-          input.classList.add('spend-missing');
+          markFieldMissing(input, true);
           input.placeholder = d.spend
             ? `$${SPEND_MINIMUMS[id].toLocaleString()} min required`
             : '$ required';
@@ -3305,24 +3313,33 @@ function goStep(n) {
       // Scroll to the first one
       const firstMissing = document.querySelector('.spend-missing');
       if (firstMissing) firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
+      // FIXED (2026-08-17, per the accessibility/UX audit -- Claire: "fix the
+      // should-fix ones too"): this branch used to block navigation with zero
+      // message at all, unlike every other validation path on the form -- a user
+      // who didn't spot the thin red border had no idea why "Next" did nothing.
+      const spendLabels = spendProblems.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
+      showToast('Please enter the required ad spend for: ' + spendLabels, 'error');
       return; // Block navigation
     }
     // Every selected tactic needs its own Start Date now (2026-08-06 — replaces the old
     // single Step-1-wide required date). Sync first so selected[id].start_date reflects
     // whatever's currently typed, then block on any selected row still missing one.
     syncRowInputs();
-    document.querySelectorAll('.svc-start-cell input.spend-missing').forEach(el => el.classList.remove('spend-missing'));
+    document.querySelectorAll('.svc-start-cell input.spend-missing').forEach(el => markFieldMissing(el, false));
     const missingDates = Object.entries(selected).filter(([id, d]) => !d.start_date);
     if (missingDates.length > 0) {
       missingDates.forEach(([id]) => {
         const startInput = document.getElementById('svc-start-' + id);
-        if (startInput) startInput.classList.add('spend-missing');
+        markFieldMissing(startInput, true);
         const row = document.querySelector(`tr[data-id="${id}"]`);
         const section = row?.closest('.card-body');
         if (section) section.style.display = 'block';
       });
       const firstMissing = document.querySelector('.svc-start-cell input.spend-missing');
       if (firstMissing) firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
+      // Same fix as the spend-problems branch above -- was a silent block.
+      const dateLabels = missingDates.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
+      showToast('Please enter a start date for: ' + dateLabels, 'error');
       return; // Block navigation
     }
     buildReview();
@@ -5832,7 +5849,7 @@ function resetForm() {
   // block used to also clear).
   const kocTimeSel = document.getElementById('koc-time');
   if (kocTimeSel) kocTimeSel.value = '';
-  document.querySelectorAll('.spend-missing').forEach(el => el.classList.remove('spend-missing'));
+  document.querySelectorAll('.spend-missing').forEach(el => markFieldMissing(el, false));
   // Re-default today's dates (wiped above)
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('auth-date').value = new Date().toISOString().slice(0,10);
@@ -5868,6 +5885,17 @@ function resetForm() {
 }
 
 // ── TOAST ─────────────────────────────────────────────────────
+// Keeps aria-invalid in sync with the .spend-missing red-border state (2026-08-17)
+// -- that state was purely visual before this, so a screen-reader user landed on a
+// flagged field with no indication anything was wrong with it. One shared helper
+// instead of pairing setAttribute calls at every one of this class's ~10 toggle
+// sites, so a future one can't be added without it.
+function markFieldMissing(el, bad) {
+  if (!el) return;
+  el.classList.toggle('spend-missing', bad);
+  el.setAttribute('aria-invalid', bad ? 'true' : 'false');
+}
+
 function showToast(msg, type='success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -6167,15 +6195,23 @@ function generateCatalogRowHtml(r, hasSpendCol) {
       <td class="svc-start-cell"><input type="date" id="svc-start-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','start_date')"/></td>
       <td class="svc-end-cell"><input type="date" id="svc-end-${esc(r.id)}" oninput="updateTacticDate(this,'${esc(r.id)}','end_date')"/></td>`;
   }
-  // aria-labelledby (2026-08-17) -- the checkbox and the service name are separate
-  // <td>s, not a <label>/<input> pair, so a screen reader announced every single
-  // service on the form as an unnamed "checkbox, not checked" with no way to tell
-  // one tactic from another. Pointing the checkbox at the label cell's own id fixes
-  // that without changing the table's actual layout/columns.
+  // Checkbox <-> label association (2026-08-17). Originally fixed with just
+  // aria-labelledby (the checkbox and service name are separate <td>s, so a screen
+  // reader announced every service as an unnamed "checkbox, not checked") -- upgraded
+  // to a real <label for> here as part of the should-fix pass, since that also
+  // solves the mobile tap-target problem the same audit flagged separately: the
+  // checkbox alone was ~22px on mobile, under the usual 44px touch-target
+  // recommendation, and tapping the service name next to it did nothing. A <label>
+  // makes the whole name tappable/clickable to toggle the box, same as the intake-
+  // modal's own radio/checkbox options already did it. Doesn't change the table's
+  // actual layout/columns -- still two <td>s, one now just contains a <label>.
+  // updateIntakeRowLinks()'s row-intake-link button gets appended as this label's
+  // SIBLING inside the same <td>, never nested inside it, so clicking that link
+  // can't also toggle the checkbox.
   return `
     <tr data-id="${esc(r.id)}">
-      <td><input type="checkbox" onchange="${onchange}" aria-labelledby="svc-label-${esc(r.id)}"/></td>
-      <td id="svc-label-${esc(r.id)}">${esc(r.label)}</td>
+      <td><input type="checkbox" id="svc-chk-${esc(r.id)}" onchange="${onchange}"/></td>
+      <td><label for="svc-chk-${esc(r.id)}" id="svc-label-${esc(r.id)}">${esc(r.label)}</label></td>
       ${spendCell}
       ${dateCells}
       <td><textarea class="notes-field" placeholder="Notes..." rows="1" oninput="autoGrowNotesField(this)"></textarea></td>
@@ -6299,9 +6335,16 @@ function renderPriceCells() {
     // (so wording can't drift from the actual calculation), falling back to the manual
     // fee_note field for any other kind of caveat.
     const noteText = getFeeNoteText(r);
+    // <label for> (2026-08-17) -- this rewrite used to drop the checkbox<->name
+    // association generateCatalogRowHtml() sets up (it runs once, right after that
+    // initial render, specifically to refresh the label text live from the catalog --
+    // see the comment above), silently reverting every row back to a plain unlabeled
+    // <td> the moment the page loaded. The note stays outside the <label> (a sibling),
+    // consistent with how the row-intake-link button already sits outside it too.
+    const labelHtml = `<label for="svc-chk-${esc(r.id)}" id="svc-label-${esc(r.id)}">${esc(r.label)}</label>`;
     serviceTd.innerHTML = noteText
-      ? `${esc(r.label)}<div class="minimum-note">${esc(noteText)}</div>`
-      : esc(r.label);
+      ? `${labelHtml}<div class="minimum-note">${esc(noteText)}</div>`
+      : labelHtml;
 
     const { fee, freq } = priceAndFrequency(r);
 
