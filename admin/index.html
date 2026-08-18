@@ -24,10 +24,12 @@
   .svc-form-group summary{padding:11px 14px;font-size:12.5px;font-weight:700;color:var(--accent-dark);cursor:pointer;list-style:none;user-select:none;transition:background .15s,color .15s}
   .svc-form-group summary::-webkit-details-marker{display:none}
   .svc-form-group summary::before{content:'▸';display:inline-block;width:14px;color:var(--muted);transition:transform .15s}
-  .svc-form-group[open] summary::before{transform:rotate(90deg);color:#fff}
+  .svc-form-group[open] summary::before{transform:rotate(90deg);color:#0B2436}
   .svc-form-group > div:not(summary){padding:14px 14px 2px}
   .svc-form-group summary:first-child{border-bottom:1px solid transparent}
-  .svc-form-group[open] summary{background:var(--brand-color-primary);color:#fff;border-bottom:none}
+  /* color:#0B2436, not #fff (2026-08-18, accessibility audit) -- white on this fixed
+     brand blue measures 2.98:1, failing WCAG AA; this dark ink measures 5.34:1. */
+  .svc-form-group[open] summary{background:var(--brand-color-primary);color:#0B2436;border-bottom:none}
   .svc-form-group[open] > div:not(summary){background:var(--light)}
 
   /* Sticky table headers (2026-08-13), per Claire: "freeze the headers like we did
@@ -91,7 +93,7 @@
 </head>
 <body>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <!-- ADMIN PANEL -->
 <div id="page-admin" style="display:none">
@@ -157,14 +159,14 @@
           <!-- TAB: Group Info -->
           <div id="tab-info">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-              <div><label class="lbl">Group Name</label><input type="text" id="admin-name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px" oninput="autoSlug(this.value)"/></div>
+              <div><label class="lbl" for="admin-name">Group Name</label><input type="text" id="admin-name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px" oninput="autoSlug(this.value)"/></div>
               <div>
-                <label class="lbl">IO Slug <span style="font-weight:400;text-transform:none;letter-spacing:0">— auto-generated, override if needed</span></label>
+                <label class="lbl" for="admin-slug">IO Slug <span style="font-weight:400;text-transform:none;letter-spacing:0">— auto-generated, override if needed</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
                   <input type="text" id="admin-slug" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';const sp=document.getElementById('slug-preview');if(sp)sp.textContent=this.value||'...';checkGroupSlugCollision()"/>
                   <button type="button" onclick="regenerateSlug()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
                 </div>
-                <p style="font-size:10px;color:var(--muted);margin-top:4px">URL: io.yourdigitalgroupresources.com/<span id="slug-preview" style="color:var(--accent);font-weight:600">...</span></p>
+                <p style="font-size:10px;color:var(--muted);margin-top:4px">URL: io.yourdigitalgroupresources.com/<span id="slug-preview" style="color:var(--accent-dark);font-weight:600">...</span></p>
                 <p id="admin-slug-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ Another group already uses this slug — its link would stop working. Please choose a different one.</p>
               </div>
             </div>
@@ -180,7 +182,7 @@
                    pickers — an AM has to have a Users record to log into the admin
                    portal at all, so there's no realistic "not in the list yet" case
                    the way there is for AEs/clients. -->
-              <label class="lbl">Account Manager</label>
+              <label class="lbl" for="admin-am-picker">Account Manager</label>
               <select id="admin-am-picker" onchange="applyAmPick(this.value)" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                 <option value="">— Select AM —</option>
               </select>
@@ -203,27 +205,27 @@
                  since those people have no login of their own. -->
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Digital Strategist <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— default for every client in this group</span></label>
+                <label class="lbl" for="admin-group-digital-strategist">Digital Strategist <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— default for every client in this group</span></label>
                 <select id="admin-group-digital-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">— None —</option>
                 </select>
               </div>
               <div>
-                <label class="lbl">Social Strategist</label>
+                <label class="lbl" for="admin-group-social-strategist">Social Strategist</label>
                 <select id="admin-group-social-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
               </div>
               <div>
-                <label class="lbl">Web Strategist</label>
+                <label class="lbl" for="admin-group-web-strategist">Web Strategist</label>
                 <select id="admin-group-web-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-              <div><label class="lbl">Brand Color (Primary)</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="admin-color" value="#1C9BD7" style="width:48px;height:38px;padding:2px;border-radius:7px;border:1px solid var(--border);cursor:pointer"/><input type="text" id="admin-color-hex" placeholder="#1C9BD7" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="document.getElementById('admin-color').value=this.value"/></div></div>
-              <div><label class="lbl">Brand Color 2 <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— secondary/background</span></label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="admin-color2" value="#1C9BD7" style="width:48px;height:38px;padding:2px;border-radius:7px;border:1px solid var(--border);cursor:pointer"/><input type="text" id="admin-color2-hex" placeholder="#1C9BD7" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="document.getElementById('admin-color2').value=this.value"/></div></div>
+              <div><label class="lbl" for="admin-color">Brand Color (Primary)</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="admin-color" value="#1C9BD7" style="width:48px;height:38px;padding:2px;border-radius:7px;border:1px solid var(--border);cursor:pointer"/><input type="text" id="admin-color-hex" placeholder="#1C9BD7" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="document.getElementById('admin-color').value=this.value"/></div></div>
+              <div><label class="lbl" for="admin-color2">Brand Color 2 <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— secondary/background</span></label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="admin-color2" value="#1C9BD7" style="width:48px;height:38px;padding:2px;border-radius:7px;border:1px solid var(--border);cursor:pointer"/><input type="text" id="admin-color2-hex" placeholder="#1C9BD7" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="document.getElementById('admin-color2').value=this.value"/></div></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Logo <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— PNG, JPG, SVG, or GIF, up to 2MB</span></label>
+                <label class="lbl" for="admin-logo-file">Logo <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— PNG, JPG, SVG, or GIF, up to 2MB</span></label>
                 <input type="hidden" id="admin-logo"/>
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
                   <div id="admin-logo-preview-wrap" style="display:none;width:44px;height:44px;border-radius:8px;border:1px solid var(--border);background:#FAFCFE;align-items:center;justify-content:center;flex:none;overflow:hidden">
@@ -237,18 +239,18 @@
                 </div>
                 <label style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer">
                   <input type="checkbox" id="admin-logo-dark-bg" style="cursor:pointer"/>
-                  Logo needs a dark background <span style="color:var(--muted);opacity:.8">— for white/light lettering</span>
+                  Logo needs a dark background <span style="color:var(--muted)">— for white/light lettering</span>
                 </label>
               </div>
-              <div><label class="lbl">Trello Board ID</label><input type="text" id="admin-trello" placeholder="Board ID" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
+              <div><label class="lbl" for="admin-trello">Trello Board ID</label><input type="text" id="admin-trello" placeholder="Board ID" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">IO Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, notified on every submission</span></label>
+                <label class="lbl" for="admin-io-recipient">IO Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, notified on every submission</span></label>
                 <textarea id="admin-io-recipient" rows="2" placeholder="email1@group.com, email2@group.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;resize:vertical"></textarea>
               </div>
               <div>
-                <label class="lbl">Has KOC <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— enables kick-off call scheduling</span></label>
+                <label class="lbl" for="admin-has-koc">Has KOC <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— enables kick-off call scheduling</span></label>
                 <select id="admin-has-koc" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px">
                   <option value="true">Yes — KOC required for applicable products</option>
                   <option value="false">No — skip KOC for all products</option>
@@ -291,17 +293,17 @@
           <!-- Filters -->
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;margin-bottom:14px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
             <div>
-              <label class="lbl">Group</label>
+              <label class="lbl" for="orders-filter-group">Group</label>
               <select id="orders-filter-group" onchange="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-family:inherit;background:#fff">
                 <option value="">All groups</option>
               </select>
             </div>
             <div>
-              <label class="lbl">Search</label>
+              <label class="lbl" for="orders-filter-search">Search</label>
               <input type="text" id="orders-filter-search" placeholder="Client, AE, or business name..." oninput="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
             </div>
             <div>
-              <label class="lbl">Date Range</label>
+              <label class="lbl" for="orders-filter-date">Date Range</label>
               <select id="orders-filter-date" onchange="renderAdminOrders()" style="width:100%;padding:7px 9px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-family:inherit;background:#fff">
                 <option value="all">All time</option>
                 <option value="7">Last 7 days</option>
@@ -362,7 +364,7 @@
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Import Clients from Trello</p>
           <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">
             <div>
-              <label class="lbl">Group</label>
+              <label class="lbl" for="client-import-group">Group</label>
               <select id="client-import-group" style="padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff;min-width:220px"></select>
             </div>
             <button onclick="scanClientImportCandidates()" style="padding:9px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Scan Board</button>
@@ -378,62 +380,62 @@
           <input type="hidden" id="admin-client-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Client / Business Name</label>
+              <label class="lbl" for="admin-client-name">Client / Business Name</label>
               <input type="text" id="admin-client-name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Group</label>
+              <label class="lbl" for="admin-client-group">Group</label>
               <select id="admin-client-group" onchange="refreshClientStrategistDefaults()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Contact Name</label>
+              <label class="lbl" for="admin-client-contact-name">Contact Name</label>
               <input type="text" id="admin-client-contact-name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Contact Email</label>
+              <label class="lbl" for="admin-client-contact-email">Contact Email</label>
               <input type="email" id="admin-client-contact-email" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Contact Phone</label>
+              <label class="lbl" for="admin-client-contact-phone">Contact Phone</label>
               <input type="text" id="admin-client-contact-phone" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Website URL</label>
+              <label class="lbl" for="admin-client-website">Website URL</label>
               <input type="text" id="admin-client-website" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">City <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— City, State</span></label>
+              <label class="lbl" for="admin-client-city">City <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— City, State</span></label>
               <input type="text" id="admin-client-city" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Business Type</label>
+              <label class="lbl" for="admin-client-biztype">Business Type</label>
               <input type="text" id="admin-client-biztype" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Digital Strategist Override</label>
+              <label class="lbl" for="admin-client-digital-strategist">Digital Strategist Override</label>
               <select id="admin-client-digital-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
             <div>
-              <label class="lbl">Social Strategist Override</label>
+              <label class="lbl" for="admin-client-social-strategist">Social Strategist Override</label>
               <select id="admin-client-social-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
             <div>
-              <label class="lbl">Web Strategist Override</label>
+              <label class="lbl" for="admin-client-web-strategist">Web Strategist Override</label>
               <select id="admin-client-web-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
           </div>
           <p style="font-size:10px;color:var(--muted);margin-top:-6px;margin-bottom:16px">Every client inherits their group's strategist assignments by default (set on the Group editor) — only pick something here if THIS client specifically needs a different person. Whichever strategist ends up assigned (group default or this override) gets tagged on this client's Trello tactic cards, alongside the AM/AE, for any service carrying a matching Strategist Discipline.</p>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
             <div>
-              <label class="lbl">Trello List ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— manual override; leave as-is unless you know what you're changing</span></label>
+              <label class="lbl" for="admin-client-trello-list-id">Trello List ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— manual override; leave as-is unless you know what you're changing</span></label>
               <input type="text" id="admin-client-trello-list-id" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
             </div>
           </div>
@@ -506,7 +508,7 @@
             <summary>Basics</summary>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Section + Label, override if needed. Cannot be changed after creation.</span></label>
+                <label class="lbl" for="admin-svc-id">Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Section + Label, override if needed. Cannot be changed after creation.</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
                   <input type="text" id="admin-svc-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkServiceIdCollision()"/>
                   <button type="button" onclick="regenerateServiceId()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
@@ -514,33 +516,33 @@
                 <p id="admin-svc-id-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ A service with this ID already exists — please choose a different one.</p>
               </div>
               <div>
-                <label class="lbl">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown to AEs on the form</span></label>
+                <label class="lbl" for="admin-svc-label">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown to AEs on the form</span></label>
                 <input type="text" id="admin-svc-label" placeholder="e.g. Business Pro" oninput="autoServiceId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
             <div style="margin-bottom:12px">
-              <label class="lbl">Accounting Map Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; internal-only, shown in the Accounting Map AND as the tactic name in the Strategist Portal. Leave blank to just use Label above. Never shown to clients/AEs.</span></label>
+              <label class="lbl" for="admin-svc-accounting-label">Accounting Map Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; internal-only, shown in the Accounting Map AND as the tactic name in the Strategist Portal. Leave blank to just use Label above. Never shown to clients/AEs.</span></label>
               <input type="text" id="admin-svc-accounting-label" placeholder="e.g. Targeted Display — Geo-Targeting (w/ Visits, combined CPM)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div style="margin-bottom:12px">
-              <label class="lbl">Tactic Options <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; only for services that are actually 2-3 different tactics under one price/catalog row. If set, strategists pick one from this exact list during Campaign Setup instead of seeing the combined label above. Leave blank for every other service.</span></label>
+              <label class="lbl" for="admin-svc-tactic-variants">Tactic Options <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional; only for services that are actually 2-3 different tactics under one price/catalog row. If set, strategists pick one from this exact list during Campaign Setup instead of seeing the combined label above. Leave blank for every other service.</span></label>
               <input type="text" id="admin-svc-tactic-variants" placeholder="e.g. Geofencing, Addressable: 1st Party" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               <p style="font-size:10px;color:var(--muted);margin-top:4px">Comma-separated. This is the exact wording strategists will choose from — no free typing on their end.</p>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Section</label>
+                <label class="lbl" for="admin-svc-section">Section</label>
                 <select id="admin-svc-section" onchange="onServiceSectionChange()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <p id="admin-svc-section-note" style="font-size:10px;color:var(--muted);margin-top:4px"></p>
               </div>
               <div>
-                <label class="lbl">Sort Order <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— controls row order within the section</span></label>
+                <label class="lbl" for="admin-svc-sort">Sort Order <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— controls row order within the section</span></label>
                 <input type="number" id="admin-svc-sort" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:4px">
               <div>
-                <label class="lbl">Pricing Mode</label>
+                <label class="lbl" for="admin-svc-pricing-mode">Pricing Mode</label>
                 <select id="admin-svc-pricing-mode" onchange="onPricingModeChange(true)" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="flat">Flat fee</option>
                   <option value="per_unit">Per-unit (needs a quantity)</option>
@@ -549,11 +551,11 @@
                 </select>
               </div>
               <div>
-                <label class="lbl">Default Price <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— blank = QUR (quote required)</span></label>
+                <label class="lbl" for="admin-svc-price">Default Price <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— blank = QUR (quote required)</span></label>
                 <input type="number" step="0.01" id="admin-svc-price" placeholder="e.g. 175" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
               <div>
-                <label class="lbl">Billing Type</label>
+                <label class="lbl" for="admin-svc-billing">Billing Type</label>
                 <select id="admin-svc-billing" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="one_time">One-Time</option>
                   <option value="monthly">Monthly</option>
@@ -568,7 +570,7 @@
             <summary>Pricing Details</summary>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div id="admin-svc-unit-wrap">
-                <label class="lbl">Unit <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only used if Pricing Mode is Per-unit</span></label>
+                <label class="lbl" for="admin-svc-unit">Unit <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only used if Pricing Mode is Per-unit</span></label>
                 <select id="admin-svc-unit" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">—</option>
                   <option value="hour">hour (shows as "Per Hour")</option>
@@ -577,11 +579,11 @@
                 </select>
               </div>
               <div id="admin-svc-modifier-wrap">
-                <label class="lbl">Modifier Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Modifier</span></label>
+                <label class="lbl" for="admin-svc-modifier">Modifier Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only if Pricing Mode is Modifier</span></label>
                 <input type="number" step="0.01" id="admin-svc-modifier" placeholder="e.g. 2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
               <div id="admin-svc-cpm-wrap">
-                <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— required if Pricing Mode is Spend; optional override for a CPM-adjustment Modifier (leave blank to auto-compute from the tactic it combines with)</span></label>
+                <label class="lbl" for="admin-svc-cpm">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— required if Pricing Mode is Spend; optional override for a CPM-adjustment Modifier (leave blank to auto-compute from the tactic it combines with)</span></label>
                 <input type="number" step="0.01" id="admin-svc-cpm" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
@@ -598,19 +600,19 @@
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Exclusivity Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— services in the same group become single-select (checking one unchecks the others), like the Business Starter/Builder/Pro tiers</span></label>
+                <label class="lbl" for="admin-svc-exclusivity">Exclusivity Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— services in the same group become single-select (checking one unchecks the others), like the Business Starter/Builder/Pro tiers</span></label>
                 <select id="admin-svc-exclusivity" onchange="onExclusivityGroupChange()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-exclusivity-new" placeholder="e.g. new-service-tier" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'')"/>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a broken duplicate tier. New group names auto-suggest as "<em>section</em>-tier" (e.g. seo-tier, sm-tier, em-tier) — the established convention.</p>
               </div>
               <div id="admin-svc-spendmin-wrap">
-                <label class="lbl">Spend Minimum <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Spend-based services; shows a soft reminder if entered spend is below this</span></label>
+                <label class="lbl" for="admin-svc-spend-min">Spend Minimum <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Spend-based services; shows a soft reminder if entered spend is below this</span></label>
                 <input type="number" step="1" id="admin-svc-spend-min" placeholder="e.g. 1000" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px">
               <div>
-                <label class="lbl">Tier Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only for services that are one option within a tiered package group (Exclusivity Group above). Used to classify which package tier a client selected. Leave blank for anything not part of a tier group.</span></label>
+                <label class="lbl" for="admin-svc-tier">Tier Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only for services that are one option within a tiered package group (Exclusivity Group above). Used to classify which package tier a client selected. Leave blank for anything not part of a tier group.</span></label>
                 <select id="admin-svc-tier" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">None</option>
                   <option value="starter">Starter</option>
@@ -619,7 +621,7 @@
                 </select>
               </div>
               <div>
-                <label class="lbl">Pricing Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— controls how this service is grouped/labeled on the Custom Pricing screen. Leave "None" for the normal case (uses its Section's own name).</span></label>
+                <label class="lbl" for="admin-svc-pricing-group">Pricing Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— controls how this service is grouped/labeled on the Custom Pricing screen. Leave "None" for the normal case (uses its Section's own name).</span></label>
                 <select id="admin-svc-pricing-group" onchange="onPricingGroupChange()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-pricing-group-new" placeholder="e.g. Visitor IDs" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
@@ -630,7 +632,7 @@
             <summary>Behavior &amp; Workflow</summary>
             <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Subsection <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Video/Streaming TV/Audio, which each have several mini-tables under one section (e.g. "YouTube Video", "Native Video"). Leave "None" for every other section.</span></label>
+                <label class="lbl" for="admin-svc-subsection">Subsection <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for Video/Streaming TV/Audio, which each have several mini-tables under one section (e.g. "YouTube Video", "Native Video"). Leave "None" for every other section.</span></label>
                 <select id="admin-svc-subsection" onchange="onSubsectionChange()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-subsection-new" placeholder="e.g. New Sub-Table Name" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently creating a new, disconnected mini-table instead of joining the intended one. Options are scoped to the currently-selected Section.</p>
@@ -638,7 +640,7 @@
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Hosting Prompt <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only the 4 Website site-tier services use this; it pops the hosting-setup modal when checked. Leave "None" for everything else.</span></label>
+                <label class="lbl" for="admin-svc-hosting-prompt">Hosting Prompt <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only the 4 Website site-tier services use this; it pops the hosting-setup modal when checked. Leave "None" for everything else.</span></label>
                 <select id="admin-svc-hosting-prompt" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">None</option>
                   <option value="1p">1-page (Business Starter)</option>
@@ -648,30 +650,30 @@
                 </select>
               </div>
               <div>
-                <label class="lbl">Standalone Hosting Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only for site-tier packages with a Hosting Prompt. The standalone hosting item this package's "we host it" choice would otherwise double-charge for. Leave blank for everything else.</span></label>
+                <label class="lbl" for="admin-svc-standalone-hosting">Standalone Hosting Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only for site-tier packages with a Hosting Prompt. The standalone hosting item this package's "we host it" choice would otherwise double-charge for. Leave blank for everything else.</span></label>
                 <input type="text" id="admin-svc-standalone-hosting" placeholder="e.g. w-hosting" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
               </div>
               <div>
-                <label class="lbl">Auto-Select Companion Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— checking THIS service also auto-checks the service with this ID (e.g. a Visitor ID tier auto-checking "Visitor IDs Setup Fee"). Still a normal, overridable checkbox — not a hard lock. Leave blank for everything else.</span></label>
+                <label class="lbl" for="admin-svc-auto-select">Auto-Select Companion Service ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— checking THIS service also auto-checks the service with this ID (e.g. a Visitor ID tier auto-checking "Visitor IDs Setup Fee"). Still a normal, overridable checkbox — not a hard lock. Leave blank for everything else.</span></label>
                 <input type="text" id="admin-svc-auto-select" placeholder="e.g. w-vid-setup" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">KOC Requirement</label>
+                <label class="lbl" for="admin-svc-koc">KOC Requirement</label>
                 <select id="admin-svc-koc" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="none">None</option>
                   <option value="required">Required</option>
                 </select>
               </div>
               <div>
-                <label class="lbl">Intake Form</label>
+                <label class="lbl" for="admin-svc-intake">Intake Form</label>
                 <select id="admin-svc-intake" onchange="onServiceIntakeChange(true)" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="">None</option>
                 </select>
               </div>
               <div>
-                <label class="lbl">Workflow <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which tactic this belongs to on Trello. Services sharing a workflow are treated as ONE tactic (one shared card, not a duplicate per service). Leave "None" if this service shouldn't create any Trello card on its own.</span></label>
+                <label class="lbl" for="admin-svc-workflow">Workflow <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which tactic this belongs to on Trello. Services sharing a workflow are treated as ONE tactic (one shared card, not a duplicate per service). Leave "None" if this service shouldn't create any Trello card on its own.</span></label>
                 <select id="admin-svc-workflow" onchange="onWorkflowChange()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
                 <input type="text" id="admin-svc-workflow-new" placeholder="e.g. Website" style="display:none;margin-top:8px;width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently splitting one tactic into two.</p>
@@ -679,13 +681,13 @@
             </div>
             <div id="admin-svc-tlp-cap-wrap" style="display:none;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">TLP Page Cap <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for TLP tiers. Max pages the intake grid allows for this tier; the client-facing intake form always reads this live, so changing it here takes effect immediately with no code change.</span></label>
+                <label class="lbl" for="admin-svc-tlp-cap">TLP Page Cap <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for TLP tiers. Max pages the intake grid allows for this tier; the client-facing intake form always reads this live, so changing it here takes effect immediately with no code change.</span></label>
                 <input type="number" step="1" min="1" id="admin-svc-tlp-cap" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Strategist Discipline(s) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which team(s) own fulfillment for this service. When sold, the client's assigned strategist(s) for these disciplines (set on their Client Profile) get tagged on this tactic's Trello card alongside the AM/AE. Leave "None" if no strategist should be tagged.</span></label>
+                <label class="lbl" for="admin-svc-strategist-discipline">Strategist Discipline(s) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— which team(s) own fulfillment for this service. When sold, the client's assigned strategist(s) for these disciplines (set on their Client Profile) get tagged on this tactic's Trello card alongside the AM/AE. Leave "None" if no strategist should be tagged.</span></label>
                 <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;cursor:pointer;font-size:12px;color:var(--muted)">
                   <input type="checkbox" id="admin-svc-multi-strategist" onchange="onMultiStrategistToggle()"/> Multiple Strategists Needed?
                 </label>
@@ -706,11 +708,11 @@
             </div>
             <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl">Trello Template <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the Trello list or card ID to copy into the client's list when this service is sold. Leave blank for "no template — just a plain card." Services that share a workflow and use one shared template (e.g. the 4 Digital Advertising services) should all be given the same ID here.</span></label>
+                <label class="lbl" for="admin-svc-trello-template-ref">Trello Template <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the Trello list or card ID to copy into the client's list when this service is sold. Leave blank for "no template — just a plain card." Services that share a workflow and use one shared template (e.g. the 4 Digital Advertising services) should all be given the same ID here.</span></label>
                 <input type="text" id="admin-svc-trello-template-ref" placeholder="Trello list or card ID" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
               </div>
               <div>
-                <label class="lbl">Template Type</label>
+                <label class="lbl" for="admin-svc-trello-template-type">Template Type</label>
                 <select id="admin-svc-trello-template-type" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="list">List (copy every card in it)</option>
                   <option value="card">Single Card (copy just this one)</option>
@@ -719,24 +721,24 @@
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;padding-top:12px;border-top:1px solid var(--border)">
               <div>
-                <label class="lbl">Auto-Add Setup Fee <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— spend-based services only</span></label>
+                <label class="lbl" for="admin-svc-auto-setup">Auto-Add Setup Fee <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— spend-based services only</span></label>
                 <select id="admin-svc-auto-setup" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                   <option value="false">No</option>
                   <option value="true">Yes — auto-add when spend is under the threshold</option>
                 </select>
               </div>
               <div>
-                <label class="lbl">Setup Fee Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only used if Auto-Add is Yes</span></label>
+                <label class="lbl" for="admin-svc-setup-fee">Setup Fee Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only used if Auto-Add is Yes</span></label>
                 <input type="number" step="0.01" id="admin-svc-setup-fee" placeholder="e.g. 200" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
               <div>
-                <label class="lbl">Setup Fee Threshold <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— fee applies when spend is BELOW this</span></label>
+                <label class="lbl" for="admin-svc-setup-threshold">Setup Fee Threshold <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— fee applies when spend is BELOW this</span></label>
                 <input type="number" step="0.01" id="admin-svc-setup-threshold" placeholder="e.g. 1000" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:4px">
               <div>
-                <label class="lbl">Fee Note <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— general manual caveat, shown under the service name. IGNORED if Auto-Add Setup Fee above is "Yes" (a sentence is generated automatically from the Setup Fee Amount/Threshold instead).</span></label>
+                <label class="lbl" for="admin-svc-fee-note">Fee Note <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— general manual caveat, shown under the service name. IGNORED if Auto-Add Setup Fee above is "Yes" (a sentence is generated automatically from the Setup Fee Amount/Threshold instead).</span></label>
                 <input type="text" id="admin-svc-fee-note" placeholder="e.g. Requires existing WordPress access" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
@@ -751,13 +753,13 @@
         <!-- Filters -->
         <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:10px;margin-bottom:14px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
           <div>
-            <label class="lbl">Section</label>
+            <label class="lbl" for="map-filter-section">Section</label>
             <select id="map-filter-section" onchange="renderSuggestedMap()" style="width:100%;padding:7px 9px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-family:inherit;background:#fff">
               <option value="">All sections</option>
             </select>
           </div>
           <div>
-            <label class="lbl">Search</label>
+            <label class="lbl" for="map-filter-search">Search</label>
             <input type="text" id="map-filter-search" placeholder="Service name or ID…" oninput="renderSuggestedMap()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
           </div>
           <div style="display:flex;align-items:flex-end">
@@ -788,11 +790,11 @@
           <input type="hidden" id="admin-sec-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the card's title text</span></label>
+              <label class="lbl" for="admin-sec-label">Label <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— the card's title text</span></label>
               <input type="text" id="admin-sec-label" placeholder="e.g. Podcast Advertising" oninput="autoSectionId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Icon <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— pick from the list or type any emoji</span></label>
+              <label class="lbl" for="admin-sec-icon">Icon <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— pick from the list or type any emoji</span></label>
               <input type="text" id="admin-sec-icon" list="admin-sec-icon-options" placeholder="e.g. 🎙️" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               <datalist id="admin-sec-icon-options">
                 <option value="🌐">Website</option>
@@ -825,7 +827,7 @@
           </div>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Section ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Label, override if needed. Must match exactly what's used as each service's Section value; cannot be changed after creation.</span></label>
+              <label class="lbl" for="admin-sec-id">Section ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Label, override if needed. Must match exactly what's used as each service's Section value; cannot be changed after creation.</span></label>
               <div style="display:flex;gap:8px;align-items:center">
                 <input type="text" id="admin-sec-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkSectionIdCollision()"/>
                 <button type="button" onclick="regenerateSectionId()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
@@ -833,10 +835,18 @@
               <p id="admin-sec-id-warn" style="display:none;font-size:10px;color:#B91C1C;margin-top:4px">⚠ A section with this ID already exists — please choose a different one.</p>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:16px">
             <div>
-              <label class="lbl">Header Note <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional small text next to the title, e.g. term/minimum-spend info. Leave blank for none.</span></label>
+              <label class="lbl" for="admin-sec-header-note">Header Note <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional small text next to the title, e.g. term/minimum-spend info. Leave blank for none.</span></label>
               <input type="text" id="admin-sec-header-note" placeholder="e.g. Min $1,000/mo · 6 Month Min" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
+            <div>
+              <!-- Sort Order field (2026-08-18, accessibility audit) -- drag-and-drop
+                   reordering (below, in the table) has no keyboard equivalent; Services
+                   already had this same field for exactly that reason. Leave blank on a
+                   new section to keep the existing "append to the end" behavior. -->
+              <label class="lbl" for="admin-sec-sort">Sort Order <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— controls card order on the form</span></label>
+              <input type="number" id="admin-sec-sort" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:flex;gap:10px">
@@ -864,11 +874,11 @@
           <input type="hidden" id="admin-intake-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
             <div>
-              <label class="lbl">Title <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown as the modal's heading on the live form</span></label>
+              <label class="lbl" for="admin-intake-title">Title <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown as the modal's heading on the live form</span></label>
               <input type="text" id="admin-intake-title" placeholder="e.g. Podcast Advertising Intake" oninput="autoIntakeFormId()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Form ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Title, override if needed. Cannot be changed after creation.</span></label>
+              <label class="lbl" for="admin-intake-id">Form ID <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— auto-generated from Title, override if needed. Cannot be changed after creation.</span></label>
               <div style="display:flex;gap:8px;align-items:center">
                 <input type="text" id="admin-intake-id" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';checkIntakeFormIdCollision()"/>
                 <button type="button" onclick="regenerateIntakeFormId()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
@@ -878,7 +888,7 @@
           </div>
 
           <div id="admin-intake-sections-editor"></div>
-          <button type="button" onclick="intakeAddSection()" style="margin-top:4px;padding:7px 14px;border-radius:7px;border:1px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--accent)">+ Add Section</button>
+          <button type="button" onclick="intakeAddSection()" style="margin-top:4px;padding:7px 14px;border-radius:7px;border:1px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--accent-dark)">+ Add Section</button>
 
           <div style="display:flex;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
             <button onclick="adminSaveIntakeForm()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Intake Form</button>
@@ -917,7 +927,7 @@
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">Import AEs from Trello Board Members</p>
           <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">
             <div>
-              <label class="lbl">Group</label>
+              <label class="lbl" for="ae-import-group">Group</label>
               <select id="ae-import-group" style="padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff;min-width:220px"></select>
             </div>
             <button onclick="scanAeImportCandidates()" style="padding:9px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Scan Board Members</button>
@@ -931,27 +941,27 @@
           <input type="hidden" id="admin-ae-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Name</label>
+              <label class="lbl" for="admin-ae-name">Name</label>
               <input type="text" id="admin-ae-name" placeholder="e.g. Jordan Smith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Trello Handle</label>
+              <label class="lbl" for="admin-ae-trello">Trello Handle</label>
               <input type="text" id="admin-ae-trello" placeholder="@jordansmith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
             <div>
-              <label class="lbl">Email <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— gets the submission notification for any IO this AE submits</span></label>
+              <label class="lbl" for="admin-ae-email">Email <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— gets the submission notification for any IO this AE submits</span></label>
               <input type="email" id="admin-ae-email" placeholder="jordan@agency.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— this AE only appears in the picker for this group's form</span></label>
+              <label class="lbl" for="admin-ae-group">Group <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— this AE only appears in the picker for this group's form</span></label>
               <select id="admin-ae-group" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
             <div>
-              <label class="lbl">Market <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— used in the IO submission email instead of the client's city, for AE reporting</span></label>
+              <label class="lbl" for="admin-ae-market">Market <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— used in the IO submission email instead of the client's city, for AE reporting</span></label>
               <input type="text" id="admin-ae-market" placeholder="e.g. Southeast" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
@@ -985,21 +995,21 @@
           <input type="hidden" id="admin-strategist-original-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Name</label>
+              <label class="lbl" for="admin-strategist-name">Name</label>
               <input type="text" id="admin-strategist-name" placeholder="e.g. Jordan Smith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Trello Handle</label>
+              <label class="lbl" for="admin-strategist-trello">Trello Handle</label>
               <input type="text" id="admin-strategist-trello" placeholder="@jordansmith" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
             <div>
-              <label class="lbl">Email</label>
+              <label class="lbl" for="admin-strategist-email">Email</label>
               <input type="email" id="admin-strategist-email" placeholder="jordan@agency.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Discipline <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Social or Web only; Digital strategists are added under Users instead (role: Strategist), since they log into the Strategist Portal and already have a full profile there</span></label>
+              <label class="lbl" for="admin-strategist-discipline">Discipline <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Social or Web only; Digital strategists are added under Users instead (role: Strategist), since they log into the Strategist Portal and already have a full profile there</span></label>
               <select id="admin-strategist-discipline" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                 <option value="social">Social</option>
                 <option value="web">Web</option>
@@ -1036,11 +1046,11 @@
             <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Non-Cancellation</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
-                <label class="lbl">On-Screen</label>
+                <label class="lbl" for="legal-non_cancellation_onscreen">On-Screen</label>
                 <textarea id="legal-non_cancellation_onscreen" rows="3" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
               <div>
-                <label class="lbl">Printed / PDF</label>
+                <label class="lbl" for="legal-non_cancellation_printed">Printed / PDF</label>
                 <textarea id="legal-non_cancellation_printed" rows="3" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
             </div>
@@ -1050,11 +1060,11 @@
             <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Intellectual Property</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
-                <label class="lbl">On-Screen</label>
+                <label class="lbl" for="legal-ip_onscreen">On-Screen</label>
                 <textarea id="legal-ip_onscreen" rows="4" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
               <div>
-                <label class="lbl">Printed / PDF <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— use <code>{{group_name}}</code> for the signing group's name</span></label>
+                <label class="lbl" for="legal-ip_printed">Printed / PDF <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— use <code>{{group_name}}</code> for the signing group's name</span></label>
                 <textarea id="legal-ip_printed" rows="4" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
             </div>
@@ -1064,11 +1074,11 @@
             <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Service-Specific Terms</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
-                <label class="lbl">On-Screen <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— HTML allowed (e.g. &lt;br&gt;, &lt;strong&gt;)</span></label>
+                <label class="lbl" for="legal-service_specific_onscreen">On-Screen <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— HTML allowed (e.g. &lt;br&gt;, &lt;strong&gt;)</span></label>
                 <textarea id="legal-service_specific_onscreen" rows="6" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
               <div>
-                <label class="lbl">Printed / PDF</label>
+                <label class="lbl" for="legal-service_specific_printed">Printed / PDF</label>
                 <textarea id="legal-service_specific_printed" rows="6" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
             </div>
@@ -1078,11 +1088,11 @@
             <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Digital Advertising</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div>
-                <label class="lbl">On-Screen</label>
+                <label class="lbl" for="legal-digital_advertising_onscreen">On-Screen</label>
                 <textarea id="legal-digital_advertising_onscreen" rows="3" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
               <div>
-                <label class="lbl">Printed / PDF</label>
+                <label class="lbl" for="legal-digital_advertising_printed">Printed / PDF</label>
                 <textarea id="legal-digital_advertising_printed" rows="3" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
             </div>
@@ -1092,15 +1102,15 @@
             <p style="font-size:12.5px;font-weight:700;margin-bottom:10px">Checkbox Labels <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— on-screen only, no printed equivalent</span></p>
             <div style="display:flex;flex-direction:column;gap:10px">
               <div>
-                <label class="lbl">Non-Cancellation checkbox</label>
+                <label class="lbl" for="legal-checkbox_terms">Non-Cancellation checkbox</label>
                 <textarea id="legal-checkbox_terms" rows="2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
               <div>
-                <label class="lbl">Intellectual Property checkbox</label>
+                <label class="lbl" for="legal-checkbox_ip">Intellectual Property checkbox</label>
                 <textarea id="legal-checkbox_ip" rows="2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
               <div>
-                <label class="lbl">Pricing checkbox</label>
+                <label class="lbl" for="legal-checkbox_pricing">Pricing checkbox</label>
                 <textarea id="legal-checkbox_pricing" rows="2" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit"></textarea>
               </div>
             </div>
@@ -1125,7 +1135,7 @@
         </div>
 
         <div style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff;margin-bottom:20px;max-width:520px">
-          <label class="lbl">Always-BCC Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, every group</span></label>
+          <label class="lbl" for="notif-always_bcc_recipients">Always-BCC Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, every group</span></label>
           <textarea id="notif-always_bcc_recipients" rows="3" placeholder="name@44interactive.com, name2@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:inherit;resize:vertical"></textarea>
         </div>
 
@@ -1167,11 +1177,11 @@
           <input type="hidden" id="admin-user-original-name"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Name <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— also their login username</span></label>
+              <label class="lbl" for="admin-user-name">Name <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— also their login username</span></label>
               <input type="text" id="admin-user-name" placeholder="e.g. Carol" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Role</label>
+              <label class="lbl" for="admin-user-role">Role</label>
               <select id="admin-user-role" onchange="adminUserRoleChanged()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
                 <option value="am">Account Manager</option>
                 <option value="super">Super Admin</option>
@@ -1182,21 +1192,21 @@
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Email</label>
+              <label class="lbl" for="admin-user-email">Email</label>
               <input type="email" id="admin-user-email" placeholder="name@44interactive.com" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">Trello Handle</label>
+              <label class="lbl" for="admin-user-trello">Trello Handle</label>
               <input type="text" id="admin-user-trello" placeholder="@handle" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div id="admin-user-calendar-wrap">
-              <label class="lbl">Calendar URL <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for KOC scheduling, AMs only</span></label>
+              <label class="lbl" for="admin-user-calendar">Calendar URL <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for KOC scheduling, AMs only</span></label>
               <input type="text" id="admin-user-calendar" placeholder="https://calendar.app.google/..." style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl" id="admin-user-password-label">New Password <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— leave blank to keep current password</span></label>
+              <label class="lbl" id="admin-user-password-label" for="admin-user-password">New Password <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— leave blank to keep current password</span></label>
               <input type="password" id="admin-user-password" placeholder="" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
@@ -1222,48 +1232,48 @@
           <input type="hidden" id="admin-accounting-pair-with-id"/>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">Default Retail <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
+              <label class="lbl" for="admin-accounting-default-retail-display">Default Retail <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
               <input type="text" id="admin-accounting-default-retail-display" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px dashed var(--border);font-size:13px;font-family:monospace;color:var(--muted);background:var(--light);cursor:not-allowed"/>
             </div>
             <div>
-              <label class="lbl">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
+              <label class="lbl" for="admin-accounting-retail-cpm-display">Retail CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— from the Services tab, not editable here</span></label>
               <input type="text" id="admin-accounting-retail-cpm-display" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px dashed var(--border);font-size:13px;font-family:monospace;color:var(--muted);background:var(--light);cursor:not-allowed"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">44i Cut % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Group's cut (YDA) is always 100% minus this</span></label>
+              <label class="lbl" for="admin-accounting-cut-pct">44i Cut % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Group's cut (YDA) is always 100% minus this</span></label>
               <input type="number" step="0.01" id="admin-accounting-cut-pct" placeholder="e.g. 45" oninput="updateAccountingYdaPreview()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               <p id="admin-accounting-yda-preview" style="font-size:11px;color:var(--muted);margin-top:4px">Group's cut (YDA): —</p>
             </div>
             <div>
-              <label class="lbl">Platform CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— drives In-Platform Budget/Goal in the Strategist Portal</span></label>
+              <label class="lbl" for="admin-accounting-platform-cpm">Platform CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— drives In-Platform Budget/Goal in the Strategist Portal</span></label>
               <input type="number" step="0.01" id="admin-accounting-platform-cpm" placeholder="e.g. 3.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">(Of Gross) Budgeted Spend % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— legacy, no longer used by the Strategist Portal</span></label>
+              <label class="lbl" for="admin-accounting-budgeted-spend">(Of Gross) Budgeted Spend % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— legacy, no longer used by the Strategist Portal</span></label>
               <input type="number" step="0.01" id="admin-accounting-budgeted-spend" placeholder="e.g. 25" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">In-Platform % (of Gross) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— fallback for a service with no Retail CPM (e.g. SEM), so In-Platform Budget still auto-calculates</span></label>
+              <label class="lbl" for="admin-accounting-in-platform-pct">In-Platform % (of Gross) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— fallback for a service with no Retail CPM (e.g. SEM), so In-Platform Budget still auto-calculates</span></label>
               <input type="number" step="0.01" id="admin-accounting-in-platform-pct" placeholder="e.g. 50" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
-              <label class="lbl">CPC Low <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for a clicks-based service (e.g. SEM); drives the low end of the Goal range</span></label>
+              <label class="lbl" for="admin-accounting-cpc-low">CPC Low <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for a clicks-based service (e.g. SEM); drives the low end of the Goal range</span></label>
               <input type="number" step="0.01" id="admin-accounting-cpc-low" placeholder="e.g. 4.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
             <div>
-              <label class="lbl">CPC High <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— high end of the Goal range</span></label>
+              <label class="lbl" for="admin-accounting-cpc-high">CPC High <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— high end of the Goal range</span></label>
               <input type="number" step="0.01" id="admin-accounting-cpc-high" placeholder="e.g. 12.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
           </div>
           <div id="admin-accounting-setup-fee-block" style="display:none;margin-bottom:12px;padding:14px;background:#fff;border-radius:8px;border:1px solid var(--border)">
             <p style="font-size:11px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Setup Fee Split <span id="admin-accounting-setup-fee-amount-note" style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)"></span></p>
-            <label class="lbl">44i's % of the Setup Fee <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— can differ from 44i Cut % above</span></label>
+            <label class="lbl" for="admin-accounting-setup-fee-cut-pct">44i's % of the Setup Fee <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— can differ from 44i Cut % above</span></label>
             <input type="number" step="0.01" id="admin-accounting-setup-fee-cut-pct" placeholder="e.g. 50" oninput="updateAccountingSetupFeePreview()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             <p id="admin-accounting-setup-fee-preview" style="font-size:11px;color:var(--muted);margin-top:4px">Split: —</p>
           </div>
@@ -1298,12 +1308,12 @@
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
     <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Admin Access</h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
-    <select id="admin-name-select" style="width:100%;padding:10px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
+    <p id="admin-login-instructions" style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
+    <select id="admin-name-select" aria-label="Your name" aria-describedby="admin-login-instructions" style="width:100%;padding:10px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
       <option value="">— Select your name —</option>
     </select>
-    <input type="password" id="admin-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkAdminPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
-    <div id="admin-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
+    <input type="password" id="admin-pw-input" placeholder="Password" aria-label="Password" aria-describedby="admin-login-instructions" onkeydown="if(event.key==='Enter')checkAdminPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
+    <div id="admin-pw-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
     <div style="display:flex;gap:9px">
       <button onclick="closeAdminLogin()" class="btn-quiet-green" style="flex:1">Cancel</button>
       <button onclick="checkAdminPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
@@ -1586,7 +1596,7 @@ function renderPricingFields() {
   let html = '';
   PRICEABLE_SERVICES.forEach(section => {
     html += `<div style="margin-bottom:20px">
-      <div style="font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">${section.section}</div>
+      <div style="font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">${section.section}</div>
       <div style="display:grid;grid-template-columns:1fr;gap:8px">`;
     section.items.forEach(item => {
       const override = currentPricingOverrides[item.id];
@@ -2406,10 +2416,15 @@ function renderSuggestedMap() {
     </tr></thead><tbody>`;
 
   orderedSectionIds.forEach(sec => {
-    html += `<tr><td colspan="10" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
+    html += `<tr><td colspan="10" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
     bySection[sec].forEach(s => {
       const inactive = !s.active;
-      const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
+      // No opacity here (2026-08-18, accessibility audit) -- opacity:0.5 dimmed the
+      // row's own already-borderline text colors below 4.5:1 contrast, and the
+      // dimming was purely redundant anyway: the INACTIVE badge and Reactivate button
+      // below already say the row's state in plain, fully-readable text. Same fix at
+      // every other "greyed-out inactive row" table in this file.
+      const rowStyle = inactive ? 'background:#FAFAFA' : '';
       const koc = s.koc_requirement === 'required'
         ? '<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">Required</span>'
         : '<span style="color:var(--muted);font-size:11px">—</span>';
@@ -2435,7 +2450,7 @@ function renderSuggestedMap() {
           : freqText === '—'
             ? '<span style="color:var(--muted)">—</span>'
             : `<span style="font-size:10px;color:var(--text);font-weight:600">${esc(freqText)}</span>`;
-      const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+      const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
       const isSuperAdmin = currentAdminUser?.role !== 'am';
       // Deactivate is now offered everywhere (2026-07-10) — every section is equally
       // "dynamic-row safe" now that the public form generates all of them from data, so
@@ -2621,8 +2636,8 @@ function renderAdminSectionsList() {
 
   SECTIONS.forEach(sec => {
     const inactive = !sec.active;
-    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
-    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const rowStyle = inactive ? 'background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const canDrag = isSuperAdmin && sec.active;
     const dragHandle = canDrag
       ? `<span draggable="true" ondragstart="sectionDragStart(event,'${esc(sec.id)}')" ondragend="sectionDragEnd(event)" style="cursor:grab;color:var(--muted);font-size:14px;user-select:none" title="Drag to reorder">⠿</span>`
@@ -2803,7 +2818,7 @@ function adminNewSection() {
   }
   document.getElementById('admin-section-form-title').textContent = 'New Section';
   document.getElementById('admin-sec-original-id').value = '';
-  ['admin-sec-id','admin-sec-icon','admin-sec-label','admin-sec-header-note'].forEach(id => {
+  ['admin-sec-id','admin-sec-icon','admin-sec-label','admin-sec-header-note','admin-sec-sort'].forEach(id => {
     document.getElementById(id).value = '';
   });
   document.getElementById('admin-sec-id').disabled = false;
@@ -2829,6 +2844,7 @@ function adminEditSection(id) {
   document.getElementById('admin-sec-icon').value = sec.icon || '';
   document.getElementById('admin-sec-label').value = sec.label || '';
   document.getElementById('admin-sec-header-note').value = sec.header_note || '';
+  document.getElementById('admin-sec-sort').value = sec.sort_order ?? '';
   document.getElementById('admin-section-form').style.display = 'block';
   document.getElementById('admin-section-form').scrollIntoView({behavior:'smooth'});
 }
@@ -2853,9 +2869,14 @@ async function adminSaveSection() {
     icon: document.getElementById('admin-sec-icon').value.trim() || null,
     header_note: document.getElementById('admin-sec-header-note').value.trim() || null,
   };
+  const sortVal = document.getElementById('admin-sec-sort').value;
+  if (sortVal !== '') {
+    payload.sort_order = parseInt(sortVal, 10);
+  } else if (isNew) {
+    payload.sort_order = (Math.max(0, ...SECTIONS.map(s => s.sort_order || 0)) + 10);
+  }
   if (isNew) {
     payload.id = id;
-    payload.sort_order = (Math.max(0, ...SECTIONS.map(s => s.sort_order || 0)) + 10);
     payload.active = true;
   }
 
@@ -2980,8 +3001,8 @@ function renderAdminIntakeList() {
     // Suggested Map first (allServicesMap only populates when that tab loads).
     const usedBy = Object.values(CATALOG_ROWS).filter(s => s.intake_form_id === f.id).length;
     const inactive = f.active === false;
-    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
-    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const rowStyle = inactive ? 'background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const editBtn = isSuperAdmin
       ? `<button onclick="adminEditIntakeForm('${esc(f.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>`
       : '';
@@ -3106,6 +3127,20 @@ function intakeSectionDrop(e, targetIdx) {
   renderIntakeFormEditor();
 }
 
+// Keyboard alternative to the drag handle above (2026-08-18, accessibility audit) --
+// native HTML5 drag-and-drop has no keyboard equivalent, and this reorder has no other
+// escape hatch (it's a plain in-memory array, not a DB sort_order column a number
+// field could target). Re-focuses the moved section's own button so repeated presses
+// keep moving the same item instead of losing focus back to the top of the form.
+function intakeMoveSection(sIdx, dir) {
+  const target = sIdx + dir;
+  if (target < 0 || target >= intakeFormDraft.sections.length) return;
+  const [moved] = intakeFormDraft.sections.splice(sIdx, 1);
+  intakeFormDraft.sections.splice(target, 0, moved);
+  renderIntakeFormEditor();
+  document.querySelector(`[data-intake-move-section="${target}"]`)?.focus();
+}
+
 // Fields can be dragged to reorder within their own section, OR dropped onto a
 // DIFFERENT section entirely to move there — useful since two sections can end
 // up with near-duplicate questions (e.g. two "If Book an Appointment:" follow-
@@ -3156,6 +3191,19 @@ function intakeFieldDrop(e, targetSIdx, targetFIdx) {
   if (sourceSIdx === targetSIdx && sourceFIdx < targetFIdx) insertAt -= 1;
   intakeFormDraft.sections[targetSIdx].fields.splice(insertAt, 0, moved);
   renderIntakeFormEditor();
+}
+
+// Keyboard alternative to the field drag handle, same reasoning as intakeMoveSection()
+// above -- only moves within the same section (the drag interaction's cross-section
+// move is a mouse-only convenience on top of the base reorder, not the core gap).
+function intakeMoveField(sIdx, fIdx, dir) {
+  const fields = intakeFormDraft.sections[sIdx].fields;
+  const target = fIdx + dir;
+  if (target < 0 || target >= fields.length) return;
+  const [moved] = fields.splice(fIdx, 1);
+  fields.splice(target, 0, moved);
+  renderIntakeFormEditor();
+  document.querySelector(`[data-intake-move-field="${sIdx}-${target}"]`)?.focus();
 }
 function intakeFieldLabelChange(sIdx, fIdx, val) {
   const field = intakeFormDraft.sections[sIdx].fields[fIdx];
@@ -3244,6 +3292,10 @@ function renderIntakeFormEditor() {
     <div data-intake-section="${sIdx}" ondragover="intakeSectionDragOver(event)" ondragleave="intakeSectionDragLeave(event)" ondrop="intakeSectionDrop(event, ${sIdx})" style="background:#fff;border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
         <span draggable="true" ondragstart="intakeSectionDragStart(event, ${sIdx})" ondragend="intakeSectionDragEnd(event)" style="cursor:grab;color:var(--muted);font-size:16px;user-select:none" title="Drag to reorder this section">⠿</span>
+        <span style="display:flex;flex-direction:column;gap:1px">
+          <button type="button" data-intake-move-section="${sIdx}" onclick="intakeMoveSection(${sIdx}, -1)" ${sIdx === 0 ? 'disabled' : ''} aria-label="Move this section up" title="Move section up" style="padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:10px;cursor:pointer;line-height:1.4">▲</button>
+          <button type="button" onclick="intakeMoveSection(${sIdx}, 1)" ${sIdx === intakeFormDraft.sections.length - 1 ? 'disabled' : ''} aria-label="Move this section down" title="Move section down" style="padding:1px 5px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:10px;cursor:pointer;line-height:1.4">▼</button>
+        </span>
         <input type="text" placeholder="Section title, e.g. Project Details" value="${esc(section.title || '')}"
           oninput="intakeSectionTitleChange(${sIdx}, this.value)"
           style="flex:1;padding:8px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px;font-weight:600"/>
@@ -3256,7 +3308,13 @@ function renderIntakeFormEditor() {
           return `
           <div data-intake-field="${sIdx}-${fIdx}" ondragover="intakeFieldDragOver(event)" ondragleave="intakeFieldDragLeave(event)" ondrop="intakeFieldDrop(event, ${sIdx}, ${fIdx})" style="padding:8px;background:#F8FAFC;border-radius:6px">
             <div style="display:grid;grid-template-columns:24px 1fr 1fr 170px 32px;gap:8px;align-items:start">
-              <span draggable="true" ondragstart="intakeFieldDragStart(event, ${sIdx}, ${fIdx})" ondragend="intakeFieldDragEnd(event)" style="cursor:grab;color:var(--muted);font-size:16px;user-select:none;padding-top:6px" title="Drag to reorder or move to another section">⠿</span>
+              <span style="display:flex;flex-direction:column;align-items:center;padding-top:4px">
+                <span draggable="true" ondragstart="intakeFieldDragStart(event, ${sIdx}, ${fIdx})" ondragend="intakeFieldDragEnd(event)" style="cursor:grab;color:var(--muted);font-size:16px;user-select:none" title="Drag to reorder or move to another section">⠿</span>
+                <span style="display:flex;flex-direction:column;gap:1px">
+                  <button type="button" data-intake-move-field="${sIdx}-${fIdx}" onclick="intakeMoveField(${sIdx}, ${fIdx}, -1)" ${fIdx === 0 ? 'disabled' : ''} aria-label="Move this question up" title="Move question up" style="padding:0 4px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:9px;cursor:pointer;line-height:1.4">▲</button>
+                  <button type="button" onclick="intakeMoveField(${sIdx}, ${fIdx}, 1)" ${fIdx === section.fields.length - 1 ? 'disabled' : ''} aria-label="Move this question down" title="Move question down" style="padding:0 4px;border-radius:4px;border:1px solid var(--border);background:#fff;color:var(--muted);font-size:9px;cursor:pointer;line-height:1.4">▼</button>
+                </span>
+              </span>
               <input type="text" placeholder="Question label" value="${esc(field.label || '')}"
                 oninput="intakeFieldLabelChange(${sIdx}, ${fIdx}, this.value)"
                 style="width:100%;padding:7px 9px;border-radius:5px;border:1px solid var(--border);font-size:12px"/>
@@ -3331,7 +3389,7 @@ function renderIntakeFormEditor() {
           </div>
         `; }).join('') || '<p style="font-size:11px;color:var(--muted);font-style:italic">No questions in this section yet.</p>'}
       </div>
-      <button type="button" onclick="intakeAddField(${sIdx})" style="margin-top:10px;padding:6px 12px;border-radius:6px;border:1px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--accent)">+ Add Question</button>
+      <button type="button" onclick="intakeAddField(${sIdx})" style="margin-top:10px;padding:6px 12px;border-radius:6px;border:1px dashed var(--border);background:#fff;font-size:11px;font-weight:600;cursor:pointer;color:var(--accent-dark)">+ Add Question</button>
     </div>
   `).join('');
 }
@@ -3568,8 +3626,8 @@ function renderAdminAeList() {
     </tr></thead><tbody>`;
   rows.forEach(a => {
     const inactive = !a.active;
-    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
-    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const rowStyle = inactive ? 'background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const groupName = allGroups.find(g => g.id === a.group_id)?.name || '<span style="color:var(--muted)">—</span>';
     const editBtn = `<button onclick="adminEditAe('${esc(a.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>`;
     const deactivateBtn = `<button onclick="adminToggleAeActive('${esc(a.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
@@ -3737,8 +3795,8 @@ function renderAdminStrategistList() {
     </tr></thead><tbody>`;
   ALL_STRATEGISTS.forEach(s => {
     const inactive = !s.active;
-    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
-    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const rowStyle = inactive ? 'background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const editBtn = `<button onclick="adminEditStrategist('${esc(s.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>`;
     const deactivateBtn = `<button onclick="adminToggleStrategistActive('${esc(s.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
@@ -3905,8 +3963,8 @@ function renderAdminUsersList() {
     </tr></thead><tbody>`;
   ALL_ADMIN_USERS.forEach(u => {
     const inactive = u.active === false;
-    const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
-    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const rowStyle = inactive ? 'background:#FAFAFA' : '';
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const roleLabel = { super: 'Super Admin', am: 'Account Manager', strategist: 'Strategist', accounting: 'Accounting' }[u.role] || esc(u.role);
     const editBtn = `<button onclick="adminEditUser('${esc(u.name)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>`;
     const deactivateBtn = `<button onclick="adminToggleUserActive('${esc(u.name)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
@@ -5100,7 +5158,7 @@ async function scanClientImportCandidates() {
       <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;margin-bottom:12px">`;
     CLIENT_IMPORT_CANDIDATES.forEach((l, idx) => {
       const archivedBadge = l.closed
-        ? '<span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">ARCHIVED</span>'
+        ? '<span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">ARCHIVED</span>'
         : '';
       html += `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12.5px;cursor:pointer">
         <input type="checkbox" id="import-candidate-${idx}" checked style="width:14px;height:14px;accent-color:var(--accent)"/>
@@ -6139,8 +6197,8 @@ function renderAdminGroups() {
       // group-assignment pickers, while everything historical (Orders, Clients, AEs
       // filtering by this group) keeps working exactly as before.
       const inactive = g.active === false;
-      const rowStyle = inactive ? 'opacity:0.5;background:#FAFAFA' : '';
-      const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#6B7280;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+      const rowStyle = inactive ? 'background:#FAFAFA' : '';
+      const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
       const deactivateBtn = currentAdminUser?.role === 'am' ? '' :
         `<button onclick="adminToggleGroupActive('${esc(g.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
       return `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
