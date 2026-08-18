@@ -15869,3 +15869,26 @@ correctly via `.control`/direct attribute checks in a headless browser.
 audit.** The one remaining open item — Accounting's dead `.warn` CSS
 class — stays parked as a business-logic decision for Claire, not
 something to guess at.
+
+## 2026-08-18 — Section/status tabs converted to pills, matching everything else
+
+Claire noticed Admin's section tabs and Strategist's status tabs were
+the one nav element in either app still using an underline style, while
+every other toggle/filter (the My Campaigns/All Strategists scope
+toggle, "+ Add Section," the month/group filter selects) is a rounded
+pill with a 1.5px border. Converted both tab bars to the same shape and
+active/inactive pattern as the My Campaigns/All Strategists toggle:
+1.5px `--accent-dark` border always, filled `--accent-dark`/white text
+when active, white/`--accent-dark` outline when not. `adminSection()`
+and Strategist's status-tab render function both updated to toggle
+`background`/`color` instead of the old `border-bottom-color`. Admin's
+13 tabs now wrap onto a second row at normal viewport widths (`flex-
+wrap:wrap;gap:8px`) instead of a single tight underlined strip.
+
+**Verified live**: active/inactive computed styles match exactly
+(`rgb(44,72,99)`/white for active, white/`rgb(44,72,99)` for inactive,
+`border-radius:999px` on both), `aria-selected` still toggles correctly
+(the accessibility-pass wiring was untouched, only the visual styling
+changed), and both bars screenshot as expected — full rounded pills,
+same shape as the other pill controls already in each toolbar.
+`node --check` clean on both files.
