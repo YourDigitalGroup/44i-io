@@ -48,7 +48,7 @@
       </div>
     </div>
 
-    <div style="padding:16px 20px 0">
+    <div style="padding:16px 20px 0" id="strategist-content-area">
       <!-- Platform report freshness banner (2026-08-17, per Claire -- "it would be
            nice for the strategists to know when numbers were updated" for the
            platforms she manually pastes reports for). One banner, not per-platform
@@ -2083,6 +2083,16 @@ function fitStrategistScrollBoxes() {
 window.addEventListener('resize', () => {
   if (currentStrategistUser) fitStrategistScrollBoxes();
 });
+// Catches every other way the content above the table/setup boxes can change
+// height without going through renderStrategistDashboard() -- opening/closing
+// the Import Campaign, Paste Platform Report, or Bulk Import forms (2026-08-17,
+// found auditing for other instances of the same bug as the detail-panel fix
+// above: none of those three toggle functions called fitStrategistScrollBoxes()
+// either, so opening one could overflow the page again and closing one could
+// leave a box wrongly condensed, same shape as the bug just fixed, just via a
+// different trigger). Same "observe the container, don't hunt every call site"
+// approach as admin's identical ResizeObserver on #admin-content-area.
+new ResizeObserver(() => { if (currentStrategistUser) fitStrategistScrollBoxes(); }).observe(document.getElementById('strategist-content-area'));
 
 // ── CAMPAIGN SETUP (Pending queue) ───────────────────────────────
 // Grouped by client's group, alphabetical, with the same colored group-band

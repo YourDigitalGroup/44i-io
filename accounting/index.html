@@ -1915,6 +1915,18 @@ function fitAccountingTableHeight() {
 window.addEventListener('resize', () => {
   if (typeof currentAccountingUser !== 'undefined' && currentAccountingUser) fitAccountingTableHeight();
 });
+// Catches every other way the content above the table can change height without
+// going through renderAccountingDashboard() -- opening/closing the Add Service,
+// Bulk Match, or Bulk Import forms (2026-08-17, found auditing for other
+// instances of the same bug fixed in Strategist's detail panel earlier: none of
+// those three toggle functions called fitAccountingTableHeight() either, so
+// opening one could overflow the page again and closing one could leave the
+// table wrongly condensed). Same "observe the container, don't hunt every call
+// site" approach as admin's #admin-content-area / strategist's
+// #strategist-content-area ResizeObservers.
+new ResizeObserver(() => {
+  if (typeof currentAccountingUser !== 'undefined' && currentAccountingUser) fitAccountingTableHeight();
+}).observe(document.querySelector('#page-accounting .acct-wrap'));
 
 // Sticky header row + sticky "current group" banner while scrolling a long
 // table (2026-08-11, per Claire). The group banner's sticky offset has to sit
