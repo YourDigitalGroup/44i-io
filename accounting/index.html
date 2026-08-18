@@ -129,12 +129,12 @@
     <!-- Top bar: month picker + filters -->
     <div class="acct-topbar">
       <div class="acct-month-nav">
-        <button onclick="accountingShiftMonth(-1)">‹</button>
+        <button onclick="accountingShiftMonth(-1)" aria-label="Previous month">‹</button>
         <span id="accounting-month-label" class="acct-month-label"></span>
-        <button onclick="accountingShiftMonth(1)">›</button>
+        <button onclick="accountingShiftMonth(1)" aria-label="Next month">›</button>
       </div>
       <div class="acct-filters">
-        <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer">
+        <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)" aria-label="Filter by group" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer">
           <option value="">All Groups</option>
         </select>
         <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
@@ -167,11 +167,11 @@
 <!-- Read-only order-detail modal (2026-08-13) -- shared markup/render logic
      with Strategist's own copy of this same block, via shared.js's
      renderOrderDetailModal()/closeOrderDetailModal(). -->
-<div id="shared-order-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+<div id="shared-order-modal" role="dialog" aria-modal="true" aria-labelledby="shared-order-modal-title" onkeydown="if(event.key==='Escape')closeOrderDetailModal()" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:18px;padding:24px 28px;width:600px;max-height:80vh;overflow:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <p style="font-size:14px;font-weight:700;color:var(--text)">Order Detail</p>
-      <button onclick="closeOrderDetailModal()" class="btn-quiet-green">✕ Close</button>
+      <h3 id="shared-order-modal-title" style="margin:0;font-size:14px;font-weight:700;color:var(--text)">Order Detail</h3>
+      <button id="shared-order-modal-close" onclick="closeOrderDetailModal()" class="btn-quiet-green">✕ Close</button>
     </div>
     <div id="shared-order-modal-body"></div>
   </div>
@@ -179,16 +179,16 @@
 
 <!-- ACCOUNTING LOGIN MODAL — same shape as /strategist's, scoped to
      accounting/super roles only. -->
-<div id="accounting-login-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+<div id="accounting-login-modal" role="dialog" aria-modal="true" aria-labelledby="accounting-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
-    <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Accounting Access</h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
-    <select id="accounting-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
+    <h3 id="accounting-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Accounting Access</h3>
+    <p id="accounting-login-instructions" style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
+    <select id="accounting-name-select" aria-label="Your name" aria-describedby="accounting-login-instructions" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
       <option value="">— Select your name —</option>
     </select>
-    <input type="password" id="accounting-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkAccountingPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
-    <div id="accounting-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
+    <input type="password" id="accounting-pw-input" placeholder="Password" aria-label="Password" aria-describedby="accounting-login-instructions" onkeydown="if(event.key==='Enter')checkAccountingPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
+    <div id="accounting-pw-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
     <div style="display:flex;gap:9px">
       <button onclick="checkAccountingPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
     </div>
@@ -1870,7 +1870,7 @@ function renderAccountingDashboard() {
   groupOrder.forEach(groupName => {
     const bg = byGroup.get(groupName).color || '#EBF4FB';
     const fg = accountingContrastTextColor(bg);
-    bodyRows += `<tr><td class="sticky-group-td" colspan="8" style="position:sticky;z-index:2;padding:8px 12px;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;background:${esc(bg)};color:${fg}">${esc(groupName)}</td></tr>`;
+    bodyRows += `<tr><th class="sticky-group-td" scope="colgroup" colspan="8" style="position:sticky;z-index:2;padding:8px 12px;font-weight:700;font-size:11px;letter-spacing:.04em;text-transform:uppercase;text-align:left;background:${esc(bg)};color:${fg}">${esc(groupName)}</th></tr>`;
     byGroup.get(groupName).rows.forEach(r => { bodyRows += accountingRenderRow(r); });
   });
 

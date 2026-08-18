@@ -108,26 +108,33 @@
     </div>
 
     <!-- Top-level section tabs: Groups | Orders -->
-    <div id="admin-tabs-bar" style="display:flex;border-bottom:1px solid var(--border);background:#fff">
-      <button id="section-tab-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent-dark);background:transparent;color:var(--accent-dark);cursor:pointer">Groups</button>
-      <button id="section-tab-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
-      <button id="section-tab-clients" onclick="adminSection('clients')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Clients</button>
-      <button id="section-tab-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Services</button>
-      <button id="section-tab-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
-      <button id="section-tab-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
-      <button id="section-tab-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
-      <button id="section-tab-strategists" onclick="adminSection('strategists')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Strategists</button>
-      <button id="section-tab-legal" onclick="adminSection('legal')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Legal Text</button>
-      <button id="section-tab-notifications" onclick="adminSection('notifications')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Notifications</button>
-      <button id="section-tab-reconcile" onclick="adminSection('reconcile')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Reconcile Lists</button>
-      <button id="section-tab-users" onclick="adminSection('users')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Users</button>
-      <button id="section-tab-accounting" onclick="adminSection('accounting')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Accounting Map<span id="accounting-missing-badge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:10px"></span></button>
+    <!-- role="tablist"/"tab"/"tabpanel" (2026-08-18, accessibility audit) -- this app
+         has no heading structure a screen reader could navigate by (13 sections, one
+         real <h3> total, everywhere else). Rather than bolt on a parallel set of <h2>s
+         that would just duplicate these same tab labels, this IS a tablist -- one panel
+         visible at a time, switched by these buttons -- so giving it the real ARIA
+         tablist pattern lets a screen reader move between sections the same way a
+         sighted user does, instead of two disconnected navigation systems. -->
+    <div id="admin-tabs-bar" role="tablist" aria-label="Admin sections" style="display:flex;border-bottom:1px solid var(--border);background:#fff">
+      <button id="section-tab-groups" role="tab" aria-selected="true" aria-controls="section-groups" onclick="adminSection('groups')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid var(--accent-dark);background:transparent;color:var(--accent-dark);cursor:pointer">Groups</button>
+      <button id="section-tab-orders" role="tab" aria-selected="false" aria-controls="section-orders" onclick="adminSection('orders')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Orders</button>
+      <button id="section-tab-clients" role="tab" aria-selected="false" aria-controls="section-clients" onclick="adminSection('clients')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Clients</button>
+      <button id="section-tab-map" role="tab" aria-selected="false" aria-controls="section-map" onclick="adminSection('map')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Services</button>
+      <button id="section-tab-sections" role="tab" aria-selected="false" aria-controls="section-sections" onclick="adminSection('sections')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Sections</button>
+      <button id="section-tab-intake" role="tab" aria-selected="false" aria-controls="section-intake" onclick="adminSection('intake')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Intake Forms</button>
+      <button id="section-tab-ae" role="tab" aria-selected="false" aria-controls="section-ae" onclick="adminSection('ae')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">AEs</button>
+      <button id="section-tab-strategists" role="tab" aria-selected="false" aria-controls="section-strategists" onclick="adminSection('strategists')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Strategists</button>
+      <button id="section-tab-legal" role="tab" aria-selected="false" aria-controls="section-legal" onclick="adminSection('legal')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Legal Text</button>
+      <button id="section-tab-notifications" role="tab" aria-selected="false" aria-controls="section-notifications" onclick="adminSection('notifications')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Notifications</button>
+      <button id="section-tab-reconcile" role="tab" aria-selected="false" aria-controls="section-reconcile" onclick="adminSection('reconcile')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Reconcile Lists</button>
+      <button id="section-tab-users" role="tab" aria-selected="false" aria-controls="section-users" onclick="adminSection('users')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Users</button>
+      <button id="section-tab-accounting" role="tab" aria-selected="false" aria-controls="section-accounting" onclick="adminSection('accounting')" style="padding:14px 24px;font-size:13px;font-weight:700;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Accounting Map<span id="accounting-missing-badge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:10px"></span></button>
     </div>
 
     <div style="padding:20px" id="admin-content-area">
 
       <!-- ── SECTION: Groups ── -->
-      <div id="section-groups" style="display:flex;flex-direction:column">
+      <div id="section-groups" role="tabpanel" aria-labelledby="section-tab-groups" tabindex="0" style="display:flex;flex-direction:column">
       <!-- Edit form rendered first in the DOM (order:1) so it opens near the top of the
            page, matching Services/Sections/Intake Forms — was physically AFTER the list
            (order not set = source order), which put it below every group in the list and
@@ -229,7 +236,7 @@
                 <input type="hidden" id="admin-logo"/>
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
                   <div id="admin-logo-preview-wrap" style="display:none;width:44px;height:44px;border-radius:8px;border:1px solid var(--border);background:#FAFCFE;align-items:center;justify-content:center;flex:none;overflow:hidden">
-                    <img id="admin-logo-preview" style="max-width:100%;max-height:100%"/>
+                    <img id="admin-logo-preview" alt="Group logo preview" style="max-width:100%;max-height:100%"/>
                   </div>
                   <div style="flex:1">
                     <input type="file" id="admin-logo-file" accept="image/png,image/jpeg,image/svg+xml,image/gif" onchange="adminUploadGroupLogo(this.files[0])" style="width:100%;font-size:12px"/>
@@ -286,7 +293,7 @@
       </div><!-- /section-groups -->
 
       <!-- ── SECTION: Orders ── -->
-      <div id="section-orders" style="display:none">
+      <div id="section-orders" role="tabpanel" aria-labelledby="section-tab-orders" tabindex="0" style="display:none">
         <div style="margin-bottom:16px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Submitted Orders</p>
 
@@ -335,7 +342,7 @@
       </div><!-- /section-orders -->
 
       <!-- ── SECTION: Clients (profiles — contact info, business type, linked Trello list) ── -->
-      <div id="section-clients" style="display:none;flex-direction:column">
+      <div id="section-clients" role="tabpanel" aria-labelledby="section-tab-clients" tabindex="0" style="display:none;flex-direction:column">
         <!-- Every direct child below gets an EXPLICIT order — with more than the usual
              2 children (header/list/form), leaving any child's order unset would default
              it to 0 and sort it ahead of the form, same trap this file's Groups section
@@ -449,7 +456,7 @@
       </div><!-- /section-clients -->
 
       <!-- ── SECTION: Suggested Map (standard catalog — now editable) ── -->
-      <div id="section-map" style="display:none">
+      <div id="section-map" role="tabpanel" aria-labelledby="section-tab-map" tabindex="0" style="display:none">
         <div style="margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
           <div>
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Services — Standard Catalog &amp; Pricing</p>
@@ -775,7 +782,7 @@
       </div><!-- /section-map -->
 
       <!-- ── SECTION: Sections (which cards appear on the public form, and in what order) ── -->
-      <div id="section-sections" style="display:none">
+      <div id="section-sections" role="tabpanel" aria-labelledby="section-tab-sections" tabindex="0" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <div>
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Sections — Public Form Layout</p>
@@ -859,7 +866,7 @@
       </div><!-- /section-sections -->
 
       <!-- ── SECTION: Intake Forms ── -->
-      <div id="section-intake" style="display:none">
+      <div id="section-intake" role="tabpanel" aria-labelledby="section-tab-intake" tabindex="0" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <div>
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Intake Forms</p>
@@ -900,7 +907,7 @@
       </div><!-- /section-intake -->
 
       <!-- ── SECTION: AEs (roster + Trello handle, for form autofill) ── -->
-      <div id="section-ae" style="display:none">
+      <div id="section-ae" role="tabpanel" aria-labelledby="section-tab-ae" tabindex="0" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <div>
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Account Executives</p>
@@ -981,7 +988,7 @@
            strategist_disciplines, an array — set in the Service editor's Behavior &
            Workflow section — since some services need more than one team tagged at
            once, e.g. SEO needs digital+social+web). ── -->
-      <div id="section-strategists" style="display:none">
+      <div id="section-strategists" role="tabpanel" aria-labelledby="section-tab-strategists" tabindex="0" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <div>
             <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Strategists</p>
@@ -1026,7 +1033,7 @@
       </div><!-- /section-strategists -->
 
       <!-- ── SECTION: Legal Text (Agreement & Disclaimers, global — same for every group) ── -->
-      <div id="section-legal" style="display:none">
+      <div id="section-legal" role="tabpanel" aria-labelledby="section-tab-legal" tabindex="0" style="display:none">
         <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Legal Text — Agreement &amp; Disclaimers</p>
         <p style="font-size:11px;color:var(--muted);margin-bottom:16px">
           Same text for every group. "On-Screen" is what a client sees and checks off before signing;
@@ -1122,7 +1129,7 @@
       </div><!-- /section-legal -->
 
       <!-- ── SECTION: Notifications (always-BCC recipients, global — every group's emails) ── -->
-      <div id="section-notifications" style="display:none">
+      <div id="section-notifications" role="tabpanel" aria-labelledby="section-tab-notifications" tabindex="0" style="display:none">
         <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Notifications</p>
         <p style="font-size:11px;color:var(--muted);margin-bottom:16px">
           These addresses are BCC'd on every submission email, for every group, in addition to that
@@ -1143,7 +1150,7 @@
       </div><!-- /section-notifications -->
 
       <!-- ── SECTION: Reconcile Lists (one-time cleanup, super-admin only) ── -->
-      <div id="section-reconcile" style="display:none">
+      <div id="section-reconcile" role="tabpanel" aria-labelledby="section-tab-reconcile" tabindex="0" style="display:none">
         <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Reconcile Trello Lists</p>
         <p style="font-size:11px;color:var(--muted);margin-bottom:16px;max-width:640px">
           Finds clients in Supabase that don't yet have a stored Trello list linked, and suggests a
@@ -1160,7 +1167,7 @@
       </div><!-- /section-reconcile -->
 
       <!-- ── SECTION: Users (login accounts — admin_users, super-admin only) ── -->
-      <div id="section-users" style="display:none;flex-direction:column">
+      <div id="section-users" role="tabpanel" aria-labelledby="section-tab-users" tabindex="0" style="display:none;flex-direction:column">
         <!-- Every direct child gets an explicit order, same reasoning as Groups/Clients
              above (with the edit form in the mix, letting order default to 0 would sort
              it after the table instead of above it). -->
@@ -1220,7 +1227,7 @@
       </div><!-- /section-users -->
 
       <!-- ── SECTION: Accounting Map (margin/spend-allocation data, super-admin only) ── -->
-      <div id="section-accounting" style="display:none;flex-direction:column">
+      <div id="section-accounting" role="tabpanel" aria-labelledby="section-tab-accounting" tabindex="0" style="display:none;flex-direction:column">
         <div style="order:1;margin-bottom:14px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Accounting Map</p>
           <p style="font-size:11px;color:var(--muted)">One row per service — 44i's cut, and the rates that drive the Strategist Portal. Restricted to super admins. Retail CPM and 44i CPM are shown for reference but not editable here — they're always computed live from Retail CPM (Services tab) × the cut % below. Platform CPM is a real entered rate (below), not computed — confirmed 2026-08-05 that the old "Retail CPM × Budgeted Spend %" approximation didn't match how strategists actually price a campaign.</p>
@@ -1304,10 +1311,10 @@
   </div>
 </div>
 <!-- ADMIN LOGIN MODAL -->
-<div id="admin-login-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+<div id="admin-login-modal" role="dialog" aria-modal="true" aria-labelledby="admin-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
-    <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Admin Access</h3>
+    <h3 id="admin-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Admin Access</h3>
     <p id="admin-login-instructions" style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
     <select id="admin-name-select" aria-label="Your name" aria-describedby="admin-login-instructions" style="width:100%;padding:10px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
       <option value="">— Select your name —</option>
@@ -1951,6 +1958,7 @@ function adminSection(section) {
     if (tab) {
       tab.style.borderBottomColor = (s === section) ? 'var(--accent-dark)' : 'transparent';
       tab.style.color = (s === section) ? 'var(--accent-dark)' : 'var(--muted)';
+      tab.setAttribute('aria-selected', s === section ? 'true' : 'false');
     }
   });
   // Load data for the active section
@@ -3324,7 +3332,7 @@ function renderIntakeFormEditor() {
               <select onchange="intakeFieldTypeChange(${sIdx}, ${fIdx}, this.value)" style="width:100%;padding:7px 9px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;background:#fff">
                 ${INTAKE_FIELD_TYPES.map(t => `<option value="${t.value}" ${field.type===t.value?'selected':''}>${t.label}</option>`).join('')}
               </select>
-              <button type="button" onclick="intakeRemoveField(${sIdx}, ${fIdx})" title="Remove question" style="padding:6px;border-radius:5px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:14px;cursor:pointer;line-height:1">✕</button>
+              <button type="button" onclick="intakeRemoveField(${sIdx}, ${fIdx})" title="Remove question" aria-label="Remove question" style="padding:6px;border-radius:5px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:14px;cursor:pointer;line-height:1">✕</button>
             </div>
 
             <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-top:6px;cursor:pointer">
@@ -4462,7 +4470,7 @@ function adminAddAccountingTierRow(max, cutPct, inPlatformPct) {
     <input type="number" step="0.01" value="${max ?? ''}" placeholder="Up to $ (blank = and up)" class="tier-max" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
     <input type="number" step="0.01" value="${cutPct ?? ''}" placeholder="44i Cut %" class="tier-cut" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
     <input type="number" step="0.01" value="${inPlatformPct ?? ''}" placeholder="In-Platform %" class="tier-inplat" style="flex:1;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
-    <button type="button" onclick="this.closest('.acct-tier-row').remove()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:12px;cursor:pointer" title="Remove this tier">✕</button>`;
+    <button type="button" onclick="this.closest('.acct-tier-row').remove()" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:#fff;color:#B91C1C;font-size:12px;cursor:pointer" title="Remove this tier" aria-label="Remove this tier">✕</button>`;
   container.appendChild(row);
 }
 
@@ -6073,7 +6081,7 @@ function viewOrderDetail(orderId) {
   const sigDisplay = sigData.startsWith('typed:')
     ? `<div style="font-family:'Dancing Script',cursive;font-size:32px;color:#111">${esc(sigData.replace('typed:',''))}</div>`
     : sigData.startsWith('data:image')
-      ? `<img src="${esc(sigData)}" style="height:60px;max-width:280px;object-fit:contain"/>`
+      ? `<img src="${esc(sigData)}" alt="Client signature" style="height:60px;max-width:280px;object-fit:contain"/>`
       : '<span style="color:var(--muted);font-style:italic">No signature on file</span>';
 
   document.getElementById('admin-order-detail-title').textContent = `Order — ${o._client_name || 'Unknown'} (${groupName})`;

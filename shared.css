@@ -66,7 +66,10 @@
 
 body{font-family:'Manrope',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-variant-numeric:tabular-nums}
 input,select,textarea,button{font-family:inherit}
-input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+/* outline:var(--accent-dark), not var(--accent) (2026-08-18, accessibility audit) --
+   --accent measures 2.98:1 against white, below the 3:1 minimum WCAG 1.4.11 requires
+   for a UI-component focus indicator; --accent-dark measures 9.48:1. */
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent-dark);outline-offset:1px}
 
 /* Cards — the admin panel wraps its entire content in a single .card. Shadow uses the
    ported mockup's soft layered shadow (2026-08-12) — needed now that --bg is a warm

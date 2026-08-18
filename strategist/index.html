@@ -64,9 +64,9 @@
       <!-- Top bar: month picker + My Campaigns/All Strategists scope toggle -->
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:10px">
-          <button onclick="strategistShiftMonth(-1)" style="padding:6px 10px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-size:13px">‹</button>
+          <button onclick="strategistShiftMonth(-1)" aria-label="Previous month" style="padding:6px 10px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-size:13px">‹</button>
           <span id="strategist-month-label" style="font-size:13px;font-weight:700;color:var(--text);min-width:110px;text-align:center"></span>
-          <button onclick="strategistShiftMonth(1)" style="padding:6px 10px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-size:13px">›</button>
+          <button onclick="strategistShiftMonth(1)" aria-label="Next month" style="padding:6px 10px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-size:13px">›</button>
         </div>
         <div style="display:flex;gap:10px;align-items:center;font-size:12px">
           <select id="strategist-group-filter" onchange="strategistSetGroupFilter(this.value)" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer">
@@ -101,15 +101,19 @@
            budgets) in one paste, instead of the "+ New Campaign" form one at a time. -->
       <div id="strategist-bulk-import-form" style="display:none"></div>
 
-      <!-- Status tabs -->
-      <div id="strategist-status-tabs" style="display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:16px"></div>
+      <!-- Status tabs. role="tablist" (2026-08-18, accessibility audit) -- same
+           reasoning as Admin's section tabs: this dashboard has almost no heading
+           structure for a screen reader to navigate by, and this bar IS a tablist
+           (one queue visible at a time), so the real ARIA pattern serves that need
+           better than an unrelated parallel heading system would. -->
+      <div id="strategist-status-tabs" role="tablist" aria-label="Campaign status" style="display:flex;gap:18px;border-bottom:1px solid var(--border);margin-bottom:16px"></div>
 
       <!-- Campaign Setup review panel (only rendered when the Campaign Setup tab is active).
            Bounded overflow:auto;max-height:70vh (2026-08-13, per Claire -- "freeze the
            headers" here too) -- same treatment as #strategist-table-wrap below, so the
            group band sticks while scrolling a long setup queue the same way the main
            table's group banner already does. -->
-      <div id="strategist-setup-panel" style="overflow:auto;max-height:70vh"></div>
+      <div id="strategist-setup-panel" role="tabpanel" aria-label="Campaign Setup" style="overflow:auto;max-height:70vh"></div>
 
       <!-- Row detail panel — lives ABOVE the table, same convention as every edit
            form in admin/index.html (e.g. #admin-service-form sits above the
@@ -125,7 +129,7 @@
            with no height limit it never actually scrolled internally, so the
            sticky header/group row just sat frozen and never tracked the
            page's own scroll. -->
-      <div id="strategist-table-wrap" style="overflow-x:auto;overflow-y:auto;max-height:70vh"></div>
+      <div id="strategist-table-wrap" role="tabpanel" aria-label="Active, Paused, and Complete campaigns" style="overflow-x:auto;overflow-y:auto;max-height:70vh"></div>
     </div>
   </div>
 </div>
@@ -133,11 +137,11 @@
 <!-- Read-only order-detail modal (2026-08-13) -- shared markup/render logic
      with Accounting's own copy of this same block, via shared.js's
      renderOrderDetailModal()/closeOrderDetailModal(). -->
-<div id="shared-order-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+<div id="shared-order-modal" role="dialog" aria-modal="true" aria-labelledby="shared-order-modal-title" onkeydown="if(event.key==='Escape')closeOrderDetailModal()" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:18px;padding:24px 28px;width:600px;max-height:80vh;overflow:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <p style="font-size:14px;font-weight:700;color:var(--text)">Order Detail</p>
-      <button onclick="closeOrderDetailModal()" class="btn-quiet-green">✕ Close</button>
+      <h3 id="shared-order-modal-title" style="margin:0;font-size:14px;font-weight:700;color:var(--text)">Order Detail</h3>
+      <button id="shared-order-modal-close" onclick="closeOrderDetailModal()" class="btn-quiet-green">✕ Close</button>
     </div>
     <div id="shared-order-modal-body"></div>
   </div>
@@ -146,10 +150,10 @@
 <!-- STRATEGIST LOGIN MODAL — same shape as /admin's, scoped to strategist/super roles
      only (super included so James/Jon can log in to test this as it's built, per the
      existing "James stays a super admin for now" arrangement). -->
-<div id="strategist-login-modal" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
+<div id="strategist-login-modal" role="dialog" aria-modal="true" aria-labelledby="strategist-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div style="font-size:32px;margin-bottom:12px">🔒</div>
-    <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Access</h3>
+    <h3 id="strategist-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Access</h3>
     <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
     <select id="strategist-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
       <option value="">— Select your name —</option>
@@ -2037,7 +2041,8 @@ function renderStrategistDashboard() {
   ];
   document.getElementById('strategist-status-tabs').innerHTML = tabs.map(([key, label]) => {
     const active = strategistStatusTab === key;
-    return `<button onclick="strategistSetStatusTab('${key}')" style="font:inherit;font-size:12.5px;font-weight:600;color:${active ? 'var(--text)' : 'var(--muted)'};background:none;border:none;border-bottom:2px solid ${active ? 'var(--accent)' : 'transparent'};padding:9px 2px;cursor:pointer">${label} <span style="font-family:monospace;font-size:11px">${counts[key]}</span></button>`;
+    const panelId = key === 'pending' ? 'strategist-setup-panel' : 'strategist-table-wrap';
+    return `<button id="strategist-status-tab-${key}" role="tab" aria-selected="${active}" aria-controls="${panelId}" onclick="strategistSetStatusTab('${key}')" style="font:inherit;font-size:12.5px;font-weight:600;color:${active ? 'var(--text)' : 'var(--muted)'};background:none;border:none;border-bottom:2px solid ${active ? 'var(--accent)' : 'transparent'};padding:9px 2px;cursor:pointer">${label} <span style="font-family:monospace;font-size:11px">${counts[key]}</span></button>`;
   }).join('');
 
   const lines = visibleCampaignLines();
@@ -2132,7 +2137,7 @@ function renderSetupPanel(l) {
     // in right now" -- matches Accounting's own .acct-detail-card treatment).
     return `<div style="border:1px solid var(--border);border-radius:18px;padding:16px 18px;margin-bottom:16px;background:#fff;box-shadow:var(--shadow-lg)">
       <div onclick="strategistToggleSetupPanel('${l.id}')" role="button" tabindex="0" aria-expanded="${isExpanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistToggleSetupPanel('${l.id}')}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${isExpanded ? '10px' : '0'};cursor:pointer">
-        <strong style="font-size:13.5px"><span style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</strong>
+        <h3 style="display:inline;margin:0;font-size:13.5px;font-weight:700"><span style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</h3>
         <div style="display:flex;align-items:center;gap:8px">
           ${strategistSetupBlockerPill(l)}
           ${l.order_id ? `<button onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">View Order</button>` : ''}
@@ -2841,14 +2846,14 @@ function renderStrategistDetailPanel() {
 
   panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:18px;padding:16px 18px;background:#fff;box-shadow:var(--shadow-lg)">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
-      <strong style="font-size:13px">${esc(l.client_name || '(unknown)')} / ${(() => {
+      <h3 style="margin:0;font-size:13px;font-weight:700">${esc(l.client_name || '(unknown)')} / ${(() => {
         const variants = strategistTacticVariantOptions(l);
         if (!variants) return esc(strategistTacticDisplay(l));
         return `<select id="detail-tactic-variant-${l.id}" onchange="strategistSaveLine('${l.id}', {tactic_label: this.value}, false)" style="padding:3px 6px;border-radius:999px;border:1.5px solid var(--accent-dark);font-size:12.5px;font-weight:700;color:var(--accent-dark);background:#fff">
           <option value="" ${!variants.includes(l.tactic_label) ? 'selected' : ''}>— Choose which one —</option>
           ${variants.map(v => `<option value="${esc(v)}" ${l.tactic_label === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
         </select>`;
-      })()}</strong>
+      })()}</h3>
       <div style="display:flex;align-items:center;gap:8px">
         <input id="detail-split-label-${l.id}" value="${esc(l.split_label || '')}" placeholder="Split label (e.g. Region 1) — blank if not split" onchange="strategistSaveSplitLabel('${l.id}', this.value)" style="width:170px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSavePlatformCampaignName('${l.id}', this.value)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
@@ -2917,16 +2922,16 @@ function renderStrategistDetailPanel() {
       </div>`).join('')}
     </div>` : ''}
 
-    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">This month's numbers</p>
+    <h4 style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">This month's numbers</h4>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
       ${(STRATEGIST_PLATFORM_METRIC_TILES[l.platform] || STRATEGIST_DEFAULT_METRIC_TILES).map(([field, label]) => `
         <div style="padding:8px 12px;border-radius:8px;background:var(--light);border:1px solid var(--border);min-width:100px">
           <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:3px">${esc(label)}</div>
-          <input type="number" step="any" value="${monthRow[field] ?? ''}" onchange="strategistSaveMonth('${l.id}', '${strategistCurrentMonth.toISOString().slice(0,10)}', {${field}: this.value})" style="width:90px;padding:3px 5px;border:none;background:transparent;font-family:monospace;font-size:14px;font-weight:700"/>
+          <input type="number" step="any" value="${monthRow[field] ?? ''}" onchange="strategistSaveMonth('${l.id}', '${strategistCurrentMonth.toISOString().slice(0,10)}', {${field}: this.value})" aria-label="${esc(label)}" style="width:90px;padding:3px 5px;border:none;background:transparent;font-family:monospace;font-size:14px;font-weight:700"/>
         </div>`).join('')}
     </div>
 
-    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 4px">Monthly history</p>
+    <h4 style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 4px">Monthly history</h4>
     <p style="font-size:10.5px;color:var(--muted);margin:0 0 8px">In-Platform and Goal are normally computed automatically from that month's Gross Budget — the override next to each is there for a specific month that needs to diverge from the plan; leave it blank to keep using the auto-calculated value.${l.service_id === 'sem-bp' ? ' A range like "150-200" is OK for SEM\'s Goal; pacing uses the midpoint.' : ''} Check <strong>Paused</strong> on a month (e.g. a seasonal off-month) to have this campaign show up under Paused for just that month automatically — no need to remember to flip the Status dropdown above and back. Only applies while overall Status is Active; add a future month below to schedule one ahead of time.</p>
     <div style="border:1px solid var(--border);border-radius:8px;padding:4px 12px;margin-bottom:16px;background:var(--light)">
       <div style="display:flex;align-items:center;gap:8px;font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);padding:6px 0">
@@ -2945,13 +2950,13 @@ function renderStrategistDetailPanel() {
         return `
         <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--border)">
           <span style="width:90px;color:var(--muted);font-weight:600">${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}</span>
-          <span style="width:60px;text-align:center"><input type="checkbox" ${m.paused ? 'checked' : ''} onchange="strategistSaveMonth('${l.id}', '${m.month}', {paused: this.checked})" title="Scheduled paused this month -- overrides Active down to effectively-Paused for this month only, without touching the campaign's overall status"/></span>
-          <input type="number" value="${m.gross_budget ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {gross_budget: this.value})" placeholder="Gross" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
-          <input type="number" value="${m.in_platform_override ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {in_platform_override: this.value})" placeholder="${autoInPlatform != null ? 'Auto: ' + Math.round(autoInPlatform) : 'In-Platform override'}" title="${m.in_platform_override != null ? 'Overridden — auto-calculated value is ' + (autoInPlatform != null ? '$' + Math.round(autoInPlatform) : 'unavailable') : ''}" style="width:${autoInPlatform != null ? '110px' : '130px'};padding:5px 6px;border-radius:6px;border:1px ${m.in_platform_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
-          <input type="${l.service_id === 'sem-bp' ? 'text' : 'number'}" value="${esc(m.goal_override ?? '')}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {goal_override: this.value})" placeholder="${l.service_id === 'sem-bp' ? (autoGoal.value != null ? 'Auto: ' + autoGoal.display : 'e.g. 150 or 150-200') : (autoGoal.value != null ? 'Auto: ' + autoGoal.display : 'Goal')}" title="${m.goal_override != null && m.goal_override !== '' ? 'Overridden — auto-calculated value is ' + (autoGoal.value != null ? autoGoal.display + ' ' + autoGoal.unit : 'unavailable') : ''}" style="width:${autoGoal.value != null ? '110px' : '130px'};padding:5px 6px;border-radius:6px;border:1px ${m.goal_override != null && m.goal_override !== '' ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
-          <input type="number" value="${m.actual_spend ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_spend: this.value})" placeholder="Actual spend" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
-          <input type="number" value="${m.actual_clicks ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_clicks: this.value})" placeholder="Clicks" style="width:75px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
-          <input type="number" value="${m.actual_impressions ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_impressions: this.value})" placeholder="Impr." style="width:85px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <span style="width:60px;text-align:center"><input type="checkbox" ${m.paused ? 'checked' : ''} onchange="strategistSaveMonth('${l.id}', '${m.month}', {paused: this.checked})" aria-label="Paused for ${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}" title="Scheduled paused this month -- overrides Active down to effectively-Paused for this month only, without touching the campaign's overall status"/></span>
+          <input type="number" value="${m.gross_budget ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {gross_budget: this.value})" placeholder="Gross" aria-label="Gross budget for ${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <input type="number" value="${m.in_platform_override ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {in_platform_override: this.value})" placeholder="${autoInPlatform != null ? 'Auto: ' + Math.round(autoInPlatform) : 'In-Platform override'}" aria-label="In-Platform override for ${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}" title="${m.in_platform_override != null ? 'Overridden — auto-calculated value is ' + (autoInPlatform != null ? '$' + Math.round(autoInPlatform) : 'unavailable') : ''}" style="width:${autoInPlatform != null ? '110px' : '130px'};padding:5px 6px;border-radius:6px;border:1px ${m.in_platform_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
+          <input type="${l.service_id === 'sem-bp' ? 'text' : 'number'}" value="${esc(m.goal_override ?? '')}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {goal_override: this.value})" placeholder="${l.service_id === 'sem-bp' ? (autoGoal.value != null ? 'Auto: ' + autoGoal.display : 'e.g. 150 or 150-200') : (autoGoal.value != null ? 'Auto: ' + autoGoal.display : 'Goal')}" aria-label="Goal for ${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}" title="${m.goal_override != null && m.goal_override !== '' ? 'Overridden — auto-calculated value is ' + (autoGoal.value != null ? autoGoal.display + ' ' + autoGoal.unit : 'unavailable') : ''}" style="width:${autoGoal.value != null ? '110px' : '130px'};padding:5px 6px;border-radius:6px;border:1px ${m.goal_override != null && m.goal_override !== '' ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
+          <input type="number" value="${m.actual_spend ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_spend: this.value})" placeholder="Actual spend" aria-label="Actual spend for ${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}" style="width:90px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <input type="number" value="${m.actual_clicks ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_clicks: this.value})" placeholder="Clicks" aria-label="Clicks for ${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}" style="width:75px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+          <input type="number" value="${m.actual_impressions ?? ''}" onchange="strategistSaveMonth('${l.id}', '${m.month}', {actual_impressions: this.value})" placeholder="Impr." aria-label="Impressions for ${esc(strategistMonthLabel(new Date(m.month + 'T00:00:00')))}" style="width:85px;padding:5px 6px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
         </div>`;
       }).join('') || '<p style="font-size:11px;color:var(--muted);padding:6px 0">No months on record yet.</p>'}
       <div style="display:flex;align-items:center;gap:8px;margin:8px 0">
@@ -2961,7 +2966,7 @@ function renderStrategistDetailPanel() {
       </div>
     </div>
 
-    <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Optimize log</p>
+    <h4 style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 8px">Optimize log</h4>
     ${log.map(o => `<div style="display:flex;align-items:flex-start;gap:14px;padding:8px 0;border-top:1px solid var(--border)">
       <span style="font-family:monospace;font-size:11px;color:var(--muted);width:80px;flex:none">${esc(o.entry_date)}</span>
       <span style="font-size:12.5px;flex:1">${esc(o.note)}</span>
@@ -2973,11 +2978,11 @@ function renderStrategistDetailPanel() {
 
     <div id="log-entry-form-${l.id}" style="margin-top:12px;display:flex;gap:8px;align-items:flex-end">
       <div>
-        <label class="lbl">Date</label>
+        <label class="lbl" for="log-date-${l.id}">Date</label>
         <input type="date" id="log-date-${l.id}" value="${new Date().toISOString().slice(0,10)}" style="padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
       </div>
       <div style="flex:1">
-        <label class="lbl">What was changed</label>
+        <label class="lbl" for="log-note-${l.id}">What was changed</label>
         <input type="text" id="log-note-${l.id}" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
       </div>
       <input type="hidden" id="log-edit-id-${l.id}"/>

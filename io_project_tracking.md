@@ -15657,3 +15657,100 @@ in both files.
 **This closes every BLOCKING finding from the portal audit** (19 total
 across Admin/Strategist/Accounting). Should-fix and polish tiers are
 still open, pending Claire's direction on whether/when to do them.
+
+## 2026-08-18 — Portal accessibility/UX audit, should-fix fixes
+
+**Shared (all three portals).** `shared.css`'s `input:focus`/`select:
+focus`/`textarea:focus` outline used `var(--accent)` (2.98:1 on white) —
+below the 3:1 WCAG 1.4.11 minimum for a focus indicator. Changed to
+`var(--accent-dark)` (9.48:1). One fix, three portals.
+
+**Admin.** The two icon-only "✕ Remove" buttons (Intake Form question,
+Accounting-map spend tier) relied on `title` alone, which isn't a
+screen reader's accessible name — added matching `aria-label`. Added
+`alt` to the two `<img>`s that had none (group logo preview, client
+signature — the latter is real proof-of-signing content, not
+decoration). The heading-structure gap (one real `<h3>` in the whole
+6,600-line app) turned out to be better solved as a real ARIA tablist
+than as bolted-on `<h2>`s: this app already IS a tab interface (13
+sections, one panel visible at a time, switched by the top bar) — Admin
+tabs got the real `role="tablist"`/`role="tab"`/`role="tabpanel"`
+pattern, `aria-selected` wired into the existing `adminSection()`
+toggle function, and `aria-controls` linking each tab to its panel.
+Adding a parallel heading system would have just duplicated these same
+13 labels in a second, disconnected navigation structure.
+
+**Strategist.** Same fixes as Admin's icon buttons pattern doesn't
+apply here (no bare-title-only buttons), but the month-nav `‹`/`›`
+buttons got the same missing-`aria-label` fix as Accounting's identical
+control. The Monthly History table's Gross/In-Platform/Goal/Actual
+Spend/Clicks/Impressions inputs (a plain flex-row layout, not a real
+`<table>`, so no `<th>`/`<td>` association was possible) each got an
+`aria-label` naming both the column and the specific month it's for
+(e.g. "Gross budget for Aug 2026") — was previously an unlabeled
+sequence of blank number fields to a screen reader. The "This month's
+numbers" metric tile inputs got the same treatment. Two directly
+adjacent `<label>`s (the Optimize Log's own Date/"What was changed"
+add-entry fields) were also missing `for=` — fixed alongside, same bug
+class. The status-tab bar (Campaign Setup/Active/Paused/Complete) got
+the same real ARIA tablist pattern as Admin's section tabs. The
+Campaign Setup queue's own "Campaign Setup — Client / Tactic" label and
+the campaign detail panel's "Client / Tactic" label, "This month's
+numbers," "Monthly history," and "Optimize log" section labels were
+converted from `<strong>`/`<p>` to real `<h3>`/`<h4>` headings — unlike
+the tab bars, this is genuinely a document a screen-reader user would
+want to skim by heading, not a tab switcher. Verified via screenshot
+that both heading conversions (one sitting inline in a flex row next to
+an icon span, one as a flex-item sibling of an action-buttons div) have
+zero visual effect — flexbox already blockifies any child regardless of
+its own `display` value, so `<h3 style="display:inline">` renders
+identically to the `<strong>` it replaced.
+
+**Found but NOT fixed — flagging for a separate pass, not fixing
+silently**: while checking Strategist's labels, found the New
+Campaign/Bulk Import forms (lines ~466-546, "Client," "Tactic,"
+"Platform," "Status," "Setup Notes," "Flight Start/End," "Current Gross
+Budget," etc.) have the same unwired-`<label>` bug as everything already
+fixed in Admin and Accounting's own Add-a-Service form — roughly 15
+more instances, none of which the original audit agent caught for this
+file. This is a real, same-category bug, but it's meaningfully more
+scope than the should-fix item that led me to it, so it's flagged here
+rather than fixed without asking, per the "don't expand scope
+unprompted" rule — happy to do it next if wanted.
+
+**Accounting.** Month-nav buttons: same `aria-label` fix as Strategist.
+The group filter, name-select, and password field on the group filter
+bar/login modal had no accessible name (`aria-label` added to all
+three, password field's login instructions also linked via
+`aria-describedby`, matching Admin's earlier login-modal fix). Also
+swapped its `#EF4444` error text for the same `#B3261E` used everywhere
+else and added `role="alert"` — this file hadn't gotten that specific
+fix yet even though Admin and Strategist both had. The group-name
+banner row was a plain `<td colspan="8">` — changed to
+`<th scope="colgroup">` so it reads as a real section header over the
+rows beneath it, not an ordinary (and bizarrely 8-wide) data cell.
+
+**Both order-detail modal and all three login modals** got `role=
+"dialog"`/`aria-modal="true"`/`aria-labelledby` (pointing at each
+modal's own heading). The order-detail modal — shared between
+Strategist and Accounting via `shared.js`'s `renderOrderDetailModal()`/
+`closeOrderDetailModal()` — also got real focus management: opening it
+now moves focus to its own Close button, and closing it restores focus
+to whatever had it before (verified live: focus starts on a trigger
+button, moves to the modal's Close button on open, and returns to the
+original trigger on close), plus `onkeydown="if(event.key==='Escape')
+closeOrderDetailModal()"` on the modal's own container. The three login
+modals got the dialog role/label wiring only, not the same full focus-
+trap treatment — they gate the whole app before most other content
+exists to tab into, a meaningfully lower-risk case than a modal that
+opens over an already-populated table.
+
+**Verified live** in a headless browser: all `aria-label`s resolve to
+the expected accessible names; both dialog modals report `role=
+"dialog"` with a resolvable `aria-labelledby` target; the order-detail
+modal's open/close focus handoff works exactly as designed; Admin's 13
+tabs/panels are correctly `aria-controls`-linked and `aria-selected`
+toggles correctly on `adminSection()` calls; Strategist's 4 status tabs
+report the same; both heading conversions screenshot identically to
+their pre-fix layout. `node --check` clean on every inline script in
+all four HTML files plus `shared.js`.
