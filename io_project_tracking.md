@@ -15358,3 +15358,71 @@ still pass unchanged, confirming this didn't disturb anything else.
 **All should-fix findings now closed.** Remaining open items are both
 polish-tier (leftover chevron glyph on the Review page, dense legal
 text) — not requested yet.
+
+## 2026-08-17 (cont'd) — Fixed the 2 remaining polish findings
+
+Claire: "Fix the two polish items too." Both audit findings closed.
+
+**Leftover raw chevron glyph.** The Review page's section toggles
+(`toggleReviewSection()`) still rendered the raw Unicode `▸`/`▾`
+characters, even though this exact substitution was already fixed
+everywhere else on 2026-08-07 specifically because several mobile
+browsers render `U+25B6`/`U+25BC` as their own colorful "media player"
+icon instead of a plain triangle — caught live on Claire's phone once
+already; this one instance was simply missed at the time. Replaced with
+the identical `.chevron`/`.chevron.expanded` inline-SVG markup the
+service-section headers already use (same classes, same rotation
+transition), rather than a second one-off implementation.
+
+**Dense legal text.** Found this was really two separate instances,
+not one — the on-screen "Digital Advertising" disclaimer the audit
+originally cited, and a much denser printed-document-only version
+found while fixing it (`buildIoDocumentHtml()`'s `legalServiceSpecific`
+fallback ran all 7 hosting/commitment-length rules together as one
+sentence, every symbol separated only by a period). Both are only the
+**built-in fallback** text — `loadLegalContent()` overwrites the on-
+screen version's `innerHTML` wholesale from the admin-editable
+`legal_content` table when it has real content, and the printed
+versions are plain `||` string fallbacks used only when that same table
+field is empty. Restructured the on-screen "Digital Advertising" text
+into a `<ul>`/`<li>` list (its two actual rules — a spend-minimum note
+and a non-refundability rule — were previously one run-on sentence);
+deliberately put the `<ul>` INSIDE the id'd `<span>` rather than making
+the span itself the list, so `loadLegalContent()`'s wholesale
+`innerHTML` replacement still behaves exactly as before regardless of
+whether the live admin text is plain prose or its own markup — verified
+this live by simulating an admin overwrite with plain text and
+confirming it cleanly replaces the list with no leftover markup.
+Restructured both printed fallbacks (`legalDigitalAdvertising`,
+`legalServiceSpecific`) into one rule per line via `<br>`, matching the
+on-screen version's existing line-per-symbol style; confirmed via
+`buildIoDocumentHtml()`'s actual return value that both render as real
+line breaks, not literal `<br>` text.
+
+**Important scope note, told to Claire directly rather than assumed
+away**: none of this touches the actual LIVE legal wording stored in
+Supabase's `legal_content` table — only the fallback text baked into
+this file, which only ever shows if that table's fetch fails or a
+specific field is empty. If Claire wants her group's real, currently-
+live legal text to read this way too, that's a content edit she'd make
+herself via the Admin portal's Legal Text tab (which already supports
+HTML like `<br>`/`<ul>` per its own field hints) — not something a code
+change to the fallback reaches, and not something to guess at or rewrite
+on her behalf, per the same reasoning as every other business-facing
+wording decision this session has left for her to make.
+
+**Verified** live in a headless browser: confirmed no raw `▸`/`▾`
+characters render anywhere in the Review page's text content, the
+chevron span contains a real `<svg>`, and `.expanded` is applied
+correctly when a section isn't collapsed. Confirmed the Digital
+Advertising span renders exactly 2 `<li>` items with the correct split
+text. Screenshotted both the Review page's chevron (rendering cleanly,
+pointing down while expanded) and the full Agreement & Disclaimers card
+(the new bulleted list sits consistently alongside the existing
+Service-Specific Terms list, no visual regression to the other three
+disclaimer blocks). `node --check` clean.
+
+**This closes every finding from the original client-form audit** —
+all 3 blocking, all 5 should-fix (well, 6 counting the header/button
+contrast as two related findings), and both polish items are now
+addressed.
