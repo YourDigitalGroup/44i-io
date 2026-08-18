@@ -932,7 +932,24 @@ select.qty-field{background-image:none;padding-right:3px}
         </div>
 
         <div class="legal" style="margin-bottom:20px">
-          <strong>Digital Advertising:</strong> <span id="legal-text-digital-advertising">Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, Audio, and Mobile campaigns have a recommended minimum monthly spend as noted, for the campaign to have a meaningful chance at results. All advertising budgets are non-refundable once campaigns have launched.</span>
+          <strong>Digital Advertising:</strong>
+          <!-- Split into its two actual rules, as a <ul> INSIDE the id'd span rather
+               than making the span itself a list (2026-08-17, per the accessibility/UX
+               audit) -- was one unbroken sentence covering both a spend-minimum note
+               and a non-refundability rule, easy to skim past before signing. This is
+               the built-in FALLBACK only, replaced wholesale by loadLegalContent() if
+               the admin-editable field has real content -- keeping the id on a plain
+               span (not the <ul> itself) means that replacement still works exactly
+               the same as it always did, whatever shape the live text is in, rather
+               than potentially leaving a bare unstyled <ul> if the live text is plain
+               prose with no <li> markup. If the group's LIVE legal text (Admin portal
+               → Legal Text tab, which already supports HTML like <br>) should read
+               this way too, that's a content edit for whoever owns that wording, not
+               something this code change reaches on its own. -->
+          <span id="legal-text-digital-advertising"><ul style="margin:6px 0 0;padding-left:20px">
+            <li>Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, Audio, and Mobile campaigns have a recommended minimum monthly spend as noted, for the campaign to have a meaningful chance at results.</li>
+            <li>All advertising budgets are non-refundable once campaigns have launched.</li>
+          </ul></span>
         </div>
 
         <!-- Disclaimer checkboxes -->
@@ -3565,7 +3582,15 @@ function buildReview() {
     // to visually stick at all -- see io_project_tracking.md for that failed attempt).
     // While collapsed, the table is left out entirely rather than hidden with
     // display:none -- there's nothing to scroll, so no box is needed at all.
-    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}"><span class="rs-chevron">${isCollapsed ? '▸' : '▾'}</span> ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table"><thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
+    // Inline SVG chevron, not the raw ▸/▾ Unicode characters (2026-08-17, per the
+    // accessibility/UX audit) -- this exact glyph substitution was already fixed
+    // everywhere else on 2026-08-07 (several mobile browsers render U+25B6/U+25BC as
+    // their own colorful "media player" icon instead of a plain triangle, caught live
+    // on Claire's phone), this one instance was just missed. Reuses the identical
+    // .chevron/.chevron.expanded markup and rotation the service-section headers
+    // already use, rather than a second one-off implementation.
+    const rsChevronSvg = `<span class="chevron rs-chevron${isCollapsed ? '' : ' expanded'}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>`;
+    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}">${rsChevronSvg} ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table"><thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
   });
 
   document.getElementById('total-onetime').textContent = fmt(oneTime);
@@ -5007,10 +5032,16 @@ function buildIoDocumentHtml() {
     'This agreement is non-cancellable and non-refundable for the duration of the campaign term. Final pricing may vary by applicable sales tax.';
   const legalIp = subGroupName(LEGAL_CONTENT?.ip_printed) ||
     `The Client represents and warrants that it has the right, including patents, trademarks, and copyrights, whether published or unpublished, to use any and all materials supplied including imagery, content, and software code, and holds ${groupName} and its partners harmless from any claims arising therefrom.`;
+  // Both fallbacks below split into one rule per line via <br> (2026-08-17, per the
+  // accessibility/UX audit) -- same reasoning and same caveat as the on-screen
+  // Digital Advertising fix: this only ever shows if LEGAL_CONTENT's own printed
+  // field is empty, so it doesn't touch whatever text a group's live legal_content
+  // row actually has. legalServiceSpecific in particular used to run all 7 rules
+  // together as one dense sentence, every symbol separated only by a period.
   const legalDigitalAdvertising = subGroupName(LEGAL_CONTENT?.digital_advertising_printed) ||
-    'Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, and Audio campaigns are billed based on the agreed campaign budget. Advertising budgets are non-refundable once campaigns have launched.';
+    'Targeted Display, Social Media Ads, Location Targeting, Video, Streaming TV, and Audio campaigns are billed based on the agreed campaign budget.<br>Advertising budgets are non-refundable once campaigns have launched.';
   const legalServiceSpecific = subGroupName(LEGAL_CONTENT?.service_specific_printed) ||
-    '* Annual hosting fee required each year on IO anniversary date. ** 12-month minimum commitment. *** E-commerce hosting fee required annually. ‡ 6-month non-cancellable agreement. ◊ 12-month non-cancellable agreement. § 18-month non-cancellable agreement. ADA Web Accessibility hosting collected upfront and renews annually.';
+    '* Annual hosting fee required each year on IO anniversary date.<br>** 12-month minimum commitment.<br>*** E-commerce hosting fee required annually.<br>‡ 6-month non-cancellable agreement.<br>◊ 12-month non-cancellable agreement.<br>§ 18-month non-cancellable agreement.<br>ADA Web Accessibility hosting collected upfront and renews annually.';
   const amName = group.am_name || '';
   const amEmail = group.am_email || '';
   const color = group.brand_color || '#1C9BD7';
