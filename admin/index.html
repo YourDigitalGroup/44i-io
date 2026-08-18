@@ -6007,25 +6007,42 @@ function viewOrderDetail(orderId) {
   const hosting = o.hosting_choices || {};
 
   // Line items
-  let liRows = li.map(item => {
-    let amtParts = [];
-    if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
-    if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
-    if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
-    if (item.prorated_hosting_amt) amtParts.push('+ $' + item.prorated_hosting_amt.toFixed(2) + ' prorated hosting');
-    const kocBadge = item.requires_koc ? '<span style="font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:8px;margin-left:4px">KOC</span>' : '';
-    // Shows the same disambiguated title Strategist/Accounting show (2026-08-12,
-    // per Claire: "update this page to include the service title, like the
-    // accounting portal") -- prefers a LIVE catalog lookup over the value frozen
-    // on the order at signing time, so an older order retroactively shows a label
-    // added to the catalog afterward (found live: this exact order's own wm-5p
-    // item had no accounting_label yet at signing time, only just added). Falls
-    // back to the order's own frozen value, then the plain client-facing label,
-    // if the catalog has no live row for this service_id at all (e.g. a
-    // since-deactivated service).
-    const displayLabel = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label;
-    return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td></tr>`;
-  }).join('') || '<tr><td colspan="3" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
+  // Grouped by section, with dated per-service Start/End columns (2026-08-18, per
+  // Claire) -- same section-divider pattern as the Services catalog tab
+  // (orderedSectionIds/sectionLabel()), and Start/End now read each line item's OWN
+  // start_date/end_date (stored per-tactic since 2026-08-06) instead of having no
+  // per-service date visibility at all here. Falls back to the order-wide dates
+  // only for pre-2026-08-06 orders that never got per-line dates written.
+  const byLiSection = {};
+  li.forEach(item => { (byLiSection[item.section] = byLiSection[item.section] || []).push(item); });
+  const liSectionOrderIndex = {};
+  SECTIONS.forEach((sec, i) => { liSectionOrderIndex[sec.id] = sec.sort_order ?? i; });
+  const orderedLiSectionIds = Object.keys(byLiSection).sort((a, b) =>
+    (liSectionOrderIndex[a] ?? Infinity) - (liSectionOrderIndex[b] ?? Infinity));
+
+  let liRows = orderedLiSectionIds.map(sec => {
+    const header = `<tr><td colspan="5" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
+    const rows = byLiSection[sec].map(item => {
+      let amtParts = [];
+      if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
+      if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
+      if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
+      if (item.prorated_hosting_amt) amtParts.push('+ $' + item.prorated_hosting_amt.toFixed(2) + ' prorated hosting');
+      const kocBadge = item.requires_koc ? '<span style="font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:8px;margin-left:4px">KOC</span>' : '';
+      // Shows the same disambiguated title Strategist/Accounting show (2026-08-12,
+      // per Claire: "update this page to include the service title, like the
+      // accounting portal") -- prefers a LIVE catalog lookup over the value frozen
+      // on the order at signing time, so an older order retroactively shows a label
+      // added to the catalog afterward (found live: this exact order's own wm-5p
+      // item had no accounting_label yet at signing time, only just added). Falls
+      // back to the order's own frozen value, then the plain client-facing label,
+      // if the catalog has no live row for this service_id at all (e.g. a
+      // since-deactivated service).
+      const displayLabel = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label;
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td></tr>`;
+    }).join('');
+    return header + rows;
+  }).join('') || '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
 
   // Intake forms — show human labels, not field keys
   let intakeHtml = '';
@@ -6120,6 +6137,8 @@ function viewOrderDetail(orderId) {
     <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-bottom:18px">
       <thead><tr style="background:var(--light)">
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Service</th>
+        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Start</th>
+        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">End</th>
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Amount</th>
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Notes</th>
       </tr></thead>
