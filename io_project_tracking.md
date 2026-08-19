@@ -16404,3 +16404,122 @@ validation friction. `node --check` clean.
 **Not yet done**: Phase 3 (backend fan-out into per-agent `campaign_lines`),
 Phase 4 (Trello card fan-out with county-prefixed titles), Phase 5 (portal
 Client-column display), Phase 6 (legacy client migration).
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out: individual intake forms per agent
+
+Claire, after confirming the split table's placement/amount-entry mechanics
+already match what they do today: "they will need individual intake
+forms." Real gap: intake responses are stored keyed by the FORM's own id
+(`intakeData[formKey]`) — even two different services sharing one form
+already share a single response by design. For a multi-agent split, each
+agent needs their OWN response to the same form, which the existing
+mechanism had no way to express.
+
+**Built**, without touching the plain (non-split) intake flow's own
+behavior:
+- `openIntakeForService(serviceId, forceEdit, storageKeyOverride)` — new
+  third param. When set, the modal reads/writes `intakeData` under that key
+  instead of the real `formKey`; the form DEFINITION/rendering (which
+  fields show, `INTAKE_FORMS[formKey]`) is untouched either way — only
+  *where the response is stored* changes. Tracked for the life of one modal
+  session via a new `currentIntakeStorageKey` global, mirroring how
+  `currentIntakeServiceId` already works.
+- `agentIntakeStorageKey(formKey, row)` — composes `formKey::agent::<id>`
+  (or `::agent::new:<name>` for a not-yet-created agent), scoped per split
+  row.
+- `saveIntakeForm()`, `bypassIntakeFromFooter()`, `removeBypass()` all now
+  read/write through `currentIntakeStorageKey || formKey` instead of the
+  bare formKey — `removeBypass()` no longer takes a param at all, since it
+  can just read the tracked key directly (simpler, one less place a stale
+  hardcoded key could get passed).
+- New "Intake" column on the split table (`renderAgentSplitRows()`): shows
+  "Pick an agent first" until that row has a real or new agent, then a
+  Fill in/Edit button plus a live status (Not started/Partial/Complete/AM
+  Help), via `agentSplitRowIntakeInfo(i)`/`openAgentSplitIntake(i)`.
+  Re-renders on a Service or new-agent-name change so the column never
+  shows a stale service's status.
+- No change needed to the submission payload — `intake_responses:
+  intakeData` (already existing) already carries the new composite-keyed
+  entries alongside normal ones, since they're just additional keys on the
+  same object.
+
+**Verified live** via Playwright: two agents on the identical service get
+fully isolated statuses (agent1 marked Complete after a direct save,
+agent2 stays "Not started," unaffected) — the actual bug this whole
+mechanism exists to prevent, confirmed not happening. A split row with no
+agent chosen yet correctly shows the "needs an agent first" state instead
+of a broken/premature key. `openAgentSplitIntake()` correctly wires
+`currentIntakeStorageKey` to that row's own composite key before opening.
+`node --check` clean.
+
+**Deliberately not touched**: the existing checkbox-driven auto-open of
+the SHARED (non-agent) intake modal when a service is first checked in the
+normal Step 2 flow still fires as before, even for a multi-agent client's
+service. Flagged, not fixed — Claire didn't ask for this to be suppressed,
+and doing so unprompted risked scope creep; if it turns out confusing
+during real testing, it's one flag to add back to `toggle()`.
+
+---
+
+### 2026-08-19 — MS Farm Bureau: suppress shared intake popup, transfer flight dates
+
+Two follow-ups from the same conversation:
+
+1. **"Remove the shared one since it is not needed for these specific
+   clients."** `toggle()`'s auto-open of the shared (non-agent) intake modal
+   now checks `isMultiAgentClientActive()` first and skips entirely for a
+   multi-agent client — intake is filled in per row on the split table
+   instead (previous entry). A normal client's checkbox flow is completely
+   unaffected.
+
+2. **"Have the flight dates transfer to the per client lines."** A split
+   row's Start/End used to be typed from scratch, duplicating the dates
+   already entered on the tactic's own row. Now: picking a row's Service
+   inherits that tactic's current Start/End immediately
+   (`updateAgentSplitRow`'s `serviceId` case), and `updateTacticDate()` (the
+   function behind the tactic's own date inputs) now also calls
+   `syncAgentSplitDatesForService()`, which pushes any later edit to the
+   tactic's own dates into every split row currently using that service.
+   Rows stay independently editable after inheriting — this only sets the
+   starting value, same "transfer, don't lock" behavior implied by the ask.
+
+**Verified live** via Playwright: checking a service for a multi-agent
+client no longer calls `openIntakeForService()` at all, while the identical
+check for a normal client still does (isolated by swapping
+`agent-split-card`'s visibility, the same flag `isMultiAgentClientActive()`
+reads). Separately: picking a split row's Service pulls in the tactic's
+already-set Sept 1 – Feb 28 dates verbatim, and editing the tactic's Start
+date afterward (Oct 15) propagates into that same row live, without
+touching its End date. `node --check` clean.
+
+---
+
+### 2026-08-19 — MS Farm Bureau: validate split totals against the requested amount
+
+Claire: "confirms that the splits add up to the total that was requested
+for that service." Added both a live indicator and a hard submit-time
+check.
+
+**Built:**
+- `agentSplitServiceExpectedTotal(serviceId)` — reads whichever field
+  actually carries a tactic's sold amount for its own pricing shape
+  (`.spend` for ad-spend tactics, `.fee × .qty` for per-unit, `.recurring`
+  or `.fee` otherwise), returning `null` (not 0) when there's genuinely
+  nothing priced yet (an un-quoted QUR item) so that case isn't flagged as
+  a false mismatch.
+- `agentSplitServiceReconciliation()` — groups split rows by service, sums
+  each service's agent amounts, compares to the above.
+- Live summary under the split table (`renderAgentSplitReconciliation()`,
+  its own container so an Amount keystroke refreshes just this — not the
+  whole rows table, which would blur the input mid-type): "✓ ... matches"
+  or "⚠ ... MISMATCH" per service in play.
+- `collectAgentSplits()` now blocks submission (returns `null`, toasts
+  which service and both figures) if any service's split total doesn't
+  match its requested amount within a 1-cent float-rounding tolerance.
+
+**Verified live** via Playwright: a $210+$185 split against a $1,150
+SEM tactic shows the live MISMATCH warning and `collectAgentSplits()`
+correctly returns `null` (blocked); adjusting the same rows to $600+$550
+clears the warning and submission succeeds. `node --check` clean.

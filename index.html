@@ -849,6 +849,12 @@ select.qty-field{background-image:none;padding-right:3px}
 
         <div id="agent-split-rows"></div>
         <button type="button" class="btn-quiet-green" onclick="addAgentSplitRow()" style="margin-top:10px">+ Add another agent/service row</button>
+
+        <!-- Live reconciliation (2026-08-19, per Claire -- "confirms that the
+             splits add up to the total that was requested for that service") --
+             updates as amounts are typed; also enforced (not just shown) at
+             submit by collectAgentSplits(). -->
+        <div id="agent-split-reconciliation" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border)"></div>
       </div>
     </div>
 
@@ -1495,6 +1501,11 @@ async function loadAgentSplitRosters(clientId) {
   renderAgentSplitRows();
 }
 
+function isMultiAgentClientActive() {
+  const card = document.getElementById('agent-split-card');
+  return !!card && card.style.display !== 'none';
+}
+
 function setAgentSplitCardVisible(visible) {
   const card = document.getElementById('agent-split-card');
   if (card) card.style.display = visible ? 'block' : 'none';
@@ -1536,6 +1547,42 @@ function agentSplitServiceOptions() {
   return Object.entries(selected).map(([id, data]) => ({ id, label: data.label }));
 }
 
+// What the client was actually sold for one tactic, in whichever field
+// actually carries that number for its pricing shape (2026-08-19, per Claire
+// -- "confirms that the splits add up to the total that was requested for
+// that service"). Returns null when there's genuinely nothing to compare
+// against yet (a QUR item with no quoted price entered), not 0 -- 0 would
+// read as a real mismatch against any nonzero split total.
+function agentSplitServiceExpectedTotal(serviceId) {
+  const data = selected[serviceId];
+  if (!data) return null;
+  if (data.spend > 0) return Number(data.spend);
+  if (data.qty != null) return Number(data.fee || 0) * Number(data.qty);
+  if (data.recurring != null && data.recurring > 0) return Number(data.recurring);
+  if (data.fee != null && data.fee > 0) return Number(data.fee);
+  return null;
+}
+
+// Groups the current split rows by service, summing each service's agent
+// amounts and comparing to agentSplitServiceExpectedTotal() above. Used both
+// for the live reconciliation summary and for collectAgentSplits()'s own
+// submit-time validation, so the two can never disagree about what counts as
+// a match. 1-cent tolerance absorbs float rounding, not real discrepancies.
+function agentSplitServiceReconciliation() {
+  const byService = {};
+  agentSplitRows.forEach(row => {
+    if (!row.serviceId) return;
+    const amt = Number(row.amount) || 0;
+    byService[row.serviceId] = (byService[row.serviceId] || 0) + amt;
+  });
+  return Object.entries(byService).map(([serviceId, splitTotal]) => {
+    const expected = agentSplitServiceExpectedTotal(serviceId);
+    const label = selected[serviceId]?.label || serviceId;
+    const matches = expected == null ? null : Math.abs(splitTotal - expected) < 0.01;
+    return { serviceId, label, splitTotal, expected, matches };
+  });
+}
+
 function renderAgentSplitRows() {
   const wrap = document.getElementById('agent-split-rows');
   if (!wrap) return;
@@ -1550,10 +1597,20 @@ function renderAgentSplitRows() {
       <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Start</th>
       <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">End</th>
       <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Amount</th>
+      <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Intake</th>
       <th></th>
     </tr></thead>
     <tbody>` +
-    agentSplitRows.map((row, i) => `
+    agentSplitRows.map((row, i) => {
+      const intake = agentSplitRowIntakeInfo(i);
+      let intakeCell = '<span style="color:var(--muted);font-size:11px">—</span>';
+      if (intake) {
+        intakeCell = intake.needsAgent
+          ? '<span style="color:var(--muted);font-size:11px">Pick an agent first</span>'
+          : `<button type="button" class="btn-quiet-green" onclick="openAgentSplitIntake(${i})" style="font-size:11px;padding:4px 10px">${intake.status === 'Not started' ? 'Fill in' : 'Edit'}</button>
+             <span style="font-size:10.5px;font-weight:700;color:${intake.color};margin-left:4px">${esc(intake.status)}</span>`;
+      }
+      return `
       <tr>
         <td style="padding:4px 6px">
           <select onchange="updateAgentSplitRow(${i},'agentPick',this.value)" style="width:100%">
@@ -1566,8 +1623,10 @@ function renderAgentSplitRows() {
         <td style="padding:4px 6px"><input type="date" value="${esc(row.startDate || '')}" oninput="updateAgentSplitRow(${i},'startDate',this.value)" style="width:100%"/></td>
         <td style="padding:4px 6px"><input type="date" value="${esc(row.endDate || '')}" oninput="updateAgentSplitRow(${i},'endDate',this.value)" style="width:100%"/></td>
         <td style="padding:4px 6px"><input type="number" step="0.01" placeholder="$" value="${esc(row.amount || '')}" oninput="updateAgentSplitRow(${i},'amount',this.value)" style="width:90px"/></td>
+        <td style="padding:4px 6px;white-space:nowrap">${intakeCell}</td>
         <td style="padding:4px 6px">${agentSplitRows.length > 1 ? `<button type="button" class="btn-quiet-green" onclick="removeAgentSplitRow(${i})">✕</button>` : ''}</td>
-      </tr>`).join('') +
+      </tr>`;
+    }).join('') +
     `</tbody></table>`;
   // Re-select each row's Agent dropdown to its stored value now that the HTML is in
   // the DOM (avoids fragile string-matching inside the template above for the agent
@@ -1576,6 +1635,29 @@ function renderAgentSplitRows() {
     const agentSel = tr.querySelector('td:first-child select');
     if (agentSel) agentSel.value = agentSplitRows[i].agentId || '';
   });
+  renderAgentSplitReconciliation();
+}
+
+// Live "does this add up" summary (2026-08-19, per Claire -- "confirms that
+// the splits add up to the total that was requested for that service"). A
+// separate container/function from the rows table itself so a keystroke in
+// an Amount field can refresh just this summary without re-rendering (and
+// losing focus on) the whole table -- see updateAgentSplitRow()'s 'amount'
+// case below.
+function renderAgentSplitReconciliation() {
+  const el = document.getElementById('agent-split-reconciliation');
+  if (!el) return;
+  const rows = agentSplitServiceReconciliation();
+  if (!rows.length) { el.innerHTML = ''; return; }
+  el.innerHTML = rows.map(r => {
+    const fmt = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    if (r.expected == null) {
+      return `<div style="font-size:11.5px;color:var(--muted);padding:3px 0">${esc(r.label)}: split total ${fmt(r.splitTotal)} — no requested amount to check against yet</div>`;
+    }
+    const color = r.matches ? '#1F7A42' : '#B91C1C';
+    const icon = r.matches ? '✓' : '⚠';
+    return `<div style="font-size:11.5px;color:${color};font-weight:600;padding:3px 0">${icon} ${esc(r.label)}: split total ${fmt(r.splitTotal)} vs. requested ${fmt(r.expected)}${r.matches ? ' — matches' : ' — MISMATCH'}</div>`;
+  }).join('');
 }
 
 function updateAgentSplitRow(i, field, value) {
@@ -1587,6 +1669,50 @@ function updateAgentSplitRow(i, field, value) {
     return;
   }
   agentSplitRows[i][field] = value;
+  // Picking a row's Service inherits that tactic's own Start/End (2026-08-19,
+  // per Claire -- "have the flight dates transfer to the per client lines"),
+  // same dates already typed on the catalog row above, instead of the AE
+  // re-entering them here from scratch. Still independently editable after --
+  // this only sets the starting value.
+  if (field === 'serviceId' && selected[value]) {
+    agentSplitRows[i].startDate = selected[value].start_date || '';
+    agentSplitRows[i].endDate = selected[value].end_date || '';
+  }
+  // Re-render on a Service change too, not just Agent -- the Intake column's
+  // button/status depends on which service this row is for, and typing a new
+  // agent name (agentNewName) needs to be reflected in that column immediately
+  // too (a new agent has no saved intake response yet either way, but the "Pick
+  // an agent first" placeholder needs to clear once a name is typed).
+  if (field === 'serviceId' || field === 'agentNewName') renderAgentSplitRows();
+  // 'amount' only needs the reconciliation summary refreshed, not a full
+  // table re-render (which would blur the input mid-keystroke).
+  else if (field === 'amount') renderAgentSplitReconciliation();
+}
+
+// Resolves what the Intake column should show for one split row: null if that
+// row's service has no intake form at all, {needsAgent:true} if an agent hasn't
+// been chosen/typed yet (nothing to key a response to), otherwise the row's own
+// saved status (2026-08-19 -- see agentIntakeStorageKey()/currentIntakeStorageKey
+// above for why this is a PER-ROW response, not shared with the plain checkbox
+// flow or with any other agent on the same service).
+function agentSplitRowIntakeInfo(i) {
+  const row = agentSplitRows[i];
+  const cfg = PRODUCT_CONFIG[row.serviceId];
+  if (!cfg?.intake) return null;
+  if (!row.agentId && !row.agentNewName) return { needsAgent: true };
+  const data = intakeData[agentIntakeStorageKey(cfg.intake, row)];
+  if (data?.bypassed) return { needsAgent: false, status: 'AM Help', color: '#92400E' };
+  if (data?.completed) return { needsAgent: false, status: 'Complete', color: '#1F7A42' };
+  if (data?.partial) return { needsAgent: false, status: 'Partial', color: '#92650B' };
+  return { needsAgent: false, status: 'Not started', color: 'var(--muted)' };
+}
+
+function openAgentSplitIntake(i) {
+  const row = agentSplitRows[i];
+  const cfg = PRODUCT_CONFIG[row.serviceId];
+  if (!cfg?.intake) return;
+  if (!row.agentId && !row.agentNewName) { showToast('Pick or add an agent for this row first', 'error'); return; }
+  openIntakeForService(row.serviceId, false, agentIntakeStorageKey(cfg.intake, row));
 }
 
 function addAgentSplitRow() {
@@ -1630,6 +1756,17 @@ function collectAgentSplits() {
       end_date: row.endDate || null,
       amount: Number(row.amount),
     });
+  }
+  // Enforced here, not just shown live (2026-08-19, per Claire -- "confirms
+  // that the splits add up to the total that was requested for that
+  // service") -- a service with no requested-total to compare against yet
+  // (e.g. an unpriced QUR item) is skipped, not treated as a mismatch.
+  const mismatches = agentSplitServiceReconciliation().filter(r => r.matches === false);
+  if (mismatches.length) {
+    const first = mismatches[0];
+    const fmt = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    showToast(`Agent/County Split: ${first.label}'s splits total ${fmt(first.splitTotal)}, but ${fmt(first.expected)} was requested — please fix before submitting`, 'error');
+    return null;
   }
   return splits;
 }
@@ -1743,6 +1880,19 @@ let currentStep = 1;
 let intakeData = {}; // formKey -> { fields, bypassed, bypassNote }
 let hostingChoices = {}; // serviceId -> { choice, package, proratedAmt, proratedNote }
 let currentIntakeServiceId = null;
+// Agent/County Split intake (2026-08-19, MS Farm Bureau) -- an intake form's
+// response is normally stored under intakeData[formKey] (the FORM's own id --
+// shared across every service using that form, by design). A multi-agent split
+// row needs its OWN response per agent instead of one shared across the whole
+// tactic, so the modal's actual STORAGE key becomes formKey::agent::<agentKey>
+// when opened from a split row, while the form DEFINITION/rendering still uses
+// the real formKey throughout (only where the response gets read/written
+// changes). null means "use the real formKey" -- the normal, non-agent path.
+let currentIntakeStorageKey = null;
+function agentIntakeStorageKey(formKey, row) {
+  const agentKey = row.agentId === '__new__' ? ('new:' + row.agentNewName) : row.agentId;
+  return `${formKey}::agent::${agentKey}`;
+}
 let currentHostingServiceId = null;
 let currentHostingPageType = null;
 
@@ -2021,23 +2171,25 @@ function bypassIntakeFromFooter() {
   if (!sid) return;
   const cfg = PRODUCT_CONFIG[sid];
   if (!cfg?.intake) return;
-  intakeData[cfg.intake] = { bypassed: true, bypassNote: '', fields: {} };
+  intakeData[currentIntakeStorageKey || cfg.intake] = { bypassed: true, bypassNote: '', fields: {} };
   closeIntakeModal();
   updateIntakeStatusCard();
   showToast('✋ AM help requested — KOC will be required');
 }
 
-function openIntakeForService(serviceId, forceEdit) {
+function openIntakeForService(serviceId, forceEdit, storageKeyOverride) {
   const cfg = PRODUCT_CONFIG[serviceId];
   if (!cfg || !cfg.intake) return;
   const formDef = INTAKE_FORMS[cfg.intake];
   if (!formDef) return;
   currentIntakeServiceId = serviceId;
+  currentIntakeStorageKey = storageKeyOverride || null;
+  const storageKey = currentIntakeStorageKey || cfg.intake;
 
   document.getElementById('intake-modal-title').textContent = formDef.title;
   document.getElementById('intake-modal-product').textContent = cfg.label;
 
-  const existing = intakeData[cfg.intake] || {};
+  const existing = intakeData[storageKey] || {};
 
   // If already bypassed — show bypass screen (view only, can undo)
   if (existing.bypassed && !forceEdit) {
@@ -2049,7 +2201,7 @@ function openIntakeForService(serviceId, forceEdit) {
         <p style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:24px;max-width:380px;margin-left:auto;margin-right:auto">
           ${amName} will cover this intake on the kick-off call.
         </p>
-        <button onclick="removeBypass('${cfg.intake}')"
+        <button onclick="removeBypass()"
           style="padding:10px 22px;border-radius:8px;background:var(--light);color:var(--text);border:1px solid var(--border);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
           ✏️ Fill out form instead
         </button>
@@ -2066,11 +2218,17 @@ function openIntakeForService(serviceId, forceEdit) {
   document.getElementById('intake-modal').style.display = 'flex';
 }
 
-function removeBypass(formKey) {
-  if (intakeData[formKey]) delete intakeData[formKey];
+// No longer takes formKey as a param (2026-08-19) -- always reads the
+// currently-open modal's own tracked storage key (currentIntakeStorageKey),
+// which already correctly resolves to either the real formKey or an
+// agent-split override, whichever this modal session was opened with.
+function removeBypass() {
+  const storageKey = currentIntakeStorageKey || PRODUCT_CONFIG[currentIntakeServiceId]?.intake;
+  if (storageKey && intakeData[storageKey]) delete intakeData[storageKey];
   const sid = currentIntakeServiceId;
+  const keyOverride = currentIntakeStorageKey;
   closeIntakeModal();
-  setTimeout(() => openIntakeForService(sid, true), 100);
+  setTimeout(() => openIntakeForService(sid, true, keyOverride), 100);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -2500,7 +2658,7 @@ function saveIntakeForm() {
   const filledCount = allFields.filter(f => fields[f.key]).length;
   const isComplete = filledCount === allFields.length && (formKey !== 'tlp' || !(tlpPageCap(sid) || sid === 'tlp-custom') || tlpGridFilled);
 
-  intakeData[formKey] = {
+  intakeData[currentIntakeStorageKey || formKey] = {
     fields,
     completed: isComplete,
     partial: !isComplete && filledCount > 0,
@@ -2508,13 +2666,16 @@ function saveIntakeForm() {
   };
 
   updateIntakeStatusCard();
+  const wasAgentSplit = !!currentIntakeStorageKey;
   closeIntakeModal();
+  if (wasAgentSplit) renderAgentSplitRows(); // refresh that row's Intake status badge
   showToast(isComplete ? '✓ Intake form saved' : '✓ Intake form saved (partial)');
 }
 
 function closeIntakeModal() {
   document.getElementById('intake-modal').style.display = 'none';
   currentIntakeServiceId = null;
+  currentIntakeStorageKey = null;
   tlpGridState = null; // clear grid working state so it can't leak into the next form
 }
 
@@ -3031,6 +3192,28 @@ function updateTacticDate(input, id, which) {
   if (selected[id]) selected[id][which] = iso;
   if (iso) autoCheckIfNeeded(id);
   checkServiceDateOverlap(id);
+  syncAgentSplitDatesForService(id);
+}
+
+// Agent/County Split flight dates (2026-08-19, per Claire: "have the flight
+// dates transfer to the per client lines") -- a split row's Start/End used to
+// be entered from scratch, duplicating what the AE just typed on the tactic's
+// own row above. Now inherited automatically: once from whichever service a
+// row is set to (see updateAgentSplitRow's 'serviceId' case below), and kept
+// in sync afterward if the tactic's own dates are edited later. A row's dates
+// stay independently editable after inheriting -- this only sets the starting
+// value, it doesn't lock the field.
+function syncAgentSplitDatesForService(serviceId) {
+  if (!agentSplitRows.length) return;
+  const tactic = selected[serviceId];
+  if (!tactic) return;
+  let changed = false;
+  agentSplitRows.forEach(row => {
+    if (row.serviceId !== serviceId) return;
+    if (row.startDate !== (tactic.start_date || '')) { row.startDate = tactic.start_date || ''; changed = true; }
+    if (row.endDate !== (tactic.end_date || '')) { row.endDate = tactic.end_date || ''; changed = true; }
+  });
+  if (changed) renderAgentSplitRows();
 }
 
 // ── DUPLICATE-IO WARNING (2026-08-10) ────────────────────────
@@ -3124,9 +3307,13 @@ function toggle(cb, id) {
       setVidGroupDisabled('wm-vid-pkg', false);
     }
 
-    // Open intake form if this product has one
+    // Open intake form if this product has one -- skipped for a multi-agent
+    // client (2026-08-19, per Claire: "not needed for these specific clients")
+    // since a single shared response doesn't correspond to any one agent;
+    // intake is instead filled in per row on the Agent/County Split table
+    // below (see agentIntakeStorageKey()/openAgentSplitIntake()).
     const cfg = PRODUCT_CONFIG[id];
-    if (cfg?.intake) {
+    if (cfg?.intake && !isMultiAgentClientActive()) {
       setTimeout(() => openIntakeForService(id), 200);
     }
 
