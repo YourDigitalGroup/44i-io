@@ -16066,3 +16066,26 @@ history at all.
   unaffected).
 
 `node --check` clean on the extracted inline script.
+
+---
+
+### 2026-08-19 — Accounting Portal: Flight dates always stack start/end
+
+Claire asked for the Flight column's dates to always render start date on
+top and end date on the bottom, rather than one inline "start – end" line
+that could wrap awkwardly in the table's narrow column.
+
+Changed `accountingFormatFlightRange()` in `accounting/index.html` to
+return two block-level `<div>`s instead of a single inline string —
+start date first, then the end date (still dash-prefixed, e.g.
+"– Jan 31, 27"). Only this function changed; the detail card's separate
+prose format (`accountingFormatFullFlightRange`, used inline in a
+"Group · date range" sentence) is untouched, since stacking there would
+break that sentence's flow — this only affects the main table's own
+Flight column, which is the dense, narrow context the request was about.
+
+**Verified live** via Playwright, calling `accountingFormatFlightRange()`
+directly: a normal range now returns
+`<div>Aug 1, 26</div><div>– Jan 31, 27</div>`, an open-ended range
+correctly shows "– Ongoing" on its own line, and an empty range still
+falls back to "—". `node --check` clean on the extracted inline script.
