@@ -16089,3 +16089,46 @@ directly: a normal range now returns
 `<div>Aug 1, 26</div><div>– Jan 31, 27</div>`, an open-ended range
 correctly shows "– Ongoing" on its own line, and an empty range still
 falls back to "—". `node --check` clean on the extracted inline script.
+
+---
+
+### 2026-08-19 — Custom Pricing: ad-spend tactics (retail CPM) now overridable per group
+
+Claire: "we need to just have all of them in the list because there are
+some groups that have different retail cpms." The Custom Pricing screen
+(`admin/index.html`) only ever listed flat/per-unit services with a
+`default_price` — ad-spend tactics (SEM, Targeted Display, etc.) were
+deliberately excluded, per the screen's own existing comment, because
+their client-facing rate lives in a different column (`retail_cpm`, the
+"$X CPM" shown on the catalog row) than the one this screen was built to
+override (`default_price`). That exclusion was right for QUR items and
+modifier add-ons (genuinely no single number to override) but wrong for
+spend-priced tactics — `retail_cpm` **is** a real, single, client-facing
+number, just stored differently.
+
+**Fix**: `rebuildPriceableServices()` now also includes any active
+`pricing_mode='spend'` service with a `retail_cpm` set, tagged with a new
+`field: 'cpm'` (vs. the existing `'recurring'`/`'fee'`), grouped by the
+same `pricing_group`/section convention as everything else on this
+screen. `renderPricingFields()`/`onPriceInput()` show a "CPM" suffix and
+reference `retail_cpm` (not `default_price`) as the standard-price
+tooltip for these rows. QUR items and modifier add-ons are still
+excluded — unchanged, correctly out of scope.
+
+On the public form, `applyCustomPricing()` (`index.html`) now checks for
+a `.cpm` field on `SERVICE_DATA[id]` FIRST, before its existing flat/
+recurring heuristic — a spend item's `.recurring` is always a real `0`
+(never `null`), so without this check the existing heuristic would have
+misread a CPM override as a monthly flat-fee override and silently
+zeroed out the client's own spend entry. The override now correctly
+writes to `.cpm` and updates the visible catalog cell to `"$X CPM"`.
+
+**Verified live** via Playwright: `rebuildPriceableServices()` against a
+mixed fake catalog (one spend service, one flat service, one QUR flat
+service, one modifier add-on) includes exactly the spend and flat
+services — QUR and modifier stay excluded — with the spend service
+correctly tagged `field: 'cpm'`. `applyCustomPricing({'td-geo': 18,
+'sm-bs': 800})` against fake `SERVICE_DATA` set `td-geo.cpm = 18` (leaving
+`.fee`/`.recurring` at their original 0) and `sm-bs.recurring = 800`,
+confirming the two paths don't cross. `node --check` clean on both
+extracted inline scripts.

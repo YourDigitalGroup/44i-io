@@ -2737,6 +2737,19 @@ function applyCustomPricing(pricing) {
     const p = typeof pricing === 'string' ? JSON.parse(pricing) : pricing;
     Object.entries(p).forEach(([id, price]) => {
       if (!SERVICE_DATA[id]) return;
+      // Ad-spend tactics (2026-08-19, per Claire — some groups have a different retail
+      // CPM) override .cpm instead of .fee/.recurring — a spend item's .recurring is
+      // always a real 0 (not null), so the isRecurring check below would otherwise
+      // mistake this for a monthly flat fee and silently zero out the client's spend
+      // input. Checked first, ahead of that heuristic, for exactly this reason.
+      const isCpm = SERVICE_DATA[id].cpm !== null && SERVICE_DATA[id].cpm !== undefined;
+      if (isCpm) {
+        SERVICE_DATA[id].cpm = price;
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const priceCell = row?.querySelector('td.svc-fee') || row?.querySelector('td.right');
+        if (priceCell) priceCell.textContent = `$${price} CPM`;
+        return;
+      }
       // Determine field correctly even when recurring is 0 (not just truthy)
       const isRecurring = SERVICE_DATA[id].recurring !== null && SERVICE_DATA[id].recurring !== undefined;
       if (isRecurring) SERVICE_DATA[id].recurring = price;

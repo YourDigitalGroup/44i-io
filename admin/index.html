@@ -1539,19 +1539,31 @@ function rebuildPriceableServices() {
   const groupOrder = [], groupMap = {}, groupMinOrder = {};
   Object.values(CATALOG_ROWS).forEach(r => {
     const mode = r.pricing_mode || 'flat';
-    if (mode !== 'flat' && mode !== 'per_unit') return;
-    if (r.default_price == null) return;
+    // Ad-spend tactics (2026-08-19, per Claire — "some groups have different retail
+    // CPMs") DO have a single client-facing number worth overriding: retail_cpm, the
+    // "$X CPM" rate shown on the catalog row — it's just a different column than
+    // default_price, since the client's actual monthly total for these comes from
+    // whatever spend they enter, not from this rate. Only retail_cpm is in scope here;
+    // pricing_mode='modifier' add-ons and QUR items (default_price == null on a flat/
+    // per_unit service) still have no single number to override and stay excluded.
+    if (mode === 'spend') {
+      if (r.retail_cpm == null) return;
+    } else if (mode === 'flat' || mode === 'per_unit') {
+      if (r.default_price == null) return;
+    } else {
+      return;
+    }
     const groupLabel = r.pricing_group || sectionLabel(r.section);
     if (!groupMap[groupLabel]) { groupMap[groupLabel] = []; groupOrder.push(groupLabel); groupMinOrder[groupLabel] = Infinity; }
     groupMap[groupLabel].push({
       id: r.id,
       label: r.label,
-      // Only controls the "/mo" suffix shown next to the override input here — NOT which
+      // Only controls the suffix shown next to the override input here — NOT which
       // field actually gets overridden (applyCustomPricing() on the public form decides
       // that independently). Must be strictly billing_type === 'monthly', not just "not
       // one_time" — a YEARLY item (the 3 Hosting Fees rows) is stored in .recurring for
       // totals purposes, but showing "/mo" next to an annual price would be misleading.
-      field: r.billing_type === 'monthly' ? 'recurring' : 'fee',
+      field: mode === 'spend' ? 'cpm' : (r.billing_type === 'monthly' ? 'recurring' : 'fee'),
     });
     const secOrder = sectionOrderIndex[r.section] ?? Infinity;
     if (secOrder < groupMinOrder[groupLabel]) groupMinOrder[groupLabel] = secOrder;
@@ -1616,8 +1628,8 @@ function renderPricingFields() {
       const displayVal = isOverridden ? override : '';
       // item is always a live catalog row now (PRICEABLE_SERVICES is rebuilt fresh from
       // CATALOG_ROWS on every load) — no removed-service fallback needed anymore.
-      const liveDefault = CATALOG_ROWS[item.id]?.default_price;
-      const fieldType = item.field === 'recurring' ? '/mo' : '';
+      const liveDefault = item.field === 'cpm' ? CATALOG_ROWS[item.id]?.retail_cpm : CATALOG_ROWS[item.id]?.default_price;
+      const fieldType = item.field === 'recurring' ? '/mo' : (item.field === 'cpm' ? 'CPM' : '');
       // Row-level highlight, not just the input's own border — found live 2026-07-30
       // (Claire): scanning a long service list to spot the handful of overrides by
       // border color alone is easy to miss; a tinted row background is much easier to
@@ -1631,7 +1643,7 @@ function renderPricingFields() {
             id="price-${item.id}"
             value="${displayVal}"
             placeholder="${liveDefault}"
-            title="${isOverridden ? 'Custom price for this group (standard is $' + liveDefault + ')' : ''}"
+            title="${isOverridden ? `Custom ${item.field === 'cpm' ? 'CPM' : 'price'} for this group (standard is $${liveDefault}${item.field === 'cpm' ? ' CPM' : ''})` : ''}"
             style="width:74px;padding:5px 8px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
             oninput="onPriceInput('${item.id}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:24px">${fieldType}</span>
@@ -1658,7 +1670,9 @@ function onPriceInput(serviceId, val) {
   const dollarSign = input?.previousElementSibling;
   if (input) {
     input.style.cssText += ';' + (isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE);
-    input.title = isOverridden ? `Custom price for this group (standard is $${CATALOG_ROWS[serviceId]?.default_price})` : '';
+    const isCpm = CATALOG_ROWS[serviceId]?.pricing_mode === 'spend';
+    const liveDefault = isCpm ? CATALOG_ROWS[serviceId]?.retail_cpm : CATALOG_ROWS[serviceId]?.default_price;
+    input.title = isOverridden ? `Custom ${isCpm ? 'CPM' : 'price'} for this group (standard is $${liveDefault}${isCpm ? ' CPM' : ''})` : '';
   }
   if (dollarSign) dollarSign.style.color = isOverridden ? 'var(--accent-dark)' : 'var(--muted)';
   const row = document.getElementById('price-row-' + serviceId);
