@@ -849,6 +849,12 @@ select.qty-field{background-image:none;padding-right:3px}
 
         <div id="agent-split-rows"></div>
         <button type="button" class="btn-quiet-green" onclick="addAgentSplitRow()" style="margin-top:10px">+ Add another agent/service row</button>
+
+        <!-- Live reconciliation (2026-08-19, per Claire -- "confirms that the
+             splits add up to the total that was requested for that service") --
+             updates as amounts are typed; also enforced (not just shown) at
+             submit by collectAgentSplits(). -->
+        <div id="agent-split-reconciliation" style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border)"></div>
       </div>
     </div>
 
@@ -1541,6 +1547,42 @@ function agentSplitServiceOptions() {
   return Object.entries(selected).map(([id, data]) => ({ id, label: data.label }));
 }
 
+// What the client was actually sold for one tactic, in whichever field
+// actually carries that number for its pricing shape (2026-08-19, per Claire
+// -- "confirms that the splits add up to the total that was requested for
+// that service"). Returns null when there's genuinely nothing to compare
+// against yet (a QUR item with no quoted price entered), not 0 -- 0 would
+// read as a real mismatch against any nonzero split total.
+function agentSplitServiceExpectedTotal(serviceId) {
+  const data = selected[serviceId];
+  if (!data) return null;
+  if (data.spend > 0) return Number(data.spend);
+  if (data.qty != null) return Number(data.fee || 0) * Number(data.qty);
+  if (data.recurring != null && data.recurring > 0) return Number(data.recurring);
+  if (data.fee != null && data.fee > 0) return Number(data.fee);
+  return null;
+}
+
+// Groups the current split rows by service, summing each service's agent
+// amounts and comparing to agentSplitServiceExpectedTotal() above. Used both
+// for the live reconciliation summary and for collectAgentSplits()'s own
+// submit-time validation, so the two can never disagree about what counts as
+// a match. 1-cent tolerance absorbs float rounding, not real discrepancies.
+function agentSplitServiceReconciliation() {
+  const byService = {};
+  agentSplitRows.forEach(row => {
+    if (!row.serviceId) return;
+    const amt = Number(row.amount) || 0;
+    byService[row.serviceId] = (byService[row.serviceId] || 0) + amt;
+  });
+  return Object.entries(byService).map(([serviceId, splitTotal]) => {
+    const expected = agentSplitServiceExpectedTotal(serviceId);
+    const label = selected[serviceId]?.label || serviceId;
+    const matches = expected == null ? null : Math.abs(splitTotal - expected) < 0.01;
+    return { serviceId, label, splitTotal, expected, matches };
+  });
+}
+
 function renderAgentSplitRows() {
   const wrap = document.getElementById('agent-split-rows');
   if (!wrap) return;
@@ -1593,6 +1635,29 @@ function renderAgentSplitRows() {
     const agentSel = tr.querySelector('td:first-child select');
     if (agentSel) agentSel.value = agentSplitRows[i].agentId || '';
   });
+  renderAgentSplitReconciliation();
+}
+
+// Live "does this add up" summary (2026-08-19, per Claire -- "confirms that
+// the splits add up to the total that was requested for that service"). A
+// separate container/function from the rows table itself so a keystroke in
+// an Amount field can refresh just this summary without re-rendering (and
+// losing focus on) the whole table -- see updateAgentSplitRow()'s 'amount'
+// case below.
+function renderAgentSplitReconciliation() {
+  const el = document.getElementById('agent-split-reconciliation');
+  if (!el) return;
+  const rows = agentSplitServiceReconciliation();
+  if (!rows.length) { el.innerHTML = ''; return; }
+  el.innerHTML = rows.map(r => {
+    const fmt = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    if (r.expected == null) {
+      return `<div style="font-size:11.5px;color:var(--muted);padding:3px 0">${esc(r.label)}: split total ${fmt(r.splitTotal)} — no requested amount to check against yet</div>`;
+    }
+    const color = r.matches ? '#1F7A42' : '#B91C1C';
+    const icon = r.matches ? '✓' : '⚠';
+    return `<div style="font-size:11.5px;color:${color};font-weight:600;padding:3px 0">${icon} ${esc(r.label)}: split total ${fmt(r.splitTotal)} vs. requested ${fmt(r.expected)}${r.matches ? ' — matches' : ' — MISMATCH'}</div>`;
+  }).join('');
 }
 
 function updateAgentSplitRow(i, field, value) {
@@ -1619,6 +1684,9 @@ function updateAgentSplitRow(i, field, value) {
   // too (a new agent has no saved intake response yet either way, but the "Pick
   // an agent first" placeholder needs to clear once a name is typed).
   if (field === 'serviceId' || field === 'agentNewName') renderAgentSplitRows();
+  // 'amount' only needs the reconciliation summary refreshed, not a full
+  // table re-render (which would blur the input mid-keystroke).
+  else if (field === 'amount') renderAgentSplitReconciliation();
 }
 
 // Resolves what the Intake column should show for one split row: null if that
@@ -1688,6 +1756,17 @@ function collectAgentSplits() {
       end_date: row.endDate || null,
       amount: Number(row.amount),
     });
+  }
+  // Enforced here, not just shown live (2026-08-19, per Claire -- "confirms
+  // that the splits add up to the total that was requested for that
+  // service") -- a service with no requested-total to compare against yet
+  // (e.g. an unpriced QUR item) is skipped, not treated as a mismatch.
+  const mismatches = agentSplitServiceReconciliation().filter(r => r.matches === false);
+  if (mismatches.length) {
+    const first = mismatches[0];
+    const fmt = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+    showToast(`Agent/County Split: ${first.label}'s splits total ${fmt(first.splitTotal)}, but ${fmt(first.expected)} was requested — please fix before submitting`, 'error');
+    return null;
   }
   return splits;
 }

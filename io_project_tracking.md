@@ -16493,3 +16493,33 @@ reads). Separately: picking a split row's Service pulls in the tactic's
 already-set Sept 1 – Feb 28 dates verbatim, and editing the tactic's Start
 date afterward (Oct 15) propagates into that same row live, without
 touching its End date. `node --check` clean.
+
+---
+
+### 2026-08-19 — MS Farm Bureau: validate split totals against the requested amount
+
+Claire: "confirms that the splits add up to the total that was requested
+for that service." Added both a live indicator and a hard submit-time
+check.
+
+**Built:**
+- `agentSplitServiceExpectedTotal(serviceId)` — reads whichever field
+  actually carries a tactic's sold amount for its own pricing shape
+  (`.spend` for ad-spend tactics, `.fee × .qty` for per-unit, `.recurring`
+  or `.fee` otherwise), returning `null` (not 0) when there's genuinely
+  nothing priced yet (an un-quoted QUR item) so that case isn't flagged as
+  a false mismatch.
+- `agentSplitServiceReconciliation()` — groups split rows by service, sums
+  each service's agent amounts, compares to the above.
+- Live summary under the split table (`renderAgentSplitReconciliation()`,
+  its own container so an Amount keystroke refreshes just this — not the
+  whole rows table, which would blur the input mid-type): "✓ ... matches"
+  or "⚠ ... MISMATCH" per service in play.
+- `collectAgentSplits()` now blocks submission (returns `null`, toasts
+  which service and both figures) if any service's split total doesn't
+  match its requested amount within a 1-cent float-rounding tolerance.
+
+**Verified live** via Playwright: a $210+$185 split against a $1,150
+SEM tactic shows the live MISMATCH warning and `collectAgentSplits()`
+correctly returns `null` (blocked); adjusting the same rows to $600+$550
+clears the warning and submission succeeds. `node --check` clean.
