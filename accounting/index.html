@@ -336,10 +336,13 @@ let accountingSelectedLineId = null; // drives the per-campaign detail card belo
 // its own nowrap span since an en dash carries its own line-break opportunity that
 // a non-breaking space alone doesn't suppress). Returns HTML -- callers must NOT
 // wrap this in esc() (safe: only ever built from Date output, never free-typed text).
+// Includes the day (2026-08-18, per Claire -- match Strategist's own flight-date
+// precision, "Jun 1, 26" not just "Jun '26"), same toLocaleDateString options
+// Strategist's strategistFormatFlightDate() already uses.
 function accountingFormatFlightDate(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr + 'T00:00:00');
-  return (d.toLocaleString('en-US', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(-2)).replace(/ /g, '\xa0');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }).replace(/ /g, '\xa0');
 }
 function accountingFormatFlightRange(start, end) {
   const s = accountingFormatFlightDate(start), e = accountingFormatFlightDate(end);
