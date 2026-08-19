@@ -1950,13 +1950,41 @@ function strategistMonthPaused(lineId, monthDate) {
   return !!row?.paused;
 }
 
-// The campaign's overall status (campaign_lines.status) still wins outright
+// Reconstructs what a line's status actually WAS as of `monthDate`, from its real
+// status-change history (2026-08-18, per Claire -- found live: pausing a campaign
+// today made it show as Paused for past months too, when it was genuinely Active
+// back then). Uses the most recent status_history entry on or before the end of
+// that month; falls back to the current status if there's no recorded change yet
+// on or before it (nothing to reconstruct from -- e.g. a campaign that's never had
+// a status change logged).
+function strategistHistoricalStatus(line, monthDate) {
+  const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0, 23, 59, 59, 999);
+  const lineHistory = ALL_STATUS_HISTORY.filter(h => h.campaign_line_id === line.id);
+  if (!lineHistory.length) return line.status;
+
+  let latestOnOrBefore = null;
+  let earliest = null;
+  lineHistory.forEach(h => {
+    const changedAt = new Date(h.changed_at);
+    if (!earliest || changedAt < new Date(earliest.changed_at)) earliest = h;
+    if (changedAt <= monthEnd && (!latestOnOrBefore || changedAt > new Date(latestOnOrBefore.changed_at))) latestOnOrBefore = h;
+  });
+  if (latestOnOrBefore) return latestOnOrBefore.new_status;
+  // The viewed month is before ANY recorded change -- use what it was transitioning
+  // FROM at the earliest known change, since that's the last confirmed status before
+  // history starts.
+  return earliest.old_status || line.status;
+}
+
+// The campaign's HISTORICAL status (as of the viewed month, not necessarily its
+// current one -- see strategistHistoricalStatus() above) still wins outright
 // whenever it's anything other than 'active' -- paused-indefinitely, complete,
 // and pending are all real manual states the schedule should never override.
-// Only an 'active' campaign can be knocked down to effectively-paused for a
+// Only an 'active' month can be knocked down to effectively-paused for a
 // specific scheduled month.
 function strategistEffectiveStatus(line, monthDate) {
-  if (line.status !== 'active') return line.status;
+  const historicalStatus = strategistHistoricalStatus(line, monthDate);
+  if (historicalStatus !== 'active') return historicalStatus;
   return strategistMonthPaused(line.id, monthDate) ? 'paused' : 'active';
 }
 
