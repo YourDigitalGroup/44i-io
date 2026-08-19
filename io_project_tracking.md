@@ -16573,3 +16573,27 @@ row per agent shows up in Strategist/Accounting with the right flight
 dates/gross budget, a second submission for the same agent+service
 updates in place rather than duplicating, and a brand-new agent/county
 typed on the form shows up in the Admin roster afterward.
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out Phase 3 CORRECTION: no special-casing on accounting_only
+
+Claire: "the MS Farm Bureau clients should be handled the same way as other
+clients when it comes to what goes to the strategist portal or not." My
+first pass of the per-split branch always set `accounting_only = false`
+(fully Strategist-managed) regardless of the tactic's real pricing shape —
+a hardcoded special case for splits, not the general rule.
+
+**Fix**: the per-split branch now reads the service's real `pricing_mode`
+and applies the EXACT SAME rule the rest of the function already uses for
+every other client — `pricing_mode = 'spend'` → `accounting_only = false`,
+`billing_type = 'spend'` (real, actively managed Strategist campaign);
+anything else → `accounting_only = true`, `billing_type` mapped from the
+catalog's own `monthly`/other exactly like the existing flat-fee branch. No
+per-client exception anywhere in this logic now — a multi-agent client's
+line gets whatever accounting_only/billing_type any other client's line for
+that same service would get, just fanned out one row per agent instead of
+one shared row.
+
+Corrected SQL handed to Claire to re-run (same `CREATE OR REPLACE`, no
+`DROP` needed — return type/signature unchanged from the first pass).
