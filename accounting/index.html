@@ -1428,10 +1428,25 @@ function accountingEffectiveInPlatformPct(serviceId, groupId, grossBudget) {
   const baseRate = ACCOUNTING_IN_PLATFORM_PCT_RATES.base[serviceId];
   return baseRate != null ? baseRate : null;
 }
+// A group's Retail CPM override lives in the SAME io_pricing JSONB the public
+// form's applyCustomPricing() already reads (2026-08-19 -- Claire: "some groups
+// have different retail cpms", built as a Custom Pricing override in
+// admin/index.html) -- not a separate per-group accounting field, since it's
+// the same real-world number the client sees on the catalog, just read here
+// for the internal Expected Spend calc instead. Looked up via any client
+// belonging to the group (accounting_get_clients already returns each
+// client's own group_io_pricing; every client under one group carries an
+// identical copy) rather than adding a new groups-keyed fetch just for this.
+function accountingGroupRetailCpm(serviceId, groupId) {
+  if (!groupId) return null;
+  const client = ALL_ACCOUNTING_CLIENTS.find(c => c.group_id === groupId && c.group_io_pricing && c.group_io_pricing[serviceId] != null);
+  return client ? Number(client.group_io_pricing[serviceId]) : null;
+}
 function accountingComputeExpectedSpend(grossBudget, serviceId, groupId, inPlatformOverride, hasModifier) {
   if (inPlatformOverride != null) return Number(inPlatformOverride);
   if (grossBudget == null) return null;
-  const retailCpm = CATALOG_ROWS[serviceId]?.retail_cpm != null ? Number(CATALOG_ROWS[serviceId].retail_cpm) : null;
+  const groupRetailCpm = accountingGroupRetailCpm(serviceId, groupId);
+  const retailCpm = groupRetailCpm != null ? groupRetailCpm : (CATALOG_ROWS[serviceId]?.retail_cpm != null ? Number(CATALOG_ROWS[serviceId].retail_cpm) : null);
   const platformCpm = accountingEffectivePlatformCpm(serviceId, groupId, hasModifier);
   if (retailCpm != null && platformCpm != null) {
     const impressions = (Number(grossBudget) / retailCpm) * 1000;

@@ -16132,3 +16132,53 @@ correctly tagged `field: 'cpm'`. `applyCustomPricing({'td-geo': 18,
 `.fee`/`.recurring` at their original 0) and `sm-bs.recurring = 800`,
 confirming the two paths don't cross. `node --check` clean on both
 extracted inline scripts.
+
+---
+
+### 2026-08-19 — Full audit of Claire's 7-field override list; found and fixed the real gap
+
+Claire asked for confirmation that every one of these is overridable per
+group: Default Retail, YDA %, 44i Cut %, Budgeted Spend %, Retail CPM,
+44i CPM, Platform CPM. Went through each:
+
+1. **Default Retail** — `default_price`, already overridable via Custom
+   Pricing (`io_pricing`). Unchanged, already correct.
+2. **YDA %** — never stored anywhere; always `100 − 44i Cut %`, confirmed
+   as a real rule (not a coincidence) back on 2026-07-30. Nothing to
+   override — overriding 44i Cut % already determines it.
+3. **44i Cut %** — `accounting_map.fortyfouri_cut_pct`, already
+   overridable via the group's Accounting Overrides tab. Unchanged.
+4. **Budgeted Spend %** — `accounting_map.budgeted_spend_pct`, already
+   overridable via Accounting Overrides. Unchanged.
+5. **Retail CPM** — just added to Custom Pricing this session (previous
+   entry above), but that only affects the client-facing catalog display.
+6. **44i CPM** — never stored; always `Retail CPM × 44i Cut %`, same
+   derived-not-stored pattern as YDA. Nothing to override directly.
+7. **Platform CPM** — `accounting_map.platform_cpm`, already overridable
+   via Accounting Overrides. Unchanged.
+
+**Real gap found in #5**: `accountingComputeExpectedSpend()`
+(`accounting/index.html`) — the function that computes a campaign line's
+"Expected Spend" for margin tracking — read `CATALOG_ROWS[serviceId]
+.retail_cpm` directly, the GLOBAL service value, with no group-level
+lookup at all. So a group with an overridden Retail CPM (via the fix
+above) would show correctly on their own catalog page, but Accounting's
+own Expected Spend math for that group's lines was still silently using
+the wrong (global default) CPM.
+
+**Fix**: added `accountingGroupRetailCpm(serviceId, groupId)`, which
+looks up the override from the SAME `io_pricing` data the public form's
+`applyCustomPricing()` already reads — deliberately reusing the single
+Custom Pricing mechanism rather than adding a second, parallel
+"accounting's own copy" of Retail CPM, since it's the same real-world
+number in both places. The lookup goes through `ALL_ACCOUNTING_CLIENTS`
+(already loaded, each client carries its group's `group_io_pricing`)
+rather than fetching groups directly — no new query needed.
+`accountingComputeExpectedSpend()` now checks this group override before
+falling back to the global `retail_cpm`.
+
+**Verified live** via Playwright: a fake group with a Retail CPM override
+(18, vs. the global default of 12) computes Expected Spend as $400 on a
+$1,200 gross budget at a 6 platform CPM; every other group (or no group)
+still correctly computes $600 using the global rate. `node --check`
+clean on the extracted inline script.
