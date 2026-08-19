@@ -16311,3 +16311,41 @@ county. `node --check` clean on the extracted inline script.
 **Not yet done**: Claire needs to run the SQL above before this tab will
 show real data. Phases 2-6 are next, each to be checked in on before
 building, per the approved plan.
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out Phase 1 CORRECTION: client-scoped, not group-scoped
+
+Claire caught this immediately after Phase 1's live verification: "remember
+with STMM they have regular clients as well that don't need to be handled
+like the MS Farm Bureau clients so it can't be across the group." Correct —
+`groups.is_multi_agent` and group-scoped `agents`/`counties` would have shown
+the split step for EVERY client under STMM Digital Group, not just the MS
+Farm Bureau ones sharing that group.
+
+**Fix**: moved everything down one level, from group to client:
+- `is_multi_agent` moved from `groups` to `clients`.
+- `agents`/`counties` re-keyed from `group_id` to `client_id`.
+- Admin UI moved from a Group editor tab to the Client Profile editor
+  (`admin/index.html`) — a new "Multi-Agent Client" dropdown that reveals an
+  Agents & Counties panel directly on that one client's form, hidden by
+  default. Verified this ALSO fixes the actual concern: a regular client in
+  the same group (tested with a fake "Riverside Dental" under the same STMM
+  group as "MS Farm Bureau - Lee") never shows the panel, since the flag now
+  lives on the client record, not the shared group.
+- RPCs renamed `p_group_id` → `p_client_id` throughout; public RPCs renamed
+  `get_group_agents/counties` → `get_client_agents/counties` for Phase 2.
+
+**Correction SQL given to Claire** (drops the wrong group-level columns/
+functions, truncates the two test rows from the first pass since group_id
+and client_id are different real records with no valid mapping between
+them, adds the client-level column, recreates the RPCs re-keyed).
+
+**Verified live** via Playwright: editing a fake multi-agent client shows
+the flag as Yes with its county/agent data loaded (Alcorn County, Kevin
+Kendrick), while editing a second fake client in the SAME group with the
+flag off correctly keeps the panel hidden. `node --check` clean.
+
+**Still to do**: Claire needs to run the correction SQL, then re-verify live
+(the same checklist as before, but now on a Client's edit form instead of a
+Group's) before Phase 2 starts.
