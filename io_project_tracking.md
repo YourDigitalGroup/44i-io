@@ -16404,3 +16404,59 @@ validation friction. `node --check` clean.
 **Not yet done**: Phase 3 (backend fan-out into per-agent `campaign_lines`),
 Phase 4 (Trello card fan-out with county-prefixed titles), Phase 5 (portal
 Client-column display), Phase 6 (legacy client migration).
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out: individual intake forms per agent
+
+Claire, after confirming the split table's placement/amount-entry mechanics
+already match what they do today: "they will need individual intake
+forms." Real gap: intake responses are stored keyed by the FORM's own id
+(`intakeData[formKey]`) — even two different services sharing one form
+already share a single response by design. For a multi-agent split, each
+agent needs their OWN response to the same form, which the existing
+mechanism had no way to express.
+
+**Built**, without touching the plain (non-split) intake flow's own
+behavior:
+- `openIntakeForService(serviceId, forceEdit, storageKeyOverride)` — new
+  third param. When set, the modal reads/writes `intakeData` under that key
+  instead of the real `formKey`; the form DEFINITION/rendering (which
+  fields show, `INTAKE_FORMS[formKey]`) is untouched either way — only
+  *where the response is stored* changes. Tracked for the life of one modal
+  session via a new `currentIntakeStorageKey` global, mirroring how
+  `currentIntakeServiceId` already works.
+- `agentIntakeStorageKey(formKey, row)` — composes `formKey::agent::<id>`
+  (or `::agent::new:<name>` for a not-yet-created agent), scoped per split
+  row.
+- `saveIntakeForm()`, `bypassIntakeFromFooter()`, `removeBypass()` all now
+  read/write through `currentIntakeStorageKey || formKey` instead of the
+  bare formKey — `removeBypass()` no longer takes a param at all, since it
+  can just read the tracked key directly (simpler, one less place a stale
+  hardcoded key could get passed).
+- New "Intake" column on the split table (`renderAgentSplitRows()`): shows
+  "Pick an agent first" until that row has a real or new agent, then a
+  Fill in/Edit button plus a live status (Not started/Partial/Complete/AM
+  Help), via `agentSplitRowIntakeInfo(i)`/`openAgentSplitIntake(i)`.
+  Re-renders on a Service or new-agent-name change so the column never
+  shows a stale service's status.
+- No change needed to the submission payload — `intake_responses:
+  intakeData` (already existing) already carries the new composite-keyed
+  entries alongside normal ones, since they're just additional keys on the
+  same object.
+
+**Verified live** via Playwright: two agents on the identical service get
+fully isolated statuses (agent1 marked Complete after a direct save,
+agent2 stays "Not started," unaffected) — the actual bug this whole
+mechanism exists to prevent, confirmed not happening. A split row with no
+agent chosen yet correctly shows the "needs an agent first" state instead
+of a broken/premature key. `openAgentSplitIntake()` correctly wires
+`currentIntakeStorageKey` to that row's own composite key before opening.
+`node --check` clean.
+
+**Deliberately not touched**: the existing checkbox-driven auto-open of
+the SHARED (non-agent) intake modal when a service is first checked in the
+normal Step 2 flow still fires as before, even for a multi-agent client's
+service. Flagged, not fixed — Claire didn't ask for this to be suppressed,
+and doing so unprompted risked scope creep; if it turns out confusing
+during real testing, it's one flag to add back to `toggle()`.
