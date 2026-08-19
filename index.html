@@ -1495,6 +1495,11 @@ async function loadAgentSplitRosters(clientId) {
   renderAgentSplitRows();
 }
 
+function isMultiAgentClientActive() {
+  const card = document.getElementById('agent-split-card');
+  return !!card && card.style.display !== 'none';
+}
+
 function setAgentSplitCardVisible(visible) {
   const card = document.getElementById('agent-split-card');
   if (card) card.style.display = visible ? 'block' : 'none';
@@ -1599,6 +1604,15 @@ function updateAgentSplitRow(i, field, value) {
     return;
   }
   agentSplitRows[i][field] = value;
+  // Picking a row's Service inherits that tactic's own Start/End (2026-08-19,
+  // per Claire -- "have the flight dates transfer to the per client lines"),
+  // same dates already typed on the catalog row above, instead of the AE
+  // re-entering them here from scratch. Still independently editable after --
+  // this only sets the starting value.
+  if (field === 'serviceId' && selected[value]) {
+    agentSplitRows[i].startDate = selected[value].start_date || '';
+    agentSplitRows[i].endDate = selected[value].end_date || '';
+  }
   // Re-render on a Service change too, not just Agent -- the Intake column's
   // button/status depends on which service this row is for, and typing a new
   // agent name (agentNewName) needs to be reflected in that column immediately
@@ -3099,6 +3113,28 @@ function updateTacticDate(input, id, which) {
   if (selected[id]) selected[id][which] = iso;
   if (iso) autoCheckIfNeeded(id);
   checkServiceDateOverlap(id);
+  syncAgentSplitDatesForService(id);
+}
+
+// Agent/County Split flight dates (2026-08-19, per Claire: "have the flight
+// dates transfer to the per client lines") -- a split row's Start/End used to
+// be entered from scratch, duplicating what the AE just typed on the tactic's
+// own row above. Now inherited automatically: once from whichever service a
+// row is set to (see updateAgentSplitRow's 'serviceId' case below), and kept
+// in sync afterward if the tactic's own dates are edited later. A row's dates
+// stay independently editable after inheriting -- this only sets the starting
+// value, it doesn't lock the field.
+function syncAgentSplitDatesForService(serviceId) {
+  if (!agentSplitRows.length) return;
+  const tactic = selected[serviceId];
+  if (!tactic) return;
+  let changed = false;
+  agentSplitRows.forEach(row => {
+    if (row.serviceId !== serviceId) return;
+    if (row.startDate !== (tactic.start_date || '')) { row.startDate = tactic.start_date || ''; changed = true; }
+    if (row.endDate !== (tactic.end_date || '')) { row.endDate = tactic.end_date || ''; changed = true; }
+  });
+  if (changed) renderAgentSplitRows();
 }
 
 // ── DUPLICATE-IO WARNING (2026-08-10) ────────────────────────
@@ -3192,9 +3228,13 @@ function toggle(cb, id) {
       setVidGroupDisabled('wm-vid-pkg', false);
     }
 
-    // Open intake form if this product has one
+    // Open intake form if this product has one -- skipped for a multi-agent
+    // client (2026-08-19, per Claire: "not needed for these specific clients")
+    // since a single shared response doesn't correspond to any one agent;
+    // intake is instead filled in per row on the Agent/County Split table
+    // below (see agentIntakeStorageKey()/openAgentSplitIntake()).
     const cfg = PRODUCT_CONFIG[id];
-    if (cfg?.intake) {
+    if (cfg?.intake && !isMultiAgentClientActive()) {
       setTimeout(() => openIntakeForService(id), 200);
     }
 

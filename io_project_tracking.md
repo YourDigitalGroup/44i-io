@@ -16460,3 +16460,36 @@ normal Step 2 flow still fires as before, even for a multi-agent client's
 service. Flagged, not fixed — Claire didn't ask for this to be suppressed,
 and doing so unprompted risked scope creep; if it turns out confusing
 during real testing, it's one flag to add back to `toggle()`.
+
+---
+
+### 2026-08-19 — MS Farm Bureau: suppress shared intake popup, transfer flight dates
+
+Two follow-ups from the same conversation:
+
+1. **"Remove the shared one since it is not needed for these specific
+   clients."** `toggle()`'s auto-open of the shared (non-agent) intake modal
+   now checks `isMultiAgentClientActive()` first and skips entirely for a
+   multi-agent client — intake is filled in per row on the split table
+   instead (previous entry). A normal client's checkbox flow is completely
+   unaffected.
+
+2. **"Have the flight dates transfer to the per client lines."** A split
+   row's Start/End used to be typed from scratch, duplicating the dates
+   already entered on the tactic's own row. Now: picking a row's Service
+   inherits that tactic's current Start/End immediately
+   (`updateAgentSplitRow`'s `serviceId` case), and `updateTacticDate()` (the
+   function behind the tactic's own date inputs) now also calls
+   `syncAgentSplitDatesForService()`, which pushes any later edit to the
+   tactic's own dates into every split row currently using that service.
+   Rows stay independently editable after inheriting — this only sets the
+   starting value, same "transfer, don't lock" behavior implied by the ask.
+
+**Verified live** via Playwright: checking a service for a multi-agent
+client no longer calls `openIntakeForService()` at all, while the identical
+check for a normal client still does (isolated by swapping
+`agent-split-card`'s visibility, the same flag `isMultiAgentClientActive()`
+reads). Separately: picking a split row's Service pulls in the tactic's
+already-set Sept 1 – Feb 28 dates verbatim, and editing the tactic's Start
+date afterward (Oct 15) propagates into that same row live, without
+touching its End date. `node --check` clean.
