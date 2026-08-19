@@ -16013,3 +16013,56 @@ live: `accountingFormatFullFlightRange('2026-08-01', '2027-01-31')`
 now returns "Aug 1, 2026 – Jan 31, 2027," while the short table format
 correctly stays on 2-digit years ("Aug 1, 26 – Jan 31, 27"). `node
 --check` clean.
+
+---
+
+### 2026-08-19 — Strategist Portal: pause status shown retroactively for past months
+
+Claire noticed live: pausing a campaign made it show as "Paused" when
+browsing PAST months on the Strategist portal's month-nav, even for
+months when the campaign was genuinely active (the pause hadn't
+happened yet). Root cause: `strategistEffectiveStatus(line, monthDate)`
+only ever checked the campaign's CURRENT `line.status` — if the
+campaign is paused today, every month you browse to (past or future)
+saw `line.status !== 'active'` and returned "paused" unconditionally,
+ignoring the campaign's real status-change history entirely.
+
+Fix: added `strategistHistoricalStatus(line, monthDate)`, which
+reconstructs what the line's status actually WAS as of the end of the
+viewed month using the real timestamped records in
+`ALL_STATUS_HISTORY` (the same data that already powers the visible
+Status History log in the campaign detail panel) — the most recent
+status change on or before that month wins. `strategistEffectiveStatus`
+now calls this instead of reading `line.status` directly, then layers
+the existing per-month "paused" schedule check on top only when the
+historical status is "active" (paused-indefinitely/complete/pending
+still win outright, since those are real manual states the schedule
+should never override).
+
+**A first version of this fix had its own bug**, caught by live
+testing before it shipped: for a month with NO history entry on or
+before it (i.e., before the line's very first recorded status change),
+the fallback returned the CURRENT `line.status` instead of what the
+line actually was transitioning FROM at its earliest known change.
+Concretely: a line currently "paused" with one history entry (active →
+paused on 2026-09-10) incorrectly showed "paused" for June and August
+2026 too, months that were genuinely active. Corrected the fallback to
+use `earliest.old_status` (the state before the earliest recorded
+change) whenever the viewed month predates all recorded history, only
+falling back to the current `line.status` when the line has no status
+history at all.
+
+**Verified live** via Playwright (`ALL_STATUS_HISTORY` and
+`ALL_CAMPAIGN_MONTHS` mocked directly in-page, real
+`strategistEffectiveStatus`/`strategistHistoricalStatus` called):
+- Line paused 2026-09-10 (from active): June 2026 → "active", August
+  2026 → "active", September 2026 → "paused", October 2026 →
+  "paused" — all correct after the fix (June/August were wrongly
+  "paused" before this last correction).
+- Line with no status history at all, currently "complete" → still
+  "complete" for any month (fallback path unaffected).
+- Line "active" with a per-month pause flag on July 2026 only → July
+  → "paused", August → "active" (existing scheduled-pause behavior
+  unaffected).
+
+`node --check` clean on the extracted inline script.
