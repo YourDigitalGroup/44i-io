@@ -162,6 +162,7 @@
           <button id="tab-btn-info" onclick="adminTab('info')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--accent-dark);background:transparent;color:var(--accent-dark);cursor:pointer">Group Info</button>
           <button id="tab-btn-pricing" onclick="adminTab('pricing')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Custom Pricing</button>
           <button id="tab-btn-accounting-override" onclick="adminTab('accounting-override')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Accounting Overrides</button>
+          <button id="tab-btn-agents-counties" onclick="adminTab('agents-counties')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Agents &amp; Counties</button>
         </div>
 
         <div style="padding:20px">
@@ -268,6 +269,16 @@
                   <option value="false">No — skip KOC for all products</option>
                 </select>
               </div>
+              <!-- Multi-Agent (2026-08-19, MS Farm Bureau) -- same shape/precedent as
+                   Has KOC above: a plain boolean gating different Step 2 behavior on the
+                   public IO form, rather than a hardcoded client-id check. -->
+              <div>
+                <label class="lbl" for="admin-is-multi-agent">Multi-Agent Client <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shows the Agent/County split step on the IO form</span></label>
+                <select id="admin-is-multi-agent" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px">
+                  <option value="false">No — normal single-client IO flow</option>
+                  <option value="true">Yes — split services across agents/counties on submit</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -287,6 +298,56 @@
             <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. A CPM-adjustment modifier (like Offline Visits Tracking) shows one row per tactic it can combine with, so each pairing (e.g. Geo-Targeting w/ Offline Tracking vs. Site-Targeting w/ Offline Tracking) can be overridden separately for this group.</p>
             <div id="accounting-override-fields"></div>
             <p style="font-size:10px;color:var(--muted);margin-top:12px">Internal only — never shown to clients or on the printed IO. Affects only how this group's real margin is calculated, not anything on the public form.</p>
+          </div>
+
+          <!-- TAB: Agents & Counties (2026-08-19, MS Farm Bureau) -- a small roster
+               scoped to THIS group, same "pick from a list or add a new one inline"
+               shape as the AE/Client pickers on the public form. Nested here rather
+               than a global admin tab (like AE/Strategist) since only a handful of
+               groups ever need this -- same reasoning as Custom Pricing/Accounting
+               Overrides living on the Group editor instead of their own top-level tab. -->
+          <div id="tab-agents-counties" style="display:none">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Only relevant when "Multi-Agent Client" above is turned on. Counties and Agents set up here become pickable on the IO form's split-entry step for this group -- an AE can still type a brand-new one there, which adds it to this same list.</p>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <p style="font-size:12px;font-weight:700;color:var(--text);margin:0">Counties</p>
+              <button type="button" onclick="adminNewCounty()" class="btn-quiet-green">+ Add County</button>
+            </div>
+            <div id="admin-county-table" style="margin-bottom:8px"></div>
+            <div id="admin-county-form" style="display:none;background:var(--light);border-radius:10px;padding:14px;margin-bottom:22px">
+              <input type="hidden" id="admin-county-original-id"/>
+              <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-county-form-title">New County</p>
+              <div style="display:flex;gap:10px;align-items:flex-end">
+                <div style="flex:1">
+                  <label class="lbl" for="admin-county-name">Name</label>
+                  <input type="text" id="admin-county-name" placeholder="e.g. Alcorn County" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                </div>
+                <button type="button" onclick="adminSaveCounty()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+                <button type="button" onclick="adminCancelCountyEdit()" class="btn-quiet-green">Cancel</button>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <p style="font-size:12px;font-weight:700;color:var(--text);margin:0">Agents</p>
+              <button type="button" onclick="adminNewAgent()" class="btn-quiet-green">+ Add Agent</button>
+            </div>
+            <div id="admin-agent-table"></div>
+            <div id="admin-agent-form" style="display:none;background:var(--light);border-radius:10px;padding:14px;margin-top:8px">
+              <input type="hidden" id="admin-agent-original-id"/>
+              <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-agent-form-title">New Agent</p>
+              <div style="display:flex;gap:10px;align-items:flex-end">
+                <div style="flex:1">
+                  <label class="lbl" for="admin-agent-name">Name</label>
+                  <input type="text" id="admin-agent-name" placeholder="e.g. Kevin Kendrick" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                </div>
+                <div style="flex:1">
+                  <label class="lbl" for="admin-agent-county">County</label>
+                  <select id="admin-agent-county" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
+                </div>
+                <button type="button" onclick="adminSaveAgent()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+                <button type="button" onclick="adminCancelAgentEdit()" class="btn-quiet-green">Cancel</button>
+              </div>
+            </div>
           </div>
 
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
@@ -1584,13 +1645,17 @@ async function adminTab(tab) {
   document.getElementById('tab-info').style.display     = tab==='info'    ? 'block' : 'none';
   document.getElementById('tab-pricing').style.display  = tab==='pricing' ? 'block' : 'none';
   document.getElementById('tab-accounting-override').style.display = tab==='accounting-override' ? 'block' : 'none';
+  document.getElementById('tab-agents-counties').style.display = tab==='agents-counties' ? 'block' : 'none';
   document.getElementById('tab-btn-info').style.borderBottomColor    = tab==='info'    ? 'var(--accent-dark)' : 'transparent';
   document.getElementById('tab-btn-pricing').style.borderBottomColor = tab==='pricing' ? 'var(--accent-dark)' : 'transparent';
   document.getElementById('tab-btn-accounting-override').style.borderBottomColor = tab==='accounting-override' ? 'var(--accent-dark)' : 'transparent';
+  document.getElementById('tab-btn-agents-counties').style.borderBottomColor = tab==='agents-counties' ? 'var(--accent-dark)' : 'transparent';
   document.getElementById('tab-btn-info').style.color    = tab==='info'    ? 'var(--accent-dark)' : 'var(--muted)';
   document.getElementById('tab-btn-pricing').style.color = tab==='pricing' ? 'var(--accent-dark)' : 'var(--muted)';
   document.getElementById('tab-btn-accounting-override').style.color = tab==='accounting-override' ? 'var(--accent-dark)' : 'var(--muted)';
+  document.getElementById('tab-btn-agents-counties').style.color = tab==='agents-counties' ? 'var(--accent-dark)' : 'var(--muted)';
   if (tab === 'pricing') renderPricingFields();
+  if (tab === 'agents-counties') loadGroupAgentsCounties();
   if (tab === 'accounting-override') {
     // Accounting Overrides needs the same base Accounting Map data the Accounting Map
     // tab itself uses (ALL_ACCOUNTING_MAP/allServicesMap) — load it lazily here too,
@@ -3762,6 +3827,241 @@ async function adminToggleAeActive(id, makeActive) {
     loadAdminAes();
   } catch(e) {
     showToast('Error updating AE: ' + e.message, 'error');
+  }
+}
+
+// ── AGENTS & COUNTIES (2026-08-19, MS Farm Bureau) ─────────────
+// Nested inside the Group editor rather than a global admin tab (unlike AE/
+// Strategist) since these are scoped to one group at a time and only a
+// handful of groups ever need them -- same "own tab on the Group editor"
+// pattern as Custom Pricing/Accounting Overrides. Loaded lazily when the
+// Agents & Counties tab is opened, same as ensureStaffRosterLoaded().
+let ALL_GROUP_COUNTIES = [];
+let ALL_GROUP_AGENTS = [];
+
+async function loadGroupAgentsCounties() {
+  const groupId = document.getElementById('admin-group-id').value;
+  if (!groupId) {
+    document.getElementById('admin-county-table').innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Save the group once before adding counties/agents.</p>';
+    document.getElementById('admin-agent-table').innerHTML = '';
+    return;
+  }
+  try {
+    const [counties, agents] = await Promise.all([
+      sb('rpc/admin_get_counties', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_group_id: groupId }) }),
+      sb('rpc/admin_get_agents', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_group_id: groupId }) }),
+    ]);
+    ALL_GROUP_COUNTIES = counties || [];
+    ALL_GROUP_AGENTS = agents || [];
+    renderGroupCountyList();
+    renderGroupAgentList();
+  } catch(e) {
+    showToast('Error loading agents/counties: ' + e.message, 'error');
+  }
+}
+
+function renderGroupCountyList() {
+  const el = document.getElementById('admin-county-table');
+  if (!ALL_GROUP_COUNTIES.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No counties yet.</p>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  ALL_GROUP_COUNTIES.forEach(c => {
+    const inactive = !c.active;
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    html += `<tr style="border-bottom:1px solid var(--border);${inactive ? 'background:#FAFAFA' : ''}">
+      <td style="padding:8px 10px">${esc(c.name)}${inactiveBadge}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">
+        <button onclick="adminEditCounty('${esc(c.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>
+        <button onclick="adminToggleCountyActive('${esc(c.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function populateAgentCountyDropdown(selectedId) {
+  const sel = document.getElementById('admin-agent-county');
+  const options = ALL_GROUP_COUNTIES.filter(c => c.active !== false || c.id === selectedId);
+  sel.innerHTML = '<option value="">— None —</option>' + options.map(c =>
+    `<option value="${esc(c.id)}">${esc(c.name)}${c.active === false ? ' (inactive)' : ''}</option>`
+  ).join('');
+  sel.value = selectedId || '';
+}
+
+function adminNewCounty() {
+  document.getElementById('admin-county-form-title').textContent = 'New County';
+  document.getElementById('admin-county-original-id').value = '';
+  document.getElementById('admin-county-name').value = '';
+  document.getElementById('admin-county-form').style.display = 'block';
+}
+
+function adminEditCounty(id) {
+  const c = ALL_GROUP_COUNTIES.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('admin-county-form-title').textContent = 'Edit County — ' + c.name;
+  document.getElementById('admin-county-original-id').value = c.id;
+  document.getElementById('admin-county-name').value = c.name || '';
+  document.getElementById('admin-county-form').style.display = 'block';
+}
+
+function adminCancelCountyEdit() {
+  document.getElementById('admin-county-form').style.display = 'none';
+}
+
+async function adminSaveCounty() {
+  const groupId = document.getElementById('admin-group-id').value;
+  const isNew = !document.getElementById('admin-county-original-id').value;
+  const name = document.getElementById('admin-county-name').value.trim();
+  if (!name) { showToast('Name is required', 'error'); return; }
+  const payload = { name };
+  if (isNew) payload.active = true;
+  try {
+    await sb('rpc/admin_save_county', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_county_id: isNew ? null : document.getElementById('admin-county-original-id').value,
+        p_group_id: groupId,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'County created!' : 'County updated!');
+    document.getElementById('admin-county-form').style.display = 'none';
+    await loadGroupAgentsCounties();
+  } catch(e) {
+    showToast('Error saving county: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleCountyActive(id, makeActive) {
+  const c = ALL_GROUP_COUNTIES.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${c.name}?`)) return;
+  const groupId = document.getElementById('admin-group-id').value;
+  try {
+    await sb('rpc/admin_save_county', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_county_id: id,
+        p_group_id: groupId,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`County ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadGroupAgentsCounties();
+  } catch(e) {
+    showToast('Error updating county: ' + e.message, 'error');
+  }
+}
+
+function renderGroupAgentList() {
+  const el = document.getElementById('admin-agent-table');
+  if (!ALL_GROUP_AGENTS.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No agents yet.</p>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">County</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  ALL_GROUP_AGENTS.forEach(a => {
+    const inactive = !a.active;
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const countyName = ALL_GROUP_COUNTIES.find(c => c.id === a.county_id)?.name || '<span style="color:var(--muted)">—</span>';
+    html += `<tr style="border-bottom:1px solid var(--border);${inactive ? 'background:#FAFAFA' : ''}">
+      <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
+      <td style="padding:8px 10px">${countyName}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">
+        <button onclick="adminEditAgent('${esc(a.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>
+        <button onclick="adminToggleAgentActive('${esc(a.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function adminNewAgent() {
+  document.getElementById('admin-agent-form-title').textContent = 'New Agent';
+  document.getElementById('admin-agent-original-id').value = '';
+  document.getElementById('admin-agent-name').value = '';
+  populateAgentCountyDropdown(null);
+  document.getElementById('admin-agent-form').style.display = 'block';
+}
+
+function adminEditAgent(id) {
+  const a = ALL_GROUP_AGENTS.find(x => x.id === id);
+  if (!a) return;
+  document.getElementById('admin-agent-form-title').textContent = 'Edit Agent — ' + a.name;
+  document.getElementById('admin-agent-original-id').value = a.id;
+  document.getElementById('admin-agent-name').value = a.name || '';
+  populateAgentCountyDropdown(a.county_id);
+  document.getElementById('admin-agent-form').style.display = 'block';
+}
+
+function adminCancelAgentEdit() {
+  document.getElementById('admin-agent-form').style.display = 'none';
+}
+
+async function adminSaveAgent() {
+  const groupId = document.getElementById('admin-group-id').value;
+  const isNew = !document.getElementById('admin-agent-original-id').value;
+  const name = document.getElementById('admin-agent-name').value.trim();
+  const countyId = document.getElementById('admin-agent-county').value || null;
+  if (!name) { showToast('Name is required', 'error'); return; }
+  const payload = { name, county_id: countyId };
+  if (isNew) payload.active = true;
+  try {
+    await sb('rpc/admin_save_agent', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_agent_id: isNew ? null : document.getElementById('admin-agent-original-id').value,
+        p_group_id: groupId,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'Agent created!' : 'Agent updated!');
+    document.getElementById('admin-agent-form').style.display = 'none';
+    await loadGroupAgentsCounties();
+  } catch(e) {
+    showToast('Error saving agent: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleAgentActive(id, makeActive) {
+  const a = ALL_GROUP_AGENTS.find(x => x.id === id);
+  if (!a) return;
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${a.name}?`)) return;
+  const groupId = document.getElementById('admin-group-id').value;
+  try {
+    await sb('rpc/admin_save_agent', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_agent_id: id,
+        p_group_id: groupId,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`Agent ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadGroupAgentsCounties();
+  } catch(e) {
+    showToast('Error updating agent: ' + e.message, 'error');
   }
 }
 
@@ -6447,6 +6747,7 @@ async function adminNewGroup() {
   document.getElementById('admin-color2').value = '#1C9BD7';
   document.getElementById('admin-color2-hex').value = '#1C9BD7';
   document.getElementById('admin-has-koc').value = 'true';
+  document.getElementById('admin-is-multi-agent').value = 'false';
   document.getElementById('admin-logo-dark-bg').checked = false;
   setGroupLogoPreview('');
   document.getElementById('admin-logo-file').value = '';
@@ -6516,6 +6817,7 @@ async function adminEditGroup(id, initialTab) {
   document.getElementById('admin-trello').value = g.trello_board_id || '';
   document.getElementById('admin-io-recipient').value = g.io_recipient || '';
   document.getElementById('admin-has-koc').value = g.has_koc ? 'true' : 'false';
+  document.getElementById('admin-is-multi-agent').value = g.is_multi_agent ? 'true' : 'false';
   // Load existing pricing overrides
   currentPricingOverrides = {};
   if (g.io_pricing) {
@@ -6571,6 +6873,7 @@ async function adminSaveGroup() {
     trello_board_id: document.getElementById('admin-trello').value.trim(),
     io_recipient: document.getElementById('admin-io-recipient').value.trim() || null,
     has_koc: document.getElementById('admin-has-koc').value === 'true',
+    is_multi_agent: document.getElementById('admin-is-multi-agent').value === 'true',
   };
   // Only super admins may set pricing. For AM-tier users, omit io_pricing entirely
   // so a PATCH never overwrites the group's existing overrides.

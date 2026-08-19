@@ -16262,3 +16262,52 @@ re-screenshotted (no visual rendering tool in this environment) — the
 fix is a straightforward literal-width correction with no computed
 logic to verify beyond the syntax check; Claire should confirm live
 that the columns now line up.
+
+---
+
+### 2026-08-19 — MS Farm Bureau multi-agent fan-out, Phase 1: schema + admin rosters
+
+Team meeting approved the Option A design from the earlier mockups, with
+three refinements: adding a new county should work the same as adding a new
+agent, the Trello card title should show county in front of the agent name,
+and existing per-agent client records (e.g. "Farm Burea: Kevin Kendrick
+(Prentiss County)") should be **consolidated** into one client per AE/county
+going forward — confirmed with Claire via AskUserQuestion — with the
+Strategist/Accounting Client column instead displaying a composed
+`{group}: {agent} ({county} County)` string per line.
+
+This is a large feature; built in phases (full plan at
+`/root/.claude/plans/zany-sleeping-lecun.md`), checking in before each. This
+entry covers **Phase 1 only** — schema + admin rosters. Phases 2-6 (IO form
+split-entry step, backend fan-out trigger, Trello card fan-out, portal
+display, legacy client migration) are NOT yet built.
+
+**Built:**
+- New `agents`/`counties` tables (group-scoped, soft `active` flag), plus
+  `groups.is_multi_agent` (same precedent as `has_koc` — a plain boolean
+  gating different Step 2 behavior later) and
+  `campaign_lines.agent_name`/`campaign_lines.county` (denormalized strings,
+  matching how `tactic_label`/`client_name` already denormalize rather than
+  joining live). SQL given to Claire to run (not committed, per this
+  project's standing convention) — see chat for the full script.
+- New RPCs: `admin_get_counties`/`admin_save_county`,
+  `admin_get_agents`/`admin_save_agent` (password-gated, same shape as
+  `admin_save_ae`'s safe `case when p_data ? 'field'` partial-update
+  pattern), and public `get_group_agents`/`get_group_counties` for Phase 2.
+- New "Agents & Counties" tab on the Group editor (`admin/index.html`) —
+  nested per-group rather than a global admin tab, same reasoning as Custom
+  Pricing/Accounting Overrides living there instead of their own top-level
+  tab. Add/edit/deactivate for both counties and agents, agent form includes
+  a County picker. New "Multi-Agent Client" Yes/No selector on Group Info,
+  same shape/placement as "Has KOC".
+
+**Verified live** via Playwright against fake `admin_get_counties`/
+`admin_get_agents` responses: the new tab renders and switches correctly,
+the county/agent tables show the right rows including the agent's resolved
+county name, `adminNewAgent()`'s county dropdown populates from the loaded
+counties, and `adminEditAgent()` correctly pre-selects that agent's existing
+county. `node --check` clean on the extracted inline script.
+
+**Not yet done**: Claire needs to run the SQL above before this tab will
+show real data. Phases 2-6 are next, each to be checked in on before
+building, per the approved plan.
