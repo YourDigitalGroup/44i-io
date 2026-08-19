@@ -16349,3 +16349,58 @@ flag off correctly keeps the panel hidden. `node --check` clean.
 **Still to do**: Claire needs to run the correction SQL, then re-verify live
 (the same checklist as before, but now on a Client's edit form instead of a
 Group's) before Phase 2 starts.
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out Phase 2: public form split-entry step
+
+Built the Agent/County split step on the public IO form (`index.html`),
+following the approved mockup. Shown only when the SELECTED CLIENT (not
+group) has `is_multi_agent` set — reuses the Phase 1 correction's scoping.
+
+**Built:**
+- New "Agent / County Split" card in Step 2, right after the normal catalog
+  sections, hidden by default (`#agent-split-card`).
+- `applyClientPick()` now checks `c.is_multi_agent` on the picked client and
+  shows/hides this card accordingly, loading that client's own
+  agents/counties (`get_client_agents`/`get_client_counties`, from Phase 1)
+  when shown.
+- County picker with a "+ New County…" inline fallback (reveals a plain
+  text input), same shape as the AE/Client pickers elsewhere on this form.
+- A split-entry table: Agent (roster + "+ New Agent…" fallback), Service
+  (options drawn from whatever's already checked in the normal Step 2 flow
+  above — not the full catalog), Start, End, Amount. Rows addable/removable.
+- `collectAgentSplits()` — validates the whole section on submit (county
+  set, every row has an agent/service/amount), returns `null` and toasts a
+  specific error if incomplete (submission blocked, scrolls back to the
+  card), returns `[]` untouched for a non-multi-agent client so a normal
+  submission is completely unaffected either way.
+- `submitIO()`/`orderPayload` now includes `agent_splits` (null if the
+  card isn't in play, matching every other optional-field convention on
+  this payload).
+
+**SQL needed** (given to Claire, being run now):
+- `get_group_clients` extended to also return `is_multi_agent` — required a
+  `DROP FUNCTION` first since Postgres won't let `CREATE OR REPLACE` change
+  a function's return row shape; hit and resolved live (the SQL editor
+  needs the DROP and CREATE run as two separate statements — one combined
+  paste threw "no function body specified", the CREATE's body apparently
+  not carrying over across the split).
+- `orders.agent_splits jsonb` — new column to receive the submitted array.
+
+**Verified live** via Playwright, with a full fake catalog (one service,
+one section, one intake form, one hosting-proration row — the real form
+refuses to load at all without at least one of each, confirmed live the
+hard way when a first, thinner mock left the whole body empty and every
+subsequent assertion failed against missing DOM). Confirmed: the card shows
+for a multi-agent client and stays hidden for a normal client in the exact
+same roster; the county dropdown and the split table's Service dropdown
+populate correctly (Service options pulled live from `selected`, not the
+full catalog); `collectAgentSplits()` returns `null` with nothing filled in
+and the correct structured array once county/agent/service/amount are all
+set; a normal client's `collectAgentSplits()` returns `[]` with zero
+validation friction. `node --check` clean.
+
+**Not yet done**: Phase 3 (backend fan-out into per-agent `campaign_lines`),
+Phase 4 (Trello card fan-out with county-prefixed titles), Phase 5 (portal
+Client-column display), Phase 6 (legacy client migration).

@@ -829,6 +829,29 @@ select.qty-field{background-image:none;padding-right:3px}
          code change, same principle as every service inside it. -->
     <div id="dynamic-sections"></div>
 
+    <!-- Agent/County Split (2026-08-19, MS Farm Bureau) -- shown only when the
+         selected client has is_multi_agent set (Admin -> Client Profile). Splits
+         the services already checked above across multiple agents instead of a
+         free-text Instructions breakdown. Scoped to ONE county per submission --
+         a List can hold several counties, but one IO never covers more than one. -->
+    <div class="card" id="agent-split-card" style="display:none">
+      <div class="card-head"><h3>Agent / County Split</h3></div>
+      <div style="padding:16px">
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">This client splits services across multiple agents. Pick the county this IO is for, then enter each agent's own share below — replaces writing the breakdown into Special Instructions.</p>
+
+        <div style="max-width:320px;margin-bottom:16px">
+          <label class="lbl" for="agent-split-county-picker">County</label>
+          <select id="agent-split-county-picker" onchange="onAgentSplitCountyPick(this.value)">
+            <option value="">— Select County —</option>
+          </select>
+          <input type="text" id="agent-split-county-new" placeholder="New county name" style="display:none;margin-top:8px;width:100%"/>
+        </div>
+
+        <div id="agent-split-rows"></div>
+        <button type="button" class="btn-quiet-green" onclick="addAgentSplitRow()" style="margin-top:10px">+ Add another agent/service row</button>
+      </div>
+    </div>
+
     <!-- Special Instructions -->
     <div class="card">
       <div class="card-head"><h3>Special Instructions</h3></div>
@@ -1408,6 +1431,7 @@ async function applyClientPick(id) {
     setBizNameLocked(false);
     CLIENT_SERVICE_HISTORY = [];
     recheckAllServiceOverlaps();
+    setAgentSplitCardVisible(false);
     return;
   }
   const c = CLIENT_ROSTER.find(x => x.id === id);
@@ -1427,6 +1451,187 @@ async function applyClientPick(id) {
     CLIENT_SERVICE_HISTORY = [];
   }
   recheckAllServiceOverlaps();
+  // Agent/County split (2026-08-19, MS Farm Bureau) -- gated on the CLIENT's own
+  // is_multi_agent flag, not the group's (a group can hold both multi-agent and
+  // ordinary clients side by side, per Claire 2026-08-19).
+  if (c.is_multi_agent) {
+    await loadAgentSplitRosters(id);
+    setAgentSplitCardVisible(true);
+  } else {
+    setAgentSplitCardVisible(false);
+  }
+}
+
+// ── AGENT/COUNTY SPLIT (2026-08-19, MS Farm Bureau) ─────────────
+// Shown only for clients flagged is_multi_agent (Admin -> Client Profile).
+// Replaces writing a per-agent breakdown into free-text Special Instructions
+// with a real, structured table — County (roster + inline "new"), and per
+// row an Agent (same), Service (drawn from whatever's already checked above
+// in Step 2), Start/End, and Amount. Collected into `agent_splits` on submit,
+// alongside the normal `line_items`.
+let AGENT_ROSTER = [];
+let COUNTY_ROSTER = [];
+let agentSplitCountyId = null;
+let agentSplitCountyNewName = '';
+let agentSplitRows = []; // [{agentId, agentNewName, serviceId, startDate, endDate, amount}]
+
+async function loadAgentSplitRosters(clientId) {
+  try {
+    const [agents, counties] = await Promise.all([
+      sb('rpc/get_client_agents', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
+      sb('rpc/get_client_counties', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
+    ]);
+    AGENT_ROSTER = agents || [];
+    COUNTY_ROSTER = counties || [];
+  } catch(e) {
+    console.warn('Could not load this client\'s agents/counties:', e.message);
+    AGENT_ROSTER = [];
+    COUNTY_ROSTER = [];
+  }
+  agentSplitCountyId = null;
+  agentSplitCountyNewName = '';
+  agentSplitRows = [{ agentId: '', agentNewName: '', serviceId: '', startDate: '', endDate: '', amount: '' }];
+  renderAgentSplitCountyPicker();
+  renderAgentSplitRows();
+}
+
+function setAgentSplitCardVisible(visible) {
+  const card = document.getElementById('agent-split-card');
+  if (card) card.style.display = visible ? 'block' : 'none';
+  if (!visible) {
+    agentSplitCountyId = null;
+    agentSplitCountyNewName = '';
+    agentSplitRows = [];
+  }
+}
+
+function renderAgentSplitCountyPicker() {
+  const sel = document.getElementById('agent-split-county-picker');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Select County —</option>' +
+    COUNTY_ROSTER.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('') +
+    '<option value="__new__">+ New County…</option>';
+  document.getElementById('agent-split-county-new').style.display = 'none';
+}
+
+function onAgentSplitCountyPick(value) {
+  const newField = document.getElementById('agent-split-county-new');
+  if (value === '__new__') {
+    agentSplitCountyId = null;
+    newField.style.display = 'block';
+    newField.value = '';
+    newField.oninput = () => { agentSplitCountyNewName = newField.value.trim(); };
+  } else {
+    agentSplitCountyId = value || null;
+    agentSplitCountyNewName = '';
+    newField.style.display = 'none';
+  }
+}
+
+// Service dropdown options are drawn from whatever's currently checked in the
+// normal Step 2 flow above (the `selected` object) rather than the full
+// catalog — the AE picks WHICH services are being sold up there first, this
+// table only breaks the dollar amount down by agent.
+function agentSplitServiceOptions() {
+  return Object.entries(selected).map(([id, data]) => ({ id, label: data.label }));
+}
+
+function renderAgentSplitRows() {
+  const wrap = document.getElementById('agent-split-rows');
+  if (!wrap) return;
+  const serviceOptions = agentSplitServiceOptions();
+  const agentOptionsHtml = AGENT_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('') + '<option value="__new__">+ New Agent…</option>';
+  const serviceOptionsHtml = '<option value="">— Service —</option>' + serviceOptions.map(s => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join('');
+
+  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr>
+      <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Agent</th>
+      <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Service</th>
+      <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Start</th>
+      <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">End</th>
+      <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Amount</th>
+      <th></th>
+    </tr></thead>
+    <tbody>` +
+    agentSplitRows.map((row, i) => `
+      <tr>
+        <td style="padding:4px 6px">
+          <select onchange="updateAgentSplitRow(${i},'agentPick',this.value)" style="width:100%">
+            <option value="">— Agent —</option>
+            ${agentOptionsHtml}
+          </select>
+          <input type="text" placeholder="New agent name" value="${esc(row.agentNewName || '')}" oninput="updateAgentSplitRow(${i},'agentNewName',this.value)" style="display:${row.agentId === '__new__' ? 'block' : 'none'};margin-top:4px;width:100%"/>
+        </td>
+        <td style="padding:4px 6px"><select onchange="updateAgentSplitRow(${i},'serviceId',this.value)" style="width:100%">${serviceOptionsHtml.replace(`value="${esc(row.serviceId)}"`, `value="${esc(row.serviceId)}" selected`)}</select></td>
+        <td style="padding:4px 6px"><input type="date" value="${esc(row.startDate || '')}" oninput="updateAgentSplitRow(${i},'startDate',this.value)" style="width:100%"/></td>
+        <td style="padding:4px 6px"><input type="date" value="${esc(row.endDate || '')}" oninput="updateAgentSplitRow(${i},'endDate',this.value)" style="width:100%"/></td>
+        <td style="padding:4px 6px"><input type="number" step="0.01" placeholder="$" value="${esc(row.amount || '')}" oninput="updateAgentSplitRow(${i},'amount',this.value)" style="width:90px"/></td>
+        <td style="padding:4px 6px">${agentSplitRows.length > 1 ? `<button type="button" class="btn-quiet-green" onclick="removeAgentSplitRow(${i})">✕</button>` : ''}</td>
+      </tr>`).join('') +
+    `</tbody></table>`;
+  // Re-select each row's Agent dropdown to its stored value now that the HTML is in
+  // the DOM (avoids fragile string-matching inside the template above for the agent
+  // select, same as done inline for the service select).
+  wrap.querySelectorAll('tbody tr').forEach((tr, i) => {
+    const agentSel = tr.querySelector('td:first-child select');
+    if (agentSel) agentSel.value = agentSplitRows[i].agentId || '';
+  });
+}
+
+function updateAgentSplitRow(i, field, value) {
+  if (!agentSplitRows[i]) return;
+  if (field === 'agentPick') {
+    agentSplitRows[i].agentId = value;
+    if (value !== '__new__') agentSplitRows[i].agentNewName = '';
+    renderAgentSplitRows();
+    return;
+  }
+  agentSplitRows[i][field] = value;
+}
+
+function addAgentSplitRow() {
+  agentSplitRows.push({ agentId: '', agentNewName: '', serviceId: '', startDate: '', endDate: '', amount: '' });
+  renderAgentSplitRows();
+}
+
+function removeAgentSplitRow(i) {
+  agentSplitRows.splice(i, 1);
+  renderAgentSplitRows();
+}
+
+// Called right before submission — returns null (and shows a toast) if the
+// split is incomplete, or the agent_splits array to attach to the order
+// payload. Returns [] (not null) when the card isn't visible at all, so a
+// non-multi-agent submission is completely unaffected.
+function collectAgentSplits() {
+  const card = document.getElementById('agent-split-card');
+  if (!card || card.style.display === 'none') return [];
+  if (!agentSplitCountyId && !agentSplitCountyNewName) {
+    showToast('Agent/County Split: please pick or enter a county', 'error');
+    return null;
+  }
+  const countyName = agentSplitCountyId ? (COUNTY_ROSTER.find(c => c.id === agentSplitCountyId)?.name || '') : agentSplitCountyNewName;
+  const splits = [];
+  for (const row of agentSplitRows) {
+    if (!row.agentId && !row.agentNewName) { showToast('Agent/County Split: every row needs an agent', 'error'); return null; }
+    if (row.agentId === '__new__' && !row.agentNewName) { showToast('Agent/County Split: please type the new agent\'s name', 'error'); return null; }
+    if (!row.serviceId) { showToast('Agent/County Split: every row needs a service', 'error'); return null; }
+    if (!row.amount || Number(row.amount) <= 0) { showToast('Agent/County Split: every row needs an amount', 'error'); return null; }
+    const agentName = row.agentId === '__new__' ? row.agentNewName : (AGENT_ROSTER.find(a => a.id === row.agentId)?.name || '');
+    splits.push({
+      agent_id: row.agentId === '__new__' ? null : row.agentId,
+      agent_name: agentName,
+      is_new_agent: row.agentId === '__new__',
+      county_id: agentSplitCountyId,
+      county: countyName,
+      is_new_county: !agentSplitCountyId,
+      service_id: row.serviceId,
+      start_date: row.startDate || null,
+      end_date: row.endDate || null,
+      amount: Number(row.amount),
+    });
+  }
+  return splits;
 }
 
 // Safety net: if a client was picked but the business name is then hand-edited away
@@ -3939,6 +4144,16 @@ async function submitIO() {
     // Pull the latest Notes + Spend values from the service rows into selected{}
     syncRowInputs();
 
+    // Agent/County Split (2026-08-19, MS Farm Bureau) -- validated here, before the
+    // KOC checks below, so an incomplete split is caught in the same pass rather
+    // than after KOC's own gate has already passed.
+    const agentSplits = collectAgentSplits();
+    if (agentSplits === null) {
+      btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+      document.getElementById('agent-split-card')?.scrollIntoView({behavior:'smooth', block:'center'});
+      return;
+    }
+
     // Hard block if KOC required but not scheduled properly
     if (kocIsRequired() && selectedGroup?.has_koc) {
       if (!kocCalendarOpened) {
@@ -4155,6 +4370,10 @@ async function submitIO() {
       hosting_choices: hostingChoices,
       special_instructions: document.getElementById('special-instructions')?.value || '',
       needs_am_help: Object.values(intakeData).some(d => d.bypassed),
+      // Agent/County Split (2026-08-19, MS Farm Bureau) -- null (not []) when this
+      // client isn't multi-agent, so the column stays untouched for every normal
+      // order the way it always has.
+      agent_splits: agentSplits.length ? agentSplits : null,
     };
     const orders = await sb('orders', {method:'POST', body: JSON.stringify(orderPayload)});
     const orderId = Array.isArray(orders) ? orders[0]?.id : orders?.id;
