@@ -16229,3 +16229,36 @@ Budget/Actual Spend/Clicks entered at all (blank, unlike August onward),
 while Impr. shows a real recorded value (46,381). Unclear yet whether
 this is a missing data-entry for that month or a separate real bug —
 asked Claire to clarify before touching it, rather than guess.
+
+---
+
+### 2026-08-19 — Strategist Portal: Monthly History columns misaligned row-to-row
+
+Claire, on the same screenshot as the Retail CPM report above: "They
+aren't lined up correctly" — the In-Platform/Goal/Actual Spend/Clicks/
+Impr. columns didn't form a clean grid down the Monthly History table;
+July's row sat visibly offset from August's.
+
+Root cause: the In-Platform override and Goal override `<input>`s each
+had a WIDTH that changed depending on whether that specific month had an
+auto-calculated value to show as a placeholder — `110px` when an
+"Auto: X" placeholder was available, `130px` when it wasn't (e.g. July,
+which has no Gross Budget entered yet, so nothing to auto-calculate
+from). The column header above them is a fixed `130px` `<span>`
+regardless. Every row where an auto value existed (August onward, once
+Gross Budget carries forward) rendered 20px narrower per affected
+column than a row where it didn't (July) — so the two columns after
+Goal shifted left/right between rows, throwing off the whole row's
+alignment against both the header and every other row.
+
+**Fix**: both inputs now render at a constant `130px`, matching the
+header exactly, regardless of whether an auto value exists. The auto-vs-
+overridden visual distinction (dashed gray border vs. solid accent
+border) was never dependent on width in the first place, so nothing
+about that indicator changes — only the column now stays put row to row.
+
+`node --check` clean on the extracted inline script. Not independently
+re-screenshotted (no visual rendering tool in this environment) — the
+fix is a straightforward literal-width correction with no computed
+logic to verify beyond the syntax check; Claire should confirm live
+that the columns now line up.
