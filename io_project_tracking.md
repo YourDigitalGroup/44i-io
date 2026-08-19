@@ -16003,3 +16003,13 @@ different context (a header, not a dense table cell).
 **Verified live**: `accountingFormatFlightRange('2025-07-01',
 '2027-06-30')` now returns "Jul 1, 25 – Jun 30, 27," matching
 Strategist's exact date shape. `node --check` clean.
+
+**Follow-up, same session**: Claire wanted the detail card's separate
+"fuller" format updated too, for full consistency. Added the day there
+as well (`accountingFormatFullFlightDate`) while keeping its 4-digit
+year — that year length is the format's own real distinguishing
+feature for a header context with more room than the table. Verified
+live: `accountingFormatFullFlightRange('2026-08-01', '2027-01-31')`
+now returns "Aug 1, 2026 – Jan 31, 2027," while the short table format
+correctly stays on 2-digit years ("Aug 1, 26 – Jan 31, 27"). `node
+--check` clean.
