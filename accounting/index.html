@@ -336,22 +336,29 @@ let accountingSelectedLineId = null; // drives the per-campaign detail card belo
 // its own nowrap span since an en dash carries its own line-break opportunity that
 // a non-breaking space alone doesn't suppress). Returns HTML -- callers must NOT
 // wrap this in esc() (safe: only ever built from Date output, never free-typed text).
+// Includes the day (2026-08-18, per Claire -- match Strategist's own flight-date
+// precision, "Jun 1, 26" not just "Jun '26"), same toLocaleDateString options
+// Strategist's strategistFormatFlightDate() already uses.
 function accountingFormatFlightDate(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr + 'T00:00:00');
-  return (d.toLocaleString('en-US', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(-2)).replace(/ /g, '\xa0');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }).replace(/ /g, '\xa0');
 }
 function accountingFormatFlightRange(start, end) {
   const s = accountingFormatFlightDate(start), e = accountingFormatFlightDate(end);
   if (!s && !e) return '—';
   return `${s || '—'} <span style="white-space:nowrap">– ${e || 'Ongoing'}</span>`;
 }
-// Fuller "Aug 2026 – Jan 2027" format for the detail card header only -- the
-// main table stays on the shorter "Aug '26" form (narrower column).
+// Fuller "Aug 1, 2026 – Jan 31, 2027" format for the detail card header only --
+// the main table stays on the shorter 2-digit-year "Aug 1, 26" form (narrower
+// column). Includes the day now too (2026-08-18, per Claire -- "consistency
+// across the board" with the main table's own day-level fix and Strategist's
+// own flight-date precision), keeping the 4-digit year as this format's own
+// distinguishing feature for a header context where space isn't as tight.
 function accountingFormatFullFlightDate(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleString('en-US', { month: 'short', year: 'numeric' }).replace(/ /g, '\xa0');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).replace(/ /g, '\xa0');
 }
 function accountingFormatFullFlightRange(start, end) {
   const s = accountingFormatFullFlightDate(start), e = accountingFormatFullFlightDate(end);

@@ -15977,3 +15977,39 @@ this was a fixture-ordering mistake, not a code bug.
 headers render as their real labels, in the right order, and each line
 item shows its own start/end dates. `node --check` clean on `shared.js`,
 `strategist/index.html`, and `accounting/index.html`.
+
+## 2026-08-18 — Accounting's Flight column was missing the day
+
+Claire asked if Accounting shows the real flight dates the same way
+Strategist does. Checked first: yes, both already read the same
+`flight_start`/`flight_end` off each campaign line, and Accounting's
+table already has a real "Flight" column, not a derived/order-level
+one. But Claire then caught, from a live screenshot, that Accounting's
+version only showed month + 2-digit year ("Jul '25 – Jun '27") while
+Strategist's shows the day too ("Jun 1, 26"). `accountingFormatFlightDate()`
+had been deliberately built without a day at all — not a bug exactly,
+just a different, coarser format than Strategist's own
+`strategistFormatFlightDate()`.
+
+Changed it to use the identical `toLocaleDateString` options
+Strategist's version already uses (month/day/2-digit-year), kept
+Accounting's own non-breaking-space handling. Only the main table's
+short format changed — the detail card's separate "fuller" header
+format (`accountingFormatFullFlightDate`, "Aug 2026" style) is
+untouched for now; flagged to Claire as a second thing to decide on
+separately since it's a deliberately different, coarser format for a
+different context (a header, not a dense table cell).
+
+**Verified live**: `accountingFormatFlightRange('2025-07-01',
+'2027-06-30')` now returns "Jul 1, 25 – Jun 30, 27," matching
+Strategist's exact date shape. `node --check` clean.
+
+**Follow-up, same session**: Claire wanted the detail card's separate
+"fuller" format updated too, for full consistency. Added the day there
+as well (`accountingFormatFullFlightDate`) while keeping its 4-digit
+year — that year length is the format's own real distinguishing
+feature for a header context with more room than the table. Verified
+live: `accountingFormatFullFlightRange('2026-08-01', '2027-01-31')`
+now returns "Aug 1, 2026 – Jan 31, 2027," while the short table format
+correctly stays on 2-digit years ("Aug 1, 26 – Jan 31, 27"). `node
+--check` clean.
