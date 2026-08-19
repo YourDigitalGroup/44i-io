@@ -16182,3 +16182,50 @@ falling back to the global `retail_cpm`.
 $1,200 gross budget at a 6 platform CPM; every other group (or no group)
 still correctly computes $600 using the global rate. `node --check`
 clean on the extracted inline script.
+
+---
+
+### 2026-08-19 — Strategist Portal: In-Platform/Goal didn't pick up a group's overridden Retail CPM
+
+Claire: "I just updated the Retail CPM for one of the groups but it
+didn't update the in platform spend or goal." Same root cause as the
+Accounting fix just above, in Strategist's own independent copy:
+`budgetedImpressions()` read `CATALOG_ROWS[serviceId].retail_cpm`
+directly — the global value — with no group-level lookup, so the
+auto-calculated In-Platform Budget/Goal placeholders for future months
+kept using the OLD retail CPM after Claire's group override changed it.
+
+**Fix**: added `strategistGroupRetailCpm(serviceId, groupId)`, same
+shape as Accounting's `accountingGroupRetailCpm()` — reads the override
+from `client.group_io_pricing` (`ALL_STRATEGIST_CLIENTS`, keyed by
+`group_id`). `budgetedImpressions()` now takes a `groupId` param and
+checks this before falling back to the global `retail_cpm`; both of its
+call sites (`computeInPlatformBudget()`, `computeGoal()`) already had
+`groupId`/`line.group_id` in scope, so no new data was needed there.
+
+**Important, unverified dependency**: this only works if
+`strategist_get_clients` (the Supabase RPC backing
+`ALL_STRATEGIST_CLIENTS`) actually returns `group_io_pricing` in its
+jsonb output. `accounting_get_clients` needed this exact same field
+added by hand on 2026-08-1x (`'group_io_pricing', g.io_pricing`) — there
+is no evidence in this repo that `strategist_get_clients` has ever had
+it added. **Claire needs to confirm** (or run the equivalent SQL to add
+it) before this fix takes effect live — flagged directly in a comment
+above `strategistGroupRetailCpm()` in the file too, so this isn't lost
+context next session.
+
+**Verified live** via Playwright (JS logic only — the actual RPC's
+column list is unverified, see above): with a fake group override of 14
+(vs. a global default of 12) on a $500 gross budget, the overridden
+group now computes 35,714 impressions — matching the real numbers
+Claire's own screenshot showed already working for August — while a
+normal (non-overridden) group and a null groupId both still correctly
+compute 41,667, the stale value that was showing for every future month
+before the override. `node --check` clean.
+
+**Not yet investigated**: Claire also flagged "the july columns are
+off" in the same message — from the screenshot, July's row has no Gross
+Budget/Actual Spend/Clicks entered at all (blank, unlike August onward),
+while Impr. shows a real recorded value (46,381). Unclear yet whether
+this is a missing data-entry for that month or a separate real bug —
+asked Claire to clarify before touching it, rather than guess.
