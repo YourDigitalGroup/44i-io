@@ -16132,3 +16132,100 @@ correctly tagged `field: 'cpm'`. `applyCustomPricing({'td-geo': 18,
 `.fee`/`.recurring` at their original 0) and `sm-bs.recurring = 800`,
 confirming the two paths don't cross. `node --check` clean on both
 extracted inline scripts.
+
+---
+
+### 2026-08-19 — Full audit of Claire's 7-field override list; found and fixed the real gap
+
+Claire asked for confirmation that every one of these is overridable per
+group: Default Retail, YDA %, 44i Cut %, Budgeted Spend %, Retail CPM,
+44i CPM, Platform CPM. Went through each:
+
+1. **Default Retail** — `default_price`, already overridable via Custom
+   Pricing (`io_pricing`). Unchanged, already correct.
+2. **YDA %** — never stored anywhere; always `100 − 44i Cut %`, confirmed
+   as a real rule (not a coincidence) back on 2026-07-30. Nothing to
+   override — overriding 44i Cut % already determines it.
+3. **44i Cut %** — `accounting_map.fortyfouri_cut_pct`, already
+   overridable via the group's Accounting Overrides tab. Unchanged.
+4. **Budgeted Spend %** — `accounting_map.budgeted_spend_pct`, already
+   overridable via Accounting Overrides. Unchanged.
+5. **Retail CPM** — just added to Custom Pricing this session (previous
+   entry above), but that only affects the client-facing catalog display.
+6. **44i CPM** — never stored; always `Retail CPM × 44i Cut %`, same
+   derived-not-stored pattern as YDA. Nothing to override directly.
+7. **Platform CPM** — `accounting_map.platform_cpm`, already overridable
+   via Accounting Overrides. Unchanged.
+
+**Real gap found in #5**: `accountingComputeExpectedSpend()`
+(`accounting/index.html`) — the function that computes a campaign line's
+"Expected Spend" for margin tracking — read `CATALOG_ROWS[serviceId]
+.retail_cpm` directly, the GLOBAL service value, with no group-level
+lookup at all. So a group with an overridden Retail CPM (via the fix
+above) would show correctly on their own catalog page, but Accounting's
+own Expected Spend math for that group's lines was still silently using
+the wrong (global default) CPM.
+
+**Fix**: added `accountingGroupRetailCpm(serviceId, groupId)`, which
+looks up the override from the SAME `io_pricing` data the public form's
+`applyCustomPricing()` already reads — deliberately reusing the single
+Custom Pricing mechanism rather than adding a second, parallel
+"accounting's own copy" of Retail CPM, since it's the same real-world
+number in both places. The lookup goes through `ALL_ACCOUNTING_CLIENTS`
+(already loaded, each client carries its group's `group_io_pricing`)
+rather than fetching groups directly — no new query needed.
+`accountingComputeExpectedSpend()` now checks this group override before
+falling back to the global `retail_cpm`.
+
+**Verified live** via Playwright: a fake group with a Retail CPM override
+(18, vs. the global default of 12) computes Expected Spend as $400 on a
+$1,200 gross budget at a 6 platform CPM; every other group (or no group)
+still correctly computes $600 using the global rate. `node --check`
+clean on the extracted inline script.
+
+---
+
+### 2026-08-19 — Strategist Portal: In-Platform/Goal didn't pick up a group's overridden Retail CPM
+
+Claire: "I just updated the Retail CPM for one of the groups but it
+didn't update the in platform spend or goal." Same root cause as the
+Accounting fix just above, in Strategist's own independent copy:
+`budgetedImpressions()` read `CATALOG_ROWS[serviceId].retail_cpm`
+directly — the global value — with no group-level lookup, so the
+auto-calculated In-Platform Budget/Goal placeholders for future months
+kept using the OLD retail CPM after Claire's group override changed it.
+
+**Fix**: added `strategistGroupRetailCpm(serviceId, groupId)`, same
+shape as Accounting's `accountingGroupRetailCpm()` — reads the override
+from `client.group_io_pricing` (`ALL_STRATEGIST_CLIENTS`, keyed by
+`group_id`). `budgetedImpressions()` now takes a `groupId` param and
+checks this before falling back to the global `retail_cpm`; both of its
+call sites (`computeInPlatformBudget()`, `computeGoal()`) already had
+`groupId`/`line.group_id` in scope, so no new data was needed there.
+
+**Important, unverified dependency**: this only works if
+`strategist_get_clients` (the Supabase RPC backing
+`ALL_STRATEGIST_CLIENTS`) actually returns `group_io_pricing` in its
+jsonb output. `accounting_get_clients` needed this exact same field
+added by hand on 2026-08-1x (`'group_io_pricing', g.io_pricing`) — there
+is no evidence in this repo that `strategist_get_clients` has ever had
+it added. **Claire needs to confirm** (or run the equivalent SQL to add
+it) before this fix takes effect live — flagged directly in a comment
+above `strategistGroupRetailCpm()` in the file too, so this isn't lost
+context next session.
+
+**Verified live** via Playwright (JS logic only — the actual RPC's
+column list is unverified, see above): with a fake group override of 14
+(vs. a global default of 12) on a $500 gross budget, the overridden
+group now computes 35,714 impressions — matching the real numbers
+Claire's own screenshot showed already working for August — while a
+normal (non-overridden) group and a null groupId both still correctly
+compute 41,667, the stale value that was showing for every future month
+before the override. `node --check` clean.
+
+**Not yet investigated**: Claire also flagged "the july columns are
+off" in the same message — from the screenshot, July's row has no Gross
+Budget/Actual Spend/Clicks entered at all (blank, unlike August onward),
+while Impr. shows a real recorded value (46,381). Unclear yet whether
+this is a missing data-entry for that month or a separate real bug —
+asked Claire to clarify before touching it, rather than guess.

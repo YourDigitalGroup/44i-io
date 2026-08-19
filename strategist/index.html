@@ -1635,10 +1635,28 @@ function effectiveCpcRange(serviceId, groupId) {
 // This is also now the direct basis for Goal (see computeGoal below) -- Goal never
 // derives from In-Platform Budget, since what's promised to the client doesn't move
 // just because the platform ends up more or less efficient than planned.
-function budgetedImpressions(grossBudget, serviceId) {
+// A group's Retail CPM override lives in the SAME io_pricing JSONB the public
+// form's applyCustomPricing() and Accounting's own accountingGroupRetailCpm()
+// already read (2026-08-19 -- Claire: "I just updated the Retail CPM for one
+// of the groups but it didn't update the in platform spend or goal") -- not a
+// separate per-group Strategist field, since it's the same real-world number
+// the client sees on the catalog. Requires `strategist_get_clients` to return
+// `group_io_pricing` the same way `accounting_get_clients` already does --
+// give this SQL to Claire to confirm/add if this still doesn't pick up a
+// change live: alter the RPC's jsonb output to include
+// 'group_io_pricing', g.io_pricing alongside id/name/group_id/group_name.
+function strategistGroupRetailCpm(serviceId, groupId) {
+  if (!groupId) return null;
+  const client = ALL_STRATEGIST_CLIENTS.find(c => c.group_id === groupId && c.group_io_pricing && c.group_io_pricing[serviceId] != null);
+  return client ? Number(client.group_io_pricing[serviceId]) : null;
+}
+function budgetedImpressions(grossBudget, serviceId, groupId) {
   const row = CATALOG_ROWS[serviceId];
-  if (grossBudget == null || !row || row.retail_cpm == null) return null;
-  return (Number(grossBudget) / Number(row.retail_cpm)) * 1000;
+  if (grossBudget == null || !row) return null;
+  const groupRetailCpm = groupId != null ? strategistGroupRetailCpm(serviceId, groupId) : null;
+  const retailCpm = groupRetailCpm != null ? groupRetailCpm : (row.retail_cpm != null ? Number(row.retail_cpm) : null);
+  if (retailCpm == null) return null;
+  return (Number(grossBudget) / retailCpm) * 1000;
 }
 
 // In-Platform Budget = Budgeted Impressions × Platform CPM ÷ 1000 -- always computed
@@ -1646,7 +1664,7 @@ function budgetedImpressions(grossBudget, serviceId) {
 // project. Platform CPM is a real number entered per service/group (Admin →
 // Accounting Map / Accounting Overrides), not derived from a flat %.
 function computeInPlatformBudget(grossBudget, serviceId, groupId, hasModifier) {
-  const impressions = budgetedImpressions(grossBudget, serviceId);
+  const impressions = budgetedImpressions(grossBudget, serviceId, groupId);
   const platformCpm = effectivePlatformCpm(serviceId, groupId, hasModifier);
   if (impressions == null || platformCpm == null) {
     // Fallback for a service with no Retail CPM at all (2026-08-10: SEM) --
@@ -1795,7 +1813,7 @@ function computeGoal(line, monthRow) {
     }
     return { value: null, unit, manual: true };
   }
-  const auto = budgetedImpressions(monthRow?.gross_budget, line.service_id);
+  const auto = budgetedImpressions(monthRow?.gross_budget, line.service_id, line.group_id);
   return { value: auto, unit, manual: false, display: auto != null ? Math.round(auto).toLocaleString() : null };
 }
 
