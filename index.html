@@ -763,7 +763,7 @@ select.qty-field{background-image:none;padding-right:3px}
       </div>
       <div class="field-group cols2">
         <div>
-          <label class="lbl lbl-required" for="contact-email">Email</label>
+          <label class="lbl" for="contact-email">Email</label>
           <input type="email" id="contact-email" placeholder="client@email.com"/>
         </div>
         <div>
@@ -1525,9 +1525,11 @@ async function loadAgentSplitRosters(clientId) {
 // with no list saved yet) for this client -- submitIO() blocks on null rather
 // than falling back anywhere, per Claire: an unregistered AE gets a warning,
 // not a card in the wrong place.
+function submittingClientAeRow() {
+  return CLIENT_AE_ROSTER.find(ca => ca.ae_id === selectedAeId && ca.active !== false) || null;
+}
 function submittingAeTrelloListId() {
-  const match = CLIENT_AE_ROSTER.find(ca => ca.ae_id === selectedAeId && ca.active !== false);
-  return match?.trello_list_id || null;
+  return submittingClientAeRow()?.trello_list_id || null;
 }
 
 function isMultiAgentClientActive() {
@@ -1545,11 +1547,24 @@ function setAgentSplitCardVisible(visible) {
   }
 }
 
+// County/agent scoping by the submitting AE (2026-08-20, per Claire: "Based
+// on the AE submitting the form I would like just their assigned counties to
+// show and based on the county selected I only want those agents to show").
+// Falls back to the FULL roster only if the submitting AE has no client_aes
+// match at all -- shouldn't happen in practice now that validateStep1()
+// blocks progressing past Step 1 for an unregistered AE, but a fallback here
+// keeps this defensive rather than rendering an empty, dead-end picker.
+function countiesForSubmittingAe() {
+  const myClientAe = submittingClientAeRow();
+  if (!myClientAe) return COUNTY_ROSTER;
+  return COUNTY_ROSTER.filter(c => c.client_ae_id === myClientAe.id);
+}
+
 function renderAgentSplitCountyPicker() {
   const sel = document.getElementById('agent-split-county-picker');
   if (!sel) return;
   sel.innerHTML = '<option value="">— Select County —</option>' +
-    COUNTY_ROSTER.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('') +
+    countiesForSubmittingAe().map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('') +
     '<option value="__new__">+ New County…</option>';
   document.getElementById('agent-split-county-new').style.display = 'none';
 }
@@ -1566,6 +1581,8 @@ function onAgentSplitCountyPick(value) {
     agentSplitCountyNewName = '';
     newField.style.display = 'none';
   }
+  // Which agents are offered below depends on which county is now selected.
+  renderAgentSplitRows();
 }
 
 // Service dropdown options are drawn from whatever's currently checked in the
@@ -1616,7 +1633,12 @@ function renderAgentSplitRows() {
   const wrap = document.getElementById('agent-split-rows');
   if (!wrap) return;
   const serviceOptions = agentSplitServiceOptions();
-  const agentOptionsHtml = AGENT_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('') + '<option value="__new__">+ New Agent…</option>';
+  // Scoped to the currently selected county (2026-08-20, per Claire) -- a
+  // brand-new county (agentSplitCountyId null) naturally has no agents on
+  // it yet, so this correctly offers only "+ New Agent" until an existing
+  // county is picked.
+  const agentsForCounty = AGENT_ROSTER.filter(a => a.county_id === agentSplitCountyId);
+  const agentOptionsHtml = agentsForCounty.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('') + '<option value="__new__">+ New Agent…</option>';
   const serviceOptionsHtml = '<option value="">— Service —</option>' + serviceOptions.map(s => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join('');
 
   // Fixed PIXEL widths, not percentages, in a horizontally-scrolling wrapper
@@ -2167,19 +2189,12 @@ function onKocCalendarClicked() {
 }
 
 function kocIsRequired() {
-  // Returns true if any selected product requires a KOC
-  return Object.keys(selected).some(id => {
-    const cfg = PRODUCT_CONFIG[id];
-    if (!cfg) return false;
-    if (cfg.koc === 'required') return true;
-    // koc:none but intake not fully saved
-    if (cfg.koc === 'none' && cfg.intake) {
-      const d = intakeData[cfg.intake];
-      if (!d || (!d.completed && !d.bypassed)) return true;
-      if (d.bypassed) return true;
-    }
-    return false;
-  });
+  // Returns true if any selected product requires a KOC. A koc:'none' product
+  // never requires one, regardless of its own intake form's status (2026-08-20
+  // fix, per Claire — an incomplete/bypassed intake used to force a KOC here
+  // even for services that don't need a call at all; intake completeness is
+  // tracked and chased separately via the Campaign Intake Forms card).
+  return Object.keys(selected).some(id => PRODUCT_CONFIG[id]?.koc === 'required');
 }
 
 function updateKocCard() {
@@ -2191,28 +2206,12 @@ function updateKocCard() {
   const amName = selectedGroup?.am_name || 'your Account Manager';
   const calUrl = selectedGroup?.am_calendar_url;
 
-  // Situation A: products that always require a KOC regardless of intake
+  // Products that require a KOC — kocIsRequired() now only flags koc:'required'
+  // products (see its own comment), so this is the whole list.
   const alwaysKoc = Object.keys(selected).filter(id => PRODUCT_CONFIG[id]?.koc === 'required');
-
-  // Situation B: koc:none products whose intake is incomplete/bypassed/not started
-  const incompleteIntakeForms = [];
-  Object.keys(selected).forEach(id => {
-    const cfg = PRODUCT_CONFIG[id];
-    if (!cfg || cfg.koc !== 'none' || !cfg.intake) return;
-    const d = intakeData[cfg.intake];
-    if (!d || (!d.completed && !d.bypassed) || d.bypassed) {
-      // Only add form once even if multiple products share it
-      const formDef = INTAKE_FORMS[cfg.intake];
-      const label = formDef?.title || cfg.intake;
-      if (!incompleteIntakeForms.find(f => f.key === cfg.intake)) {
-        incompleteIntakeForms.push({ key: cfg.intake, label, sampleId: id, bypassed: d?.bypassed });
-      }
-    }
-  });
 
   let html = '';
 
-  // Situation A block
   if (alwaysKoc.length > 0) {
     html += `
       <div style="margin-bottom:14px">
@@ -2220,18 +2219,6 @@ function updateKocCard() {
         <ul style="margin:0;padding-left:18px;font-size:12px;color:#92400E">
           ${alwaysKoc.map(id => `<li>${PRODUCT_CONFIG[id]?.label || id}</li>`).join('')}
         </ul>
-      </div>`;
-  }
-
-  // Situation B block — just explain, no duplicate buttons (forms card below handles it)
-  if (incompleteIntakeForms.length > 0) {
-    html += `
-      <div style="margin-bottom:14px;${alwaysKoc.length ? 'padding-top:12px;border-top:1px solid #FED7AA;' : ''}">
-        <p style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:4px">📋 KOC required — incomplete intake form${incompleteIntakeForms.length > 1 ? 's' : ''}:</p>
-        <ul style="margin:0 0 6px 18px;font-size:12px;color:#92400E">
-          ${incompleteIntakeForms.map(f => `<li>${f.label}${f.bypassed ? ' <em style="font-size:10px">(AM help requested)</em>' : ''}</li>`).join('')}
-        </ul>
-        <p style="font-size:11px;color:var(--muted)">Complete the intake form${incompleteIntakeForms.length > 1 ? 's' : ''} in the <strong>Campaign Intake Forms</strong> card below to eliminate this requirement, or schedule the call now.</p>
       </div>`;
   }
 
@@ -3344,6 +3331,13 @@ function updateTacticDate(input, id, which) {
   if (iso) autoCheckIfNeeded(id);
   checkServiceDateOverlap(id);
   syncAgentSplitDatesForService(id);
+  // A date change shifts which months/day-counts a whole-campaign-total or
+  // customized per-month plan covers -- rather than try to reconcile an
+  // edited plan against new dates, recompute a fresh one from scratch (2026-08-20).
+  const data = selected[id];
+  if (data?.budgetMode === 'total') recomputeMonthPlanFromTotal(id);
+  else if (data?.customizingMonths) data.monthPlan = seedFlatMonthlyPlan(data.spend || 0, data.start_date, data.end_date);
+  refreshBudgetDetail(id);
 }
 
 // Agent/County Split flight dates (2026-08-19, per Claire: "have the flight
@@ -3570,14 +3564,174 @@ function autoCheckIfNeeded(id) {
   }
 }
 
+// Budget entry form states (2026-08-20, per Claire's approved mockup) — a
+// spend-priced row's single dollar field can mean three things: a flat
+// monthly rate (default, unchanged), a whole-campaign total that gets
+// auto-split across the flight's months by day-count, or a hand-edited
+// per-month plan (either seeded from the flat rate or from the auto-split).
+// `.spend` keeps meaning "the monthly rate" everywhere else in this file
+// (Step 2's running total, Review, Print, the submitted line item) even in
+// 'total' mode -- it's kept as the AVERAGE of monthPlan's amounts so every
+// existing "$X/mo" display stays accurate without having to touch each of
+// those call sites; the true, possibly-uneven breakdown lives in
+// `.monthPlan` and rides along separately as `month_budgets` on submission.
+function monthsInFlight(startDateStr, endDateStr) {
+  if (!startDateStr) return [];
+  const flightStart = new Date(startDateStr + 'T00:00:00');
+  const flightEnd = endDateStr ? new Date(endDateStr + 'T00:00:00') : flightStart;
+  if (flightEnd < flightStart) return [];
+  const months = [];
+  let cursor = new Date(flightStart.getFullYear(), flightStart.getMonth(), 1);
+  const last = new Date(flightEnd.getFullYear(), flightEnd.getMonth(), 1);
+  while (cursor <= last) {
+    const monthStart = new Date(cursor);
+    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const s = monthStart > flightStart ? monthStart : flightStart;
+    const e = monthEnd < flightEnd ? monthEnd : flightEnd;
+    const days = s > e ? 0 : Math.round((e - s) / 86400000) + 1;
+    months.push({
+      month: `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`,
+      label: cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      days,
+    });
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  return months;
+}
+function splitAmountAcrossMonths(totalAmount, startDateStr, endDateStr) {
+  const months = monthsInFlight(startDateStr, endDateStr);
+  const totalDays = months.reduce((sum, m) => sum + m.days, 0);
+  let allocated = 0;
+  months.forEach((m, i) => {
+    if (i === months.length - 1) {
+      m.amount = Math.round((totalAmount - allocated) * 100) / 100; // last month absorbs rounding
+    } else {
+      m.amount = Math.round((totalAmount * m.days / totalDays) * 100) / 100;
+      allocated += m.amount;
+    }
+    m.paused = false;
+  });
+  return months;
+}
+function seedFlatMonthlyPlan(rate, startDateStr, endDateStr) {
+  const months = monthsInFlight(startDateStr, endDateStr);
+  months.forEach(m => { m.amount = rate; m.paused = false; });
+  return months;
+}
+function recomputeSpendAverageFromPlan(id) {
+  const data = selected[id];
+  if (!data || !data.monthPlan || !data.monthPlan.length) return;
+  data.spend = Math.round((data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0) / data.monthPlan.length) * 100) / 100;
+}
+function recomputeMonthPlanFromTotal(id) {
+  const data = selected[id];
+  if (!data) return;
+  data.monthPlan = splitAmountAcrossMonths(data.spendTotal || 0, data.start_date, data.end_date);
+  recomputeSpendAverageFromPlan(id);
+}
+function refreshBudgetDetail(id) {
+  const existing = document.getElementById('budget-detail-' + id);
+  if (!existing) return;
+  existing.outerHTML = renderBudgetDetailRow(id);
+}
+function toggleBudgetDetail(id) {
+  const existing = document.getElementById('budget-detail-' + id);
+  if (existing) { existing.remove(); return; }
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  if (!row) return;
+  row.insertAdjacentHTML('afterend', renderBudgetDetailRow(id));
+}
+function setBudgetMode(id, mode) {
+  const data = selected[id];
+  if (!data) return;
+  data.budgetMode = mode;
+  const input = document.querySelector(`tr[data-id="${id}"] input[type=number]`);
+  if (mode === 'total') {
+    data.spendTotal = data.spendTotal || data.spend || 0;
+    recomputeMonthPlanFromTotal(id);
+    if (input) input.value = data.spendTotal;
+  } else {
+    data.monthPlan = data.customizingMonths ? seedFlatMonthlyPlan(data.spend || 0, data.start_date, data.end_date) : null;
+    if (input) input.value = data.spend || '';
+  }
+  refreshBudgetDetail(id);
+}
+function expandCustomizeByMonth(id) {
+  const data = selected[id];
+  if (!data) return;
+  data.customizingMonths = true;
+  if (!data.monthPlan || !data.monthPlan.length) {
+    data.monthPlan = data.budgetMode === 'total'
+      ? splitAmountAcrossMonths(data.spendTotal || 0, data.start_date, data.end_date)
+      : seedFlatMonthlyPlan(data.spend || 0, data.start_date, data.end_date);
+  }
+  refreshBudgetDetail(id);
+}
+function updateMonthPlanAmount(id, idx, value) {
+  const data = selected[id];
+  if (!data || !data.monthPlan || !data.monthPlan[idx]) return;
+  data.monthPlan[idx].amount = parseFloat(value) || 0;
+  recomputeSpendAverageFromPlan(id);
+}
+function toggleMonthPaused(id, idx) {
+  const data = selected[id];
+  const m = data && data.monthPlan && data.monthPlan[idx];
+  if (!m) return;
+  m.paused = !m.paused;
+  if (m.paused) { m._savedAmount = m.amount; m.amount = 0; }
+  else if (m._savedAmount != null) { m.amount = m._savedAmount; }
+  recomputeSpendAverageFromPlan(id);
+  refreshBudgetDetail(id);
+}
+function renderMonthPreviewTable(plan, editable, id) {
+  const fmt = n => '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const rows = plan.map((m, i) => editable
+    ? `<tr${m.paused ? ' style="opacity:.55"' : ''}><td style="padding:5px 8px">${esc(m.label)}${m.paused ? ' <span style="font-size:9.5px;font-weight:700;color:#92650B;background:#FFF3DA;padding:1px 6px;border-radius:20px">Paused</span>' : ''}</td><td style="padding:5px 8px"><input type="number" value="${m.amount}" ${m.paused ? 'disabled' : ''} onchange="updateMonthPlanAmount('${esc(id)}',${i},this.value)" style="width:100px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);font-size:12px"/></td><td style="padding:5px 8px;text-align:center"><input type="checkbox" ${m.paused ? 'checked' : ''} onchange="toggleMonthPaused('${esc(id)}',${i})"/></td></tr>`
+    : `<tr><td style="padding:5px 8px">${esc(m.label)}</td><td style="padding:5px 8px">${m.days} day${m.days === 1 ? '' : 's'}</td><td style="padding:5px 8px">${fmt(m.amount)}</td></tr>`
+  ).join('');
+  const total = plan.reduce((s, m) => s + (m.amount || 0), 0);
+  const head = editable
+    ? '<tr><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Month</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Amount</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Paused</th></tr>'
+    : '<tr><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Month</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Days in flight</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Amount</th></tr>';
+  const totalRow = editable ? '' : `<tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:5px 8px">Total</td><td style="padding:5px 8px">${plan.reduce((s, m) => s + m.days, 0)} days</td><td style="padding:5px 8px">${fmt(total)}</td></tr>`;
+  return `<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px">${editable ? '<caption style="display:none"></caption>' : ''}<thead>${head}</thead><tbody>${rows}${totalRow}</tbody></table>`;
+}
+function renderBudgetDetailRow(id) {
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const colCount = row ? row.children.length : 6;
+  const data = selected[id] || {};
+  const mode = data.budgetMode || 'monthly';
+  const plan = data.monthPlan || [];
+  const toggleBtn = (label, val) => `<span onclick="setBudgetMode('${esc(id)}','${val}')" style="padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;${mode === val ? 'background:var(--accent);color:#fff' : 'color:var(--accent-dark)'}">${esc(label)}</span>`;
+  return `<tr id="budget-detail-${esc(id)}"><td colspan="${colCount}" style="background:var(--light);padding:10px 14px">
+    <div style="display:inline-flex;border:1.5px solid var(--accent);border-radius:999px;overflow:hidden;margin-bottom:8px">${toggleBtn('Monthly rate', 'monthly')}${toggleBtn('Whole campaign total', 'total')}</div>
+    ${mode === 'total' && plan.length ? `<div style="font-size:10.5px;color:#1F7A42;background:#E7F5EC;display:inline-block;padding:2px 8px;border-radius:20px;font-weight:700;margin:0 0 4px 8px">Auto-computed, shown before submitting</div>${renderMonthPreviewTable(plan, false)}` : ''}
+    <div style="margin-top:8px"><a href="#" onclick="event.preventDefault();expandCustomizeByMonth('${esc(id)}')" style="font-size:11.5px;font-weight:700;color:var(--accent-dark);text-decoration:none">▾ Customize by month (skip a month, or use a different amount for one)</a></div>
+    ${data.customizingMonths && plan.length ? renderMonthPreviewTable(plan, true, id) : ''}
+  </td></tr>`;
+}
+
 function updateSpend(input, id) {
   autoCheckIfNeeded(id);
-  if (selected[id]) selected[id].spend = parseFloat(input.value) || 0;
+  const raw = parseFloat(input.value) || 0;
+  if (selected[id]) {
+    if (selected[id].budgetMode === 'total') {
+      selected[id].spendTotal = raw;
+      recomputeMonthPlanFromTotal(id);
+      refreshBudgetDetail(id);
+    } else {
+      selected[id].spend = raw;
+      if (!selected[id].customizingMonths) selected[id].monthPlan = null;
+    }
+  }
   // Clear the required highlight once a value is entered
   if (parseFloat(input.value) > 0) markFieldMissing(input, false);
-  // Show below-minimum warning inline
+  // Show below-minimum warning inline — compares against the MONTHLY rate,
+  // never the raw input value: in 'total' mode the input holds a whole-
+  // campaign figure, so the monthly-equivalent computed above (selected[id]
+  // .spend) is what a monthly minimum is actually meant to check.
   const min = SPEND_MINIMUMS[id];
-  const val = parseFloat(input.value) || 0;
+  const val = (selected[id]?.budgetMode === 'total') ? (selected[id]?.spend || 0) : (parseFloat(input.value) || 0);
   const row = input.closest('tr');
   if (!row) return;
   let warn = row.querySelector('.spend-min-warn');
@@ -3867,8 +4021,13 @@ function syncRowInputs() {
       else selected[id].recurring = amount;
       selected[id].quotedPriceEntered = quotedInput.value !== '';
     }
+    // Budget entry form states (2026-08-20): in 'total' mode this same input
+    // holds a whole-campaign TOTAL, not the monthly rate -- .spend must stay
+    // the already-computed monthly average (updateSpend/recomputeMonthPlanFromTotal
+    // keep it current) rather than being clobbered with the raw total here.
     const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
-    if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
+    if (spendInput && selected[id].budgetMode === 'total') selected[id].spendTotal = parseFloat(spendInput.value) || 0;
+    else if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
     // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now.
     // updateTacticDate() already writes these into selected[id] live as the AE types a
     // complete MM/DD/YY value, so this is a safety net (same role syncRowInputs()
@@ -3912,12 +4071,15 @@ function updateDerivedCampaignSummary() {
 }
 
 // ── STEP 1 VALIDATION ─────────────────────────────────────────
-// Required before leaving Step 1: AE name, business name, contact email.
+// Required before leaving Step 1: AE name, business name, city. Contact
+// email (2026-08-20, per Claire: "make the email override as not needed
+// since it varies") is no longer required — some clients genuinely don't
+// have one to give at submission time — but its FORMAT is still checked
+// when the AE does type one in, so a typo still gets caught.
 function validateStep1() {
   const required = [
     ['ae-name', 'Digital Account Executive name'],
     ['biz-name', 'Business name'],
-    ['contact-email', 'Contact email'],
     ['city', 'City / Service Area'],
   ];
   let firstMissing = null;
@@ -3925,13 +4087,23 @@ function validateStep1() {
   required.forEach(([id, label]) => {
     const el = document.getElementById(id);
     const val = (el?.value || '').trim();
-    const bad = !val || (id === 'contact-email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val));
+    const bad = !val;
     markFieldMissing(el, bad);
     if (bad) {
       missingLabels.push(label);
       if (!firstMissing) firstMissing = el;
     }
   });
+  // Contact email is optional, but a non-empty value still needs to look
+  // like a real email — catches a typo without forcing the field itself.
+  const emailEl = document.getElementById('contact-email');
+  const emailVal = (emailEl?.value || '').trim();
+  const emailBad = emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal);
+  markFieldMissing(emailEl, emailBad);
+  if (emailBad) {
+    missingLabels.push('Contact email (invalid format)');
+    if (!firstMissing) firstMissing = emailEl;
+  }
   if (firstMissing) {
     showToast('Required: ' + missingLabels.join(', '), 'error');
     // Make sure Step 1 is visible so the highlighted fields can be seen
@@ -3943,6 +4115,16 @@ function validateStep1() {
     }
     firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
     firstMissing.focus();
+    return false;
+  }
+  // MS Farm Bureau fan-out (2026-08-20, per Claire): this used to only block
+  // at final submission (see submitIO()'s own identical check) -- moved
+  // earlier so an AE who isn't registered for this client's Trello board
+  // finds out on Step 1, before doing all the work of filling out Step 2's
+  // Agent/County Split and the rest of the form, instead of at the very end.
+  if (isMultiAgentClientActive() && !submittingAeTrelloListId()) {
+    showToast('Your AE profile isn\'t set up for this client\'s Trello board yet — contact your AM before continuing', 'error');
+    document.getElementById('ae-picker-wrap')?.scrollIntoView({behavior:'smooth', block:'center'});
     return false;
   }
   return true;
@@ -4571,6 +4753,12 @@ async function submitIO() {
         // order-wide campaign_start/campaign_end.
         start_date: data.start_date || null,
         end_date: data.end_date || null,
+        // Budget entry form states (2026-08-20) — only present when the AE
+        // actually used the whole-campaign-total toggle or customize-by-month
+        // (the vast majority of rows never touch this); when present, the
+        // strategist-portal trigger seeds one campaign_months row per entry
+        // instead of the single flat-rate row it seeds otherwise.
+        month_budgets: (data.monthPlan && data.monthPlan.length) ? data.monthPlan.map(m => ({ month: m.month, amount: m.amount, paused: !!m.paused })) : null,
       };
     });
 
@@ -5213,6 +5401,12 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           addedCardNames.add(norm('IO'));
           console.log('Created IO card');
         }
+        // Comment on every order, new card or reused (2026-08-20, per Claire —
+        // "if a card is already created... there is no notification"). A brand
+        // new card already gets Trello's own creation activity; this still
+        // posts here too so the AM sees a consistent, specific "what got
+        // ordered" note either way, not just a generic "card created."
+        await postOrderComment(ioCardId, `📋 New order submitted (IO #${ioNumber}):\n\n${servicesDesc}`);
         // Overview IO card covers the whole order — gets the UNION of every discipline
         // represented across ALL selected line items, not just one tactic's.
         await assignCardMembers(ioCardId, memberIdsForLineItems(lineItems));
@@ -5325,6 +5519,26 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // applyKoc (2026-07-15, per Claire): a whole-list template can copy SEVERAL
         // cards for one workflow — the KOC label should only land on the first of them,
         // not every sub-card, so the caller passes false for every card after the first.
+        // Posts a Trello comment noting what was just ordered (2026-08-20, per
+        // Claire — a resold service updating an EXISTING card produced no
+        // notification at all, since only card creation implicitly notifies
+        // watchers; this covers new and existing cards alike). Failures are
+        // logged, not thrown — a missing comment shouldn't block the rest of
+        // card setup, same tolerance as the PDF-attach calls right below it.
+        async function postOrderComment(cardId, text) {
+          if (!cardId || !text) return;
+          try {
+            const res = await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text })
+            });
+            if (!res.ok) console.warn('Could not post order comment to card', cardId, ':', res.status);
+          } catch (e) {
+            console.warn('Could not post order comment to card', cardId, ':', e.message);
+          }
+        }
+
         async function finalizeTacticCard(cardId, wfIdx, applyKoc = true) {
           if (!cardId) return;
           const intake = buildIntakeDesc(originalWorkflows[wfIdx]);
@@ -5332,6 +5546,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           // banner (2026-07-15, per Claire — kept visible without the full Q&A
           // cluttering it; the full detail lives in the PDF instead).
           const sellDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intake?.bannerHeader].filter(Boolean).join('\n\n');
+          await postOrderComment(cardId, `📋 New order submitted:\n\n${formatSiblingLineItems(originalWorkflows[wfIdx])}`);
           if (sellDesc) {
             await fetch(PROXY, {
               method: 'POST',
@@ -5436,6 +5651,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               const card = await res.json();
               if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
             }
+            await postOrderComment(cardId, `📋 New order submitted:\n\n${descLines}`);
             if (cardId && intake) {
               try {
                 const { base64, fileName } = await generateIntakePdfBlob(`${wf}-${agentName}`, intake.html);
@@ -7049,8 +7265,12 @@ function generateCatalogRowHtml(r, hasSpendCol) {
   // <td> when the table needs one (hasSpendCol, passed in by the caller) keeps every
   // row's cell count matching its header regardless of that row's own pricing mode —
   // the actual "no spend value" intent is unchanged, only the missing-cell bug is fixed.
+  // Budget entry form states (2026-08-20) — the ⚙ link opens/closes a detail
+  // row right below this one (toggleBudgetDetail) with the whole-campaign-
+  // total toggle and the customize-by-month table; collapsed by default so
+  // every existing spend-priced row still looks pixel-identical to before.
   const spendCell = r.pricing_mode === 'spend'
-    ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
+    ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/><button type="button" onclick="toggleBudgetDetail('${esc(r.id)}')" title="Customize this budget by month or as a campaign total" style="margin-left:4px;background:none;border:none;color:var(--accent-dark);cursor:pointer;font-size:13px;vertical-align:middle;padding:0">⚙</button></td>`
     : (hasSpendCol ? `<td class="svc-spend-placeholder"></td>` : '');
   // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now
   // (replaces the old single Step-1-wide Campaign Dates card). Length dropped

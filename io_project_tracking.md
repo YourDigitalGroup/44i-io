@@ -17054,3 +17054,189 @@ stored list) submitted successfully and BOTH the IO card and Danny
 Crozier's agent-split card landed in Andy's own list — confirming routing
 now follows the submitting AE regardless of which county/Farm-Bureau-agent
 was picked underneath. `node --check` clean on both extracted scripts.
+
+## 2026-08-20 — Fixed empty "AE" dropdown in the Multi-Agent client editor
+
+Claire hit this live while setting up MS Farm Bureau's real roster: clicking
+"+ Add AE" under a Multi-Agent Client showed a completely empty "AE" dropdown,
+blocking her from entering any of the 16 real AEs. Two real bugs, both in
+`admin/index.html`'s `populateClientAePickerDropdown()`/`adminNewClientAe()`:
+1. The picker filtered `ALL_AES` (the global, group-wide AE roster) only by
+   "not already added to this client" — no group scoping at all, so it should
+   have shown every group's AEs mixed together rather than being empty. Added
+   an explicit `a.group_id === groupId` filter (reading the client's own
+   `admin-client-group` select value), per Claire: "this dropdown should only
+   include AE's from the assigned Group."
+2. The more likely actual cause of the *empty* dropdown: switching "Multi-Agent
+   Client" to Yes shows the AE panel immediately via `onMultiAgentClientChange()`,
+   but the AE roster itself loads asynchronously right after, via
+   `loadClientAgentsCounties()`. Clicking "+ Add AE" before that fetch resolved
+   rendered the picker against a still-empty `ALL_AES`. `adminNewClientAe()` is
+   now `async` and awaits `loadClientAgentsCounties()` first if `ALL_AES` is
+   still empty.
+
+**Verified:** `node --check` clean on the extracted script. Not independently
+reproduced with a timed race in a test harness (the fix's own correctness is
+straightforward — await-before-read — but the exact original failure mode
+couldn't be confirmed live without DB access this session); asked Claire to
+retest against the real roster after this deployed.
+
+## 2026-08-20 — Removed incorrect KOC requirement tied to unrelated intake status
+
+Claire flagged: "Right now AE's are required to set up a KOC for a service
+that doesn't need one but has an incomplete Intake form, we need to remove
+that guard." Confirmed in `index.html`'s `kocIsRequired()`: a product marked
+`koc:'none'` (no call needed) was still forcing a Kick-Off-Call requirement —
+and blocking submission entirely — whenever its OWN separate intake form
+wasn't `completed` (including when it had been explicitly `bypassed`, which
+should have been the "skip this, AM will collect on the call" escape hatch,
+not a trigger for a call the service was never supposed to need).
+
+**Fix:** `kocIsRequired()` now only ever returns true for a product whose own
+`koc` field is literally `'required'` — a `koc:'none'` product's intake
+status no longer factors in at all. Removed the now-unreachable "Situation B"
+block from `updateKocCard()` (the paired UI code that listed incomplete
+intake forms as a KOC reason) since `kocIsRequired()` can no longer trigger it.
+Intake completeness is still tracked and chased — just through the existing,
+separate Campaign Intake Forms card, with no KOC consequence attached.
+
+**Verified:** extracted `kocIsRequired()` and ran it against four scenarios in
+Node — a `koc:'none'` product with no intake data at all, one with a
+`bypassed` intake, a `koc:'required'` product alone, and a mix of both —
+confirming only the `koc:'required'` case returns true in every case.
+`node --check` clean on the extracted inline script.
+
+## 2026-08-20 — Trello comment on every order, new card or reused
+
+Claire: "For new orders for both the IO and existing cards we need to create
+a comment so that the AM and anyone else gets notified that something has
+been ordered. Right now it only creates cards so if a card is already
+created there is no notification." Confirmed: only card *creation* implicitly
+notifies Trello board watchers via its own activity feed — updating an
+existing card's description (the resell path every tactic card and the IO
+card already use) posts nothing anyone would see.
+
+**Backend:** added a new `trello_add_comment` target to the
+`claude-proxy` Supabase Edge Function (not tracked in this repo — Claire
+pasted its current source, added the one new `switch` case herself, and
+redeployed), calling Trello's `POST /1/cards/{id}/actions/comments`.
+
+**Frontend (`index.html`):** new shared `postOrderComment(cardId, text)`
+helper inside `submitIO()`, tolerant of failure (logged, not thrown) same as
+the existing PDF-attach calls. Wired into all three places a card gets
+created or reused: the IO card (posts the services-sold summary once,
+right after either its create or update branch), `finalizeTacticCard()`
+(covers every tactic-card path — single-card template, whole-list template,
+list-fallback, and no-template plain card — since all four already funnel
+through this one function for both new and existing cards), and
+`createAgentSplitCards()` (one comment per agent's card, MS Farm Bureau
+fan-out).
+
+**Verified live** via Playwright through the real `submitIO()` path with a
+pre-existing Trello card mocked for the SEM tactic (forcing the
+previously-silent update branch) alongside a brand-new IO card: confirmed
+`trello_add_comment` fired for BOTH — the reused SEM card got a comment
+(`card_id: card_sem_existing`, the exact case that was broken) and the new
+IO card got its own. `node --check` clean on the extracted inline script.
+
+## 2026-08-20 — Budget entry form states (1-3), per approved mockup
+
+Approved artifact "Budget Entry Form States" specified 3 buildable states for
+a spend-priced tactic row's dollar field (a 4th, mid-month accounting-side
+proration, is explicitly parked as an open question — not built):
+1. Default flat monthly rate — unchanged.
+2. "Monthly rate" vs. "Whole campaign total" toggle — the total auto-splits
+   across the flight's months by day-count, shown as a preview table.
+3. "Customize by month" — an editable per-month table (amount + Paused
+   checkbox), seeded from state 1 or 2's value, always visible as a plain
+   link (not a checkbox) so it costs nothing to ignore.
+
+**Design decision (confirmed with Claire):** the mockup shows each service
+as its own spacious card, but the real form renders every service as one
+row in a dense table. Rather than cram a toggle + tables into the Spend
+`<td>`, a small ⚙ link next to the spend input expands a full-width detail
+row directly beneath it (`toggleBudgetDetail`/`renderBudgetDetailRow`) —
+collapsed by default, so every unaffected row stays pixel-identical to
+before this change.
+
+**Data model:** `selected[id].spend` keeps meaning "the monthly rate"
+everywhere else in this file (Step 2's running total, Review, Print, the
+submitted line item's `spend` field) even in 'total' mode — it's kept as the
+average of `.monthPlan`'s amounts (`recomputeSpendAverageFromPlan`) so none
+of those existing display sites needed to change. The real, possibly-uneven
+per-month breakdown lives in `.monthPlan` and rides along separately as a
+new `month_budgets` array on the submitted line item, only when non-empty
+(the vast majority of rows never touch this).
+
+**New pure functions:** `monthsInFlight`, `splitAmountAcrossMonths` (day-
+count proration of a total, inclusive counting of both the start and end
+date — a deliberate choice, not a copy of the mockup's own placeholder
+numbers, which used exclusive-end counting), `seedFlatMonthlyPlan` (customize-
+by-month's seed when opened directly from a flat rate, no proration).
+
+**Real bug found and fixed while testing:** `syncRowInputs()` (called before
+line items are built) unconditionally re-read the visible spend `<input>`'s
+raw DOM value into `selected[id].spend` — in 'total' mode that input holds
+the TOTAL, not the monthly rate, so this was clobbering the correctly-
+computed average right before submission (caught live: a test asserting
+`spend: 845.83` after a hand-edited per-month plan instead got `spend: 6900`,
+the raw total). Fixed by having `syncRowInputs()` route total-mode input into
+`.spendTotal` instead of overwriting `.spend` directly, matching the same
+guard `updateSpend()` already had.
+
+**Verified:** a standalone Node script exercised `splitAmountAcrossMonths`
+against 6 scenarios (single full month, a 2-month split with exact rounding-
+remainder handling, a 6-month even split, no dates, no end date) — 17/17
+assertions pass, including that every split always sums to the exact input
+total. Then a live Playwright run: checked a spend row, typed $1,150/mo,
+switched to whole-campaign-total with $6,900 over Aug 2026–Jan 2027 (6
+months, correct day-prorated split summing to exactly $6,900), opened
+Customize by month, paused October (forced to $0) and hand-edited August to
+$500, confirmed the detail row's actual rendered HTML (not just JS state)
+showed the "Paused" tag — then ran the real `submitIO()` and confirmed the
+posted order's line item carried `spend: 845.83` (the correct recomputed
+average) and the full 6-entry `month_budgets` array with the paused/edited
+values intact. `node --check` clean on the extracted inline script.
+
+**Backend (not yet applied — SQL handed to Claire):** `create_campaign_lines
+_from_order()`'s spend-insert branch extended to seed one `campaign_months`
+row per `month_budgets` entry (a paused month still gets its own $0 row,
+not simply omitted) instead of the single flat-rate row, only when
+`month_budgets` is present on the line item — every line item that doesn't
+use this feature falls through to the original single-row insert, unchanged.
+
+## 2026-08-20 — MS Farm Bureau follow-ups: earlier AE gate, optional email, county/agent scoping
+
+Three corrections Claire asked for after using the multi-agent client setup
+for the first time:
+
+1. **AE-not-registered warning moved to Step 1.** The check already existed
+   at final submission (`submitIO()`, "Your AE profile isn't set up for this
+   client's Trello board yet"), added during Phase 4. Claire wanted it
+   earlier — an AE who isn't on this client's roster now finds out on Step 1
+   (added to `validateStep1()`, reusing the same `submittingAeTrelloListId()`
+   lookup and message) instead of after filling out the whole form. The
+   original submit-time check stays in place too, as a safety net.
+2. **Contact email no longer required.** Claire: "make the email... not
+   needed since it varies" — confirmed via follow-up she meant the Step 1
+   Contact Email field (`validateStep1()`, `index.html`), not a different
+   "override" field (none exists by that name — checked). Dropped from the
+   required-fields list; format is still checked when a value IS entered, so
+   a typo still gets caught, just not an empty field.
+3. **County/agent pickers scoped to the submitting AE.** Claire: "based on
+   the AE submitting the form I would like just their assigned counties to
+   show and based on the county selected I only want those agents to show."
+   New `submittingClientAeRow()` (the AE's own `client_aes` row) backs a new
+   `countiesForSubmittingAe()` filter on the county picker (`county.client_ae_id
+   === thatRow.id`), and the per-row agent `<select>` in `renderAgentSplitRows()`
+   now filters `AGENT_ROSTER` by `agent.county_id === agentSplitCountyId` —
+   a brand-new county naturally shows no existing agents until one is
+   registered against it. Picking a different county now re-renders the
+   split rows so the agent list updates immediately.
+
+**Verified live** via Playwright: an unregistered AE is blocked at Step 1
+while a registered one with a blank email passes; a county picker seeded
+with two counties on two different AEs correctly shows only the submitting
+AE's own county; and after picking that county, the agent picker shows only
+the agent registered to it, not one belonging to a different county.
+`node --check` clean on the extracted inline script.
