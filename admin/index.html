@@ -6906,8 +6906,18 @@ function viewOrderDetail(orderId) {
         editBtn = `<button type="button" onclick="adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:700;cursor:pointer">✎ Edit</button>`;
         if (lastEdit) amtCellHtml += `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>`;
       }
-      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${cancelBtn}</div></td></tr>
+      // AM-triggered Renew (2026-08-20, per Claire's post-meeting follow-up) -- "Renew
+      // as is" just pushes flight_end out with no other change; "Renew with
+      // modifications" can also set a new monthly budget (applied starting the first
+      // month of the renewed term) and/or a different end date than the plain default.
+      // Same scope decision as Edit: only the order record's own display refreshes here
+      // plus a Trello comment on the existing card -- no new card, no day-prorating (this
+      // is the SAME campaign_lines row continuing, not a new one like Swap creates).
+      const currentEndDate = item.end_date || o.campaign_end || '';
+      const renewBtn = `<button type="button" onclick="adminToggleRenewPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(currentEndDate)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button>`;
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${cancelBtn}</div></td></tr>
         <tr id="edit-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
+        <tr id="renew-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
     }).join('');
     return header + rows;
@@ -7355,6 +7365,119 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
   }
 
   showToast('✅ Change saved');
+  viewOrderDetail(orderId);
+}
+
+// ── AM-TRIGGERED RENEW (2026-08-20, per Claire's post-meeting follow-up) ─────
+// A 4th surface alongside Cancel/Edit/Swap, for a service about to run out its
+// flight rather than being replaced (Swap) or cut short (Cancel). Two modes,
+// per Claire: "Renew as is" just extends flight_end with no other change;
+// "Renew with modifications" can ALSO set a new monthly budget and/or a
+// different end date than the plain "one more term" default. Deliberately does
+// NOT let the tactic itself change here -- that's what Swap is for. Same
+// campaign_lines row continues (no new row, no day-prorating, unlike Swap) --
+// admin_renew_service() just extends flight_end and, if a new budget was given,
+// sets it starting the renewed term's first month.
+function adminToggleRenewPanel(orderId, serviceId, currentEndDate) {
+  const row = document.getElementById(`renew-panel-${serviceId}`);
+  if (!row) return;
+  if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  // fmtDate() itself is a local const scoped inside viewOrderDetail() -- not visible
+  // from this top-level function, so this panel formats its own display date inline.
+  const currentEndDisplay = currentEndDate
+    ? new Date(currentEndDate + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
+    : '';
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);border-radius:8px;padding:14px 16px;margin:4px 0">
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:8px">Renew: ${esc(CATALOG_ROWS[serviceId]?.accounting_label || CATALOG_ROWS[serviceId]?.label || serviceId)}${currentEndDisplay ? ` <span style="color:var(--muted);font-weight:400">(currently ends ${esc(currentEndDisplay)})</span>` : ''}</div>
+      <div style="display:flex;gap:16px;margin-bottom:10px">
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="radio" name="renew-mode-${serviceId}" value="as-is" checked onchange="adminUpdateRenewMode('${esc(serviceId)}')"/> Renew as is
+        </label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="radio" name="renew-mode-${serviceId}" value="modify" onchange="adminUpdateRenewMode('${esc(serviceId)}')"/> Renew with modifications
+        </label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;max-width:420px">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New End Date</label>
+          <input type="date" id="renew-end-${esc(serviceId)}" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+        <div id="renew-budget-wrap-${esc(serviceId)}" style="display:none">
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New Monthly Budget (optional)</label>
+          <input type="number" step="0.01" id="renew-budget-${esc(serviceId)}" placeholder="Leave blank to keep current" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button type="button" onclick="adminConfirmRenewal('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#1F7A42;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Renewal</button>
+        <button type="button" onclick="adminToggleRenewPanel('${esc(orderId)}','${esc(serviceId)}','${esc(currentEndDate)}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+}
+
+// "As is" hides the budget field entirely -- there's nothing to type, keeping the
+// current rate is the whole point of that mode. Switching back to "as is" clears
+// whatever was typed into it so a stray value can't sneak through unintentionally.
+function adminUpdateRenewMode(serviceId) {
+  const wrap = document.getElementById(`renew-budget-wrap-${serviceId}`);
+  const isModify = document.querySelector(`input[name="renew-mode-${serviceId}"]:checked`)?.value === 'modify';
+  if (wrap) wrap.style.display = isModify ? 'block' : 'none';
+  if (!isModify) {
+    const budgetInput = document.getElementById(`renew-budget-${serviceId}`);
+    if (budgetInput) budgetInput.value = '';
+  }
+}
+
+async function adminConfirmRenewal(orderId, serviceId) {
+  const newEndDate = document.getElementById(`renew-end-${serviceId}`)?.value;
+  const budgetRaw = document.getElementById(`renew-budget-${serviceId}`)?.value;
+  const newBudget = budgetRaw ? parseFloat(budgetRaw) : null;
+  if (!newEndDate) { showToast('Enter a new end date', 'error'); return; }
+
+  let result;
+  try {
+    result = await sb('rpc/admin_renew_service', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: serviceId,
+        p_new_end_date: newEndDate, p_new_monthly_budget: newBudget,
+      }),
+    });
+  } catch (e) {
+    showToast('Could not renew this service: ' + e.message, 'error');
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const svc = CATALOG_ROWS[serviceId] || {};
+  if (o) {
+    const item = (o.line_items || []).find(li => li.service_id === serviceId);
+    if (item) item.end_date = newEndDate;
+
+    const label = svc.accounting_label || svc.label || serviceId;
+    const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
+    const commentText = `🔁 Renewed ${label} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
+    const ioCardId = o.trello_card_ids?.__io_card__;
+    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    for (const cardId of cardIds) {
+      try {
+        const res = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
+        });
+        if (!res.ok) console.warn('Could not post renewal comment to card', cardId, ':', res.status);
+      } catch (e) {
+        console.warn('Could not post renewal comment to card', cardId, ':', e.message);
+      }
+    }
+    if (!cardIds.length) showToast('Renewed, but no Trello card was found — please note it in Trello by hand', 'error');
+  }
+
+  showToast('✅ Service renewed');
   viewOrderDetail(orderId);
 }
 

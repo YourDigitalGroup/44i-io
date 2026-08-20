@@ -17952,3 +17952,51 @@ through cleanly. Edit panel toggles open/closed as a real table row (not
 a stray `<div>` inside another cell), pre-fills the current amount,
 and closes correctly on a second click. `node --check` clean on both
 files.
+
+## 2026-08-20 — 4th Order Detail surface: AM-triggered Renew
+
+New request from Claire's meeting: "We need to add a 'Renew' option...
+either 'Renew as is' or 'Renew with modifications' for a service that is
+about to expire." Confirmed scope with her before building, since this
+touches live `campaign_lines` data the same way Swap does:
+- Lives next to Cancel/Edit/Swap in Admin Order Detail, one button per
+  line item (`↻ Renew`).
+- **Renew as is:** just extends the SAME `campaign_lines` row's
+  `flight_end` — no new row, no new Trello card (unlike Swap, which
+  genuinely replaces one tactic with another).
+- **Renew with modifications:** can also set a new monthly budget and/or
+  a different end date than the plain default — but NOT a different
+  tactic; that's still Swap's job, kept separate on purpose.
+- Trello: just a comment on the existing card(s) (IO card + tactic card,
+  same lookup as Edit), no new/changed card.
+
+**New RPC `admin_renew_service`:** finds the order's active (non-
+cancelled) `campaign_lines` row for that service, updates `flight_end`.
+If a new monthly budget was given, it's applied starting the first month
+of the renewed term (the month right after the OLD end date) via an
+upsert into `campaign_months` — same "touch just the one relevant month"
+scope `admin_swap_tactic` already uses, not a bulk-populate of every
+future month. Every month after that keeps following Strategist's normal
+carry-forward/manual workflow, unchanged.
+
+**One documented judgment call, not confirmed with Claire in detail —
+worth double-checking if it doesn't match what Strategists expect:** the
+"new budget starts the month right after the old end date" rule assumes
+the renewed term's first month is exactly that. If a renewal is entered
+well before or after the actual expiration, this could land on an
+unexpected month — flagging this now rather than silently guessing
+something more elaborate.
+
+**UI:** radio toggle between the two modes — "as is" hides the budget
+field entirely (and clears anything typed into it if you switch back to
+it, so a stray value can't sneak through); "with modifications" reveals
+an optional New Monthly Budget field alongside the always-visible New
+End Date field. Shows the tactic's current end date for context before
+picking a new one.
+
+**Verified live** via Playwright: panel opens/closes as a real table row
+(same convention as Edit/Cancel); the budget field is hidden by default,
+appears in "modify" mode, and clears when switching back to "as is"; the
+RPC payload carries the right order/service/date/budget; confirming
+posts the same renewal comment to both the IO card and the tactic's own
+card. `node --check` clean.
