@@ -4297,6 +4297,28 @@ function goStep(n) {
       showToast('Please enter a start date for: ' + dateLabels, 'error');
       return; // Block navigation
     }
+    // Guard (2026-08-20, per Claire): a service's start date can't be on or before the
+    // IO's own date -- a start date that early makes no sense for a brand-new order.
+    // Same block-with-highlight pattern as the two checks above, string-compared as
+    // plain ISO 'YYYY-MM-DD' (lexicographic order matches calendar order for that
+    // format, no Date() parsing needed).
+    document.querySelectorAll('.svc-start-cell input.spend-missing').forEach(el => markFieldMissing(el, false));
+    const ioDateVal = document.getElementById('io-date').value || new Date().toISOString().slice(0,10);
+    const tooEarlyDates = Object.entries(selected).filter(([id, d]) => d.start_date && d.start_date <= ioDateVal);
+    if (tooEarlyDates.length > 0) {
+      tooEarlyDates.forEach(([id]) => {
+        const startInput = document.getElementById('svc-start-' + id);
+        markFieldMissing(startInput, true);
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const section = row?.closest('.card-body');
+        if (section) section.style.display = 'block';
+      });
+      const firstBad = document.querySelector('.svc-start-cell input.spend-missing');
+      if (firstBad) firstBad.scrollIntoView({behavior:'smooth', block:'center'});
+      const badLabels = tooEarlyDates.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
+      showToast(`Start date must be after the IO date (${ioDateVal}) for: ` + badLabels, 'error');
+      return; // Block navigation
+    }
     buildReview();
     updateKocCard();
     updateIntakeStatusCard();

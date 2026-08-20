@@ -17906,3 +17906,49 @@ in Admin, the public IO form bills the client at the right price, and
 both internal portals now split that revenue using the client's own
 rates once the two RPCs above are live. Nothing else from today's session
 is still open.
+
+## 2026-08-20 — Post-meeting follow-ups: Edit button visibility, Swap labels, Service start-date guard
+
+Claire, after both RPCs above confirmed run, brought three quick fixes
+from a meeting (a fourth, "Renew," is being scoped separately — see the
+next entry).
+
+**Edit button was too easy to miss:** "I see the cancel, and swap options
+but I don't see the edit option." The AM-triggered Edit control
+(2026-08-20, earlier today) was a tiny `✎` text link squeezed into the
+amount cell — easy to overlook next to the dollar figure, unlike Cancel/
+Swap's real buttons. Turned into an actual button (`✎ Edit`, same size/
+style as Cancel, sitting right next to it), and its edit form now opens
+in its own full-width table row below the line (matching the Cancel
+panel's existing layout) instead of a small inline `<div>` inside the
+amount cell. `adminToggleEditPanel()` updated to toggle/target that row
+the same way `adminToggleCancelPanel()` already does. Still only offered
+when exactly one of fee/recurring/spend is the line's sole nonzero
+amount (unchanged, documented gap — a compound line has no single
+unambiguous field to edit).
+
+**Swap panel labels:** Claire described it as "current tactic options
+first... then what the new tactic will be." Checked the actual code
+first rather than assuming a bug — the ending-tactic dropdown was
+already first and already restricted to `o.line_items` (what's actually
+on the IO), and the new-tactic dropdown was already second. Renamed the
+internal "Ending Tactic"/"Starting Tactic" labels to "Current Tactic"/
+"New Tactic" (and the preview table's "(ending)"/"(starting)" tags to
+match) since that's the language she used — no functional/ordering
+change was actually needed, just clearer labels matching how she thinks
+about it.
+
+**Service start-date guard (public IO form):** a tactic's Start Date can
+no longer be on or before the IO's own date — same block-and-highlight
+pattern as the existing "missing start date"/"missing spend" checks at
+the Step 2 → Step 3 transition (`goStep(3)`), comparing as plain ISO
+strings against `#io-date`'s value (defaulting to today if somehow
+blank). Blocks navigation with a toast naming every offending service,
+same UX as the two checks it sits next to.
+
+**Verified live** via Playwright: picking a start date equal to the IO
+date blocks Step 3 and highlights the field; a date the day after passes
+through cleanly. Edit panel toggles open/closed as a real table row (not
+a stray `<div>` inside another cell), pre-fills the current amount,
+and closes correctly on a second click. `node --check` clean on both
+files.

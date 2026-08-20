@@ -6893,16 +6893,21 @@ function viewOrderDetail(orderId) {
       // edited by Y, Z" shape as the mockup.
       const editableCandidates = [['recurring', item.recurring], ['spend', item.spend], ['fee', item.fee]].filter(([, v]) => v > 0);
       let amtCellHtml = esc(amtParts.join(' + ') || '—');
+      // A real BUTTON, not a tiny inline text link (2026-08-20, per Claire: "I see the
+      // cancel, and swap options but I don't see the edit option") -- same size/style as
+      // the Cancel button next to it so it's just as easy to spot, not a subtle ✎
+      // character easy to miss among the dollar amount text.
+      let editBtn = '';
       if (editableCandidates.length === 1 && !item.prorated_hosting_amt) {
         const [editField, editVal] = editableCandidates[0];
         const lastEdit = Array.isArray(o.edit_history)
           ? [...o.edit_history].reverse().find(h => h.service_id === item.service_id && h.field === editField)
           : null;
-        amtCellHtml += ` <a href="#" onclick="event.preventDefault();adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="font-size:10px;font-weight:700;color:var(--accent-dark);text-decoration:none">✎</a>
-          <div id="edit-panel-${esc(item.service_id)}" style="display:none"></div>
-          ${lastEdit ? `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>` : ''}`;
+        editBtn = `<button type="button" onclick="adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:700;cursor:pointer">✎ Edit</button>`;
+        if (lastEdit) amtCellHtml += `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>`;
       }
-      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${cancelBtn}</td></tr>
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${cancelBtn}</div></td></tr>
+        <tr id="edit-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
     }).join('');
     return header + rows;
@@ -7266,16 +7271,20 @@ async function adminSubmitCancellation(orderId, serviceId) {
 // campaign_months -- per Claire, an edit here is scoped to the order's own
 // record for now, not a retroactive change to what's already being billed.
 function adminToggleEditPanel(orderId, serviceId, field, currentValue) {
-  const box = document.getElementById(`edit-panel-${serviceId}`);
-  if (!box) return;
-  if (box.style.display !== 'none' && box.innerHTML) { box.style.display = 'none'; box.innerHTML = ''; return; }
-  box.innerHTML = `
-    <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
-      <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:var(--light);font-size:12px"/>
+  // Now a full-width table row, same as the Cancel panel right below it
+  // (2026-08-20 -- was a plain <div> squeezed inside the amount cell, too easy to
+  // miss/lay out oddly next to the amount text).
+  const row = document.getElementById(`edit-panel-${serviceId}`);
+  if (!row) return;
+  if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);padding:12px 14px;display:flex;gap:8px;align-items:center">
+      <label style="font-size:11px;font-weight:700;color:var(--muted)">New amount:</label>
+      <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
       <button type="button" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
       <button type="button" onclick="adminToggleEditPanel('${esc(orderId)}','${esc(serviceId)}','${esc(field)}',${currentValue})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
     </div>`;
-  box.style.display = 'block';
+  row.style.display = 'table-row';
 }
 
 async function adminSaveLineItemEdit(orderId, serviceId, field) {
@@ -7378,11 +7387,11 @@ function adminToggleSwapPanel(orderId) {
     <div style="background:var(--light);border-radius:8px;padding:14px 16px">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:10px">
         <div>
-          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Ending Tactic</label>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Current Tactic</label>
           <select id="swap-ending-${orderId}" onchange="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px">${endingOptions}</select>
         </div>
         <div>
-          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Starting Tactic</label>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New Tactic</label>
           <select id="swap-starting-${orderId}" onchange="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px">${startingOptions}</select>
         </div>
         <div>
@@ -7428,8 +7437,8 @@ function adminUpdateSwapPreview(orderId) {
     <table style="width:100%;border-collapse:collapse;font-size:11.5px">
       <thead><tr><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Line</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Covers</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Amount</th></tr></thead>
       <tbody>
-        <tr><td style="padding:4px 8px">${esc(endingLabel)} (ending)</td><td style="padding:4px 8px">${endingDays} day${endingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(endingAmt)}</td></tr>
-        <tr><td style="padding:4px 8px">${esc(startingLabel)} (starting)</td><td style="padding:4px 8px">${startingDays} day${startingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(startingAmt)}</td></tr>
+        <tr><td style="padding:4px 8px">${esc(endingLabel)} (current, ending)</td><td style="padding:4px 8px">${endingDays} day${endingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(endingAmt)}</td></tr>
+        <tr><td style="padding:4px 8px">${esc(startingLabel)} (new, starting)</td><td style="padding:4px 8px">${startingDays} day${startingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(startingAmt)}</td></tr>
         <tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:4px 8px">Total</td><td style="padding:4px 8px">${totalDays} days</td><td style="padding:4px 8px">${fmt(budget)}</td></tr>
       </tbody>
     </table>`;
