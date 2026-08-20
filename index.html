@@ -763,7 +763,7 @@ select.qty-field{background-image:none;padding-right:3px}
       </div>
       <div class="field-group cols2">
         <div>
-          <label class="lbl lbl-required" for="contact-email">Email</label>
+          <label class="lbl" for="contact-email">Email</label>
           <input type="email" id="contact-email" placeholder="client@email.com"/>
         </div>
         <div>
@@ -1525,9 +1525,11 @@ async function loadAgentSplitRosters(clientId) {
 // with no list saved yet) for this client -- submitIO() blocks on null rather
 // than falling back anywhere, per Claire: an unregistered AE gets a warning,
 // not a card in the wrong place.
+function submittingClientAeRow() {
+  return CLIENT_AE_ROSTER.find(ca => ca.ae_id === selectedAeId && ca.active !== false) || null;
+}
 function submittingAeTrelloListId() {
-  const match = CLIENT_AE_ROSTER.find(ca => ca.ae_id === selectedAeId && ca.active !== false);
-  return match?.trello_list_id || null;
+  return submittingClientAeRow()?.trello_list_id || null;
 }
 
 function isMultiAgentClientActive() {
@@ -1545,11 +1547,24 @@ function setAgentSplitCardVisible(visible) {
   }
 }
 
+// County/agent scoping by the submitting AE (2026-08-20, per Claire: "Based
+// on the AE submitting the form I would like just their assigned counties to
+// show and based on the county selected I only want those agents to show").
+// Falls back to the FULL roster only if the submitting AE has no client_aes
+// match at all -- shouldn't happen in practice now that validateStep1()
+// blocks progressing past Step 1 for an unregistered AE, but a fallback here
+// keeps this defensive rather than rendering an empty, dead-end picker.
+function countiesForSubmittingAe() {
+  const myClientAe = submittingClientAeRow();
+  if (!myClientAe) return COUNTY_ROSTER;
+  return COUNTY_ROSTER.filter(c => c.client_ae_id === myClientAe.id);
+}
+
 function renderAgentSplitCountyPicker() {
   const sel = document.getElementById('agent-split-county-picker');
   if (!sel) return;
   sel.innerHTML = '<option value="">— Select County —</option>' +
-    COUNTY_ROSTER.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('') +
+    countiesForSubmittingAe().map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('') +
     '<option value="__new__">+ New County…</option>';
   document.getElementById('agent-split-county-new').style.display = 'none';
 }
@@ -1566,6 +1581,8 @@ function onAgentSplitCountyPick(value) {
     agentSplitCountyNewName = '';
     newField.style.display = 'none';
   }
+  // Which agents are offered below depends on which county is now selected.
+  renderAgentSplitRows();
 }
 
 // Service dropdown options are drawn from whatever's currently checked in the
@@ -1616,7 +1633,12 @@ function renderAgentSplitRows() {
   const wrap = document.getElementById('agent-split-rows');
   if (!wrap) return;
   const serviceOptions = agentSplitServiceOptions();
-  const agentOptionsHtml = AGENT_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('') + '<option value="__new__">+ New Agent…</option>';
+  // Scoped to the currently selected county (2026-08-20, per Claire) -- a
+  // brand-new county (agentSplitCountyId null) naturally has no agents on
+  // it yet, so this correctly offers only "+ New Agent" until an existing
+  // county is picked.
+  const agentsForCounty = AGENT_ROSTER.filter(a => a.county_id === agentSplitCountyId);
+  const agentOptionsHtml = agentsForCounty.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('') + '<option value="__new__">+ New Agent…</option>';
   const serviceOptionsHtml = '<option value="">— Service —</option>' + serviceOptions.map(s => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join('');
 
   // Fixed PIXEL widths, not percentages, in a horizontally-scrolling wrapper
@@ -4049,12 +4071,15 @@ function updateDerivedCampaignSummary() {
 }
 
 // ── STEP 1 VALIDATION ─────────────────────────────────────────
-// Required before leaving Step 1: AE name, business name, contact email.
+// Required before leaving Step 1: AE name, business name, city. Contact
+// email (2026-08-20, per Claire: "make the email override as not needed
+// since it varies") is no longer required — some clients genuinely don't
+// have one to give at submission time — but its FORMAT is still checked
+// when the AE does type one in, so a typo still gets caught.
 function validateStep1() {
   const required = [
     ['ae-name', 'Digital Account Executive name'],
     ['biz-name', 'Business name'],
-    ['contact-email', 'Contact email'],
     ['city', 'City / Service Area'],
   ];
   let firstMissing = null;
@@ -4062,13 +4087,23 @@ function validateStep1() {
   required.forEach(([id, label]) => {
     const el = document.getElementById(id);
     const val = (el?.value || '').trim();
-    const bad = !val || (id === 'contact-email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val));
+    const bad = !val;
     markFieldMissing(el, bad);
     if (bad) {
       missingLabels.push(label);
       if (!firstMissing) firstMissing = el;
     }
   });
+  // Contact email is optional, but a non-empty value still needs to look
+  // like a real email — catches a typo without forcing the field itself.
+  const emailEl = document.getElementById('contact-email');
+  const emailVal = (emailEl?.value || '').trim();
+  const emailBad = emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal);
+  markFieldMissing(emailEl, emailBad);
+  if (emailBad) {
+    missingLabels.push('Contact email (invalid format)');
+    if (!firstMissing) firstMissing = emailEl;
+  }
   if (firstMissing) {
     showToast('Required: ' + missingLabels.join(', '), 'error');
     // Make sure Step 1 is visible so the highlighted fields can be seen
@@ -4080,6 +4115,16 @@ function validateStep1() {
     }
     firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
     firstMissing.focus();
+    return false;
+  }
+  // MS Farm Bureau fan-out (2026-08-20, per Claire): this used to only block
+  // at final submission (see submitIO()'s own identical check) -- moved
+  // earlier so an AE who isn't registered for this client's Trello board
+  // finds out on Step 1, before doing all the work of filling out Step 2's
+  // Agent/County Split and the rest of the form, instead of at the very end.
+  if (isMultiAgentClientActive() && !submittingAeTrelloListId()) {
+    showToast('Your AE profile isn\'t set up for this client\'s Trello board yet — contact your AM before continuing', 'error');
+    document.getElementById('ae-picker-wrap')?.scrollIntoView({behavior:'smooth', block:'center'});
     return false;
   }
   return true;

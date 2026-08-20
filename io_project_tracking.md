@@ -17204,3 +17204,39 @@ row per `month_budgets` entry (a paused month still gets its own $0 row,
 not simply omitted) instead of the single flat-rate row, only when
 `month_budgets` is present on the line item — every line item that doesn't
 use this feature falls through to the original single-row insert, unchanged.
+
+## 2026-08-20 — MS Farm Bureau follow-ups: earlier AE gate, optional email, county/agent scoping
+
+Three corrections Claire asked for after using the multi-agent client setup
+for the first time:
+
+1. **AE-not-registered warning moved to Step 1.** The check already existed
+   at final submission (`submitIO()`, "Your AE profile isn't set up for this
+   client's Trello board yet"), added during Phase 4. Claire wanted it
+   earlier — an AE who isn't on this client's roster now finds out on Step 1
+   (added to `validateStep1()`, reusing the same `submittingAeTrelloListId()`
+   lookup and message) instead of after filling out the whole form. The
+   original submit-time check stays in place too, as a safety net.
+2. **Contact email no longer required.** Claire: "make the email... not
+   needed since it varies" — confirmed via follow-up she meant the Step 1
+   Contact Email field (`validateStep1()`, `index.html`), not a different
+   "override" field (none exists by that name — checked). Dropped from the
+   required-fields list; format is still checked when a value IS entered, so
+   a typo still gets caught, just not an empty field.
+3. **County/agent pickers scoped to the submitting AE.** Claire: "based on
+   the AE submitting the form I would like just their assigned counties to
+   show and based on the county selected I only want those agents to show."
+   New `submittingClientAeRow()` (the AE's own `client_aes` row) backs a new
+   `countiesForSubmittingAe()` filter on the county picker (`county.client_ae_id
+   === thatRow.id`), and the per-row agent `<select>` in `renderAgentSplitRows()`
+   now filters `AGENT_ROSTER` by `agent.county_id === agentSplitCountyId` —
+   a brand-new county naturally shows no existing agents until one is
+   registered against it. Picking a different county now re-renders the
+   split rows so the agent list updates immediately.
+
+**Verified live** via Playwright: an unregistered AE is blocked at Step 1
+while a registered one with a blank email passes; a county picker seeded
+with two counties on two different AEs correctly shows only the submitting
+AE's own county; and after picking that county, the agent picker shows only
+the agent registered to it, not one belonging to a different county.
+`node --check` clean on the extracted inline script.
