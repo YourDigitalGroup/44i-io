@@ -3938,12 +3938,19 @@ function populateClientAePickerDropdown(selectedAeId) {
   // being edited) — same "no duplicate roster entry" guard as Agents/Counties.
   const editingId = document.getElementById('admin-client-ae-original-id').value;
   const alreadyAdded = new Set(ALL_CLIENT_AES.filter(ca => ca.id !== editingId).map(ca => ca.ae_id));
-  const options = ALL_AES.filter(a => a.active !== false && (!alreadyAdded.has(a.id) || a.id === selectedAeId));
+  // Scoped to the client's own group (2026-08-20, per Claire) -- an AE belongs to
+  // one group's roster, so a client shouldn't be offered every other group's AEs.
+  const groupId = document.getElementById('admin-client-group')?.value;
+  const options = ALL_AES.filter(a => a.active !== false && a.group_id === groupId && (!alreadyAdded.has(a.id) || a.id === selectedAeId));
   sel.innerHTML = options.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
   sel.value = selectedAeId || '';
 }
 
-function adminNewClientAe() {
+async function adminNewClientAe() {
+  // Guards a race (2026-08-20, live bug): selecting "Yes" on Multi-Agent Client
+  // shows this panel immediately, but the AE roster loads in the background --
+  // clicking "+ Add AE" before that finishes rendered an empty dropdown.
+  if (!ALL_AES.length) await loadClientAgentsCounties();
   document.getElementById('admin-client-ae-form-title').textContent = 'New AE';
   document.getElementById('admin-client-ae-original-id').value = '';
   document.getElementById('admin-client-ae-trello-list-id').value = '';
