@@ -16983,3 +16983,74 @@ path: a new, not-on-roster agent produced exactly the expected toast and
 created zero cards/orders; an existing roster agent (Danny, with his own
 stored Trello list) submitted normally and landed in his own list exactly
 as Phase 6 already established. `node --check` clean.
+
+### 2026-08-20 — MS Farm Bureau fan-out CORRECTION: Trello list belongs to the AE submitting the IO, not the Farm Bureau field agent
+
+Walking through actual setup with Claire surfaced that Phase 6 (and the
+"block new agent" follow-up right above) got the hierarchy wrong. The real
+structure, confirmed directly:
+
+- **AE** — the 44i person submitting the IO. This is the group-wide roster
+  ALREADY on Step 1 of the form ("AE Name"/"AE Trello Handle",
+  `AE_ROSTER`/`selectedAeId`/`get_group_aes`) — a completely different
+  table from the client-scoped `agents` this feature built. Each AE who
+  works MS Farm Bureau has their OWN dedicated Trello list for it.
+- **County** — belongs to exactly one AE ("a county is only ever attached
+  to one AE," per Claire).
+- **Farm Bureau agent** (Danny Crozier, Justin Ashmore, etc. — the actual
+  insurance agents, the `agents` table built in Phase 1) — belongs to one
+  county.
+
+So the Trello list needed to move UP a level, from `agents` (Phase 6,
+wrong) to a brand-new client-scoped link to the EXISTING global AE table.
+Also confirmed: a brand-new Farm Bureau agent or county under an
+already-registered AE poses no routing risk at all (routing never
+depended on them) — the "block new agent" toast added in the previous
+entry was solving the wrong problem and has been removed; a brand-new AE
+(the actual submitter) not yet registered for this client is the one real
+risk, and per Claire, that gets blocked with a warning telling them to
+contact their AM.
+
+**SQL run by Claire**: dropped the wrong-level `agents.trello_list_id`;
+added `client_aes` (client_id, ae_id → the existing `ae` table, its own
+`trello_list_id`, active) — one row per AE registered for a given
+multi-agent client; added `counties.client_ae_id` (FK to `client_aes`).
+`admin_save_agent` reverted to its pre-Phase-6 shape; `admin_save_county`
+extended to persist `client_ae_id`; new `admin_get_client_aes`/
+`admin_save_client_ae` (password-gated) and public `get_client_aes`
+(same trust level as `get_client_agents`/`get_client_counties`).
+
+**Built:**
+- Admin UI (`admin/index.html`): new "AEs" section in the multi-agent
+  client panel, above Counties — pick a name from the existing global AE
+  roster (`ALL_AES`, lazy-loaded here if not already), paste in their MS
+  Farm Bureau Trello list, with a clear "Not set — blocked" badge when a
+  registered AE has no list yet. County editor gained an "AE" dropdown
+  (`admin-county-ae`), and the county list now shows which AE each one
+  belongs to.
+- `index.html`: `CLIENT_AE_ROSTER` loaded alongside `AGENT_ROSTER`/
+  `COUNTY_ROSTER` in `loadAgentSplitRosters()` (new `get_client_aes` call).
+  `submittingAeTrelloListId()` looks up `CLIENT_AE_ROSTER` by
+  `selectedAeId` — the SAME id Step 1's existing AE picker already sets,
+  no new "which AE" question added to the split screen itself. `submitIO()`
+  now blocks right after `collectAgentSplits()` (before the KOC gate,
+  order insert, or any Trello work) if `isMultiAgentClientActive()` and
+  `submittingAeTrelloListId()` is null. Where `clientList` gets resolved,
+  a multi-agent client now uses `submittingAeTrelloListId()` instead of
+  `client.trello_list_id` — every card in the submission (IO card, tactic
+  cards, agent split cards alike) lands in that one AE's list, since it
+  really is their whole book of business. Skipped persisting this
+  AE-specific list back onto `clients.trello_list_id` (that column is the
+  client's own general list; overwriting it here would misroute the next
+  AE's submission). Reverted Phase 6's per-agent list-cache complexity in
+  `createAgentSplitCards()` back to the simple shared-`clientList` shape,
+  and removed the "block new agent" check from `collectAgentSplits()` (no
+  longer the right problem to solve at that layer).
+
+**Verified live** via Playwright, two cases through the real `submitIO()`
+path: an AE with no matching `client_aes` row produced the "contact your
+AM" toast and created zero cards; a registered AE ("Andy," with his own
+stored list) submitted successfully and BOTH the IO card and Danny
+Crozier's agent-split card landed in Andy's own list — confirming routing
+now follows the submitting AE regardless of which county/Farm-Bureau-agent
+was picked underneath. `node --check` clean on both extracted scripts.

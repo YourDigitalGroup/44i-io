@@ -1485,28 +1485,49 @@ async function applyClientPick(id) {
 // alongside the normal `line_items`.
 let AGENT_ROSTER = [];
 let COUNTY_ROSTER = [];
+// Which of the 44i AEs (the existing group-wide AE_ROSTER/#ae-picker used by
+// EVERY client, not this client-scoped one) are registered to submit for THIS
+// multi-agent client, and which MS Farm Bureau Trello list each one's cards go
+// to (2026-08-20, corrected -- the Trello list belongs to the AE SUBMITTING
+// the IO, not to the county/agent split data underneath them).
+let CLIENT_AE_ROSTER = [];
 let agentSplitCountyId = null;
 let agentSplitCountyNewName = '';
 let agentSplitRows = []; // [{agentId, agentNewName, serviceId, startDate, endDate, amount}]
 
 async function loadAgentSplitRosters(clientId) {
   try {
-    const [agents, counties] = await Promise.all([
+    const [agents, counties, clientAes] = await Promise.all([
       sb('rpc/get_client_agents', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
       sb('rpc/get_client_counties', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
+      sb('rpc/get_client_aes', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
     ]);
     AGENT_ROSTER = agents || [];
     COUNTY_ROSTER = counties || [];
+    CLIENT_AE_ROSTER = clientAes || [];
   } catch(e) {
-    console.warn('Could not load this client\'s agents/counties:', e.message);
+    console.warn('Could not load this client\'s agents/counties/AEs:', e.message);
     AGENT_ROSTER = [];
     COUNTY_ROSTER = [];
+    CLIENT_AE_ROSTER = [];
   }
   agentSplitCountyId = null;
   agentSplitCountyNewName = '';
   agentSplitRows = [{ agentId: '', agentNewName: '', serviceId: '', startDate: '', endDate: '', amount: '' }];
   renderAgentSplitCountyPicker();
   renderAgentSplitRows();
+}
+
+// Looks up the submitting AE's own MS Farm Bureau Trello list (2026-08-20).
+// Matched on selectedAeId -- the SAME global AE picker/id already used by
+// Step 1's "AE Name" field for every client, not a separate MSFB-specific AE
+// selection. Returns null if that AE has no registered client_aes row (or one
+// with no list saved yet) for this client -- submitIO() blocks on null rather
+// than falling back anywhere, per Claire: an unregistered AE gets a warning,
+// not a card in the wrong place.
+function submittingAeTrelloListId() {
+  const match = CLIENT_AE_ROSTER.find(ca => ca.ae_id === selectedAeId && ca.active !== false);
+  return match?.trello_list_id || null;
 }
 
 function isMultiAgentClientActive() {
@@ -1821,15 +1842,12 @@ function collectAgentSplits() {
   for (const row of agentSplitRows) {
     if (!row.agentId && !row.agentNewName) { showToast('Agent/County Split: every row needs an agent', 'error'); return null; }
     if (row.agentId === '__new__' && !row.agentNewName) { showToast('Agent/County Split: please type the new agent\'s name', 'error'); return null; }
-    // Blocked, not auto-created (2026-08-20, per Claire): an AE typed in who
-    // isn't already on the roster has no Trello list set up for them yet, so
-    // there's no "correct list" to route their card to -- rather than let it
-    // fall into a shared holding list silently, submission is blocked here so
-    // the AM adds the real AE (with their real Trello list) in Admin first.
-    if (row.agentId === '__new__') {
-      showToast(`Agent/County Split: "${row.agentNewName}" isn't on the AE roster yet — contact your AM to add them (with their Trello list) before submitting this IO`, 'error');
-      return null;
-    }
+    // NOTE (2026-08-20, corrected): a brand-new Farm Bureau agent (or county)
+    // here is fine to allow through -- Trello routing was moved up a level, to
+    // the AE actually SUBMITTING the IO (see validateSubmittingAeHasTrelloList
+    // in submitIO()), not to this county/agent split data at all. A new
+    // agent/county under an already-registered AE just gets its own line on
+    // that same AE's existing card, same as a returning one would.
     if (!row.serviceId) { showToast('Agent/County Split: every row needs a service', 'error'); return null; }
     if (!row.amount || Number(row.amount) <= 0) { showToast('Agent/County Split: every row needs an amount', 'error'); return null; }
     const agentName = row.agentId === '__new__' ? row.agentNewName : (AGENT_ROSTER.find(a => a.id === row.agentId)?.name || '');
@@ -4483,6 +4501,19 @@ async function submitIO() {
       return;
     }
 
+    // Blocked, not auto-created or defaulted (2026-08-20, per Claire): the
+    // Trello list for a multi-agent client belongs to whichever AE is
+    // submitting the IO, not the county/agent split data. An AE with no
+    // registered list for this client has nowhere correct for their card to
+    // go, so submission stops here rather than landing in a shared/default
+    // list that would need to be manually fixed afterward.
+    if (isMultiAgentClientActive() && !submittingAeTrelloListId()) {
+      showToast('Your AE profile isn\'t set up for this client\'s Trello board yet — contact your AM before submitting this IO', 'error');
+      btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+      document.getElementById('ae-picker-wrap')?.scrollIntoView({behavior:'smooth', block:'center'});
+      return;
+    }
+
     // Hard block if KOC required but not scheduled properly
     if (kocIsRequired() && selectedGroup?.has_koc) {
       if (!kocCalendarOpened) {
@@ -5028,11 +5059,19 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // yet) or if the stored list was genuinely deleted on Trello (not just archived).
         let clientList = null;
 
-        if (client?.trello_list_id) {
+        // Multi-agent client (2026-08-20): the Trello list is the SUBMITTING
+        // AE's own MS Farm Bureau list, not the client's own generic one --
+        // submitIO() already blocked above if this AE has none registered, so
+        // this is guaranteed non-null here. Every card in this submission
+        // (IO card, tactic cards, agent split cards alike) uses this same
+        // list, since it really is that one AE's whole book of business.
+        const effectiveTrelloListId = isMultiAgentClientActive() ? submittingAeTrelloListId() : client?.trello_list_id;
+
+        if (effectiveTrelloListId) {
           const storedListRes = await fetch(PROXY, {
             method: 'POST',
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_get_list', list_id: client.trello_list_id })
+            body: JSON.stringify({ target: 'trello_get_list', list_id: effectiveTrelloListId })
           });
           const storedList = await storedListRes.json();
           if (storedList?.id) {
@@ -5103,7 +5142,11 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // Persist the resolved list id on the client record so future submissions skip
         // the name search entirely — this is what actually closes the duplicate/archived
         // client bug for good, rather than just working around it this one time.
-        if (client?.id && clientList?.id && clientList.id !== client.trello_list_id) {
+        // Skipped for a multi-agent client (2026-08-20): clientList here is one AE's own
+        // list, not the client's general one -- persisting it to clients.trello_list_id
+        // would overwrite the client's own default with whichever AE happened to submit
+        // most recently, and misroute the NEXT AE's submission.
+        if (!isMultiAgentClientActive() && client?.id && clientList?.id && clientList.id !== client.trello_list_id) {
           try {
             await sb('rpc/set_client_trello_list_id', {
               method: 'POST',
@@ -5233,32 +5276,6 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         const findExistingCardByName = (name) =>
           Array.isArray(existingCards) ? existingCards.find(c => norm(c.name) === norm(name)) : null;
 
-        // MS Farm Bureau fan-out (2026-08-20): an agent's split cards can land in
-        // that AGENT's own Trello list (agents.trello_list_id) instead of the
-        // client's shared list -- a multi-agent client has one real list per AE,
-        // set up once in the Admin panel. Falls back to clientList.id when an
-        // agent has no list of their own yet (a brand-new agent typed inline, or
-        // one Claire hasn't set a list for). existingCards (Step 3) already covers
-        // clientList.id, so seed the cache with it instead of re-fetching.
-        const listCardsCache = new Map([[clientList.id, Array.isArray(existingCards) ? existingCards : []]]);
-        async function getListCards(listId) {
-          if (listCardsCache.has(listId)) return listCardsCache.get(listId);
-          const res = await fetch(PROXY, {
-            method: 'POST',
-            headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_get_list_cards', list_id: listId })
-          });
-          const cards = await res.json();
-          const list = Array.isArray(cards) ? cards : [];
-          listCardsCache.set(listId, list);
-          return list;
-        }
-        function agentTargetListId(agentId) {
-          if (!agentId) return clientList.id;
-          const roster = AGENT_ROSTER.find(a => a.id === agentId);
-          return roster?.trello_list_id || clientList.id;
-        }
-
         // Event-style services (2026-07-17, per Claire's AM — Event Targeting
         // specifically): each resell is a genuinely different event, so the AM wants a
         // brand new Trello card every time instead of the normal "resell updates the
@@ -5385,8 +5402,6 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           for (const [agentKey, rowsForAgent] of Object.entries(byAgent)) {
             const agentName = rowsForAgent[0].agent_name;
             const county = rowsForAgent[0].county;
-            const targetListId = agentTargetListId(rowsForAgent[0].agent_id);
-            const targetListCards = await getListCards(targetListId);
             const cn = `${county} — ${agentName} (${wf})` + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
             const descLines = rowsForAgent.map(s => {
               const label = CATALOG_ROWS[s.service_id]?.label || s.service_id;
@@ -5402,7 +5417,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               intake?.bannerHeader,
             ].filter(Boolean).join('\n\n');
 
-            const existing = targetListCards.find(c => norm(c.name) === norm(cn));
+            const existing = findExistingCardByName(cn);
             let cardId = null;
             if (existing && !addedCardNames.has(norm(cn))) {
               addedCardNames.add(norm(cn));
@@ -5412,11 +5427,11 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
                 body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc })
               });
-            } else if (!existing && !addedCardNames.has(norm(cn))) {
+            } else if (!existing && !cardExists(cn)) {
               const res = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: targetListId, name: cn, desc, pos: 'bottom' })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc, pos: 'bottom' })
               });
               const card = await res.json();
               if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
