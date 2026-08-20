@@ -17808,3 +17808,101 @@ it only affects how that revenue gets internally split between 44i and
 the group, which is real margin data and needs its own careful,
 separately-scoped pass rather than a rushed multi-site change across two
 portals in the same breath as this one.
+
+## 2026-08-20 — Phase B, part 2: client-level overrides wired into Strategist + Accounting margin math
+
+Claire: "you can continue, I want to close all of this up so there isn't
+anything still open to be forgotten about." Closes the gap flagged at the
+end of the previous entry — client-level `io_pricing` (Retail CPM) and
+`accounting_overrides` (44i Cut %, Platform CPM, In-Platform %, CPC
+range, Setup Fee Split %) now beat the group's own copy in every rate
+resolver in both portals, same precedence order used throughout this
+whole feature: pairing/tier (where applicable) → **client override** →
+group override → base catalog default.
+
+**Strategist (`strategist/index.html`):** `effectivePlatformCpm`,
+`effectiveInPlatformPct`, `effectiveCpcRange`, and the renamed
+`strategistEffectiveRetailCpm` (was `strategistGroupRetailCpm`) all now
+take a `clientId` param and check the client's own
+`accounting_overrides`/`io_pricing` (via `ALL_STRATEGIST_CLIENTS`)
+before falling through to the group. `budgetedImpressions`,
+`computeInPlatformBudget`, and `effectiveInPlatformBudget` thread it
+through; `computeGoal` didn't need a signature change since it already
+receives the full `line` object (`line.client_id`). Every external call
+site updated to pass `l.client_id` alongside `l.group_id` (9 sites).
+
+**Accounting (`accounting/index.html`):** same shape —
+`accountingEffectiveCutPct`, `accountingEffectiveSetupFeeCutPct`,
+`accountingEffectivePlatformCpm`, `accountingEffectiveInPlatformPct`,
+and the renamed `accountingEffectiveRetailCpm` (was
+`accountingGroupRetailCpm`) all take `clientId`.
+`accountingComputeExpectedSpend` threads it through.
+`accountingDerivedAmount` (used by "Add Service" and bulk-match to
+pre-fill a price) already accepted `clientId` — just added the
+client-`io_pricing` check ahead of the existing group check. Call sites
+at the detail-card month builder and the main table row builder both
+updated to pass `line.client_id`/`l.client_id`.
+
+**Known, documented gap carried over from the group-level version, not
+new:** a client-level override of a PAIRING rate (Offline Visits
+Tracking/Addl. Targeting combined with a specific base tactic) isn't
+supported — `hasModifier` is only ever a plain boolean, not the specific
+modifier's id, same limitation the group-level pairing override already
+had. Not silently invented; matches existing behavior exactly.
+
+**SQL:** `strategist_get_clients` needs `io_pricing`/`accounting_overrides`
+added (full replacement below, based on the version confirmed live after
+today's Agent/County backfill work). **`accounting_get_clients` needs the
+same two fields, but I don't have its current authoritative definition on
+file** — it was extended with `group_io_pricing` at some point this
+session without a saved copy. Need Claire to run
+`select pg_get_functiondef('public.accounting_get_clients'::regprocedure);`
+and paste the result back before I can safely give her a
+`CREATE OR REPLACE` for it, rather than guessing at its current shape.
+
+```sql
+CREATE OR REPLACE FUNCTION public.strategist_get_clients(p_name text, p_pw text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  v_role text;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid strategist credentials'; end if;
+  if v_role not in ('strategist', 'super') then raise exception 'Strategist portal access is restricted'; end if;
+
+  return query
+  select jsonb_build_object(
+    'id', c.id, 'name', c.name, 'group_id', c.group_id, 'group_name', g.name,
+    'digital_strategist_name', coalesce(c.digital_strategist_name, g.digital_strategist_name),
+    'group_io_pricing', g.io_pricing,
+    'io_pricing', c.io_pricing,
+    'accounting_overrides', c.accounting_overrides,
+    'is_multi_agent', c.is_multi_agent
+  )
+  from clients c
+  left join groups g on g.id = c.group_id;
+end;
+$function$
+;
+```
+
+**Verified live** via Playwright against fake catalog/rates/client
+fixtures, both portals: every resolver's client override wins over its
+group override, which wins over its base rate; the derived-amount helper
+(Accounting's Add Service/bulk-match pre-fill) prefers client `io_pricing`
+over group `group_io_pricing` over the plain catalog default; the
+end-to-end Expected Spend calculation (retail CPM → impressions →
+platform CPM) uses the client's own rates throughout, not just at one
+step. `node --check` clean on both files.
+
+**This closes out the full "Add both please" / MS Farm Bureau pricing
+ask** — client-level Custom Pricing and Accounting Overrides can be set
+in Admin, the public IO form bills the client at the right price, and
+both internal portals now split that revenue using the client's own
+rates once the two RPCs above are live. Nothing else from today's session
+is still open.

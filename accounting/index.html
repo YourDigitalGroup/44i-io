@@ -453,14 +453,14 @@ function accountingRenderDetailCard() {
     const monthRow = accountingLineActiveInMonth(line, d) ? accountingMonthRowFor(line.id, d) : null;
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
-    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting);
+    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting);
     // Setup fee lines split at the Setup Fee Split % instead of the tactic's
     // regular 44i Cut % (2026-08-13) -- they're not spend-tiered or modifier-
     // paired, so the tier/pairing lookups inside accountingEffectiveCutPct
     // don't apply and would just be dead code for this billing_type anyway.
     const cutPct = line.billing_type === 'setup_fee'
-      ? accountingEffectiveSetupFeeCutPct(line.service_id, line.group_id)
-      : accountingEffectiveCutPct(line.service_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross);
+      ? accountingEffectiveSetupFeeCutPct(line.service_id, line.client_id, line.group_id)
+      : accountingEffectiveCutPct(line.service_id, line.client_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
@@ -625,6 +625,9 @@ function accountingDerivedBillingType(serviceId) {
 // service with no default_price set) -- caller falls back to manual entry.
 function accountingDerivedAmount(serviceId, clientId) {
   const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+  // Client's own io_pricing (2026-08-20, Phase B) wins over its group's copy --
+  // same client-beats-group precedence as everywhere else in this pass.
+  if (client?.io_pricing?.[serviceId] != null) return Number(client.io_pricing[serviceId]);
   const pricing = client?.group_io_pricing;
   if (pricing && pricing[serviceId] != null) return Number(pricing[serviceId]);
   const base = CATALOG_ROWS[serviceId]?.default_price;
@@ -1312,13 +1315,23 @@ function accountingEffectiveCutPctTier(serviceId, grossBudget) {
 // toggleable options, so there's no case where the two pairing rates could
 // collide into this single lookup. If that ever changes, this needs a real
 // per-modifier pairing key instead of one flat serviceId -> rate map.
-function accountingEffectiveCutPct(serviceId, groupId, hasModifier, grossBudget) {
+// clientId (2026-08-20, Phase B of the MS Farm Bureau pricing work) -- checked
+// right after the tier lookup and before the group override, same precedence
+// as everywhere else client-level now beats group-level. Sourced from the
+// client's own accounting_overrides (ALL_ACCOUNTING_CLIENTS), not the base/
+// group/pairing `rates` dataset, which has no client scope. Same documented
+// gap as the pre-existing group-override case: a client override of a PAIRING
+// rate isn't supported (hasModifier is only ever a plain boolean).
+function accountingEffectiveCutPct(serviceId, clientId, groupId, hasModifier, grossBudget) {
   if (hasModifier) {
     const pairingRate = ACCOUNTING_CUT_RATES.pairing[serviceId];
     if (pairingRate != null) return pairingRate;
   }
   const tierRate = accountingEffectiveCutPctTier(serviceId, grossBudget);
   if (tierRate != null) return tierRate;
+  const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+  const clientRate = client?.accounting_overrides?.[serviceId]?.fortyfouri_cut_pct;
+  if (clientRate != null) return Number(clientRate);
   const groupRate = groupId ? ACCOUNTING_CUT_RATES.group[`${groupId}|${serviceId}`] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_CUT_RATES.base[serviceId];
@@ -1331,7 +1344,10 @@ function accountingEffectiveCutPct(serviceId, groupId, hasModifier, grossBudget)
 // regular 44i Cut % (confirmed 2026-07-30 for SEM's $200 fee: 50/50, not
 // SEM's regular split). No tier/pairing concept here -- a setup fee is a
 // flat one-time amount, never spend-tiered or modifier-paired.
-function accountingEffectiveSetupFeeCutPct(serviceId, groupId) {
+function accountingEffectiveSetupFeeCutPct(serviceId, clientId, groupId) {
+  const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+  const clientRate = client?.accounting_overrides?.[serviceId]?.setup_fee_cut_pct;
+  if (clientRate != null) return Number(clientRate);
   const groupRate = groupId ? ACCOUNTING_SETUP_FEE_CUT_RATES.group[`${groupId}|${serviceId}`] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_SETUP_FEE_CUT_RATES.base[serviceId];
@@ -1410,11 +1426,14 @@ function accountingRowIsPaused(r) {
 // in Admin's Accounting Map since the pairing mechanism was built, but was
 // never actually looked up here; only the cut % pairing rate was). Pairing
 // wins outright over group/base, same precedence as the cut % pairing rate.
-function accountingEffectivePlatformCpm(serviceId, groupId, hasModifier) {
+function accountingEffectivePlatformCpm(serviceId, clientId, groupId, hasModifier) {
   if (hasModifier) {
     const pairingRate = ACCOUNTING_PLATFORM_CPM_RATES.pairing[serviceId];
     if (pairingRate != null) return pairingRate;
   }
+  const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+  const clientRate = client?.accounting_overrides?.[serviceId]?.platform_cpm;
+  if (clientRate != null) return Number(clientRate);
   const groupRate = groupId ? ACCOUNTING_PLATFORM_CPM_RATES.group[`${groupId}|${serviceId}`] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_PLATFORM_CPM_RATES.base[serviceId];
@@ -1433,9 +1452,12 @@ function accountingEffectiveInPlatformPctTier(serviceId, grossBudget) {
 }
 // A tiered rate (when configured) replaces the flat base/group rate
 // entirely -- same "tiers win outright" rule as 44i Cut %.
-function accountingEffectiveInPlatformPct(serviceId, groupId, grossBudget) {
+function accountingEffectiveInPlatformPct(serviceId, clientId, groupId, grossBudget) {
   const tierRate = accountingEffectiveInPlatformPctTier(serviceId, grossBudget);
   if (tierRate != null) return tierRate;
+  const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+  const clientRate = client?.accounting_overrides?.[serviceId]?.in_platform_pct;
+  if (clientRate != null) return Number(clientRate);
   const groupRate = groupId ? ACCOUNTING_IN_PLATFORM_PCT_RATES.group[`${groupId}|${serviceId}`] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_IN_PLATFORM_PCT_RATES.base[serviceId];
@@ -1450,22 +1472,27 @@ function accountingEffectiveInPlatformPct(serviceId, groupId, grossBudget) {
 // belonging to the group (accounting_get_clients already returns each
 // client's own group_io_pricing; every client under one group carries an
 // identical copy) rather than adding a new groups-keyed fetch just for this.
-function accountingGroupRetailCpm(serviceId, groupId) {
+// Client-level Retail CPM (2026-08-20, Phase B) wins over the group's -- same
+// clients.io_pricing a client can now set in Admin's own Client editor,
+// checked before falling through to the group's copy of the same JSONB shape.
+function accountingEffectiveRetailCpm(serviceId, clientId, groupId) {
+  const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+  if (client?.io_pricing?.[serviceId] != null) return Number(client.io_pricing[serviceId]);
   if (!groupId) return null;
-  const client = ALL_ACCOUNTING_CLIENTS.find(c => c.group_id === groupId && c.group_io_pricing && c.group_io_pricing[serviceId] != null);
-  return client ? Number(client.group_io_pricing[serviceId]) : null;
+  const groupClient = ALL_ACCOUNTING_CLIENTS.find(c => c.group_id === groupId && c.group_io_pricing && c.group_io_pricing[serviceId] != null);
+  return groupClient ? Number(groupClient.group_io_pricing[serviceId]) : null;
 }
-function accountingComputeExpectedSpend(grossBudget, serviceId, groupId, inPlatformOverride, hasModifier) {
+function accountingComputeExpectedSpend(grossBudget, serviceId, clientId, groupId, inPlatformOverride, hasModifier) {
   if (inPlatformOverride != null) return Number(inPlatformOverride);
   if (grossBudget == null) return null;
-  const groupRetailCpm = accountingGroupRetailCpm(serviceId, groupId);
-  const retailCpm = groupRetailCpm != null ? groupRetailCpm : (CATALOG_ROWS[serviceId]?.retail_cpm != null ? Number(CATALOG_ROWS[serviceId].retail_cpm) : null);
-  const platformCpm = accountingEffectivePlatformCpm(serviceId, groupId, hasModifier);
+  const retailCpmOverride = accountingEffectiveRetailCpm(serviceId, clientId, groupId);
+  const retailCpm = retailCpmOverride != null ? retailCpmOverride : (CATALOG_ROWS[serviceId]?.retail_cpm != null ? Number(CATALOG_ROWS[serviceId].retail_cpm) : null);
+  const platformCpm = accountingEffectivePlatformCpm(serviceId, clientId, groupId, hasModifier);
   if (retailCpm != null && platformCpm != null) {
     const impressions = (Number(grossBudget) / retailCpm) * 1000;
     return impressions * platformCpm / 1000;
   }
-  const pct = accountingEffectiveInPlatformPct(serviceId, groupId, grossBudget);
+  const pct = accountingEffectiveInPlatformPct(serviceId, clientId, groupId, grossBudget);
   return pct != null ? Number(grossBudget) * pct / 100 : null;
 }
 
@@ -1687,10 +1714,10 @@ function accountingBuildRows() {
     const monthRow = accountingMonthRowFor(l.id, accountingCurrentMonth);
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
-    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting);
+    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting);
     const cutPct = l.billing_type === 'setup_fee'
-      ? accountingEffectiveSetupFeeCutPct(l.service_id, l.group_id)
-      : accountingEffectiveCutPct(l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross);
+      ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
+      : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
     // manual confirm from the detail card (for tactics the Strategist Portal
