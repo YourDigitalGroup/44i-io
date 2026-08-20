@@ -17356,3 +17356,59 @@ right payload, updates the local order state to completed/non-partial, and
 fires both `trello_add_comment` and `trello_attach_file` against the
 correct stored `card_id` (not a re-derived/guessed one). `node --check`
 clean on both files' extracted inline scripts.
+
+## 2026-08-20 — AM-triggered Cancel a Service + per-service guardrails
+
+First of three surfaces from Claire's approved "Edit & Cancel Flow Mockup"
+artifact. Per her explicit resolution: cancellation is AM-triggered from
+Admin's Order Detail for now, not the AE self-serve no-login form the
+mockup itself shows (same "AM side first" staging as Intake Editing) —
+built as one Cancel button per line item rather than the mockup's multi-
+service checklist, functionally equivalent and simpler to verify.
+
+**Schema:** `campaign_lines` gains `cancel_effective_date`, `cancel_reason`,
+`cancelled_by`, `cancelled_at`. `services` gains the guardrail fields —
+`cancel_notice_days`, `cancel_penalty_type` (none/flat/percent_remaining),
+`cancel_penalty_amount` — editable from the Service editor's new
+"Cancellation Terms" fields, wired through `admin_save_service` (existing
+function, extended in place — same explicit `p_data ? 'key'`-guarded
+pattern every other field already uses, so an unrelated field never gets
+silently nulled on save).
+
+**Card lookup, generalized:** the Intake Editor's `trello_card_id` (stored
+inside `intake_responses[formKey]`) only covers services WITH an intake
+form. Cancellation needs to work on any service, so `index.html` now also
+stamps a `workflowCardIds` map onto a new `orders.trello_card_ids` column
+(`{workflow: cardId}`), in the same follow-up PATCH. **MS Farm Bureau's
+per-agent split cards aren't covered** — a workflow with several agent
+cards has no single card to resolve to; flagged as a known gap, not
+silently guessed at. Caught a real regression risk while building this:
+the PATCH referencing the not-yet-existing column would have made every
+live submission silently fail to persist `trello_synced`/intake card ids
+(caught by its own try/catch, so submission itself still succeeded) until
+the column was added — flagged to Claire immediately, migration ran within
+the same session before any real order could be affected.
+
+**New RPC** `admin_cancel_service(p_name, p_pw, p_order_id, p_service_id,
+p_effective_date, p_reason)` — sets `campaign_lines.status = 'cancelled'`
+for every non-cancelled line matching that order+service (idempotent — a
+repeat call updates 0 rows rather than erroring or double-logging).
+**Note:** Strategist/Accounting's own display logic hasn't been checked
+for whether it already excludes `status = 'cancelled'` lines from "active"
+views — worth verifying before relying on this for real billing decisions.
+
+**Admin UI:** a "Cancel" button per line item in Order Detail's Services
+table expands an inline panel (Effective Date, Reason, Submit) — a live
+guardrail warning appears/disappears as the AM changes the date, computed
+from the service's own Notice Days/Penalty fields, naming the specific
+penalty. On submit: calls the RPC, then (only if the RPC actually changed
+a row) posts a Trello comment on the resolved card; a card-not-found or
+already-cancelled case shows a specific toast instead of silently doing
+nothing or erroring.
+
+**Verified live** via Playwright: the warning appears when the chosen date
+violates the service's notice period and clears when pushed past it;
+submitting posts the comment to the correct stored `card_id` with the
+right effective date/reason/AM name; a second submission against an
+already-cancelled line updates 0 rows and correctly skips posting a
+duplicate Trello comment. `node --check` clean on both files.

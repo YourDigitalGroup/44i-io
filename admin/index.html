@@ -6584,7 +6584,7 @@ function viewOrderDetail(orderId) {
     (liSectionOrderIndex[a] ?? Infinity) - (liSectionOrderIndex[b] ?? Infinity));
 
   let liRows = orderedLiSectionIds.map(sec => {
-    const header = `<tr><td colspan="5" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
+    const header = `<tr><td colspan="6" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
     const rows = byLiSection[sec].map(item => {
       let amtParts = [];
       if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
@@ -6602,10 +6602,17 @@ function viewOrderDetail(orderId) {
       // if the catalog has no live row for this service_id at all (e.g. a
       // since-deactivated service).
       const displayLabel = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label;
-      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td></tr>`;
+      // AM-triggered Cancel a Service (2026-08-20) -- one button per line item;
+      // doesn't reflect an already-cancelled state inline since Order Detail
+      // doesn't load live campaign_lines rows, only the order's own frozen
+      // line_items snapshot -- admin_cancel_service() is idempotent (a repeat
+      // click just updates 0 rows) rather than risk showing a wrong status.
+      const cancelBtn = `<button type="button" onclick="adminToggleCancelPanel('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #B3261E;background:#fff;color:#B3261E;font-size:10.5px;font-weight:700;cursor:pointer">Cancel</button>`;
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${cancelBtn}</td></tr>
+        <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
     }).join('');
     return header + rows;
-  }).join('') || '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
 
   // Intake forms — show human labels, not field keys
   let intakeHtml = '';
@@ -6713,6 +6720,7 @@ function viewOrderDetail(orderId) {
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">End</th>
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Amount</th>
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Notes</th>
+        <th style="padding:7px 10px"></th>
       </tr></thead>
       <tbody>${liRows}</tbody>
     </table>
@@ -6832,6 +6840,114 @@ async function adminSaveOrderIntakeForm(orderId, formKey, markComplete) {
 // time (2026-08-20). An order submitted before that change has no stored id
 // — rather than guess at a card name and risk landing on the wrong card,
 // this just tells the AM to update Trello by hand for that older order.
+// ── AM-TRIGGERED CANCEL A SERVICE (2026-08-20) ──────────────────
+// Per the approved mockup, but AM-driven from here instead of an AE self-
+// serve form (per Claire: "keep it AM only for now"). One panel per line
+// item rather than the mockup's multi-service checklist -- functionally
+// the same (an AM cancelling several services just opens Cancel on each),
+// simpler to build/verify. No PDF re-attach here (per the mockup, only the
+// comment) -- just a Trello comment on that tactic's own card, resolved
+// from the new workflow-keyed trello_card_ids (works for any service,
+// unlike the intake-only formKey lookup above). MS Farm Bureau's per-agent
+// split cards aren't covered yet -- a workflow with multiple agent cards
+// has no single card to resolve to; flagged as a known gap, not silently
+// guessed at.
+function adminToggleCancelPanel(orderId, serviceId) {
+  const row = document.getElementById(`cancel-panel-${serviceId}`);
+  if (!row) return;
+  if (row.style.display !== 'none') { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  const svc = CATALOG_ROWS[serviceId] || {};
+  const label = svc.accounting_label || svc.label || serviceId;
+  const today = new Date().toISOString().slice(0, 10);
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);padding:12px 14px">
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:8px">Cancel: ${esc(label)}</div>
+      <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:8px">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Effective Date</label>
+          <input type="date" id="cancel-date-${esc(serviceId)}" value="${today}" oninput="adminUpdateCancelWarning('${esc(serviceId)}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Reason</label>
+          <input type="text" id="cancel-reason-${esc(serviceId)}" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+      </div>
+      <div id="cancel-warning-${esc(serviceId)}"></div>
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button type="button" onclick="adminSubmitCancellation('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#B3261E;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Submit Cancellation</button>
+        <button type="button" onclick="adminToggleCancelPanel('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+  adminUpdateCancelWarning(serviceId);
+}
+
+function adminUpdateCancelWarning(serviceId) {
+  const warnEl = document.getElementById(`cancel-warning-${serviceId}`);
+  if (!warnEl) return;
+  const svc = CATALOG_ROWS[serviceId] || {};
+  const dateVal = document.getElementById(`cancel-date-${serviceId}`)?.value;
+  const noticeDays = svc.cancel_notice_days;
+  const penaltyType = svc.cancel_penalty_type;
+  if (!dateVal || !noticeDays || !penaltyType || penaltyType === 'none') { warnEl.innerHTML = ''; return; }
+  const daysUntil = Math.round((new Date(dateVal + 'T00:00:00') - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')) / 86400000);
+  if (daysUntil >= noticeDays) { warnEl.innerHTML = ''; return; }
+  const penaltyText = penaltyType === 'flat'
+    ? `a flat $${Number(svc.cancel_penalty_amount || 0).toLocaleString()} early-termination fee`
+    : `a ${svc.cancel_penalty_amount || 0}% early-termination fee on the remaining contract value`;
+  warnEl.innerHTML = `<div style="display:flex;gap:8px;background:#FFF3DA;border-left:3px solid #C68A1E;border-radius:0 6px 6px 0;padding:9px 12px;font-size:11.5px;color:#92650B;margin-bottom:6px">⚠ This service requires ${noticeDays} days' notice — this effective date gives only ${Math.max(daysUntil, 0)}. Cancelling now may involve ${penaltyText} — confirm with the client before submitting.</div>`;
+}
+
+async function adminSubmitCancellation(orderId, serviceId) {
+  const effectiveDate = document.getElementById(`cancel-date-${serviceId}`)?.value;
+  const reason = document.getElementById(`cancel-reason-${serviceId}`)?.value.trim() || null;
+  if (!effectiveDate) { showToast('Effective Date is required', 'error'); return; }
+
+  let updatedCount;
+  try {
+    updatedCount = await sb('rpc/admin_cancel_service', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: serviceId, p_effective_date: effectiveDate, p_reason: reason,
+      }),
+    });
+  } catch (e) {
+    showToast('Could not cancel this service: ' + e.message, 'error');
+    return;
+  }
+
+  if (!updatedCount) {
+    showToast('Nothing to cancel — this service already shows cancelled', 'error');
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const svc = CATALOG_ROWS[serviceId] || {};
+  const workflow = svc.workflow;
+  const cardId = workflow ? o?.trello_card_ids?.[workflow] : null;
+  if (cardId) {
+    try {
+      const res = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({
+          target: 'trello_add_comment', card_id: cardId,
+          text: `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`,
+        }),
+      });
+      if (!res.ok) console.warn('Could not post cancellation comment:', res.status);
+    } catch (e) {
+      console.warn('Could not post cancellation comment:', e.message);
+    }
+  } else {
+    showToast('Cancelled, but no Trello card was found for this tactic — please update Trello by hand', 'error');
+  }
+
+  document.getElementById(`cancel-panel-${serviceId}`).style.display = 'none';
+  showToast('✅ Service cancelled');
+}
+
 async function adminNotifyTrelloOfIntakeCompletion(o, formKey) {
   const cardId = o.intake_responses?.[formKey]?.trello_card_id;
   if (!cardId) {
