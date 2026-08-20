@@ -17456,3 +17456,54 @@ the SAME comment to both the stored IO card and the tactic's own card
 (deduped if they happened to be the same id), flips the Revised pill on,
 and shows the correct audit line with the old and new values. `node
 --check` clean on both files.
+
+## 2026-08-20 — AM-triggered Swap Tactic (closes out the Edit & Cancel Flow Mockup)
+
+Third and final surface. Two scope questions resolved explicitly with
+Claire before building, since this is materially bigger than Cancel/Edit:
+(1) Swap DOES write into live `campaign_lines`/`campaign_months` — unlike
+Edit, the whole point here is the automatic day-prorated split, so a
+cosmetic order-record note wouldn't replace today's real manual
+pause-one-create-another workaround; (2) the new starting tactic's Trello
+card is a **plain** card, not resolved from that service's own template —
+reproducing index.html's full template-resolution logic (single-card/
+whole-list copy, KOC labeling) inside Admin would duplicate a lot of
+complexity with real drift risk for a first pass.
+
+**New RPC** `admin_swap_tactic(p_name, p_pw, p_order_id, p_ending_service_id,
+p_starting_service_id, p_effective_date, p_new_monthly_budget)` — sets the
+outgoing line's `flight_end` to the day before the effective date, inserts
+a brand-new `campaign_lines` row for the incoming tactic (same
+`accounting_only`/`billing_type` derivation from `pricing_mode` as the MS
+Farm Bureau fan-out trigger — not a special case here either), then day-
+prorates the swap month's budget between the two lines' `campaign_months`
+rows (inclusive day-counting, remainder-safe, same convention as the
+Budget Entry Form States math).
+
+**Admin UI:** a "⇄ Swap Tactic" button above the Services table opens a
+panel — Ending Tactic (from this order's own line items) / Starting Tactic
+(any active catalog service) / Effective Date / New Monthly Budget — with
+a live auto-computed preview table (Line / Covers / Amount) that updates
+as any field changes, mirroring the mockup's own layout exactly. On
+Confirm: posts a "replaced by X, N of M days, $Y" comment on the outgoing
+tactic's existing card, creates the plain new card in the client's real
+Trello list (fetched fresh by `client_id`, not assumed cached), and stamps
+its id onto `trello_card_ids` under the new tactic's workflow for any
+later Cancel/Edit on it to find. The order's own `line_items` snapshot is
+deliberately left untouched — it keeps recording what was originally sold;
+`campaign_lines` is the operational record that evolves independently.
+
+**Verified live** via Playwright using the mockup's own worked example
+(Targeted Display: Audience → Keyword, Aug 19 effective date, $1,200
+budget): the preview correctly computed 18 ending days / 13 starting days
+out of 31 (matching the mockup's own numbers exactly), the RPC fired with
+the right payload, the outgoing card got the correct "18 of 31 days,
+$696.77" comment, a new card was created in the right client's list with
+the right description ($503.23, 13 of 31 days), and the order's local
+`trello_card_ids` picked up the new card under its workflow key. `node
+--check` clean on both files.
+
+**This closes out all three surfaces of the approved Edit & Cancel Flow
+Mockup** (Cancel, Edit, Swap) plus the per-service cancellation guardrails
+— everything from today's MS Farm Bureau follow-ups and the six new items
+from Claire's brain-dump is now built and verified.
