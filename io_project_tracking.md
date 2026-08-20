@@ -16705,3 +16705,27 @@ untouched, the Step 3 card correctly shows both agents as separate lines —
 one "✓ Complete," one "Not Started." Screenshot confirmed visually — full
 agent names ("Danny Garrison," "Justin Ashmore") now render without
 mid-word cutoff. `node --check` clean.
+
+---
+
+### 2026-08-19 — Agent/County Split table: fixed-width columns still clipped content
+
+Claire, from another screenshot: the percentage-based column widths from
+the previous fix still clipped a native date input's day/month/year (plus
+its calendar icon) and "Facebook & Instagram Ads" in the Service select —
+"I want to be able to see everything in every cell." Percentages of a
+fixed-width card were never going to be enough room for that content no
+matter how they were split up; the real fix is giving each column a real
+minimum PIXEL width sized to what it actually needs to hold.
+
+**Fix**: switched the `<colgroup>` from percentages to fixed pixel widths
+(Agent 160px / Service 240px / Start 135px / End 135px / Amount 100px /
+Intake 130px / remove 40px, table total 940px), wrapped in its own
+`overflow-x:auto` container so the table can be wider than the card and
+scroll horizontally on a narrow viewport instead of every column
+fighting over one too-small total width.
+
+**Verified** via a live Playwright screenshot: "Danny Crozier"/"Justin
+Ashmore" (Agent), "Facebook & Instagram Ads" (Service), and
+"09/04/2026"/"12/04/2026" (Start/End) all render in full with no
+mid-word or mid-date clipping. `node --check` clean.
