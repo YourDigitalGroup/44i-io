@@ -17054,3 +17054,54 @@ stored list) submitted successfully and BOTH the IO card and Danny
 Crozier's agent-split card landed in Andy's own list — confirming routing
 now follows the submitting AE regardless of which county/Farm-Bureau-agent
 was picked underneath. `node --check` clean on both extracted scripts.
+
+## 2026-08-20 — Fixed empty "AE" dropdown in the Multi-Agent client editor
+
+Claire hit this live while setting up MS Farm Bureau's real roster: clicking
+"+ Add AE" under a Multi-Agent Client showed a completely empty "AE" dropdown,
+blocking her from entering any of the 16 real AEs. Two real bugs, both in
+`admin/index.html`'s `populateClientAePickerDropdown()`/`adminNewClientAe()`:
+1. The picker filtered `ALL_AES` (the global, group-wide AE roster) only by
+   "not already added to this client" — no group scoping at all, so it should
+   have shown every group's AEs mixed together rather than being empty. Added
+   an explicit `a.group_id === groupId` filter (reading the client's own
+   `admin-client-group` select value), per Claire: "this dropdown should only
+   include AE's from the assigned Group."
+2. The more likely actual cause of the *empty* dropdown: switching "Multi-Agent
+   Client" to Yes shows the AE panel immediately via `onMultiAgentClientChange()`,
+   but the AE roster itself loads asynchronously right after, via
+   `loadClientAgentsCounties()`. Clicking "+ Add AE" before that fetch resolved
+   rendered the picker against a still-empty `ALL_AES`. `adminNewClientAe()` is
+   now `async` and awaits `loadClientAgentsCounties()` first if `ALL_AES` is
+   still empty.
+
+**Verified:** `node --check` clean on the extracted script. Not independently
+reproduced with a timed race in a test harness (the fix's own correctness is
+straightforward — await-before-read — but the exact original failure mode
+couldn't be confirmed live without DB access this session); asked Claire to
+retest against the real roster after this deployed.
+
+## 2026-08-20 — Removed incorrect KOC requirement tied to unrelated intake status
+
+Claire flagged: "Right now AE's are required to set up a KOC for a service
+that doesn't need one but has an incomplete Intake form, we need to remove
+that guard." Confirmed in `index.html`'s `kocIsRequired()`: a product marked
+`koc:'none'` (no call needed) was still forcing a Kick-Off-Call requirement —
+and blocking submission entirely — whenever its OWN separate intake form
+wasn't `completed` (including when it had been explicitly `bypassed`, which
+should have been the "skip this, AM will collect on the call" escape hatch,
+not a trigger for a call the service was never supposed to need).
+
+**Fix:** `kocIsRequired()` now only ever returns true for a product whose own
+`koc` field is literally `'required'` — a `koc:'none'` product's intake
+status no longer factors in at all. Removed the now-unreachable "Situation B"
+block from `updateKocCard()` (the paired UI code that listed incomplete
+intake forms as a KOC reason) since `kocIsRequired()` can no longer trigger it.
+Intake completeness is still tracked and chased — just through the existing,
+separate Campaign Intake Forms card, with no KOC consequence attached.
+
+**Verified:** extracted `kocIsRequired()` and ran it against four scenarios in
+Node — a `koc:'none'` product with no intake data at all, one with a
+`bypassed` intake, a `koc:'required'` product alone, and a mix of both —
+confirming only the `koc:'required'` case returns true in every case.
+`node --check` clean on the extracted inline script.

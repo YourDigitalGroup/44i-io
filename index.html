@@ -2167,19 +2167,12 @@ function onKocCalendarClicked() {
 }
 
 function kocIsRequired() {
-  // Returns true if any selected product requires a KOC
-  return Object.keys(selected).some(id => {
-    const cfg = PRODUCT_CONFIG[id];
-    if (!cfg) return false;
-    if (cfg.koc === 'required') return true;
-    // koc:none but intake not fully saved
-    if (cfg.koc === 'none' && cfg.intake) {
-      const d = intakeData[cfg.intake];
-      if (!d || (!d.completed && !d.bypassed)) return true;
-      if (d.bypassed) return true;
-    }
-    return false;
-  });
+  // Returns true if any selected product requires a KOC. A koc:'none' product
+  // never requires one, regardless of its own intake form's status (2026-08-20
+  // fix, per Claire — an incomplete/bypassed intake used to force a KOC here
+  // even for services that don't need a call at all; intake completeness is
+  // tracked and chased separately via the Campaign Intake Forms card).
+  return Object.keys(selected).some(id => PRODUCT_CONFIG[id]?.koc === 'required');
 }
 
 function updateKocCard() {
@@ -2191,28 +2184,12 @@ function updateKocCard() {
   const amName = selectedGroup?.am_name || 'your Account Manager';
   const calUrl = selectedGroup?.am_calendar_url;
 
-  // Situation A: products that always require a KOC regardless of intake
+  // Products that require a KOC — kocIsRequired() now only flags koc:'required'
+  // products (see its own comment), so this is the whole list.
   const alwaysKoc = Object.keys(selected).filter(id => PRODUCT_CONFIG[id]?.koc === 'required');
-
-  // Situation B: koc:none products whose intake is incomplete/bypassed/not started
-  const incompleteIntakeForms = [];
-  Object.keys(selected).forEach(id => {
-    const cfg = PRODUCT_CONFIG[id];
-    if (!cfg || cfg.koc !== 'none' || !cfg.intake) return;
-    const d = intakeData[cfg.intake];
-    if (!d || (!d.completed && !d.bypassed) || d.bypassed) {
-      // Only add form once even if multiple products share it
-      const formDef = INTAKE_FORMS[cfg.intake];
-      const label = formDef?.title || cfg.intake;
-      if (!incompleteIntakeForms.find(f => f.key === cfg.intake)) {
-        incompleteIntakeForms.push({ key: cfg.intake, label, sampleId: id, bypassed: d?.bypassed });
-      }
-    }
-  });
 
   let html = '';
 
-  // Situation A block
   if (alwaysKoc.length > 0) {
     html += `
       <div style="margin-bottom:14px">
@@ -2220,18 +2197,6 @@ function updateKocCard() {
         <ul style="margin:0;padding-left:18px;font-size:12px;color:#92400E">
           ${alwaysKoc.map(id => `<li>${PRODUCT_CONFIG[id]?.label || id}</li>`).join('')}
         </ul>
-      </div>`;
-  }
-
-  // Situation B block — just explain, no duplicate buttons (forms card below handles it)
-  if (incompleteIntakeForms.length > 0) {
-    html += `
-      <div style="margin-bottom:14px;${alwaysKoc.length ? 'padding-top:12px;border-top:1px solid #FED7AA;' : ''}">
-        <p style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:4px">📋 KOC required — incomplete intake form${incompleteIntakeForms.length > 1 ? 's' : ''}:</p>
-        <ul style="margin:0 0 6px 18px;font-size:12px;color:#92400E">
-          ${incompleteIntakeForms.map(f => `<li>${f.label}${f.bypassed ? ' <em style="font-size:10px">(AM help requested)</em>' : ''}</li>`).join('')}
-        </ul>
-        <p style="font-size:11px;color:var(--muted)">Complete the intake form${incompleteIntakeForms.length > 1 ? 's' : ''} in the <strong>Campaign Intake Forms</strong> card below to eliminate this requirement, or schedule the call now.</p>
       </div>`;
   }
 
