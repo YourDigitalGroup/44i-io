@@ -5302,8 +5302,84 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           await assignCardMembers(cardId, memberIdsForLineItems(tacticLineItems));
         }
 
+        // MS Farm Bureau fan-out, Phase 4 (2026-08-19): a workflow whose sold
+        // services are covered by the Agent/County Split gets one Trello card
+        // PER AGENT instead of the normal single shared tactic card — this
+        // completely bypasses the template-resolution branches below for that
+        // workflow (agent-split tactics have no Trello template configured
+        // today; if one's ever needed, extend createAgentSplitCards() below
+        // the same way, rather than the template branches themselves).
+        // Grouped by workflow (not service) since one workflow can cover
+        // several split services (e.g. SEM + FB/IG could theoretically share
+        // one card if they were ever put on the same workflow — they aren't
+        // today, but this stays correct either way).
+        const agentSplitsByWorkflow = {};
+        agentSplits.forEach(s => {
+          const wf = CATALOG_ROWS[s.service_id]?.workflow;
+          if (!wf) return;
+          (agentSplitsByWorkflow[wf] = agentSplitsByWorkflow[wf] || []).push(s);
+        });
+
+        // One card per distinct agent within this workflow's splits — county
+        // goes in front of the agent name in the title (2026-08-19, per
+        // Claire's second ask on this feature). Reuses the exact same
+        // dedup/update-vs-create pattern (findExistingCardByName/cardExists/
+        // addedCardNames) and member-assignment (memberIdsForLineItems) every
+        // other branch below already uses, just scoped to one agent's own
+        // line(s) for the description instead of the whole tactic's.
+        async function createAgentSplitCards(wfIdx, splitsForWorkflow) {
+          const wf = soldWorkflows[wfIdx];
+          const byAgent = {};
+          splitsForWorkflow.forEach(s => {
+            const key = s.agent_id || ('new:' + s.agent_name);
+            (byAgent[key] = byAgent[key] || []).push(s);
+          });
+          const tacticLineItems = lineItems.filter(li => li.workflow === originalWorkflows[wfIdx]);
+          for (const rowsForAgent of Object.values(byAgent)) {
+            const agentName = rowsForAgent[0].agent_name;
+            const county = rowsForAgent[0].county;
+            const cn = `${county} — ${agentName} (${wf})` + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+            const descLines = rowsForAgent.map(s => {
+              const label = CATALOG_ROWS[s.service_id]?.label || s.service_id;
+              return `• ${label} — $${Number(s.amount).toLocaleString()}/mo (${s.start_date || '—'} – ${s.end_date || 'Ongoing'})`;
+            }).join('\n');
+            const desc = `**Agent:** ${agentName}\n**County:** ${county}\n\n**Services sold to this agent:**\n${descLines}`;
+
+            const existing = findExistingCardByName(cn);
+            let cardId = null;
+            if (existing && !addedCardNames.has(norm(cn))) {
+              addedCardNames.add(norm(cn));
+              cardId = existing.id;
+              await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc })
+              });
+            } else if (!existing && !cardExists(cn)) {
+              const res = await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc, pos: 'bottom' })
+              });
+              const card = await res.json();
+              if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
+            }
+            // Per-agent intake PDF attachment is NOT included in this pass —
+            // flagged, not silently skipped: each agent's response already
+            // exists (see agentIntakeStorageKey()), but generating/attaching
+            // a PDF from it needs its own per-agent HTML builder, mirroring
+            // buildIntakeDesc()'s shared-response version. Ask before adding.
+            if (cardId) await assignCardMembers(cardId, memberIdsForLineItems(tacticLineItems));
+          }
+        }
+
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
           const wf = soldWorkflows[wfIdx];
+          const splitsForThisWorkflow = agentSplitsByWorkflow[originalWorkflows[wfIdx]];
+          if (splitsForThisWorkflow && splitsForThisWorkflow.length) {
+            await createAgentSplitCards(wfIdx, splitsForThisWorkflow);
+            continue;
+          }
           const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
 
           if (template && template.type === 'card') {

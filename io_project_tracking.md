@@ -16729,3 +16729,49 @@ fighting over one too-small total width.
 Ashmore" (Agent), "Facebook & Instagram Ads" (Service), and
 "09/04/2026"/"12/04/2026" (Start/End) all render in full with no
 mid-word or mid-date clipping. `node --check` clean.
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out Phase 4: per-agent Trello cards
+
+Built the Trello side of the fan-out: a workflow whose sold services are
+covered by the Agent/County Split now gets one Trello card **per agent**
+instead of the normal single shared tactic card, in `index.html`'s
+`submitIO()`.
+
+**Built:**
+- `agentSplitsByWorkflow` — groups the submitted `agent_splits` by their
+  underlying service's workflow, resolved once before the main per-
+  workflow card loop.
+- `createAgentSplitCards(wfIdx, splitsForWorkflow)` — for a workflow with
+  splits, groups by distinct agent and creates/updates ONE card per agent:
+  title `${county} — ${agentName} (${wf})` + the existing dated-card
+  suffix + business name (county in front of the agent name, per Claire's
+  earlier ask), description listing just that agent's own service(s) and
+  dollar amount(s) — not the tactic's shared total — and member assignment
+  reusing `memberIdsForLineItems()` exactly like every other card. Reuses
+  the same dedup pattern (`findExistingCardByName`/`cardExists`/
+  `addedCardNames`) every other branch already relies on, so a resubmit
+  updates that agent's existing card instead of duplicating it.
+- The main workflow loop now checks for matching splits first and
+  `continue`s past the entire template-resolution branch (single-card
+  template / whole-list template / plain card) for that workflow —
+  agent-split tactics don't have a Trello template configured today; if
+  one's ever needed, that's a follow-up to `createAgentSplitCards()`
+  itself, not the existing branches.
+- **Deliberately not included in this pass, flagged rather than silently
+  skipped**: per-agent intake PDF attachment. Each agent's intake response
+  already exists (`agentIntakeStorageKey()`, built earlier this session),
+  but generating/attaching a PDF from it needs its own per-agent HTML
+  builder mirroring `buildIntakeDesc()`'s shared-response version — real
+  additional scope, not done here.
+
+**Verified live**, and unusually thoroughly for a Trello-touching change:
+built a full Playwright harness that actually drives `submitIO()` end to
+end (bypassing the dev-preview safety guard, mocking every Supabase/Trello
+proxy call) rather than just reviewing the code. Confirmed two distinct
+cards were created — "Alcorn — Danny Crozier (SEM) — MS Farm Bureau -
+Lee" and "Alcorn — Justin Ashmore (SEM) — MS Farm Bureau - Lee" — each
+with its OWN description showing its own dollar amount ($600/mo and
+$550/mo respectively, not the shared $1,150 tactic total). `node --check`
+clean.
