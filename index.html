@@ -1821,6 +1821,15 @@ function collectAgentSplits() {
   for (const row of agentSplitRows) {
     if (!row.agentId && !row.agentNewName) { showToast('Agent/County Split: every row needs an agent', 'error'); return null; }
     if (row.agentId === '__new__' && !row.agentNewName) { showToast('Agent/County Split: please type the new agent\'s name', 'error'); return null; }
+    // Blocked, not auto-created (2026-08-20, per Claire): an AE typed in who
+    // isn't already on the roster has no Trello list set up for them yet, so
+    // there's no "correct list" to route their card to -- rather than let it
+    // fall into a shared holding list silently, submission is blocked here so
+    // the AM adds the real AE (with their real Trello list) in Admin first.
+    if (row.agentId === '__new__') {
+      showToast(`Agent/County Split: "${row.agentNewName}" isn't on the AE roster yet — contact your AM to add them (with their Trello list) before submitting this IO`, 'error');
+      return null;
+    }
     if (!row.serviceId) { showToast('Agent/County Split: every row needs a service', 'error'); return null; }
     if (!row.amount || Number(row.amount) <= 0) { showToast('Agent/County Split: every row needs an amount', 'error'); return null; }
     const agentName = row.agentId === '__new__' ? row.agentNewName : (AGENT_ROSTER.find(a => a.id === row.agentId)?.name || '');
