@@ -17705,3 +17705,51 @@ every field. `node --check` clean.
 
 **Next up:** client-level Accounting Overrides UI (deferred follow-up,
 not started), then checking with Claire on timing for Phase B.
+
+## 2026-08-20 — Client-level Accounting Overrides (second half of "Add both please")
+
+Closes out the "Add both please" pricing/accounting ask now that Claire
+confirmed the SQL from the previous entry ran. Same reasoning and same
+mirror-the-group-level-mechanism approach as client-level Custom Pricing,
+just for the deeper, per-field Accounting Overrides mechanism instead of
+a single price. **Phase B (wiring either override into live pricing/rate
+calculations) is still not started** — this is schema+UI only, same as
+the pricing half.
+
+**Schema/RPCs:** no new migration needed — `clients.accounting_overrides`
+and the `admin_get_clients`/`admin_save_client` support for it were
+already included in the same SQL block Claire ran for the Custom Pricing
+half (`accounting_overrides jsonb`, both functions already handle it).
+
+**Admin UI:** a second `<details>` section, "Accounting Overrides for
+this client," added to the Client editor right below Custom Pricing —
+built as an exact mirror of the group-level Accounting Overrides tab
+(`renderAccountingOverrideFields()`/`onAccountingOverrideInput()`),
+including the same per-pairing-key granularity for CPM-adjustment
+modifiers (e.g. Offline Visits Tracking combined with a specific base
+tactic) and the same Setup Fee Split % column gating. Own state
+(`currentClientAccountingOverrides`) and `client-acct-`-prefixed DOM ids
+so it can't collide with the group-level version.
+
+**Super-admin only, same as the group-level tab:** an AM-tier user never
+sees this section (`display:none`, and `ALL_ACCOUNTING_MAP` is never
+loaded for them) — this is internal margin data. `adminSaveClient()`
+omits `accounting_overrides` from the payload entirely for an AM user,
+rather than sending a stale/empty state that could accidentally wipe out
+real data an AM never had visibility into in the first place.
+
+**Verified live** via Playwright against fake `allServicesMap`/
+`ALL_ACCOUNTING_MAP` fixtures: an AM-role user gets the section hidden on
+both Edit and New Client, with no map load and no `accounting_overrides`
+key in the save payload; a super-admin sees it, gets pre-filled values +
+the "Custom" badge from an existing `accounting_overrides` value, can
+edit two fields on the same service, and the save payload carries exactly
+those two updated values; clearing every field on a service back out
+drops the key from state entirely (not a stray `{}`) and saves `null`.
+`node --check` clean.
+
+**Next up:** confirm with Claire whether/when to start Phase B — wiring
+client-level `io_pricing`/`accounting_overrides` into the actual live
+pricing/rate calculations in `index.html`/`strategist/index.html`/
+`accounting/index.html`. Both overrides are fully settable and stored
+now, but nothing reads them yet in a real IO, campaign, or invoice.
