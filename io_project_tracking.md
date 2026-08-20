@@ -16951,3 +16951,35 @@ typed inline, no roster entry at all). Confirmed:
 Bureau fan-out feature (Phases 1-6) — Phase 5's portal display and this
 routing fix were both real gaps caught by talking through the design with
 Claire before shipping, not originally scoped work.
+
+### 2026-08-20 — MS Farm Bureau fan-out: block submission for an AE not yet on the roster
+
+Follow-up to Phase 6's per-agent Trello list routing: walked through with
+Claire what should happen when an AE typed into the split screen isn't
+already on the AE roster (so has no Trello list on file). Two options were
+on the table — auto-create a fresh list for them, or fall back to the
+client's shared list and let Claire notice/fix it after the fact. Claire
+rejected both: "that is not how we want it to happen... it may be easier
+to link the list by county/AE" — confirmed a county is always exactly one
+AE's, so the existing agent-keyed design (Phase 6) already fully handles
+a brand-new COUNTY under an EXISTING AE with zero extra work. The only
+remaining gap was a genuinely new AE, and Claire's call there: block the
+submission outright rather than let it land anywhere provisional.
+
+**Built (`index.html`)**: `collectAgentSplits()` — a split row whose
+`agentId === '__new__'` (i.e. the AE typed a name not on the roster) now
+shows an error toast (`"<name>" isn't on the AE roster yet — contact your
+AM to add them (with their Trello list) before submitting this IO`) and
+returns `null`, which is checked at the very top of `submitIO()`
+(before the KOC gate, the order insert, and all Trello work) — so a
+blocked submission never reaches the database or Trello at all, not even
+the roster-growing trigger from Phase 3. The "+ New Agent…" option stays
+in the picker (so an AE can still type who they meant, which the error
+message echoes back) — it's blocked at validation, not removed from the
+UI.
+
+**Verified live** via Playwright, two cases through the real `submitIO()`
+path: a new, not-on-roster agent produced exactly the expected toast and
+created zero cards/orders; an existing roster agent (Danny, with his own
+stored Trello list) submitted normally and landed in his own list exactly
+as Phase 6 already established. `node --check` clean.
