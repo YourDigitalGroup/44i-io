@@ -17610,3 +17610,38 @@ ones per card).
 and `trello_attach_file` fire for both the stored IO card and the tactic
 card, with the same generated filename/content each time. `node --check`
 clean.
+
+## 2026-08-20 — Agent/County on the Strategist Portal's manual "+ New Campaign" backfill
+
+Answers the second half of the MS Farm Bureau backfill question — the
+existing "+ New Campaign" import tool (for a campaign already running,
+not yet in the system) had no way to record which agent/county a line
+belongs to, so backfilling MS Farm Bureau's real history through it would
+have created lines with no agent identity — no composed "STMM Digital:
+Andy (Alcorn County)" display, just the plain client name.
+
+**Schema/RPCs:** `strategist_get_clients` now also returns `is_multi_agent`
+(needed so the import form knows which clients to show the picker for);
+`strategist_save_campaign_line` now accepts and persists `agent_name`/
+`county` on both insert and update.
+
+**Front-end:** picking a multi-agent client in the import form's Client
+dropdown reveals County/Agent pickers, loaded via the same public
+`get_client_counties`/`get_client_agents` RPCs the real IO form's own
+Agent/County Split uses — but NOT cascaded county→agent the way that
+live AE-facing picker is; a strategist backfilling old business already
+knows which agent/county they mean, so this just lists everything
+registered for the client. Submitting without both fields picked for a
+multi-agent client is blocked with a clear toast.
+
+**Known follow-up, not yet checked:** the import form's separate "Split
+into multiple campaigns" path (`strategist_split_campaign_line`) wasn't
+verified to carry `agent_name`/`county` forward onto the derived split
+rows — an edge case (a multi-agent AND split-region import in the same
+action) that didn't come up today; worth checking before relying on it.
+
+**Verified live** via Playwright: the wrap stays hidden for a regular
+client and shows/populates correctly for a multi-agent one (via the
+right `client_id`); submitting without agent/county picked is blocked;
+submitting with both produces a save payload carrying the real
+`agent_name: "Andy"` / `county: "Alcorn"`. `node --check` clean.
