@@ -4847,12 +4847,20 @@ async function submitIO() {
         // status) for the PDF, captured via html2canvas as a screenshot exactly like the
         // IO PDF already is, so it renders correctly regardless of jsPDF's font
         // limitations.
-        const buildIntakeDesc = (originalWorkflow) => {
+        // storageKeyOverride/agentLabel (2026-08-19, MS Farm Bureau) -- an agent-
+        // split card needs THAT AGENT's own intake response, not the shared one
+        // this function reads by default (intakeData[formKey]). Same override
+        // pattern already used by openIntakeForService()/saveIntakeForm() for the
+        // entry-side modal -- storageKeyOverride wins when given, defaulting to
+        // formKey for every existing non-split caller (unchanged behavior).
+        // agentLabel, when given, is shown under the business name on the PDF
+        // itself so it's clear whose answers this particular attachment holds.
+        const buildIntakeDesc = (originalWorkflow, storageKeyOverride, agentLabel) => {
           const formKey = resolveWorkflowIntakeFormId(originalWorkflow);
           if (!formKey) return null;
           const formDef = INTAKE_FORMS[formKey];
           if (!formDef) return null;
-          const data = intakeData[formKey] || {};
+          const data = intakeData[storageKeyOverride || formKey] || {};
           const fields = data.fields || {};
 
           // Compute fill state -- a field hidden by an unmet showIf, or marked
@@ -4948,7 +4956,7 @@ async function submitIO() {
               <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:3px solid ${color};margin-bottom:16px">
                 <div style="font-size:16pt;font-weight:800;color:${color};letter-spacing:-.01em">${esc(formDef.title)}</div>
                 <div style="text-align:right;font-size:8.5pt;color:#6B7280;line-height:1.5">
-                  <strong style="color:#374151;font-size:9pt">${esc(bizName)}</strong><br>
+                  <strong style="color:#374151;font-size:9pt">${esc(bizName)}</strong>${agentLabel ? `<br><span style="color:${color};font-weight:600">${esc(agentLabel)}</span>` : ''}<br>
                   ${new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})}
                 </div>
               </div>
@@ -5302,8 +5310,105 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           await assignCardMembers(cardId, memberIdsForLineItems(tacticLineItems));
         }
 
+        // MS Farm Bureau fan-out, Phase 4 (2026-08-19): a workflow whose sold
+        // services are covered by the Agent/County Split gets one Trello card
+        // PER AGENT instead of the normal single shared tactic card — this
+        // completely bypasses the template-resolution branches below for that
+        // workflow (agent-split tactics have no Trello template configured
+        // today; if one's ever needed, extend createAgentSplitCards() below
+        // the same way, rather than the template branches themselves).
+        // Grouped by workflow (not service) since one workflow can cover
+        // several split services (e.g. SEM + FB/IG could theoretically share
+        // one card if they were ever put on the same workflow — they aren't
+        // today, but this stays correct either way).
+        const agentSplitsByWorkflow = {};
+        agentSplits.forEach(s => {
+          const wf = CATALOG_ROWS[s.service_id]?.workflow;
+          if (!wf) return;
+          (agentSplitsByWorkflow[wf] = agentSplitsByWorkflow[wf] || []).push(s);
+        });
+
+        // One card per distinct agent within this workflow's splits — county
+        // goes in front of the agent name in the title (2026-08-19, per
+        // Claire's second ask on this feature). Reuses the exact same
+        // dedup/update-vs-create pattern (findExistingCardByName/cardExists/
+        // addedCardNames) and member-assignment (memberIdsForLineItems) every
+        // other branch below already uses, just scoped to one agent's own
+        // line(s) for the description instead of the whole tactic's.
+        async function createAgentSplitCards(wfIdx, splitsForWorkflow) {
+          const wf = soldWorkflows[wfIdx];
+          const byAgent = {};
+          splitsForWorkflow.forEach(s => {
+            const key = s.agent_id || ('new:' + s.agent_name);
+            (byAgent[key] = byAgent[key] || []).push(s);
+          });
+          const tacticLineItems = lineItems.filter(li => li.workflow === originalWorkflows[wfIdx]);
+          // Same form the shared path would use for this workflow
+          // (resolveWorkflowIntakeFormId) — just read/attached per agent below
+          // instead of once for the whole tactic.
+          const formKey = resolveWorkflowIntakeFormId(originalWorkflows[wfIdx]);
+          for (const [agentKey, rowsForAgent] of Object.entries(byAgent)) {
+            const agentName = rowsForAgent[0].agent_name;
+            const county = rowsForAgent[0].county;
+            const cn = `${county} — ${agentName} (${wf})` + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+            const descLines = rowsForAgent.map(s => {
+              const label = CATALOG_ROWS[s.service_id]?.label || s.service_id;
+              return `• ${label} — $${Number(s.amount).toLocaleString()}/mo (${s.start_date || '—'} – ${s.end_date || 'Ongoing'})`;
+            }).join('\n');
+            // Per-agent intake (2026-08-19) — same storage-key format
+            // agentIntakeStorageKey()/agentSplitRowIntakeInfo() already use on
+            // the entry side (formKey::agent::<agentKey>), so whatever the AE
+            // filled in on the split table is exactly what shows up here.
+            const intake = formKey ? buildIntakeDesc(originalWorkflows[wfIdx], `${formKey}::agent::${agentKey}`, agentName) : null;
+            const desc = [
+              `**Agent:** ${agentName}\n**County:** ${county}\n\n**Services sold to this agent:**\n${descLines}`,
+              intake?.bannerHeader,
+            ].filter(Boolean).join('\n\n');
+
+            const existing = findExistingCardByName(cn);
+            let cardId = null;
+            if (existing && !addedCardNames.has(norm(cn))) {
+              addedCardNames.add(norm(cn));
+              cardId = existing.id;
+              await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc })
+              });
+            } else if (!existing && !cardExists(cn)) {
+              const res = await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc, pos: 'bottom' })
+              });
+              const card = await res.json();
+              if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
+            }
+            if (cardId && intake) {
+              try {
+                const { base64, fileName } = await generateIntakePdfBlob(`${wf}-${agentName}`, intake.html);
+                const attachRes = await fetch(PROXY, {
+                  method: 'POST',
+                  headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                  body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' })
+                });
+                const attachData = await attachRes.json().catch(() => null);
+                if (!attachRes.ok) console.warn('Could not attach agent intake PDF to card', cardId, ':', attachRes.status, attachData);
+              } catch (e) {
+                console.warn('Could not generate/attach agent intake PDF for card', cardId, ':', e.message);
+              }
+            }
+            if (cardId) await assignCardMembers(cardId, memberIdsForLineItems(tacticLineItems));
+          }
+        }
+
         for (let wfIdx = 0; wfIdx < soldWorkflows.length; wfIdx++) {
           const wf = soldWorkflows[wfIdx];
+          const splitsForThisWorkflow = agentSplitsByWorkflow[originalWorkflows[wfIdx]];
+          if (splitsForThisWorkflow && splitsForThisWorkflow.length) {
+            await createAgentSplitCards(wfIdx, splitsForThisWorkflow);
+            continue;
+          }
           const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
 
           if (template && template.type === 'card') {

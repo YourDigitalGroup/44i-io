@@ -16729,3 +16729,98 @@ fighting over one too-small total width.
 Ashmore" (Agent), "Facebook & Instagram Ads" (Service), and
 "09/04/2026"/"12/04/2026" (Start/End) all render in full with no
 mid-word or mid-date clipping. `node --check` clean.
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out Phase 4: per-agent Trello cards
+
+Built the Trello side of the fan-out: a workflow whose sold services are
+covered by the Agent/County Split now gets one Trello card **per agent**
+instead of the normal single shared tactic card, in `index.html`'s
+`submitIO()`.
+
+**Built:**
+- `agentSplitsByWorkflow` — groups the submitted `agent_splits` by their
+  underlying service's workflow, resolved once before the main per-
+  workflow card loop.
+- `createAgentSplitCards(wfIdx, splitsForWorkflow)` — for a workflow with
+  splits, groups by distinct agent and creates/updates ONE card per agent:
+  title `${county} — ${agentName} (${wf})` + the existing dated-card
+  suffix + business name (county in front of the agent name, per Claire's
+  earlier ask), description listing just that agent's own service(s) and
+  dollar amount(s) — not the tactic's shared total — and member assignment
+  reusing `memberIdsForLineItems()` exactly like every other card. Reuses
+  the same dedup pattern (`findExistingCardByName`/`cardExists`/
+  `addedCardNames`) every other branch already relies on, so a resubmit
+  updates that agent's existing card instead of duplicating it.
+- The main workflow loop now checks for matching splits first and
+  `continue`s past the entire template-resolution branch (single-card
+  template / whole-list template / plain card) for that workflow —
+  agent-split tactics don't have a Trello template configured today; if
+  one's ever needed, that's a follow-up to `createAgentSplitCards()`
+  itself, not the existing branches.
+- **Deliberately not included in this pass, flagged rather than silently
+  skipped**: per-agent intake PDF attachment. Each agent's intake response
+  already exists (`agentIntakeStorageKey()`, built earlier this session),
+  but generating/attaching a PDF from it needs its own per-agent HTML
+  builder mirroring `buildIntakeDesc()`'s shared-response version — real
+  additional scope, not done here.
+
+**Verified live**, and unusually thoroughly for a Trello-touching change:
+built a full Playwright harness that actually drives `submitIO()` end to
+end (bypassing the dev-preview safety guard, mocking every Supabase/Trello
+proxy call) rather than just reviewing the code. Confirmed two distinct
+cards were created — "Alcorn — Danny Crozier (SEM) — MS Farm Bureau -
+Lee" and "Alcorn — Justin Ashmore (SEM) — MS Farm Bureau - Lee" — each
+with its OWN description showing its own dollar amount ($600/mo and
+$550/mo respectively, not the shared $1,150 tactic total). `node --check`
+clean.
+
+### 2026-08-19 — MS Farm Bureau fan-out: per-agent intake PDF attachments on the split cards
+
+Closed the gap flagged (not silently skipped) at the end of Phase 4: per
+Claire's follow-up "We will need PDF attachments on the trello cards,"
+each agent's own split card now gets its own intake-response PDF attached,
+built from that agent's own answers — not the workflow's shared intake.
+
+**Built (`index.html`):**
+- `buildIntakeDesc(originalWorkflow, storageKeyOverride, agentLabel)` —
+  added the latter two params. Reads
+  `intakeData[storageKeyOverride || formKey]` instead of always the
+  shared `formKey`, so a per-agent call reads that agent's own stored
+  answers (via the existing `agentIntakeStorageKey()` composite key). When
+  `agentLabel` is passed, the generated PDF's header shows the agent's name
+  under the business name, in the group's accent color, so an attached PDF
+  is self-identifying if it's ever viewed outside the card it's on.
+- `createAgentSplitCards()` — resolves the workflow's intake form once
+  (`resolveWorkflowIntakeFormId`), then per agent calls `buildIntakeDesc`
+  with that agent's composite storage key and name, appends the returned
+  status banner to that agent's card description (alongside the
+  service/dollar-amount lines already built in Phase 4), and — once the
+  card is created/updated — generates a PDF via the existing
+  `generateIntakePdfBlob()` and attaches it through the same
+  `trello_attach_file` proxy call every other PDF attachment already uses,
+  wrapped in the same try/catch-and-warn pattern as `finalizeTacticCard()`
+  (a PDF failure never blocks card creation or the rest of submission).
+
+**Verified live**, extending the same Playwright harness built for Phase 4:
+set up two agents on one SEM split (Danny Crozier with a completed intake
+response, Justin Ashmore with none at all) and drove `submitIO()` through
+the real code path end to end. Confirmed:
+- Danny's card description includes "SEM Intake — ✅ COMPLETE — all 1
+  questions answered."; Justin's includes "SEM Intake — ⚠️ INTAKE NOT
+  STARTED — AE did not fill out this form..." — proving intake data stayed
+  fully isolated per agent, not shared across the workflow.
+- Three distinct `trello_attach_file` calls fired: the existing IO PDF,
+  plus `Intake-sem-danny-crozier-2026-08-20.pdf` and
+  `Intake-sem-justin-ashmore-2026-08-20.pdf` — distinct filenames, one per
+  agent.
+- No errors from the new code (`submitIO error: null`).
+
+One test-harness note, not a product bug: the first run of this test
+showed `pdf.setFillColor is not a function` — the fake `window.jspdf` mock
+built for this harness didn't implement the full jsPDF surface the real
+PDF-drawing code calls. Extended the mock with the missing no-op methods
+and reran; this affected the harness only, not `index.html` itself (the
+real jsPDF library loaded in production already has these methods).
+`node --check` clean both before and after this fix.
