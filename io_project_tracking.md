@@ -17139,6 +17139,57 @@ previously-silent update branch) alongside a brand-new IO card: confirmed
 (`card_id: card_sem_existing`, the exact case that was broken) and the new
 IO card got its own. `node --check` clean on the extracted inline script.
 
+## 2026-08-20 — Budget entry form states 1-3 (whole-campaign-total + customize by month)
+
+Built per Claire's approved "Budget Entry Form States" mockup, states 1-3
+only (state 4, mid-month proration on the Accounting side, is explicitly
+parked as an open question in the mockup itself, not built).
+
+**Math:** new pure functions `monthsInFlight`/`splitAmountAcrossMonths`/
+`seedFlatMonthlyPlan` — day-count proration across the flight's calendar
+months, using INCLUSIVE day-counting (both the start and end date count as
+running days) as a deliberate choice, not a copy of the mockup's own
+placeholder numbers (which happened to use exclusive-end counting).
+Unit-tested standalone in Node against 6 cases (single month, a 2-month
+split, a 1-month partial-day case, a 6-month even split, no-date and
+no-end-date edge cases) — all pass, sums always reconcile exactly (any
+rounding remainder is absorbed into the last month).
+
+**UI:** a detail row (`renderBudgetDetailRow`) expands directly below any
+`pricing_mode='spend'` catalog row — a Monthly rate/Whole campaign total
+toggle, an auto-computed read-only preview table in total mode, and a
+"Customize by month" link revealing an editable per-month table (amount +
+Paused checkbox) seeded from whichever mode is active. `.spend` keeps
+meaning "the monthly rate" everywhere else in the file (Step 2's running
+total, Review, Print, the submitted line item) — kept as the AVERAGE of the
+plan's amounts — so no other display code anywhere needed to change; the
+true, possibly-uneven breakdown rides separately as a new `month_budgets`
+array on the submitted line item, only present when the AE actually used
+one of these states.
+
+**Follow-up fixes same day, after Claire tested it live:**
+- The original design gated the whole detail row behind a small ⚙ icon
+  next to the spend input — Claire: "this is new, the AE's won't think to
+  click the tiny gear," and a screenshot showed the ⚙ crowding the spend
+  cell and making the below-minimum warning wrap awkwardly. Removed the ⚙
+  entirely; the detail row now auto-opens (`ensureBudgetDetailOpen`,
+  idempotent) the moment the row is checked OR a spend value is typed, and
+  auto-closes on uncheck.
+- Added soft warnings (toast, not silent no-ops) for two dead-end cases
+  Claire flagged: switching Monthly rate/Whole campaign total with no
+  budget amount entered yet, and opening Customize by month with no amount
+  or no Start Date yet (both needed for the day-count math to produce
+  anything) — each names specifically what's missing.
+
+**Verified live** via Playwright driving the real DOM functions
+(`toggle`/`updateSpend`/`setBudgetMode`/`expandCustomizeByMonth`/
+`updateTacticDate`) against a fake spend-priced row: confirmed the detail
+row opens on check, both soft warnings fire with the right message and
+correctly block the action, both succeed once their preconditions are met,
+customize-by-month produces a real 3-month plan that sums back to the
+original amount ($1,150 → $379.12 + $391.76 + $379.12), and the detail row
+is removed on uncheck. `node --check` clean on the extracted inline script.
+
 ## 2026-08-20 — Budget entry form states (1-3), per approved mockup
 
 Approved artifact "Budget Entry Form States" specified 3 buildable states for
