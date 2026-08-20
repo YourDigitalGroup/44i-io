@@ -1730,6 +1730,65 @@ function removeAgentSplitRow(i) {
   renderAgentSplitRows();
 }
 
+// Read-only, non-validating display rows for Step 3 (Review) and the printed
+// IO (2026-08-19, per Claire -- "add the agent information to step 3, the
+// print IO"). Deliberately does NOT toast or block on an incomplete row --
+// unlike collectAgentSplits() below, this just shows whatever's there right
+// now so Review/Print can render live as the AE fills the table in, not only
+// once every row happens to validate.
+function agentSplitDisplayRows() {
+  const card = document.getElementById('agent-split-card');
+  if (!card || card.style.display === 'none') return [];
+  const countyName = agentSplitCountyId ? (COUNTY_ROSTER.find(c => c.id === agentSplitCountyId)?.name || '') : (agentSplitCountyNewName || '');
+  return agentSplitRows
+    .filter(row => row.agentId || row.agentNewName) // skip a still-blank row entirely
+    .map(row => {
+      const agentName = row.agentId === '__new__' ? row.agentNewName : (AGENT_ROSTER.find(a => a.id === row.agentId)?.name || '');
+      const serviceLabel = selected[row.serviceId]?.label || row.serviceId || '—';
+      return {
+        agentName: agentName || '—',
+        county: countyName || '—',
+        serviceLabel,
+        startDate: row.startDate || null,
+        endDate: row.endDate || null,
+        amount: row.amount ? Number(row.amount) : null,
+      };
+    });
+}
+
+// Shared HTML builder for the Agent/County Split table -- used identically by
+// buildReview() (Step 3, on-screen) and buildIoDocumentHtml() (printed IO), so
+// the two can never show different numbers. The two callers have their own,
+// DIFFERENT table CSS (Step 3 reuses .summary-table already used by the rest
+// of that screen; the printed doc has its own separate stylesheet built
+// around table.services/.svc-* classes) -- `mode` picks which class set to
+// render with; the underlying data (agentSplitDisplayRows()) is identical
+// either way. dateFmt lets each caller use its own date-display convention
+// (both currently pass formatISOToMMDDYY).
+function agentSplitTableHtml(dateFmt, mode) {
+  const rows = agentSplitDisplayRows();
+  if (!rows.length) return '';
+  const fmtAmt = n => n != null ? '$' + n.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
+  const fmtDate = d => d ? dateFmt(d) : '—';
+  if (mode === 'print') {
+    const body = rows.map(r => `<tr>
+      <td class="svc-name">${esc(r.agentName)} <span style="color:#6B7280">(${esc(r.county)})</span></td>
+      <td class="svc-amt">${fmtAmt(r.amount)}</td>
+      <td class="svc-flight">${esc(fmtDate(r.startDate))} – ${esc(fmtDate(r.endDate))}</td>
+      <td class="svc-notes">${esc(r.serviceLabel)}</td>
+    </tr>`).join('');
+    return `<table class="services"><thead><tr><th>Agent</th><th class="amt">Amount</th><th class="flight">Flight</th><th class="notes">Service</th></tr></thead><tbody>${body}</tbody></table>`;
+  }
+  const body = rows.map(r => `<tr>
+    <td>${esc(r.agentName)}</td>
+    <td>${esc(r.county)}</td>
+    <td>${esc(r.serviceLabel)}</td>
+    <td>${esc(fmtDate(r.startDate))} – ${esc(fmtDate(r.endDate))}</td>
+    <td style="text-align:right">${fmtAmt(r.amount)}</td>
+  </tr>`).join('');
+  return `<table class="summary-table"><thead><tr><th>Agent</th><th>County</th><th>Service</th><th>Flight</th><th style="text-align:right">Amount</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
 // Called right before submission — returns null (and shows a toast) if the
 // split is incomplete, or the agent_splits array to attach to the order
 // payload. Returns [] (not null) when the card isn't visible at all, so a
@@ -4084,6 +4143,15 @@ function buildReview() {
     sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}">${rsChevronSvg} ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table"><thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
   });
 
+  // Agent/County Split (2026-08-19, per Claire -- "add the agent information
+  // to step 3, the print IO") -- its own box, always expanded (no collapse
+  // toggle needed for a handful of rows), right after the normal per-section
+  // boxes above.
+  const agentSplitHtml = agentSplitTableHtml(formatISOToMMDDYY);
+  if (agentSplitHtml) {
+    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" style="cursor:default">Agent / County Split</div>${agentSplitHtml}</div>`);
+  }
+
   document.getElementById('total-onetime').textContent = fmt(oneTime);
   document.getElementById('total-monthly').textContent = fmt(monthly) + '/mo';
   document.getElementById('total-items').textContent = count;
@@ -5907,6 +5975,16 @@ function buildIoDocumentHtml() {
   </table>
 </div>
 ${monthly > 0 ? `<div class="first-month-note">Subsequent months: ${fmt(monthly)}/mo for the duration of the campaign term.</div>` : ''}
+
+${(() => {
+  // Agent/County Split (2026-08-19, per Claire -- "add the agent information
+  // to step 3, the print IO") -- same shared table builder Step 3's Review
+  // uses (just this doc's own table.services CSS instead of Review's
+  // .summary-table), so the printed copy and the on-screen review can never
+  // disagree on the underlying numbers.
+  const html = agentSplitTableHtml(formatISOToMMDDYY, 'print');
+  return html ? `<div class="section-title">Agent / County Split</div>${html}` : '';
+})()}
 
 ${specialInstructions ? `<div class="special-box"><strong>Additional Notes</strong>${specialInstructions}</div>` : ''}
 

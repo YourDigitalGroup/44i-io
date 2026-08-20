@@ -16630,3 +16630,38 @@ that the plain `<select>`/`<input>` elements inside the table were already
 picking up the form's global input styling with no changes needed (this
 file styles bare `input`/`select` tags globally, unlike the buttons).
 `node --check` clean.
+
+---
+
+### 2026-08-19 — Agent/County Split now shown on Step 3 (Review) and the printed IO
+
+Claire: "add the agent information to step 3, the print IO." Before this,
+the split table's data only lived in Step 2 — nothing downstream showed
+it, so an AE reviewing before signing (or printing a copy) saw the flat
+per-tactic total with no breakdown by agent at all.
+
+**Built:**
+- `agentSplitDisplayRows()` — read-only, non-validating resolved rows
+  (agent name, county, service label, flight dates, amount). Deliberately
+  separate from `collectAgentSplits()`, which toasts and blocks on an
+  incomplete row — Review/Print need to show whatever's there right now,
+  not refuse to render until every row happens to validate.
+- `agentSplitTableHtml(dateFmt, mode)` — one shared builder used by both
+  callers so they can never disagree on the numbers. `mode: 'print'`
+  renders with the printed document's own `table.services`/`.svc-*` CSS
+  (that doc has a completely separate stylesheet from the live page); the
+  default renders with Step 3's existing `.summary-table` class, same as
+  every other section box there.
+- `buildReview()` — added as its own always-expanded box, right after the
+  normal per-section boxes.
+- `buildIoDocumentHtml()` — added right after the totals box, using the
+  same `.section-title` heading style as "Campaign Details"/"Services &
+  Pricing" already use in that document.
+
+**Verified live** via Playwright: with two split rows (one existing agent,
+one brand-new agent typed in) both `buildReview()`'s Step 3 output and
+`buildIoDocumentHtml()`'s printed HTML correctly show "Agent / County
+Split" with both agent names and the county — confirmed the printed
+version specifically uses its own `table.services` markup, not the
+on-screen `.summary-table` class (which doesn't exist in that document's
+stylesheet). `node --check` clean.
