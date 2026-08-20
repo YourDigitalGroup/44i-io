@@ -5497,6 +5497,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // Admin's Order Detail can later find the right card directly instead
         // of re-deriving a card name and hoping it matches.
         const formKeyCardIds = {};
+        // AM-triggered Cancel/Edit (2026-08-20) — same idea as formKeyCardIds
+        // above, but keyed by WORKFLOW instead of intake form, since not every
+        // service has an intake form at all and cancellation/editing needs to
+        // work on any of them. Admin resolves the workflow for a given line
+        // item locally (CATALOG_ROWS[service_id].workflow, already loaded via
+        // the shared loadCatalog()) and looks it up here.
+        const workflowCardIds = {};
 
         // "Needs KOC" label (2026-07-14, per Claire) — looked up ONCE per submission
         // (not per card) and only if something sold actually needs it, since it's an
@@ -5589,6 +5596,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           if (!cardId) return;
           const tacticFormKey = resolveWorkflowIntakeFormId(originalWorkflows[wfIdx]);
           if (tacticFormKey) formKeyCardIds[tacticFormKey] = cardId;
+          workflowCardIds[originalWorkflows[wfIdx]] = cardId;
           const intake = buildIntakeDesc(originalWorkflows[wfIdx]);
           // Card description = services-sold summary + the short completion-status
           // banner (2026-07-15, per Claire — kept visible without the full Q&A
@@ -5943,6 +5951,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 trello_synced_at: new Date().toISOString(),
                 trello_client_list_id: clientList?.id || null,
                 intake_responses: intakeWithCardIds,
+                trello_card_ids: workflowCardIds,
               }),
               prefer: 'return=minimal'
             });
