@@ -469,10 +469,21 @@ function strategistOpenImportForm() {
       <div>
         <label class="lbl" for="import-client">Client</label>
         <input type="text" id="import-client-search" oninput="strategistFilterClientOptions()" placeholder="Search clients…" style="width:100%;padding:6px 8px;border-radius:6px 6px 0 0;border:1px solid var(--border);border-bottom:none;font-size:12px"/>
-        <select id="import-client" style="width:100%;padding:7px 8px;border-radius:0 0 6px 6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
+        <select id="import-client" onchange="strategistImportClientChanged()" style="width:100%;padding:7px 8px;border-radius:0 0 6px 6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
-          ${ALL_STRATEGIST_CLIENTS.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('')}
+          ${ALL_STRATEGIST_CLIENTS.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}" data-multi-agent="${c.is_multi_agent ? '1' : ''}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('')}
         </select>
+        <!-- Agent/County backfill (2026-08-20, per Claire) -- a multi-agent
+             client (e.g. MS Farm Bureau) needs these on a manually-imported
+             line too, same as a real IO submission's Agent/County Split --
+             otherwise the composed "{group}: {agent} ({county} County)"
+             display this whole feature depends on has nothing to show. -->
+        <div id="import-agent-county-wrap" style="display:none;margin-top:8px">
+          <label class="lbl" for="import-county">County</label>
+          <select id="import-county" style="width:100%;padding:6px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;margin-bottom:6px"></select>
+          <label class="lbl" for="import-agent">Agent</label>
+          <select id="import-agent" style="width:100%;padding:6px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px"></select>
+        </div>
       </div>
       <div>
         <label class="lbl" for="import-service">Tactic</label>
@@ -610,8 +621,39 @@ function strategistFilterClientOptions() {
   const currentValue = sel.value;
   const filtered = search ? ALL_STRATEGIST_CLIENTS.filter(c => c.name.toLowerCase().includes(search)) : ALL_STRATEGIST_CLIENTS;
   sel.innerHTML = '<option value="">— Select —</option>' +
-    filtered.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
+    filtered.map(c => `<option value="${esc(c.id)}" data-group-id="${esc(c.group_id || '')}" data-multi-agent="${c.is_multi_agent ? '1' : ''}">${esc(c.name)}${c.group_name ? ' (' + esc(c.group_name) + ')' : ''}</option>`).join('');
   if (filtered.some(c => c.id === currentValue)) sel.value = currentValue;
+  strategistImportClientChanged();
+}
+
+// Agent/County backfill for a multi-agent client (2026-08-20, per Claire).
+// Not scoped by "submitting AE" the way the real IO form's own picker is --
+// a strategist backfilling old business already knows which agent/county
+// they mean, so this shows every registered one for the client rather than
+// cascading county -> agent the way an AE's live submission does.
+async function strategistImportClientChanged() {
+  const sel = document.getElementById('import-client');
+  const wrap = document.getElementById('import-agent-county-wrap');
+  const isMultiAgent = sel.selectedOptions[0]?.dataset.multiAgent === '1';
+  if (!isMultiAgent) { wrap.style.display = 'none'; return; }
+  const clientId = sel.value;
+  const countySel = document.getElementById('import-county');
+  const agentSel = document.getElementById('import-agent');
+  countySel.innerHTML = '<option value="">Loading…</option>';
+  agentSel.innerHTML = '<option value="">Loading…</option>';
+  wrap.style.display = 'block';
+  try {
+    const [counties, agents] = await Promise.all([
+      sb('rpc/get_client_counties', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
+      sb('rpc/get_client_agents', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
+    ]);
+    countySel.innerHTML = '<option value="">— Select —</option>' + (counties || []).map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+    agentSel.innerHTML = '<option value="">— Select —</option>' + (agents || []).map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+  } catch (e) {
+    countySel.innerHTML = '<option value="">Error loading</option>';
+    agentSel.innerHTML = '<option value="">Error loading</option>';
+    console.warn('Could not load agents/counties for this client:', e.message);
+  }
 }
 
 // Same split-rows UI as the Setup panel's own split form (strategistSplitRowHtml/
@@ -657,8 +699,12 @@ async function strategistSubmitImport() {
   // just against #import-setup-blocker instead of a real line id's own container.
   const setupBlockers = [...document.querySelectorAll('#import-setup-blocker .setup-blocker-cb:checked')].map(el => el.value);
   const setupNotes = document.getElementById('import-setup-notes').value.trim();
+  const isMultiAgent = document.getElementById('import-agent-county-wrap').style.display !== 'none';
+  const agentName = isMultiAgent ? document.getElementById('import-agent').value : null;
+  const county = isMultiAgent ? document.getElementById('import-county').value : null;
 
   if (!clientId || !serviceId) { showToast('Pick a client and a tactic.', 'error'); return; }
+  if (isMultiAgent && (!agentName || !county)) { showToast('This is a multi-agent client — pick both an Agent and a County.', 'error'); return; }
 
   // Same real scenario as the Setup panel's own split form: one price sold across
   // several regions/segments. Read+validate BEFORE creating anything, same as
@@ -682,6 +728,7 @@ async function strategistSubmitImport() {
         flight_start: flightStart, flight_end: flightEnd,
         status, assigned_strategist: currentStrategistUser.name, has_offline_visits: hasOfflineVisits,
         has_addl_targeting: hasAddlTargeting,
+        agent_name: agentName, county,
         ...(status === 'pending' ? { setup_blocker: setupBlockers.length ? setupBlockers : null, setup_notes: setupNotes || null } : {})
       }
     }) });
