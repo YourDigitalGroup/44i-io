@@ -16888,3 +16888,66 @@ login/session) and calling the real functions against fake line data:
   confirming per-agent rows stay separate, not rolled into one blended
   number.
 `node --check` clean on both extracted portal scripts.
+
+### 2026-08-20 — MS Farm Bureau fan-out Phase 6: per-agent Trello list routing (no legacy data migration needed)
+
+Phase 6 was originally scoped as "migrate the existing per-agent MS Farm
+Bureau client records into the new consolidated structure." That turned
+out to be moot: Claire confirmed nothing has been sold under any of the
+16 existing `MS Farm Bureau - <AE>` client records yet — she deliberately
+built this feature first specifically to avoid a real migration. No
+historical `campaign_lines`/`orders` exist to re-point, so there was
+nothing to migrate.
+
+**A real, separate gap surfaced during that conversation, though**: MS
+Farm Bureau has 16 different AEs, each with their OWN pre-existing Trello
+list (confirmed via `clients.trello_list_id` — each of the 16 legacy
+client rows already has a distinct real list id, imported earlier via the
+Trello-import tool). The Agent/County Split feature (Phases 2-4) assumed
+one client = one Trello list, so consolidating down to one client for MS
+Farm Bureau would have sent every agent's cards into a single shared
+list — losing the separation Claire actually needs. Confirmed by walking
+through `submitIO()`'s existing list-resolution code
+(`index.html:5012-5106`): it resolves exactly one `clientList` per
+submission from `client.trello_list_id`, and every card in that
+submission — including the agent split cards — used it.
+
+**Fix: moved Trello-list ownership from the client to the agent.**
+
+**SQL run by Claire**: `alter table agents add column trello_list_id text;`
+plus `admin_save_agent` updated (`CREATE OR REPLACE`, return type
+unchanged) to read/write it. `admin_get_agents`/`get_client_agents` needed
+no SQL change at all — both already `select * from agents`, so the new
+column appears in their output automatically.
+
+**Built:**
+- Admin UI (`admin/index.html`): new "Trello List ID" field on the Agent
+  editor, plus a Set/"Uses client list" badge column on the agent table so
+  it's visible at a glance which agents still fall back to the shared
+  list. Wired into `adminNewAgent`/`adminEditAgent`/`adminSaveAgent`.
+- `index.html`'s `submitIO()`: added `getListCards(listId)` (a small cache
+  seeded with the client's own already-fetched `existingCards`, so the
+  client's own list isn't re-fetched) and `agentTargetListId(agentId)`
+  (looks up `AGENT_ROSTER` for a stored `trello_list_id`, falling back to
+  `clientList.id` when the agent has none — a brand-new agent typed inline
+  on the split form, or one Claire hasn't set a list for yet). Rewrote
+  `createAgentSplitCards()` to resolve/fetch/dedupe against each agent's
+  OWN target list instead of the client's shared `existingCards` — the
+  card-exists lookup, create call, and update call all now target
+  `targetListId` per agent, not `clientList.id`.
+
+**Verified live** via Playwright, extending the `submitIO()` harness with
+two agents on one split: Danny Crozier (roster entry with
+`trello_list_id: 'list_danny_own'`) and Justin Ashmore (brand-new agent
+typed inline, no roster entry at all). Confirmed:
+- `trello_get_list_cards` was called for BOTH distinct lists
+  (`list_client_default` and `list_danny_own`) — proving per-list lookup,
+  not just the client's shared list.
+- Danny's card landed in `list_danny_own`; Justin's correctly fell back to
+  `list_client_default`.
+- `submitIO error: null` — no exceptions from the new routing logic.
+
+`node --check` clean on the extracted script. This closes out the MS Farm
+Bureau fan-out feature (Phases 1-6) — Phase 5's portal display and this
+routing fix were both real gaps caught by talking through the design with
+Claire before shipping, not originally scoped work.

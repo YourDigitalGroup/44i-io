@@ -505,9 +505,18 @@
                   <label class="lbl" for="admin-agent-county">County</label>
                   <select id="admin-agent-county" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
                 </div>
+                <div style="flex:1">
+                  <label class="lbl" for="admin-agent-trello-list-id">Trello List ID</label>
+                  <input type="text" id="admin-agent-trello-list-id" placeholder="e.g. 66ec562e1bc7223b1df294c7" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                </div>
                 <button type="button" onclick="adminSaveAgent()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
                 <button type="button" onclick="adminCancelAgentEdit()" class="btn-quiet-green">Cancel</button>
               </div>
+              <!-- MS Farm Bureau fan-out (2026-08-20): each agent's card lands in THEIR
+                   OWN Trello list, not the client's shared one -- a multi-agent client
+                   has many AEs, each with their own pre-existing list. Optional: a blank
+                   value means new cards for that agent fall back to the client's own list. -->
+              <p style="font-size:11px;color:var(--muted);margin:6px 0 0">Optional — this agent's split cards go here instead of the client's own list. Leave blank to use the client's list.</p>
             </div>
           </div>
 
@@ -3981,15 +3990,20 @@ function renderClientAgentList() {
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">County</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello List</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
   ALL_CLIENT_AGENTS.forEach(a => {
     const inactive = !a.active;
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const countyName = ALL_CLIENT_COUNTIES.find(c => c.id === a.county_id)?.name || '<span style="color:var(--muted)">—</span>';
+    const trelloBadge = a.trello_list_id
+      ? '<span style="font-size:10px;font-weight:700;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:8px">Set</span>'
+      : '<span style="font-size:10px;color:var(--muted)">Uses client list</span>';
     html += `<tr style="border-bottom:1px solid var(--border);${inactive ? 'background:#FAFAFA' : ''}">
       <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
       <td style="padding:8px 10px">${countyName}</td>
+      <td style="padding:8px 10px">${trelloBadge}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">
         <button onclick="adminEditAgent('${esc(a.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>
         <button onclick="adminToggleAgentActive('${esc(a.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>
@@ -4004,6 +4018,7 @@ function adminNewAgent() {
   document.getElementById('admin-agent-form-title').textContent = 'New Agent';
   document.getElementById('admin-agent-original-id').value = '';
   document.getElementById('admin-agent-name').value = '';
+  document.getElementById('admin-agent-trello-list-id').value = '';
   populateAgentCountyDropdown(null);
   document.getElementById('admin-agent-form').style.display = 'block';
 }
@@ -4014,6 +4029,7 @@ function adminEditAgent(id) {
   document.getElementById('admin-agent-form-title').textContent = 'Edit Agent — ' + a.name;
   document.getElementById('admin-agent-original-id').value = a.id;
   document.getElementById('admin-agent-name').value = a.name || '';
+  document.getElementById('admin-agent-trello-list-id').value = a.trello_list_id || '';
   populateAgentCountyDropdown(a.county_id);
   document.getElementById('admin-agent-form').style.display = 'block';
 }
@@ -4027,8 +4043,9 @@ async function adminSaveAgent() {
   const isNew = !document.getElementById('admin-agent-original-id').value;
   const name = document.getElementById('admin-agent-name').value.trim();
   const countyId = document.getElementById('admin-agent-county').value || null;
+  const trelloListId = document.getElementById('admin-agent-trello-list-id').value.trim() || null;
   if (!name) { showToast('Name is required', 'error'); return; }
-  const payload = { name, county_id: countyId };
+  const payload = { name, county_id: countyId, trello_list_id: trelloListId };
   if (isNew) payload.active = true;
   try {
     await sb('rpc/admin_save_agent', {
