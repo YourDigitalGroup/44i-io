@@ -16523,3 +16523,77 @@ check.
 SEM tactic shows the live MISMATCH warning and `collectAgentSplits()`
 correctly returns `null` (blocked); adjusting the same rows to $600+$550
 clears the warning and submission succeeds. `node --check` clean.
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out Phase 3: backend campaign-line fan-out
+
+Replaced `create_campaign_lines_from_order()` (the `AFTER INSERT ON orders`
+trigger — SQL given directly, not committed, per this project's standing
+convention; pulled its current `pg_get_functiondef()` plus `campaign_lines`/
+`campaign_months` column lists from Claire first, same as every other
+trigger change this session) to also fan out `new.agent_splits` into one
+`campaign_lines` row per agent, instead of the normal single shared line
+for that tactic.
+
+**Design, in order of how it was resolved:**
+- A line item whose service has any matching `agent_splits` entries skips
+  its own normal spend/flat-fee insert branch entirely (guarded by a new
+  `v_has_splits` check) — replaced by the new per-split loop at the end of
+  the function. Every other branch (SEO's dual LLO/Rep-Monitoring lines,
+  hosting proration, setup fee) is untouched and unconditional, since those
+  are one-time/auxiliary lines, never split-by-agent candidates.
+- **Real judgment call, flagged to Claire rather than silently decided**:
+  the existing flat-fee branch marks its line `accounting_only = true` (a
+  billing record only, no active Strategist tracking/pacing) — but the
+  whole point of this feature is per-agent Strategist-managed flight
+  dates/status, so the new per-split branch deliberately omits
+  `accounting_only` (defaults to `false`, confirmed via the real column
+  list) rather than copying the flat branch's `true`. Asked Claire to
+  correct this if the intent was actually accounting-only.
+- Dedup key: `(client_id, service_id, agent_name, county)` — matches the
+  design doc's own stated rule. A match updates that line's current month's
+  `gross_budget` and flight dates in place; `order_id` is deliberately NOT
+  reassigned on a match, so it keeps pointing at whichever order first
+  created that agent's line rather than losing that history to whichever
+  order happens to touch it next.
+- `billing_type` derived from the underlying service's real `billing_type`
+  (`monthly` → `recurring`, else `one_time`) — same mapping the existing
+  flat branch already uses, just applied per split instead of per item.
+- New: growing the `agents`/`counties` roster automatically when
+  `is_new_agent`/`is_new_county` is set — re-checked by name (not just the
+  flag) before inserting, so a resubmission for the same brand-new
+  county/agent can't create a duplicate roster row.
+
+**Not independently verified** — this trigger only runs on a real
+`orders` insert; there's no way to exercise a live Postgres trigger from
+this environment. Claire needs to submit (or have someone submit) a real
+test IO for a multi-agent client and confirm live: one `campaign_lines`
+row per agent shows up in Strategist/Accounting with the right flight
+dates/gross budget, a second submission for the same agent+service
+updates in place rather than duplicating, and a brand-new agent/county
+typed on the form shows up in the Admin roster afterward.
+
+---
+
+### 2026-08-19 — MS Farm Bureau fan-out Phase 3 CORRECTION: no special-casing on accounting_only
+
+Claire: "the MS Farm Bureau clients should be handled the same way as other
+clients when it comes to what goes to the strategist portal or not." My
+first pass of the per-split branch always set `accounting_only = false`
+(fully Strategist-managed) regardless of the tactic's real pricing shape —
+a hardcoded special case for splits, not the general rule.
+
+**Fix**: the per-split branch now reads the service's real `pricing_mode`
+and applies the EXACT SAME rule the rest of the function already uses for
+every other client — `pricing_mode = 'spend'` → `accounting_only = false`,
+`billing_type = 'spend'` (real, actively managed Strategist campaign);
+anything else → `accounting_only = true`, `billing_type` mapped from the
+catalog's own `monthly`/other exactly like the existing flat-fee branch. No
+per-client exception anywhere in this logic now — a multi-agent client's
+line gets whatever accounting_only/billing_type any other client's line for
+that same service would get, just fanned out one row per agent instead of
+one shared row.
+
+Corrected SQL handed to Claire to re-run (same `CREATE OR REPLACE`, no
+`DROP` needed — return type/signature unchanged from the first pass).
