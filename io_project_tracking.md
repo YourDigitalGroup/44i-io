@@ -17645,3 +17645,63 @@ client and shows/populates correctly for a multi-agent one (via the
 right `client_id`); submitting without agent/county picked is blocked;
 submitting with both produces a save payload carrying the real
 `agent_name: "Andy"` / `county: "Alcorn"`. `node --check` clean.
+
+## 2026-08-20 — Client-level Custom Pricing (first half of "Add both please")
+
+Answers the first half of the MS Farm Bureau pricing question: Custom
+Pricing (`groups.io_pricing`) and Accounting Overrides
+(`groups.accounting_overrides`) only ever existed at the group level, so
+MS Farm Bureau couldn't have its own price separate from the rest of its
+group (STMM Digital). Split into two pieces going forward, per my own
+proposal to Claire (not yet separately confirmed, but no objection
+raised): **Phase A** (this entry) — schema + Admin UI so a client CAN
+carry its own override, no calculation changes yet, safe. **Phase B**
+(separate, not started) — actually wiring a client-level override into
+the live pricing/rate math in `index.html`/`strategist/index.html`/
+`accounting/index.html`, which touches real billing numbers at many call
+sites and needs its own careful pass. Within Phase A, only client-level
+**Custom Pricing** is built now; client-level **Accounting Overrides**
+(the more complex, pairing-key based mechanism) is deferred as its own
+follow-up given its complexity.
+
+**Schema:** `clients.io_pricing jsonb` (new column, mirrors
+`groups.io_pricing`'s shape exactly — a sparse `{service_id: price}` map).
+`accounting_overrides jsonb` was also added to `clients` in the same
+migration so the column exists ahead of that follow-up, but nothing
+reads/writes it yet.
+
+**RPCs:** `admin_get_clients` now also returns `io_pricing` (and
+`accounting_overrides`, unused for now) per client. `admin_save_client`
+now accepts and persists `io_pricing` on both insert and update, same
+`p_data ? 'key'`-gated pattern as every other optional field on that RPC.
+
+**Admin UI:** the Client editor gets a new collapsed `<details>` section,
+"Custom Pricing for this client (optional — overrides the group's own
+pricing)," right above the Save button, with explanatory copy that
+leaving it blank falls back to the group's own Custom Pricing (or the
+standard catalog price if the group has none either). Built as an exact
+mirror of the existing group-level Custom Pricing UI
+(`renderPricingFields()`/`onPriceInput()`) — same visual language
+(tinted row + "Custom" badge for an active override), same
+`PRICEABLE_SERVICES` data, but its own state object
+(`currentClientPricingOverrides`) and `client-price-`-prefixed DOM ids so
+the two mechanisms can't collide. Populated from `c.io_pricing` in
+`adminEditClient()`, cleared in `adminNewClient()`, written back into the
+save payload in `adminSaveClient()`.
+
+**SQL given to Claire, not yet confirmed run** — this is the one open
+dependency before this feature does anything in production; the schema/
+RPC changes were posted in 3 code blocks right after "Add both please."
+
+**Verified live** via Playwright against fake `CATALOG_ROWS`/`SECTIONS`
+fixtures: editing a client with an existing `io_pricing` value pre-fills
+both an overridden CPM-mode service and a flat-price service correctly
+and shows the "Custom" badge; clearing one override via the input and
+changing another updates `currentClientPricingOverrides` live and drops
+the badge; `adminSaveClient()`'s RPC payload carries exactly the
+remaining override (`{"seo-basic": 700}`, with the cleared `sem-bp` key
+gone); opening the New Client form resets the override state and blanks
+every field. `node --check` clean.
+
+**Next up:** client-level Accounting Overrides UI (deferred follow-up,
+not started), then checking with Claire on timing for Phase B.
