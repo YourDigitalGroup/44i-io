@@ -1436,6 +1436,13 @@ function setBizNameLocked(locked) {
 
 async function applyClientPick(id) {
   selectedClientId = id || null;
+  // Client-level Custom Pricing (2026-08-20) has to be re-layered on every pick —
+  // picking a client WITH its own override needs it applied, and switching away
+  // from one (to a different client, or back to "New Client") needs it removed
+  // again rather than left stuck on screen. reapplyPricingOverrides() itself
+  // reads the now-updated selectedClientId, so this must run after the assignment
+  // above, on both the "New Client" early-return path and the real-client path.
+  reapplyPricingOverrides();
   if (!id) {
     // Switched back to "New Client" — clear the fields so a previously-picked
     // client's info doesn't linger on what's now meant to be a fresh record.
@@ -2944,7 +2951,7 @@ async function loadGroup() {
       if (typeof selectedGroup[k] === 'string') selectedGroup[k] = selectedGroup[k].trim();
     });
     applyGroupBranding(selectedGroup);
-    if (selectedGroup.io_pricing) applyCustomPricing(selectedGroup.io_pricing);
+    reapplyPricingOverrides();
     loadAeRoster(selectedGroup.id);
     loadClientRoster(selectedGroup.id);
     document.getElementById('group-display').style.display = 'block';
@@ -3024,14 +3031,11 @@ window.applyDevGroup = function(id) {
   resetForm();
   selectedGroup = g;
   applyGroupBranding(g);
-  // Rebuild SERVICE_DATA from the raw catalog rows before applying this group's
-  // overrides — applyCustomPricing() only ever mutates the specific keys it's given,
-  // so without this reset, a PREVIOUS group's override would stay stuck in memory for
-  // any service the newly-picked group doesn't itself override (renderPriceCells()
-  // alone only fixes what's visibly on screen, not the underlying totals math).
-  Object.values(CATALOG_ROWS).forEach(r => { SERVICE_DATA[r.id] = rowToServiceData(r); });
-  renderPriceCells();
-  if (g.io_pricing) applyCustomPricing(g.io_pricing);
+  // reapplyPricingOverrides() does the same reset-then-reapply this used to do inline
+  // (see its own comment) — now also layers a client-level override on top when one's
+  // selected, but resetForm() above already cleared selectedClientId, so this dev-picker
+  // path is effectively just the group layer, same as before.
+  reapplyPricingOverrides();
   loadAeRoster(g.id);
   loadClientRoster(g.id);
   const sel = document.getElementById('dev-group-select');
@@ -3231,6 +3235,25 @@ function hexToRgbTriplet(hex) {
   const g = parseInt(c.substr(2,2),16);
   const b = parseInt(c.substr(4,2),16);
   return `${r},${g},${b}`;
+}
+
+// Re-derives every service's price from scratch and layers overrides on top in
+// precedence order: client-level io_pricing (2026-08-20, Phase B of the MS Farm
+// Bureau pricing work) beats group-level io_pricing, which beats the plain catalog
+// default. Must fully reset to the catalog default first (not just apply the new
+// layer on top of whatever's already in SERVICE_DATA) — otherwise switching from a
+// client with its own override to one without (or back to "New Client") would leave
+// the PREVIOUS client's price stuck on screen and in the actual submitted totals,
+// since applyCustomPricing() only ever touches the specific keys it's given. Same
+// reset-then-reapply pattern applyDevGroup() already used for switching groups.
+function reapplyPricingOverrides() {
+  Object.values(CATALOG_ROWS).forEach(r => { SERVICE_DATA[r.id] = rowToServiceData(r); });
+  renderPriceCells();
+  if (selectedGroup?.io_pricing) applyCustomPricing(selectedGroup.io_pricing);
+  if (selectedClientId) {
+    const c = CLIENT_ROSTER.find(x => x.id === selectedClientId);
+    if (c?.io_pricing) applyCustomPricing(c.io_pricing);
+  }
 }
 
 function applyCustomPricing(pricing) {
@@ -4272,6 +4295,28 @@ function goStep(n) {
       // Same fix as the spend-problems branch above -- was a silent block.
       const dateLabels = missingDates.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
       showToast('Please enter a start date for: ' + dateLabels, 'error');
+      return; // Block navigation
+    }
+    // Guard (2026-08-20, per Claire): a service's start date can't be on or before the
+    // IO's own date -- a start date that early makes no sense for a brand-new order.
+    // Same block-with-highlight pattern as the two checks above, string-compared as
+    // plain ISO 'YYYY-MM-DD' (lexicographic order matches calendar order for that
+    // format, no Date() parsing needed).
+    document.querySelectorAll('.svc-start-cell input.spend-missing').forEach(el => markFieldMissing(el, false));
+    const ioDateVal = document.getElementById('io-date').value || new Date().toISOString().slice(0,10);
+    const tooEarlyDates = Object.entries(selected).filter(([id, d]) => d.start_date && d.start_date <= ioDateVal);
+    if (tooEarlyDates.length > 0) {
+      tooEarlyDates.forEach(([id]) => {
+        const startInput = document.getElementById('svc-start-' + id);
+        markFieldMissing(startInput, true);
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const section = row?.closest('.card-body');
+        if (section) section.style.display = 'block';
+      });
+      const firstBad = document.querySelector('.svc-start-cell input.spend-missing');
+      if (firstBad) firstBad.scrollIntoView({behavior:'smooth', block:'center'});
+      const badLabels = tooEarlyDates.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
+      showToast(`Start date must be after the IO date (${ioDateVal}) for: ` + badLabels, 'error');
       return; // Block navigation
     }
     buildReview();

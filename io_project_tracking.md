@@ -17705,3 +17705,298 @@ every field. `node --check` clean.
 
 **Next up:** client-level Accounting Overrides UI (deferred follow-up,
 not started), then checking with Claire on timing for Phase B.
+
+## 2026-08-20 — Client-level Accounting Overrides (second half of "Add both please")
+
+Closes out the "Add both please" pricing/accounting ask now that Claire
+confirmed the SQL from the previous entry ran. Same reasoning and same
+mirror-the-group-level-mechanism approach as client-level Custom Pricing,
+just for the deeper, per-field Accounting Overrides mechanism instead of
+a single price. **Phase B (wiring either override into live pricing/rate
+calculations) is still not started** — this is schema+UI only, same as
+the pricing half.
+
+**Schema/RPCs:** no new migration needed — `clients.accounting_overrides`
+and the `admin_get_clients`/`admin_save_client` support for it were
+already included in the same SQL block Claire ran for the Custom Pricing
+half (`accounting_overrides jsonb`, both functions already handle it).
+
+**Admin UI:** a second `<details>` section, "Accounting Overrides for
+this client," added to the Client editor right below Custom Pricing —
+built as an exact mirror of the group-level Accounting Overrides tab
+(`renderAccountingOverrideFields()`/`onAccountingOverrideInput()`),
+including the same per-pairing-key granularity for CPM-adjustment
+modifiers (e.g. Offline Visits Tracking combined with a specific base
+tactic) and the same Setup Fee Split % column gating. Own state
+(`currentClientAccountingOverrides`) and `client-acct-`-prefixed DOM ids
+so it can't collide with the group-level version.
+
+**Super-admin only, same as the group-level tab:** an AM-tier user never
+sees this section (`display:none`, and `ALL_ACCOUNTING_MAP` is never
+loaded for them) — this is internal margin data. `adminSaveClient()`
+omits `accounting_overrides` from the payload entirely for an AM user,
+rather than sending a stale/empty state that could accidentally wipe out
+real data an AM never had visibility into in the first place.
+
+**Verified live** via Playwright against fake `allServicesMap`/
+`ALL_ACCOUNTING_MAP` fixtures: an AM-role user gets the section hidden on
+both Edit and New Client, with no map load and no `accounting_overrides`
+key in the save payload; a super-admin sees it, gets pre-filled values +
+the "Custom" badge from an existing `accounting_overrides` value, can
+edit two fields on the same service, and the save payload carries exactly
+those two updated values; clearing every field on a service back out
+drops the key from state entirely (not a stray `{}`) and saves `null`.
+`node --check` clean.
+
+**Next up:** confirm with Claire whether/when to start Phase B — wiring
+client-level `io_pricing`/`accounting_overrides` into the actual live
+pricing/rate calculations in `index.html`/`strategist/index.html`/
+`accounting/index.html`. Both overrides are fully settable and stored
+now, but nothing reads them yet in a real IO, campaign, or invoice.
+
+## 2026-08-20 — Phase B, part 1: client-level Custom Pricing now affects the actual IO price
+
+Claire said "Proceed" on Phase B. Scoped this first part narrowly to the
+public IO form (`index.html`) — the one place that determines what price
+a client actually sees, signs, and gets billed. The Strategist/Accounting
+portals' internal margin math (client-level `accounting_overrides`) is a
+separate, not-yet-started piece — see "Not done yet" below.
+
+**The gap:** `applyCustomPricing(selectedGroup.io_pricing)` only ever
+applied the GROUP's override. `selectedClientId` existed (used for client
+identity/history) but was never consulted for pricing at all — setting a
+client-level price in Admin (the previous two entries) had literally no
+effect on what showed up on the form.
+
+**Fix:** new `reapplyPricingOverrides()` — resets every service back to
+its plain catalog default, then layers group `io_pricing` on top, then
+client `io_pricing` on top of that (client wins). The full reset-first
+step matters: `applyCustomPricing()` only ever touches the specific keys
+it's given, so without resetting first, switching from a client WITH an
+override to one without (or back to "New Client") would leave the
+previous client's price stuck in both the visible table and the actual
+submitted totals — same reasoning `applyDevGroup()`'s dev-picker already
+handled for switching groups, now centralized into one function and
+reused by `loadGroup()`, `applyDevGroup()`, and `applyClientPick()` (all
+three previously had their own copy or lacked this step entirely).
+
+**Schema/RPC:** `get_group_clients()` (public, used to build `CLIENT_ROSTER`)
+now also returns `io_pricing` per client — it previously omitted it even
+after `clients.io_pricing` existed, so the front end had no way to know a
+client's own override without this. **SQL given to Claire, not yet
+confirmed run** — until it is, `CLIENT_ROSTER` entries won't carry
+`io_pricing` and this whole feature is a no-op in production (falls back
+to group pricing exactly as before, fails safe).
+
+**Verified live** via Playwright against fake catalog/group/client
+fixtures: the group's own override applies at load; picking a client with
+its own override wins over the group's; picking a client with NO override
+correctly falls back to the group's (not stuck on a previous client's);
+switching back to "New Client" also falls back to the group's, not stuck;
+the visible price cell shows the client's price too, not just the
+underlying `SERVICE_DATA` used for totals. `node --check` clean.
+
+**Not done yet (separate follow-up, not started):** client-level
+`accounting_overrides` (44i Cut %, Platform CPM, etc.) still isn't
+wired into either portal's internal margin math — `strategist/index.html`'s
+`effectivePlatformCpm`/`effectiveInPlatformPct`/`effectiveCpcRange`/
+`strategistGroupRetailCpm` and `accounting/index.html`'s equivalent
+`accountingEffective*` functions are all still group-only, called at 10+
+sites across both files. This doesn't affect what a client is BILLED
+(that's the gross budget, now correctly client-aware per this entry) —
+it only affects how that revenue gets internally split between 44i and
+the group, which is real margin data and needs its own careful,
+separately-scoped pass rather than a rushed multi-site change across two
+portals in the same breath as this one.
+
+## 2026-08-20 — Phase B, part 2: client-level overrides wired into Strategist + Accounting margin math
+
+Claire: "you can continue, I want to close all of this up so there isn't
+anything still open to be forgotten about." Closes the gap flagged at the
+end of the previous entry — client-level `io_pricing` (Retail CPM) and
+`accounting_overrides` (44i Cut %, Platform CPM, In-Platform %, CPC
+range, Setup Fee Split %) now beat the group's own copy in every rate
+resolver in both portals, same precedence order used throughout this
+whole feature: pairing/tier (where applicable) → **client override** →
+group override → base catalog default.
+
+**Strategist (`strategist/index.html`):** `effectivePlatformCpm`,
+`effectiveInPlatformPct`, `effectiveCpcRange`, and the renamed
+`strategistEffectiveRetailCpm` (was `strategistGroupRetailCpm`) all now
+take a `clientId` param and check the client's own
+`accounting_overrides`/`io_pricing` (via `ALL_STRATEGIST_CLIENTS`)
+before falling through to the group. `budgetedImpressions`,
+`computeInPlatformBudget`, and `effectiveInPlatformBudget` thread it
+through; `computeGoal` didn't need a signature change since it already
+receives the full `line` object (`line.client_id`). Every external call
+site updated to pass `l.client_id` alongside `l.group_id` (9 sites).
+
+**Accounting (`accounting/index.html`):** same shape —
+`accountingEffectiveCutPct`, `accountingEffectiveSetupFeeCutPct`,
+`accountingEffectivePlatformCpm`, `accountingEffectiveInPlatformPct`,
+and the renamed `accountingEffectiveRetailCpm` (was
+`accountingGroupRetailCpm`) all take `clientId`.
+`accountingComputeExpectedSpend` threads it through.
+`accountingDerivedAmount` (used by "Add Service" and bulk-match to
+pre-fill a price) already accepted `clientId` — just added the
+client-`io_pricing` check ahead of the existing group check. Call sites
+at the detail-card month builder and the main table row builder both
+updated to pass `line.client_id`/`l.client_id`.
+
+**Known, documented gap carried over from the group-level version, not
+new:** a client-level override of a PAIRING rate (Offline Visits
+Tracking/Addl. Targeting combined with a specific base tactic) isn't
+supported — `hasModifier` is only ever a plain boolean, not the specific
+modifier's id, same limitation the group-level pairing override already
+had. Not silently invented; matches existing behavior exactly.
+
+**SQL:** `strategist_get_clients` needs `io_pricing`/`accounting_overrides`
+added (full replacement below, based on the version confirmed live after
+today's Agent/County backfill work). **`accounting_get_clients` needs the
+same two fields, but I don't have its current authoritative definition on
+file** — it was extended with `group_io_pricing` at some point this
+session without a saved copy. Need Claire to run
+`select pg_get_functiondef('public.accounting_get_clients'::regprocedure);`
+and paste the result back before I can safely give her a
+`CREATE OR REPLACE` for it, rather than guessing at its current shape.
+
+```sql
+CREATE OR REPLACE FUNCTION public.strategist_get_clients(p_name text, p_pw text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  v_role text;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid strategist credentials'; end if;
+  if v_role not in ('strategist', 'super') then raise exception 'Strategist portal access is restricted'; end if;
+
+  return query
+  select jsonb_build_object(
+    'id', c.id, 'name', c.name, 'group_id', c.group_id, 'group_name', g.name,
+    'digital_strategist_name', coalesce(c.digital_strategist_name, g.digital_strategist_name),
+    'group_io_pricing', g.io_pricing,
+    'io_pricing', c.io_pricing,
+    'accounting_overrides', c.accounting_overrides,
+    'is_multi_agent', c.is_multi_agent
+  )
+  from clients c
+  left join groups g on g.id = c.group_id;
+end;
+$function$
+;
+```
+
+**Verified live** via Playwright against fake catalog/rates/client
+fixtures, both portals: every resolver's client override wins over its
+group override, which wins over its base rate; the derived-amount helper
+(Accounting's Add Service/bulk-match pre-fill) prefers client `io_pricing`
+over group `group_io_pricing` over the plain catalog default; the
+end-to-end Expected Spend calculation (retail CPM → impressions →
+platform CPM) uses the client's own rates throughout, not just at one
+step. `node --check` clean on both files.
+
+**This closes out the full "Add both please" / MS Farm Bureau pricing
+ask** — client-level Custom Pricing and Accounting Overrides can be set
+in Admin, the public IO form bills the client at the right price, and
+both internal portals now split that revenue using the client's own
+rates once the two RPCs above are live. Nothing else from today's session
+is still open.
+
+## 2026-08-20 — Post-meeting follow-ups: Edit button visibility, Swap labels, Service start-date guard
+
+Claire, after both RPCs above confirmed run, brought three quick fixes
+from a meeting (a fourth, "Renew," is being scoped separately — see the
+next entry).
+
+**Edit button was too easy to miss:** "I see the cancel, and swap options
+but I don't see the edit option." The AM-triggered Edit control
+(2026-08-20, earlier today) was a tiny `✎` text link squeezed into the
+amount cell — easy to overlook next to the dollar figure, unlike Cancel/
+Swap's real buttons. Turned into an actual button (`✎ Edit`, same size/
+style as Cancel, sitting right next to it), and its edit form now opens
+in its own full-width table row below the line (matching the Cancel
+panel's existing layout) instead of a small inline `<div>` inside the
+amount cell. `adminToggleEditPanel()` updated to toggle/target that row
+the same way `adminToggleCancelPanel()` already does. Still only offered
+when exactly one of fee/recurring/spend is the line's sole nonzero
+amount (unchanged, documented gap — a compound line has no single
+unambiguous field to edit).
+
+**Swap panel labels:** Claire described it as "current tactic options
+first... then what the new tactic will be." Checked the actual code
+first rather than assuming a bug — the ending-tactic dropdown was
+already first and already restricted to `o.line_items` (what's actually
+on the IO), and the new-tactic dropdown was already second. Renamed the
+internal "Ending Tactic"/"Starting Tactic" labels to "Current Tactic"/
+"New Tactic" (and the preview table's "(ending)"/"(starting)" tags to
+match) since that's the language she used — no functional/ordering
+change was actually needed, just clearer labels matching how she thinks
+about it.
+
+**Service start-date guard (public IO form):** a tactic's Start Date can
+no longer be on or before the IO's own date — same block-and-highlight
+pattern as the existing "missing start date"/"missing spend" checks at
+the Step 2 → Step 3 transition (`goStep(3)`), comparing as plain ISO
+strings against `#io-date`'s value (defaulting to today if somehow
+blank). Blocks navigation with a toast naming every offending service,
+same UX as the two checks it sits next to.
+
+**Verified live** via Playwright: picking a start date equal to the IO
+date blocks Step 3 and highlights the field; a date the day after passes
+through cleanly. Edit panel toggles open/closed as a real table row (not
+a stray `<div>` inside another cell), pre-fills the current amount,
+and closes correctly on a second click. `node --check` clean on both
+files.
+
+## 2026-08-20 — 4th Order Detail surface: AM-triggered Renew
+
+New request from Claire's meeting: "We need to add a 'Renew' option...
+either 'Renew as is' or 'Renew with modifications' for a service that is
+about to expire." Confirmed scope with her before building, since this
+touches live `campaign_lines` data the same way Swap does:
+- Lives next to Cancel/Edit/Swap in Admin Order Detail, one button per
+  line item (`↻ Renew`).
+- **Renew as is:** just extends the SAME `campaign_lines` row's
+  `flight_end` — no new row, no new Trello card (unlike Swap, which
+  genuinely replaces one tactic with another).
+- **Renew with modifications:** can also set a new monthly budget and/or
+  a different end date than the plain default — but NOT a different
+  tactic; that's still Swap's job, kept separate on purpose.
+- Trello: just a comment on the existing card(s) (IO card + tactic card,
+  same lookup as Edit), no new/changed card.
+
+**New RPC `admin_renew_service`:** finds the order's active (non-
+cancelled) `campaign_lines` row for that service, updates `flight_end`.
+If a new monthly budget was given, it's applied starting the first month
+of the renewed term (the month right after the OLD end date) via an
+upsert into `campaign_months` — same "touch just the one relevant month"
+scope `admin_swap_tactic` already uses, not a bulk-populate of every
+future month. Every month after that keeps following Strategist's normal
+carry-forward/manual workflow, unchanged.
+
+**One documented judgment call, not confirmed with Claire in detail —
+worth double-checking if it doesn't match what Strategists expect:** the
+"new budget starts the month right after the old end date" rule assumes
+the renewed term's first month is exactly that. If a renewal is entered
+well before or after the actual expiration, this could land on an
+unexpected month — flagging this now rather than silently guessing
+something more elaborate.
+
+**UI:** radio toggle between the two modes — "as is" hides the budget
+field entirely (and clears anything typed into it if you switch back to
+it, so a stray value can't sneak through); "with modifications" reveals
+an optional New Monthly Budget field alongside the always-visible New
+End Date field. Shows the tactic's current end date for context before
+picking a new one.
+
+**Verified live** via Playwright: panel opens/closes as a real table row
+(same convention as Edit/Cancel); the budget field is hidden by default,
+appears in "modify" mode, and clears when switching back to "as is"; the
+RPC payload carries the right order/service/date/budget; confirming
+posts the same renewal comment to both the IO card and the tactic's own
+card. `node --check` clean.

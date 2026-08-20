@@ -562,6 +562,18 @@
             <div id="client-pricing-fields"></div>
           </details>
 
+          <!-- Client-level Accounting Overrides (2026-08-20, second half of the same
+               MS Farm Bureau request) -- same override shape/UI language as the Group
+               editor's own Accounting Overrides tab (renderAccountingOverrideFields/
+               onAccountingOverrideInput), same reasoning for keeping it a fully
+               separate state/container/functions pair. Internal margin data, super-
+               admin only -- gated the same way the group-level tab already is. -->
+          <details id="client-accounting-override-details" style="margin-bottom:16px;display:none">
+            <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--accent-dark);padding:8px 0">Accounting Overrides for this client (optional — overrides the group's own overrides)</summary>
+            <p style="font-size:11px;color:var(--muted);margin:6px 0 12px">Only set a value here if THIS client's margin needs to differ from the rest of its group. Leave blank to use the group's own Accounting Overrides (or the standard Accounting Map value if the group has none set either).</p>
+            <div id="client-accounting-override-fields" style="overflow-x:auto"></div>
+          </details>
+
           <div style="display:flex;gap:10px">
             <button onclick="adminSaveClient()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save Client</button>
             <button onclick="adminCancelClientEdit()" class="btn-quiet-green">Cancel</button>
@@ -2087,6 +2099,162 @@ function onAccountingOverrideInput(serviceId, field, val) {
   const rowIsOverridden = !!currentAccountingOverrides[serviceId] && Object.keys(currentAccountingOverrides[serviceId]).length > 0;
   const row = document.getElementById('acct-row-' + serviceId);
   const badge = document.getElementById('acct-badge-' + serviceId);
+  if (row) row.style.background = rowIsOverridden ? 'var(--accent-dim,#EAF6FC)' : '';
+  if (badge) badge.style.display = rowIsOverridden ? 'inline' : 'none';
+}
+
+// ── CLIENT-LEVEL ACCOUNTING OVERRIDES (2026-08-20) ──────────────
+// Same shape/UI as renderAccountingOverrideFields()/onAccountingOverrideInput() above,
+// kept as its own separate state/container/functions for the same reason as the
+// client-level Custom Pricing pair. currentClientAccountingOverrides is populated from
+// c.accounting_overrides in adminEditClient()/cleared in adminNewClient(), and written
+// back into the save payload's accounting_overrides field in adminSaveClient().
+let currentClientAccountingOverrides = {};
+
+function renderClientAccountingOverrideFields() {
+  const container = document.getElementById('client-accounting-override-fields');
+  if (!container) return;
+  const mapById = {};
+  const mapByPair = {};
+  ALL_ACCOUNTING_MAP.forEach(a => {
+    const pairKey = a.pair_with_service_id || '';
+    if (pairKey === '') mapById[a.service_id] = a;
+    else mapByPair[a.service_id + '|' + pairKey] = a;
+  });
+  const sectionOrderIndex = {};
+  SECTIONS.forEach((sec, i) => { sectionOrderIndex[sec.id] = sec.sort_order ?? i; });
+
+  const sectionSpendCandidates = {};
+  allServicesMap.forEach(o => {
+    if (o.active !== false && o.pricing_mode === 'spend') {
+      (sectionSpendCandidates[o.section] = sectionSpendCandidates[o.section] || []).push(o);
+    }
+  });
+
+  const activeServices = allServicesMap.filter(s => s.active !== false)
+    .sort((a,b) => ((sectionOrderIndex[a.section] ?? Infinity) - (sectionOrderIndex[b.section] ?? Infinity)) || (a.sort_order||0)-(b.sort_order||0));
+
+  const rows = [];
+  activeServices.forEach(s => {
+    if (s.is_cpm_adjustment) {
+      const candidates = (sectionSpendCandidates[s.section] || []).filter(c => c.id !== s.id);
+      const displayLabel = s.accounting_label || s.label;
+      if (candidates.length <= 1) {
+        const base = candidates[0];
+        const baseA = base ? mapById[base.id] : null;
+        const ownA = mapById[s.id];
+        const pctOverridden = !!ownA;
+        rows.push({
+          overrideKey: s.id,
+          displayLabel,
+          idNote: s.id,
+          hasSetupFee: false,
+          fields: {
+            fortyfouri_cut_pct: pctOverridden ? ownA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
+            platform_cpm: pctOverridden ? ownA.platform_cpm : baseA?.platform_cpm,
+            budgeted_spend_pct: pctOverridden ? ownA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
+          },
+        });
+      } else {
+        candidates.forEach(base => {
+          const baseA = mapById[base.id];
+          const pairA = mapByPair[base.id + '|' + s.id];
+          const pctOverridden = !!pairA;
+          rows.push({
+            overrideKey: `${base.id}|${s.id}`,
+            displayLabel: `${base.accounting_label || base.label} (w/ ${displayLabel})`,
+            idNote: `${base.id} + ${s.id}`,
+            hasSetupFee: false,
+            fields: {
+              fortyfouri_cut_pct: pctOverridden ? pairA.fortyfouri_cut_pct : baseA?.fortyfouri_cut_pct,
+              platform_cpm: pctOverridden ? pairA.platform_cpm : baseA?.platform_cpm,
+              budgeted_spend_pct: pctOverridden ? pairA.budgeted_spend_pct : baseA?.budgeted_spend_pct,
+            },
+          });
+        });
+      }
+      return;
+    }
+    const base = mapById[s.id];
+    if (!base) return;
+    rows.push({
+      overrideKey: s.id,
+      displayLabel: s.accounting_label || s.label,
+      idNote: s.id,
+      hasSetupFee: s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null,
+      fields: {
+        fortyfouri_cut_pct: base.fortyfouri_cut_pct,
+        platform_cpm: base.platform_cpm,
+        budgeted_spend_pct: base.budgeted_spend_pct,
+        setup_fee_cut_pct: base.setup_fee_cut_pct,
+        in_platform_pct: base.in_platform_pct,
+        cpc_low: base.cpc_low,
+        cpc_high: base.cpc_high,
+      },
+    });
+  });
+
+  if (!rows.length) {
+    container.innerHTML = '<p style="color:var(--muted);font-size:12px">No services have an Accounting Map entry yet — set those up first in the Accounting Map tab, then client-level overrides can be added here.</p>';
+    return;
+  }
+  const ALL_OVERRIDE_FIELDS = [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }];
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+      ${ALL_OVERRIDE_FIELDS.map(f => `<th style="padding:8px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${f.label}</th>`).join('')}
+    </tr></thead><tbody>`;
+  rows.forEach(row => {
+    const override = currentClientAccountingOverrides[row.overrideKey] || {};
+    const rowIsOverridden = Object.keys(override).length > 0;
+    html += `<tr id="client-acct-row-${esc(row.overrideKey)}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
+      <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="client-acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(row.idNote)}</div></td>`;
+    ALL_OVERRIDE_FIELDS.forEach(f => {
+      const applicable = f.key !== 'setup_fee_cut_pct' || row.hasSetupFee;
+      if (!applicable) {
+        html += `<td style="padding:8px 10px;text-align:right;color:var(--muted)">—</td>`;
+        return;
+      }
+      const val = override[f.key];
+      const isOverridden = val !== undefined;
+      const liveDefault = row.fields[f.key] ?? '—';
+      html += `<td style="padding:8px 10px;text-align:right">
+        <div style="display:inline-flex;align-items:center;gap:3px">
+          <input type="number" step="0.01"
+            id="client-acct-override-${esc(row.overrideKey)}-${f.key}"
+            value="${isOverridden ? val : ''}"
+            placeholder="${liveDefault}"
+            title="${isOverridden ? 'Custom for this client (standard is ' + liveDefault + f.suffix + ')' : ''}"
+            style="width:64px;padding:5px 6px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
+            oninput="onClientAccountingOverrideInput('${esc(row.overrideKey)}', '${f.key}', this.value)"/>
+          <span style="font-size:10px;color:var(--muted);min-width:10px">${f.suffix}</span>
+        </div>
+      </td>`;
+    });
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+  container.innerHTML = html;
+}
+
+function onClientAccountingOverrideInput(serviceId, field, val) {
+  const isOverridden = val !== '' && val !== null && !isNaN(parseFloat(val));
+  if (!currentClientAccountingOverrides[serviceId]) currentClientAccountingOverrides[serviceId] = {};
+  if (!isOverridden) {
+    delete currentClientAccountingOverrides[serviceId][field];
+    if (Object.keys(currentClientAccountingOverrides[serviceId]).length === 0) {
+      delete currentClientAccountingOverrides[serviceId];
+    }
+  } else {
+    currentClientAccountingOverrides[serviceId][field] = parseFloat(val);
+  }
+  const input = document.getElementById(`client-acct-override-${serviceId}-${field}`);
+  if (input) {
+    input.style.cssText += ';' + (isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE);
+  }
+  const rowIsOverridden = !!currentClientAccountingOverrides[serviceId] && Object.keys(currentClientAccountingOverrides[serviceId]).length > 0;
+  const row = document.getElementById('client-acct-row-' + serviceId);
+  const badge = document.getElementById('client-acct-badge-' + serviceId);
   if (row) row.style.background = rowIsOverridden ? 'var(--accent-dim,#EAF6FC)' : '';
   if (badge) badge.style.display = rowIsOverridden ? 'inline' : 'none';
 }
@@ -5661,6 +5829,12 @@ async function adminNewClient() {
   ALL_CLIENT_AES = [];
   currentClientPricingOverrides = {};
   renderClientPricingFields();
+  currentClientAccountingOverrides = {};
+  document.getElementById('client-accounting-override-details').style.display = currentAdminUser?.role === 'am' ? 'none' : 'block';
+  if (currentAdminUser?.role !== 'am') {
+    if (!ALL_ACCOUNTING_MAP.length) await loadAdminAccountingMap();
+    renderClientAccountingOverrideFields();
+  }
   await ensureStaffRosterLoaded();
   await ensureStrategistsLoaded();
   refreshClientStrategistDefaults();
@@ -5685,6 +5859,12 @@ async function adminEditClient(id) {
   onMultiAgentClientChange();
   currentClientPricingOverrides = c.io_pricing ? { ...c.io_pricing } : {};
   renderClientPricingFields();
+  currentClientAccountingOverrides = c.accounting_overrides ? { ...c.accounting_overrides } : {};
+  document.getElementById('client-accounting-override-details').style.display = currentAdminUser?.role === 'am' ? 'none' : 'block';
+  if (currentAdminUser?.role !== 'am') {
+    if (!ALL_ACCOUNTING_MAP.length) await loadAdminAccountingMap();
+    renderClientAccountingOverrideFields();
+  }
   populateClientGroupDropdown('admin-client-group', c.group_id);
   await ensureStaffRosterLoaded();
   await ensureStrategistsLoaded();
@@ -5725,6 +5905,13 @@ async function adminSaveClient() {
     is_multi_agent: document.getElementById('admin-client-is-multi-agent').value === 'true',
     io_pricing: Object.keys(currentClientPricingOverrides).length > 0 ? currentClientPricingOverrides : null,
   };
+  // An AM-tier user never sees/loads the Accounting Overrides section (super-admin only,
+  // same restriction as the group-level tab) -- omit the key entirely rather than send a
+  // stale/empty currentClientAccountingOverrides that could wipe out real data an AM
+  // never had visibility into.
+  if (currentAdminUser?.role !== 'am') {
+    payload.accounting_overrides = Object.keys(currentClientAccountingOverrides).length > 0 ? currentClientAccountingOverrides : null;
+  }
   try {
     await sb('rpc/admin_save_client', {
       method: 'POST',
@@ -6706,16 +6893,31 @@ function viewOrderDetail(orderId) {
       // edited by Y, Z" shape as the mockup.
       const editableCandidates = [['recurring', item.recurring], ['spend', item.spend], ['fee', item.fee]].filter(([, v]) => v > 0);
       let amtCellHtml = esc(amtParts.join(' + ') || '—');
+      // A real BUTTON, not a tiny inline text link (2026-08-20, per Claire: "I see the
+      // cancel, and swap options but I don't see the edit option") -- same size/style as
+      // the Cancel button next to it so it's just as easy to spot, not a subtle ✎
+      // character easy to miss among the dollar amount text.
+      let editBtn = '';
       if (editableCandidates.length === 1 && !item.prorated_hosting_amt) {
         const [editField, editVal] = editableCandidates[0];
         const lastEdit = Array.isArray(o.edit_history)
           ? [...o.edit_history].reverse().find(h => h.service_id === item.service_id && h.field === editField)
           : null;
-        amtCellHtml += ` <a href="#" onclick="event.preventDefault();adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="font-size:10px;font-weight:700;color:var(--accent-dark);text-decoration:none">✎</a>
-          <div id="edit-panel-${esc(item.service_id)}" style="display:none"></div>
-          ${lastEdit ? `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>` : ''}`;
+        editBtn = `<button type="button" onclick="adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:700;cursor:pointer">✎ Edit</button>`;
+        if (lastEdit) amtCellHtml += `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>`;
       }
-      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${cancelBtn}</td></tr>
+      // AM-triggered Renew (2026-08-20, per Claire's post-meeting follow-up) -- "Renew
+      // as is" just pushes flight_end out with no other change; "Renew with
+      // modifications" can also set a new monthly budget (applied starting the first
+      // month of the renewed term) and/or a different end date than the plain default.
+      // Same scope decision as Edit: only the order record's own display refreshes here
+      // plus a Trello comment on the existing card -- no new card, no day-prorating (this
+      // is the SAME campaign_lines row continuing, not a new one like Swap creates).
+      const currentEndDate = item.end_date || o.campaign_end || '';
+      const renewBtn = `<button type="button" onclick="adminToggleRenewPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(currentEndDate)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button>`;
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${cancelBtn}</div></td></tr>
+        <tr id="edit-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
+        <tr id="renew-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
     }).join('');
     return header + rows;
@@ -7079,16 +7281,20 @@ async function adminSubmitCancellation(orderId, serviceId) {
 // campaign_months -- per Claire, an edit here is scoped to the order's own
 // record for now, not a retroactive change to what's already being billed.
 function adminToggleEditPanel(orderId, serviceId, field, currentValue) {
-  const box = document.getElementById(`edit-panel-${serviceId}`);
-  if (!box) return;
-  if (box.style.display !== 'none' && box.innerHTML) { box.style.display = 'none'; box.innerHTML = ''; return; }
-  box.innerHTML = `
-    <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
-      <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:var(--light);font-size:12px"/>
+  // Now a full-width table row, same as the Cancel panel right below it
+  // (2026-08-20 -- was a plain <div> squeezed inside the amount cell, too easy to
+  // miss/lay out oddly next to the amount text).
+  const row = document.getElementById(`edit-panel-${serviceId}`);
+  if (!row) return;
+  if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);padding:12px 14px;display:flex;gap:8px;align-items:center">
+      <label style="font-size:11px;font-weight:700;color:var(--muted)">New amount:</label>
+      <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
       <button type="button" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
       <button type="button" onclick="adminToggleEditPanel('${esc(orderId)}','${esc(serviceId)}','${esc(field)}',${currentValue})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
     </div>`;
-  box.style.display = 'block';
+  row.style.display = 'table-row';
 }
 
 async function adminSaveLineItemEdit(orderId, serviceId, field) {
@@ -7162,6 +7368,119 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
   viewOrderDetail(orderId);
 }
 
+// ── AM-TRIGGERED RENEW (2026-08-20, per Claire's post-meeting follow-up) ─────
+// A 4th surface alongside Cancel/Edit/Swap, for a service about to run out its
+// flight rather than being replaced (Swap) or cut short (Cancel). Two modes,
+// per Claire: "Renew as is" just extends flight_end with no other change;
+// "Renew with modifications" can ALSO set a new monthly budget and/or a
+// different end date than the plain "one more term" default. Deliberately does
+// NOT let the tactic itself change here -- that's what Swap is for. Same
+// campaign_lines row continues (no new row, no day-prorating, unlike Swap) --
+// admin_renew_service() just extends flight_end and, if a new budget was given,
+// sets it starting the renewed term's first month.
+function adminToggleRenewPanel(orderId, serviceId, currentEndDate) {
+  const row = document.getElementById(`renew-panel-${serviceId}`);
+  if (!row) return;
+  if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  // fmtDate() itself is a local const scoped inside viewOrderDetail() -- not visible
+  // from this top-level function, so this panel formats its own display date inline.
+  const currentEndDisplay = currentEndDate
+    ? new Date(currentEndDate + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
+    : '';
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);border-radius:8px;padding:14px 16px;margin:4px 0">
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:8px">Renew: ${esc(CATALOG_ROWS[serviceId]?.accounting_label || CATALOG_ROWS[serviceId]?.label || serviceId)}${currentEndDisplay ? ` <span style="color:var(--muted);font-weight:400">(currently ends ${esc(currentEndDisplay)})</span>` : ''}</div>
+      <div style="display:flex;gap:16px;margin-bottom:10px">
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="radio" name="renew-mode-${serviceId}" value="as-is" checked onchange="adminUpdateRenewMode('${esc(serviceId)}')"/> Renew as is
+        </label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
+          <input type="radio" name="renew-mode-${serviceId}" value="modify" onchange="adminUpdateRenewMode('${esc(serviceId)}')"/> Renew with modifications
+        </label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;max-width:420px">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New End Date</label>
+          <input type="date" id="renew-end-${esc(serviceId)}" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+        <div id="renew-budget-wrap-${esc(serviceId)}" style="display:none">
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New Monthly Budget (optional)</label>
+          <input type="number" step="0.01" id="renew-budget-${esc(serviceId)}" placeholder="Leave blank to keep current" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button type="button" onclick="adminConfirmRenewal('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#1F7A42;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Renewal</button>
+        <button type="button" onclick="adminToggleRenewPanel('${esc(orderId)}','${esc(serviceId)}','${esc(currentEndDate)}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+}
+
+// "As is" hides the budget field entirely -- there's nothing to type, keeping the
+// current rate is the whole point of that mode. Switching back to "as is" clears
+// whatever was typed into it so a stray value can't sneak through unintentionally.
+function adminUpdateRenewMode(serviceId) {
+  const wrap = document.getElementById(`renew-budget-wrap-${serviceId}`);
+  const isModify = document.querySelector(`input[name="renew-mode-${serviceId}"]:checked`)?.value === 'modify';
+  if (wrap) wrap.style.display = isModify ? 'block' : 'none';
+  if (!isModify) {
+    const budgetInput = document.getElementById(`renew-budget-${serviceId}`);
+    if (budgetInput) budgetInput.value = '';
+  }
+}
+
+async function adminConfirmRenewal(orderId, serviceId) {
+  const newEndDate = document.getElementById(`renew-end-${serviceId}`)?.value;
+  const budgetRaw = document.getElementById(`renew-budget-${serviceId}`)?.value;
+  const newBudget = budgetRaw ? parseFloat(budgetRaw) : null;
+  if (!newEndDate) { showToast('Enter a new end date', 'error'); return; }
+
+  let result;
+  try {
+    result = await sb('rpc/admin_renew_service', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: serviceId,
+        p_new_end_date: newEndDate, p_new_monthly_budget: newBudget,
+      }),
+    });
+  } catch (e) {
+    showToast('Could not renew this service: ' + e.message, 'error');
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const svc = CATALOG_ROWS[serviceId] || {};
+  if (o) {
+    const item = (o.line_items || []).find(li => li.service_id === serviceId);
+    if (item) item.end_date = newEndDate;
+
+    const label = svc.accounting_label || svc.label || serviceId;
+    const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
+    const commentText = `🔁 Renewed ${label} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
+    const ioCardId = o.trello_card_ids?.__io_card__;
+    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    for (const cardId of cardIds) {
+      try {
+        const res = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
+        });
+        if (!res.ok) console.warn('Could not post renewal comment to card', cardId, ':', res.status);
+      } catch (e) {
+        console.warn('Could not post renewal comment to card', cardId, ':', e.message);
+      }
+    }
+    if (!cardIds.length) showToast('Renewed, but no Trello card was found — please note it in Trello by hand', 'error');
+  }
+
+  showToast('✅ Service renewed');
+  viewOrderDetail(orderId);
+}
+
 // ── AM-TRIGGERED SWAP TACTIC (2026-08-20) ───────────────────────
 // Third surface from the approved mockup. Unlike Cancel/Edit, this DOES
 // write into live campaign_lines/campaign_months (per Claire, since the
@@ -7191,11 +7510,11 @@ function adminToggleSwapPanel(orderId) {
     <div style="background:var(--light);border-radius:8px;padding:14px 16px">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:10px">
         <div>
-          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Ending Tactic</label>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Current Tactic</label>
           <select id="swap-ending-${orderId}" onchange="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px">${endingOptions}</select>
         </div>
         <div>
-          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Starting Tactic</label>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New Tactic</label>
           <select id="swap-starting-${orderId}" onchange="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px">${startingOptions}</select>
         </div>
         <div>
@@ -7241,8 +7560,8 @@ function adminUpdateSwapPreview(orderId) {
     <table style="width:100%;border-collapse:collapse;font-size:11.5px">
       <thead><tr><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Line</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Covers</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Amount</th></tr></thead>
       <tbody>
-        <tr><td style="padding:4px 8px">${esc(endingLabel)} (ending)</td><td style="padding:4px 8px">${endingDays} day${endingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(endingAmt)}</td></tr>
-        <tr><td style="padding:4px 8px">${esc(startingLabel)} (starting)</td><td style="padding:4px 8px">${startingDays} day${startingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(startingAmt)}</td></tr>
+        <tr><td style="padding:4px 8px">${esc(endingLabel)} (current, ending)</td><td style="padding:4px 8px">${endingDays} day${endingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(endingAmt)}</td></tr>
+        <tr><td style="padding:4px 8px">${esc(startingLabel)} (new, starting)</td><td style="padding:4px 8px">${startingDays} day${startingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(startingAmt)}</td></tr>
         <tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:4px 8px">Total</td><td style="padding:4px 8px">${totalDays} days</td><td style="padding:4px 8px">${fmt(budget)}</td></tr>
       </tbody>
     </table>`;
