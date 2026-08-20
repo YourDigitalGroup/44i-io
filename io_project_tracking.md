@@ -17753,3 +17753,58 @@ client-level `io_pricing`/`accounting_overrides` into the actual live
 pricing/rate calculations in `index.html`/`strategist/index.html`/
 `accounting/index.html`. Both overrides are fully settable and stored
 now, but nothing reads them yet in a real IO, campaign, or invoice.
+
+## 2026-08-20 — Phase B, part 1: client-level Custom Pricing now affects the actual IO price
+
+Claire said "Proceed" on Phase B. Scoped this first part narrowly to the
+public IO form (`index.html`) — the one place that determines what price
+a client actually sees, signs, and gets billed. The Strategist/Accounting
+portals' internal margin math (client-level `accounting_overrides`) is a
+separate, not-yet-started piece — see "Not done yet" below.
+
+**The gap:** `applyCustomPricing(selectedGroup.io_pricing)` only ever
+applied the GROUP's override. `selectedClientId` existed (used for client
+identity/history) but was never consulted for pricing at all — setting a
+client-level price in Admin (the previous two entries) had literally no
+effect on what showed up on the form.
+
+**Fix:** new `reapplyPricingOverrides()` — resets every service back to
+its plain catalog default, then layers group `io_pricing` on top, then
+client `io_pricing` on top of that (client wins). The full reset-first
+step matters: `applyCustomPricing()` only ever touches the specific keys
+it's given, so without resetting first, switching from a client WITH an
+override to one without (or back to "New Client") would leave the
+previous client's price stuck in both the visible table and the actual
+submitted totals — same reasoning `applyDevGroup()`'s dev-picker already
+handled for switching groups, now centralized into one function and
+reused by `loadGroup()`, `applyDevGroup()`, and `applyClientPick()` (all
+three previously had their own copy or lacked this step entirely).
+
+**Schema/RPC:** `get_group_clients()` (public, used to build `CLIENT_ROSTER`)
+now also returns `io_pricing` per client — it previously omitted it even
+after `clients.io_pricing` existed, so the front end had no way to know a
+client's own override without this. **SQL given to Claire, not yet
+confirmed run** — until it is, `CLIENT_ROSTER` entries won't carry
+`io_pricing` and this whole feature is a no-op in production (falls back
+to group pricing exactly as before, fails safe).
+
+**Verified live** via Playwright against fake catalog/group/client
+fixtures: the group's own override applies at load; picking a client with
+its own override wins over the group's; picking a client with NO override
+correctly falls back to the group's (not stuck on a previous client's);
+switching back to "New Client" also falls back to the group's, not stuck;
+the visible price cell shows the client's price too, not just the
+underlying `SERVICE_DATA` used for totals. `node --check` clean.
+
+**Not done yet (separate follow-up, not started):** client-level
+`accounting_overrides` (44i Cut %, Platform CPM, etc.) still isn't
+wired into either portal's internal margin math — `strategist/index.html`'s
+`effectivePlatformCpm`/`effectiveInPlatformPct`/`effectiveCpcRange`/
+`strategistGroupRetailCpm` and `accounting/index.html`'s equivalent
+`accountingEffective*` functions are all still group-only, called at 10+
+sites across both files. This doesn't affect what a client is BILLED
+(that's the gross budget, now correctly client-aware per this entry) —
+it only affects how that revenue gets internally split between 44i and
+the group, which is real margin data and needs its own careful,
+separately-scoped pass rather than a rushed multi-site change across two
+portals in the same breath as this one.
