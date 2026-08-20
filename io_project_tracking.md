@@ -16597,3 +16597,36 @@ one shared row.
 
 Corrected SQL handed to Claire to re-run (same `CREATE OR REPLACE`, no
 `DROP` needed — return type/signature unchanged from the first pass).
+
+---
+
+### 2026-08-19 — Agent/County Split: visual polish (color + button styling bug)
+
+Two asks from a live screenshot: make the card visually distinct, and fix
+the buttons to "match the system."
+
+**Real bug found on the second one**: every button in this card
+(`+ Add another agent/service row`, the per-row `Fill in`/`Edit` intake
+button, and the `✕` remove-row button) used `class="btn-quiet-green"` —
+copy-pasted from the ADMIN portal's own CSS, which doesn't exist at all in
+the public form's stylesheet. They were rendering as plain unstyled
+browser default buttons the whole time, not a deliberate style choice.
+Fixed by using this file's own real button classes: `.btn.btn-secondary`
+(same pill used by "← Back") for Add Row, `.btn-open-intake` (the same
+small accent pill the normal per-service intake flow already uses) for
+Fill in/Edit, and a small inline-styled `✕` matching the existing close-
+button convention already used elsewhere in this file (the hosting
+modal's own dismiss button).
+
+**Distinctiveness**: gave the whole card a violet accent (`border:2px
+solid #C4B5FD`, header `background:#F5F3FF`, heading text `#5B21B6`,
+🧩 icon) — same "card gets its own accent color" pattern the KOC card
+already uses (orange), just a different color so the two special-purpose
+cards are never confused with each other.
+
+**Verified** via a live Playwright screenshot (attached in chat) —
+confirmed the violet header, correctly-styled Add Row/remove buttons, and
+that the plain `<select>`/`<input>` elements inside the table were already
+picking up the form's global input styling with no changes needed (this
+file styles bare `input`/`select` tags globally, unlike the buttons).
+`node --check` clean.
