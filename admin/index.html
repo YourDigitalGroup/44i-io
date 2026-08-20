@@ -7047,6 +7047,26 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
       }
     }
     if (!cardIds.length) showToast('Saved, but no Trello card was found — please update Trello by hand', 'error');
+
+    // Fresh PDF replaces the old one on both cards (2026-08-20, closing the
+    // gap flagged when Edit first shipped) -- one Revised IO Summary,
+    // generated once, attached to whichever card(s) were actually found.
+    if (cardIds.length) {
+      try {
+        const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
+        for (const cardId of cardIds) {
+          const attachRes = await fetch(PROXY, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+            body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
+          });
+          if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', cardId, ':', attachRes.status);
+        }
+      } catch (e) {
+        console.warn('Could not generate/attach revised IO PDF:', e.message);
+        showToast('Saved and commented, but the revised PDF could not be attached', 'error');
+      }
+    }
   }
 
   showToast('✅ Change saved');
@@ -7344,6 +7364,93 @@ async function generateAdminIntakePdfBlob(title, formDef, fields) {
     adminPaginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, adminComputeUnsafeZonesMm(iframe.contentDocument, imgWidth));
     const safeTitle = (title || 'intake').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
     const fileName = `Intake-${safeTitle}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    return { base64: pdf.output('datauristring').split(',')[1], fileName };
+  } finally {
+    document.body.removeChild(iframe);
+  }
+}
+
+// ── REVISED IO PDF (2026-08-20) ─────────────────────────────────
+// Closes the gap flagged when Edit first shipped: the approved mockup's
+// "a fresh PDF replaces the old one" on both the IO card and the specific
+// tactic's card. NOT a byte-identical rebuild of index.html's own
+// buildIoDocumentHtml() -- that document is built from live, in-session
+// form state (selectedGroup's fetched logo, the AE's live `selected`
+// object, etc.) that Admin never has access to after the fact. This is
+// instead a real, purpose-built "Revised IO Summary": every current line
+// item from the order's own line_items (reflecting whatever's been edited
+// so far), the full edit history (was/now/who/when per field), and totals
+// -- everything an AM or strategist would actually need to see reflects
+// the CURRENT state of the order, not the original signed snapshot.
+async function generateAdminRevisedIoPdfBlob(o) {
+  const color = '#1C9BD7';
+  const fmt = n => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const items = Array.isArray(o.line_items) ? o.line_items : [];
+  let oneTime = 0, monthly = 0;
+  const rows = items.map(item => {
+    const label = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label || item.service_id;
+    let amtParts = [];
+    if (item.fee > 0) { amtParts.push(fmt(item.fee) + ' one-time'); oneTime += item.fee; }
+    if (item.recurring > 0) { amtParts.push(fmt(item.recurring) + '/mo'); monthly += item.recurring; }
+    if (item.spend > 0) { amtParts.push(fmt(item.spend) + '/mo spend'); monthly += item.spend; }
+    return `<tr>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827">${esc(label)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151">${esc(amtParts.join(' + ') || '—')}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#6B7280">${esc(item.start_date || '—')} – ${esc(item.end_date || 'Ongoing')}</td>
+    </tr>`;
+  }).join('');
+
+  const historyRows = (o.edit_history || []).slice().reverse().map(h => {
+    const label = CATALOG_ROWS[h.service_id]?.accounting_label || CATALOG_ROWS[h.service_id]?.label || h.service_id;
+    return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#111827">${esc(label)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#374151">${esc(h.field)}: ${fmt(h.old_value)} → ${fmt(h.new_value)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#6B7280">${esc(h.edited_by)}, ${new Date(h.edited_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<div style="font-family:Montserrat,sans-serif;padding:26px 30px;width:690px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${color};padding-bottom:12px;margin-bottom:10px">
+      <div>
+        <div style="font-size:14pt;font-weight:800;color:#111827">Revised IO Summary</div>
+        <div style="font-size:9pt;color:#92300B;font-weight:700;margin-top:2px">● REVISED</div>
+      </div>
+      <div style="text-align:right;font-size:8.5pt;color:#6B7280;line-height:1.5">
+        <strong style="color:#374151;font-size:9pt">${esc(o._client_name || o.client_name || '')}</strong><br>
+        ${new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})}
+      </div>
+    </div>
+    <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:14px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Current Services</div>
+    <table style="width:100%;border-collapse:collapse">${rows}</table>
+    <div style="margin-top:10px;font-size:9.5pt;color:#111827"><strong>One-Time Total:</strong> ${fmt(oneTime)} &nbsp;&nbsp; <strong>Monthly Recurring:</strong> ${fmt(monthly)}/mo</div>
+    ${historyRows ? `
+    <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Change History</div>
+    <table style="width:100%;border-collapse:collapse">${historyRows}</table>` : ''}
+  </div>`;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-10000px;left:-10000px;width:750px;height:100px;border:none;';
+  document.body.appendChild(iframe);
+  try {
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(`<!DOCTYPE html><html><head>
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+      </head><body style="margin:0">${html}</body></html>`);
+    iframe.contentDocument.close();
+    await new Promise(resolve => setTimeout(resolve, 700));
+    const canvas = await html2canvas(iframe.contentDocument.body, {
+      scale: 1.5, useCORS: true,
+      windowWidth: iframe.contentDocument.body.scrollWidth,
+      windowHeight: iframe.contentDocument.body.scrollHeight,
+    });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'letter', { compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
+    adminPaginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, adminComputeUnsafeZonesMm(iframe.contentDocument, imgWidth));
+    const fileName = `Revised-IO-${new Date().toISOString().slice(0, 10)}.pdf`;
     return { base64: pdf.output('datauristring').split(',')[1], fileName };
   } finally {
     document.body.removeChild(iframe);
