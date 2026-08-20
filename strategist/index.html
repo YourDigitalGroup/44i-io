@@ -1768,6 +1768,17 @@ function strategistSetupBlockerPill(line) {
   return '';
 }
 
+// MS Farm Bureau fan-out (2026-08-20): a line with both agent_name and county
+// belongs to a consolidated multi-agent client (one real client record per
+// AE/county, per Claire's design) -- shown with the same composed name
+// strategists/accounting are used to seeing from the old separate-client-per-
+// agent setup, so nothing looks different to them even though there's only
+// one client record underneath now.
+function strategistDisplayClientName(line) {
+  if (line.agent_name && line.county) return `${line.group_name || ''}: ${line.agent_name} (${line.county} County)`;
+  return line.client_name || '(unknown)';
+}
+
 function strategistTacticDisplay(line) {
   let base = line.tactic_label || line.service_id;
   if (line.split_label) base += ' — ' + line.split_label;
@@ -2177,7 +2188,7 @@ function renderSetupPanels(lines) {
   }).join('');
 }
 function renderSetupPanel(l) {
-    const client = l.client_name || '(unknown client)';
+    const client = strategistDisplayClientName(l);
     const monthRow = setupBudgetRowFor(l.id) || {};
     const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
     const monthRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month));
@@ -2831,7 +2842,7 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px">${actualPerf != null ? Number(actualPerf).toLocaleString() + ' ' + goal.unit : '—'}</td>
         <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>`;
       html += `<tr onclick="strategistSelectLine('${l.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistSelectLine('${l.id}')}" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
-        <td style="padding:9px 10px"><strong>${esc(l.client_name || '(unknown)')}</strong></td>
+        <td style="padding:9px 10px"><strong>${esc(strategistDisplayClientName(l))}</strong></td>
         <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
         ${platformCellHtml}
         <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
@@ -2903,7 +2914,7 @@ function renderStrategistDetailPanel() {
 
   panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:18px;padding:16px 18px;background:#fff;box-shadow:var(--shadow-lg)">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
-      <h3 style="margin:0;font-size:13px;font-weight:700">${esc(l.client_name || '(unknown)')} / ${(() => {
+      <h3 style="margin:0;font-size:13px;font-weight:700">${esc(strategistDisplayClientName(l))} / ${(() => {
         const variants = strategistTacticVariantOptions(l);
         if (!variants) return esc(strategistTacticDisplay(l));
         return `<select id="detail-tactic-variant-${l.id}" onchange="strategistSaveLine('${l.id}', {tactic_label: this.value}, false)" style="padding:3px 6px;border-radius:999px;border:1.5px solid var(--accent-dark);font-size:12.5px;font-weight:700;color:var(--accent-dark);background:#fff">

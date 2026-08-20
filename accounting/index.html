@@ -347,6 +347,19 @@ function accountingFormatFlightDate(dateStr) {
 // Stacked start/end instead of one inline "start – end" line (2026-08-19,
 // per Claire -- wants the Flight column to always read top-to-bottom the
 // same way rather than wrapping mid-range in the narrow column).
+// MS Farm Bureau fan-out (2026-08-20): a line with both agent_name and county
+// belongs to a consolidated multi-agent client (one real client record per
+// AE/county, per Claire's design) -- shown with the same composed name
+// strategists/accounting are used to seeing from the old separate-client-per-
+// agent setup, so nothing looks different to them even though there's only
+// one client record underneath now. Own copy of strategist/index.html's
+// identical helper, per this project's "each portal keeps its own copy"
+// convention.
+function accountingDisplayClientName(line) {
+  if (line.agent_name && line.county) return `${line.group_name || ''}: ${line.agent_name} (${line.county} County)`;
+  return line.client_name || '(unknown)';
+}
+
 function accountingFormatFlightRange(start, end) {
   const s = accountingFormatFlightDate(start), e = accountingFormatFlightDate(end);
   if (!s && !e) return '—';
@@ -459,7 +472,7 @@ function accountingRenderDetailCard() {
   });
 
   el.innerHTML = `<div class="acct-detail-head">
-      <div class="acct-detail-title">${esc(line.client_name || '(unknown)')} — ${esc(line.tactic_label || line.service_id || '—')}</div>
+      <div class="acct-detail-title">${esc(accountingDisplayClientName(line))} — ${esc(line.tactic_label || line.service_id || '—')}</div>
       <div style="display:flex;align-items:center;gap:14px">
         <div class="acct-detail-sub">${esc(line.group_name || '—')} · ${accountingFormatFullFlightRange(line.flight_start, line.flight_end)}</div>
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11.5px;color:var(--muted)">
@@ -1756,9 +1769,15 @@ function accountingRenderRow(r) {
       const childTint = accountingTintColor(r.line.group_color, 0.92);
       r.children.forEach(c => {
         const selected = c.line.id === accountingSelectedLineId;
+        // Agent-fan-out children (2026-08-20) have no split_label -- what
+        // distinguishes them is the agent/county, so that goes in the Client
+        // column (blank for a manually-created split, same as before) and the
+        // Tactic column falls back to '—' instead of the manual-split-only
+        // "(unlabeled split)" text, which wouldn't make sense here.
+        const isAgentChild = !!(c.line.agent_name && c.line.county);
         html += `<tr class="acct-row acct-child${selected ? ' selected' : ''}"${childTint ? ` style="--child-tint:${esc(childTint)}"` : ''} onclick="event.stopPropagation();accountingSelectLine('${c.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();accountingSelectLine('${c.line.id}')}">
-          <td></td>
-          <td>${esc(c.line.split_label || '(unlabeled split)')}</td>
+          <td>${isAgentChild ? esc(accountingDisplayClientName(c.line)) : ''}</td>
+          <td>${esc(c.line.split_label || (isAgentChild ? '—' : '(unlabeled split)'))}</td>
           <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
           <td class="num">${c.gross != null ? '$' + c.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
@@ -1772,7 +1791,7 @@ function accountingRenderRow(r) {
   }
   const selected = r.line.id === accountingSelectedLineId;
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingSelectLine('${r.line.id}')}">
-    <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
+    <td><strong>${esc(accountingDisplayClientName(r.line))}</strong></td>
     <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
     <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
