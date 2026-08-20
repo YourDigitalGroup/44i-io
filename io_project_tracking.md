@@ -17412,3 +17412,47 @@ submitting posts the comment to the correct stored `card_id` with the
 right effective date/reason/AM name; a second submission against an
 already-cancelled line updates 0 rows and correctly skips posting a
 duplicate Trello comment. `node --check` clean on both files.
+
+## 2026-08-20 — AM-triggered Edit of a submitted IO
+
+Second of three surfaces from the "Edit & Cancel Flow Mockup" artifact.
+Per Claire's explicit scope decision for this pass: an edit updates the
+order's own `line_items` (and Trello) but does NOT touch live
+`campaign_lines`/`campaign_months` — a strategist would separately correct
+any month(s) already seeded for billing. Also does NOT regenerate/reattach
+a fresh PDF to either card (unlike Cancel/Intake-editing) — rebuilding the
+full IO print document's layout inside Admin is a much larger, separate
+lift; a Trello **comment** on both the IO card and the specific tactic's
+card covers the "everyone finds out" need without that build. Both
+reductions were flagged to Claire rather than silently built in.
+
+**Schema/RPC:** `orders` gains `is_revised boolean` and `edit_history
+jsonb` (an array of `{service_id, field, old_value, new_value, edited_by,
+edited_at}`). New `admin_edit_order_line_item(p_name, p_pw, p_order_id,
+p_service_id, p_field, p_new_value)` — finds the matching entry in the
+`line_items` jsonb array by service_id (via `jsonb_array_elements(...)
+with ordinality` to get its index), `jsonb_set`s just that one field,
+appends to `edit_history`, sets `is_revised = true`. Only
+`recurring`/`spend`/`fee`/`start_date`/`end_date`/`notes` are allowed
+fields — anything else raises.
+
+**IO card id, generalized further:** the IO card itself had never been
+stored anywhere (only per-workflow tactic cards were, via
+`trello_card_ids`). `index.html` now also stamps it in under a reserved
+key (`trello_card_ids.__io_card__`) in the same follow-up PATCH, so Admin
+can comment on the IO card too without re-deriving/guessing at it.
+
+**Admin UI:** a small ✎ link appears next to a line item's Amount **only**
+when exactly one of fee/recurring/spend is the sole nonzero contributor
+(a compound amount like fee + prorated hosting has no single field to
+edit unambiguously, so no link shows for that row) — opens an inline
+number input + Save/Cancel. A "Revised" pill appears in the Order Detail
+header once any edit has been made; each edited line shows its own
+"Was $X · edited by Y, Z" audit line, read from `edit_history`.
+
+**Verified live** via Playwright: the ✎ link appears for a single-field
+line item; saving a change calls the RPC with the right payload, posts
+the SAME comment to both the stored IO card and the tactic's own card
+(deduped if they happened to be the same id), flips the Revised pill on,
+and shows the correct audit line with the old and new values. `node
+--check` clean on both files.

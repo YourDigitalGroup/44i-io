@@ -6608,7 +6608,25 @@ function viewOrderDetail(orderId) {
       // line_items snapshot -- admin_cancel_service() is idempotent (a repeat
       // click just updates 0 rows) rather than risk showing a wrong status.
       const cancelBtn = `<button type="button" onclick="adminToggleCancelPanel('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #B3261E;background:#fff;color:#B3261E;font-size:10.5px;font-weight:700;cursor:pointer">Cancel</button>`;
-      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${cancelBtn}</td></tr>
+      // AM-triggered Edit (2026-08-20) -- only offered when exactly ONE of
+      // fee/recurring/spend is the nonzero contributor, matching the
+      // mockup's single "Monthly Budget" field; a compound amount (e.g. fee +
+      // prorated hosting) has no single unambiguous field to edit, so no
+      // edit link shows for that row. Shows the most recent edit_history
+      // entry for this service_id+field as the audit line, same "Was $X ·
+      // edited by Y, Z" shape as the mockup.
+      const editableCandidates = [['recurring', item.recurring], ['spend', item.spend], ['fee', item.fee]].filter(([, v]) => v > 0);
+      let amtCellHtml = esc(amtParts.join(' + ') || '—');
+      if (editableCandidates.length === 1 && !item.prorated_hosting_amt) {
+        const [editField, editVal] = editableCandidates[0];
+        const lastEdit = Array.isArray(o.edit_history)
+          ? [...o.edit_history].reverse().find(h => h.service_id === item.service_id && h.field === editField)
+          : null;
+        amtCellHtml += ` <a href="#" onclick="event.preventDefault();adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="font-size:10px;font-weight:700;color:var(--accent-dark);text-decoration:none">✎</a>
+          <div id="edit-panel-${esc(item.service_id)}" style="display:none"></div>
+          ${lastEdit ? `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>` : ''}`;
+      }
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${cancelBtn}</td></tr>
         <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
     }).join('');
     return header + rows;
@@ -6685,7 +6703,12 @@ function viewOrderDetail(orderId) {
       ? `<img src="${esc(sigData)}" alt="Client signature" style="height:60px;max-width:280px;object-fit:contain"/>`
       : '<span style="color:var(--muted);font-style:italic">No signature on file</span>';
 
-  document.getElementById('admin-order-detail-title').textContent = `Order — ${o._client_name || 'Unknown'} (${groupName})`;
+  // Revised pill (2026-08-20, per the approved Edit & Cancel Flow Mockup) --
+  // set once an edit has actually been made (admin_edit_order_line_item
+  // sets is_revised = true), same "Revised" label/color as the mockup.
+  document.getElementById('admin-order-detail-title').innerHTML =
+    `Order — ${esc(o._client_name || 'Unknown')} (${esc(groupName)})` +
+    (o.is_revised ? ' <span style="font-size:10px;font-weight:700;letter-spacing:.02em;padding:3px 10px;border-radius:20px;background:#FDEDEC;color:#92300B;margin-left:6px">● Revised</span>' : '');
   document.getElementById('admin-order-detail-body').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px">
       <div>
@@ -6946,6 +6969,80 @@ async function adminSubmitCancellation(orderId, serviceId) {
 
   document.getElementById(`cancel-panel-${serviceId}`).style.display = 'none';
   showToast('✅ Service cancelled');
+}
+
+// ── AM-TRIGGERED EDIT (2026-08-20) ──────────────────────────────
+// Per the approved mockup, but per Claire's earlier scope decision for this
+// pass: updates the order's own line_items (what Order Detail and Trello
+// read) and posts a Trello COMMENT on both the IO card and the specific
+// tactic's card -- does NOT regenerate/reattach a fresh PDF to either
+// (unlike Cancel/Intake-editing, that would mean rebuilding the full IO
+// print document's layout inside Admin, a much larger, separate lift; flagged
+// rather than silently skipped). Also does NOT touch live campaign_lines/
+// campaign_months -- per Claire, an edit here is scoped to the order's own
+// record for now, not a retroactive change to what's already being billed.
+function adminToggleEditPanel(orderId, serviceId, field, currentValue) {
+  const box = document.getElementById(`edit-panel-${serviceId}`);
+  if (!box) return;
+  if (box.style.display !== 'none' && box.innerHTML) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.innerHTML = `
+    <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
+      <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:var(--light);font-size:12px"/>
+      <button type="button" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+      <button type="button" onclick="adminToggleEditPanel('${esc(orderId)}','${esc(serviceId)}','${esc(field)}',${currentValue})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
+    </div>`;
+  box.style.display = 'block';
+}
+
+async function adminSaveLineItemEdit(orderId, serviceId, field) {
+  const input = document.getElementById(`edit-value-${serviceId}`);
+  const newValue = input?.value;
+  if (newValue === '' || newValue == null) { showToast('Enter a value', 'error'); return; }
+
+  try {
+    await sb('rpc/admin_edit_order_line_item', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: serviceId, p_field: field, p_new_value: String(newValue),
+      }),
+    });
+  } catch (e) {
+    showToast('Could not save this change: ' + e.message, 'error');
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const svc = CATALOG_ROWS[serviceId] || {};
+  if (o) {
+    const item = (o.line_items || []).find(li => li.service_id === serviceId);
+    const oldValue = item ? item[field] : null;
+    if (item) item[field] = parseFloat(newValue);
+    o.is_revised = true;
+    o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field, old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
+
+    const label = svc.accounting_label || svc.label || serviceId;
+    const commentText = `✏️ ${label} ${field} changed from $${Number(oldValue).toLocaleString()} to $${Number(newValue).toLocaleString()} (by ${currentAdminUser?.name || 'AM'}).`;
+    const ioCardId = o.trello_card_ids?.__io_card__;
+    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    for (const cardId of cardIds) {
+      try {
+        const res = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
+        });
+        if (!res.ok) console.warn('Could not post edit comment to card', cardId, ':', res.status);
+      } catch (e) {
+        console.warn('Could not post edit comment to card', cardId, ':', e.message);
+      }
+    }
+    if (!cardIds.length) showToast('Saved, but no Trello card was found — please update Trello by hand', 'error');
+  }
+
+  showToast('✅ Change saved');
+  viewOrderDetail(orderId);
 }
 
 async function adminNotifyTrelloOfIntakeCompletion(o, formKey) {
