@@ -16665,3 +16665,43 @@ Split" with both agent names and the county — confirmed the printed
 version specifically uses its own `table.services` markup, not the
 on-screen `.summary-table` class (which doesn't exist in that document's
 stylesheet). `node --check` clean.
+
+---
+
+### 2026-08-19 — Agent/County Split: group coloring, column squeeze, per-agent intake status
+
+Three follow-ups from a live screenshot.
+
+1. **"Have the box match the group coloring."** Replaced the hardcoded
+   violet with the existing `--accent`/`--accent-dark`/`--light` CSS
+   variables `loadGroup()` already re-themes to the selected group's own
+   `brand_color` — the card now automatically matches whichever group is
+   selected, same as everything else on the page that's already
+   group-branded, instead of a second, disconnected color source.
+
+2. **"Not have it condense once you add agents in."** Real bug: the split
+   table had no explicit column widths, so the browser's own table auto-
+   layout kept shrinking the Agent/Service columns as real names/labels got
+   typed in — "Danny Garrison" rendered as "Danny (", "Facebook &
+   Instagram" as "Facebook &". Added `table-layout:fixed` with an explicit
+   `<colgroup>` (Agent 20% / Service 18% / Start 13% / End 13% / Amount 10%
+   / Intake 20% / remove 6%) so the columns hold their allocation instead
+   of shrinking as content grows.
+
+3. **Campaign Intake status card, Step 3 — "add a line for each in case one
+   agent gets filled out and another doesn't."** `updateIntakeStatusCard()`
+   grouped by intake FORM only, one shared line regardless of agent — for a
+   multi-agent split service it now excludes that service from the shared
+   grouping entirely and adds one line per (service, agent) instead,
+   reusing `agentSplitRowIntakeInfo()`/`openAgentSplitIntake()` (the exact
+   same status/action the split table itself already uses) so the two can
+   never disagree.
+
+**Verified live** via Playwright: with a fake group brand color
+(`#E11D48`), the card's border/header correctly render that exact color;
+the table's colgroup widths hold at 20/18/13/13/10/20/6%; and after marking
+one agent's intake Complete while leaving a second agent (same service)
+untouched, the Step 3 card correctly shows both agents as separate lines —
+one "✓ Complete," one "Not Started." Screenshot confirmed visually — full
+agent names ("Danny Garrison," "Justin Ashmore") now render without
+mid-word cutoff. `node --check` clean.

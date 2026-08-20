@@ -834,13 +834,16 @@ select.qty-field{background-image:none;padding-right:3px}
          the services already checked above across multiple agents instead of a
          free-text Instructions breakdown. Scoped to ONE county per submission --
          a List can hold several counties, but one IO never covers more than one. -->
-    <!-- Distinct violet treatment (2026-08-19, per Claire -- "make it more
-         distinct") so this reads as its own special step, not just another
-         plain card — same "own accent color" pattern the KOC card already
-         uses for its orange, just a different color so the two special
-         cards are never confused with each other. -->
-    <div class="card" id="agent-split-card" style="display:none;border:2px solid #C4B5FD">
-      <div class="card-head" style="background:#F5F3FF"><h3 style="color:#5B21B6">🧩 Agent / County Split</h3></div>
+    <!-- Distinct treatment (2026-08-19, per Claire -- "make it more distinct",
+         then "have the box match the group coloring") so this reads as its
+         own special step, not just another plain card. Uses the SAME --accent/
+         --light variables loadGroup() already re-themes to the selected
+         group's own brand_color (see the setProperty calls in loadGroup()) --
+         not a fixed color of its own -- so this card's color always matches
+         whichever group is currently selected, same as everything else on
+         the page that's already group-branded. -->
+    <div class="card" id="agent-split-card" style="display:none;border:2px solid var(--accent)">
+      <div class="card-head" style="background:var(--light)"><h3 style="color:var(--accent-dark)">🧩 Agent / County Split</h3></div>
       <div style="padding:16px">
         <p style="font-size:12px;color:var(--muted);margin-bottom:14px">This client splits services across multiple agents. Pick the county this IO is for, then enter each agent's own share below — replaces writing the breakdown into Special Instructions.</p>
 
@@ -1595,7 +1598,17 @@ function renderAgentSplitRows() {
   const agentOptionsHtml = AGENT_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('') + '<option value="__new__">+ New Agent…</option>';
   const serviceOptionsHtml = '<option value="">— Service —</option>' + serviceOptions.map(s => `<option value="${esc(s.id)}">${esc(s.label)}</option>`).join('');
 
-  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+  // table-layout:fixed + an explicit colgroup (2026-08-19, per Claire --
+  // "not have it condense once you add agents in") -- without this, the
+  // browser's own auto table layout kept shrinking the Agent/Service columns
+  // as real names/labels got typed in ("Danny G" rendering as "Danny (",
+  // "Facebook & Instagram" as "Facebook &"), since those two selects were
+  // fighting the Start/End/Amount/Intake columns for space with no fixed
+  // allocation at all. Percentages sum to 100.
+  wrap.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed">
+    <colgroup>
+      <col style="width:20%"/><col style="width:18%"/><col style="width:13%"/><col style="width:13%"/><col style="width:10%"/><col style="width:20%"/><col style="width:6%"/>
+    </colgroup>
     <thead><tr>
       <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Agent</th>
       <th style="text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:0 6px 6px">Service</th>
@@ -2790,16 +2803,31 @@ function updateIntakeRowLinks() {
 
 function updateIntakeStatusCard() {
   const needed = {};
+  // Services covered by an agent split are excluded from the plain per-form
+  // grouping below and get their own per-agent row instead (2026-08-19, per
+  // Claire -- "add a line for each in case one agent gets filled out and
+  // another doesn't") -- the shared, non-agent intake popup was already
+  // suppressed for these on check (see toggle()'s isMultiAgentClientActive()
+  // guard), so there's no meaningful single "the tactic's" status to show
+  // here anymore; each agent's own response is the only one that matters.
+  const splitServiceIds = new Set(agentSplitRows.filter(r => r.serviceId && (r.agentId || r.agentNewName)).map(r => r.serviceId));
   Object.keys(selected).forEach(id => {
     const cfg = PRODUCT_CONFIG[id];
-    if (cfg?.intake) {
+    if (cfg?.intake && !splitServiceIds.has(id)) {
       if (!needed[cfg.intake]) needed[cfg.intake] = { labels:[], sampleId:id };
       needed[cfg.intake].labels.push(cfg.label);
     }
   });
+  const agentIntakeRows = [];
+  agentSplitRows.forEach((row, i) => {
+    const cfg = PRODUCT_CONFIG[row.serviceId];
+    if (!cfg?.intake) return;
+    if (!row.agentId && !row.agentNewName) return;
+    agentIntakeRows.push(i);
+  });
   const card = document.getElementById('intake-status-card');
   const list = document.getElementById('intake-status-list');
-  if (!Object.keys(needed).length) { card.style.display = 'none'; updateIntakeRowLinks(); return; }
+  if (!Object.keys(needed).length && !agentIntakeRows.length) { card.style.display = 'none'; updateIntakeRowLinks(); return; }
   card.style.display = 'block';
   let html = '';
   Object.entries(needed).forEach(([formKey, {labels, sampleId}]) => {
@@ -2822,6 +2850,35 @@ function updateIntakeStatusCard() {
     html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
       <div><div style="font-size:13px;font-weight:600">${formDef?.title||formKey}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:2px">${labels.join(', ')}</div></div>
+      <div style="display:flex;align-items:center;gap:8px">${badge}${action}</div></div>`;
+  });
+  // Per-agent rows -- one line per (service, agent), reusing the exact same
+  // status resolution and action the Agent/County Split table itself uses
+  // (agentSplitRowIntakeInfo()/openAgentSplitIntake()), so this card and that
+  // table can never disagree about where a given agent's intake stands.
+  agentIntakeRows.forEach(i => {
+    const row = agentSplitRows[i];
+    const cfg = PRODUCT_CONFIG[row.serviceId];
+    const formDef = INTAKE_FORMS[cfg.intake];
+    const info = agentSplitRowIntakeInfo(i);
+    const agentName = row.agentId === '__new__' ? row.agentNewName : (AGENT_ROSTER.find(a => a.id === row.agentId)?.name || '');
+    let badge, action;
+    if (info.status === 'AM Help') {
+      badge = `<span class="intake-required-badge">✋ AM Help</span>`;
+      action = `<button class="btn-open-intake" onclick="openAgentSplitIntake(${i})">View</button>`;
+    } else if (info.status === 'Complete') {
+      badge = `<span class="intake-done-badge">✓ Complete</span>`;
+      action = `<button class="btn-open-intake" style="background:var(--light);color:var(--text);border:1px solid var(--border)" onclick="openAgentSplitIntake(${i})">Edit</button>`;
+    } else if (info.status === 'Partial') {
+      badge = `<span class="intake-required-badge">⚠ Partial</span>`;
+      action = `<button class="btn-open-intake" onclick="openAgentSplitIntake(${i})">Edit</button>`;
+    } else {
+      badge = `<span class="intake-required-badge">Not Started</span>`;
+      action = `<button class="btn-open-intake" onclick="openAgentSplitIntake(${i})">Fill Out</button>`;
+    }
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div><div style="font-size:13px;font-weight:600">${esc(formDef?.title||cfg.intake)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(cfg.label)} — ${esc(agentName)}</div></div>
       <div style="display:flex;align-items:center;gap:8px">${badge}${action}</div></div>`;
   });
   list.innerHTML = html;
