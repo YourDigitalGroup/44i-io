@@ -3440,6 +3440,10 @@ function toggle(cb, id) {
     // non-per-unit items is unchanged.
     if (CATALOG_ROWS[id]?.pricing_mode === 'per_unit') selected[id].qty = 1;
     row.classList.add('selected');
+    // Budget entry form states (2026-08-20) — auto-open as soon as a spend-
+    // priced row is checked, per Claire, rather than waiting for a spend
+    // value too (an AE may open the toggle before typing an amount).
+    if (CATALOG_ROWS[id]?.pricing_mode === 'spend') ensureBudgetDetailOpen(id);
 
     // Website OTO ↔ MRR mutual exclusivity
     if (WEB_OTO.includes(id)) {
@@ -3506,6 +3510,7 @@ function toggle(cb, id) {
       const warn = row.querySelector('.spend-min-warn');
       if (warn) warn.remove();
     }
+    document.getElementById('budget-detail-' + id)?.remove();
     // Selector dropped `input[type=number]` (2026-07-16) — a qty_preset_options service
     // (Optional Content Support's quarter-hour dropdown) renders qty as a <select>, not
     // an <input>, which the old tag-scoped selector would never match at all.
@@ -3637,13 +3642,35 @@ function refreshBudgetDetail(id) {
 function toggleBudgetDetail(id) {
   const existing = document.getElementById('budget-detail-' + id);
   if (existing) { existing.remove(); return; }
+  ensureBudgetDetailOpen(id);
+}
+// Idempotent open — used by toggle()/updateSpend() to auto-show the detail
+// row the moment it becomes relevant, rather than waiting for a manual click
+// (2026-08-20, per Claire — the previous ⚙-click-to-reveal design wasn't
+// discoverable). Does nothing if already open, so re-checking a still-open
+// row's box or re-typing its spend value doesn't duplicate/reset it.
+function ensureBudgetDetailOpen(id) {
+  if (document.getElementById('budget-detail-' + id)) return;
   const row = document.querySelector(`tr[data-id="${id}"]`);
   if (!row) return;
   row.insertAdjacentHTML('afterend', renderBudgetDetailRow(id));
 }
+// Soft warnings (2026-08-20, per Claire) — switching mode or opening
+// Customize by month before there's a spend amount to work with produces an
+// empty/zeroed table with no visible explanation of why nothing showed up;
+// this tells the AE what to fill in first instead of silently doing nothing.
+function currentBudgetAmount(id) {
+  const data = selected[id];
+  if (!data) return 0;
+  return data.budgetMode === 'total' ? (data.spendTotal || 0) : (data.spend || 0);
+}
 function setBudgetMode(id, mode) {
   const data = selected[id];
   if (!data) return;
+  if (!currentBudgetAmount(id)) {
+    showToast('Enter a budget amount first, then choose Monthly rate or Whole campaign total', 'error');
+    return;
+  }
   data.budgetMode = mode;
   const input = document.querySelector(`tr[data-id="${id}"] input[type=number]`);
   if (mode === 'total') {
@@ -3659,6 +3686,14 @@ function setBudgetMode(id, mode) {
 function expandCustomizeByMonth(id) {
   const data = selected[id];
   if (!data) return;
+  if (!currentBudgetAmount(id)) {
+    showToast('Enter a budget amount before customizing by month', 'error');
+    return;
+  }
+  if (!data.start_date) {
+    showToast('Enter a Start Date before customizing by month', 'error');
+    return;
+  }
   data.customizingMonths = true;
   if (!data.monthPlan || !data.monthPlan.length) {
     data.monthPlan = data.budgetMode === 'total'
@@ -3723,6 +3758,7 @@ function updateSpend(input, id) {
       selected[id].spend = raw;
       if (!selected[id].customizingMonths) selected[id].monthPlan = null;
     }
+    if (raw > 0) ensureBudgetDetailOpen(id);
   }
   // Clear the required highlight once a value is entered
   if (parseFloat(input.value) > 0) markFieldMissing(input, false);
@@ -7265,12 +7301,13 @@ function generateCatalogRowHtml(r, hasSpendCol) {
   // <td> when the table needs one (hasSpendCol, passed in by the caller) keeps every
   // row's cell count matching its header regardless of that row's own pricing mode —
   // the actual "no spend value" intent is unchanged, only the missing-cell bug is fixed.
-  // Budget entry form states (2026-08-20) — the ⚙ link opens/closes a detail
-  // row right below this one (toggleBudgetDetail) with the whole-campaign-
-  // total toggle and the customize-by-month table; collapsed by default so
-  // every existing spend-priced row still looks pixel-identical to before.
+  // Budget entry form states (2026-08-20) — the detail row (whole-campaign-
+  // total toggle + customize-by-month table) auto-opens as soon as this row
+  // is checked or a spend amount is typed (see toggle()/updateSpend()) —
+  // originally gated behind a small ⚙ click, removed per Claire: "this is
+  // new, the AE's won't think to click the tiny gear."
   const spendCell = r.pricing_mode === 'spend'
-    ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/><button type="button" onclick="toggleBudgetDetail('${esc(r.id)}')" title="Customize this budget by month or as a campaign total" style="margin-left:4px;background:none;border:none;color:var(--accent-dark);cursor:pointer;font-size:13px;vertical-align:middle;padding:0">⚙</button></td>`
+    ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
     : (hasSpendCol ? `<td class="svc-spend-placeholder"></td>` : '');
   // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now
   // (replaces the old single Step-1-wide Campaign Dates card). Length dropped
