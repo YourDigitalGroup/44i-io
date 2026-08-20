@@ -16824,3 +16824,130 @@ PDF-drawing code calls. Extended the mock with the missing no-op methods
 and reran; this affected the harness only, not `index.html` itself (the
 real jsPDF library loaded in production already has these methods).
 `node --check` clean both before and after this fix.
+
+### 2026-08-20 — MS Farm Bureau fan-out Phase 5: Strategist/Accounting Client-column display
+
+Per the original design (approved before Phase 1 started): the Strategist
+and Accounting portals should display a consolidated multi-agent client's
+campaign lines with the same composed name they were already used to
+seeing from the old separate-client-per-agent setup —
+`{Group Name}: {Agent} ({County} County)` — even though there's now only
+one real `clients` row underneath per AE/county, not a display change
+tied to anything Claire asked for mid-session.
+
+**SQL run by Claire**: `strategist_get_campaign_lines`/
+`accounting_get_campaign_lines` — both `CREATE OR REPLACE` (return type
+unchanged, no DROP needed) — now also select `cl.agent_name`/`cl.county`
+into the jsonb payload. Neither RPC had these two columns wired up despite
+`campaign_lines.agent_name`/`.county` existing since Phase 3 — confirmed
+by grepping both portal files for any existing `.agent_name`/`.county`
+usage and finding none, rather than assuming.
+
+**Built:**
+- `strategistDisplayClientName(line)` (`strategist/index.html`) /
+  `accountingDisplayClientName(line)` (`accounting/index.html`) — own copy
+  in each portal per this project's established convention (no shared
+  constants file between portals) — returns the composed name when a line
+  has both `agent_name` and `county`, else falls back to the plain
+  `client_name` exactly as before. Wired into all 3 Strategist display
+  sites (main table row, detail panel header, Setup queue panel) and
+  Accounting's 2 non-rollup sites (detail card header, plain table row).
+  Strategist has no rollup/grouping mechanism at all — every
+  `campaign_lines` row already renders as its own line, so this was a
+  drop-in swap with no further change needed there.
+- **Accounting's rollup path** — flagged in the original plan as needing
+  a check, and it did: `accountingBuildRows()` groups by
+  `client_id|service_id|tactic_label`, and since a consolidated
+  multi-agent client's split lines share client_id/service_id/tactic_label
+  by design, every agent's line for one tactic collapses into the existing
+  multi-region rollup row (the same mechanism already used for the
+  Strategist Portal's manual "Split into Multiple Campaigns" feature — not
+  new machinery, just a new reason to hit it). Fixed the child-row display,
+  which previously showed a blank Client cell and "(unlabeled split)" for
+  the Tactic cell (correct for a manual split, wrong for an agent split
+  with no `split_label` at all): child rows now show the composed name in
+  the Client cell when `agent_name`/`county` are present, and the Tactic
+  cell falls back to `—` instead of "(unlabeled split)" for that case only
+  (manual splits without a label are untouched). The rollup's own parent
+  row deliberately keeps the plain client name (not composed) since it
+  represents multiple agents at once — showing one agent's name there
+  would misrepresent the group.
+
+**Verified live** via Playwright, loading each portal page directly (both
+files' init logic is scoped inside a `DOMContentLoaded` handler, so the
+top-level function declarations are callable standalone without a real
+login/session) and calling the real functions against fake line data:
+- `strategistDisplayClientName`/`accountingDisplayClientName` both return
+  `"MS Farm Bureau: Danny Crozier (Alcorn County)"` for an agent line and
+  fall through to the plain `client_name` for a normal one.
+- Simulated `accountingRenderRow()` against a rollup with two agent
+  children on the same tactic: parent row correctly shows
+  "MS Farm Bureau - Lee (2 regions)"; child rows show
+  "MS Farm Bureau: Danny Crozier (Alcorn County)" / "... Justin Ashmore
+  ..." with their own distinct dollar figures ($600/$100 vs. $550/$90) —
+  confirming per-agent rows stay separate, not rolled into one blended
+  number.
+`node --check` clean on both extracted portal scripts.
+
+### 2026-08-20 — MS Farm Bureau fan-out Phase 6: per-agent Trello list routing (no legacy data migration needed)
+
+Phase 6 was originally scoped as "migrate the existing per-agent MS Farm
+Bureau client records into the new consolidated structure." That turned
+out to be moot: Claire confirmed nothing has been sold under any of the
+16 existing `MS Farm Bureau - <AE>` client records yet — she deliberately
+built this feature first specifically to avoid a real migration. No
+historical `campaign_lines`/`orders` exist to re-point, so there was
+nothing to migrate.
+
+**A real, separate gap surfaced during that conversation, though**: MS
+Farm Bureau has 16 different AEs, each with their OWN pre-existing Trello
+list (confirmed via `clients.trello_list_id` — each of the 16 legacy
+client rows already has a distinct real list id, imported earlier via the
+Trello-import tool). The Agent/County Split feature (Phases 2-4) assumed
+one client = one Trello list, so consolidating down to one client for MS
+Farm Bureau would have sent every agent's cards into a single shared
+list — losing the separation Claire actually needs. Confirmed by walking
+through `submitIO()`'s existing list-resolution code
+(`index.html:5012-5106`): it resolves exactly one `clientList` per
+submission from `client.trello_list_id`, and every card in that
+submission — including the agent split cards — used it.
+
+**Fix: moved Trello-list ownership from the client to the agent.**
+
+**SQL run by Claire**: `alter table agents add column trello_list_id text;`
+plus `admin_save_agent` updated (`CREATE OR REPLACE`, return type
+unchanged) to read/write it. `admin_get_agents`/`get_client_agents` needed
+no SQL change at all — both already `select * from agents`, so the new
+column appears in their output automatically.
+
+**Built:**
+- Admin UI (`admin/index.html`): new "Trello List ID" field on the Agent
+  editor, plus a Set/"Uses client list" badge column on the agent table so
+  it's visible at a glance which agents still fall back to the shared
+  list. Wired into `adminNewAgent`/`adminEditAgent`/`adminSaveAgent`.
+- `index.html`'s `submitIO()`: added `getListCards(listId)` (a small cache
+  seeded with the client's own already-fetched `existingCards`, so the
+  client's own list isn't re-fetched) and `agentTargetListId(agentId)`
+  (looks up `AGENT_ROSTER` for a stored `trello_list_id`, falling back to
+  `clientList.id` when the agent has none — a brand-new agent typed inline
+  on the split form, or one Claire hasn't set a list for yet). Rewrote
+  `createAgentSplitCards()` to resolve/fetch/dedupe against each agent's
+  OWN target list instead of the client's shared `existingCards` — the
+  card-exists lookup, create call, and update call all now target
+  `targetListId` per agent, not `clientList.id`.
+
+**Verified live** via Playwright, extending the `submitIO()` harness with
+two agents on one split: Danny Crozier (roster entry with
+`trello_list_id: 'list_danny_own'`) and Justin Ashmore (brand-new agent
+typed inline, no roster entry at all). Confirmed:
+- `trello_get_list_cards` was called for BOTH distinct lists
+  (`list_client_default` and `list_danny_own`) — proving per-list lookup,
+  not just the client's shared list.
+- Danny's card landed in `list_danny_own`; Justin's correctly fell back to
+  `list_client_default`.
+- `submitIO error: null` — no exceptions from the new routing logic.
+
+`node --check` clean on the extracted script. This closes out the MS Farm
+Bureau fan-out feature (Phases 1-6) — Phase 5's portal display and this
+routing fix were both real gaps caught by talking through the design with
+Claire before shipping, not originally scoped work.
