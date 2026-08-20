@@ -6584,7 +6584,7 @@ function viewOrderDetail(orderId) {
     (liSectionOrderIndex[a] ?? Infinity) - (liSectionOrderIndex[b] ?? Infinity));
 
   let liRows = orderedLiSectionIds.map(sec => {
-    const header = `<tr><td colspan="5" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
+    const header = `<tr><td colspan="6" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
     const rows = byLiSection[sec].map(item => {
       let amtParts = [];
       if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
@@ -6602,10 +6602,35 @@ function viewOrderDetail(orderId) {
       // if the catalog has no live row for this service_id at all (e.g. a
       // since-deactivated service).
       const displayLabel = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label;
-      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td></tr>`;
+      // AM-triggered Cancel a Service (2026-08-20) -- one button per line item;
+      // doesn't reflect an already-cancelled state inline since Order Detail
+      // doesn't load live campaign_lines rows, only the order's own frozen
+      // line_items snapshot -- admin_cancel_service() is idempotent (a repeat
+      // click just updates 0 rows) rather than risk showing a wrong status.
+      const cancelBtn = `<button type="button" onclick="adminToggleCancelPanel('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #B3261E;background:#fff;color:#B3261E;font-size:10.5px;font-weight:700;cursor:pointer">Cancel</button>`;
+      // AM-triggered Edit (2026-08-20) -- only offered when exactly ONE of
+      // fee/recurring/spend is the nonzero contributor, matching the
+      // mockup's single "Monthly Budget" field; a compound amount (e.g. fee +
+      // prorated hosting) has no single unambiguous field to edit, so no
+      // edit link shows for that row. Shows the most recent edit_history
+      // entry for this service_id+field as the audit line, same "Was $X ·
+      // edited by Y, Z" shape as the mockup.
+      const editableCandidates = [['recurring', item.recurring], ['spend', item.spend], ['fee', item.fee]].filter(([, v]) => v > 0);
+      let amtCellHtml = esc(amtParts.join(' + ') || '—');
+      if (editableCandidates.length === 1 && !item.prorated_hosting_amt) {
+        const [editField, editVal] = editableCandidates[0];
+        const lastEdit = Array.isArray(o.edit_history)
+          ? [...o.edit_history].reverse().find(h => h.service_id === item.service_id && h.field === editField)
+          : null;
+        amtCellHtml += ` <a href="#" onclick="event.preventDefault();adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="font-size:10px;font-weight:700;color:var(--accent-dark);text-decoration:none">✎</a>
+          <div id="edit-panel-${esc(item.service_id)}" style="display:none"></div>
+          ${lastEdit ? `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>` : ''}`;
+      }
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${cancelBtn}</td></tr>
+        <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
     }).join('');
     return header + rows;
-  }).join('') || '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
 
   // Intake forms — show human labels, not field keys
   let intakeHtml = '';
@@ -6678,7 +6703,12 @@ function viewOrderDetail(orderId) {
       ? `<img src="${esc(sigData)}" alt="Client signature" style="height:60px;max-width:280px;object-fit:contain"/>`
       : '<span style="color:var(--muted);font-style:italic">No signature on file</span>';
 
-  document.getElementById('admin-order-detail-title').textContent = `Order — ${o._client_name || 'Unknown'} (${groupName})`;
+  // Revised pill (2026-08-20, per the approved Edit & Cancel Flow Mockup) --
+  // set once an edit has actually been made (admin_edit_order_line_item
+  // sets is_revised = true), same "Revised" label/color as the mockup.
+  document.getElementById('admin-order-detail-title').innerHTML =
+    `Order — ${esc(o._client_name || 'Unknown')} (${esc(groupName)})` +
+    (o.is_revised ? ' <span style="font-size:10px;font-weight:700;letter-spacing:.02em;padding:3px 10px;border-radius:20px;background:#FDEDEC;color:#92300B;margin-left:6px">● Revised</span>' : '');
   document.getElementById('admin-order-detail-body').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:18px">
       <div>
@@ -6705,7 +6735,11 @@ function viewOrderDetail(orderId) {
       </div>
     </div>
 
-    <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Services (${li.length})</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Services (${li.length})</div>
+      <button type="button" onclick="adminToggleSwapPanel('${esc(o.id)}')" style="padding:5px 12px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:700;cursor:pointer">⇄ Swap Tactic</button>
+    </div>
+    <div id="swap-panel-${esc(o.id)}" style="display:none;margin-bottom:14px"></div>
     <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-bottom:18px">
       <thead><tr style="background:var(--light)">
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Service</th>
@@ -6713,6 +6747,7 @@ function viewOrderDetail(orderId) {
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">End</th>
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Amount</th>
         <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Notes</th>
+        <th style="padding:7px 10px"></th>
       </tr></thead>
       <tbody>${liRows}</tbody>
     </table>
@@ -6832,6 +6867,349 @@ async function adminSaveOrderIntakeForm(orderId, formKey, markComplete) {
 // time (2026-08-20). An order submitted before that change has no stored id
 // — rather than guess at a card name and risk landing on the wrong card,
 // this just tells the AM to update Trello by hand for that older order.
+// ── AM-TRIGGERED CANCEL A SERVICE (2026-08-20) ──────────────────
+// Per the approved mockup, but AM-driven from here instead of an AE self-
+// serve form (per Claire: "keep it AM only for now"). One panel per line
+// item rather than the mockup's multi-service checklist -- functionally
+// the same (an AM cancelling several services just opens Cancel on each),
+// simpler to build/verify. No PDF re-attach here (per the mockup, only the
+// comment) -- just a Trello comment on that tactic's own card, resolved
+// from the new workflow-keyed trello_card_ids (works for any service,
+// unlike the intake-only formKey lookup above). MS Farm Bureau's per-agent
+// split cards aren't covered yet -- a workflow with multiple agent cards
+// has no single card to resolve to; flagged as a known gap, not silently
+// guessed at.
+function adminToggleCancelPanel(orderId, serviceId) {
+  const row = document.getElementById(`cancel-panel-${serviceId}`);
+  if (!row) return;
+  if (row.style.display !== 'none') { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  const svc = CATALOG_ROWS[serviceId] || {};
+  const label = svc.accounting_label || svc.label || serviceId;
+  const today = new Date().toISOString().slice(0, 10);
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);padding:12px 14px">
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:8px">Cancel: ${esc(label)}</div>
+      <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:8px">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Effective Date</label>
+          <input type="date" id="cancel-date-${esc(serviceId)}" value="${today}" oninput="adminUpdateCancelWarning('${esc(serviceId)}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Reason</label>
+          <input type="text" id="cancel-reason-${esc(serviceId)}" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+      </div>
+      <div id="cancel-warning-${esc(serviceId)}"></div>
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button type="button" onclick="adminSubmitCancellation('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#B3261E;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Submit Cancellation</button>
+        <button type="button" onclick="adminToggleCancelPanel('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+  adminUpdateCancelWarning(serviceId);
+}
+
+function adminUpdateCancelWarning(serviceId) {
+  const warnEl = document.getElementById(`cancel-warning-${serviceId}`);
+  if (!warnEl) return;
+  const svc = CATALOG_ROWS[serviceId] || {};
+  const dateVal = document.getElementById(`cancel-date-${serviceId}`)?.value;
+  const noticeDays = svc.cancel_notice_days;
+  const penaltyType = svc.cancel_penalty_type;
+  if (!dateVal || !noticeDays || !penaltyType || penaltyType === 'none') { warnEl.innerHTML = ''; return; }
+  const daysUntil = Math.round((new Date(dateVal + 'T00:00:00') - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')) / 86400000);
+  if (daysUntil >= noticeDays) { warnEl.innerHTML = ''; return; }
+  const penaltyText = penaltyType === 'flat'
+    ? `a flat $${Number(svc.cancel_penalty_amount || 0).toLocaleString()} early-termination fee`
+    : `a ${svc.cancel_penalty_amount || 0}% early-termination fee on the remaining contract value`;
+  warnEl.innerHTML = `<div style="display:flex;gap:8px;background:#FFF3DA;border-left:3px solid #C68A1E;border-radius:0 6px 6px 0;padding:9px 12px;font-size:11.5px;color:#92650B;margin-bottom:6px">⚠ This service requires ${noticeDays} days' notice — this effective date gives only ${Math.max(daysUntil, 0)}. Cancelling now may involve ${penaltyText} — confirm with the client before submitting.</div>`;
+}
+
+async function adminSubmitCancellation(orderId, serviceId) {
+  const effectiveDate = document.getElementById(`cancel-date-${serviceId}`)?.value;
+  const reason = document.getElementById(`cancel-reason-${serviceId}`)?.value.trim() || null;
+  if (!effectiveDate) { showToast('Effective Date is required', 'error'); return; }
+
+  let updatedCount;
+  try {
+    updatedCount = await sb('rpc/admin_cancel_service', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: serviceId, p_effective_date: effectiveDate, p_reason: reason,
+      }),
+    });
+  } catch (e) {
+    showToast('Could not cancel this service: ' + e.message, 'error');
+    return;
+  }
+
+  if (!updatedCount) {
+    showToast('Nothing to cancel — this service already shows cancelled', 'error');
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const svc = CATALOG_ROWS[serviceId] || {};
+  const workflow = svc.workflow;
+  const cardId = workflow ? o?.trello_card_ids?.[workflow] : null;
+  if (cardId) {
+    try {
+      const res = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({
+          target: 'trello_add_comment', card_id: cardId,
+          text: `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`,
+        }),
+      });
+      if (!res.ok) console.warn('Could not post cancellation comment:', res.status);
+    } catch (e) {
+      console.warn('Could not post cancellation comment:', e.message);
+    }
+  } else {
+    showToast('Cancelled, but no Trello card was found for this tactic — please update Trello by hand', 'error');
+  }
+
+  document.getElementById(`cancel-panel-${serviceId}`).style.display = 'none';
+  showToast('✅ Service cancelled');
+}
+
+// ── AM-TRIGGERED EDIT (2026-08-20) ──────────────────────────────
+// Per the approved mockup, but per Claire's earlier scope decision for this
+// pass: updates the order's own line_items (what Order Detail and Trello
+// read) and posts a Trello COMMENT on both the IO card and the specific
+// tactic's card -- does NOT regenerate/reattach a fresh PDF to either
+// (unlike Cancel/Intake-editing, that would mean rebuilding the full IO
+// print document's layout inside Admin, a much larger, separate lift; flagged
+// rather than silently skipped). Also does NOT touch live campaign_lines/
+// campaign_months -- per Claire, an edit here is scoped to the order's own
+// record for now, not a retroactive change to what's already being billed.
+function adminToggleEditPanel(orderId, serviceId, field, currentValue) {
+  const box = document.getElementById(`edit-panel-${serviceId}`);
+  if (!box) return;
+  if (box.style.display !== 'none' && box.innerHTML) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.innerHTML = `
+    <div style="margin-top:6px;display:flex;gap:6px;align-items:center">
+      <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:var(--light);font-size:12px"/>
+      <button type="button" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+      <button type="button" onclick="adminToggleEditPanel('${esc(orderId)}','${esc(serviceId)}','${esc(field)}',${currentValue})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
+    </div>`;
+  box.style.display = 'block';
+}
+
+async function adminSaveLineItemEdit(orderId, serviceId, field) {
+  const input = document.getElementById(`edit-value-${serviceId}`);
+  const newValue = input?.value;
+  if (newValue === '' || newValue == null) { showToast('Enter a value', 'error'); return; }
+
+  try {
+    await sb('rpc/admin_edit_order_line_item', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: serviceId, p_field: field, p_new_value: String(newValue),
+      }),
+    });
+  } catch (e) {
+    showToast('Could not save this change: ' + e.message, 'error');
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const svc = CATALOG_ROWS[serviceId] || {};
+  if (o) {
+    const item = (o.line_items || []).find(li => li.service_id === serviceId);
+    const oldValue = item ? item[field] : null;
+    if (item) item[field] = parseFloat(newValue);
+    o.is_revised = true;
+    o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field, old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
+
+    const label = svc.accounting_label || svc.label || serviceId;
+    const commentText = `✏️ ${label} ${field} changed from $${Number(oldValue).toLocaleString()} to $${Number(newValue).toLocaleString()} (by ${currentAdminUser?.name || 'AM'}).`;
+    const ioCardId = o.trello_card_ids?.__io_card__;
+    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    for (const cardId of cardIds) {
+      try {
+        const res = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
+        });
+        if (!res.ok) console.warn('Could not post edit comment to card', cardId, ':', res.status);
+      } catch (e) {
+        console.warn('Could not post edit comment to card', cardId, ':', e.message);
+      }
+    }
+    if (!cardIds.length) showToast('Saved, but no Trello card was found — please update Trello by hand', 'error');
+  }
+
+  showToast('✅ Change saved');
+  viewOrderDetail(orderId);
+}
+
+// ── AM-TRIGGERED SWAP TACTIC (2026-08-20) ───────────────────────
+// Third surface from the approved mockup. Unlike Cancel/Edit, this DOES
+// write into live campaign_lines/campaign_months (per Claire, since the
+// whole point is the automatic day-prorated split -- a cosmetic order-record
+// note wouldn't actually replace today's manual pause-one-create-another
+// workaround). The new starting tactic's Trello card is a PLAIN card, not
+// resolved from that service's own template (per Claire, to avoid
+// duplicating index.html's template-resolution logic here) -- an AM who
+// needs that tactic's real template content adds it by hand. Order Detail's
+// own Services table (sourced from the order's frozen line_items) is
+// deliberately NOT updated -- the order keeps recording what was originally
+// sold; campaign_lines is the operational record that evolves independently.
+function adminSwapDayCount(startDate, endDate) {
+  return Math.round((new Date(endDate + 'T00:00:00') - new Date(startDate + 'T00:00:00')) / 86400000) + 1;
+}
+function adminToggleSwapPanel(orderId) {
+  const box = document.getElementById(`swap-panel-${orderId}`);
+  if (!box) return;
+  if (box.style.display !== 'none' && box.innerHTML) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const o = allOrders.find(x => x.id === orderId);
+  if (!o) return;
+  const endingOptions = (o.line_items || []).map(li => `<option value="${esc(li.service_id)}">${esc(CATALOG_ROWS[li.service_id]?.accounting_label || li.label || li.service_id)}</option>`).join('');
+  const startingOptions = Object.values(CATALOG_ROWS).filter(s => s.active !== false)
+    .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('');
+  const today = new Date().toISOString().slice(0, 10);
+  box.innerHTML = `
+    <div style="background:var(--light);border-radius:8px;padding:14px 16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:10px">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Ending Tactic</label>
+          <select id="swap-ending-${orderId}" onchange="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px">${endingOptions}</select>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Starting Tactic</label>
+          <select id="swap-starting-${orderId}" onchange="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px">${startingOptions}</select>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Effective Date</label>
+          <input type="date" id="swap-date-${orderId}" value="${today}" oninput="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New Monthly Budget</label>
+          <input type="number" step="0.01" id="swap-budget-${orderId}" oninput="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+      </div>
+      <div id="swap-preview-${orderId}"></div>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <button type="button" onclick="adminConfirmSwap('${orderId}')" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Swap</button>
+        <button type="button" onclick="adminToggleSwapPanel('${orderId}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  box.style.display = 'block';
+  adminUpdateSwapPreview(orderId);
+}
+
+function adminUpdateSwapPreview(orderId) {
+  const previewEl = document.getElementById(`swap-preview-${orderId}`);
+  if (!previewEl) return;
+  const dateVal = document.getElementById(`swap-date-${orderId}`)?.value;
+  const budget = parseFloat(document.getElementById(`swap-budget-${orderId}`)?.value);
+  const endingId = document.getElementById(`swap-ending-${orderId}`)?.value;
+  const startingId = document.getElementById(`swap-starting-${orderId}`)?.value;
+  if (!dateVal || !budget) { previewEl.innerHTML = ''; return; }
+  const monthStart = dateVal.slice(0, 8) + '01';
+  const nextMonth = new Date(dateVal.slice(0, 4), Number(dateVal.slice(5, 7)), 1);
+  const monthEnd = new Date(nextMonth - 86400000).toISOString().slice(0, 10);
+  const totalDays = adminSwapDayCount(monthStart, monthEnd);
+  const endingDays = adminSwapDayCount(monthStart, dateVal) - 1;
+  const startingDays = totalDays - endingDays;
+  const endingAmt = Math.round(budget * endingDays / totalDays * 100) / 100;
+  const startingAmt = Math.round((budget - endingAmt) * 100) / 100;
+  const fmt = n => '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const endingLabel = CATALOG_ROWS[endingId]?.accounting_label || CATALOG_ROWS[endingId]?.label || endingId;
+  const startingLabel = CATALOG_ROWS[startingId]?.accounting_label || CATALOG_ROWS[startingId]?.label || startingId;
+  previewEl.innerHTML = `
+    <div style="font-size:10.5px;color:#1F7A42;background:#E7F5EC;display:inline-block;padding:2px 8px;border-radius:20px;font-weight:700;margin-bottom:6px">Auto-computed, shown before submitting</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+      <thead><tr><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Line</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Covers</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Amount</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:4px 8px">${esc(endingLabel)} (ending)</td><td style="padding:4px 8px">${endingDays} day${endingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(endingAmt)}</td></tr>
+        <tr><td style="padding:4px 8px">${esc(startingLabel)} (starting)</td><td style="padding:4px 8px">${startingDays} day${startingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(startingAmt)}</td></tr>
+        <tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:4px 8px">Total</td><td style="padding:4px 8px">${totalDays} days</td><td style="padding:4px 8px">${fmt(budget)}</td></tr>
+      </tbody>
+    </table>`;
+}
+
+async function adminConfirmSwap(orderId) {
+  const endingId = document.getElementById(`swap-ending-${orderId}`)?.value;
+  const startingId = document.getElementById(`swap-starting-${orderId}`)?.value;
+  const effectiveDate = document.getElementById(`swap-date-${orderId}`)?.value;
+  const budget = document.getElementById(`swap-budget-${orderId}`)?.value;
+  if (!endingId || !startingId || !effectiveDate || !budget) { showToast('All fields are required', 'error'); return; }
+  if (endingId === startingId) { showToast('Ending and starting tactic can\'t be the same service', 'error'); return; }
+
+  let result;
+  try {
+    result = await sb('rpc/admin_swap_tactic', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_ending_service_id: endingId, p_starting_service_id: startingId,
+        p_effective_date: effectiveDate, p_new_monthly_budget: parseFloat(budget),
+      }),
+    });
+  } catch (e) {
+    showToast('Could not complete the swap: ' + e.message, 'error');
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const endingSvc = CATALOG_ROWS[endingId] || {};
+  const startingSvc = CATALOG_ROWS[startingId] || {};
+
+  // Comment on the ending tactic's existing card, noting it was replaced.
+  const endingCardId = endingSvc.workflow ? o?.trello_card_ids?.[endingSvc.workflow] : null;
+  if (endingCardId) {
+    try {
+      await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({
+          target: 'trello_add_comment', card_id: endingCardId,
+          text: `🔁 Replaced by ${startingSvc.accounting_label || startingSvc.label || startingId}, effective ${effectiveDate} (${result.ending_days} of ${result.total_days} days this month, $${Number(result.ending_amount).toLocaleString()}).`,
+        }),
+      });
+    } catch (e) { console.warn('Could not post swap comment to ending card:', e.message); }
+  }
+
+  // Plain new card for the starting tactic (per Claire's scope decision --
+  // no template resolution here).
+  try {
+    const clientRows = await sb(`clients?id=eq.${o.client_id}&select=trello_list_id,name`);
+    const listId = clientRows?.[0]?.trello_list_id;
+    const bizName = clientRows?.[0]?.name || o._client_name || '';
+    if (listId) {
+      const cardName = `${startingSvc.accounting_label || startingSvc.label || startingId} — ${bizName}`;
+      const desc = `**Started via Swap Tactic**\nReplaces: ${endingSvc.accounting_label || endingSvc.label || endingId}\nEffective: ${effectiveDate}\nAmount: $${Number(result.starting_amount).toLocaleString()} (${result.starting_days} of ${result.total_days} days this month)`;
+      const createRes = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ target: 'trello_create_card', list_id: listId, name: cardName, desc, pos: 'bottom' }),
+      });
+      const card = await createRes.json();
+      if (card?.id && o) {
+        o.trello_card_ids = { ...(o.trello_card_ids || {}), [startingSvc.workflow || startingId]: card.id };
+        await sb('orders?id=eq.' + orderId, { method: 'PATCH', body: JSON.stringify({ trello_card_ids: o.trello_card_ids }), prefer: 'return=minimal' });
+      } else {
+        showToast('Swap completed, but the new Trello card could not be created — please add it by hand', 'error');
+      }
+    } else {
+      showToast('Swap completed, but this client has no Trello list on file — please add the new card by hand', 'error');
+    }
+  } catch (e) {
+    console.warn('Could not create new tactic card:', e.message);
+    showToast('Swap completed, but the new Trello card could not be created — please add it by hand', 'error');
+  }
+
+  document.getElementById(`swap-panel-${orderId}`).style.display = 'none';
+  showToast(`✅ Swap complete — ${result.ending_days} days to the old tactic, ${result.starting_days} to the new one`);
+}
+
 async function adminNotifyTrelloOfIntakeCompletion(o, formKey) {
   const cardId = o.intake_responses?.[formKey]?.trello_card_id;
   if (!cardId) {

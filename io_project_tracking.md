@@ -17356,3 +17356,154 @@ right payload, updates the local order state to completed/non-partial, and
 fires both `trello_add_comment` and `trello_attach_file` against the
 correct stored `card_id` (not a re-derived/guessed one). `node --check`
 clean on both files' extracted inline scripts.
+
+## 2026-08-20 — AM-triggered Cancel a Service + per-service guardrails
+
+First of three surfaces from Claire's approved "Edit & Cancel Flow Mockup"
+artifact. Per her explicit resolution: cancellation is AM-triggered from
+Admin's Order Detail for now, not the AE self-serve no-login form the
+mockup itself shows (same "AM side first" staging as Intake Editing) —
+built as one Cancel button per line item rather than the mockup's multi-
+service checklist, functionally equivalent and simpler to verify.
+
+**Schema:** `campaign_lines` gains `cancel_effective_date`, `cancel_reason`,
+`cancelled_by`, `cancelled_at`. `services` gains the guardrail fields —
+`cancel_notice_days`, `cancel_penalty_type` (none/flat/percent_remaining),
+`cancel_penalty_amount` — editable from the Service editor's new
+"Cancellation Terms" fields, wired through `admin_save_service` (existing
+function, extended in place — same explicit `p_data ? 'key'`-guarded
+pattern every other field already uses, so an unrelated field never gets
+silently nulled on save).
+
+**Card lookup, generalized:** the Intake Editor's `trello_card_id` (stored
+inside `intake_responses[formKey]`) only covers services WITH an intake
+form. Cancellation needs to work on any service, so `index.html` now also
+stamps a `workflowCardIds` map onto a new `orders.trello_card_ids` column
+(`{workflow: cardId}`), in the same follow-up PATCH. **MS Farm Bureau's
+per-agent split cards aren't covered** — a workflow with several agent
+cards has no single card to resolve to; flagged as a known gap, not
+silently guessed at. Caught a real regression risk while building this:
+the PATCH referencing the not-yet-existing column would have made every
+live submission silently fail to persist `trello_synced`/intake card ids
+(caught by its own try/catch, so submission itself still succeeded) until
+the column was added — flagged to Claire immediately, migration ran within
+the same session before any real order could be affected.
+
+**New RPC** `admin_cancel_service(p_name, p_pw, p_order_id, p_service_id,
+p_effective_date, p_reason)` — sets `campaign_lines.status = 'cancelled'`
+for every non-cancelled line matching that order+service (idempotent — a
+repeat call updates 0 rows rather than erroring or double-logging).
+**Note:** Strategist/Accounting's own display logic hasn't been checked
+for whether it already excludes `status = 'cancelled'` lines from "active"
+views — worth verifying before relying on this for real billing decisions.
+
+**Admin UI:** a "Cancel" button per line item in Order Detail's Services
+table expands an inline panel (Effective Date, Reason, Submit) — a live
+guardrail warning appears/disappears as the AM changes the date, computed
+from the service's own Notice Days/Penalty fields, naming the specific
+penalty. On submit: calls the RPC, then (only if the RPC actually changed
+a row) posts a Trello comment on the resolved card; a card-not-found or
+already-cancelled case shows a specific toast instead of silently doing
+nothing or erroring.
+
+**Verified live** via Playwright: the warning appears when the chosen date
+violates the service's notice period and clears when pushed past it;
+submitting posts the comment to the correct stored `card_id` with the
+right effective date/reason/AM name; a second submission against an
+already-cancelled line updates 0 rows and correctly skips posting a
+duplicate Trello comment. `node --check` clean on both files.
+
+## 2026-08-20 — AM-triggered Edit of a submitted IO
+
+Second of three surfaces from the "Edit & Cancel Flow Mockup" artifact.
+Per Claire's explicit scope decision for this pass: an edit updates the
+order's own `line_items` (and Trello) but does NOT touch live
+`campaign_lines`/`campaign_months` — a strategist would separately correct
+any month(s) already seeded for billing. Also does NOT regenerate/reattach
+a fresh PDF to either card (unlike Cancel/Intake-editing) — rebuilding the
+full IO print document's layout inside Admin is a much larger, separate
+lift; a Trello **comment** on both the IO card and the specific tactic's
+card covers the "everyone finds out" need without that build. Both
+reductions were flagged to Claire rather than silently built in.
+
+**Schema/RPC:** `orders` gains `is_revised boolean` and `edit_history
+jsonb` (an array of `{service_id, field, old_value, new_value, edited_by,
+edited_at}`). New `admin_edit_order_line_item(p_name, p_pw, p_order_id,
+p_service_id, p_field, p_new_value)` — finds the matching entry in the
+`line_items` jsonb array by service_id (via `jsonb_array_elements(...)
+with ordinality` to get its index), `jsonb_set`s just that one field,
+appends to `edit_history`, sets `is_revised = true`. Only
+`recurring`/`spend`/`fee`/`start_date`/`end_date`/`notes` are allowed
+fields — anything else raises.
+
+**IO card id, generalized further:** the IO card itself had never been
+stored anywhere (only per-workflow tactic cards were, via
+`trello_card_ids`). `index.html` now also stamps it in under a reserved
+key (`trello_card_ids.__io_card__`) in the same follow-up PATCH, so Admin
+can comment on the IO card too without re-deriving/guessing at it.
+
+**Admin UI:** a small ✎ link appears next to a line item's Amount **only**
+when exactly one of fee/recurring/spend is the sole nonzero contributor
+(a compound amount like fee + prorated hosting has no single field to
+edit unambiguously, so no link shows for that row) — opens an inline
+number input + Save/Cancel. A "Revised" pill appears in the Order Detail
+header once any edit has been made; each edited line shows its own
+"Was $X · edited by Y, Z" audit line, read from `edit_history`.
+
+**Verified live** via Playwright: the ✎ link appears for a single-field
+line item; saving a change calls the RPC with the right payload, posts
+the SAME comment to both the stored IO card and the tactic's own card
+(deduped if they happened to be the same id), flips the Revised pill on,
+and shows the correct audit line with the old and new values. `node
+--check` clean on both files.
+
+## 2026-08-20 — AM-triggered Swap Tactic (closes out the Edit & Cancel Flow Mockup)
+
+Third and final surface. Two scope questions resolved explicitly with
+Claire before building, since this is materially bigger than Cancel/Edit:
+(1) Swap DOES write into live `campaign_lines`/`campaign_months` — unlike
+Edit, the whole point here is the automatic day-prorated split, so a
+cosmetic order-record note wouldn't replace today's real manual
+pause-one-create-another workaround; (2) the new starting tactic's Trello
+card is a **plain** card, not resolved from that service's own template —
+reproducing index.html's full template-resolution logic (single-card/
+whole-list copy, KOC labeling) inside Admin would duplicate a lot of
+complexity with real drift risk for a first pass.
+
+**New RPC** `admin_swap_tactic(p_name, p_pw, p_order_id, p_ending_service_id,
+p_starting_service_id, p_effective_date, p_new_monthly_budget)` — sets the
+outgoing line's `flight_end` to the day before the effective date, inserts
+a brand-new `campaign_lines` row for the incoming tactic (same
+`accounting_only`/`billing_type` derivation from `pricing_mode` as the MS
+Farm Bureau fan-out trigger — not a special case here either), then day-
+prorates the swap month's budget between the two lines' `campaign_months`
+rows (inclusive day-counting, remainder-safe, same convention as the
+Budget Entry Form States math).
+
+**Admin UI:** a "⇄ Swap Tactic" button above the Services table opens a
+panel — Ending Tactic (from this order's own line items) / Starting Tactic
+(any active catalog service) / Effective Date / New Monthly Budget — with
+a live auto-computed preview table (Line / Covers / Amount) that updates
+as any field changes, mirroring the mockup's own layout exactly. On
+Confirm: posts a "replaced by X, N of M days, $Y" comment on the outgoing
+tactic's existing card, creates the plain new card in the client's real
+Trello list (fetched fresh by `client_id`, not assumed cached), and stamps
+its id onto `trello_card_ids` under the new tactic's workflow for any
+later Cancel/Edit on it to find. The order's own `line_items` snapshot is
+deliberately left untouched — it keeps recording what was originally sold;
+`campaign_lines` is the operational record that evolves independently.
+
+**Verified live** via Playwright using the mockup's own worked example
+(Targeted Display: Audience → Keyword, Aug 19 effective date, $1,200
+budget): the preview correctly computed 18 ending days / 13 starting days
+out of 31 (matching the mockup's own numbers exactly), the RPC fired with
+the right payload, the outgoing card got the correct "18 of 31 days,
+$696.77" comment, a new card was created in the right client's list with
+the right description ($503.23, 13 of 31 days), and the order's local
+`trello_card_ids` picked up the new card under its workflow key. `node
+--check` clean on both files.
+
+**This closes out all three surfaces of the approved Edit & Cancel Flow
+Mockup** (Cancel, Edit, Swap) plus the per-service cancellation guardrails
+— everything from today's MS Farm Bureau follow-ups and the six new items
+from Claire's brain-dump is now built and verified.

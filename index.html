@@ -5944,6 +5944,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             Object.entries(formKeyCardIds).forEach(([key, cid]) => {
               intakeWithCardIds[key] = { ...(intakeWithCardIds[key] || {}), trello_card_id: cid };
             });
+            // Reserved key (2026-08-20) -- the IO card itself, needed by the
+            // AM-triggered Edit flow (posts a comment on the IO card too, not
+            // just the specific tactic's own card, per the approved mockup).
+            if (ioCardId) workflowCardIds['__io_card__'] = ioCardId;
             await sb('orders?id=eq.' + orderId, {
               method: 'PATCH',
               body: JSON.stringify({
