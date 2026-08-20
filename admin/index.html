@@ -468,7 +468,34 @@
           </div>
 
           <div id="admin-client-agents-counties-panel" style="display:none;background:var(--light);border-radius:10px;padding:16px;margin-bottom:16px">
-            <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">Counties and Agents set up here become pickable on the IO form's split-entry step for this client — an AE can still type a brand-new one there, which adds it to this same list.</p>
+            <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">AEs, Counties, and Agents set up here become pickable on the IO form's split-entry step for this client — an AE can still type a brand-new County or Agent there, which adds it to this same list. A brand-new AE (not added here) is blocked from submitting for this client until you add them below, since there's no Trello list to route their card to otherwise.</p>
+
+            <!-- MS Farm Bureau fan-out (2026-08-20, corrected): the Trello list belongs to
+                 the AE SUBMITTING the IO (the same AE picked on Step 1 of the public form),
+                 not to the county/agent split data underneath them. Counties belong to one
+                 AE each; Agents belong to one county each — this section is the top of that
+                 chain. -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <p style="font-size:12px;font-weight:700;color:var(--text);margin:0">AEs</p>
+              <button type="button" onclick="adminNewClientAe()" class="btn-quiet-green">+ Add AE</button>
+            </div>
+            <div id="admin-client-ae-table" style="margin-bottom:8px"></div>
+            <div id="admin-client-ae-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-bottom:22px">
+              <input type="hidden" id="admin-client-ae-original-id"/>
+              <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-client-ae-form-title">New AE</p>
+              <div style="display:flex;gap:10px;align-items:flex-end">
+                <div style="flex:1">
+                  <label class="lbl" for="admin-client-ae-picker">AE</label>
+                  <select id="admin-client-ae-picker" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
+                </div>
+                <div style="flex:1">
+                  <label class="lbl" for="admin-client-ae-trello-list-id">MS Farm Bureau Trello List ID</label>
+                  <input type="text" id="admin-client-ae-trello-list-id" placeholder="e.g. 66ec562e1bc7223b1df294c7" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                </div>
+                <button type="button" onclick="adminSaveClientAe()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+                <button type="button" onclick="adminCancelClientAeEdit()" class="btn-quiet-green">Cancel</button>
+              </div>
+            </div>
 
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
               <p style="font-size:12px;font-weight:700;color:var(--text);margin:0">Counties</p>
@@ -482,6 +509,10 @@
                 <div style="flex:1">
                   <label class="lbl" for="admin-county-name">Name</label>
                   <input type="text" id="admin-county-name" placeholder="e.g. Alcorn County" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                </div>
+                <div style="flex:1">
+                  <label class="lbl" for="admin-county-ae">AE</label>
+                  <select id="admin-county-ae" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
                 </div>
                 <button type="button" onclick="adminSaveCounty()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
                 <button type="button" onclick="adminCancelCountyEdit()" class="btn-quiet-green">Cancel</button>
@@ -505,18 +536,9 @@
                   <label class="lbl" for="admin-agent-county">County</label>
                   <select id="admin-agent-county" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
                 </div>
-                <div style="flex:1">
-                  <label class="lbl" for="admin-agent-trello-list-id">Trello List ID</label>
-                  <input type="text" id="admin-agent-trello-list-id" placeholder="e.g. 66ec562e1bc7223b1df294c7" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
-                </div>
                 <button type="button" onclick="adminSaveAgent()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
                 <button type="button" onclick="adminCancelAgentEdit()" class="btn-quiet-green">Cancel</button>
               </div>
-              <!-- MS Farm Bureau fan-out (2026-08-20): each agent's card lands in THEIR
-                   OWN Trello list, not the client's shared one -- a multi-agent client
-                   has many AEs, each with their own pre-existing list. Optional: a blank
-                   value means new cards for that agent fall back to the client's own list. -->
-              <p style="font-size:11px;color:var(--muted);margin:6px 0 0">Optional — this agent's split cards go here instead of the client's own list. Leave blank to use the client's list.</p>
             </div>
           </div>
 
@@ -3845,25 +3867,153 @@ async function adminToggleAeActive(id, makeActive) {
 // toggled on for the client currently being edited.
 let ALL_CLIENT_COUNTIES = [];
 let ALL_CLIENT_AGENTS = [];
+let ALL_CLIENT_AES = [];
 
 async function loadClientAgentsCounties() {
   const clientId = document.getElementById('admin-client-original-id').value;
   if (!clientId) {
-    document.getElementById('admin-county-table').innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Save the client once before adding counties/agents.</p>';
+    document.getElementById('admin-client-ae-table').innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Save the client once before adding AEs/counties/agents.</p>';
+    document.getElementById('admin-county-table').innerHTML = '';
     document.getElementById('admin-agent-table').innerHTML = '';
     return;
   }
   try {
-    const [counties, agents] = await Promise.all([
+    // ALL_AES (2026-08-20) — the global, group-wide AE roster (the SAME one behind
+    // Step 1's "AE Name" picker on the public form) is what this client's own AE
+    // list picks FROM, so it must be loaded here too, not just on the Admin AE tab.
+    if (!ALL_AES.length) {
+      ALL_AES = await sb('rpc/admin_get_aes', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || [];
+    }
+    const [counties, agents, clientAes] = await Promise.all([
       sb('rpc/admin_get_counties', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: clientId }) }),
       sb('rpc/admin_get_agents', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: clientId }) }),
+      sb('rpc/admin_get_client_aes', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: clientId }) }),
     ]);
     ALL_CLIENT_COUNTIES = counties || [];
     ALL_CLIENT_AGENTS = agents || [];
+    ALL_CLIENT_AES = clientAes || [];
+    renderClientAeList();
     renderClientCountyList();
     renderClientAgentList();
   } catch(e) {
-    showToast('Error loading agents/counties: ' + e.message, 'error');
+    showToast('Error loading AEs/agents/counties: ' + e.message, 'error');
+  }
+}
+
+function renderClientAeList() {
+  const el = document.getElementById('admin-client-ae-table');
+  if (!ALL_CLIENT_AES.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No AEs yet — no one can submit an IO for this client until at least one is added.</p>';
+    return;
+  }
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">AE</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello List</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead><tbody>`;
+  ALL_CLIENT_AES.forEach(ca => {
+    const inactive = !ca.active;
+    const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const aeName = ALL_AES.find(a => a.id === ca.ae_id)?.name || '<span style="color:var(--muted)">(unknown AE)</span>';
+    const listBadge = ca.trello_list_id
+      ? '<span style="font-size:10px;font-weight:700;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:8px">Set</span>'
+      : '<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:8px">Not set — blocked</span>';
+    html += `<tr style="border-bottom:1px solid var(--border);${inactive ? 'background:#FAFAFA' : ''}">
+      <td style="padding:8px 10px">${esc(aeName)}${inactiveBadge}</td>
+      <td style="padding:8px 10px">${listBadge}</td>
+      <td style="padding:8px 10px;text-align:right;white-space:nowrap">
+        <button onclick="adminEditClientAe('${esc(ca.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>
+        <button onclick="adminToggleClientAeActive('${esc(ca.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>
+      </td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function populateClientAePickerDropdown(selectedAeId) {
+  const sel = document.getElementById('admin-client-ae-picker');
+  // Excludes an AE already added to this client (unless it's the one currently
+  // being edited) — same "no duplicate roster entry" guard as Agents/Counties.
+  const editingId = document.getElementById('admin-client-ae-original-id').value;
+  const alreadyAdded = new Set(ALL_CLIENT_AES.filter(ca => ca.id !== editingId).map(ca => ca.ae_id));
+  const options = ALL_AES.filter(a => a.active !== false && (!alreadyAdded.has(a.id) || a.id === selectedAeId));
+  sel.innerHTML = options.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  sel.value = selectedAeId || '';
+}
+
+function adminNewClientAe() {
+  document.getElementById('admin-client-ae-form-title').textContent = 'New AE';
+  document.getElementById('admin-client-ae-original-id').value = '';
+  document.getElementById('admin-client-ae-trello-list-id').value = '';
+  populateClientAePickerDropdown(null);
+  document.getElementById('admin-client-ae-form').style.display = 'block';
+}
+
+function adminEditClientAe(id) {
+  const ca = ALL_CLIENT_AES.find(x => x.id === id);
+  if (!ca) return;
+  const aeName = ALL_AES.find(a => a.id === ca.ae_id)?.name || '';
+  document.getElementById('admin-client-ae-form-title').textContent = 'Edit AE — ' + aeName;
+  document.getElementById('admin-client-ae-original-id').value = ca.id;
+  document.getElementById('admin-client-ae-trello-list-id').value = ca.trello_list_id || '';
+  populateClientAePickerDropdown(ca.ae_id);
+  document.getElementById('admin-client-ae-form').style.display = 'block';
+}
+
+function adminCancelClientAeEdit() {
+  document.getElementById('admin-client-ae-form').style.display = 'none';
+}
+
+async function adminSaveClientAe() {
+  const clientId = document.getElementById('admin-client-original-id').value;
+  const isNew = !document.getElementById('admin-client-ae-original-id').value;
+  const aeId = document.getElementById('admin-client-ae-picker').value;
+  const trelloListId = document.getElementById('admin-client-ae-trello-list-id').value.trim() || null;
+  if (!aeId) { showToast('Please pick an AE', 'error'); return; }
+  const payload = { ae_id: aeId, trello_list_id: trelloListId };
+  if (isNew) payload.active = true;
+  try {
+    await sb('rpc/admin_save_client_ae', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_client_ae_id: isNew ? null : document.getElementById('admin-client-ae-original-id').value,
+        p_client_id: clientId,
+        p_data: payload
+      })
+    });
+    showToast(isNew ? 'AE added!' : 'AE updated!');
+    document.getElementById('admin-client-ae-form').style.display = 'none';
+    await loadClientAgentsCounties();
+  } catch(e) {
+    showToast('Error saving AE: ' + e.message, 'error');
+  }
+}
+
+async function adminToggleClientAeActive(id, makeActive) {
+  const ca = ALL_CLIENT_AES.find(x => x.id === id);
+  if (!ca) return;
+  const aeName = ALL_AES.find(a => a.id === ca.ae_id)?.name || 'this AE';
+  if (!confirm(`${makeActive ? 'Reactivate' : 'Deactivate'} ${aeName}?`)) return;
+  const clientId = document.getElementById('admin-client-original-id').value;
+  try {
+    await sb('rpc/admin_save_client_ae', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_client_ae_id: id,
+        p_client_id: clientId,
+        p_data: { active: makeActive }
+      })
+    });
+    showToast(`AE ${makeActive ? 'reactivated' : 'deactivated'}!`);
+    loadClientAgentsCounties();
+  } catch(e) {
+    showToast('Error updating AE: ' + e.message, 'error');
   }
 }
 
@@ -3885,13 +4035,17 @@ function renderClientCountyList() {
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">AE</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
   ALL_CLIENT_COUNTIES.forEach(c => {
     const inactive = !c.active;
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
+    const clientAe = ALL_CLIENT_AES.find(ca => ca.id === c.client_ae_id);
+    const aeName = clientAe ? (ALL_AES.find(a => a.id === clientAe.ae_id)?.name || '(unknown AE)') : '<span style="color:var(--muted)">—</span>';
     html += `<tr style="border-bottom:1px solid var(--border);${inactive ? 'background:#FAFAFA' : ''}">
       <td style="padding:8px 10px">${esc(c.name)}${inactiveBadge}</td>
+      <td style="padding:8px 10px">${aeName}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">
         <button onclick="adminEditCounty('${esc(c.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>
         <button onclick="adminToggleCountyActive('${esc(c.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>
@@ -3911,10 +4065,21 @@ function populateAgentCountyDropdown(selectedId) {
   sel.value = selectedId || '';
 }
 
+function populateCountyAeDropdown(selectedId) {
+  const sel = document.getElementById('admin-county-ae');
+  const options = ALL_CLIENT_AES.filter(ca => ca.active !== false || ca.id === selectedId);
+  sel.innerHTML = '<option value="">— None —</option>' + options.map(ca => {
+    const aeName = ALL_AES.find(a => a.id === ca.ae_id)?.name || '(unknown AE)';
+    return `<option value="${esc(ca.id)}">${esc(aeName)}${ca.active === false ? ' (inactive)' : ''}</option>`;
+  }).join('');
+  sel.value = selectedId || '';
+}
+
 function adminNewCounty() {
   document.getElementById('admin-county-form-title').textContent = 'New County';
   document.getElementById('admin-county-original-id').value = '';
   document.getElementById('admin-county-name').value = '';
+  populateCountyAeDropdown(null);
   document.getElementById('admin-county-form').style.display = 'block';
 }
 
@@ -3924,6 +4089,7 @@ function adminEditCounty(id) {
   document.getElementById('admin-county-form-title').textContent = 'Edit County — ' + c.name;
   document.getElementById('admin-county-original-id').value = c.id;
   document.getElementById('admin-county-name').value = c.name || '';
+  populateCountyAeDropdown(c.client_ae_id);
   document.getElementById('admin-county-form').style.display = 'block';
 }
 
@@ -3935,8 +4101,9 @@ async function adminSaveCounty() {
   const clientId = document.getElementById('admin-client-original-id').value;
   const isNew = !document.getElementById('admin-county-original-id').value;
   const name = document.getElementById('admin-county-name').value.trim();
+  const clientAeId = document.getElementById('admin-county-ae').value || null;
   if (!name) { showToast('Name is required', 'error'); return; }
-  const payload = { name };
+  const payload = { name, client_ae_id: clientAeId };
   if (isNew) payload.active = true;
   try {
     await sb('rpc/admin_save_county', {
@@ -3990,20 +4157,15 @@ function renderClientAgentList() {
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">County</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello List</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
   ALL_CLIENT_AGENTS.forEach(a => {
     const inactive = !a.active;
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const countyName = ALL_CLIENT_COUNTIES.find(c => c.id === a.county_id)?.name || '<span style="color:var(--muted)">—</span>';
-    const trelloBadge = a.trello_list_id
-      ? '<span style="font-size:10px;font-weight:700;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:8px">Set</span>'
-      : '<span style="font-size:10px;color:var(--muted)">Uses client list</span>';
     html += `<tr style="border-bottom:1px solid var(--border);${inactive ? 'background:#FAFAFA' : ''}">
       <td style="padding:8px 10px">${esc(a.name)}${inactiveBadge}</td>
       <td style="padding:8px 10px">${countyName}</td>
-      <td style="padding:8px 10px">${trelloBadge}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">
         <button onclick="adminEditAgent('${esc(a.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>
         <button onclick="adminToggleAgentActive('${esc(a.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>
@@ -4018,7 +4180,6 @@ function adminNewAgent() {
   document.getElementById('admin-agent-form-title').textContent = 'New Agent';
   document.getElementById('admin-agent-original-id').value = '';
   document.getElementById('admin-agent-name').value = '';
-  document.getElementById('admin-agent-trello-list-id').value = '';
   populateAgentCountyDropdown(null);
   document.getElementById('admin-agent-form').style.display = 'block';
 }
@@ -4029,7 +4190,6 @@ function adminEditAgent(id) {
   document.getElementById('admin-agent-form-title').textContent = 'Edit Agent — ' + a.name;
   document.getElementById('admin-agent-original-id').value = a.id;
   document.getElementById('admin-agent-name').value = a.name || '';
-  document.getElementById('admin-agent-trello-list-id').value = a.trello_list_id || '';
   populateAgentCountyDropdown(a.county_id);
   document.getElementById('admin-agent-form').style.display = 'block';
 }
@@ -4043,9 +4203,8 @@ async function adminSaveAgent() {
   const isNew = !document.getElementById('admin-agent-original-id').value;
   const name = document.getElementById('admin-agent-name').value.trim();
   const countyId = document.getElementById('admin-agent-county').value || null;
-  const trelloListId = document.getElementById('admin-agent-trello-list-id').value.trim() || null;
   if (!name) { showToast('Name is required', 'error'); return; }
-  const payload = { name, county_id: countyId, trello_list_id: trelloListId };
+  const payload = { name, county_id: countyId };
   if (isNew) payload.active = true;
   try {
     await sb('rpc/admin_save_agent', {
@@ -5376,6 +5535,7 @@ async function adminNewClient() {
   document.getElementById('admin-client-agents-counties-panel').style.display = 'none';
   ALL_CLIENT_COUNTIES = [];
   ALL_CLIENT_AGENTS = [];
+  ALL_CLIENT_AES = [];
   await ensureStaffRosterLoaded();
   await ensureStrategistsLoaded();
   refreshClientStrategistDefaults();
