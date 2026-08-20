@@ -17567,3 +17567,46 @@ both show "varies by month" and the correct $500 September figure; the
 SEM tactic card's Trello description (captured from the actual
 `trello_update_card` call during submission) lists all three months by
 name with their real amounts. `node --check` clean on all three files.
+
+## 2026-08-20 — Trevino Smith Funeral Home: removed a duplicate LLO (SEO) campaign_lines row
+
+Not part of any of today's built features — a live data cleanup Claire
+found by inspection. Two `campaign_lines` rows for LLO (SEO), same client,
+same dates, created 0.3 seconds apart (clearly a genuine double-insert,
+not two intentionally-separate lines). Checked before touching anything:
+they'd since diverged with real, different data — one assigned platform
+"Yext" with a $250 gross_budget already entered, the other "Local Incite"
+with no budget yet. Confirmed with Claire which was correct (Yext, since
+"we don't track anything in the portal" — meaning the platform field
+itself isn't relied on operationally either way) before running a tightly-
+scoped delete (by id + client_id + platform + tactic_label, so it could
+only ever match the one intended row) removing that row's own
+`campaign_months` entry and then the line itself.
+
+## 2026-08-20 — Revised IO PDF, closing the last gap flagged on the Edit flow
+
+When the AM-triggered Edit flow shipped earlier today, the PDF-reattach
+part of the approved mockup ("a fresh PDF replaces the old one" on both
+the IO card and the specific tactic's card) was explicitly scoped out as a
+separate, larger lift — Admin never had access to index.html's own
+`buildIoDocumentHtml()`, which depends on live in-session form state
+(fetched group logo, the AE's live `selected` object, etc.) that doesn't
+exist after the fact. Built now, per Claire's "build it now."
+
+**Not a rebuild of the original print document** — a new, purpose-built
+"Revised IO Summary" PDF (`generateAdminRevisedIoPdfBlob`): every CURRENT
+line item from the order's own `line_items` (reflecting whatever's been
+edited so far, not the original signed snapshot), totals, and a full
+Change History table (was → now, who, when, per field) pulled straight
+from `edit_history`. Reuses the same html2canvas/jsPDF capture pipeline
+and pagination helpers already built for the Intake Editor's PDF. Wired
+into `adminSaveLineItemEdit()`: after posting the comment to both the IO
+card and the tactic's card, generates this ONE pdf and attaches it to
+whichever of those cards were actually found — matching the mockup's own
+"the same comment + updated PDF" wording (one file, not two different
+ones per card).
+
+**Verified live** via Playwright: after an edit, both `trello_add_comment`
+and `trello_attach_file` fire for both the stored IO card and the tactic
+card, with the same generated filename/content each time. `node --check`
+clean.
