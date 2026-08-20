@@ -17105,3 +17105,36 @@ Node — a `koc:'none'` product with no intake data at all, one with a
 `bypassed` intake, a `koc:'required'` product alone, and a mix of both —
 confirming only the `koc:'required'` case returns true in every case.
 `node --check` clean on the extracted inline script.
+
+## 2026-08-20 — Trello comment on every order, new card or reused
+
+Claire: "For new orders for both the IO and existing cards we need to create
+a comment so that the AM and anyone else gets notified that something has
+been ordered. Right now it only creates cards so if a card is already
+created there is no notification." Confirmed: only card *creation* implicitly
+notifies Trello board watchers via its own activity feed — updating an
+existing card's description (the resell path every tactic card and the IO
+card already use) posts nothing anyone would see.
+
+**Backend:** added a new `trello_add_comment` target to the
+`claude-proxy` Supabase Edge Function (not tracked in this repo — Claire
+pasted its current source, added the one new `switch` case herself, and
+redeployed), calling Trello's `POST /1/cards/{id}/actions/comments`.
+
+**Frontend (`index.html`):** new shared `postOrderComment(cardId, text)`
+helper inside `submitIO()`, tolerant of failure (logged, not thrown) same as
+the existing PDF-attach calls. Wired into all three places a card gets
+created or reused: the IO card (posts the services-sold summary once,
+right after either its create or update branch), `finalizeTacticCard()`
+(covers every tactic-card path — single-card template, whole-list template,
+list-fallback, and no-template plain card — since all four already funnel
+through this one function for both new and existing cards), and
+`createAgentSplitCards()` (one comment per agent's card, MS Farm Bureau
+fan-out).
+
+**Verified live** via Playwright through the real `submitIO()` path with a
+pre-existing Trello card mocked for the SEM tactic (forcing the
+previously-silent update branch) alongside a brand-new IO card: confirmed
+`trello_add_comment` fired for BOTH — the reused SEM card got a comment
+(`card_id: card_sem_existing`, the exact case that was broken) and the new
+IO card got its own. `node --check` clean on the extracted inline script.

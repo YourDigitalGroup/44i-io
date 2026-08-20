@@ -5178,6 +5178,12 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           addedCardNames.add(norm('IO'));
           console.log('Created IO card');
         }
+        // Comment on every order, new card or reused (2026-08-20, per Claire —
+        // "if a card is already created... there is no notification"). A brand
+        // new card already gets Trello's own creation activity; this still
+        // posts here too so the AM sees a consistent, specific "what got
+        // ordered" note either way, not just a generic "card created."
+        await postOrderComment(ioCardId, `📋 New order submitted (IO #${ioNumber}):\n\n${servicesDesc}`);
         // Overview IO card covers the whole order — gets the UNION of every discipline
         // represented across ALL selected line items, not just one tactic's.
         await assignCardMembers(ioCardId, memberIdsForLineItems(lineItems));
@@ -5290,6 +5296,26 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // applyKoc (2026-07-15, per Claire): a whole-list template can copy SEVERAL
         // cards for one workflow — the KOC label should only land on the first of them,
         // not every sub-card, so the caller passes false for every card after the first.
+        // Posts a Trello comment noting what was just ordered (2026-08-20, per
+        // Claire — a resold service updating an EXISTING card produced no
+        // notification at all, since only card creation implicitly notifies
+        // watchers; this covers new and existing cards alike). Failures are
+        // logged, not thrown — a missing comment shouldn't block the rest of
+        // card setup, same tolerance as the PDF-attach calls right below it.
+        async function postOrderComment(cardId, text) {
+          if (!cardId || !text) return;
+          try {
+            const res = await fetch(PROXY, {
+              method: 'POST',
+              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+              body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text })
+            });
+            if (!res.ok) console.warn('Could not post order comment to card', cardId, ':', res.status);
+          } catch (e) {
+            console.warn('Could not post order comment to card', cardId, ':', e.message);
+          }
+        }
+
         async function finalizeTacticCard(cardId, wfIdx, applyKoc = true) {
           if (!cardId) return;
           const intake = buildIntakeDesc(originalWorkflows[wfIdx]);
@@ -5297,6 +5323,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           // banner (2026-07-15, per Claire — kept visible without the full Q&A
           // cluttering it; the full detail lives in the PDF instead).
           const sellDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intake?.bannerHeader].filter(Boolean).join('\n\n');
+          await postOrderComment(cardId, `📋 New order submitted:\n\n${formatSiblingLineItems(originalWorkflows[wfIdx])}`);
           if (sellDesc) {
             await fetch(PROXY, {
               method: 'POST',
@@ -5401,6 +5428,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               const card = await res.json();
               if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
             }
+            await postOrderComment(cardId, `📋 New order submitted:\n\n${descLines}`);
             if (cardId && intake) {
               try {
                 const { base64, fileName } = await generateIntakePdfBlob(`${wf}-${agentName}`, intake.html);
