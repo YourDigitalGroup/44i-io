@@ -5488,6 +5488,23 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         let cardsAdded = 0;
         const originalWorkflows = [...workflows]; // same order as soldWorkflows, pre-tier-remap
 
+        // AM-side intake editing (2026-08-20) — records which real Trello card
+        // each intake form's answers ended up on, keyed the same way
+        // intakeData itself is (plain formKey, or formKey::agent::<agentKey>
+        // for an MS Farm Bureau split card). Stamped onto the order's
+        // intake_responses in a follow-up PATCH after Trello setup finishes
+        // (see below, same pattern as the existing trello_synced PATCH) — so
+        // Admin's Order Detail can later find the right card directly instead
+        // of re-deriving a card name and hoping it matches.
+        const formKeyCardIds = {};
+        // AM-triggered Cancel/Edit (2026-08-20) — same idea as formKeyCardIds
+        // above, but keyed by WORKFLOW instead of intake form, since not every
+        // service has an intake form at all and cancellation/editing needs to
+        // work on any of them. Admin resolves the workflow for a given line
+        // item locally (CATALOG_ROWS[service_id].workflow, already loaded via
+        // the shared loadCatalog()) and looks it up here.
+        const workflowCardIds = {};
+
         // "Needs KOC" label (2026-07-14, per Claire) — looked up ONCE per submission
         // (not per card) and only if something sold actually needs it, since it's an
         // extra Trello API call. `li.requires_koc` already exists on each line item
@@ -5577,6 +5594,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
 
         async function finalizeTacticCard(cardId, wfIdx, applyKoc = true) {
           if (!cardId) return;
+          const tacticFormKey = resolveWorkflowIntakeFormId(originalWorkflows[wfIdx]);
+          if (tacticFormKey) formKeyCardIds[tacticFormKey] = cardId;
+          workflowCardIds[originalWorkflows[wfIdx]] = cardId;
           const intake = buildIntakeDesc(originalWorkflows[wfIdx]);
           // Card description = services-sold summary + the short completion-status
           // banner (2026-07-15, per Claire — kept visible without the full Q&A
@@ -5688,6 +5708,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
             }
             await postOrderComment(cardId, `📋 New order submitted:\n\n${descLines}`);
+            if (cardId && formKey) formKeyCardIds[`${formKey}::agent::${agentKey}`] = cardId;
             if (cardId && intake) {
               try {
                 const { base64, fileName } = await generateIntakePdfBlob(`${wf}-${agentName}`, intake.html);
@@ -5911,15 +5932,26 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
 
         showToast(`✅ Trello list ready — ${cardsAdded} new card${cardsAdded !== 1 ? 's' : ''} added`);
 
-        // Mark the order as successfully synced to Trello (guards future auto-purge)
+        // Mark the order as successfully synced to Trello (guards future auto-purge).
+        // Also stamps each intake form's real Trello card id onto intake_responses
+        // (2026-08-20) -- formKeyCardIds was filled in above as each tactic/agent
+        // card was resolved; Admin's Order Detail reads trello_card_id straight off
+        // an intake entry instead of re-deriving a card name to edit/reattach a PDF
+        // to it later.
         if (orderId) {
           try {
+            const intakeWithCardIds = { ...intakeData };
+            Object.entries(formKeyCardIds).forEach(([key, cid]) => {
+              intakeWithCardIds[key] = { ...(intakeWithCardIds[key] || {}), trello_card_id: cid };
+            });
             await sb('orders?id=eq.' + orderId, {
               method: 'PATCH',
               body: JSON.stringify({
                 trello_synced: true,
                 trello_synced_at: new Date().toISOString(),
                 trello_client_list_id: clientList?.id || null,
+                intake_responses: intakeWithCardIds,
+                trello_card_ids: workflowCardIds,
               }),
               prefer: 'return=minimal'
             });

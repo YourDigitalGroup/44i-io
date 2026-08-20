@@ -17291,3 +17291,68 @@ with two counties on two different AEs correctly shows only the submitting
 AE's own county; and after picking that county, the agent picker shows only
 the agent registered to it, not one belonging to a different county.
 `node --check` clean on the extracted inline script.
+
+## 2026-08-20 — AM-side Intake Form Editing in Admin's Order Detail
+
+Built per Claire's approved "Intake Form Edit Mockup" artifact — AM side
+only for now, AE side deferred (same staged rollout as the MS Farm Bureau
+Agent/County Split). This replaces the old fallback for a Partial/Not
+Started intake: previously that meant falling back to a separate PDF
+process that never made it into Trello or the system at all.
+
+**Schema/RPC:** new `admin_save_order_intake(p_name, p_pw, p_order_id,
+p_form_key, p_fields, p_completed)` — password-gated like every other admin
+RPC, writes `fields`/`completed`/`partial` onto `orders.intake_responses ->
+p_form_key`, preserving whatever `trello_card_id` is already stored there
+(see below) rather than clobbering it.
+
+**Card lookup — the design question resolved before building:** Admin's
+Order Detail is read-only today and never had to know which Trello card
+belongs to which service. Rather than duplicate the card-naming logic from
+`index.html`'s submission flow into `admin/index.html` (and risk it drifting
+out of sync over time), `index.html` itself now stamps each tactic's real
+Trello card id onto its intake entry (`intakeData[formKey].trello_card_id`)
+in the same follow-up PATCH that already marks an order `trello_synced`
+(new `formKeyCardIds` map, filled in as `finalizeTacticCard()`/
+`createAgentSplitCards()` resolve each card — covers the MS Farm Bureau
+agent-split cards too, keyed the same `formKey::agent::<agentKey>` way).
+Admin then just reads that stored id directly. **Only orders submitted
+after this change carry a stored id** — an older order's intake completion
+now shows a toast telling the AM to update that card by hand, rather than
+guessing at a card name and risking landing on the wrong one.
+
+**Admin UI (`admin/index.html`):** a Partial/Not Started intake form gets a
+"✎ Fill in the rest"/"✎ Fill in this intake form" button, expanding an
+inline editable panel (`adminToggleIntakeEditor`) built from the SAME
+`INTAKE_FORMS` global `shared.js`'s `loadCatalog()` already populates at
+startup — a redundant second declaration/rebuild of this same lookup was
+written and then removed after it threw `Identifier 'INTAKE_FORMS' has
+already been declared` and silently broke the entire admin script (caught
+via a Playwright run showing `viewOrderDetail is not defined`, traced to a
+`let INTAKE_FORMS` redeclaration colliding with shared.js's own). "Save &
+Mark Complete" calls the new RPC, then (only on Complete, per the mockup —
+"Save as Draft" skips this entirely) posts a Trello comment and reattaches
+a fresh PDF to the stored card, using new pagination helpers
+(`adminComputeUnsafeZonesMm`/`adminPaginateImageIntoPdf`) ported verbatim
+from index.html's own, plus html2canvas/jsPDF `<script>` tags added to
+admin's `<head>` (never needed before now — admin had never generated a PDF).
+
+**Deliberate simplifications from the AE-side modal**, each field renders
+as a plain text input (or textarea for `textarea`/`list` types) regardless
+of its original widget (radio/checkbox/select_fill_in/list) — safe because
+the underlying storage is always just a plain string per field key, so a
+text box can hold any prior answer even though it loses the constrained-
+choice UX. `showIf` conditional visibility isn't applied (every field always
+shows). The TLP structured-grid special case from index.html's own intake
+PDF builder is also not ported — a TLP-form intake edited from Admin shows
+plain rows instead of the numbered campaign-layout grid. Flagging these as
+known scope reductions, not oversights — worth porting later if TLP editing
+from Admin turns out to matter in practice.
+
+**Verified live** via Playwright: opening Order Detail for an order with a
+Partial intake shows the correct button text and a pre-filled editor;
+editing fields and clicking Save & Mark Complete calls the RPC with the
+right payload, updates the local order state to completed/non-partial, and
+fires both `trello_add_comment` and `trello_attach_file` against the
+correct stored `card_id` (not a re-derived/guessed one). `node --check`
+clean on both files' extracted inline scripts.

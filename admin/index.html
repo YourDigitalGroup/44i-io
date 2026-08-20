@@ -6,6 +6,11 @@
 <title>44i Admin Portal</title>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="../shared.css?v=20260813b"/>
+<!-- html2canvas/jsPDF (2026-08-20) — same versions as index.html's own PDF
+     generation, needed here so a completed intake edit can reattach a fresh
+     PDF to its Trello card the same way an AE's own submission already does. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   /* Service editor grouping (2026-07-10) — admin-only, so kept here rather than
      shared.css (see that file's own scope-discipline note: admin markup is otherwise
@@ -786,6 +791,29 @@
               <div>
                 <label class="lbl" for="admin-svc-tlp-cap">TLP Page Cap <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for TLP tiers. Max pages the intake grid allows for this tier; the client-facing intake form always reads this live, so changing it here takes effect immediately with no code change.</span></label>
                 <input type="number" step="1" min="1" id="admin-svc-tlp-cap" placeholder="e.g. 10" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              </div>
+            </div>
+            <!-- Cancellation guardrails (2026-08-20) -- per-service rules for the
+                 AM-triggered Cancel a Service flow: how much notice is required, and
+                 whether an early cancellation carries a financial penalty. Leaving
+                 Notice Days blank/0 means no minimum notice is enforced; leaving
+                 Penalty Type "None" means no penalty regardless of notice given. -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="lbl" for="admin-svc-cancel-notice-days">Cancellation Notice (days) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— minimum advance notice required before a cancellation's effective date. Leave blank for no minimum.</span></label>
+                <input type="number" step="1" min="0" id="admin-svc-cancel-notice-days" placeholder="e.g. 30" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              </div>
+              <div>
+                <label class="lbl" for="admin-svc-cancel-penalty-type">Early-Cancellation Penalty <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— charged when cancelling before the minimum commitment/notice above is met.</span></label>
+                <select id="admin-svc-cancel-penalty-type" onchange="onCancelPenaltyTypeChange()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
+                  <option value="none">None</option>
+                  <option value="flat">Flat fee</option>
+                  <option value="percent_remaining">% of remaining contract value</option>
+                </select>
+              </div>
+              <div id="admin-svc-cancel-penalty-amt-wrap" style="display:none">
+                <label class="lbl" for="admin-svc-cancel-penalty-amt">Penalty Amount <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— a dollar amount for Flat fee, or a whole number 0-100 for % of remaining contract value.</span></label>
+                <input type="number" step="0.01" min="0" id="admin-svc-cancel-penalty-amt" placeholder="e.g. 250" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px">
@@ -3060,6 +3088,10 @@ async function adminToggleSectionActive(id, makeActive) {
 // uses. Only converted to/from the real `definition` JSON shape on open/save.
 let ALL_INTAKE_FORMS = [];
 let intakeFormDraft = null; // { sections: [{ title, fields: [{key,label,type,options}] }] }
+// Note: the id-keyed {title, sections} lookup Order Detail's AM-side intake
+// answer editor reads (a different feature from the form-definition editor
+// below) is the shared `INTAKE_FORMS` global from shared.js, already
+// populated by loadCatalog() at admin startup — not built here.
 
 // 2026-08-06: three new types added per Claire, generalizing patterns that kept
 // coming up while building new intake forms rather than one-off special-casing
@@ -5891,6 +5923,11 @@ function onSubsectionChange() {
   if (sel.value !== '__new__') newInput.value = '';
 }
 
+function onCancelPenaltyTypeChange() {
+  const sel = document.getElementById('admin-svc-cancel-penalty-type');
+  document.getElementById('admin-svc-cancel-penalty-amt-wrap').style.display = sel.value === 'none' ? 'none' : 'block';
+}
+
 // Populates the Pricing Group dropdown from groups that ALREADY EXIST in the real data
 // (allServicesMap) — same pick-list-not-free-text reasoning as Exclusivity Group: a typo
 // would silently create a second, near-duplicate heading on the Custom Pricing screen
@@ -6066,12 +6103,15 @@ function adminNewService() {
   ['admin-svc-id','admin-svc-label','admin-svc-accounting-label','admin-svc-tactic-variants','admin-svc-sort','admin-svc-price',
    'admin-svc-modifier','admin-svc-cpm',
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
-   'admin-svc-spend-min','admin-svc-tlp-cap','admin-svc-trello-template-ref'].forEach(id => {
+   'admin-svc-spend-min','admin-svc-tlp-cap','admin-svc-trello-template-ref',
+   'admin-svc-cancel-notice-days','admin-svc-cancel-penalty-amt'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
   document.getElementById('admin-svc-cpm-adjustment').checked = false;
   document.getElementById('admin-svc-trello-template-type').value = 'list';
+  document.getElementById('admin-svc-cancel-penalty-type').value = 'none';
+  onCancelPenaltyTypeChange();
   document.getElementById('admin-svc-id').disabled = false;
   document.getElementById('admin-svc-id').dataset.manuallyEdited = ''; // fresh form → auto-generate again
   document.getElementById('admin-svc-id-warn').style.display = 'none';
@@ -6156,6 +6196,10 @@ function adminEditService(id) {
   document.getElementById('admin-svc-standalone-hosting').value = s.standalone_hosting_service_id || '';
   document.getElementById('admin-svc-auto-select').value = s.auto_select_service_id || '';
   document.getElementById('admin-svc-tier').value = s.tier || '';
+  document.getElementById('admin-svc-cancel-notice-days').value = s.cancel_notice_days ?? '';
+  document.getElementById('admin-svc-cancel-penalty-type').value = s.cancel_penalty_type || 'none';
+  document.getElementById('admin-svc-cancel-penalty-amt').value = s.cancel_penalty_amount ?? '';
+  onCancelPenaltyTypeChange();
   populateServiceSectionDropdown(false, s.section);
   populateServiceIntakeDropdown(s.intake_form_id);
   populateServiceExclusivityDropdown(s.exclusivity_group);
@@ -6307,6 +6351,13 @@ async function adminSaveService() {
     setup_fee: setupFeeVal === '' ? null : parseFloat(setupFeeVal),
     setup_fee_threshold: setupThresholdVal === '' ? null : parseFloat(setupThresholdVal),
     fee_note: document.getElementById('admin-svc-fee-note').value.trim() || null,
+    cancel_notice_days: (() => { const v = document.getElementById('admin-svc-cancel-notice-days').value; return v === '' ? null : parseInt(v, 10); })(),
+    cancel_penalty_type: document.getElementById('admin-svc-cancel-penalty-type').value,
+    cancel_penalty_amount: (() => {
+      const type = document.getElementById('admin-svc-cancel-penalty-type').value;
+      const v = document.getElementById('admin-svc-cancel-penalty-amt').value;
+      return (type === 'none' || v === '') ? null : parseFloat(v);
+    })(),
     exclusivity_group: exclusivityGroupVal,
     spend_minimum: spendMinimumFinal,
     subsection_label: subsectionLabelVal,
@@ -6595,6 +6646,15 @@ function viewOrderDetail(orderId) {
     } else if (data.bypassed) {
       intakeHtml += '<p style="font-size:11px;color:var(--muted);font-style:italic">AM to cover on Kick-Off Call.</p>';
     }
+    // AM-side intake editing (2026-08-20, per Claire's approved mockup) — a
+    // Partial or Not Started form becomes clickable/editable right here
+    // instead of falling back to the old separate PDF process, which never
+    // made it into Trello or the system at all. formDef is required (an
+    // unrecognized/removed form key has no field definitions to edit against).
+    if (formDef && status !== 'Complete' && status !== 'AM Help Requested') {
+      intakeHtml += `<button type="button" onclick="adminToggleIntakeEditor('${esc(o.id)}','${esc(key)}')" style="margin-top:6px;padding:5px 12px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:700;cursor:pointer">✎ ${status === 'Not Started' ? 'Fill in this intake form' : 'Fill in the rest'}</button>
+      <div id="intake-editor-${esc(key)}" style="display:none;margin-top:10px"></div>`;
+    }
     intakeHtml += '</div>';
   });
   if (!intakeHtml) intakeHtml = '<p style="font-size:12px;color:var(--muted);font-style:italic">No intake forms collected.</p>';
@@ -6682,6 +6742,230 @@ function viewOrderDetail(orderId) {
 function closeOrderDetail() {
   const el = document.getElementById('admin-order-detail');
   if (el) el.style.display = 'none';
+}
+
+// ── AM-SIDE INTAKE EDITING (2026-08-20) ─────────────────────────
+// Per Claire's approved mockup: a Partial/Not Started intake form becomes
+// editable right here in Order Detail instead of falling back to the old
+// separate PDF process. Simplified from the AE-side modal's own field
+// rendering (index.html) on purpose — every field (radio/checkbox/select_
+// fill_in/plain text) becomes one plain text input here, and `list` becomes
+// one multi-line textarea, rather than reproducing every original widget
+// type. This is safe because the underlying storage is always just a plain
+// string per field.key regardless of which widget originally collected it —
+// a text box can hold any prior answer. `showIf` conditional visibility is
+// also not applied here — every field always shows, since the AM is
+// generally transcribing an answer from a call, not navigating the form live.
+function adminToggleIntakeEditor(orderId, formKey) {
+  const box = document.getElementById(`intake-editor-${formKey}`);
+  if (!box) return;
+  if (box.style.display !== 'none') { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const o = allOrders.find(x => x.id === orderId);
+  const formDef = INTAKE_FORMS[formKey];
+  if (!o || !formDef) return;
+  const existing = (o.intake_responses || {})[formKey] || {};
+  const fields = existing.fields || {};
+  let html = '<div style="background:var(--light);border-radius:8px;padding:12px 14px">';
+  formDef.sections.forEach(section => {
+    html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent-dark);margin:10px 0 6px">${esc(section.title)}</div>`;
+    section.fields.forEach(field => {
+      const val = fields[field.key] || '';
+      const fieldId = `admin-intake-${formKey}-${field.key}`;
+      html += `<div style="margin-bottom:10px">
+        <label for="${fieldId}" style="display:block;font-size:11.5px;font-weight:700;margin-bottom:4px">${esc(field.label)}</label>
+        ${(field.type === 'textarea' || field.type === 'list')
+          ? `<textarea id="${fieldId}" data-key="${esc(field.key)}" rows="${field.type === 'list' ? 4 : 3}" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px;font-family:inherit">${esc(val)}</textarea>`
+          : `<input type="text" id="${fieldId}" data-key="${esc(field.key)}" value="${esc(val)}" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>`}
+      </div>`;
+    });
+  });
+  html += `<div style="display:flex;gap:10px;margin-top:6px">
+    <button type="button" onclick="adminSaveOrderIntakeForm('${esc(orderId)}','${esc(formKey)}',true)" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Save &amp; Mark Complete</button>
+    <button type="button" onclick="adminSaveOrderIntakeForm('${esc(orderId)}','${esc(formKey)}',false)" style="padding:8px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Save as Draft</button>
+  </div></div>`;
+  box.innerHTML = html;
+  box.style.display = 'block';
+}
+
+async function adminSaveOrderIntakeForm(orderId, formKey, markComplete) {
+  const box = document.getElementById(`intake-editor-${formKey}`);
+  if (!box) return;
+  const fieldsPayload = {};
+  box.querySelectorAll('[data-key]').forEach(el => { fieldsPayload[el.dataset.key] = el.value.trim(); });
+
+  try {
+    await sb('rpc/admin_save_order_intake', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_form_key: formKey, p_fields: fieldsPayload, p_completed: markComplete,
+      }),
+    });
+  } catch (e) {
+    showToast('Could not save this intake form: ' + e.message, 'error');
+    return;
+  }
+
+  // Reflect the save locally so re-opening Order Detail shows it immediately,
+  // without waiting on a full reload of every order.
+  const o = allOrders.find(x => x.id === orderId);
+  if (o) {
+    o.intake_responses = o.intake_responses || {};
+    const prior = o.intake_responses[formKey] || {};
+    o.intake_responses[formKey] = { ...prior, fields: fieldsPayload, completed: markComplete, partial: !markComplete, bypassed: false };
+  }
+
+  // Save as Draft stops here — no Trello activity at all until it's marked
+  // Complete (per the approved mockup: "nothing goes to Trello until it's
+  // actually marked Complete").
+  if (markComplete && o) {
+    await adminNotifyTrelloOfIntakeCompletion(o, formKey);
+  }
+
+  showToast(markComplete ? '✅ Intake marked complete' : 'Saved as draft');
+  viewOrderDetail(orderId);
+}
+
+// Posts a completion comment and reattaches a fresh PDF on the SPECIFIC
+// tactic card this intake belongs to (not the IO card) — resolved from
+// trello_card_id, stamped onto intake_responses by index.html at submission
+// time (2026-08-20). An order submitted before that change has no stored id
+// — rather than guess at a card name and risk landing on the wrong card,
+// this just tells the AM to update Trello by hand for that older order.
+async function adminNotifyTrelloOfIntakeCompletion(o, formKey) {
+  const cardId = o.intake_responses?.[formKey]?.trello_card_id;
+  if (!cardId) {
+    showToast('Saved, but this order predates Trello card tracking — please update that card by hand', 'error');
+    return;
+  }
+  const formDef = INTAKE_FORMS[formKey];
+  const fields = o.intake_responses[formKey].fields || {};
+  try {
+    const commentRes = await fetch(PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: `✅ ${formDef?.title || formKey} intake completed by AM (${currentAdminUser?.name || 'AM'}).` }),
+    });
+    if (!commentRes.ok) console.warn('Could not post intake-completion comment:', commentRes.status);
+  } catch (e) {
+    console.warn('Could not post intake-completion comment:', e.message);
+  }
+  try {
+    const { base64, fileName } = await generateAdminIntakePdfBlob(formDef?.title || formKey, formDef, fields);
+    const attachRes = await fetch(PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
+    });
+    if (!attachRes.ok) console.warn('Could not attach intake PDF:', attachRes.status);
+  } catch (e) {
+    console.warn('Could not generate/attach intake PDF:', e.message);
+  }
+}
+
+// Ported verbatim from index.html's own pagination logic (2026-08-20) — same
+// page-break-avoidance approach (never cut through a table row), kept
+// identical rather than re-derived so the two PDF pipelines can't drift.
+function adminComputeUnsafeZonesMm(iframeDoc, imgWidthMm) {
+  const bodyWidthCss = iframeDoc.body.scrollWidth;
+  const mmPerCssPx = imgWidthMm / bodyWidthCss;
+  return Array.from(iframeDoc.querySelectorAll('tr'))
+    .map(el => {
+      const r = el.getBoundingClientRect();
+      return { top: r.top * mmPerCssPx, bottom: r.bottom * mmPerCssPx };
+    })
+    .filter(z => z.bottom > z.top)
+    .sort((a, b) => a.top - b.top);
+}
+function adminPaginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, unsafeZones) {
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const nudgedCut = (naiveEnd, pageStart) => {
+    for (const zone of unsafeZones) {
+      if (naiveEnd > zone.top && naiveEnd < zone.bottom) {
+        return zone.top > pageStart ? zone.top : naiveEnd;
+      }
+    }
+    return naiveEnd;
+  };
+  let pageStart = 0;
+  let firstPage = true;
+  while (pageStart < imgHeight) {
+    const naiveEnd = Math.min(pageStart + pageHeight, imgHeight);
+    const pageEnd = naiveEnd < imgHeight ? nudgedCut(naiveEnd, pageStart) : naiveEnd;
+    if (!firstPage) pdf.addPage();
+    firstPage = false;
+    pdf.addImage(imgData, 'JPEG', 0, -pageStart, imgWidth, imgHeight);
+    if (pageEnd < pageStart + pageHeight) {
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(0, pageEnd - pageStart, pageWidth, (pageStart + pageHeight) - pageEnd, 'F');
+    }
+    pageStart = pageEnd;
+  }
+}
+
+// Simplified sibling of index.html's buildIntakeDesc/generateIntakePdfBlob —
+// deliberately skips the TLP structured-grid special case (an admin editing
+// a TLP intake will see its fields as plain rows here, not the numbered
+// campaign-layout grid the AE-side PDF builds) and always shows COMPLETE
+// (since this only runs right after the AM clicks "Save & Mark Complete").
+// If TLP editing from Admin turns out to matter in practice, port that
+// special case over from index.html's own buildIntakeDesc at that point.
+async function generateAdminIntakePdfBlob(title, formDef, fields) {
+  const color = '#1C9BD7';
+  let sectionsHtml = '';
+  (formDef?.sections || []).forEach(section => {
+    const rows = section.fields.map(field => {
+      const val = fields[field.key] || '';
+      return `<tr>
+        <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151;width:38%;vertical-align:top">${esc(field.label)}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827;vertical-align:top">${val ? esc(val).replace(/\n/g,'<br>') : '<span style="color:#9CA3AF">—</span>'}</td>
+      </tr>`;
+    }).join('');
+    sectionsHtml += `
+      <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">${esc(section.title)}</div>
+      <table style="width:100%;border-collapse:collapse">${rows}</table>`;
+  });
+  const html = `<div style="font-family:Montserrat,sans-serif;padding:26px 30px;width:690px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${color};padding-bottom:12px;margin-bottom:10px">
+      <div style="font-size:14pt;font-weight:800;color:#111827">${esc(title)}</div>
+      <div style="text-align:right;font-size:8.5pt;color:#6B7280;line-height:1.5">
+        <strong style="color:#374151;font-size:9pt">Filled in by AM</strong><br>
+        ${new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})}
+      </div>
+    </div>
+    <div style="display:inline-block;padding:4px 10px;border-radius:20px;background:#E7F5EC;color:#1F8A5F;font-size:9pt;font-weight:700">✅ COMPLETE</div>
+    ${sectionsHtml}
+  </div>`;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-10000px;left:-10000px;width:750px;height:100px;border:none;';
+  document.body.appendChild(iframe);
+  try {
+    iframe.contentDocument.open();
+    iframe.contentDocument.write(`<!DOCTYPE html><html><head>
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+      </head><body style="margin:0">${html}</body></html>`);
+    iframe.contentDocument.close();
+    await new Promise(resolve => setTimeout(resolve, 700));
+    const canvas = await html2canvas(iframe.contentDocument.body, {
+      scale: 1.5, useCORS: true,
+      windowWidth: iframe.contentDocument.body.scrollWidth,
+      windowHeight: iframe.contentDocument.body.scrollHeight,
+    });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'letter', { compress: true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const imgWidth = pageWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
+    adminPaginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, adminComputeUnsafeZonesMm(iframe.contentDocument, imgWidth));
+    const safeTitle = (title || 'intake').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase();
+    const fileName = `Intake-${safeTitle}-${new Date().toISOString().slice(0, 10)}.pdf`;
+    return { base64: pdf.output('datauristring').split(',')[1], fileName };
+  } finally {
+    document.body.removeChild(iframe);
+  }
 }
 
 function renderAdminGroups() {
