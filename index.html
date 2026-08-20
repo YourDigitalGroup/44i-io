@@ -3309,6 +3309,13 @@ function updateTacticDate(input, id, which) {
   if (iso) autoCheckIfNeeded(id);
   checkServiceDateOverlap(id);
   syncAgentSplitDatesForService(id);
+  // A date change shifts which months/day-counts a whole-campaign-total or
+  // customized per-month plan covers -- rather than try to reconcile an
+  // edited plan against new dates, recompute a fresh one from scratch (2026-08-20).
+  const data = selected[id];
+  if (data?.budgetMode === 'total') recomputeMonthPlanFromTotal(id);
+  else if (data?.customizingMonths) data.monthPlan = seedFlatMonthlyPlan(data.spend || 0, data.start_date, data.end_date);
+  refreshBudgetDetail(id);
 }
 
 // Agent/County Split flight dates (2026-08-19, per Claire: "have the flight
@@ -3535,14 +3542,174 @@ function autoCheckIfNeeded(id) {
   }
 }
 
+// Budget entry form states (2026-08-20, per Claire's approved mockup) — a
+// spend-priced row's single dollar field can mean three things: a flat
+// monthly rate (default, unchanged), a whole-campaign total that gets
+// auto-split across the flight's months by day-count, or a hand-edited
+// per-month plan (either seeded from the flat rate or from the auto-split).
+// `.spend` keeps meaning "the monthly rate" everywhere else in this file
+// (Step 2's running total, Review, Print, the submitted line item) even in
+// 'total' mode -- it's kept as the AVERAGE of monthPlan's amounts so every
+// existing "$X/mo" display stays accurate without having to touch each of
+// those call sites; the true, possibly-uneven breakdown lives in
+// `.monthPlan` and rides along separately as `month_budgets` on submission.
+function monthsInFlight(startDateStr, endDateStr) {
+  if (!startDateStr) return [];
+  const flightStart = new Date(startDateStr + 'T00:00:00');
+  const flightEnd = endDateStr ? new Date(endDateStr + 'T00:00:00') : flightStart;
+  if (flightEnd < flightStart) return [];
+  const months = [];
+  let cursor = new Date(flightStart.getFullYear(), flightStart.getMonth(), 1);
+  const last = new Date(flightEnd.getFullYear(), flightEnd.getMonth(), 1);
+  while (cursor <= last) {
+    const monthStart = new Date(cursor);
+    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const s = monthStart > flightStart ? monthStart : flightStart;
+    const e = monthEnd < flightEnd ? monthEnd : flightEnd;
+    const days = s > e ? 0 : Math.round((e - s) / 86400000) + 1;
+    months.push({
+      month: `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`,
+      label: cursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+      days,
+    });
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  return months;
+}
+function splitAmountAcrossMonths(totalAmount, startDateStr, endDateStr) {
+  const months = monthsInFlight(startDateStr, endDateStr);
+  const totalDays = months.reduce((sum, m) => sum + m.days, 0);
+  let allocated = 0;
+  months.forEach((m, i) => {
+    if (i === months.length - 1) {
+      m.amount = Math.round((totalAmount - allocated) * 100) / 100; // last month absorbs rounding
+    } else {
+      m.amount = Math.round((totalAmount * m.days / totalDays) * 100) / 100;
+      allocated += m.amount;
+    }
+    m.paused = false;
+  });
+  return months;
+}
+function seedFlatMonthlyPlan(rate, startDateStr, endDateStr) {
+  const months = monthsInFlight(startDateStr, endDateStr);
+  months.forEach(m => { m.amount = rate; m.paused = false; });
+  return months;
+}
+function recomputeSpendAverageFromPlan(id) {
+  const data = selected[id];
+  if (!data || !data.monthPlan || !data.monthPlan.length) return;
+  data.spend = Math.round((data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0) / data.monthPlan.length) * 100) / 100;
+}
+function recomputeMonthPlanFromTotal(id) {
+  const data = selected[id];
+  if (!data) return;
+  data.monthPlan = splitAmountAcrossMonths(data.spendTotal || 0, data.start_date, data.end_date);
+  recomputeSpendAverageFromPlan(id);
+}
+function refreshBudgetDetail(id) {
+  const existing = document.getElementById('budget-detail-' + id);
+  if (!existing) return;
+  existing.outerHTML = renderBudgetDetailRow(id);
+}
+function toggleBudgetDetail(id) {
+  const existing = document.getElementById('budget-detail-' + id);
+  if (existing) { existing.remove(); return; }
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  if (!row) return;
+  row.insertAdjacentHTML('afterend', renderBudgetDetailRow(id));
+}
+function setBudgetMode(id, mode) {
+  const data = selected[id];
+  if (!data) return;
+  data.budgetMode = mode;
+  const input = document.querySelector(`tr[data-id="${id}"] input[type=number]`);
+  if (mode === 'total') {
+    data.spendTotal = data.spendTotal || data.spend || 0;
+    recomputeMonthPlanFromTotal(id);
+    if (input) input.value = data.spendTotal;
+  } else {
+    data.monthPlan = data.customizingMonths ? seedFlatMonthlyPlan(data.spend || 0, data.start_date, data.end_date) : null;
+    if (input) input.value = data.spend || '';
+  }
+  refreshBudgetDetail(id);
+}
+function expandCustomizeByMonth(id) {
+  const data = selected[id];
+  if (!data) return;
+  data.customizingMonths = true;
+  if (!data.monthPlan || !data.monthPlan.length) {
+    data.monthPlan = data.budgetMode === 'total'
+      ? splitAmountAcrossMonths(data.spendTotal || 0, data.start_date, data.end_date)
+      : seedFlatMonthlyPlan(data.spend || 0, data.start_date, data.end_date);
+  }
+  refreshBudgetDetail(id);
+}
+function updateMonthPlanAmount(id, idx, value) {
+  const data = selected[id];
+  if (!data || !data.monthPlan || !data.monthPlan[idx]) return;
+  data.monthPlan[idx].amount = parseFloat(value) || 0;
+  recomputeSpendAverageFromPlan(id);
+}
+function toggleMonthPaused(id, idx) {
+  const data = selected[id];
+  const m = data && data.monthPlan && data.monthPlan[idx];
+  if (!m) return;
+  m.paused = !m.paused;
+  if (m.paused) { m._savedAmount = m.amount; m.amount = 0; }
+  else if (m._savedAmount != null) { m.amount = m._savedAmount; }
+  recomputeSpendAverageFromPlan(id);
+  refreshBudgetDetail(id);
+}
+function renderMonthPreviewTable(plan, editable, id) {
+  const fmt = n => '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const rows = plan.map((m, i) => editable
+    ? `<tr${m.paused ? ' style="opacity:.55"' : ''}><td style="padding:5px 8px">${esc(m.label)}${m.paused ? ' <span style="font-size:9.5px;font-weight:700;color:#92650B;background:#FFF3DA;padding:1px 6px;border-radius:20px">Paused</span>' : ''}</td><td style="padding:5px 8px"><input type="number" value="${m.amount}" ${m.paused ? 'disabled' : ''} onchange="updateMonthPlanAmount('${esc(id)}',${i},this.value)" style="width:100px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);font-size:12px"/></td><td style="padding:5px 8px;text-align:center"><input type="checkbox" ${m.paused ? 'checked' : ''} onchange="toggleMonthPaused('${esc(id)}',${i})"/></td></tr>`
+    : `<tr><td style="padding:5px 8px">${esc(m.label)}</td><td style="padding:5px 8px">${m.days} day${m.days === 1 ? '' : 's'}</td><td style="padding:5px 8px">${fmt(m.amount)}</td></tr>`
+  ).join('');
+  const total = plan.reduce((s, m) => s + (m.amount || 0), 0);
+  const head = editable
+    ? '<tr><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Month</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Amount</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Paused</th></tr>'
+    : '<tr><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Month</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Days in flight</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Amount</th></tr>';
+  const totalRow = editable ? '' : `<tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:5px 8px">Total</td><td style="padding:5px 8px">${plan.reduce((s, m) => s + m.days, 0)} days</td><td style="padding:5px 8px">${fmt(total)}</td></tr>`;
+  return `<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px">${editable ? '<caption style="display:none"></caption>' : ''}<thead>${head}</thead><tbody>${rows}${totalRow}</tbody></table>`;
+}
+function renderBudgetDetailRow(id) {
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const colCount = row ? row.children.length : 6;
+  const data = selected[id] || {};
+  const mode = data.budgetMode || 'monthly';
+  const plan = data.monthPlan || [];
+  const toggleBtn = (label, val) => `<span onclick="setBudgetMode('${esc(id)}','${val}')" style="padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;${mode === val ? 'background:var(--accent);color:#fff' : 'color:var(--accent-dark)'}">${esc(label)}</span>`;
+  return `<tr id="budget-detail-${esc(id)}"><td colspan="${colCount}" style="background:var(--light);padding:10px 14px">
+    <div style="display:inline-flex;border:1.5px solid var(--accent);border-radius:999px;overflow:hidden;margin-bottom:8px">${toggleBtn('Monthly rate', 'monthly')}${toggleBtn('Whole campaign total', 'total')}</div>
+    ${mode === 'total' && plan.length ? `<div style="font-size:10.5px;color:#1F7A42;background:#E7F5EC;display:inline-block;padding:2px 8px;border-radius:20px;font-weight:700;margin:0 0 4px 8px">Auto-computed, shown before submitting</div>${renderMonthPreviewTable(plan, false)}` : ''}
+    <div style="margin-top:8px"><a href="#" onclick="event.preventDefault();expandCustomizeByMonth('${esc(id)}')" style="font-size:11.5px;font-weight:700;color:var(--accent-dark);text-decoration:none">▾ Customize by month (skip a month, or use a different amount for one)</a></div>
+    ${data.customizingMonths && plan.length ? renderMonthPreviewTable(plan, true, id) : ''}
+  </td></tr>`;
+}
+
 function updateSpend(input, id) {
   autoCheckIfNeeded(id);
-  if (selected[id]) selected[id].spend = parseFloat(input.value) || 0;
+  const raw = parseFloat(input.value) || 0;
+  if (selected[id]) {
+    if (selected[id].budgetMode === 'total') {
+      selected[id].spendTotal = raw;
+      recomputeMonthPlanFromTotal(id);
+      refreshBudgetDetail(id);
+    } else {
+      selected[id].spend = raw;
+      if (!selected[id].customizingMonths) selected[id].monthPlan = null;
+    }
+  }
   // Clear the required highlight once a value is entered
   if (parseFloat(input.value) > 0) markFieldMissing(input, false);
-  // Show below-minimum warning inline
+  // Show below-minimum warning inline — compares against the MONTHLY rate,
+  // never the raw input value: in 'total' mode the input holds a whole-
+  // campaign figure, so the monthly-equivalent computed above (selected[id]
+  // .spend) is what a monthly minimum is actually meant to check.
   const min = SPEND_MINIMUMS[id];
-  const val = parseFloat(input.value) || 0;
+  const val = (selected[id]?.budgetMode === 'total') ? (selected[id]?.spend || 0) : (parseFloat(input.value) || 0);
   const row = input.closest('tr');
   if (!row) return;
   let warn = row.querySelector('.spend-min-warn');
@@ -3832,8 +3999,13 @@ function syncRowInputs() {
       else selected[id].recurring = amount;
       selected[id].quotedPriceEntered = quotedInput.value !== '';
     }
+    // Budget entry form states (2026-08-20): in 'total' mode this same input
+    // holds a whole-campaign TOTAL, not the monthly rate -- .spend must stay
+    // the already-computed monthly average (updateSpend/recomputeMonthPlanFromTotal
+    // keep it current) rather than being clobbered with the raw total here.
     const spendInput = row.querySelector('input[type=number]:not(.qty-field):not(.quoted-price-field)');
-    if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
+    if (spendInput && selected[id].budgetMode === 'total') selected[id].spendTotal = parseFloat(spendInput.value) || 0;
+    else if (spendInput) selected[id].spend = parseFloat(spendInput.value) || 0;
     // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now.
     // updateTacticDate() already writes these into selected[id] live as the AE types a
     // complete MM/DD/YY value, so this is a safety net (same role syncRowInputs()
@@ -4536,6 +4708,12 @@ async function submitIO() {
         // order-wide campaign_start/campaign_end.
         start_date: data.start_date || null,
         end_date: data.end_date || null,
+        // Budget entry form states (2026-08-20) — only present when the AE
+        // actually used the whole-campaign-total toggle or customize-by-month
+        // (the vast majority of rows never touch this); when present, the
+        // strategist-portal trigger seeds one campaign_months row per entry
+        // instead of the single flat-rate row it seeds otherwise.
+        month_budgets: (data.monthPlan && data.monthPlan.length) ? data.monthPlan.map(m => ({ month: m.month, amount: m.amount, paused: !!m.paused })) : null,
       };
     });
 
@@ -7042,8 +7220,12 @@ function generateCatalogRowHtml(r, hasSpendCol) {
   // <td> when the table needs one (hasSpendCol, passed in by the caller) keeps every
   // row's cell count matching its header regardless of that row's own pricing mode —
   // the actual "no spend value" intent is unchanged, only the missing-cell bug is fixed.
+  // Budget entry form states (2026-08-20) — the ⚙ link opens/closes a detail
+  // row right below this one (toggleBudgetDetail) with the whole-campaign-
+  // total toggle and the customize-by-month table; collapsed by default so
+  // every existing spend-priced row still looks pixel-identical to before.
   const spendCell = r.pricing_mode === 'spend'
-    ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/></td>`
+    ? `<td><input type="number" placeholder="$ spend" onchange="updateSpend(this,'${esc(r.id)}')"/><button type="button" onclick="toggleBudgetDetail('${esc(r.id)}')" title="Customize this budget by month or as a campaign total" style="margin-left:4px;background:none;border:none;color:var(--accent-dark);cursor:pointer;font-size:13px;vertical-align:middle;padding:0">⚙</button></td>`
     : (hasSpendCol ? `<td class="svc-spend-placeholder"></td>` : '');
   // Per-tactic flight dates (2026-08-06) — every row gets its own Start/End now
   // (replaces the old single Step-1-wide Campaign Dates card). Length dropped

@@ -17138,3 +17138,69 @@ previously-silent update branch) alongside a brand-new IO card: confirmed
 `trello_add_comment` fired for BOTH — the reused SEM card got a comment
 (`card_id: card_sem_existing`, the exact case that was broken) and the new
 IO card got its own. `node --check` clean on the extracted inline script.
+
+## 2026-08-20 — Budget entry form states (1-3), per approved mockup
+
+Approved artifact "Budget Entry Form States" specified 3 buildable states for
+a spend-priced tactic row's dollar field (a 4th, mid-month accounting-side
+proration, is explicitly parked as an open question — not built):
+1. Default flat monthly rate — unchanged.
+2. "Monthly rate" vs. "Whole campaign total" toggle — the total auto-splits
+   across the flight's months by day-count, shown as a preview table.
+3. "Customize by month" — an editable per-month table (amount + Paused
+   checkbox), seeded from state 1 or 2's value, always visible as a plain
+   link (not a checkbox) so it costs nothing to ignore.
+
+**Design decision (confirmed with Claire):** the mockup shows each service
+as its own spacious card, but the real form renders every service as one
+row in a dense table. Rather than cram a toggle + tables into the Spend
+`<td>`, a small ⚙ link next to the spend input expands a full-width detail
+row directly beneath it (`toggleBudgetDetail`/`renderBudgetDetailRow`) —
+collapsed by default, so every unaffected row stays pixel-identical to
+before this change.
+
+**Data model:** `selected[id].spend` keeps meaning "the monthly rate"
+everywhere else in this file (Step 2's running total, Review, Print, the
+submitted line item's `spend` field) even in 'total' mode — it's kept as the
+average of `.monthPlan`'s amounts (`recomputeSpendAverageFromPlan`) so none
+of those existing display sites needed to change. The real, possibly-uneven
+per-month breakdown lives in `.monthPlan` and rides along separately as a
+new `month_budgets` array on the submitted line item, only when non-empty
+(the vast majority of rows never touch this).
+
+**New pure functions:** `monthsInFlight`, `splitAmountAcrossMonths` (day-
+count proration of a total, inclusive counting of both the start and end
+date — a deliberate choice, not a copy of the mockup's own placeholder
+numbers, which used exclusive-end counting), `seedFlatMonthlyPlan` (customize-
+by-month's seed when opened directly from a flat rate, no proration).
+
+**Real bug found and fixed while testing:** `syncRowInputs()` (called before
+line items are built) unconditionally re-read the visible spend `<input>`'s
+raw DOM value into `selected[id].spend` — in 'total' mode that input holds
+the TOTAL, not the monthly rate, so this was clobbering the correctly-
+computed average right before submission (caught live: a test asserting
+`spend: 845.83` after a hand-edited per-month plan instead got `spend: 6900`,
+the raw total). Fixed by having `syncRowInputs()` route total-mode input into
+`.spendTotal` instead of overwriting `.spend` directly, matching the same
+guard `updateSpend()` already had.
+
+**Verified:** a standalone Node script exercised `splitAmountAcrossMonths`
+against 6 scenarios (single full month, a 2-month split with exact rounding-
+remainder handling, a 6-month even split, no dates, no end date) — 17/17
+assertions pass, including that every split always sums to the exact input
+total. Then a live Playwright run: checked a spend row, typed $1,150/mo,
+switched to whole-campaign-total with $6,900 over Aug 2026–Jan 2027 (6
+months, correct day-prorated split summing to exactly $6,900), opened
+Customize by month, paused October (forced to $0) and hand-edited August to
+$500, confirmed the detail row's actual rendered HTML (not just JS state)
+showed the "Paused" tag — then ran the real `submitIO()` and confirmed the
+posted order's line item carried `spend: 845.83` (the correct recomputed
+average) and the full 6-entry `month_budgets` array with the paused/edited
+values intact. `node --check` clean on the extracted inline script.
+
+**Backend (not yet applied — SQL handed to Claire):** `create_campaign_lines
+_from_order()`'s spend-insert branch extended to seed one `campaign_months`
+row per `month_budgets` entry (a paused month still gets its own $0 row,
+not simply omitted) instead of the single flat-rate row, only when
+`month_budgets` is present on the line item — every line item that doesn't
+use this feature falls through to the original single-row insert, unchanged.
