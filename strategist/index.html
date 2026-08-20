@@ -2449,7 +2449,14 @@ async function strategistAddSetupMonth(lineId) {
   const last = rows[rows.length - 1];
   const next = last ? new Date(last.month + 'T00:00:00') : new Date();
   next.setMonth(next.getMonth() + 1);
-  await strategistSaveMonth(lineId, next.toISOString().slice(0,10), { gross_budget: last ? last.gross_budget : null });
+  // Never carry a prior month's real number forward for a line flagged
+  // budget_varies_by_month (2026-08-20, found live while making the new
+  // varying-budget IO feature consistent everywhere it's read) -- doing so
+  // would silently commit a guessed figure as if it were a real entry for
+  // a line whose whole point is that each month is genuinely different.
+  const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
+  const carryForward = last && !line?.budget_varies_by_month;
+  await strategistSaveMonth(lineId, next.toISOString().slice(0,10), { gross_budget: carryForward ? last.gross_budget : null });
 }
 
 // Backfilling a specific past month from the detail panel's history editor (2026-08-04)
@@ -2487,6 +2494,12 @@ async function strategistAddHistoryMonth(lineId) {
 function strategistComputeFillSaves(lineId) {
   const l = ALL_CAMPAIGN_LINES.find(x => x.id === lineId);
   if (!l?.flight_end) return [];
+  // Skip entirely for a varying-budget line (2026-08-20, found live while
+  // making the new varying-budget IO feature consistent everywhere) -- this
+  // fill exists to copy one flat, unchanging monthly rate forward, which is
+  // exactly wrong for a line whose real point is that the rate differs by
+  // month; a strategist needs to enter each of those months by hand.
+  if (l.budget_varies_by_month) return [];
   const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId).sort((a,b) => a.month.localeCompare(b.month));
   if (!rows.length) return [];
   const last = rows[rows.length - 1];
@@ -2516,6 +2529,7 @@ function strategistSaveFillEntry(entry) {
 async function strategistFillMonthsToFlightEnd(lineId) {
   const l = ALL_CAMPAIGN_LINES.find(x => x.id === lineId);
   if (!l?.flight_end) { showToast('This campaign has no flight end date to fill toward.', 'error'); return; }
+  if (l.budget_varies_by_month) { showToast('This campaign\'s budget varies by month — fill in each remaining month by hand.', 'error'); return; }
   const rows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId);
   if (!rows.length) { showToast('No existing months to base the fill on yet.', 'error'); return; }
   const saves = strategistComputeFillSaves(lineId);

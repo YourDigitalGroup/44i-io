@@ -17507,3 +17507,63 @@ the right description ($503.23, 13 of 31 days), and the order's local
 Mockup** (Cancel, Edit, Swap) plus the per-service cancellation guardrails
 — everything from today's MS Farm Bureau follow-ups and the six new items
 from Claire's brain-dump is now built and verified.
+
+## 2026-08-20 — AM Help Requested forms now editable; varying-month spend made consistent everywhere
+
+Two more asks. First, quick: "AM Help Requested" (bypassed) intake forms
+were excluded from the new AM-side intake editor's "Fill in" button —
+Claire wants those editable the same way Partial/Not Started forms are, so
+an AM who collected answers on the Kick-Off Call has somewhere to put
+them. Fixed by dropping the `status !== 'AM Help Requested'` exclusion in
+`admin/index.html` — `admin_save_order_intake` already unconditionally
+sets `bypassed: false` on save, so no RPC change was needed.
+
+Second, larger: Claire asked that Step 3/Print/Trello/Strategist/
+Accounting all show a genuinely varying campaign's real month-by-month
+spend consistently — and investigating this surfaced that the Budget Entry
+Form States feature (2026-08-20, earlier today) was only ever half-built:
+the front end collects a real `month_budgets` breakdown and submits it,
+but nothing on the backend or in any downstream display had ever been
+wired to actually READ it. Every display was still showing `.spend`, the
+flattened average, with no distinction from a normal flat-rate campaign.
+
+**Backend (the highest-stakes gap):** `create_campaign_lines_from_order()`
+now consumes `item.month_budgets` when present — seeds one real
+`campaign_months` row per month (instead of the single flat-rate row it
+always inserted before) and sets `campaign_lines.budget_varies_by_month =
+true` (the same flag a strategist already sets by hand via "Budget is
+different by month"). Without that flag, none of the portal's own
+existing per-month display logic would know to treat the line as varying.
+
+**Two pre-existing Strategist bugs, found while checking the portal
+wouldn't misrepresent a newly-varying line** (an Explore agent audit,
+since the display logic itself — `monthRowFor()` et al. — turned out to
+already be correct): `strategistAddSetupMonth()` ("+ Add month") and
+`strategistComputeFillSaves()`/`strategistFillMonthsToFlightEnd()` ("Fill
+remaining months to flight end") both blindly copied a prior month's real
+`gross_budget` forward with no check of `budget_varies_by_month` — neither
+bug was reachable by anything AE-submitted before today (nothing produced
+a real varying line at all), but they'd now silently overwrite the real
+numbers this feature exists to preserve. Both gated on the flag: "+ Add
+month" leaves the new month blank instead of carrying a guessed number
+forward; "Fill remaining months" skips a varying line entirely (returns no
+saves) with an explanatory toast instead of acting.
+
+**Front-end display (`index.html`)** — `buildReview()` (Step 3),
+`buildIoDocumentHtml()` (Print), and `formatSiblingLineItems()` (Trello
+tactic card description) all now check whether `data.monthPlan`'s amounts
+actually differ (not just whether one exists — a customize-by-month table
+left at its seeded flat default still reads as a normal rate) and, when
+they do, show "$X/mo avg — varies by month" instead of a bare "$X/mo",
+plus the real breakdown: Review/Print reuse `renderMonthPreviewTable()` —
+the SAME function Step 2's own preview already renders — as an inline sub-
+table, so the numbers reviewed/printed can't drift from what the AE
+actually built; Trello's plain-text card description lists each month's
+real figure directly.
+
+**Verified live** via Playwright: submitted a real order with a 3-month
+uneven plan ($100/$500/$300) — Step 3's review HTML and the printed IO
+both show "varies by month" and the correct $500 September figure; the
+SEM tactic card's Trello description (captured from the actual
+`trello_update_card` call during submission) lists all three months by
+name with their real amounts. `node --check` clean on all three files.
