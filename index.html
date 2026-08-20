@@ -4400,7 +4400,20 @@ function buildReview() {
     } else if (recurringTotal > 0) {
       amtDisplay = qty > 1 ? `${fmt(data.recurring)} × ${qty} = ${fmt(recurringTotal)}/mo` : fmt(recurringTotal) + '/mo';
     } else if (data.spend > 0) {
-      amtDisplay = fmt(data.spend) + '/mo campaign';
+      // Budget entry form states (2026-08-20) -- data.spend is always kept as
+      // the AVERAGE of monthPlan's real amounts (see splitAmountAcrossMonths'
+      // own comment), so a genuinely varying campaign showing just "$X/mo"
+      // here would be a real inconsistency with what the AE actually
+      // confirmed in the preview table -- and with what Strategist/Accounting
+      // now see per month (create_campaign_lines_from_order consumes this
+      // same month_budgets array). "Varies by month" only shows when the
+      // amounts actually differ -- a customize-by-month table left at its
+      // seeded flat default still reads as a normal flat rate.
+      const variesByMonth = data.monthPlan && data.monthPlan.length > 1 &&
+        new Set(data.monthPlan.map(m => m.amount)).size > 1;
+      amtDisplay = variesByMonth
+        ? `${fmt(data.spend)}/mo avg — <span style="color:var(--accent-dark);font-weight:700">varies by month</span>`
+        : fmt(data.spend) + '/mo campaign';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
     } else if (data.is_cpm_adjustment) {
@@ -4417,6 +4430,14 @@ function buildReview() {
     // themselves use).
     const flightDisplay = flightDisplayFor(id, data, formatISOToMMDDYY);
     rows.push(`<tr><td class="rs-service">${esc(data.label)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
+    // Real per-month breakdown (2026-08-20) -- reuses the SAME read-only
+    // table renderMonthPreviewTable() already builds for Step 2's own
+    // preview, so the numbers the AE reviews here are pixel-identical to
+    // what they confirmed while building the campaign, not a second,
+    // independently-computed representation that could drift.
+    if (data.monthPlan && data.monthPlan.length > 1 && new Set(data.monthPlan.map(m => m.amount)).size > 1) {
+      rows.push(`<tr><td colspan="5" style="padding:2px 10px 10px 24px;background:#FAFBFC">${renderMonthPreviewTable(data.monthPlan, false)}</td></tr>`);
+    }
     // Add prorated hosting line if applicable
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
       const h = hostingChoices[id];
@@ -5065,6 +5086,18 @@ async function submitIO() {
             if (li.fee > 0) line += ` — $${li.fee.toLocaleString()} one-time`;
             if (li.recurring > 0) line += ` — $${li.recurring.toLocaleString()}/mo`;
             if (li.spend > 0) line += ` — $${li.spend.toLocaleString()}/mo spend`;
+            // Real per-month breakdown on the Trello card too (2026-08-20) --
+            // same consistency principle as Review/Print: li.spend here is
+            // always the AVERAGE, so a genuinely varying campaign gets its
+            // real month-by-month figures listed instead of reading as one
+            // flat rate to whoever's working the card in Trello.
+            if (li.month_budgets && li.month_budgets.length > 1 && new Set(li.month_budgets.map(m => m.amount)).size > 1) {
+              line += ' (varies by month)';
+              li.month_budgets.forEach(m => {
+                const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                line += `\n   – ${label}: $${Number(m.amount).toLocaleString()}${m.paused ? ' (paused)' : ''}`;
+              });
+            }
             return line;
           }).join('\n');
           return `**Services sold under this workflow:**\n${lines}`;
@@ -6202,7 +6235,13 @@ function buildIoDocumentHtml() {
       } else if (recurringTotal > 0) {
         amtCol = fmt(recurringTotal) + '/mo';
       } else if (data.spend > 0) {
-        amtCol = fmt(data.spend) + '/mo campaign';
+        // Same "varies by month" consistency check as buildReview() (2026-08-20)
+        // -- this is the signed contract document, so it needs to match the
+        // internal review exactly, same principle this function already
+        // follows for QUR/qty display above.
+        const variesByMonth = data.monthPlan && data.monthPlan.length > 1 &&
+          new Set(data.monthPlan.map(m => m.amount)).size > 1;
+        amtCol = variesByMonth ? (fmt(data.spend) + '/mo avg — varies by month') : (fmt(data.spend) + '/mo campaign');
       } else if (data.is_cpm_adjustment) {
         // Explicit "No Charge" rather than falling through to "TBD" — this is a signed
         // contract document, and "TBD" would read as an unfinished price, not an
@@ -6226,6 +6265,12 @@ function buildIoDocumentHtml() {
         ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'})
         : '');
       sectionRows += `<tr><td class="svc-name">${esc(data.label)}</td><td class="svc-amt">${amtCol}</td><td class="svc-flight">${esc(flightDisplay)}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
+      // Real per-month breakdown on the printed/signed document too (2026-08-20)
+      // -- same reuse of renderMonthPreviewTable() as buildReview(), so the
+      // contract shows the identical numbers the AE reviewed on Step 3.
+      if (data.monthPlan && data.monthPlan.length > 1 && new Set(data.monthPlan.map(m => m.amount)).size > 1) {
+        sectionRows += `<tr><td colspan="4" style="padding:2px 10px 10px 24px">${renderMonthPreviewTable(data.monthPlan, false)}</td></tr>`;
+      }
 
       const h = hostingChoices[id];
       if (h?.choice === 'us' && h.proratedAmt) {

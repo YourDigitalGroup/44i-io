@@ -6676,7 +6676,11 @@ function viewOrderDetail(orderId) {
     // instead of falling back to the old separate PDF process, which never
     // made it into Trello or the system at all. formDef is required (an
     // unrecognized/removed form key has no field definitions to edit against).
-    if (formDef && status !== 'Complete' && status !== 'AM Help Requested') {
+    // AM Help Requested (bypassed) forms are ALSO editable the same way
+    // (2026-08-20, per Claire) -- an AM who collected the answers on the
+    // Kick-Off Call needs the same fill-in path as Partial/Not Started,
+    // not a dead end.
+    if (formDef && status !== 'Complete') {
       intakeHtml += `<button type="button" onclick="adminToggleIntakeEditor('${esc(o.id)}','${esc(key)}')" style="margin-top:6px;padding:5px 12px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:700;cursor:pointer">✎ ${status === 'Not Started' ? 'Fill in this intake form' : 'Fill in the rest'}</button>
       <div id="intake-editor-${esc(key)}" style="display:none;margin-top:10px"></div>`;
     }
