@@ -18053,3 +18053,30 @@ comment text to `card-io` and the tactic's own card.
 what's already been given to/confirmed by Claire in chat. Gave her two
 `pg_get_functiondef()` queries to pull the current live versions so they
 can be diffed against what's on file, closing that gap.
+
+**Follow-up, same day:** Claire pasted both back. `create_campaign_lines_from_order`
+diffed byte-for-byte against my last copy except for SQL comments (which
+`pg_get_functiondef()` always strips when reconstructing a definition —
+expected, not drift). All 4 Order Detail RPCs confirmed present. Also
+checked the claude-proxy edge function's last known source against every
+distinct `target` string used across all 4 portal files — all 17 Trello/
+email/upload targets are implemented, including the two newest
+(`trello_add_comment`, `trello_attach_file`). Full audit closed clean.
+
+## 2026-08-21 — MS Farm Bureau follow-ups: collapsed Agents/Counties/AE editor
+
+Claire, now that she's actually populated the roster for real: "the editor
+is really long... we should look at that format." Wrapped the AEs/
+Counties/Agents sections of the multi-agent Client editor in collapsed
+`<details>` elements, same visual language as the Custom Pricing/
+Accounting Overrides sections just below them in the same editor — each
+starts closed, with a `(count)` badge next to its title so there's still
+some orientation without opening it (e.g. "AEs (4)"). The "+ Add" button
+and table for each roster live inside its own collapsed section now,
+rather than all three rendering open simultaneously every time the panel
+shows.
+
+**Verified live** via Playwright: all three `<details>` render collapsed
+by default; each count badge reflects the real roster size and goes
+blank (matching the existing "No X yet" empty state) when a list is
+empty. `node --check` clean.
