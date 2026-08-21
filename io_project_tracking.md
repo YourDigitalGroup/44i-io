@@ -18240,3 +18240,43 @@ new CSS written, just reusing what already existed.
 `svc-form-group` class and render closed by default; the count badges
 still work correctly. Purely visual — no behavior changes. `node --check`
 clean.
+
+## 2026-08-21 — Tab-switch state audit across Admin, Strategist, Accounting
+
+Claire: "if I search for MS Farm Bureau and then go to a different tab
+and back to the client tab it doesn't refresh I still see my search...
+Or it leaves an editor open if I don't close it." Checked all three
+portals for the same class of bug, not just Admin.
+
+**Admin — real bug, fixed.** Every tab's own search/filter inputs
+(`clients-filter-search`, `orders-filter-search`, `map-filter-search`,
+etc. — 10 fields across 4 tabs) and every "New/Edit" panel (Groups,
+Clients, Services, Sections, Intake Forms, AEs, Strategists, Users,
+Accounting Map, plus the Order Detail viewer — 10 panels) had nothing
+ever clearing them. Each tab's own load function re-fetches fresh data
+on entry, but re-rendered it through whatever stale search text/filter
+was still sitting in the input, and a left-open editor just stayed
+open indefinitely. New `resetAdminTabState()`, called at the top of
+`adminSection()` on every single tab switch (including re-clicking the
+currently-active tab) — clears every filter field, unchecks every
+filter checkbox, and closes every editor/detail panel, so every tab
+comes back exactly as clean as a fresh page load.
+
+**Strategist and Accounting — checked, already correct, no bug.**
+Neither has Admin's kind of separate "tabs" — both are single continuous
+dashboards with status-tab/scope/group filters instead. Every one of
+those filter-change handlers (`strategistSetScope`,
+`strategistSetGroupFilter`, `strategistSetPacingFilter`,
+`strategistSetStatusTab`, `accountingSetGroupFilter`, the accounting
+month-navigation handler) already sets its `*SelectedLineId` state to
+null before re-rendering, closing any open detail card the moment the
+visible list changes under it. The one form-like panel each portal has
+(Strategist's "+ New Campaign" import) fully rebuilds its own HTML from
+scratch every time it's opened, so it can't carry stale values between
+opens either. Nothing to fix in either file.
+
+**Verified live** via Playwright (Admin only, since Strategist/
+Accounting needed no change): searching in Clients then switching to
+Orders and back clears the search box; an open client editor closes on
+tab switch; a checkbox filter (map-filter-inactive) also resets.
+`node --check` clean.
