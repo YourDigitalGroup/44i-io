@@ -679,7 +679,28 @@
           <div style="display:flex;gap:8px">
             <button id="admin-workflows-btn" onclick="toggleWorkflowManager()" style="padding:8px 16px;border-radius:7px;background:#fff;color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚙ Workflows</button>
             <button id="admin-hosting-settings-btn" onclick="toggleHostingSettings()" style="padding:8px 16px;border-radius:7px;background:#fff;color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">⚙ Hosting Proration</button>
+            <button id="admin-template-titles-btn" onclick="toggleTemplateTitlesPanel()" style="padding:8px 16px;border-radius:7px;background:#fff;color:var(--text);border:1px solid var(--border);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">🔍 Trello Template Titles</button>
             <button id="admin-new-service-btn" onclick="adminNewService()" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">+ New Service</button>
+          </div>
+        </div>
+
+        <!-- Trello Template Titles (2026-08-21, per Claire — "I don't know if the system
+             is using the Template title formats since we never really set that up... is
+             there any easy way I can provide what the card titles are for the
+             templates?"): a service only ever stores a LINK to a Trello template
+             (trello_template_ref/type) — the card/list's own live title on Trello IS
+             the expected-name source, fetched fresh every time, never a separately
+             typed-in title anywhere in Supabase. This panel just shows, for every
+             service with a template linked, exactly what that template's real title
+             currently reads — the same thing the audit tools already read internally,
+             surfaced here so Claire can review it without opening Trello card-by-card. -->
+        <div id="admin-template-titles-panel" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Trello Template Titles</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Read-only — shows the LIVE title(s) currently on each linked Trello template card/list. This is exactly what the system uses as the base for every generated card name (before "+ Offline Visits" / the business name get appended), so it's the fastest way to confirm the templates are actually named the way you expect.</p>
+          <div id="admin-template-titles-results"><p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Click "Load" to fetch live titles from Trello.</p></div>
+          <div style="display:flex;gap:10px;margin-top:10px">
+            <button onclick="adminListTemplateTitles()" class="btn-quiet-green">Load</button>
+            <button onclick="toggleTemplateTitlesPanel()" class="btn-quiet-green">Close</button>
           </div>
         </div>
 
@@ -6249,6 +6270,65 @@ async function resolveAuditTemplateNames(templateRow, templateCache) {
   templateCache[cacheKey] = result;
   return result;
 }
+
+function toggleTemplateTitlesPanel() {
+  const panel = document.getElementById('admin-template-titles-panel');
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (isOpen) document.getElementById('admin-template-titles-results').innerHTML = '';
+}
+
+// Lists the LIVE Trello title of every linked template, grouped by (type, ref) so a
+// shared template (e.g. the 4 Digital Advertising services all pointing at one
+// "Display" card) is only fetched and shown once, with every service using it listed
+// alongside it (2026-08-21, per Claire — see the panel's own intro text for the ask).
+// Reuses resolveAuditTemplateNames() exactly as the audit tools do, so this is
+// guaranteed to show the SAME thing the real matching/audit logic actually reads.
+async function adminListTemplateTitles() {
+  const resultsEl = document.getElementById('admin-template-titles-results');
+  const templated = Object.values(CATALOG_ROWS).filter(r => r.trello_template_ref);
+  if (!templated.length) {
+    resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No services have a Trello Template linked yet.</p>';
+    return;
+  }
+  resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Loading…</p>';
+
+  const groups = {};
+  templated.forEach(r => {
+    const type = r.trello_template_type || 'list';
+    const key = `${type}:${r.trello_template_ref}`;
+    (groups[key] = groups[key] || { trello_template_type: type, trello_template_ref: r.trello_template_ref, services: [] }).services.push(r);
+  });
+
+  const templateCache = {};
+  const rows = [];
+  for (const g of Object.values(groups)) {
+    const { names, error } = await resolveAuditTemplateNames(g, templateCache);
+    rows.push({ type: g.trello_template_type, ref: g.trello_template_ref, services: g.services, names, error });
+  }
+  rows.sort((a, b) => a.services[0].label.localeCompare(b.services[0].label));
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Service(s) Using It</th>
+      <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Template Type</th>
+      <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Live Title(s) on Trello</th>
+    </tr></thead><tbody>`;
+  rows.forEach(r => {
+    const services = r.services.map(s => esc(s.label)).join('<br>');
+    const titles = r.error
+      ? `<span style="color:#991B1B;font-weight:600">⚠ ${esc(r.error)}</span>`
+      : r.names.map(n => `<span style="font-family:monospace">"${esc(n)}"</span>`).join('<br>');
+    html += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px">${services}</td>
+      <td style="padding:6px 8px">${esc(r.type)}${r.type === 'list' ? ` (${r.names.length} card${r.names.length !== 1 ? 's' : ''})` : ''}</td>
+      <td style="padding:6px 8px">${titles}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  resultsEl.innerHTML = html;
+}
+
 async function adminAuditClientTrelloCards() {
   const clientId = document.getElementById('admin-client-original-id').value;
   const resultsEl = document.getElementById('admin-client-trello-audit-results');
