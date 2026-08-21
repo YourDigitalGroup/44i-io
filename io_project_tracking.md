@@ -18765,3 +18765,50 @@ correct with no separate fix tool needed. SQL:
 built from the last known version of the function (2026-08-12) since
 no more recent copy was on file — flagged to Claire in case it's
 drifted since. Not yet run by Claire.
+
+## 2026-08-21 (cont'd) — Audit tool now checks BOTH directions: missing cards AND unrecognized real cards
+
+Claire asked: "is the audit tool looking at all of the cards in a
+list or just the ones that are included in the strategist's portal
+right now?" Answer: neither, quite — it only ever checked ONE
+direction. For every active `campaign_lines` row it asked "does a
+matching card exist?" (`findActual()`), but never the reverse — a real
+card on Trello that doesn't correspond to anything currently tracked
+(a stale leftover from a cancelled tactic, a typo'd rename, a sale
+never entered into the system) was silently invisible either way.
+Claire then asked for "a full audit of what is currently on Trello
+lists and what doesn't match our naming conventions."
+
+**Built the reverse direction, in both the per-client and bulk audit
+tools.** New `auditIsKnownNonTacticCard(cardName, bizName,
+markerNames)` recognizes the 4 kinds of real card that are NOT tactic
+cards and shouldn't be flagged just for not matching an expected
+name: the client's own IO overview card (`IO — {bizName}`), a 🧪 test
+card, an `*AE*`/"AE Questions" leftover, and the 2 fixed Gold/Green
+marker cards every client list gets (resolved once per audit run via
+new `auditFetchMarkerCardNames()`, not per client — both cards are
+identical everywhere). Every OTHER real card that doesn't match one
+of the client's own expected tactic names (collected into a Set as
+each workflow gets checked, reusing the exact same name-generation
+logic the existing direction already uses — so the two directions can
+never disagree about what "expected" means) gets a new `kind: 'orphan'`
+problem row: "❓ Real card '...' doesn't match any expected tactic —
+stale leftover, typo, or an untracked sale?"
+
+**One real, unavoidable limitation, called out directly in the UI**:
+Event-style ("always new card") services intentionally get a fresh,
+dated card every resell — an OLDER dated copy of one of those will
+always look unrecognized here, since only the CURRENT date range is
+ever "expected." Flagged in the caveat text rather than attempting to
+guess which unrecognized cards are actually just old dated versions
+(too fragile to detect reliably) — per this project's "no silent
+caps" principle, the limitation is stated, not hidden.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Ran the exact matching logic against a mock list containing: a
+hyphen-typed real card that should still match its em-dash expected
+name (confirms the two directions share the same normalization), the
+client's own IO card, a test card, a Gold/Green marker, an AE
+Questions card, and one genuinely orphaned card — only the truly
+unrecognized card was flagged; every known non-tactic card was
+correctly excluded. No SQL — front-end only, `admin/index.html`.
