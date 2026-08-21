@@ -491,8 +491,8 @@
                  look (#F8FAFC background, border, grid layout) as the Services tab's own
                  filter row, and the same "form sits above its own list" placement the
                  Services tab already uses for New/Edit Service. -->
-            <details style="margin-bottom:16px">
-              <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">AEs <span id="admin-client-ae-count" style="font-weight:400;color:var(--muted)"></span></summary>
+            <details class="svc-form-group">
+              <summary>AEs <span id="admin-client-ae-count" style="font-weight:400;opacity:.7"></span></summary>
               <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:flex-end;margin:6px 0 10px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
                 <div>
                   <label class="lbl" for="admin-client-ae-search">Search</label>
@@ -529,8 +529,8 @@
               <div id="admin-client-ae-table"></div>
             </details>
 
-            <details style="margin-bottom:16px">
-              <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">Counties <span id="admin-county-count" style="font-weight:400;color:var(--muted)"></span></summary>
+            <details class="svc-form-group">
+              <summary>Counties <span id="admin-county-count" style="font-weight:400;opacity:.7"></span></summary>
               <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:flex-end;margin:6px 0 10px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
                 <div>
                   <label class="lbl" for="admin-county-search">Search</label>
@@ -557,8 +557,8 @@
               <div id="admin-county-table"></div>
             </details>
 
-            <details>
-              <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">Agents <span id="admin-agent-count" style="font-weight:400;color:var(--muted)"></span></summary>
+            <details class="svc-form-group">
+              <summary>Agents <span id="admin-agent-count" style="font-weight:400;opacity:.7"></span></summary>
               <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:flex-end;margin:6px 0 10px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
                 <div>
                   <label class="lbl" for="admin-agent-search">Search</label>
@@ -595,10 +595,20 @@
                reusing those directly -- the group editor's version is tightly
                coupled to its own container ids and currentPricingOverrides global,
                and could render at an overlapping time with this one. -->
-          <details style="margin-bottom:16px">
-            <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--accent-dark);padding:8px 0">Custom Pricing for this client (optional — overrides the group's own pricing)</summary>
-            <p style="font-size:11px;color:var(--muted);margin:6px 0 12px">Only set a price here if THIS client needs something different from the rest of its group. Leave blank to use the group's own Custom Pricing (or the standard catalog price if the group has none set either).</p>
-            <div id="client-pricing-fields"></div>
+          <!-- Same card-style collapsible as the Service editor's Basics/Pricing
+               Details/Behavior & Workflow sections (2026-08-21, per Claire: "could we
+               make these editors... look more like this editor?") -- .svc-form-group
+               (defined near the top of this file's <style> block) supplies the
+               rounded-card border, ▸/▾ arrow, and highlighted-when-open background;
+               only a class name and a plain <div> wrapper (its padding rule targets
+               direct div children, not the bare <p> these used to have) needed to
+               change here, no new CSS. -->
+          <details class="svc-form-group">
+            <summary>Custom Pricing for this client (optional — overrides the group's own pricing)</summary>
+            <div style="margin-bottom:12px">
+              <p style="font-size:11px;color:var(--muted);margin:0">Only set a price here if THIS client needs something different from the rest of its group. Leave blank to use the group's own Custom Pricing (or the standard catalog price if the group has none set either).</p>
+              <div id="client-pricing-fields" style="margin-top:12px"></div>
+            </div>
           </details>
 
           <!-- Client-level Accounting Overrides (2026-08-20, second half of the same
@@ -607,10 +617,12 @@
                onAccountingOverrideInput), same reasoning for keeping it a fully
                separate state/container/functions pair. Internal margin data, super-
                admin only -- gated the same way the group-level tab already is. -->
-          <details id="client-accounting-override-details" style="margin-bottom:16px;display:none">
-            <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--accent-dark);padding:8px 0">Accounting Overrides for this client (optional — overrides the group's own overrides)</summary>
-            <p style="font-size:11px;color:var(--muted);margin:6px 0 12px">Only set a value here if THIS client's margin needs to differ from the rest of its group. Leave blank to use the group's own Accounting Overrides (or the standard Accounting Map value if the group has none set either).</p>
-            <div id="client-accounting-override-fields" style="overflow-x:auto"></div>
+          <details id="client-accounting-override-details" class="svc-form-group" style="display:none">
+            <summary>Accounting Overrides for this client (optional — overrides the group's own overrides)</summary>
+            <div style="margin-bottom:12px">
+              <p style="font-size:11px;color:var(--muted);margin:0">Only set a value here if THIS client's margin needs to differ from the rest of its group. Leave blank to use the group's own Accounting Overrides (or the standard Accounting Map value if the group has none set either).</p>
+              <div id="client-accounting-override-fields" style="overflow-x:auto;margin-top:12px"></div>
+            </div>
           </details>
 
           <div style="display:flex;gap:10px">
