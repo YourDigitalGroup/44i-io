@@ -18996,3 +18996,29 @@ unknown production risk found via this audit work today (after the
 dash-character bug and the SEO-tier-defaults-to-Pro bug) — all three
 were silent until something started actually comparing generated
 names against real ones at scale.
+
+## 2026-08-21 (cont'd) — Audit: exclude standard "Dates" and "Questions" cards
+
+Claire: "Every list has a 'Dates' and 'Questions' cards that I don't
+care to be told about, those are standard cards." Confirmed these
+have no fixed title — wording varies per client — and "Questions" is
+a separate, different card from the existing "AE Questions" pattern
+the audit already skips.
+
+Added to `auditIsKnownNonTacticCard()` in `admin/index.html`: a card
+whose name contains the whole word "dates" or "questions" (case-
+insensitive, anywhere in the title, not just a prefix) is now excluded
+from the "unrecognized card" check — same reasoning as the existing
+AE Questions/test-card/marker-card exclusions, just broader since the
+exact phrasing isn't fixed. Only touches the audit's exclusion list —
+did NOT touch `auditIsSkippableTemplateCard()` or index.html's own
+real card-creation skip logic, since these are legitimate standard
+cards meant to exist on every real client list (not template
+placeholders that should be skipped when copying a template).
+
+**Verified**: `node --check` on the extracted inline script passes.
+Ran the updated exclusion function against several title variations
+("Campaign Dates," "Important Dates - Client," "Client Questions,"
+"Questions for AE") — all correctly excluded — while confirming two
+genuine tactic card names are still correctly NOT excluded (so a real
+mismatch/orphan still gets flagged normally).

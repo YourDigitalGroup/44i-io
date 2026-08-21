@@ -6207,6 +6207,14 @@ function auditIsKnownNonTacticCard(cardName, bizName, markerNames) {
   if (cardName.trim().startsWith('🧪')) return true;
   if (auditNorm(cardName) === auditNorm(`IO — ${bizName}`)) return true;
   if (/^\*ae\*/i.test(cardName) || /^ae questions/i.test(cardName)) return true;
+  // Standard "Dates" and "Questions" cards (2026-08-21, per Claire — "Every list has a
+  // 'Dates' and 'Questions' cards that I don't care to be told about, those are
+  // standard cards") — real, legitimate cards on every client list, not something to
+  // flag as unrecognized. Wording varies per client ("I don't care to be told about"
+  // implies no fixed title to match exactly), so this checks for the word anywhere in
+  // the card name rather than an exact/prefix title match, same reasoning as the
+  // AE Questions check above but broader since the exact phrasing isn't fixed.
+  if (/\bdates\b/i.test(cardName) || /\bquestions\b/i.test(cardName)) return true;
   return markerNames.some(n => n && auditNorm(cardName) === auditNorm(n));
 }
 // Offline Visits Tracking card-title suffix (2026-08-21, per Claire — "if they include
