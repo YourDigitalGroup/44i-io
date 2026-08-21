@@ -18473,3 +18473,43 @@ end;
 $function$
 ;
 ```
+
+## 2026-08-21 — Real production bug found via the audit: dash-character mismatch in card matching
+
+Claire ran the new bulk audit and flagged a confusing result: 3B Outdoor
+Equipment has a real card "Search Engine Marketing - 3B Outdoor
+Equipment" but the audit said it would create a new one. Asked her to
+paste the exact "Expects..." string from the report — it was "Search
+Engine Marketing **—** 3B Outdoor Equipment" (em dash). Everything else
+was identical; only the dash character differed (real card: plain
+hyphen "-", expected: em dash "—").
+
+**This is a real bug in the live matching logic, not just the audit
+tool.** Every card name the system generates uses an em dash
+("Tactic — Business Name"), but `norm()` in `index.html`'s own
+`findExistingCardByName()` only ever normalized TRAILING dashes, never
+a different dash character sitting in the MIDDLE of the name. A
+hand-typed real card almost always uses a plain hyphen, not an em dash
+— meaning any client whose card was named with a hyphen was already at
+risk of silently getting a duplicate card created on their next resell,
+audit or no audit. This predates all of today's Trello-audit work
+entirely; the audit just happened to be the first thing to surface it.
+
+**Fixed in both places `norm()`/`auditNorm()` exist:** `index.html`
+(the real, write-side matching logic) and `admin/index.html`'s
+`auditNorm()` (kept in sync on purpose — an audit that disagreed with
+the real logic about what counts as a match would be worse than no
+audit at all). Both now canonicalize EVERY dash variant (hyphen/en-dash/
+em-dash) to a plain hyphen across the WHOLE string before comparing, not
+just at the trailing edge. The trailing-strip step (for template
+placeholders like "IO -") still runs afterward, unchanged in effect.
+
+**Verified live**: the exact 3B Outdoor Equipment case now matches;
+en-dash variants also match; the existing placeholder-detection cases
+("IO -", "IO — Business Name", a colon-suffixed template name) all still
+behave exactly as before; two genuinely different tactic names still
+correctly don't match. No SQL — front-end only, both files.
+
+**No audit re-run needed for this one client** — Claire can just
+re-run the bulk audit now that the fix is live; any client whose only
+issue was a dash-style difference should now come back clean.

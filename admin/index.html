@@ -6127,8 +6127,16 @@ async function adminSaveClient() {
 // silently create a duplicate is to check the ACTUAL current card names
 // against what this exact formula expects, per client. This makes zero
 // Trello writes -- trello_get_card/trello_get_list_cards only.
+// Canonicalizes every dash variant (hyphen/en-dash/em-dash) to a plain hyphen
+// EVERYWHERE in the string, not just at the end (2026-08-21, found live via this
+// exact audit — Claire: "3B Outdoor Equipment has a card that says 'Search Engine
+// Marketing - 3B Outdoor Equipment' but it came back that it would create a new
+// card"). Every generated name uses an em dash ("Tactic — Business Name"); a
+// hand-typed real card almost always uses a plain hyphen -- kept in sync with the
+// identical fix in index.html's own norm(), since a mismatch here would mean the
+// audit and the real matching logic disagree about what counts as a match.
 function auditNorm(n) {
-  return (n || '').toLowerCase().trim().replace(/[\s\-–—:]+$/g, '').trim();
+  return (n || '').toLowerCase().replace(/[-–—]/g, '-').trim().replace(/[\s\-:]+$/g, '').trim();
 }
 function auditIsSkippableTemplateCard(name) {
   const t = auditNorm(name);
