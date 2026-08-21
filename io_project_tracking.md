@@ -18812,3 +18812,39 @@ client's own IO card, a test card, a Gold/Green marker, an AE
 Questions card, and one genuinely orphaned card — only the truly
 unrecognized card was flagged; every known non-tactic card was
 correctly excluded. No SQL — front-end only, `admin/index.html`.
+
+## 2026-08-21 (cont'd) — New "Trello Template Titles" panel: shows what the system is actually reading
+
+Claire wanted to sanity-check the whole naming-convention approach
+before going further: "I don't know if the system is using the
+Template title formats since we never really set that up. We linked
+the templates only. Is there any easy way I can provide what the card
+titles are for the templates?"
+
+**Answered directly first**: yes, the system already uses the live
+Trello template's own title as the expected-name source, fetched
+fresh every time (`resolveAuditTemplateNames()`/`findExistingCardByName`)
+— there's no separate "title format" field anywhere that was left
+unset. Linking the template (`trello_template_ref`/`trello_template_type`)
+is genuinely the whole setup; whatever that card/list is named on
+Trello IS what gets used.
+
+**Built a read-only panel to show it, rather than having Claire
+manually copy titles out of Trello into a message.** New "🔍 Trello
+Template Titles" button on the Services tab (next to Workflows/Hosting
+Proration), opens a panel listing every service with a template
+linked, grouped by (type, ref) so a template shared across several
+services (e.g. the 4 Digital Advertising services sharing one
+"Display" card) only shows once with all its services listed
+together — reuses `resolveAuditTemplateNames()` exactly as the audit
+tools do, so this is guaranteed to show the SAME thing the real
+matching logic reads, not a second, possibly-drifting copy of the
+same idea.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Ran the grouping/dedup/list-filtering logic against mock catalog rows
+(2 services sharing one card template, 1 service with its own card
+template, 1 with a list template containing a test card and an IO
+placeholder to skip) — confirms the shared template only appears once
+with both services listed, and the list-type skip-filtering still
+works correctly. No SQL — front-end only, `admin/index.html`.
