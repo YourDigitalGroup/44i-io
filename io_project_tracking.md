@@ -18080,3 +18080,138 @@ shows.
 by default; each count badge reflects the real roster size and goes
 blank (matching the existing "No X yet" empty state) when a list is
 empty. `node --check` clean.
+
+## 2026-08-21 — Fixed a latent bug: one AE with two Trello Lists would have silently mis-routed cards
+
+Claire: "I have 1 AE that has 2 separate Trello Lists, how should we
+handle that?" — same AE, covering 2 different counties. The data model
+already supported this (a county links to a specific `client_aes` row,
+not to a plain AE id — Counties belong to one AE+list PAIRING, not just
+one AE), but the actual list-resolution code didn't use that: it matched
+purely by `ae_id`, so an AE with 2 `client_aes` rows would have
+deterministically always resolved to whichever one loaded first —
+**every submission from that AE, regardless of which county was
+actually picked, would have silently routed to the same one Trello
+list.** This had never come up before today because every AE so far had
+exactly one list. Confirmed with Claire first: an IO submission is
+always for exactly one county, which is what makes the fix work cleanly.
+
+**Fix (`index.html`):** `submittingClientAeRow()` → `submittingClientAeRows()`
+(plural). `submittingAeTrelloListId()` now resolves via the ACTUAL county
+picked in the Agent/County Split when the AE has more than one
+registered list (unaffected, same as before, when they only have one).
+`countiesForSubmittingAe()` now unions counties across ALL of the AE's
+`client_aes` rows, not just whichever one happened to match first — an
+AE with 2 lists needs BOTH counties showing in the picker, not just one.
+New `aeRegisteredForThisClient()` for the Step 1 gate, which only needs
+to know the AE is registered at all — the SPECIFIC list can't be known
+yet at Step 1, before Step 2's county picker is filled in. The
+submission-time gate still uses `submittingAeTrelloListId()` and now
+gives a different message for "not registered at all" vs. "registered,
+but this specific county isn't tied to one of your lists yet" — a
+brand-new, not-yet-added county is genuinely ambiguous when an AE has 2+
+lists (there's no way to know which list it belongs to), so it's
+blocked rather than guessed, same "blocked, not defaulted" rule as an
+unregistered AE.
+
+**Verified live** via Playwright: an AE with 2 registered lists sees
+both counties in the picker; picking each county resolves to that
+county's own distinct list (not stuck on the first match); no county
+picked yet correctly returns no list (Step 1 timing); a brand-new
+unregistered county with 2 lists on file correctly blocks; a normal
+single-list AE is completely unaffected either way. `node --check`
+clean.
+
+**How to actually set this AE up with their 2nd list, in Admin:** add
+the same AE a second time in the client's AEs section (now collapsed,
+see the section above) with the second Trello List ID, then assign each
+county to whichever of the two AE entries it belongs to.
+
+## 2026-08-21 — Removed the 16 original per-agent MS Farm Bureau client records
+
+Closes out the last MS Farm Bureau follow-up: these 16 clients
+(`MS Farm Bureau - Andy`, `- Ben S.`, `- Ben W.`, etc.) were the original
+Trello-imported per-agent records from before the consolidation to one
+real MS Farm Bureau client with structured Agents/Counties/AEs
+underneath it — this is exactly Phase 6 from the original MS Farm Bureau
+fan-out plan ("migrate existing per-agent clients," flagged from the
+start as needing Claire's own mapping/confirmation, not something to
+guess at).
+
+Checked for real data on all 16 first (`campaign_line_count`/
+`order_count`, both 0 across the board — genuinely just placeholders,
+never used for a real order) and for any leftover child rows before
+deleting anything. Found 1 county (Alcorn) and 2 agents (Danny Crozier,
+Justin Ashmore) still pointed at one of the old clients (`- Andy`) —
+Claire confirmed these were an early false start, already re-added under
+the real consolidated client, safe to remove. Deleted in dependency
+order: the 2 agents and 1 county first, then all 16 client records.
+
+No code changes — this was a pure data cleanup, run by Claire after
+confirming each step.
+
+## 2026-08-21 — Closing the 2-Trello-List AE gap for real: found the picker was actively blocking it
+
+Claire, right after the last fix: "the only thing that will be a little
+tough with the 2 separate AE Boards is I won't be able to know which one
+to assign the county to because I can't edit the AE name." Turned out
+this pointed at a real, more fundamental gap than the label problem
+alone — the AE picker in the "+ Add AE" form actively EXCLUDED any AE
+already added to the client, so there was no way to add the same AE a
+second time in the first place, on top of the two entries being visually
+identical once added.
+
+**New `client_aes.label` column** (nullable, optional) — a short
+free-text tag she can set per AE+list entry (e.g. "Alcorn/Lee list"),
+independent of the AE's own shared/global name (which she can't edit
+per-client, correctly). `admin_save_client_ae` extended to persist it.
+
+**Front-end (`admin/index.html`):**
+- `populateClientAePickerDropdown()` no longer excludes an already-added
+  AE — now shows "(already added Nx)" next to their name instead, so
+  adding a second entry is possible and a truly accidental duplicate is
+  still visible in the moment.
+- `renderClientAeList()`'s table shows the label next to the AE name —
+  the fix required also stopping a double-escaping bug this introduced
+  (the row template ran `esc()` over the whole assembled name+label
+  string, which used to work only because that string was always plain
+  text before this).
+- `populateCountyAeDropdown()` — the actual place Claire's exact
+  complaint bites — now shows `"John B. — Alcorn list"` vs.
+  `"John B. — Lee list"` instead of two identical "John B." options.
+
+**Verified live** via Playwright: the AE picker lets John B. be picked
+again and shows the "already added 2x" hint; the AE table shows both
+entries with their own labels; the County form's AE dropdown shows two
+genuinely distinguishable options for the same AE. `node --check` clean.
+
+## 2026-08-21 — AE/County/Agent editor: search + form-at-top, matching the Services tab
+
+Claire, having now populated the real roster (16 AEs, 62 counties, 142
+agents): "a few small design edits... it looks a little analog right
+now, can we make it more like the services editor?" plus "can we make
+the add AE/County/Agent editor at the top of the section so you don't
+have to scroll?"
+
+**Form now renders ABOVE its table, not below** — the create/edit form
+used to sit after the (potentially 142-row) table in the DOM, so opening
+it via "+ Add" meant scrolling down past the whole list to actually see
+it. Now placed right after each section's header bar, same as the
+Services tab's own New/Edit Service form placement.
+
+**Added a live search box to each of the three lists** — same
+filter-as-you-type pattern as the Services tab's own Search field, in
+the same boxed `#F8FAFC` filter-bar container (background/border/
+border-radius) her screenshot showed missing. The `(count)` badge in
+each collapsed section's title always reflects the FULL roster, not the
+filtered view, so it stays a true "how many total" indicator.
+
+**Counties table also shows each AE's label now**, not just the plain
+name — the exact place knowing which of an AE's 2+ entries a county
+belongs to matters most, same reasoning as the County form's AE dropdown
+fixed in the entry right before this one.
+
+**Verified live** via Playwright: the AE form element now sits before
+the table element in DOM order; searching each of the three boxes
+filters correctly to just the matching row(s); the Counties table shows
+an AE's label alongside its name. `node --check` clean.

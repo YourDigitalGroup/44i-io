@@ -1525,18 +1525,37 @@ async function loadAgentSplitRosters(clientId) {
   renderAgentSplitRows();
 }
 
-// Looks up the submitting AE's own MS Farm Bureau Trello list (2026-08-20).
-// Matched on selectedAeId -- the SAME global AE picker/id already used by
-// Step 1's "AE Name" field for every client, not a separate MSFB-specific AE
-// selection. Returns null if that AE has no registered client_aes row (or one
-// with no list saved yet) for this client -- submitIO() blocks on null rather
-// than falling back anywhere, per Claire: an unregistered AE gets a warning,
-// not a card in the wrong place.
-function submittingClientAeRow() {
-  return CLIENT_AE_ROSTER.find(ca => ca.ae_id === selectedAeId && ca.active !== false) || null;
+// An AE can have MORE THAN ONE client_aes row for the same client (2026-08-21,
+// per Claire: "I have 1 AE that has 2 separate Trello Lists" -- same AE,
+// covering 2 different counties, each routing to its own list). Matched on
+// selectedAeId -- the SAME global AE picker/id already used by Step 1's
+// "AE Name" field for every client, not a separate MSFB-specific AE selection.
+function submittingClientAeRows() {
+  return CLIENT_AE_ROSTER.filter(ca => ca.ae_id === selectedAeId && ca.active !== false);
 }
+// Step 1's gate only needs to know the AE is registered for THIS client at
+// all -- which specific list can't be resolved yet at Step 1 when the AE has
+// more than one, since that depends on a county not picked until Step 2's
+// Agent/County Split.
+function aeRegisteredForThisClient() {
+  return submittingClientAeRows().length > 0;
+}
+// Which Trello list this submission's cards use. An AE with exactly one
+// registered list uses it regardless of county (unchanged from before this
+// fix). An AE with MORE THAN ONE resolves via the county actually picked in
+// the Agent/County Split -- an existing county is always tied to exactly one
+// client_aes row (its own list); a brand-new, not-yet-registered county has
+// no way to say which of the AE's lists it belongs to, so this returns null
+// rather than guessing -- submitIO() blocks on null the same "blocked, not
+// defaulted" way it already does for an unregistered AE.
 function submittingAeTrelloListId() {
-  return submittingClientAeRow()?.trello_list_id || null;
+  const rows = submittingClientAeRows();
+  if (!rows.length) return null;
+  if (rows.length === 1) return rows[0].trello_list_id || null;
+  if (!agentSplitCountyId) return null;
+  const county = COUNTY_ROSTER.find(c => c.id === agentSplitCountyId);
+  const matchedRow = county ? rows.find(ca => ca.id === county.client_ae_id) : null;
+  return matchedRow?.trello_list_id || null;
 }
 
 function isMultiAgentClientActive() {
@@ -1562,9 +1581,9 @@ function setAgentSplitCardVisible(visible) {
 // blocks progressing past Step 1 for an unregistered AE, but a fallback here
 // keeps this defensive rather than rendering an empty, dead-end picker.
 function countiesForSubmittingAe() {
-  const myClientAe = submittingClientAeRow();
-  if (!myClientAe) return COUNTY_ROSTER;
-  return COUNTY_ROSTER.filter(c => c.client_ae_id === myClientAe.id);
+  const myClientAeIds = submittingClientAeRows().map(ca => ca.id);
+  if (!myClientAeIds.length) return COUNTY_ROSTER;
+  return COUNTY_ROSTER.filter(c => myClientAeIds.includes(c.client_ae_id));
 }
 
 function renderAgentSplitCountyPicker() {
@@ -4181,7 +4200,12 @@ function validateStep1() {
   // earlier so an AE who isn't registered for this client's Trello board
   // finds out on Step 1, before doing all the work of filling out Step 2's
   // Agent/County Split and the rest of the form, instead of at the very end.
-  if (isMultiAgentClientActive() && !submittingAeTrelloListId()) {
+  // Checks registration only, not a specific resolvable list (2026-08-21) --
+  // an AE with more than one client_aes row can't have their exact list
+  // resolved until Step 2's county picker is filled in; submitIO()'s own
+  // later check (using submittingAeTrelloListId(), not this one) is what
+  // catches an AE who picked/typed an unregistered/ambiguous county.
+  if (isMultiAgentClientActive() && !aeRegisteredForThisClient()) {
     showToast('Your AE profile isn\'t set up for this client\'s Trello board yet — contact your AM before continuing', 'error');
     document.getElementById('ae-picker-wrap')?.scrollIntoView({behavior:'smooth', block:'center'});
     return false;
@@ -4790,9 +4814,16 @@ async function submitIO() {
     // submitting the IO, not the county/agent split data. An AE with no
     // registered list for this client has nowhere correct for their card to
     // go, so submission stops here rather than landing in a shared/default
-    // list that would need to be manually fixed afterward.
+    // list that would need to be manually fixed afterward. Distinguishes an
+    // unregistered AE from a registered one who just picked/typed a county
+    // that can't be resolved to one of their (2+) lists (2026-08-21) -- the
+    // second case needs a different fix (register that county in Admin), not
+    // "contact your AM" as if the AE profile itself were the problem.
     if (isMultiAgentClientActive() && !submittingAeTrelloListId()) {
-      showToast('Your AE profile isn\'t set up for this client\'s Trello board yet — contact your AM before submitting this IO', 'error');
+      const msg = aeRegisteredForThisClient()
+        ? 'This county isn\'t registered to one of your Trello lists for this client yet — contact your AM before submitting this IO'
+        : 'Your AE profile isn\'t set up for this client\'s Trello board yet — contact your AM before submitting this IO';
+      showToast(msg, 'error');
       btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
       document.getElementById('ae-picker-wrap')?.scrollIntoView({behavior:'smooth', block:'center'});
       return;
