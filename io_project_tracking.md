@@ -18215,3 +18215,28 @@ fixed in the entry right before this one.
 the table element in DOM order; searching each of the three boxes
 filters correctly to just the matching row(s); the Counties table shows
 an AE's label alongside its name. `node --check` clean.
+
+## 2026-08-21 — Matched Client editor's 5 collapsibles to the Service editor's card style
+
+Claire sent a screenshot of the Service editor's Basics/Pricing Details/
+Behavior & Workflow sections: "could we make these editors including the
+pricing and accounting look more like this editor?" Those sections use
+an existing `.svc-form-group` CSS class (rounded card border, ▸/▾ arrow
+marker, highlighted background when open) that the AE/County/Agent/
+Custom Pricing/Accounting Overrides sections in the Client editor never
+picked up — they were still using bare, unstyled `<details>`/`<summary>`
+with hand-rolled inline styles.
+
+Applied `class="svc-form-group"` to all 5 collapsibles (AEs, Counties,
+Agents, Custom Pricing, Accounting Overrides) and dropped their
+redundant inline summary styling in favor of the class's own. Since the
+class's padding rule targets direct `<div>` children (not bare `<p>`
+tags), Custom Pricing's and Accounting Overrides' intro paragraphs got
+wrapped in a `<div>` alongside their fields container so they pick up
+the same padding treatment the Service editor's own sections get — no
+new CSS written, just reusing what already existed.
+
+**Verified live** via Playwright: all 5 sections carry the
+`svc-form-group` class and render closed by default; the count badges
+still work correctly. Purely visual — no behavior changes. `node --check`
+clean.
