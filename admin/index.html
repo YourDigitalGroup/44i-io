@@ -506,6 +506,16 @@
                   <button type="button" onclick="adminSaveClientAe()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
                   <button type="button" onclick="adminCancelClientAeEdit()" class="btn-quiet-green">Cancel</button>
                 </div>
+                <!-- Label (2026-08-21, per Claire: "I won't be able to know which one to
+                     assign the county to because I can't edit the AE name") -- the same
+                     AE can be added here more than once (one entry per Trello List), and
+                     the AE's own name is shared/global, not editable per-entry. This lets
+                     her tell the two entries apart when picking which one a county belongs
+                     to, without touching the real AE roster. -->
+                <div style="margin-top:10px">
+                  <label class="lbl" for="admin-client-ae-label">Label (optional — helps tell apart 2+ entries for the same AE, e.g. "Alcorn/Lee list")</label>
+                  <input type="text" id="admin-client-ae-label" placeholder="e.g. Alcorn/Lee list" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                </div>
               </div>
             </details>
 
@@ -4214,12 +4224,19 @@ function renderClientAeList() {
   ALL_CLIENT_AES.forEach(ca => {
     const inactive = !ca.active;
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
-    const aeName = ALL_AES.find(a => a.id === ca.ae_id)?.name || '<span style="color:var(--muted)">(unknown AE)</span>';
+    const aeNameRaw = ALL_AES.find(a => a.id === ca.ae_id)?.name || null;
+    // Assembled from already-escaped pieces, not passed through esc() again below
+    // (the row template used to esc(aeName) as a whole, which only worked because
+    // aeName was always plain text before) -- label shown right next to the name
+    // (2026-08-21) since the whole point of it is telling two entries for the SAME
+    // AE apart in this exact table.
+    const aeName = (aeNameRaw ? esc(aeNameRaw) : '<span style="color:var(--muted)">(unknown AE)</span>') +
+      (ca.label ? ` <span style="color:var(--muted);font-weight:400">— ${esc(ca.label)}</span>` : '');
     const listBadge = ca.trello_list_id
       ? '<span style="font-size:10px;font-weight:700;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:8px">Set</span>'
       : '<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:8px">Not set — blocked</span>';
     html += `<tr style="border-bottom:1px solid var(--border);${inactive ? 'background:#FAFAFA' : ''}">
-      <td style="padding:8px 10px">${esc(aeName)}${inactiveBadge}</td>
+      <td style="padding:8px 10px">${aeName}${inactiveBadge}</td>
       <td style="padding:8px 10px">${listBadge}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">
         <button onclick="adminEditClientAe('${esc(ca.id)}')" class="btn-quiet-green" style="margin-right:4px">Edit</button>
@@ -4233,15 +4250,22 @@ function renderClientAeList() {
 
 function populateClientAePickerDropdown(selectedAeId) {
   const sel = document.getElementById('admin-client-ae-picker');
-  // Excludes an AE already added to this client (unless it's the one currently
-  // being edited) — same "no duplicate roster entry" guard as Agents/Counties.
+  // Used to exclude an AE already added to this client -- removed (2026-08-21,
+  // per Claire's own real case: 1 AE with 2 separate Trello Lists) since that's
+  // now a supported, intentional setup, not a mistake to guard against. Still
+  // flags how many times an AE is already added, right in the option label, so
+  // adding a genuine duplicate by accident is at least visible in the moment.
   const editingId = document.getElementById('admin-client-ae-original-id').value;
-  const alreadyAdded = new Set(ALL_CLIENT_AES.filter(ca => ca.id !== editingId).map(ca => ca.ae_id));
+  const countByAeId = {};
+  ALL_CLIENT_AES.filter(ca => ca.id !== editingId).forEach(ca => { countByAeId[ca.ae_id] = (countByAeId[ca.ae_id] || 0) + 1; });
   // Scoped to the client's own group (2026-08-20, per Claire) -- an AE belongs to
   // one group's roster, so a client shouldn't be offered every other group's AEs.
   const groupId = document.getElementById('admin-client-group')?.value;
-  const options = ALL_AES.filter(a => a.active !== false && a.group_id === groupId && (!alreadyAdded.has(a.id) || a.id === selectedAeId));
-  sel.innerHTML = options.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  const options = ALL_AES.filter(a => a.active !== false && a.group_id === groupId);
+  sel.innerHTML = options.map(a => {
+    const n = countByAeId[a.id] || 0;
+    return `<option value="${esc(a.id)}">${esc(a.name)}${n > 0 ? ` (already added ${n}x)` : ''}</option>`;
+  }).join('');
   sel.value = selectedAeId || '';
 }
 
@@ -4253,6 +4277,7 @@ async function adminNewClientAe() {
   document.getElementById('admin-client-ae-form-title').textContent = 'New AE';
   document.getElementById('admin-client-ae-original-id').value = '';
   document.getElementById('admin-client-ae-trello-list-id').value = '';
+  document.getElementById('admin-client-ae-label').value = '';
   populateClientAePickerDropdown(null);
   document.getElementById('admin-client-ae-form').style.display = 'block';
 }
@@ -4264,6 +4289,7 @@ function adminEditClientAe(id) {
   document.getElementById('admin-client-ae-form-title').textContent = 'Edit AE — ' + aeName;
   document.getElementById('admin-client-ae-original-id').value = ca.id;
   document.getElementById('admin-client-ae-trello-list-id').value = ca.trello_list_id || '';
+  document.getElementById('admin-client-ae-label').value = ca.label || '';
   populateClientAePickerDropdown(ca.ae_id);
   document.getElementById('admin-client-ae-form').style.display = 'block';
 }
@@ -4277,8 +4303,9 @@ async function adminSaveClientAe() {
   const isNew = !document.getElementById('admin-client-ae-original-id').value;
   const aeId = document.getElementById('admin-client-ae-picker').value;
   const trelloListId = document.getElementById('admin-client-ae-trello-list-id').value.trim() || null;
+  const label = document.getElementById('admin-client-ae-label').value.trim() || null;
   if (!aeId) { showToast('Please pick an AE', 'error'); return; }
-  const payload = { ae_id: aeId, trello_list_id: trelloListId };
+  const payload = { ae_id: aeId, trello_list_id: trelloListId, label };
   if (isNew) payload.active = true;
   try {
     await sb('rpc/admin_save_client_ae', {
@@ -4378,7 +4405,12 @@ function populateCountyAeDropdown(selectedId) {
   const options = ALL_CLIENT_AES.filter(ca => ca.active !== false || ca.id === selectedId);
   sel.innerHTML = '<option value="">— None —</option>' + options.map(ca => {
     const aeName = ALL_AES.find(a => a.id === ca.ae_id)?.name || '(unknown AE)';
-    return `<option value="${esc(ca.id)}">${esc(aeName)}${ca.active === false ? ' (inactive)' : ''}</option>`;
+    // The label is what actually tells 2+ entries for the SAME AE apart here
+    // (2026-08-21, per Claire: "I won't be able to know which one to assign the
+    // county to because I can't edit the AE name") -- without it, this picker is
+    // exactly where the ambiguity she flagged actually bites.
+    const labelSuffix = ca.label ? ` — ${ca.label}` : '';
+    return `<option value="${esc(ca.id)}">${esc(aeName + labelSuffix)}${ca.active === false ? ' (inactive)' : ''}</option>`;
   }).join('');
   sel.value = selectedId || '';
 }

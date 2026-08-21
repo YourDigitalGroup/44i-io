@@ -18149,3 +18149,38 @@ order: the 2 agents and 1 county first, then all 16 client records.
 
 No code changes — this was a pure data cleanup, run by Claire after
 confirming each step.
+
+## 2026-08-21 — Closing the 2-Trello-List AE gap for real: found the picker was actively blocking it
+
+Claire, right after the last fix: "the only thing that will be a little
+tough with the 2 separate AE Boards is I won't be able to know which one
+to assign the county to because I can't edit the AE name." Turned out
+this pointed at a real, more fundamental gap than the label problem
+alone — the AE picker in the "+ Add AE" form actively EXCLUDED any AE
+already added to the client, so there was no way to add the same AE a
+second time in the first place, on top of the two entries being visually
+identical once added.
+
+**New `client_aes.label` column** (nullable, optional) — a short
+free-text tag she can set per AE+list entry (e.g. "Alcorn/Lee list"),
+independent of the AE's own shared/global name (which she can't edit
+per-client, correctly). `admin_save_client_ae` extended to persist it.
+
+**Front-end (`admin/index.html`):**
+- `populateClientAePickerDropdown()` no longer excludes an already-added
+  AE — now shows "(already added Nx)" next to their name instead, so
+  adding a second entry is possible and a truly accidental duplicate is
+  still visible in the moment.
+- `renderClientAeList()`'s table shows the label next to the AE name —
+  the fix required also stopping a double-escaping bug this introduced
+  (the row template ran `esc()` over the whole assembled name+label
+  string, which used to work only because that string was always plain
+  text before this).
+- `populateCountyAeDropdown()` — the actual place Claire's exact
+  complaint bites — now shows `"John B. — Alcorn list"` vs.
+  `"John B. — Lee list"` instead of two identical "John B." options.
+
+**Verified live** via Playwright: the AE picker lets John B. be picked
+again and shows the "already added 2x" hint; the AE table shows both
+entries with their own labels; the County form's AE dropdown shows two
+genuinely distinguishable options for the same AE. `node --check` clean.
