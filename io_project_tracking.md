@@ -18729,3 +18729,39 @@ Ran `getSeoTrackingOnlyTactics()` against mock catalog rows — produces
 exactly the expected 6 entries with correct display labels; also
 confirmed it degrades to `[]` (not a throw) if called before the
 catalog has loaded, closing the timing bug before it could ship.
+
+## 2026-08-21 (cont'd) — SEO-tier safety-check query had a self-join bug; real finding: no legacy client has a real-tier line at all
+
+First safety-check query I gave Claire came back "Matches — genuinely
+Pro, no fix needed" for every single client — wrong. Its `real_tier`
+join didn't exclude the tracking lines themselves from the match, so
+each LLO (SEO)/Rep Monitoring (SEO) row matched against ITSELF (same
+`client_id` + `service_id = 'seo-bp'`), trivially "confirming" Pro
+every time. Fixed by excluding `tactic_label in ('LLO (SEO)', 'Rep
+Monitoring (SEO)')` from the `real_tier` side of the join and joining
+`services` for its real label.
+
+Re-run with the corrected query: **every one of the ~50 affected
+clients came back "no real tier line found."** These are all legacy/
+manually-imported clients where only the two SEO tracking lines were
+ever entered (via Bulk Import or "+ New Campaign") — the actual tier
+(Starter/Builder/Pro) was never recorded in Supabase at all, only on
+whatever real signed IO or record Claire has outside the system. No
+SQL can recover it; it has to come from Claire looking each one up.
+
+Asked how she wanted to fix ~50 clients' worth of this by hand —
+Claire's answer: "could this update once I upload everything else on
+the Accounting Side?" Yes — Accounting's "+ Add Service" and "Bulk
+Import (CSV)" both already route through one RPC,
+`accounting_add_campaign_line`. Patched it: whenever a real SEO tier
+line (`seo-bs`/`seo-bb`/`seo-bp`) gets added for a client through
+either tool, it now also re-anchors that same client's existing LLO
+(SEO)/Rep Monitoring (SEO) lines to the tier just added (only touches
+non-cancelled tracking lines; leaves a cancelled one alone). As Claire
+uploads each legacy client's real SEO service through Accounting, the
+tracking-line anchors — and the Trello audit's tier resolution — self-
+correct with no separate fix tool needed. SQL:
+`accounting-add-service-seo-tier-backfill-2026-08-21.sql`, scratchpad,
+built from the last known version of the function (2026-08-12) since
+no more recent copy was on file — flagged to Claire in case it's
+drifted since. Not yet run by Claire.
