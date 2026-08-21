@@ -18126,3 +18126,26 @@ clean.
 the same AE a second time in the client's AEs section (now collapsed,
 see the section above) with the second Trello List ID, then assign each
 county to whichever of the two AE entries it belongs to.
+
+## 2026-08-21 — Removed the 16 original per-agent MS Farm Bureau client records
+
+Closes out the last MS Farm Bureau follow-up: these 16 clients
+(`MS Farm Bureau - Andy`, `- Ben S.`, `- Ben W.`, etc.) were the original
+Trello-imported per-agent records from before the consolidation to one
+real MS Farm Bureau client with structured Agents/Counties/AEs
+underneath it — this is exactly Phase 6 from the original MS Farm Bureau
+fan-out plan ("migrate existing per-agent clients," flagged from the
+start as needing Claire's own mapping/confirmation, not something to
+guess at).
+
+Checked for real data on all 16 first (`campaign_line_count`/
+`order_count`, both 0 across the board — genuinely just placeholders,
+never used for a real order) and for any leftover child rows before
+deleting anything. Found 1 county (Alcorn) and 2 agents (Danny Crozier,
+Justin Ashmore) still pointed at one of the old clients (`- Andy`) —
+Claire confirmed these were an early false start, already re-added under
+the real consolidated client, safe to remove. Deleted in dependency
+order: the 2 agents and 1 county first, then all 16 client records.
+
+No code changes — this was a pure data cleanup, run by Claire after
+confirming each step.
