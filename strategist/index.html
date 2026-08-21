@@ -490,7 +490,7 @@ function strategistOpenImportForm() {
         <select id="import-service" onchange="strategistImportServiceChanged()" style="width:100%;padding:7px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px">
           <option value="">— Select —</option>
           ${spendServices.map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('')}
-          ${SEO_TRACKING_ONLY_TACTICS.map((t, i) => `<option value="__seo_track_${i}__">${esc(t.tacticLabel)}</option>`).join('')}
+          ${getSeoTrackingOnlyTactics().map((t, i) => `<option value="__seo_track_${i}__">${esc(t.displayLabel)}</option>`).join('')}
         </select>
         <div id="import-tactic-variant-wrap" style="display:none;margin-top:5px"></div>
         <label style="display:flex;align-items:center;gap:5px;font-size:11px;margin-top:5px;cursor:pointer">
@@ -680,7 +680,7 @@ async function strategistSubmitImport() {
   const groupId = clientSel.selectedOptions[0]?.dataset.groupId || null;
   const serviceSel = document.getElementById('import-service');
   const seoTrackMatch = /^__seo_track_(\d+)__$/.exec(serviceSel.value);
-  const seoTrack = seoTrackMatch ? SEO_TRACKING_ONLY_TACTICS[Number(seoTrackMatch[1])] : null;
+  const seoTrack = seoTrackMatch ? getSeoTrackingOnlyTactics()[Number(seoTrackMatch[1])] : null;
   const serviceId = seoTrack ? seoTrack.serviceId : serviceSel.value;
   const serviceLabel = seoTrack ? seoTrack.tacticLabel : (serviceSel.selectedOptions[0]?.textContent || '');
   const variantEl = document.getElementById('import-tactic-variant');
@@ -1080,31 +1080,52 @@ const TRACKABLE_FLAT_SERVICE_IDS = ['llo-bp', 'rep-bp'];
 
 // LLO (SEO) and Rep Monitoring (SEO) have no catalog row of their own -- the
 // create_campaign_lines_from_order() trigger (2026-08-10 "SEO tracking lines"
-// work) inserts them automatically whenever any SEO tier is sold, tactic_label
-// literally "LLO (SEO)"/"Rep Monitoring (SEO)". For campaigns that predate that
-// trigger, or weren't created via a live IO at all, Claire needs to add these
-// two directly through the same manual-entry tools. Anchored to seo-bp as a
-// placeholder service_id -- functionally inert here (no budget, no pricing
-// logic reads it), so which exact SEO tier doesn't matter for these lines.
-const SEO_TRACKING_ONLY_TACTICS = [
-  { tacticLabel: 'LLO (SEO)', serviceId: 'seo-bp' },
-  { tacticLabel: 'Rep Monitoring (SEO)', serviceId: 'seo-bp' },
-];
+// work) inserts them automatically whenever any SEO tier is sold, anchored to
+// whichever real tier service_id was actually sold (item->>'service_id') --
+// correct by construction. For campaigns that predate that trigger, or
+// weren't created via a live IO at all, Claire adds these two manually
+// through Bulk Import / "+ New Campaign" instead, which is where this list is
+// used. USED TO always anchor both to seo-bp regardless of the client's real
+// tier ("functionally inert... so which exact SEO tier doesn't matter" -- true
+// when nothing read it, false as of 2026-08-21: the Trello card-name audit
+// resolves its expected template off this exact service_id, so anchoring
+// every manually-added client to Pro's template was silently wrong for every
+// Starter/Builder client added this way -- caught live via the audit always
+// expecting Pro). Fixed by expanding to one entry PER (tactic × real tier)
+// combination -- the SAME dropdowns (Tactic picker, Bulk Import's fix-it
+// override) now force picking the actual tier, no separate UI needed.
+const SEO_TIER_SERVICE_IDS = ['seo-bs', 'seo-bb', 'seo-bp'];
+// A function, not a plain const (2026-08-21) -- CATALOG_ROWS is populated asynchronously
+// by loadCatalog() well after this script's top-level code runs, so a const computed
+// here at parse time would freeze on an empty catalog forever. Called fresh everywhere
+// it's needed instead (same reason getSectionLabel()-style lookups in this file are
+// functions, not consts).
+function getSeoTrackingOnlyTactics() {
+  return ['LLO (SEO)', 'Rep Monitoring (SEO)'].flatMap(tacticLabel =>
+    SEO_TIER_SERVICE_IDS.filter(id => CATALOG_ROWS[id]).map(serviceId => ({
+      tacticLabel,
+      serviceId,
+      displayLabel: `${tacticLabel} — ${CATALOG_ROWS[serviceId].accounting_label || CATALOG_ROWS[serviceId].label}`,
+    }))
+  );
+}
 
 // These same 4 tactics (2026-08-17, per Claire: "there isn't anything to really
 // track [for LLO, LLO (SEO), Reputation Mgmt., Rep Monitoring (SEO)]... update
 // their lines so it looks a little cleaner") have no platform, budget, or
 // performance numbers at all -- carrying no spend/budget of their own is exactly
-// why they're in TRACKABLE_FLAT_SERVICE_IDS/SEO_TRACKING_ONLY_TACTICS above.
+// why they're in TRACKABLE_FLAT_SERVICE_IDS/getSeoTrackingOnlyTactics() above.
 // renderMainTable() uses this to collapse the Gross Budget/In-Platform Budget/
 // Actual Spend/Spend Pacing/Goal/Actual Perf./Perf. Pacing columns (which would
 // otherwise just be 7 "—"s in a row) into one plain explanatory cell, and to
 // swap the editable Platform dropdown for a plain dash -- Optimize Log and Notes
 // stay fully real and untouched, since strategists genuinely use both for these.
 // Matched by service_id for the two catalog-backed tactics (llo-bp/rep-bp) and by
-// tactic_label for the two SEO-trigger-only ones, which all share seo-bp as an
-// inert placeholder service_id (see SEO_TRACKING_ONLY_TACTICS's own comment) and
-// so can't be told apart from a real SEO campaign by service_id alone.
+// tactic_label for the two SEO-trigger-only ones (2026-08-21: now anchored to
+// whichever real SEO tier was actually picked, not always seo-bp -- see
+// getSeoTrackingOnlyTactics()'s own comment -- so service_id alone still can't
+// tell a SEO tracking line apart from a real SEO campaign, but for a different
+// reason than before: it's a real tier id, just one of these placeholder rows).
 const FLAT_FEE_NO_METRICS_TACTIC_LABELS = ['LLO (SEO)', 'Rep Monitoring (SEO)'];
 function isFlatFeeNoMetricsLine(line) {
   return TRACKABLE_FLAT_SERVICE_IDS.includes(line.service_id) ||
@@ -1127,8 +1148,13 @@ function resolveBulkTactic(name) {
   const direct = Object.values(CATALOG_ROWS).find(r => (r.pricing_mode === 'spend' || TRACKABLE_FLAT_SERVICE_IDS.includes(r.id)) &&
     ((r.accounting_label || r.label || '').trim().toLowerCase() === norm));
   if (direct) return { service: direct, tacticLabel: direct.accounting_label || direct.label };
-  const seoTrack = SEO_TRACKING_ONLY_TACTICS.find(t => t.tacticLabel.toLowerCase() === norm);
-  if (seoTrack && CATALOG_ROWS[seoTrack.serviceId]) return { service: CATALOG_ROWS[seoTrack.serviceId], tacticLabel: seoTrack.tacticLabel };
+  // "LLO (SEO)"/"Rep Monitoring (SEO)" text alone (2026-08-21, per Claire -- the audit
+  // was showing Pro for every client regardless of real tier) can't be auto-matched to
+  // one of the 3 real SEO tiers now that the tier actually matters (Trello card-name
+  // audit resolves its expected template off this exact service_id) -- deliberately left
+  // unresolved here so it falls through to the fix-it override flow below, where the
+  // real tier gets picked explicitly from getSeoTrackingOnlyTactics()'s 6 options
+  // instead of silently defaulting to Pro (seo-bp) like it used to.
   for (const r of Object.values(CATALOG_ROWS)) {
     if (r.pricing_mode !== 'spend' || !Array.isArray(r.tactic_variants)) continue;
     const variant = r.tactic_variants.find(v => v.trim().toLowerCase() === norm);
@@ -1179,7 +1205,7 @@ function strategistParseBulkImport(raw, overrides = {}) {
     const client = clientOverrideId ? ALL_STRATEGIST_CLIENTS.find(c => c.id === clientOverrideId) : resolveBulkClient(clientName);
     const seoTrackOverrideMatch = serviceOverrideId ? /^__seo_track_(\d+)__$/.exec(serviceOverrideId) : null;
     const tacticMatch = seoTrackOverrideMatch
-      ? { service: CATALOG_ROWS[SEO_TRACKING_ONLY_TACTICS[Number(seoTrackOverrideMatch[1])].serviceId], tacticLabel: SEO_TRACKING_ONLY_TACTICS[Number(seoTrackOverrideMatch[1])].tacticLabel }
+      ? { service: CATALOG_ROWS[getSeoTrackingOnlyTactics()[Number(seoTrackOverrideMatch[1])].serviceId], tacticLabel: getSeoTrackingOnlyTactics()[Number(seoTrackOverrideMatch[1])].tacticLabel }
       : serviceOverrideId
       ? { service: CATALOG_ROWS[serviceOverrideId], tacticLabel: CATALOG_ROWS[serviceOverrideId]?.accounting_label || CATALOG_ROWS[serviceOverrideId]?.label }
       : resolveBulkTactic(tacticName);
@@ -1345,7 +1371,7 @@ function strategistRenderBulkPreview() {
   const tacticOptions = Object.values(CATALOG_ROWS).filter(s => s.pricing_mode === 'spend' || TRACKABLE_FLAT_SERVICE_IDS.includes(s.id))
     .sort((a, b) => (a.accounting_label || a.label).localeCompare(b.accounting_label || b.label))
     .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('') +
-    SEO_TRACKING_ONLY_TACTICS.map((t, i) => `<option value="__seo_track_${i}__">${esc(t.tacticLabel)}</option>`).join('');
+    getSeoTrackingOnlyTactics().map((t, i) => `<option value="__seo_track_${i}__">${esc(t.displayLabel)}</option>`).join('');
   const statusOptions = BULK_IMPORT_VALID_STATUSES.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
   const blockerOptions = Object.entries(SETUP_BLOCKER_LABELS).map(([key, label]) => `<option value="${esc(key)}">${esc(label)}</option>`).join('');
   const errorsHtml = plan.errors.map(e => {

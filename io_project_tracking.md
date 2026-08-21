@@ -18652,3 +18652,80 @@ no-variant-picked case falls back to the original combined-label name
 unchanged. Ran the audit-side `auditTacticVariantName()` the same way
 against mock `campaign_lines` rows carrying a `tactic_label`. No SQL —
 `services.tactic_variants` already existed from 2026-08-10.
+
+## 2026-08-21 (cont'd) — Strategist auto-fill for tactic variants; the other 6 rows don't need splitting; found and fixed the SEO-tier audit bug
+
+Three follow-ups in one message.
+
+**1. "One less manual thing for them to do."** Patched
+`create_campaign_lines_from_order()` so every place a line's
+`tactic_label` gets set now checks `item->>'tactic_variant'` first —
+`coalesce(item->>'tactic_variant', v_tactic_label, item->>'label')`
+instead of `coalesce(v_tactic_label, item->>'label')`. When the AE
+picked a variant on the IO form, the Strategist's Campaign Setup
+dropdown now opens already correct; when they didn't, behavior is
+identical to before. Stores the RAW variant text (e.g. "Geofencing"),
+matching exactly what a strategist's own manual pick would store — the
+Trello-title prefixing rule stays purely in the card-naming/audit
+code, never in the stored data. SQL:
+`tactic-variant-autofill-2026-08-21.sql`, scratchpad, not yet run.
+
+**2. The other 6 "X or Y" rows** — Claire reviewed and confirmed
+`nd-geo`/`nv-geo`/`pa-geo`/`pv-geo` ("Geotargeting, Keyword,
+Contextual, Category & Retargeting") and `yttv-addl` ("Addl. Targeting
+(Demo, HHI, behavioral, etc.)") are "&"/example lists — everything
+listed applies together, not a choose-one — so no splitting needed.
+`wm-host-ai` (the one with an actual "or" in its label) is currently
+inactive, so parked with no action.
+
+**3. Real bug: the bulk Trello audit resolves SEO to "Pro" for every
+client, regardless of real tier.** Claire caught this from the audit
+output itself. Root cause: the live order-submission trigger already
+anchors "LLO (SEO)"/"Rep Monitoring (SEO)" tracking lines to whichever
+real tier was actually sold (`item->>'service_id'`, correct by
+construction) — but the Strategist Portal's MANUAL entry tools (Bulk
+Import, "+ New Campaign", used for any campaign that predates the
+trigger or wasn't created via a live IO) hardcoded both tracking lines
+to `seo-bp` regardless of the client's real tier
+(`SEO_TRACKING_ONLY_TACTICS` in `strategist/index.html`). That was
+harmless when nothing downstream read the tier — "functionally inert…
+so which exact SEO tier doesn't matter," per its own 2026-08-10
+comment — until the Trello audit started resolving its expected
+template off that exact `service_id`, at which point every
+manually-added Starter/Builder client silently got checked against
+Pro's template instead.
+
+**Fixed** by expanding `SEO_TRACKING_ONLY_TACTICS` from 2 hardcoded
+entries into 6 — one per (tactic × real tier) combination, generated
+from the catalog's own `seo-bs`/`seo-bb`/`seo-bp` rows rather than
+hardcoded labels. Converted from a `const` to a
+`getSeoTrackingOnlyTactics()` function — a plain const would have
+evaluated against an empty `CATALOG_ROWS` at script-parse time, before
+`loadCatalog()` ever populates it (a real timing bug caught before it
+shipped, not found live). The existing Tactic dropdown ("+ New
+Campaign") and the Bulk Import fix-it override dropdown both now show
+all 6 tier-specific options (e.g. "LLO (SEO) — SEO Business Starter")
+instead of one ambiguous "LLO (SEO)" — no new UI needed, same
+mechanism, just a wider option list. `resolveBulkTactic()`'s automatic
+text-match on bare "LLO (SEO)"/"Rep Monitoring (SEO)" (which could
+only ever guess Pro) was removed entirely — those rows now fall
+through to the existing unresolved-row error, which the fix-it
+dropdown resolves explicitly to the correct tier. Stored
+`tactic_label` stays exactly "LLO (SEO)"/"Rep Monitoring (SEO)"
+either way (only `service_id` varies by tier) — `FLAT_FEE_NO_METRICS_
+TACTIC_LABELS`'s tactic_label-based matching is unaffected.
+
+**Existing (possibly wrong) data**: gave Claire a read-only safety-check
+query (`seo-tier-audit-2026-08-21.sql`, scratchpad) that finds every
+client whose SEO tracking lines are anchored to `seo-bp`, cross-
+referenced against whether that same client has their OWN real tier
+line (Starter/Builder) elsewhere — flagging a clear mismatch,
+a clean match, or "can't confirm from data alone" when no real tier
+line exists at all. No UPDATE included — Claire reviews the output
+first, per this project's standing data-cleanup convention.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Ran `getSeoTrackingOnlyTactics()` against mock catalog rows — produces
+exactly the expected 6 entries with correct display labels; also
+confirmed it degrades to `[]` (not a throw) if called before the
+catalog has loaded, closing the timing bug before it could ship.
