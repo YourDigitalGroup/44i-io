@@ -6316,10 +6316,15 @@ async function adminAuditAllClientsTrelloCards() {
   allLines.forEach(li => { (linesByClient[li.client_id] = linesByClient[li.client_id] || []).push(li); });
 
   const templateCache = {};
-  const problems = []; // { clientName, workflow, expected, kind: 'mismatch'|'error', detail }
+  const problems = []; // { groupName, clientName, workflow, expected, kind: 'mismatch'|'error', detail }
   let clientsChecked = 0, workflowsChecked = 0;
 
   for (const client of clients) {
+    // Group name captured per-client (2026-08-21, per Claire -- "close to 600 I need to
+    // look through... include the group and put it in alpha order by group and then by
+    // client") so the report can be sorted the same way she'd naturally work through
+    // her group list, not just an arbitrary client order.
+    const groupName = allGroups.find(g => g.id === client.group_id)?.name || '(no group)';
     const clientLines = linesByClient[client.id] || [];
     if (clientLines.length) {
       const byWorkflow = {};
@@ -6340,7 +6345,7 @@ async function adminAuditAllClientsTrelloCards() {
           actualCards = Array.isArray(res) ? res : null;
         } catch (e) { /* falls through to the !actualCards branch below */ }
         if (!actualCards) {
-          problems.push({ clientName: client.name, workflow: '(all)', expected: null, kind: 'error', detail: 'Could not read this client\'s Trello list' });
+          problems.push({ groupName, clientName: client.name, workflow: '(all)', expected: null, kind: 'error', detail: 'Could not read this client\'s Trello list' });
         } else {
           const findActual = name => actualCards.find(c => auditNorm(c.name) === auditNorm(name));
           for (const [wf, lines] of Object.entries(byWorkflow)) {
@@ -6348,14 +6353,14 @@ async function adminAuditAllClientsTrelloCards() {
             const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
             if (!templateRow) {
               const expected = `${wf} — ${client.name}`;
-              if (!findActual(expected)) problems.push({ clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
+              if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
               continue;
             }
             const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
-            if (error) { problems.push({ clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
+            if (error) { problems.push({ groupName, clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
             names.forEach(n => {
               const expected = `${n} — ${client.name}`;
-              if (!findActual(expected)) problems.push({ clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
+              if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
             });
           }
         }
@@ -6370,9 +6375,15 @@ async function adminAuditAllClientsTrelloCards() {
     resultsEl.innerHTML = summary + '<p style="color:#166534;font-size:12px">✅ Every checked client\'s cards match what the system expects.</p>';
     return;
   }
+  // Sort alpha by group, then by client (2026-08-21, per Claire -- "close to 600 I need
+  // to look through... put it in alpha order by group and then by client to make it
+  // easier to go through"), so the report reads in the same order she works her group
+  // list, not an arbitrary client order.
+  problems.sort((a, b) => a.groupName.localeCompare(b.groupName) || a.clientName.localeCompare(b.clientName));
   let html = summary + `<p style="font-size:10px;color:var(--muted);margin-bottom:8px">Doesn't account for "always new card" (Event-style) services, which are meant to create a fresh card every resell. Only mismatches/errors are listed — matches aren't shown.</p>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="background:var(--light)">
+        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Group</th>
         <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Client</th>
         <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Workflow</th>
         <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Issue</th>
@@ -6382,6 +6393,7 @@ async function adminAuditAllClientsTrelloCards() {
       ? `<span style="color:#991B1B;font-weight:600">⚠ ${esc(p.detail)}</span>`
       : `<span style="color:#991B1B;font-weight:700">❌ Expects "${esc(p.expected)}" — no matching card, will create a NEW one on next resell</span>`;
     html += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px">${esc(p.groupName)}</td>
       <td style="padding:6px 8px">${esc(p.clientName)}</td>
       <td style="padding:6px 8px">${esc(p.workflow)}</td>
       <td style="padding:6px 8px">${issue}</td>
