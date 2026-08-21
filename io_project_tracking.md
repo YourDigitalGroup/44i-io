@@ -18574,3 +18574,81 @@ which normalizes (via the existing dash-canonicalization fix) to match
 her real, hyphen-typed card exactly. Confirmed a workflow WITHOUT the
 modifier gets no suffix (no false positives introduced). No SQL, no
 schema change — `is_cpm_adjustment` already existed on `services`.
+
+## 2026-08-21 (cont'd) — "Which one is it?" variant picker added to the IO form itself
+
+Follow-up to the Offline Visits fix above: Claire asked how to handle
+tactics like "Location Targeting: Geofencing" that actually come from a
+combined/ambiguous catalog row ("Geofencing or 1st Party Addressable")
+— the real Trello card gets manually renamed to the specific variant,
+which is exactly the kind of drift-from-the-system risk already found
+twice this session. Traced this back to the 2026-08-10 work: 5 catalog
+rows (`lt-crm`, `lt-event`, `lt-geo`, `td-custom`, `td-site`) already
+have a `services.tactic_variants` list and a picker for it — but only
+in the Strategist Portal's Campaign Setup, which happens AFTER the
+Trello card's already been created off the generic combined label.
+
+Confirmed with Claire the real Trello convention is "prefixed" (e.g.
+"Location Targeting: Geofencing"), not the Strategist Portal's plain/
+bare display ("Geofencing" alone, no prefix — confirmed by reading
+`strategistTacticVariantOptions()`/`resolveBulkTactic()`, which store
+the picked variant into `tactic_label` completely as-typed, no
+transformation). Claire then pulled the live data for all 5 rows via
+SQL — this surfaced that the variant text itself is inconsistent:
+`lt-*` rows store bare names ("Geofencing", "CRM", "Event Targeting",
+"Lookback Targeting") that need a prefix, while some of their OWN
+sibling options ("Addressable: 1st Party", "Addressable: Curated") and
+all of `td-*`'s options ("Targeted Display: AdRT", etc.) are already
+fully-qualified with their own different prefix. **Rule**: if the
+variant string already contains a colon, use it as-is; otherwise
+prepend the SELLING SERVICE'S OWN SECTION display name (not the
+`workflow` column — `td-custom`/`td-site`'s workflow is "Digital
+Advertising", a broader grouping that doesn't match the real section
+name "Targeted Display").
+
+**Built:**
+1. **IO form (`index.html`)** — services with `tactic_variants`
+   configured (already present in `CATALOG_ROWS` via the existing
+   `select=*` catalog load, no query change needed) now show a "—
+   Which one? —" dropdown right under the service name, in
+   `renderPriceCells()` (same place the minimum-note/quoted-price
+   fields already live). Read into `selected[id].tacticVariant` via
+   `syncRowInputs()` — same read-only-at-sync pattern as the plain
+   Notes field, no `onchange` needed. Carried onto each submitted line
+   item as `tactic_variant` (flows into the stored order's
+   `line_items` JSON for free, no schema change).
+2. **Card title (`index.html`)** — new `resolveTacticVariantName(originalWorkflow,
+   fallbackName)` applies the rule above; used in place of the plain
+   template-card name at the one call site that needs it (the
+   single-card-template branch — all 5 configured rows are `card`-type
+   templates today). Falls back to the original name unchanged when no
+   variant was picked, so every other service is unaffected.
+3. **Audit tool (`admin/index.html`)** — new `auditTacticVariantName(lines,
+   fallbackName)`, same rule, but reading `tactic_label` off
+   `campaign_lines` instead — for an EXISTING client, the only place a
+   variant pick has ever been recorded is the Strategist's later
+   Campaign Setup step (this is a genuinely new capability at IO time,
+   not a backfill), so the audit checks whether a line's `tactic_label`
+   is one of that service's own `tactic_variants` before trusting it as
+   the resolved name. Wired into both the per-client and bulk audit's
+   expected-name construction.
+
+**Not built (flagged, not assumed)**: this doesn't yet write the IO
+form's picked variant back onto `campaign_lines.tactic_label` at order
+creation — the Strategist still has to pick it again independently
+during Campaign Setup for now. Mentioned to Claire as a natural
+follow-up (skip the Strategist's re-pick when the AE already supplied
+it) but intentionally not built without her asking for it, per this
+project's "don't expand scope unprompted" convention.
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Ran `resolveTacticVariantName()` against all 5 real rows and
+their real stored variant values (from Claire's SQL) — every bare
+variant correctly gets its selling section's prefix, every
+already-prefixed variant is used as-is, and the exact Auto Service
+Center case reproduces "Location Targeting: Geofencing + Offline
+Visits — Auto Service Center" character-for-character. Confirmed the
+no-variant-picked case falls back to the original combined-label name
+unchanged. Ran the audit-side `auditTacticVariantName()` the same way
+against mock `campaign_lines` rows carrying a `tactic_label`. No SQL —
+`services.tactic_variants` already existed from 2026-08-10.

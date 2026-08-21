@@ -4081,6 +4081,10 @@ function syncRowInputs() {
     if (!row) return;
     const noteInput = row.querySelector('.notes-field');
     if (noteInput) selected[id].notes = noteInput.value.trim();
+    // "Which one is it?" variant picker (2026-08-21) — same read-only-at-sync pattern as
+    // Notes above; see the comment in renderPriceCells() for why this exists.
+    const variantInput = row.querySelector('.tactic-variant-field');
+    if (variantInput) selected[id].tacticVariant = variantInput.value || null;
     // Quantity has its own class so it's never mistaken for the ad-spend input below —
     // in practice a row is never both per-unit AND spend-priced (pricing_mode is a single
     // value per service), but kept explicit rather than relying on that never happening.
@@ -4875,6 +4879,12 @@ async function submitIO() {
         unit_fee: data.fee || 0,
         setup_fee_amt: (getSetupFeeInfo(id, data.spend || 0) || {}).amount || null,
         notes: [data.notes, hosting?.note].filter(Boolean).join(' | '),
+        // "Which one is it?" variant, when this service has tactic_variants configured
+        // and the AE picked one (2026-08-21) — feeds the Trello card title (see
+        // resolveTacticVariantName()) and is carried on the stored order's line_items
+        // even though nothing else reads it yet; a future step could backfill it onto
+        // campaign_lines.tactic_label too, skipping the Strategist's own re-pick.
+        tactic_variant: data.tacticVariant || null,
         workflow: data.workflow || null,
         requires_koc: cfg.koc === 'required',
         hosting_choice: hosting?.choice || null,
@@ -5160,6 +5170,29 @@ async function submitIO() {
             .map(id => CATALOG_ROWS[id])
             .some(r => r && r.workflow === originalWorkflow && r.is_cpm_adjustment);
           return hasOfflineVisits ? ' + Offline Visits' : '';
+        }
+
+        // "Which one is it?" variant name for the card title (2026-08-21, per Claire —
+        // confirmed prefixed format, matching her screenshot exactly): a handful of
+        // catalog rows have a combined/ambiguous label (e.g. "Geofencing or 1st Party
+        // Addressable") because one row secretly covers 2-3 real tactics — the AE's pick
+        // from services.tactic_variants replaces that combined label with the specific
+        // one on the card. Some stored variant strings are already fully-qualified with
+        // their OWN prefix (e.g. "Targeted Display: AdRT", "Addressable: 1st Party" —
+        // used as-is), while others are bare (e.g. "Geofencing", "CRM") and need the
+        // selling service's own SECTION display name prepended ("Location Targeting: " —
+        // NOT the `workflow` column, which for some of these rows is a different, broader
+        // grouping like "Digital Advertising" that doesn't match the real section name).
+        // Returns the original fallback name unchanged when no variant was picked, so a
+        // service with tactic_variants configured but left blank behaves exactly as it
+        // did before this existed.
+        function resolveTacticVariantName(originalWorkflow, fallbackName) {
+          const li = lineItems.find(li => li.workflow === originalWorkflow && li.tactic_variant);
+          if (!li) return fallbackName;
+          const variant = li.tactic_variant;
+          if (variant.includes(':')) return variant;
+          const sectionLabel = SECTIONS.find(s => s.id === CATALOG_ROWS[li.service_id]?.section)?.label;
+          return sectionLabel ? `${sectionLabel}: ${variant}` : variant;
         }
 
         // Lists every sold line item sharing a workflow (2026-07-13) — so a small add-on
@@ -5892,7 +5925,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             } else {
               // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
               // the business name.
-              const cn = (templateCard.name || wf).trim() + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+              const cn = resolveTacticVariantName(originalWorkflows[wfIdx], (templateCard.name || wf).trim()) + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
               const existing = findExistingCardByName(cn);
               if (existing && !addedCardNames.has(norm(cn))) {
                 addedCardNames.add(norm(cn));
@@ -7673,9 +7706,24 @@ function renderPriceCells() {
     // <td> the moment the page loaded. The note stays outside the <label> (a sibling),
     // consistent with how the row-intake-link button already sits outside it too.
     const labelHtml = `<label for="svc-chk-${esc(r.id)}" id="svc-label-${esc(r.id)}">${esc(r.label)}</label>`;
-    serviceTd.innerHTML = noteText
+    // "Which one is it?" variant dropdown (2026-08-21, per Claire — a handful of catalog
+    // rows secretly cover 2-3 real tactics, e.g. "Geofencing or 1st Party Addressable"; the
+    // Strategist Portal already has this exact dropdown for services.tactic_variants, but
+    // only asks for it later at Campaign Setup, after the Trello card's already been named
+    // off the combined/ambiguous label). Capturing it here, at IO time, lets the real card
+    // get its final, specific name immediately — see offlineVisitsSuffix()-style
+    // resolveTacticVariantName() near the Trello card-creation code. Read (not written) via
+    // syncRowInputs(), same pattern as the plain Notes field — no onchange needed.
+    const variantOptions = Array.isArray(r.tactic_variants) ? r.tactic_variants : null;
+    const variantHtml = variantOptions && variantOptions.length
+      ? `<select class="tactic-variant-field" style="width:100%;margin-top:4px;padding:4px 6px;font-size:11px;border:1px dashed var(--accent);border-radius:5px">
+          <option value="">— Which one? —</option>
+          ${variantOptions.map(v => `<option value="${esc(v)}" ${selected[r.id]?.tacticVariant === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+        </select>`
+      : '';
+    serviceTd.innerHTML = (noteText
       ? `${labelHtml}<div class="minimum-note">${esc(noteText)}</div>`
-      : labelHtml;
+      : labelHtml) + variantHtml;
 
     const { fee, freq } = priceAndFrequency(r);
 

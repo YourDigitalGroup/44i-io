@@ -6156,6 +6156,26 @@ function auditIsSkippableTemplateCard(name) {
 function auditOfflineVisitsSuffix(lines) {
   return lines.some(li => CATALOG_ROWS[li.service_id]?.is_cpm_adjustment) ? ' + Offline Visits' : '';
 }
+// "Which one is it?" variant name for the audit's expected card name (2026-08-21) —
+// kept in sync with index.html's own resolveTacticVariantName(). The IO form now lets
+// the AE pick a services.tactic_variants option directly, but for any EXISTING client
+// the only place that pick has ever been recorded is campaign_lines.tactic_label (set
+// later by the Strategist in Campaign Setup) — so the audit checks tactic_label against
+// the service's own tactic_variants list rather than a field it doesn't have yet.
+// Same colon-detection rule as index.html: an already-fully-qualified variant (e.g.
+// "Targeted Display: AdRT") is used as-is; a bare one (e.g. "Geofencing") gets the
+// selling service's own SECTION display name prepended.
+function auditTacticVariantName(lines, fallbackName) {
+  const li = lines.find(li => {
+    const variants = CATALOG_ROWS[li.service_id]?.tactic_variants;
+    return Array.isArray(variants) && li.tactic_label && variants.includes(li.tactic_label);
+  });
+  if (!li) return fallbackName;
+  const variant = li.tactic_label;
+  if (variant.includes(':')) return variant;
+  const secLabel = sectionLabel(CATALOG_ROWS[li.service_id]?.section);
+  return secLabel && secLabel !== CATALOG_ROWS[li.service_id]?.section ? `${secLabel}: ${variant}` : variant;
+}
 // Resolves a workflow's template to the plain tactic name(s) a real client card should
 // carry (before the " — Business Name" suffix, which is client-specific and added by the
 // caller). `templateCache`, keyed by `${type}:${ref}`, is passed in BY THE CALLER so the
@@ -6258,7 +6278,7 @@ async function adminAuditClientTrelloCards() {
     const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
     if (error) rows.push({ workflow: wf, expected: null, error });
     names.forEach(n => {
-      const expected = `${n}${offlineSuffix} — ${bizName}`;
+      const expected = `${auditTacticVariantName(lines, n)}${offlineSuffix} — ${bizName}`;
       rows.push({ workflow: wf, expected, actual: findActual(expected) });
     });
   }
@@ -6371,7 +6391,7 @@ async function adminAuditAllClientsTrelloCards() {
             const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
             if (error) { problems.push({ groupName, clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
             names.forEach(n => {
-              const expected = `${n}${offlineSuffix} — ${client.name}`;
+              const expected = `${auditTacticVariantName(lines, n)}${offlineSuffix} — ${client.name}`;
               if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
             });
           }
