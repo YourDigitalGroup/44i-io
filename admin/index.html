@@ -6231,6 +6231,30 @@ function auditTacticVariantName(lines, fallbackName) {
   const secLabel = sectionLabel(CATALOG_ROWS[li.service_id]?.section);
   return secLabel && secLabel !== CATALOG_ROWS[li.service_id]?.section ? `${secLabel}: ${variant}` : variant;
 }
+// Every plain name that would be a LEGITIMATE match for this template — not just the
+// one auditTacticVariantName() can confirm from a recorded tactic_label (2026-08-21,
+// found live via the bulk audit: "Location Targeting: Geofencing" is a real, correctly
+// renamed card for a combined-label service, but nothing in Supabase ever recorded that
+// pick, so the audit only knew to expect the generic combined label and flagged the
+// CORRECTLY renamed real card as both missing AND unrecognized). Someone may have
+// already manually renamed the real Trello card to a specific variant on Trello itself,
+// same as Claire's been doing across the board — without a recorded tactic_label pick,
+// the audit has no way to know WHICH variant, so it accepts any of them, plus the
+// combined fallback, as valid. Only tightens back down to the one true pick once
+// tactic_label actually records it (auditTacticVariantName's own case, first in the set).
+function auditAcceptablePlainNames(lines, fallbackName) {
+  const names = new Set([auditTacticVariantName(lines, fallbackName), fallbackName]);
+  lines.forEach(li => {
+    const svc = CATALOG_ROWS[li.service_id];
+    if (!Array.isArray(svc?.tactic_variants)) return;
+    svc.tactic_variants.forEach(v => {
+      if (v.includes(':')) { names.add(v); return; }
+      const secLabel = sectionLabel(svc.section);
+      names.add(secLabel && secLabel !== svc.section ? `${secLabel}: ${v}` : v);
+    });
+  });
+  return [...names];
+}
 // Resolves a workflow's template to the plain tactic name(s) a real client card should
 // carry (before the " — Business Name" suffix, which is client-specific and added by the
 // caller). `templateCache`, keyed by `${type}:${ref}`, is passed in BY THE CALLER so the
@@ -6410,9 +6434,14 @@ async function adminAuditClientTrelloCards() {
     const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
     if (error) rows.push({ workflow: wf, expected: null, error });
     names.forEach(n => {
-      const expected = `${auditTacticVariantName(lines, n)}${offlineSuffix} — ${bizName}`;
-      expectedNamesForClient.add(auditNorm(expected));
-      rows.push({ workflow: wf, expected, actual: findActual(expected) });
+      // Accepts a match on ANY of this template's known variants, not just the one
+      // confirmed pick (if tactic_label records one) or the generic combined label —
+      // see auditAcceptablePlainNames()'s own comment for why.
+      const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${bizName}`);
+      acceptable.forEach(nm => expectedNamesForClient.add(auditNorm(nm)));
+      const expected = acceptable[0]; // best guess, for display only
+      const actual = acceptable.map(findActual).find(Boolean);
+      rows.push({ workflow: wf, expected, actual });
     });
   }
   // Reverse direction (2026-08-21, per Claire -- "a full audit of what is currently on
@@ -6547,9 +6576,14 @@ async function adminAuditAllClientsTrelloCards() {
             const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
             if (error) { problems.push({ groupName, clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
             names.forEach(n => {
-              const expected = `${auditTacticVariantName(lines, n)}${offlineSuffix} — ${client.name}`;
-              expectedNamesForClient.add(auditNorm(expected));
-              if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
+              // Accepts a match on ANY of this template's known variants (2026-08-21,
+              // found live: real cards already manually renamed to a specific variant,
+              // with no recorded tactic_label pick, were showing as BOTH missing and
+              // unrecognized) — see auditAcceptablePlainNames()'s own comment.
+              const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${client.name}`);
+              acceptable.forEach(nm => expectedNamesForClient.add(auditNorm(nm)));
+              const expected = acceptable[0]; // best guess, for display only
+              if (!acceptable.some(findActual)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
             });
           }
           // Reverse direction (2026-08-21): a real card that doesn't match ANY of this

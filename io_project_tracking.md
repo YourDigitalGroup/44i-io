@@ -18883,3 +18883,72 @@ know the exact original failure mode (never confirmed whether the
 first version hung, errored, or just ran slowly) — asked Claire what
 she actually saw so this can be pinned down for certain if the
 parallelization fix alone doesn't resolve it.
+
+## 2026-08-21 (cont'd) — Bulk audit: 2,613 issues (2,034 unrecognized cards) — two real bugs found, one fixed now
+
+Ran the bulk audit against real production data for the first time
+with the new "unrecognized card" direction live: 692 clients, 463
+workflows, 2,613 issues (2,034 of them unrecognized-card flags).
+Claire: way more than the "some issues, but not that many" she
+expected from the AMs' own prior card-naming cleanup. Asked for the
+summary line plus real screenshots to diagnose rather than guessing.
+Two distinct, real causes found:
+
+**1. The SEO-tier-defaults-to-Pro bug (already diagnosed/fixed
+earlier today) is polluting BOTH audit directions.** BK Media
+Solutions' real cards are Starter-tier sub-cards ("SEO Starter
+Package - GMB Profile Management & Posting," "- Blog," "- LLO"), but
+since this client (like every other legacy SEO client per the earlier
+finding) has no real tier line recorded, its tracking lines are
+anchored to `seo-bp` — so the audit expects PRO's list-template cards
+instead of Starter's, meaning every one of Starter's real sub-cards
+now ALSO shows as "unrecognized" on top of Pro's cards showing as
+"missing." No new fix needed here — the `accounting_add_campaign_line`
+patch given earlier today already resolves this as Claire uploads
+each client's real tier through Accounting; flagged as the likely
+biggest single contributor to the inflated count.
+
+**2. New bug: a manually-renamed real card with no recorded pick was
+flagged as BOTH missing and unrecognized.** Automotive Service
+Center's real "Location Targeting: Geofencing + Offline Visits" card
+is a legitimate, correctly-renamed card for the `lt-geo` combined-
+label service ("Geofencing or 1st Party Addressable") — someone
+already renamed it to the specific variant on Trello, exactly the
+kind of cleanup Claire's been doing across the board, but nothing in
+Supabase ever recorded which variant was picked (`tactic_label` still
+holds the generic combined label unless a Strategist, or now the IO
+form, explicitly set it). The audit only knew to expect the ONE
+generic combined name, so it flagged the correctly-renamed real card
+twice over: once as "the generic name is missing," once as "this real
+card doesn't match anything expected."
+
+**Fixed**: new `auditAcceptablePlainNames(lines, fallbackName)` in
+`admin/index.html` returns every name that legitimately counts as a
+match for a combined-label template — the one confirmed pick (if
+`tactic_label` records it, via the existing `auditTacticVariantName()`),
+PLUS the generic combined fallback, PLUS every other variant the
+service's `tactic_variants` lists — since without a recorded pick, ANY
+of them being the real card's name is a legitimate outcome, not a
+naming problem. Wired into both the per-client and bulk audit's
+mismatch AND expected-names-for-orphan-check logic, replacing the
+single-name `auditTacticVariantName()` call at both sites. The
+displayed "expected" name in a genuine mismatch row still shows the
+single best guess for readability — only the match-checking itself
+now accepts any of the acceptable set.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Reproduced the exact Automotive Service Center scenario with mock
+data (a combined-label service, `tactic_label` still generic, real
+card renamed to the specific "Geofencing" variant) — confirms it's
+now correctly recognized as a match. Also confirmed an unrelated real
+card (e.g. a totally different tactic) still correctly does NOT match
+— the fix only widens acceptance to genuine known variants, not
+anything at all. The IO-card mismatch also seen in Claire's screenshot
+("IO - Automotive Service Center" flagged as unrecognized) traced
+through `auditNorm()`/`auditIsKnownNonTacticCard()` by hand and should
+already match correctly given the client's own name — asked Claire to
+confirm the exact stored client name in case of a hidden-character
+data issue, since no code-level cause was found for that one specific
+case. Re-running the bulk audit after this fix (and especially after
+the SEO-tier uploads land) should bring the count down substantially;
+worth re-checking the new totals together once both are in.
