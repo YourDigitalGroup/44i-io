@@ -6143,14 +6143,21 @@ async function scanClientImportCandidates() {
       return;
     }
 
-    let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:10px">Uncheck anything that isn't actually a client (a template, an archived reference list, etc.) before importing.</p>
+    // Starts every candidate UNCHECKED now (2026-08-21, per Claire, after the initial
+    // large bulk import is done) -- from here on this is a one-off tool for adding a
+    // client here and there before the real IO system goes live, not a "select
+    // everything then uncheck the exceptions" bulk pass. Check-in-the-ones-you-want is
+    // the safer default now that it's a smaller, more deliberate list each time --
+    // also directly avoids a repeat of the accidental board's worth of clients getting
+    // imported all at once (2026-08-21, found live).
+    let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:10px">Check the ones you actually want to import as clients.</p>
       <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;margin-bottom:12px">`;
     CLIENT_IMPORT_CANDIDATES.forEach((l, idx) => {
       const archivedBadge = l.closed
         ? '<span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">ARCHIVED</span>'
         : '';
       html += `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12.5px;cursor:pointer">
-        <input type="checkbox" id="import-candidate-${idx}" checked style="width:14px;height:14px;accent-color:var(--accent)"/>
+        <input type="checkbox" id="import-candidate-${idx}" style="width:14px;height:14px;accent-color:var(--accent)"/>
         ${esc(l.name)} ${archivedBadge}
       </label>`;
     });
