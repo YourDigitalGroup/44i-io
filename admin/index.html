@@ -2019,7 +2019,13 @@ function renderAccountingOverrideFields() {
         const pctOverridden = !!ownA;
         rows.push({
           overrideKey: s.id,
-          displayLabel,
+          // Combined with the one base tactic's name, same as the multi-candidate
+          // branch below (2026-08-21, found live: Claire -- "some of the offline
+          // visits have their own line that just says offline visits not tactic
+          // w/offline visits tracking"). Only a section with genuinely NO spend
+          // candidate at all (base is undefined) falls back to the modifier's own
+          // bare name, since there's nothing real to combine it with.
+          displayLabel: base ? `${base.accounting_label || base.label} (w/ ${displayLabel})` : displayLabel,
           idNote: s.id,
           hasSetupFee: false,
           fields: {
@@ -2197,7 +2203,13 @@ function renderClientAccountingOverrideFields() {
         const pctOverridden = !!ownA;
         rows.push({
           overrideKey: s.id,
-          displayLabel,
+          // Combined with the one base tactic's name, same as the multi-candidate
+          // branch below (2026-08-21, found live: Claire -- "some of the offline
+          // visits have their own line that just says offline visits not tactic
+          // w/offline visits tracking"). Only a section with genuinely NO spend
+          // candidate at all (base is undefined) falls back to the modifier's own
+          // bare name, since there's nothing real to combine it with.
+          displayLabel: base ? `${base.accounting_label || base.label} (w/ ${displayLabel})` : displayLabel,
           idNote: s.id,
           hasSetupFee: false,
           fields: {
