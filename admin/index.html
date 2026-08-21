@@ -7246,23 +7246,27 @@ async function adminSubmitCancellation(orderId, serviceId) {
 
   const o = allOrders.find(x => x.id === orderId);
   const svc = CATALOG_ROWS[serviceId] || {};
-  const workflow = svc.workflow;
-  const cardId = workflow ? o?.trello_card_ids?.[workflow] : null;
-  if (cardId) {
+  // Also comments the IO card, not just the tactic's own card (2026-08-21 --
+  // found in audit: Edit/Renew both did this already, Cancel and Swap didn't,
+  // so an AM watching the IO card for activity would see edits/renewals but
+  // silently miss a cancellation -- the more important one not to miss).
+  const ioCardId = o?.trello_card_ids?.__io_card__;
+  const tacticCardId = svc.workflow ? o?.trello_card_ids?.[svc.workflow] : null;
+  const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+  const commentText = `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`;
+  for (const cardId of cardIds) {
     try {
       const res = await fetch(PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-        body: JSON.stringify({
-          target: 'trello_add_comment', card_id: cardId,
-          text: `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`,
-        }),
+        body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
       });
-      if (!res.ok) console.warn('Could not post cancellation comment:', res.status);
+      if (!res.ok) console.warn('Could not post cancellation comment to card', cardId, ':', res.status);
     } catch (e) {
-      console.warn('Could not post cancellation comment:', e.message);
+      console.warn('Could not post cancellation comment to card', cardId, ':', e.message);
     }
-  } else {
+  }
+  if (!cardIds.length) {
     showToast('Cancelled, but no Trello card was found for this tactic — please update Trello by hand', 'error');
   }
 
@@ -7594,19 +7598,22 @@ async function adminConfirmSwap(orderId) {
   const endingSvc = CATALOG_ROWS[endingId] || {};
   const startingSvc = CATALOG_ROWS[startingId] || {};
 
-  // Comment on the ending tactic's existing card, noting it was replaced.
+  // Comment on the ending tactic's existing card, noting it was replaced --
+  // and on the IO card too (2026-08-21 -- found in audit: Edit/Renew both did
+  // this already, Cancel and Swap didn't, so an AM watching the IO card for
+  // activity would silently miss a swap).
   const endingCardId = endingSvc.workflow ? o?.trello_card_ids?.[endingSvc.workflow] : null;
-  if (endingCardId) {
+  const ioCardId = o?.trello_card_ids?.__io_card__;
+  const swapCardIds = [...new Set([endingCardId, ioCardId].filter(Boolean))];
+  const swapCommentText = `🔁 Replaced by ${startingSvc.accounting_label || startingSvc.label || startingId}, effective ${effectiveDate} (${result.ending_days} of ${result.total_days} days this month, $${Number(result.ending_amount).toLocaleString()}).`;
+  for (const cardId of swapCardIds) {
     try {
       await fetch(PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-        body: JSON.stringify({
-          target: 'trello_add_comment', card_id: endingCardId,
-          text: `🔁 Replaced by ${startingSvc.accounting_label || startingSvc.label || startingId}, effective ${effectiveDate} (${result.ending_days} of ${result.total_days} days this month, $${Number(result.ending_amount).toLocaleString()}).`,
-        }),
+        body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: swapCommentText }),
       });
-    } catch (e) { console.warn('Could not post swap comment to ending card:', e.message); }
+    } catch (e) { console.warn('Could not post swap comment to card', cardId, ':', e.message); }
   }
 
   // Plain new card for the starting tactic (per Claire's scope decision --
