@@ -6146,6 +6146,40 @@ function auditIsSkippableTemplateCard(name) {
   // client's list either.
   return name.trim().startsWith('🧪') || t === 'io' || /^\*ae\*/i.test(name) || /^ae questions/i.test(name);
 }
+// Gold/Green marker cards (2026-07-17, same 2 fixed Trello template cards
+// index.html's submitIO() copies onto EVERY client list, unrelated to any sold
+// service) -- same source ids as there, so the audit doesn't flag them as
+// unrecognized on every single client. Resolved once per audit run (both cards
+// are identical everywhere) and cached, not per client.
+const AUDIT_GOLD_CARD_SOURCE = '9nNTNa64';
+const AUDIT_GREEN_CARD_SOURCE = 'n5b8N5HV';
+async function auditFetchMarkerCardNames() {
+  const names = [];
+  for (const shortLink of [AUDIT_GOLD_CARD_SOURCE, AUDIT_GREEN_CARD_SOURCE]) {
+    try {
+      const card = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ target: 'trello_get_card', card_id: shortLink }),
+      }).then(r => r.json());
+      if (card?.name) names.push(card.name);
+    } catch (e) { /* best-effort -- a real client's own tactic cards matter far more
+      than these 2 fixed markers; never let a failure here block the whole audit */ }
+  }
+  return names;
+}
+// Whether a REAL card on a client's list is something other than a tactic card this
+// audit should be comparing against an expected name (2026-08-21, per Claire -- "a full
+// audit of what is currently on Trello lists and what doesn't match our naming
+// conventions"): the client's own IO overview card, a test card, an AE Questions
+// leftover, or one of the 2 fixed Gold/Green markers. Anything else that doesn't match
+// one of THIS client's own expected tactic names is flagged as unrecognized.
+function auditIsKnownNonTacticCard(cardName, bizName, markerNames) {
+  if (cardName.trim().startsWith('🧪')) return true;
+  if (auditNorm(cardName) === auditNorm(`IO — ${bizName}`)) return true;
+  if (/^\*ae\*/i.test(cardName) || /^ae questions/i.test(cardName)) return true;
+  return markerNames.some(n => n && auditNorm(cardName) === auditNorm(n));
+}
 // Offline Visits Tracking card-title suffix (2026-08-21, per Claire — "if they include
 // Offline tracking they add it to the title"): kept in sync with index.html's own
 // offlineVisitsSuffix() — whenever a workflow's active campaign lines include the
@@ -6266,12 +6300,14 @@ async function adminAuditClientTrelloCards() {
   const findActual = name => actualCards.find(c => auditNorm(c.name) === auditNorm(name));
   const templateCache = {};
   const rows = [];
+  const bizName = client?.name || '';
+  const expectedNamesForClient = new Set();
   for (const [wf, lines] of Object.entries(byWorkflow)) {
     const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
-    const bizName = client?.name || '';
     const offlineSuffix = auditOfflineVisitsSuffix(lines);
     if (!templateRow) {
       const expected = `${wf}${offlineSuffix} — ${bizName}`;
+      expectedNamesForClient.add(auditNorm(expected));
       rows.push({ workflow: wf, expected, actual: findActual(expected) });
       continue;
     }
@@ -6279,11 +6315,21 @@ async function adminAuditClientTrelloCards() {
     if (error) rows.push({ workflow: wf, expected: null, error });
     names.forEach(n => {
       const expected = `${auditTacticVariantName(lines, n)}${offlineSuffix} — ${bizName}`;
+      expectedNamesForClient.add(auditNorm(expected));
       rows.push({ workflow: wf, expected, actual: findActual(expected) });
     });
   }
+  // Reverse direction (2026-08-21, per Claire -- "a full audit of what is currently on
+  // Trello lists and what doesn't match our naming conventions"): any real card that
+  // matched none of the expected names above, and isn't the IO card/a test card/a
+  // Gold/Green marker, gets its own row -- see adminAuditAllClientsTrelloCards()'s
+  // matching comment for the "always new card" (Event-style) caveat.
+  const markerNames = await auditFetchMarkerCardNames();
+  const orphanRows = actualCards
+    .filter(c => !expectedNamesForClient.has(auditNorm(c.name)) && !auditIsKnownNonTacticCard(c.name, bizName, markerNames))
+    .map(c => ({ orphan: true, cardName: c.name }));
 
-  if (!rows.length) {
+  if (!rows.length && !orphanRows.length) {
     resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Nothing to check — no sold service maps to a workflow.</p>';
     return;
   }
@@ -6307,6 +6353,12 @@ async function adminAuditClientTrelloCards() {
     </tr>`;
   });
   html += '</tbody></table>';
+  if (orphanRows.length) {
+    html += `<p style="font-size:11px;font-weight:600;margin:12px 0 4px">Unrecognized cards on this list (${orphanRows.length}) — an older dated card from an "always new card" service will always show up here too:</p>
+      <ul style="margin:0;padding-left:18px;font-size:12px;color:#92400E">
+        ${orphanRows.map(o => `<li>❓ "${esc(o.cardName)}"</li>`).join('')}
+      </ul>`;
+  }
   resultsEl.innerHTML = html;
 }
 
@@ -6346,8 +6398,9 @@ async function adminAuditAllClientsTrelloCards() {
   const linesByClient = {};
   allLines.forEach(li => { (linesByClient[li.client_id] = linesByClient[li.client_id] || []).push(li); });
 
+  const markerNames = await auditFetchMarkerCardNames();
   const templateCache = {};
-  const problems = []; // { groupName, clientName, workflow, expected, kind: 'mismatch'|'error', detail }
+  const problems = []; // { groupName, clientName, workflow, expected, kind: 'mismatch'|'error'|'orphan', detail }
   let clientsChecked = 0, workflowsChecked = 0;
 
   for (const client of clients) {
@@ -6379,12 +6432,19 @@ async function adminAuditAllClientsTrelloCards() {
           problems.push({ groupName, clientName: client.name, workflow: '(all)', expected: null, kind: 'error', detail: 'Could not read this client\'s Trello list' });
         } else {
           const findActual = name => actualCards.find(c => auditNorm(c.name) === auditNorm(name));
+          // Every expected name generated for THIS client, collected as we go (2026-08-21,
+          // per Claire -- "a full audit of what is currently on Trello lists and what
+          // doesn't match our naming conventions") -- once every workflow's been checked,
+          // any real card on the list that matched none of these (and isn't the IO card,
+          // a test card, or a Gold/Green marker) gets flagged as unrecognized below.
+          const expectedNamesForClient = new Set();
           for (const [wf, lines] of Object.entries(byWorkflow)) {
             workflowsChecked++;
             const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
             const offlineSuffix = auditOfflineVisitsSuffix(lines);
             if (!templateRow) {
               const expected = `${wf}${offlineSuffix} — ${client.name}`;
+              expectedNamesForClient.add(auditNorm(expected));
               if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
               continue;
             }
@@ -6392,9 +6452,23 @@ async function adminAuditAllClientsTrelloCards() {
             if (error) { problems.push({ groupName, clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
             names.forEach(n => {
               const expected = `${auditTacticVariantName(lines, n)}${offlineSuffix} — ${client.name}`;
+              expectedNamesForClient.add(auditNorm(expected));
               if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
             });
           }
+          // Reverse direction (2026-08-21): a real card that doesn't match ANY of this
+          // client's expected names and isn't a known non-tactic card (IO/test/marker) --
+          // doesn't necessarily mean a duplicate will be created (this audit's original
+          // purpose), but it IS a naming-convention mismatch worth a human look: a stale
+          // card from a cancelled tactic, a typo'd rename, or a legitimately-sold tactic
+          // this audit has no record of. Doesn't account for "always new card" (Event-
+          // style) services -- an OLDER dated copy of one of those will always look
+          // unrecognized here, since only the CURRENT date range is ever expected.
+          actualCards.forEach(c => {
+            if (expectedNamesForClient.has(auditNorm(c.name))) return;
+            if (auditIsKnownNonTacticCard(c.name, client.name, markerNames)) return;
+            problems.push({ groupName, clientName: client.name, workflow: '(unrecognized card)', expected: null, kind: 'orphan', detail: c.name });
+          });
         }
       }
     }
@@ -6402,9 +6476,10 @@ async function adminAuditAllClientsTrelloCards() {
     resultsEl.innerHTML = `<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Checking… (${clientsChecked} / ${clients.length} clients checked, ${problems.length} issue${problems.length !== 1 ? 's' : ''} found so far)</p>`;
   }
 
-  const summary = `<p style="font-size:12px;font-weight:600;margin-bottom:10px">Checked ${clientsChecked} client${clientsChecked !== 1 ? 's' : ''}, ${workflowsChecked} workflow${workflowsChecked !== 1 ? 's' : ''} — ${problems.length} issue${problems.length !== 1 ? 's' : ''} found.</p>`;
+  const orphanCount = problems.filter(p => p.kind === 'orphan').length;
+  const summary = `<p style="font-size:12px;font-weight:600;margin-bottom:10px">Checked ${clientsChecked} client${clientsChecked !== 1 ? 's' : ''}, ${workflowsChecked} workflow${workflowsChecked !== 1 ? 's' : ''} — ${problems.length} issue${problems.length !== 1 ? 's' : ''} found${orphanCount ? ` (${orphanCount} unrecognized card${orphanCount !== 1 ? 's' : ''})` : ''}.</p>`;
   if (!problems.length) {
-    resultsEl.innerHTML = summary + '<p style="color:#166534;font-size:12px">✅ Every checked client\'s cards match what the system expects.</p>';
+    resultsEl.innerHTML = summary + '<p style="color:#166534;font-size:12px">✅ Every checked client\'s cards match what the system expects, and every real card matched something expected.</p>';
     return;
   }
   // Sort alpha by group, then by client (2026-08-21, per Claire -- "close to 600 I need
@@ -6412,7 +6487,7 @@ async function adminAuditAllClientsTrelloCards() {
   // easier to go through"), so the report reads in the same order she works her group
   // list, not an arbitrary client order.
   problems.sort((a, b) => a.groupName.localeCompare(b.groupName) || a.clientName.localeCompare(b.clientName));
-  let html = summary + `<p style="font-size:10px;color:var(--muted);margin-bottom:8px">Doesn't account for "always new card" (Event-style) services, which are meant to create a fresh card every resell. Only mismatches/errors are listed — matches aren't shown.</p>
+  let html = summary + `<p style="font-size:10px;color:var(--muted);margin-bottom:8px">Doesn't account for "always new card" (Event-style) services, which are meant to create a fresh card every resell -- an older dated copy of one of those will always show up as an unrecognized card below. Only mismatches/errors/unrecognized cards are listed — matches aren't shown.</p>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="background:var(--light)">
         <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Group</th>
@@ -6423,6 +6498,8 @@ async function adminAuditAllClientsTrelloCards() {
   problems.forEach(p => {
     const issue = p.kind === 'error'
       ? `<span style="color:#991B1B;font-weight:600">⚠ ${esc(p.detail)}</span>`
+      : p.kind === 'orphan'
+      ? `<span style="color:#92400E;font-weight:700">❓ Real card "${esc(p.detail)}" doesn't match any expected tactic — stale leftover, typo, or an untracked sale?</span>`
       : `<span style="color:#991B1B;font-weight:700">❌ Expects "${esc(p.expected)}" — no matching card, will create a NEW one on next resell</span>`;
     html += `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:6px 8px">${esc(p.groupName)}</td>
