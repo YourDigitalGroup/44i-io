@@ -457,6 +457,20 @@
             </div>
           </div>
 
+          <!-- Trello Card Name Audit (2026-08-21, per Claire: "make sure for our
+               current clients we avoid new cards potentially being created" after
+               renaming real cards to match updated templates) -- card matching on
+               resell is 100% name-based (see index.html's findExistingCardByName),
+               computed fresh from the CURRENT template/workflow name + business name
+               every submission, never a hardcoded old name. This mirrors that exact
+               computation read-only against this client's real Trello list, so a
+               mismatch (a rename that doesn't line up) surfaces here BEFORE it causes
+               a silent duplicate card on the next resell, instead of after. -->
+          <div style="margin-bottom:16px">
+            <button type="button" onclick="adminAuditClientTrelloCards()" class="btn-quiet-green">🔍 Audit Trello Card Names</button>
+            <div id="admin-client-trello-audit-results" style="margin-top:10px"></div>
+          </div>
+
           <!-- Multi-Agent Client (2026-08-19, MS Farm Bureau) -- per-CLIENT, not
                per-group (2026-08-19, corrected same day per Claire -- a group like
                STMM Digital Group holds both MS Farm Bureau clients that need this
@@ -6084,6 +6098,147 @@ async function adminSaveClient() {
   } catch(e) {
     showToast('Error saving client: ' + e.message, 'error');
   }
+}
+
+// ── TRELLO CARD NAME AUDIT (2026-08-21) ─────────────────────────
+// Read-only mirror of index.html's own findExistingCardByName()/
+// resolveWorkflowTemplate()/norm() -- see submitIO() for the real
+// (write-side) version this is checked against. Every resell decides
+// "update the existing card" vs. "create a new one" purely by NAME match
+// against whatever the current template/workflow + business name computes
+// TODAY -- never a hardcoded old name. So after renaming real client cards
+// to match updated templates, the only way to be sure a resell won't
+// silently create a duplicate is to check the ACTUAL current card names
+// against what this exact formula expects, per client. This makes zero
+// Trello writes -- trello_get_card/trello_get_list_cards only.
+function auditNorm(n) {
+  return (n || '').toLowerCase().trim().replace(/[\s\-–—:]+$/g, '').trim();
+}
+function auditIsSkippableTemplateCard(name) {
+  const t = auditNorm(name);
+  // Mirrors submitIO()'s own filters for a whole-list template's own cards:
+  // test cards, the template's own "IO" placeholder, and "AE Questions" cards
+  // never get copied as real tactic cards, so they're not expected on a real
+  // client's list either.
+  return name.trim().startsWith('🧪') || t === 'io' || /^\*ae\*/i.test(name) || /^ae questions/i.test(name);
+}
+async function adminAuditClientTrelloCards() {
+  const clientId = document.getElementById('admin-client-original-id').value;
+  const resultsEl = document.getElementById('admin-client-trello-audit-results');
+  if (!clientId) { showToast('Save this client first, then audit', 'error'); return; }
+  const client = ALL_CLIENTS.find(c => c.id === clientId);
+  const listId = document.getElementById('admin-client-trello-list-id').value.trim();
+  if (!listId) { showToast('This client has no Trello List ID set', 'error'); return; }
+  resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Auditing…</p>';
+
+  let actualCards, clientLines;
+  try {
+    const [actualRes, lines] = await Promise.all([
+      fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ target: 'trello_get_list_cards', list_id: listId }),
+      }).then(r => r.json()),
+      sb('rpc/admin_get_client_campaign_lines', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: clientId }),
+      }),
+    ]);
+    actualCards = Array.isArray(actualRes) ? actualRes : null;
+    clientLines = lines || [];
+  } catch (e) {
+    resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Could not run the audit: ${esc(e.message)}</p>`;
+    return;
+  }
+  if (!actualCards) {
+    resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Could not read this client's Trello list — check the List ID.</p>`;
+    return;
+  }
+  if (!clientLines.length) {
+    resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No active campaign lines found for this client to check against.</p>';
+    return;
+  }
+
+  // Group by workflow, same as resolveWorkflowTemplate() groups by workflow among
+  // SOLD services on a submission -- here it's grouped by what's currently active
+  // in campaign_lines instead, since that's the live "what does this client
+  // actually have" record, not any one specific past order.
+  const byWorkflow = {};
+  clientLines.forEach(li => {
+    const wf = CATALOG_ROWS[li.service_id]?.workflow;
+    if (!wf) return;
+    (byWorkflow[wf] = byWorkflow[wf] || []).push(li);
+  });
+
+  const findActual = name => actualCards.find(c => auditNorm(c.name) === auditNorm(name));
+  const rows = [];
+  for (const [wf, lines] of Object.entries(byWorkflow)) {
+    const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
+    const bizName = client?.name || '';
+    if (!templateRow) {
+      const expected = `${wf} — ${bizName}`;
+      rows.push({ workflow: wf, expected, actual: findActual(expected) });
+      continue;
+    }
+    if (templateRow.trello_template_type === 'card') {
+      try {
+        const templateCard = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_get_card', card_id: templateRow.trello_template_ref }),
+        }).then(r => r.json());
+        const expected = `${(templateCard?.name || wf).trim()} — ${bizName}`;
+        rows.push({ workflow: wf, expected, actual: findActual(expected) });
+      } catch (e) {
+        rows.push({ workflow: wf, expected: null, error: `Could not resolve card template: ${e.message}` });
+      }
+    } else {
+      try {
+        const templateCards = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_get_list_cards', list_id: templateRow.trello_template_ref }),
+        }).then(r => r.json());
+        if (!Array.isArray(templateCards)) throw new Error('Template list unreadable');
+        const relevant = templateCards.filter(c => !auditIsSkippableTemplateCard(c.name));
+        if (!relevant.length) {
+          rows.push({ workflow: wf, expected: null, error: 'Template list has no real tactic cards (after skipping test/IO/AE Questions cards)' });
+        }
+        relevant.forEach(c => {
+          const expected = `${c.name.trim()} — ${bizName}`;
+          rows.push({ workflow: wf, expected, actual: findActual(expected) });
+        });
+      } catch (e) {
+        rows.push({ workflow: wf, expected: null, error: `Could not resolve list template: ${e.message}` });
+      }
+    }
+  }
+
+  if (!rows.length) {
+    resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Nothing to check — no sold service maps to a workflow.</p>';
+    return;
+  }
+  let html = `<p style="font-size:10px;color:var(--muted);margin-bottom:8px">Doesn't account for "always new card" (Event-style) services, which are meant to create a fresh card every resell.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:var(--light)">
+        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Workflow</th>
+        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Expected Card Name</th>
+        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Result</th>
+      </tr></thead><tbody>`;
+  rows.forEach(r => {
+    const result = r.error
+      ? `<span style="color:#991B1B;font-weight:600">⚠ ${esc(r.error)}</span>`
+      : r.actual
+        ? `<span style="color:#166534;font-weight:600">✅ Found: "${esc(r.actual.name)}"</span>`
+        : `<span style="color:#991B1B;font-weight:700">❌ No match — will create a NEW card on next resell</span>`;
+    html += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px">${esc(r.workflow)}</td>
+      <td style="padding:6px 8px;font-family:monospace">${esc(r.expected || '—')}</td>
+      <td style="padding:6px 8px">${result}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  resultsEl.innerHTML = html;
 }
 
 // ── IMPORT CLIENTS FROM TRELLO (2026-07-17) ─────────────────────

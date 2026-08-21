@@ -18335,3 +18335,74 @@ one-offs rather than big board imports.
 
 **Verified live** via Playwright: scanning a board's lists now renders
 every checkbox unchecked. `node --check` clean.
+
+## 2026-08-21 — New: Trello Card Name Audit tool (read-only, per client)
+
+Claire: "we updated all of our cards to match the templates that we
+created but I want to make sure for our current clients we avoid new
+cards potentially being created." Real, concrete risk worth explaining
+plainly: resell card-matching in `index.html` (`findExistingCardByName`)
+is 100% NAME-based — it computes the expected card name FRESH from
+whatever the current Trello template (or, if none, the workflow name)
+plus the client's business name says TODAY, then looks for an exact
+(case/trailing-punctuation-insensitive) match on the client's real
+Trello list. It never remembers an old name. So renaming real cards to
+match new templates is exactly the right move — but if a renamed card's
+final text doesn't line up EXACTLY with what that formula produces
+today (extra/missing space, a different dash, a missing " — Business
+Name" suffix, the business name spelled differently than
+`clients.name`), the match silently fails and the next resell creates a
+brand-new duplicate card instead of updating the real one.
+
+**Built a read-only audit tool** (new `admin_get_client_campaign_lines`
+RPC + `adminAuditClientTrelloCards()`) so this doesn't have to be
+checked by eye, client by client, hoping nothing's off. For any client:
+groups their active `campaign_lines` by workflow, resolves each
+workflow's template the same way `resolveWorkflowTemplate()` does
+(single card, whole list, or none), computes the exact expected card
+name using the SAME formula the real submission uses, then checks it
+against that client's actual live Trello list. Reports, per workflow:
+✅ found a matching card, ❌ no match (would create a new card on the
+next resell), or ⚠ couldn't resolve the template at all. Makes zero
+Trello writes — only `trello_get_card`/`trello_get_list_cards`, purely
+diagnostic.
+
+**One known, deliberate gap, not silently invented:** doesn't account
+for `always_new_card` (Event-style) services, which are SUPPOSED to
+create a fresh card every resell — those were never a duplication risk
+in the first place, so they're excluded rather than flagged as false
+positives.
+
+**Verified live** via Playwright against a 3-workflow fixture (a
+correctly-renamed card-template match, a no-template workflow with a
+stale unrenamed card, and a list-template workflow missing its card
+entirely, including confirming the tool correctly skips the
+template list's own IO/test placeholder cards): all three came back
+with the exactly correct ✅/❌ verdict. `node --check` clean.
+
+**SQL to run:**
+```sql
+CREATE OR REPLACE FUNCTION public.admin_get_client_campaign_lines(p_name text, p_pw text, p_client_id uuid)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  v_role text;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid admin credentials'; end if;
+
+  return query
+  select jsonb_build_object(
+    'id', cl.id, 'service_id', cl.service_id, 'tactic_label', cl.tactic_label, 'status', cl.status
+  )
+  from campaign_lines cl
+  where cl.client_id = p_client_id
+    and coalesce(cl.status, 'active') <> 'cancelled';
+end;
+$function$
+;
+```
