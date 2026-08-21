@@ -362,9 +362,25 @@
         <div style="order:1;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:10px;flex-wrap:wrap">
           <p style="font-size:13px;font-weight:700;color:var(--text)">Clients</p>
           <div style="display:flex;gap:8px">
+            <button onclick="toggleClientTrelloAuditPanel()" style="padding:7px 16px;border-radius:7px;background:#fff;color:var(--accent-dark);border:1.5px solid var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer">🔍 Audit All Trello Cards</button>
             <button onclick="openClientImportPanel()" style="padding:7px 16px;border-radius:7px;background:#fff;color:var(--accent-dark);border:1.5px solid var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer">Import from Trello</button>
             <button onclick="adminNewClient()" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">+ New Client</button>
           </div>
+        </div>
+
+        <!-- Bulk Trello Card Name Audit (2026-08-21, per Claire: "there are a lot of
+             clients to have to go through one at a time") -- same read-only logic as the
+             per-client audit on the Client edit form, run across every client with a
+             Trello List ID in one pass, reporting only the mismatches (an all-green
+             report for hundreds of clients would be unreadable). -->
+        <div id="admin-client-trello-audit-panel" style="order:3;display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:20px">
+          <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">Audit All Clients' Trello Cards</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Checks every client with a Trello List ID against what the system will look for on their next resell — read-only, makes no Trello changes. Can take a while for a large client list (one Trello read per client).</p>
+          <div style="display:flex;gap:10px;margin-bottom:14px">
+            <button onclick="adminAuditAllClientsTrelloCards()" style="padding:8px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Run Audit</button>
+            <button onclick="toggleClientTrelloAuditPanel()" class="btn-quiet-green">Close</button>
+          </div>
+          <div id="admin-client-trello-audit-all-results"></div>
         </div>
 
         <div style="order:2;display:grid;grid-template-columns:1fr 220px;gap:10px;margin-bottom:16px">
@@ -6122,6 +6138,45 @@ function auditIsSkippableTemplateCard(name) {
   // client's list either.
   return name.trim().startsWith('🧪') || t === 'io' || /^\*ae\*/i.test(name) || /^ae questions/i.test(name);
 }
+// Resolves a workflow's template to the plain tactic name(s) a real client card should
+// carry (before the " — Business Name" suffix, which is client-specific and added by the
+// caller). `templateCache`, keyed by `${type}:${ref}`, is passed in BY THE CALLER so the
+// bulk, all-clients audit can share one cache across every client — a workflow's template
+// is the same Trello card/list no matter which client is being checked, so it only needs
+// to be fetched from Trello ONCE per audit run, not once per client selling it.
+async function resolveAuditTemplateNames(templateRow, templateCache) {
+  const cacheKey = `${templateRow.trello_template_type}:${templateRow.trello_template_ref}`;
+  if (templateCache[cacheKey]) return templateCache[cacheKey];
+  let result;
+  if (templateRow.trello_template_type === 'card') {
+    try {
+      const templateCard = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ target: 'trello_get_card', card_id: templateRow.trello_template_ref }),
+      }).then(r => r.json());
+      const name = (templateCard?.name || '').trim();
+      result = { names: name ? [name] : [], error: name ? null : 'Could not resolve card template' };
+    } catch (e) {
+      result = { names: [], error: `Could not resolve card template: ${e.message}` };
+    }
+  } else {
+    try {
+      const templateCards = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ target: 'trello_get_list_cards', list_id: templateRow.trello_template_ref }),
+      }).then(r => r.json());
+      if (!Array.isArray(templateCards)) throw new Error('Template list unreadable');
+      const relevant = templateCards.filter(c => !auditIsSkippableTemplateCard(c.name)).map(c => c.name.trim());
+      result = { names: relevant, error: relevant.length ? null : 'Template list has no real tactic cards (after skipping test/IO/AE Questions cards)' };
+    } catch (e) {
+      result = { names: [], error: `Could not resolve list template: ${e.message}` };
+    }
+  }
+  templateCache[cacheKey] = result;
+  return result;
+}
 async function adminAuditClientTrelloCards() {
   const clientId = document.getElementById('admin-client-original-id').value;
   const resultsEl = document.getElementById('admin-client-trello-audit-results');
@@ -6171,6 +6226,7 @@ async function adminAuditClientTrelloCards() {
   });
 
   const findActual = name => actualCards.find(c => auditNorm(c.name) === auditNorm(name));
+  const templateCache = {};
   const rows = [];
   for (const [wf, lines] of Object.entries(byWorkflow)) {
     const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
@@ -6180,38 +6236,12 @@ async function adminAuditClientTrelloCards() {
       rows.push({ workflow: wf, expected, actual: findActual(expected) });
       continue;
     }
-    if (templateRow.trello_template_type === 'card') {
-      try {
-        const templateCard = await fetch(PROXY, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-          body: JSON.stringify({ target: 'trello_get_card', card_id: templateRow.trello_template_ref }),
-        }).then(r => r.json());
-        const expected = `${(templateCard?.name || wf).trim()} — ${bizName}`;
-        rows.push({ workflow: wf, expected, actual: findActual(expected) });
-      } catch (e) {
-        rows.push({ workflow: wf, expected: null, error: `Could not resolve card template: ${e.message}` });
-      }
-    } else {
-      try {
-        const templateCards = await fetch(PROXY, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-          body: JSON.stringify({ target: 'trello_get_list_cards', list_id: templateRow.trello_template_ref }),
-        }).then(r => r.json());
-        if (!Array.isArray(templateCards)) throw new Error('Template list unreadable');
-        const relevant = templateCards.filter(c => !auditIsSkippableTemplateCard(c.name));
-        if (!relevant.length) {
-          rows.push({ workflow: wf, expected: null, error: 'Template list has no real tactic cards (after skipping test/IO/AE Questions cards)' });
-        }
-        relevant.forEach(c => {
-          const expected = `${c.name.trim()} — ${bizName}`;
-          rows.push({ workflow: wf, expected, actual: findActual(expected) });
-        });
-      } catch (e) {
-        rows.push({ workflow: wf, expected: null, error: `Could not resolve list template: ${e.message}` });
-      }
-    }
+    const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
+    if (error) rows.push({ workflow: wf, expected: null, error });
+    names.forEach(n => {
+      const expected = `${n} — ${bizName}`;
+      rows.push({ workflow: wf, expected, actual: findActual(expected) });
+    });
   }
 
   if (!rows.length) {
@@ -6235,6 +6265,118 @@ async function adminAuditClientTrelloCards() {
       <td style="padding:6px 8px">${esc(r.workflow)}</td>
       <td style="padding:6px 8px;font-family:monospace">${esc(r.expected || '—')}</td>
       <td style="padding:6px 8px">${result}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  resultsEl.innerHTML = html;
+}
+
+function toggleClientTrelloAuditPanel() {
+  const panel = document.getElementById('admin-client-trello-audit-panel');
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (isOpen) document.getElementById('admin-client-trello-audit-all-results').innerHTML = '';
+}
+
+// Same read-only check as adminAuditClientTrelloCards(), across every client with a
+// Trello List ID in one pass (2026-08-21, per Claire: "there are a lot of clients to
+// have to go through one at a time"). Shares ONE templateCache across all of them --
+// a workflow's template only needs to be fetched from Trello once for the whole run,
+// no matter how many clients sell that tactic. Reports ONLY mismatches/errors, not
+// every match too — an all-green table for hundreds of clients would bury the handful
+// of real problems worth acting on.
+async function adminAuditAllClientsTrelloCards() {
+  const resultsEl = document.getElementById('admin-client-trello-audit-all-results');
+  const clients = ALL_CLIENTS.filter(c => c.trello_list_id);
+  if (!clients.length) {
+    resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No clients have a Trello List ID set.</p>';
+    return;
+  }
+  resultsEl.innerHTML = `<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Starting… (0 / ${clients.length} clients checked)</p>`;
+
+  let allLines;
+  try {
+    allLines = await sb('rpc/admin_get_all_active_campaign_lines', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }),
+    }) || [];
+  } catch (e) {
+    resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Could not load campaign lines: ${esc(e.message)}</p>`;
+    return;
+  }
+  const linesByClient = {};
+  allLines.forEach(li => { (linesByClient[li.client_id] = linesByClient[li.client_id] || []).push(li); });
+
+  const templateCache = {};
+  const problems = []; // { clientName, workflow, expected, kind: 'mismatch'|'error', detail }
+  let clientsChecked = 0, workflowsChecked = 0;
+
+  for (const client of clients) {
+    const clientLines = linesByClient[client.id] || [];
+    if (clientLines.length) {
+      const byWorkflow = {};
+      clientLines.forEach(li => {
+        const wf = CATALOG_ROWS[li.service_id]?.workflow;
+        if (!wf) return;
+        (byWorkflow[wf] = byWorkflow[wf] || []).push(li);
+      });
+
+      let actualCards = null;
+      if (Object.keys(byWorkflow).length) {
+        try {
+          const res = await fetch(PROXY, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+            body: JSON.stringify({ target: 'trello_get_list_cards', list_id: client.trello_list_id }),
+          }).then(r => r.json());
+          actualCards = Array.isArray(res) ? res : null;
+        } catch (e) { /* falls through to the !actualCards branch below */ }
+        if (!actualCards) {
+          problems.push({ clientName: client.name, workflow: '(all)', expected: null, kind: 'error', detail: 'Could not read this client\'s Trello list' });
+        } else {
+          const findActual = name => actualCards.find(c => auditNorm(c.name) === auditNorm(name));
+          for (const [wf, lines] of Object.entries(byWorkflow)) {
+            workflowsChecked++;
+            const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
+            if (!templateRow) {
+              const expected = `${wf} — ${client.name}`;
+              if (!findActual(expected)) problems.push({ clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
+              continue;
+            }
+            const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
+            if (error) { problems.push({ clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
+            names.forEach(n => {
+              const expected = `${n} — ${client.name}`;
+              if (!findActual(expected)) problems.push({ clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
+            });
+          }
+        }
+      }
+    }
+    clientsChecked++;
+    resultsEl.innerHTML = `<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Checking… (${clientsChecked} / ${clients.length} clients checked, ${problems.length} issue${problems.length !== 1 ? 's' : ''} found so far)</p>`;
+  }
+
+  const summary = `<p style="font-size:12px;font-weight:600;margin-bottom:10px">Checked ${clientsChecked} client${clientsChecked !== 1 ? 's' : ''}, ${workflowsChecked} workflow${workflowsChecked !== 1 ? 's' : ''} — ${problems.length} issue${problems.length !== 1 ? 's' : ''} found.</p>`;
+  if (!problems.length) {
+    resultsEl.innerHTML = summary + '<p style="color:#166534;font-size:12px">✅ Every checked client\'s cards match what the system expects.</p>';
+    return;
+  }
+  let html = summary + `<p style="font-size:10px;color:var(--muted);margin-bottom:8px">Doesn't account for "always new card" (Event-style) services, which are meant to create a fresh card every resell. Only mismatches/errors are listed — matches aren't shown.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:var(--light)">
+        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Client</th>
+        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Workflow</th>
+        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Issue</th>
+      </tr></thead><tbody>`;
+  problems.forEach(p => {
+    const issue = p.kind === 'error'
+      ? `<span style="color:#991B1B;font-weight:600">⚠ ${esc(p.detail)}</span>`
+      : `<span style="color:#991B1B;font-weight:700">❌ Expects "${esc(p.expected)}" — no matching card, will create a NEW one on next resell</span>`;
+    html += `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 8px">${esc(p.clientName)}</td>
+      <td style="padding:6px 8px">${esc(p.workflow)}</td>
+      <td style="padding:6px 8px">${issue}</td>
     </tr>`;
   });
   html += '</tbody></table>';
