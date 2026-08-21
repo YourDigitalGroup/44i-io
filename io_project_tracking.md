@@ -18513,3 +18513,27 @@ correctly don't match. No SQL — front-end only, both files.
 **No audit re-run needed for this one client** — Claire can just
 re-run the bulk audit now that the fix is live; any client whose only
 issue was a dash-style difference should now come back clean.
+
+## 2026-08-21 — Bulk Trello audit: added Group column, sorted by group then client
+
+With the dash bug fixed, Claire has ~600 clients to page through in the
+bulk audit report and asked for a Group column plus alphabetical
+group-then-client ordering, since that's the order she naturally works
+through her group list.
+
+**Changed in `admin/index.html`'s `adminAuditAllClientsTrelloCards()`**:
+Each client's group name is now looked up (`allGroups.find(g => g.id ===
+client.group_id)?.name || '(no group)'`) and carried on every pushed
+problem entry — including the no-template mismatch branch, which had
+been missed on the first pass through this edit and still lacked
+`groupName` until this fix. Before rendering, the `problems` array is
+now sorted with `a.groupName.localeCompare(b.groupName) ||
+a.clientName.localeCompare(b.clientName)`. The results table has a new
+"Group" column, first, before "Client".
+
+**Verified**: `node --check` on the extracted inline script passes.
+Confirmed via a standalone functional test that a mixed-order sample
+list (including a "(no group)" entry) sorts correctly group-first then
+client-second. Re-checked all four `problems.push(...)` call sites by
+grep — all four now include `groupName`. No SQL, no other files
+changed.
