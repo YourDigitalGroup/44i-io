@@ -2384,7 +2384,41 @@ window.addEventListener('resize', () => {
 });
 
 // ── ADMIN SECTION SWITCHER ─────────────────────────────────────
+// Every tab's search/filter fields + any open create/edit panel, reset on every
+// tab switch (2026-08-21, per Claire: "if I search for MS Farm Bureau and then
+// go to a different tab and back to the client tab it doesn't refresh I still
+// see my search" / "or it leaves an editor open if I don't close it"). Each
+// tab's own load function already re-fetches fresh data on entry -- the filter
+// inputs and edit panels were the only stale leftovers, since nothing ever
+// cleared them. Resets ALL tabs unconditionally on every call (not just the one
+// being left), so returning to a tab always shows the same clean state it
+// would on a fresh page load, matching what Claire expects.
+const ADMIN_TAB_FILTER_IDS = [
+  'orders-filter-group', 'orders-filter-search', 'orders-filter-date', 'orders-filter-help',
+  'clients-filter-search', 'clients-filter-group',
+  'map-filter-section', 'map-filter-search', 'map-filter-inactive',
+  'ae-filter-group',
+];
+const ADMIN_TAB_PANEL_IDS = [
+  'admin-order-detail', 'admin-group-form', 'admin-client-form', 'admin-service-form',
+  'admin-section-form', 'admin-intake-form', 'admin-ae-form', 'admin-strategist-form',
+  'admin-user-form', 'admin-accounting-form',
+];
+function resetAdminTabState() {
+  ADMIN_TAB_FILTER_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = false;
+    else el.value = '';
+  });
+  ADMIN_TAB_PANEL_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
 function adminSection(section) {
+  resetAdminTabState();
   // Twelve sections: groups | orders | clients | map | sections | intake | ae | legal | notifications | reconcile | users | accounting
   const sections = ['groups','orders','clients','map','sections','intake','ae','strategists','legal','notifications','reconcile','users','accounting'];
   sections.forEach(s => {
