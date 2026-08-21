@@ -18280,3 +18280,30 @@ Accounting needed no change): searching in Clients then switching to
 Orders and back clears the search box; an open client editor closes on
 tab switch; a checkbox filter (map-filter-inactive) also resets.
 `node --check` clean.
+
+## 2026-08-21 — Fixed Offline Visits Tracking rows showing a bare, uncombined label
+
+Claire, while updating the Accounting Overrides: "some of the offline
+visits have their own line that just says offline visits not tactic
+w/offline visits tracking." Found the real bug in both
+`renderAccountingOverrideFields()` (group-level) and
+`renderClientAccountingOverrideFields()` (client-level, its exact
+mirror): a CPM-adjustment modifier (Offline Visits Tracking, etc.) only
+got its label combined with its base tactic's name
+(`"{Tactic} (w/ {Modifier})"`) in the MULTI-candidate branch (sections
+like Targeted Display with several possible base tactics). The far more
+common single-candidate case — a section with exactly one spend tactic
+to pair with — used the modifier's own bare name instead
+(`"Offline Visits Tracking"`), even though there was a real, specific
+tactic to combine it with sitting right there as `candidates[0]`.
+
+Fixed both to combine with that one candidate's name too, same format
+as the multi-candidate branch. Only a section with genuinely NO spend
+candidate at all still falls back to the modifier's bare name, since
+there's nothing real to combine it with in that case.
+
+**Verified live** via Playwright against a single-candidate SEO-style
+fixture (one spend tactic + Offline Visits Tracking): both the group-
+level and client-level override tables now show
+`"LLO (SEO) (w/ Offline Visits Tracking)"` instead of the bare
+`"Offline Visits Tracking"`. `node --check` clean.
