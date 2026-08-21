@@ -6299,16 +6299,32 @@ async function adminListTemplateTitles() {
     const key = `${type}:${r.trello_template_ref}`;
     (groups[key] = groups[key] || { trello_template_type: type, trello_template_ref: r.trello_template_ref, services: [] }).services.push(r);
   });
+  const groupList = Object.values(groups);
 
+  // Fetched IN PARALLEL (2026-08-21, found live -- Claire: "it didn't run them all,
+  // single cards alone I have 55"): with 55+ single-card templates plus several
+  // whole-list ones, awaiting each Trello round-trip ONE AT A TIME in sequence could
+  // take long enough to look stalled/incomplete. Promise.all fires every fetch at
+  // once instead -- same templateCache object, safe since nothing here is actually
+  // concurrent-write-unsafe (worst case two services sharing a genuinely-duplicate
+  // ref each fetch it once before the cache is populated, which just means one wasted
+  // extra Trello call, not a wrong result).
   const templateCache = {};
-  const rows = [];
-  for (const g of Object.values(groups)) {
-    const { names, error } = await resolveAuditTemplateNames(g, templateCache);
-    rows.push({ type: g.trello_template_type, ref: g.trello_template_ref, services: g.services, names, error });
-  }
+  const rows = await Promise.all(groupList.map(g =>
+    resolveAuditTemplateNames(g, templateCache).then(({ names, error }) =>
+      ({ type: g.trello_template_type, ref: g.trello_template_ref, services: g.services, names, error }))
+  ));
   rows.sort((a, b) => a.services[0].label.localeCompare(b.services[0].label));
 
-  let html = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+  // Explicit counts (2026-08-21, same finding) -- rather than Claire having to count
+  // rows by hand to notice something's missing, the summary states plainly how many
+  // services fed in and how many distinct templates came out, so any future
+  // undercount (e.g. two DIFFERENT templates accidentally sharing the same ref by
+  // data-entry mistake, which would silently merge them into one row here) is visible
+  // as a number mismatch instead of something only caught by manually recounting.
+  const errorCount = rows.filter(r => r.error).length;
+  let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:8px">${templated.length} service${templated.length !== 1 ? 's' : ''} with a template linked → ${rows.length} distinct template${rows.length !== 1 ? 's' : ''} shown${errorCount ? ` (${errorCount} couldn't be resolved — see below)` : ''}.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
     <thead><tr style="background:var(--light)">
       <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Service(s) Using It</th>
       <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Template Type</th>

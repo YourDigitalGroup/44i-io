@@ -18848,3 +18848,38 @@ template, 1 with a list template containing a test card and an IO
 placeholder to skip) — confirms the shared template only appears once
 with both services listed, and the list-type skip-filtering still
 works correctly. No SQL — front-end only, `admin/index.html`.
+
+## 2026-08-21 (cont'd) — Template Titles panel: parallelized fetches, added explicit counts
+
+Claire: "It didn't run them all, single cards alone I have 55" — the
+panel's first version fetched every template's live title ONE AT A
+TIME in a sequential loop (`for...of` with `await` inside), which with
+55+ single-card templates plus several whole-list ones could take long
+enough to look stalled or incomplete. Switched to `Promise.all()` so
+every fetch fires at once instead of waiting in line.
+
+Also added an explicit count line ("N services with a template linked
+→ M distinct templates shown") to the panel's output, rather than
+leaving Claire to count rows by hand to notice something's off. This
+also surfaces a genuinely different, real risk the grouping-by-ref
+logic could otherwise hide silently: if two DIFFERENT services
+accidentally point at the SAME Trello card/list by a data-entry
+mistake (rather than intentional sharing, like the 4 Digital
+Advertising services sharing one "Display" card on purpose), they'd
+merge into one row here — worth catching, since it also means both
+services' resells would fight over the same real card. The services-
+in vs. templates-out count mismatch is now visible as a number, not
+just as fewer rows than expected.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Ran the parallel-fetch logic against 59 mock services (57 with
+distinct card refs, 2 deliberately sharing one ref to simulate a
+data-entry accident, plus 1 list-type) — confirms all 59 resolve
+successfully via `Promise.all`, the count line correctly reports "59
+services → 58 distinct templates," and the accidentally-shared ref
+correctly surfaces as one row listing both services together (visible
+proof the count math would catch this class of real bug). Still don't
+know the exact original failure mode (never confirmed whether the
+first version hung, errored, or just ran slowly) — asked Claire what
+she actually saw so this can be pinned down for certain if the
+parallelization fix alone doesn't resolve it.
