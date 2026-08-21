@@ -5498,16 +5498,27 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         });
         const existingCards = await existingCardsRes.json();
 
-        // Normalize card names for comparison: lowercase, trim, strip trailing dashes/colons/whitespace
-        // This catches template placeholders like "IO -", "Website Monthly Package: 5-page Custom -"
-        const norm = n => (n || '').toLowerCase().trim().replace(/[\s\-–—:]+$/g, '').trim();
+        // Normalize card names for comparison: lowercase, canonicalize every dash variant
+        // (hyphen/en-dash/em-dash) to a plain hyphen EVERYWHERE in the string (not just at
+        // the end), trim, strip trailing dashes/colons/whitespace. The dash canonicalization
+        // (2026-08-21, found live — Claire: "3B Outdoor Equipment has a card that says
+        // 'Search Engine Marketing - 3B Outdoor Equipment' but it came back that it would
+        // create a new card") fixes a real bug: every generated card name uses an em dash
+        // ("Tactic — Business Name"), but a hand-typed real card almost always uses a plain
+        // hyphen -- these used to compare as different strings and would have silently
+        // created a duplicate card on that client's next resell. The trailing-strip below
+        // still catches template placeholders like "IO -", "Website Monthly Package: 5-page
+        // Custom -".
+        const norm = n => (n || '').toLowerCase().replace(/[-–—]/g, '-').trim().replace(/[\s\-:]+$/g, '').trim();
         // Matches a bare "IO" placeholder (used to skip template placeholder cards, which
         // are never renamed) AND, since the real IO card is now named "IO — <bizName>"
         // (2026-07-17, per Claire), also matches that pattern so a returning client's
         // already-created IO card is still found and updated rather than treated as new.
+        // Only needs to check for a plain hyphen now -- norm() above already canonicalized
+        // every dash variant before this ever sees the string.
         const isIoName = n => {
           const t = norm(n);
-          return t === 'io' || /^io\s*[-–—:]/.test(t);
+          return t === 'io' || /^io\s*[-:]/.test(t);
         };
 
         const existingCardNames = Array.isArray(existingCards)
