@@ -6156,8 +6156,16 @@ async function adminSaveClient() {
 // hand-typed real card almost always uses a plain hyphen -- kept in sync with the
 // identical fix in index.html's own norm(), since a mismatch here would mean the
 // audit and the real matching logic disagree about what counts as a match.
+// Also collapses every run of whitespace to a single plain space (2026-08-21, found
+// live via Visit Brookings' TruView card -- a real card and its expected name were
+// character-for-character identical as TYPED, yet still failed to match; the only
+// remaining explanation was a non-breaking space or doubled space somewhere in the
+// underlying client name, invisible in any screenshot but real in the data -- \s
+// matches those Unicode whitespace variants same as a plain space, so replacing
+// EVERY run of \s+ with one plain space before the dash/trim work below neutralizes
+// them regardless of which client or card carries the irregularity).
 function auditNorm(n) {
-  return (n || '').toLowerCase().replace(/[-–—]/g, '-').trim().replace(/[\s\-:]+$/g, '').trim();
+  return (n || '').toLowerCase().replace(/[-–—]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
 }
 function auditIsSkippableTemplateCard(name) {
   const t = auditNorm(name);
@@ -6199,6 +6207,14 @@ function auditIsKnownNonTacticCard(cardName, bizName, markerNames) {
   if (cardName.trim().startsWith('🧪')) return true;
   if (auditNorm(cardName) === auditNorm(`IO — ${bizName}`)) return true;
   if (/^\*ae\*/i.test(cardName) || /^ae questions/i.test(cardName)) return true;
+  // Standard "Dates" and "Questions" cards (2026-08-21, per Claire — "Every list has a
+  // 'Dates' and 'Questions' cards that I don't care to be told about, those are
+  // standard cards") — real, legitimate cards on every client list, not something to
+  // flag as unrecognized. Wording varies per client ("I don't care to be told about"
+  // implies no fixed title to match exactly), so this checks for the word anywhere in
+  // the card name rather than an exact/prefix title match, same reasoning as the
+  // AE Questions check above but broader since the exact phrasing isn't fixed.
+  if (/\bdates\b/i.test(cardName) || /\bquestions\b/i.test(cardName)) return true;
   return markerNames.some(n => n && auditNorm(cardName) === auditNorm(n));
 }
 // Offline Visits Tracking card-title suffix (2026-08-21, per Claire — "if they include
