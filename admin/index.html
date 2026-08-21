@@ -6146,6 +6146,36 @@ function auditIsSkippableTemplateCard(name) {
   // client's list either.
   return name.trim().startsWith('🧪') || t === 'io' || /^\*ae\*/i.test(name) || /^ae questions/i.test(name);
 }
+// Offline Visits Tracking card-title suffix (2026-08-21, per Claire — "if they include
+// Offline tracking they add it to the title"): kept in sync with index.html's own
+// offlineVisitsSuffix() — whenever a workflow's active campaign lines include the
+// Offline Visits Tracking modifier (the only is_cpm_adjustment modifier in the catalog
+// today), the real card gets "+ Offline Visits" appended before the business name, so
+// the audit's expected name has to include it too or every such tactic reads as a
+// false mismatch.
+function auditOfflineVisitsSuffix(lines) {
+  return lines.some(li => CATALOG_ROWS[li.service_id]?.is_cpm_adjustment) ? ' + Offline Visits' : '';
+}
+// "Which one is it?" variant name for the audit's expected card name (2026-08-21) —
+// kept in sync with index.html's own resolveTacticVariantName(). The IO form now lets
+// the AE pick a services.tactic_variants option directly, but for any EXISTING client
+// the only place that pick has ever been recorded is campaign_lines.tactic_label (set
+// later by the Strategist in Campaign Setup) — so the audit checks tactic_label against
+// the service's own tactic_variants list rather than a field it doesn't have yet.
+// Same colon-detection rule as index.html: an already-fully-qualified variant (e.g.
+// "Targeted Display: AdRT") is used as-is; a bare one (e.g. "Geofencing") gets the
+// selling service's own SECTION display name prepended.
+function auditTacticVariantName(lines, fallbackName) {
+  const li = lines.find(li => {
+    const variants = CATALOG_ROWS[li.service_id]?.tactic_variants;
+    return Array.isArray(variants) && li.tactic_label && variants.includes(li.tactic_label);
+  });
+  if (!li) return fallbackName;
+  const variant = li.tactic_label;
+  if (variant.includes(':')) return variant;
+  const secLabel = sectionLabel(CATALOG_ROWS[li.service_id]?.section);
+  return secLabel && secLabel !== CATALOG_ROWS[li.service_id]?.section ? `${secLabel}: ${variant}` : variant;
+}
 // Resolves a workflow's template to the plain tactic name(s) a real client card should
 // carry (before the " — Business Name" suffix, which is client-specific and added by the
 // caller). `templateCache`, keyed by `${type}:${ref}`, is passed in BY THE CALLER so the
@@ -6239,15 +6269,16 @@ async function adminAuditClientTrelloCards() {
   for (const [wf, lines] of Object.entries(byWorkflow)) {
     const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
     const bizName = client?.name || '';
+    const offlineSuffix = auditOfflineVisitsSuffix(lines);
     if (!templateRow) {
-      const expected = `${wf} — ${bizName}`;
+      const expected = `${wf}${offlineSuffix} — ${bizName}`;
       rows.push({ workflow: wf, expected, actual: findActual(expected) });
       continue;
     }
     const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
     if (error) rows.push({ workflow: wf, expected: null, error });
     names.forEach(n => {
-      const expected = `${n} — ${bizName}`;
+      const expected = `${auditTacticVariantName(lines, n)}${offlineSuffix} — ${bizName}`;
       rows.push({ workflow: wf, expected, actual: findActual(expected) });
     });
   }
@@ -6351,15 +6382,16 @@ async function adminAuditAllClientsTrelloCards() {
           for (const [wf, lines] of Object.entries(byWorkflow)) {
             workflowsChecked++;
             const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
+            const offlineSuffix = auditOfflineVisitsSuffix(lines);
             if (!templateRow) {
-              const expected = `${wf} — ${client.name}`;
+              const expected = `${wf}${offlineSuffix} — ${client.name}`;
               if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
               continue;
             }
             const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
             if (error) { problems.push({ groupName, clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
             names.forEach(n => {
-              const expected = `${n} — ${client.name}`;
+              const expected = `${auditTacticVariantName(lines, n)}${offlineSuffix} — ${client.name}`;
               if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
             });
           }

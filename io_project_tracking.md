@@ -18537,3 +18537,231 @@ list (including a "(no group)" entry) sorts correctly group-first then
 client-second. Re-checked all four `problems.push(...)` call sites by
 grep — all four now include `groupName`. No SQL, no other files
 changed.
+
+## 2026-08-21 — Card-title convention: "+ Offline Visits" appended when that modifier is sold
+
+Claire flagged a real audit case (Auto Service Center, "Location
+Targeting: Geofencing") the same way as the earlier dash bug: the real
+Trello card is named "Location Targeting: Geofencing + Offline Visits -
+Auto Service Center", but the system's generated/expected name doesn't
+account for the "+ Offline Visits" piece. Her rule, stated directly:
+"If they include Offline tracking they add it to the title." Confirmed
+with her the suffix is always exactly "+ Offline Visits" (no wording
+variation), and that this should be fixed in the real card-creation/
+matching logic, not just the audit tool — otherwise every tactic sold
+together with Offline Visits Tracking would look like it needs a brand
+new card on its next resell.
+
+**Fixed in both `index.html` and `admin/index.html`.** Added
+`offlineVisitsSuffix(originalWorkflow)` in `index.html` (checks whether
+any SOLD service sharing that workflow has `is_cpm_adjustment` true —
+today that's exclusively the Offline Visits Tracking modifier) and the
+matching `auditOfflineVisitsSuffix(lines)` in `admin/index.html` (same
+check, against a client's active `campaign_lines`). Both return
+`' + Offline Visits'` or `''`, inserted right after the tactic name and
+before the dated-card suffix and the `— Business Name` piece, at every
+place a tactic card name gets built: the single-card template path, the
+whole-list template path, the plain-fallback path, the
+template-list-unreadable fallback path, and the MS Farm Bureau
+agent-split card path (`index.html`) — and both expected-name sites in
+the per-client and bulk audit tools (`admin/index.html`).
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Ran the suffix logic against Claire's exact real-world case —
+generated name comes out
+"Location Targeting: Geofencing + Offline Visits — Auto Service Center",
+which normalizes (via the existing dash-canonicalization fix) to match
+her real, hyphen-typed card exactly. Confirmed a workflow WITHOUT the
+modifier gets no suffix (no false positives introduced). No SQL, no
+schema change — `is_cpm_adjustment` already existed on `services`.
+
+## 2026-08-21 (cont'd) — "Which one is it?" variant picker added to the IO form itself
+
+Follow-up to the Offline Visits fix above: Claire asked how to handle
+tactics like "Location Targeting: Geofencing" that actually come from a
+combined/ambiguous catalog row ("Geofencing or 1st Party Addressable")
+— the real Trello card gets manually renamed to the specific variant,
+which is exactly the kind of drift-from-the-system risk already found
+twice this session. Traced this back to the 2026-08-10 work: 5 catalog
+rows (`lt-crm`, `lt-event`, `lt-geo`, `td-custom`, `td-site`) already
+have a `services.tactic_variants` list and a picker for it — but only
+in the Strategist Portal's Campaign Setup, which happens AFTER the
+Trello card's already been created off the generic combined label.
+
+Confirmed with Claire the real Trello convention is "prefixed" (e.g.
+"Location Targeting: Geofencing"), not the Strategist Portal's plain/
+bare display ("Geofencing" alone, no prefix — confirmed by reading
+`strategistTacticVariantOptions()`/`resolveBulkTactic()`, which store
+the picked variant into `tactic_label` completely as-typed, no
+transformation). Claire then pulled the live data for all 5 rows via
+SQL — this surfaced that the variant text itself is inconsistent:
+`lt-*` rows store bare names ("Geofencing", "CRM", "Event Targeting",
+"Lookback Targeting") that need a prefix, while some of their OWN
+sibling options ("Addressable: 1st Party", "Addressable: Curated") and
+all of `td-*`'s options ("Targeted Display: AdRT", etc.) are already
+fully-qualified with their own different prefix. **Rule**: if the
+variant string already contains a colon, use it as-is; otherwise
+prepend the SELLING SERVICE'S OWN SECTION display name (not the
+`workflow` column — `td-custom`/`td-site`'s workflow is "Digital
+Advertising", a broader grouping that doesn't match the real section
+name "Targeted Display").
+
+**Built:**
+1. **IO form (`index.html`)** — services with `tactic_variants`
+   configured (already present in `CATALOG_ROWS` via the existing
+   `select=*` catalog load, no query change needed) now show a "—
+   Which one? —" dropdown right under the service name, in
+   `renderPriceCells()` (same place the minimum-note/quoted-price
+   fields already live). Read into `selected[id].tacticVariant` via
+   `syncRowInputs()` — same read-only-at-sync pattern as the plain
+   Notes field, no `onchange` needed. Carried onto each submitted line
+   item as `tactic_variant` (flows into the stored order's
+   `line_items` JSON for free, no schema change).
+2. **Card title (`index.html`)** — new `resolveTacticVariantName(originalWorkflow,
+   fallbackName)` applies the rule above; used in place of the plain
+   template-card name at the one call site that needs it (the
+   single-card-template branch — all 5 configured rows are `card`-type
+   templates today). Falls back to the original name unchanged when no
+   variant was picked, so every other service is unaffected.
+3. **Audit tool (`admin/index.html`)** — new `auditTacticVariantName(lines,
+   fallbackName)`, same rule, but reading `tactic_label` off
+   `campaign_lines` instead — for an EXISTING client, the only place a
+   variant pick has ever been recorded is the Strategist's later
+   Campaign Setup step (this is a genuinely new capability at IO time,
+   not a backfill), so the audit checks whether a line's `tactic_label`
+   is one of that service's own `tactic_variants` before trusting it as
+   the resolved name. Wired into both the per-client and bulk audit's
+   expected-name construction.
+
+**Not built (flagged, not assumed)**: this doesn't yet write the IO
+form's picked variant back onto `campaign_lines.tactic_label` at order
+creation — the Strategist still has to pick it again independently
+during Campaign Setup for now. Mentioned to Claire as a natural
+follow-up (skip the Strategist's re-pick when the AE already supplied
+it) but intentionally not built without her asking for it, per this
+project's "don't expand scope unprompted" convention.
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Ran `resolveTacticVariantName()` against all 5 real rows and
+their real stored variant values (from Claire's SQL) — every bare
+variant correctly gets its selling section's prefix, every
+already-prefixed variant is used as-is, and the exact Auto Service
+Center case reproduces "Location Targeting: Geofencing + Offline
+Visits — Auto Service Center" character-for-character. Confirmed the
+no-variant-picked case falls back to the original combined-label name
+unchanged. Ran the audit-side `auditTacticVariantName()` the same way
+against mock `campaign_lines` rows carrying a `tactic_label`. No SQL —
+`services.tactic_variants` already existed from 2026-08-10.
+
+## 2026-08-21 (cont'd) — Strategist auto-fill for tactic variants; the other 6 rows don't need splitting; found and fixed the SEO-tier audit bug
+
+Three follow-ups in one message.
+
+**1. "One less manual thing for them to do."** Patched
+`create_campaign_lines_from_order()` so every place a line's
+`tactic_label` gets set now checks `item->>'tactic_variant'` first —
+`coalesce(item->>'tactic_variant', v_tactic_label, item->>'label')`
+instead of `coalesce(v_tactic_label, item->>'label')`. When the AE
+picked a variant on the IO form, the Strategist's Campaign Setup
+dropdown now opens already correct; when they didn't, behavior is
+identical to before. Stores the RAW variant text (e.g. "Geofencing"),
+matching exactly what a strategist's own manual pick would store — the
+Trello-title prefixing rule stays purely in the card-naming/audit
+code, never in the stored data. SQL:
+`tactic-variant-autofill-2026-08-21.sql`, scratchpad, not yet run.
+
+**2. The other 6 "X or Y" rows** — Claire reviewed and confirmed
+`nd-geo`/`nv-geo`/`pa-geo`/`pv-geo` ("Geotargeting, Keyword,
+Contextual, Category & Retargeting") and `yttv-addl` ("Addl. Targeting
+(Demo, HHI, behavioral, etc.)") are "&"/example lists — everything
+listed applies together, not a choose-one — so no splitting needed.
+`wm-host-ai` (the one with an actual "or" in its label) is currently
+inactive, so parked with no action.
+
+**3. Real bug: the bulk Trello audit resolves SEO to "Pro" for every
+client, regardless of real tier.** Claire caught this from the audit
+output itself. Root cause: the live order-submission trigger already
+anchors "LLO (SEO)"/"Rep Monitoring (SEO)" tracking lines to whichever
+real tier was actually sold (`item->>'service_id'`, correct by
+construction) — but the Strategist Portal's MANUAL entry tools (Bulk
+Import, "+ New Campaign", used for any campaign that predates the
+trigger or wasn't created via a live IO) hardcoded both tracking lines
+to `seo-bp` regardless of the client's real tier
+(`SEO_TRACKING_ONLY_TACTICS` in `strategist/index.html`). That was
+harmless when nothing downstream read the tier — "functionally inert…
+so which exact SEO tier doesn't matter," per its own 2026-08-10
+comment — until the Trello audit started resolving its expected
+template off that exact `service_id`, at which point every
+manually-added Starter/Builder client silently got checked against
+Pro's template instead.
+
+**Fixed** by expanding `SEO_TRACKING_ONLY_TACTICS` from 2 hardcoded
+entries into 6 — one per (tactic × real tier) combination, generated
+from the catalog's own `seo-bs`/`seo-bb`/`seo-bp` rows rather than
+hardcoded labels. Converted from a `const` to a
+`getSeoTrackingOnlyTactics()` function — a plain const would have
+evaluated against an empty `CATALOG_ROWS` at script-parse time, before
+`loadCatalog()` ever populates it (a real timing bug caught before it
+shipped, not found live). The existing Tactic dropdown ("+ New
+Campaign") and the Bulk Import fix-it override dropdown both now show
+all 6 tier-specific options (e.g. "LLO (SEO) — SEO Business Starter")
+instead of one ambiguous "LLO (SEO)" — no new UI needed, same
+mechanism, just a wider option list. `resolveBulkTactic()`'s automatic
+text-match on bare "LLO (SEO)"/"Rep Monitoring (SEO)" (which could
+only ever guess Pro) was removed entirely — those rows now fall
+through to the existing unresolved-row error, which the fix-it
+dropdown resolves explicitly to the correct tier. Stored
+`tactic_label` stays exactly "LLO (SEO)"/"Rep Monitoring (SEO)"
+either way (only `service_id` varies by tier) — `FLAT_FEE_NO_METRICS_
+TACTIC_LABELS`'s tactic_label-based matching is unaffected.
+
+**Existing (possibly wrong) data**: gave Claire a read-only safety-check
+query (`seo-tier-audit-2026-08-21.sql`, scratchpad) that finds every
+client whose SEO tracking lines are anchored to `seo-bp`, cross-
+referenced against whether that same client has their OWN real tier
+line (Starter/Builder) elsewhere — flagging a clear mismatch,
+a clean match, or "can't confirm from data alone" when no real tier
+line exists at all. No UPDATE included — Claire reviews the output
+first, per this project's standing data-cleanup convention.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Ran `getSeoTrackingOnlyTactics()` against mock catalog rows — produces
+exactly the expected 6 entries with correct display labels; also
+confirmed it degrades to `[]` (not a throw) if called before the
+catalog has loaded, closing the timing bug before it could ship.
+
+## 2026-08-21 (cont'd) — SEO-tier safety-check query had a self-join bug; real finding: no legacy client has a real-tier line at all
+
+First safety-check query I gave Claire came back "Matches — genuinely
+Pro, no fix needed" for every single client — wrong. Its `real_tier`
+join didn't exclude the tracking lines themselves from the match, so
+each LLO (SEO)/Rep Monitoring (SEO) row matched against ITSELF (same
+`client_id` + `service_id = 'seo-bp'`), trivially "confirming" Pro
+every time. Fixed by excluding `tactic_label in ('LLO (SEO)', 'Rep
+Monitoring (SEO)')` from the `real_tier` side of the join and joining
+`services` for its real label.
+
+Re-run with the corrected query: **every one of the ~50 affected
+clients came back "no real tier line found."** These are all legacy/
+manually-imported clients where only the two SEO tracking lines were
+ever entered (via Bulk Import or "+ New Campaign") — the actual tier
+(Starter/Builder/Pro) was never recorded in Supabase at all, only on
+whatever real signed IO or record Claire has outside the system. No
+SQL can recover it; it has to come from Claire looking each one up.
+
+Asked how she wanted to fix ~50 clients' worth of this by hand —
+Claire's answer: "could this update once I upload everything else on
+the Accounting Side?" Yes — Accounting's "+ Add Service" and "Bulk
+Import (CSV)" both already route through one RPC,
+`accounting_add_campaign_line`. Patched it: whenever a real SEO tier
+line (`seo-bs`/`seo-bb`/`seo-bp`) gets added for a client through
+either tool, it now also re-anchors that same client's existing LLO
+(SEO)/Rep Monitoring (SEO) lines to the tier just added (only touches
+non-cancelled tracking lines; leaves a cancelled one alone). As Claire
+uploads each legacy client's real SEO service through Accounting, the
+tracking-line anchors — and the Trello audit's tier resolution — self-
+correct with no separate fix tool needed. SQL:
+`accounting-add-service-seo-tier-backfill-2026-08-21.sql`, scratchpad,
+built from the last known version of the function (2026-08-12) since
+no more recent copy was on file — flagged to Claire in case it's
+drifted since. Not yet run by Claire.
