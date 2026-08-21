@@ -18406,3 +18406,70 @@ end;
 $function$
 ;
 ```
+
+## 2026-08-21 — Extended the Trello Card Name Audit to run across every client at once
+
+Claire: "there are a lot of clients to have to go through one at a
+time." Fair — the per-client audit built earlier this session doesn't
+scale to checking a whole client base by hand. Added a bulk version.
+
+**New "🔍 Audit All Trello Cards" button** in the Clients tab header,
+opening a panel with a "Run Audit" button. Checks every client that has
+a Trello List ID, using the exact same read-only logic as the per-client
+audit (refactored the template-resolution part into a shared
+`resolveAuditTemplateNames()` helper so both versions can never quietly
+drift apart). New `admin_get_all_active_campaign_lines` RPC fetches
+every client's active lines in one call instead of one RPC per client.
+
+**Key efficiency piece:** a shared `templateCache` object is passed
+through the WHOLE run, keyed by `${type}:${ref}` — a workflow's template
+(e.g. the SEM template card) is the same Trello object no matter which
+client is being checked, so it's fetched from Trello exactly ONCE for
+the entire audit, not once per client that happens to sell that tactic.
+The per-client Trello list read (`trello_get_list_cards`) is still one
+call per client (unavoidable — each client has their own list), run
+sequentially with a live "X / Y clients checked" progress message since
+this can take a while for a large client base.
+
+**Report only shows problems, not every match** — an all-green table
+covering hundreds of clients would bury the handful of real issues
+worth acting on. Shows a one-line summary (clients/workflows checked,
+issue count) followed by a table of just the ❌ mismatches (client +
+workflow + the exact name it expected but couldn't find) and ⚠ errors
+(e.g. a client's list couldn't be read, or a workflow's template
+couldn't be resolved at all).
+
+**Verified live** via Playwright with 4 clients (one correctly-matching,
+one with a stale unrenamed card flagged as a mismatch, one matching via
+the no-template workflow-name fallback, and one with no Trello List ID
+correctly skipped) sharing one card-template between two of them —
+confirmed the mismatch surfaced correctly, the match didn't clutter the
+report, the skip worked, and the template was fetched from Trello only
+once despite two clients needing it. `node --check` clean.
+
+**SQL to run:**
+```sql
+CREATE OR REPLACE FUNCTION public.admin_get_all_active_campaign_lines(p_name text, p_pw text)
+ RETURNS SETOF jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  v_role text;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid admin credentials'; end if;
+
+  return query
+  select jsonb_build_object(
+    'id', cl.id, 'client_id', cl.client_id, 'service_id', cl.service_id,
+    'tactic_label', cl.tactic_label, 'status', cl.status
+  )
+  from campaign_lines cl
+  where coalesce(cl.status, 'active') <> 'cancelled';
+end;
+$function$
+;
+```
