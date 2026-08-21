@@ -480,71 +480,82 @@
                  not to the county/agent split data underneath them. Counties belong to one
                  AE each; Agents belong to one county each — this section is the top of that
                  chain. -->
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-              <p style="font-size:12px;font-weight:700;color:var(--text);margin:0">AEs</p>
-              <button type="button" onclick="adminNewClientAe()" class="btn-quiet-green">+ Add AE</button>
-            </div>
-            <div id="admin-client-ae-table" style="margin-bottom:8px"></div>
-            <div id="admin-client-ae-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-bottom:22px">
-              <input type="hidden" id="admin-client-ae-original-id"/>
-              <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-client-ae-form-title">New AE</p>
-              <div style="display:flex;gap:10px;align-items:flex-end">
-                <div style="flex:1">
-                  <label class="lbl" for="admin-client-ae-picker">AE</label>
-                  <select id="admin-client-ae-picker" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
-                </div>
-                <div style="flex:1">
-                  <label class="lbl" for="admin-client-ae-trello-list-id">MS Farm Bureau Trello List ID</label>
-                  <input type="text" id="admin-client-ae-trello-list-id" placeholder="e.g. 66ec562e1bc7223b1df294c7" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
-                </div>
-                <button type="button" onclick="adminSaveClientAe()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
-                <button type="button" onclick="adminCancelClientAeEdit()" class="btn-quiet-green">Cancel</button>
+            <!-- Each roster collapsed by default (2026-08-21, per Claire -- "now that I
+                 have added everything... the editor is really long") -- same collapsed
+                 <details> language as Custom Pricing/Accounting Overrides below the Save
+                 Client button, so a long roster no longer means scrolling past all three
+                 every time this panel opens. -->
+            <details style="margin-bottom:16px">
+              <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">AEs <span id="admin-client-ae-count" style="font-weight:400;color:var(--muted)"></span></summary>
+              <div style="display:flex;justify-content:flex-end;margin:6px 0 10px">
+                <button type="button" onclick="adminNewClientAe()" class="btn-quiet-green">+ Add AE</button>
               </div>
-            </div>
+              <div id="admin-client-ae-table" style="margin-bottom:8px"></div>
+              <div id="admin-client-ae-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-bottom:8px">
+                <input type="hidden" id="admin-client-ae-original-id"/>
+                <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-client-ae-form-title">New AE</p>
+                <div style="display:flex;gap:10px;align-items:flex-end">
+                  <div style="flex:1">
+                    <label class="lbl" for="admin-client-ae-picker">AE</label>
+                    <select id="admin-client-ae-picker" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
+                  </div>
+                  <div style="flex:1">
+                    <label class="lbl" for="admin-client-ae-trello-list-id">MS Farm Bureau Trello List ID</label>
+                    <input type="text" id="admin-client-ae-trello-list-id" placeholder="e.g. 66ec562e1bc7223b1df294c7" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                  </div>
+                  <button type="button" onclick="adminSaveClientAe()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+                  <button type="button" onclick="adminCancelClientAeEdit()" class="btn-quiet-green">Cancel</button>
+                </div>
+              </div>
+            </details>
 
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-              <p style="font-size:12px;font-weight:700;color:var(--text);margin:0">Counties</p>
-              <button type="button" onclick="adminNewCounty()" class="btn-quiet-green">+ Add County</button>
-            </div>
-            <div id="admin-county-table" style="margin-bottom:8px"></div>
-            <div id="admin-county-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-bottom:22px">
-              <input type="hidden" id="admin-county-original-id"/>
-              <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-county-form-title">New County</p>
-              <div style="display:flex;gap:10px;align-items:flex-end">
-                <div style="flex:1">
-                  <label class="lbl" for="admin-county-name">Name</label>
-                  <input type="text" id="admin-county-name" placeholder="e.g. Alcorn County" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
-                </div>
-                <div style="flex:1">
-                  <label class="lbl" for="admin-county-ae">AE</label>
-                  <select id="admin-county-ae" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
-                </div>
-                <button type="button" onclick="adminSaveCounty()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
-                <button type="button" onclick="adminCancelCountyEdit()" class="btn-quiet-green">Cancel</button>
+            <details style="margin-bottom:16px">
+              <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">Counties <span id="admin-county-count" style="font-weight:400;color:var(--muted)"></span></summary>
+              <div style="display:flex;justify-content:flex-end;margin:6px 0 10px">
+                <button type="button" onclick="adminNewCounty()" class="btn-quiet-green">+ Add County</button>
               </div>
-            </div>
+              <div id="admin-county-table" style="margin-bottom:8px"></div>
+              <div id="admin-county-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-bottom:8px">
+                <input type="hidden" id="admin-county-original-id"/>
+                <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-county-form-title">New County</p>
+                <div style="display:flex;gap:10px;align-items:flex-end">
+                  <div style="flex:1">
+                    <label class="lbl" for="admin-county-name">Name</label>
+                    <input type="text" id="admin-county-name" placeholder="e.g. Alcorn County" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                  </div>
+                  <div style="flex:1">
+                    <label class="lbl" for="admin-county-ae">AE</label>
+                    <select id="admin-county-ae" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
+                  </div>
+                  <button type="button" onclick="adminSaveCounty()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+                  <button type="button" onclick="adminCancelCountyEdit()" class="btn-quiet-green">Cancel</button>
+                </div>
+              </div>
+            </details>
 
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-              <p style="font-size:12px;font-weight:700;color:var(--text);margin:0">Agents</p>
-              <button type="button" onclick="adminNewAgent()" class="btn-quiet-green">+ Add Agent</button>
-            </div>
-            <div id="admin-agent-table"></div>
-            <div id="admin-agent-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-top:8px">
-              <input type="hidden" id="admin-agent-original-id"/>
-              <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-agent-form-title">New Agent</p>
-              <div style="display:flex;gap:10px;align-items:flex-end">
-                <div style="flex:1">
-                  <label class="lbl" for="admin-agent-name">Name</label>
-                  <input type="text" id="admin-agent-name" placeholder="e.g. Kevin Kendrick" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
-                </div>
-                <div style="flex:1">
-                  <label class="lbl" for="admin-agent-county">County</label>
-                  <select id="admin-agent-county" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
-                </div>
-                <button type="button" onclick="adminSaveAgent()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
-                <button type="button" onclick="adminCancelAgentEdit()" class="btn-quiet-green">Cancel</button>
+            <details>
+              <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">Agents <span id="admin-agent-count" style="font-weight:400;color:var(--muted)"></span></summary>
+              <div style="display:flex;justify-content:flex-end;margin:6px 0 10px">
+                <button type="button" onclick="adminNewAgent()" class="btn-quiet-green">+ Add Agent</button>
               </div>
-            </div>
+              <div id="admin-agent-table"></div>
+              <div id="admin-agent-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-top:8px">
+                <input type="hidden" id="admin-agent-original-id"/>
+                <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-agent-form-title">New Agent</p>
+                <div style="display:flex;gap:10px;align-items:flex-end">
+                  <div style="flex:1">
+                    <label class="lbl" for="admin-agent-name">Name</label>
+                    <input type="text" id="admin-agent-name" placeholder="e.g. Kevin Kendrick" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                  </div>
+                  <div style="flex:1">
+                    <label class="lbl" for="admin-agent-county">County</label>
+                    <select id="admin-agent-county" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"></select>
+                  </div>
+                  <button type="button" onclick="adminSaveAgent()" style="padding:9px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save</button>
+                  <button type="button" onclick="adminCancelAgentEdit()" class="btn-quiet-green">Cancel</button>
+                </div>
+              </div>
+            </details>
           </div>
 
           <!-- Client-level Custom Pricing (2026-08-20, per Claire -- MS Farm Bureau
@@ -4186,6 +4197,10 @@ async function loadClientAgentsCounties() {
 
 function renderClientAeList() {
   const el = document.getElementById('admin-client-ae-table');
+  // Visible in the collapsed <details> summary (2026-08-21) -- so there's still
+  // some orientation ("AEs (4)") without having to open the section first.
+  const countEl = document.getElementById('admin-client-ae-count');
+  if (countEl) countEl.textContent = ALL_CLIENT_AES.length ? `(${ALL_CLIENT_AES.length})` : '';
   if (!ALL_CLIENT_AES.length) {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No AEs yet — no one can submit an IO for this client until at least one is added.</p>';
     return;
@@ -4319,6 +4334,8 @@ function onMultiAgentClientChange() {
 
 function renderClientCountyList() {
   const el = document.getElementById('admin-county-table');
+  const countEl = document.getElementById('admin-county-count');
+  if (countEl) countEl.textContent = ALL_CLIENT_COUNTIES.length ? `(${ALL_CLIENT_COUNTIES.length})` : '';
   if (!ALL_CLIENT_COUNTIES.length) {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No counties yet.</p>';
     return;
@@ -4440,6 +4457,8 @@ async function adminToggleCountyActive(id, makeActive) {
 
 function renderClientAgentList() {
   const el = document.getElementById('admin-agent-table');
+  const countEl = document.getElementById('admin-agent-count');
+  if (countEl) countEl.textContent = ALL_CLIENT_AGENTS.length ? `(${ALL_CLIENT_AGENTS.length})` : '';
   if (!ALL_CLIENT_AGENTS.length) {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No agents yet.</p>';
     return;
@@ -7246,23 +7265,27 @@ async function adminSubmitCancellation(orderId, serviceId) {
 
   const o = allOrders.find(x => x.id === orderId);
   const svc = CATALOG_ROWS[serviceId] || {};
-  const workflow = svc.workflow;
-  const cardId = workflow ? o?.trello_card_ids?.[workflow] : null;
-  if (cardId) {
+  // Also comments the IO card, not just the tactic's own card (2026-08-21 --
+  // found in audit: Edit/Renew both did this already, Cancel and Swap didn't,
+  // so an AM watching the IO card for activity would see edits/renewals but
+  // silently miss a cancellation -- the more important one not to miss).
+  const ioCardId = o?.trello_card_ids?.__io_card__;
+  const tacticCardId = svc.workflow ? o?.trello_card_ids?.[svc.workflow] : null;
+  const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+  const commentText = `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`;
+  for (const cardId of cardIds) {
     try {
       const res = await fetch(PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-        body: JSON.stringify({
-          target: 'trello_add_comment', card_id: cardId,
-          text: `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`,
-        }),
+        body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
       });
-      if (!res.ok) console.warn('Could not post cancellation comment:', res.status);
+      if (!res.ok) console.warn('Could not post cancellation comment to card', cardId, ':', res.status);
     } catch (e) {
-      console.warn('Could not post cancellation comment:', e.message);
+      console.warn('Could not post cancellation comment to card', cardId, ':', e.message);
     }
-  } else {
+  }
+  if (!cardIds.length) {
     showToast('Cancelled, but no Trello card was found for this tactic — please update Trello by hand', 'error');
   }
 
@@ -7594,19 +7617,22 @@ async function adminConfirmSwap(orderId) {
   const endingSvc = CATALOG_ROWS[endingId] || {};
   const startingSvc = CATALOG_ROWS[startingId] || {};
 
-  // Comment on the ending tactic's existing card, noting it was replaced.
+  // Comment on the ending tactic's existing card, noting it was replaced --
+  // and on the IO card too (2026-08-21 -- found in audit: Edit/Renew both did
+  // this already, Cancel and Swap didn't, so an AM watching the IO card for
+  // activity would silently miss a swap).
   const endingCardId = endingSvc.workflow ? o?.trello_card_ids?.[endingSvc.workflow] : null;
-  if (endingCardId) {
+  const ioCardId = o?.trello_card_ids?.__io_card__;
+  const swapCardIds = [...new Set([endingCardId, ioCardId].filter(Boolean))];
+  const swapCommentText = `🔁 Replaced by ${startingSvc.accounting_label || startingSvc.label || startingId}, effective ${effectiveDate} (${result.ending_days} of ${result.total_days} days this month, $${Number(result.ending_amount).toLocaleString()}).`;
+  for (const cardId of swapCardIds) {
     try {
       await fetch(PROXY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-        body: JSON.stringify({
-          target: 'trello_add_comment', card_id: endingCardId,
-          text: `🔁 Replaced by ${startingSvc.accounting_label || startingSvc.label || startingId}, effective ${effectiveDate} (${result.ending_days} of ${result.total_days} days this month, $${Number(result.ending_amount).toLocaleString()}).`,
-        }),
+        body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: swapCommentText }),
       });
-    } catch (e) { console.warn('Could not post swap comment to ending card:', e.message); }
+    } catch (e) { console.warn('Could not post swap comment to card', cardId, ':', e.message); }
   }
 
   // Plain new card for the starting tactic (per Claire's scope decision --

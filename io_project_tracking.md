@@ -18000,3 +18000,83 @@ appears in "modify" mode, and clears when switching back to "as is"; the
 RPC payload carries the right order/service/date/budget; confirming
 posts the same renewal comment to both the IO card and the tactic's own
 card. `node --check` clean.
+
+## 2026-08-21 — Full-pipeline audit (IO submission → Strategist/Accounting → Trello)
+
+Claire, start of a new day after several heavy days of changes: "I want
+to do a quick audit of our changes... to make sure everything will work
+as it should." Background subagents I tried to parallelize this across
+all failed on the account's monthly API spend limit, so this was done as
+a direct manual read-through instead (noted to Claire; nothing else was
+affected).
+
+**Verified correct, no changes needed:**
+- Public form Budget Entry States: `splitAmountAcrossMonths` divides
+  proportional to real day-count with the last month absorbing rounding;
+  `setBudgetMode`/`expandCustomizeByMonth` never leave a stale
+  `monthPlan` behind when switching modes; "varies by month" only shows
+  when amounts genuinely differ (`new Set(...).size > 1`), not just
+  because a campaign spans multiple months.
+- `reapplyPricingOverrides()` correctly resets to catalog default before
+  layering group then client on top, called from every place pricing
+  could go stale (group load, dev-picker switch, every client pick).
+- Trello comment-on-every-order fires for both new and reused cards
+  (`postOrderComment` inside `finalizeTacticCard`); the `trello_card_ids`
+  PATCH only happens after all cards are resolved, not before.
+- Strategist + Accounting: every single call site of the client-override
+  rate resolvers (`effectivePlatformCpm`, `accountingEffectiveCutPct`,
+  etc.) passes `clientId`/`groupId` in the right order -- no stale
+  pre-rename call sites left over. Precedence in the actual code (not
+  just comments) is client > group > base throughout.
+- `budget_varies_by_month` guards in `strategistAddSetupMonth`/
+  `strategistComputeFillSaves`/`strategistFillMonthsToFlightEnd` really
+  do skip carry-forward in the logic itself, not just claim to in a
+  comment. Accounting's own carry-forward (`accountingMonthRowFor`) has
+  the matching guard.
+- Accounting's revenue split (`accountingSplitRevenue`) and the
+  billed-externally exclusion (`accountingSplitInvoiceable`) are both
+  correct, including the per-child (not all-or-nothing) handling for a
+  mixed rollup. Pending/Paused exclusion from stat tiles checks both
+  flags together at every summing site.
+
+**Found and fixed:** Cancel and Swap only ever commented on the tactic's
+own Trello card, not the IO card -- Edit and Renew (built slightly later
+the same day) both comment on BOTH cards. An AM watching an IO card for
+activity would see edits/renewals noted there but silently miss a
+cancellation or swap, which is arguably the more important one not to
+miss. Fixed both to match Edit/Renew's `ioCardId`/`tacticCardId` pattern
+exactly. Verified live via Playwright: both actions now post the same
+comment text to `card-io` and the tactic's own card.
+
+**Not independently verified (no direct DB access):** the actual live
+`create_campaign_lines_from_order` trigger and the various RPCs, beyond
+what's already been given to/confirmed by Claire in chat. Gave her two
+`pg_get_functiondef()` queries to pull the current live versions so they
+can be diffed against what's on file, closing that gap.
+
+**Follow-up, same day:** Claire pasted both back. `create_campaign_lines_from_order`
+diffed byte-for-byte against my last copy except for SQL comments (which
+`pg_get_functiondef()` always strips when reconstructing a definition —
+expected, not drift). All 4 Order Detail RPCs confirmed present. Also
+checked the claude-proxy edge function's last known source against every
+distinct `target` string used across all 4 portal files — all 17 Trello/
+email/upload targets are implemented, including the two newest
+(`trello_add_comment`, `trello_attach_file`). Full audit closed clean.
+
+## 2026-08-21 — MS Farm Bureau follow-ups: collapsed Agents/Counties/AE editor
+
+Claire, now that she's actually populated the roster for real: "the editor
+is really long... we should look at that format." Wrapped the AEs/
+Counties/Agents sections of the multi-agent Client editor in collapsed
+`<details>` elements, same visual language as the Custom Pricing/
+Accounting Overrides sections just below them in the same editor — each
+starts closed, with a `(count)` badge next to its title so there's still
+some orientation without opening it (e.g. "AEs (4)"). The "+ Add" button
+and table for each roster live inside its own collapsed section now,
+rather than all three rendering open simultaneously every time the panel
+shows.
+
+**Verified live** via Playwright: all three `<details>` render collapsed
+by default; each count badge reflects the real roster size and goes
+blank (matching the existing "No X yet" empty state) when a list is
+empty. `node --check` clean.
