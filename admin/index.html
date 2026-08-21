@@ -6156,8 +6156,16 @@ async function adminSaveClient() {
 // hand-typed real card almost always uses a plain hyphen -- kept in sync with the
 // identical fix in index.html's own norm(), since a mismatch here would mean the
 // audit and the real matching logic disagree about what counts as a match.
+// Also collapses every run of whitespace to a single plain space (2026-08-21, found
+// live via Visit Brookings' TruView card -- a real card and its expected name were
+// character-for-character identical as TYPED, yet still failed to match; the only
+// remaining explanation was a non-breaking space or doubled space somewhere in the
+// underlying client name, invisible in any screenshot but real in the data -- \s
+// matches those Unicode whitespace variants same as a plain space, so replacing
+// EVERY run of \s+ with one plain space before the dash/trim work below neutralizes
+// them regardless of which client or card carries the irregularity).
 function auditNorm(n) {
-  return (n || '').toLowerCase().replace(/[-–—]/g, '-').trim().replace(/[\s\-:]+$/g, '').trim();
+  return (n || '').toLowerCase().replace(/[-–—]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
 }
 function auditIsSkippableTemplateCard(name) {
   const t = auditNorm(name);

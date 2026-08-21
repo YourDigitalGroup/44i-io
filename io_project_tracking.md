@@ -18952,3 +18952,47 @@ data issue, since no code-level cause was found for that one specific
 case. Re-running the bulk audit after this fix (and especially after
 the SEO-tier uploads land) should bring the count down substantially;
 worth re-checking the new totals together once both are in.
+
+## 2026-08-21 (cont'd) — Real bug found and fixed: whitespace normalization gap
+
+Chased down two more of Claire's flagged examples: Visit Brookings'
+"YouTube Video: TruView Skippable :05 (Non-skippable) :12s-3m" card,
+confirmed active (not cancelled) and confirmed the only YouTube
+service on that client (ruling out the earlier one-template-per-
+workflow theory too). Traced the exact strings through `auditNorm()`
+by hand and in a live Node test — character-for-character, as typed,
+they matched perfectly. That only left one explanation: something
+invisible in the underlying data, not visible in any screenshot —
+almost certainly a non-breaking space or a doubled space somewhere in
+the stored client name, from however it was originally typed or
+copy-pasted into Supabase at some point.
+
+**Confirmed the gap**: `norm()`/`auditNorm()` only ever normalized
+dash characters and TRAILING whitespace — a run of whitespace
+anywhere in the MIDDLE of the string (a double space, a non-breaking
+space, a tab) was never touched. Verified with a live test: two
+strings identical except for a non-breaking space vs. a regular space
+compared as different after normalization, exactly reproducing what
+Claire was seeing.
+
+**Fixed in both places `norm()`/`auditNorm()` exist** (`index.html`'s
+real matching logic and `admin/index.html`'s audit): both now also
+`.replace(/\s+/g, ' ')` — collapsing every run of whitespace to one
+plain space — before the existing dash-canonicalization and trailing-
+strip steps. `\s` matches Unicode whitespace variants (non-breaking
+space included), so this neutralizes the irregularity regardless of
+which character it actually was or which client/card carries it.
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Ran a full regression suite: the original dash-canonicalization
+case still passes; a non-breaking-space case and a doubled-space case
+(reproducing the exact TruView symptom) now both correctly match;
+`isIoName()`'s existing behavior (including its intentional double
+duty — also matching the real "IO — BizName" card, not just the bare
+"IO"/"IO -" placeholder, confirmed unchanged before/after this fix via
+a direct comparison) is unaffected; two genuinely different tactics
+still correctly don't match. This is the third real, previously-
+unknown production risk found via this audit work today (after the
+dash-character bug and the SEO-tier-defaults-to-Pro bug) — all three
+were silent until something started actually comparing generated
+names against real ones at scale.
