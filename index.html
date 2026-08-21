@@ -5147,6 +5147,21 @@ async function submitIO() {
           return { ref: soldRows[0].trello_template_ref, type: soldRows[0].trello_template_type || 'list' };
         }
 
+        // Offline Visits Tracking card-title suffix (2026-08-21, per Claire — "if they
+        // include Offline tracking they add it to the title"): whenever a workflow's
+        // sold services include the Offline Visits Tracking modifier (the only
+        // is_cpm_adjustment modifier in the catalog today), the real Trello card gets
+        // "+ Offline Visits" appended right after the tactic name, before the business
+        // name — e.g. "Location Targeting: Geofencing + Offline Visits — Auto Service
+        // Center". The generated/expected name has to match this convention or every
+        // such tactic will look like it needs a brand-new card on next resell.
+        function offlineVisitsSuffix(originalWorkflow) {
+          const hasOfflineVisits = Object.keys(selected)
+            .map(id => CATALOG_ROWS[id])
+            .some(r => r && r.workflow === originalWorkflow && r.is_cpm_adjustment);
+          return hasOfflineVisits ? ' + Offline Visits' : '';
+        }
+
         // Lists every sold line item sharing a workflow (2026-07-13) — so a small add-on
         // (e.g. a modifier like Offline Visits Tracking) never gets missed just because it
         // only ever appeared on the IO card, not the specific tactic card someone's actually
@@ -5793,7 +5808,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           for (const [agentKey, rowsForAgent] of Object.entries(byAgent)) {
             const agentName = rowsForAgent[0].agent_name;
             const county = rowsForAgent[0].county;
-            const cn = `${county} — ${agentName} (${wf})` + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+            const cn = `${county} — ${agentName} (${wf})` + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
             const descLines = rowsForAgent.map(s => {
               const label = CATALOG_ROWS[s.service_id]?.label || s.service_id;
               return `• ${label} — $${Number(s.amount).toLocaleString()}/mo (${s.start_date || '—'} – ${s.end_date || 'Ongoing'})`;
@@ -5877,7 +5892,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             } else {
               // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
               // the business name.
-              const cn = (templateCard.name || wf).trim() + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+              const cn = (templateCard.name || wf).trim() + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
               const existing = findExistingCardByName(cn);
               if (existing && !addedCardNames.has(norm(cn))) {
                 addedCardNames.add(norm(cn));
@@ -5927,7 +5942,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
                 // Tactic — Client (2026-07-14, per Claire) — appended AFTER the filters
                 // above (which need to match the template's own plain name).
-                cn += datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+                cn += offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
 
                 const existing = findExistingCardByName(cn);
                 if (existing && !addedCardNames.has(norm(cn))) {
@@ -5957,7 +5972,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               // Template list id configured but its cards couldn't be read (e.g. the
               // list was deleted) — fall back to a plain card so submission still works
               // Tactic — Client (2026-07-14, per Claire)
-              const fallbackName = wf + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+              const fallbackName = wf + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
               const existing = findExistingCardByName(fallbackName);
               if (existing && !addedCardNames.has(norm(fallbackName))) {
                 addedCardNames.add(norm(fallbackName));
@@ -5980,7 +5995,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             // has no template content at all, it's the one place a modifier/add-on
             // riding alongside the main service could otherwise go completely unmentioned.
             // Tactic — Client (2026-07-14, per Claire)
-            const plainName = wf + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+            const plainName = wf + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
             const existing = findExistingCardByName(plainName);
             if (existing && !addedCardNames.has(norm(plainName))) {
               addedCardNames.add(norm(plainName));

@@ -18537,3 +18537,40 @@ list (including a "(no group)" entry) sorts correctly group-first then
 client-second. Re-checked all four `problems.push(...)` call sites by
 grep — all four now include `groupName`. No SQL, no other files
 changed.
+
+## 2026-08-21 — Card-title convention: "+ Offline Visits" appended when that modifier is sold
+
+Claire flagged a real audit case (Auto Service Center, "Location
+Targeting: Geofencing") the same way as the earlier dash bug: the real
+Trello card is named "Location Targeting: Geofencing + Offline Visits -
+Auto Service Center", but the system's generated/expected name doesn't
+account for the "+ Offline Visits" piece. Her rule, stated directly:
+"If they include Offline tracking they add it to the title." Confirmed
+with her the suffix is always exactly "+ Offline Visits" (no wording
+variation), and that this should be fixed in the real card-creation/
+matching logic, not just the audit tool — otherwise every tactic sold
+together with Offline Visits Tracking would look like it needs a brand
+new card on its next resell.
+
+**Fixed in both `index.html` and `admin/index.html`.** Added
+`offlineVisitsSuffix(originalWorkflow)` in `index.html` (checks whether
+any SOLD service sharing that workflow has `is_cpm_adjustment` true —
+today that's exclusively the Offline Visits Tracking modifier) and the
+matching `auditOfflineVisitsSuffix(lines)` in `admin/index.html` (same
+check, against a client's active `campaign_lines`). Both return
+`' + Offline Visits'` or `''`, inserted right after the tactic name and
+before the dated-card suffix and the `— Business Name` piece, at every
+place a tactic card name gets built: the single-card template path, the
+whole-list template path, the plain-fallback path, the
+template-list-unreadable fallback path, and the MS Farm Bureau
+agent-split card path (`index.html`) — and both expected-name sites in
+the per-client and bulk audit tools (`admin/index.html`).
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Ran the suffix logic against Claire's exact real-world case —
+generated name comes out
+"Location Targeting: Geofencing + Offline Visits — Auto Service Center",
+which normalizes (via the existing dash-canonicalization fix) to match
+her real, hyphen-typed card exactly. Confirmed a workflow WITHOUT the
+modifier gets no suffix (no false positives introduced). No SQL, no
+schema change — `is_cpm_adjustment` already existed on `services`.
