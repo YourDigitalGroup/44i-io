@@ -18080,3 +18080,49 @@ shows.
 by default; each count badge reflects the real roster size and goes
 blank (matching the existing "No X yet" empty state) when a list is
 empty. `node --check` clean.
+
+## 2026-08-21 — Fixed a latent bug: one AE with two Trello Lists would have silently mis-routed cards
+
+Claire: "I have 1 AE that has 2 separate Trello Lists, how should we
+handle that?" — same AE, covering 2 different counties. The data model
+already supported this (a county links to a specific `client_aes` row,
+not to a plain AE id — Counties belong to one AE+list PAIRING, not just
+one AE), but the actual list-resolution code didn't use that: it matched
+purely by `ae_id`, so an AE with 2 `client_aes` rows would have
+deterministically always resolved to whichever one loaded first —
+**every submission from that AE, regardless of which county was
+actually picked, would have silently routed to the same one Trello
+list.** This had never come up before today because every AE so far had
+exactly one list. Confirmed with Claire first: an IO submission is
+always for exactly one county, which is what makes the fix work cleanly.
+
+**Fix (`index.html`):** `submittingClientAeRow()` → `submittingClientAeRows()`
+(plural). `submittingAeTrelloListId()` now resolves via the ACTUAL county
+picked in the Agent/County Split when the AE has more than one
+registered list (unaffected, same as before, when they only have one).
+`countiesForSubmittingAe()` now unions counties across ALL of the AE's
+`client_aes` rows, not just whichever one happened to match first — an
+AE with 2 lists needs BOTH counties showing in the picker, not just one.
+New `aeRegisteredForThisClient()` for the Step 1 gate, which only needs
+to know the AE is registered at all — the SPECIFIC list can't be known
+yet at Step 1, before Step 2's county picker is filled in. The
+submission-time gate still uses `submittingAeTrelloListId()` and now
+gives a different message for "not registered at all" vs. "registered,
+but this specific county isn't tied to one of your lists yet" — a
+brand-new, not-yet-added county is genuinely ambiguous when an AE has 2+
+lists (there's no way to know which list it belongs to), so it's
+blocked rather than guessed, same "blocked, not defaulted" rule as an
+unregistered AE.
+
+**Verified live** via Playwright: an AE with 2 registered lists sees
+both counties in the picker; picking each county resolves to that
+county's own distinct list (not stuck on the first match); no county
+picked yet correctly returns no list (Step 1 timing); a brand-new
+unregistered county with 2 lists on file correctly blocks; a normal
+single-list AE is completely unaffected either way. `node --check`
+clean.
+
+**How to actually set this AE up with their 2nd list, in Admin:** add
+the same AE a second time in the client's AEs section (now collapsed,
+see the section above) with the second Trello List ID, then assign each
+county to whichever of the two AE entries it belongs to.
