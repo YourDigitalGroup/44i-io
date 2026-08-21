@@ -485,13 +485,22 @@
                  <details> language as Custom Pricing/Accounting Overrides below the Save
                  Client button, so a long roster no longer means scrolling past all three
                  every time this panel opens. -->
+            <!-- Header/filter bar + create form ABOVE the table (2026-08-21, per Claire:
+                 "make it more like the services editor" + "add AE/County/Agent... at the
+                 top of the section so you don't have to scroll") -- same boxed-filter-bar
+                 look (#F8FAFC background, border, grid layout) as the Services tab's own
+                 filter row, and the same "form sits above its own list" placement the
+                 Services tab already uses for New/Edit Service. -->
             <details style="margin-bottom:16px">
               <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">AEs <span id="admin-client-ae-count" style="font-weight:400;color:var(--muted)"></span></summary>
-              <div style="display:flex;justify-content:flex-end;margin:6px 0 10px">
-                <button type="button" onclick="adminNewClientAe()" class="btn-quiet-green">+ Add AE</button>
+              <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:flex-end;margin:6px 0 10px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                <div>
+                  <label class="lbl" for="admin-client-ae-search">Search</label>
+                  <input type="text" id="admin-client-ae-search" placeholder="AE name…" oninput="renderClientAeList()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+                </div>
+                <button type="button" onclick="adminNewClientAe()" class="btn-quiet-green" style="white-space:nowrap">+ Add AE</button>
               </div>
-              <div id="admin-client-ae-table" style="margin-bottom:8px"></div>
-              <div id="admin-client-ae-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-bottom:8px">
+              <div id="admin-client-ae-form" style="display:none;background:var(--card);border-radius:10px;box-shadow:var(--shadow);padding:14px;margin-bottom:12px">
                 <input type="hidden" id="admin-client-ae-original-id"/>
                 <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-client-ae-form-title">New AE</p>
                 <div style="display:flex;gap:10px;align-items:flex-end">
@@ -517,15 +526,19 @@
                   <input type="text" id="admin-client-ae-label" placeholder="e.g. Alcorn/Lee list" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
                 </div>
               </div>
+              <div id="admin-client-ae-table"></div>
             </details>
 
             <details style="margin-bottom:16px">
               <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">Counties <span id="admin-county-count" style="font-weight:400;color:var(--muted)"></span></summary>
-              <div style="display:flex;justify-content:flex-end;margin:6px 0 10px">
-                <button type="button" onclick="adminNewCounty()" class="btn-quiet-green">+ Add County</button>
+              <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:flex-end;margin:6px 0 10px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                <div>
+                  <label class="lbl" for="admin-county-search">Search</label>
+                  <input type="text" id="admin-county-search" placeholder="County name…" oninput="renderClientCountyList()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+                </div>
+                <button type="button" onclick="adminNewCounty()" class="btn-quiet-green" style="white-space:nowrap">+ Add County</button>
               </div>
-              <div id="admin-county-table" style="margin-bottom:8px"></div>
-              <div id="admin-county-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-bottom:8px">
+              <div id="admin-county-form" style="display:none;background:var(--card);border-radius:10px;box-shadow:var(--shadow);padding:14px;margin-bottom:12px">
                 <input type="hidden" id="admin-county-original-id"/>
                 <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-county-form-title">New County</p>
                 <div style="display:flex;gap:10px;align-items:flex-end">
@@ -541,15 +554,19 @@
                   <button type="button" onclick="adminCancelCountyEdit()" class="btn-quiet-green">Cancel</button>
                 </div>
               </div>
+              <div id="admin-county-table"></div>
             </details>
 
             <details>
               <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);padding:6px 0;display:flex;align-items:center;gap:8px">Agents <span id="admin-agent-count" style="font-weight:400;color:var(--muted)"></span></summary>
-              <div style="display:flex;justify-content:flex-end;margin:6px 0 10px">
-                <button type="button" onclick="adminNewAgent()" class="btn-quiet-green">+ Add Agent</button>
+              <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:flex-end;margin:6px 0 10px;padding:12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                <div>
+                  <label class="lbl" for="admin-agent-search">Search</label>
+                  <input type="text" id="admin-agent-search" placeholder="Agent name…" oninput="renderClientAgentList()" style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+                </div>
+                <button type="button" onclick="adminNewAgent()" class="btn-quiet-green" style="white-space:nowrap">+ Add Agent</button>
               </div>
-              <div id="admin-agent-table"></div>
-              <div id="admin-agent-form" style="display:none;background:#fff;border-radius:10px;padding:14px;margin-top:8px">
+              <div id="admin-agent-form" style="display:none;background:var(--card);border-radius:10px;box-shadow:var(--shadow);padding:14px;margin-bottom:12px">
                 <input type="hidden" id="admin-agent-original-id"/>
                 <p style="font-size:12px;font-weight:700;margin-bottom:10px" id="admin-agent-form-title">New Agent</p>
                 <div style="display:flex;gap:10px;align-items:flex-end">
@@ -565,6 +582,7 @@
                   <button type="button" onclick="adminCancelAgentEdit()" class="btn-quiet-green">Cancel</button>
                 </div>
               </div>
+              <div id="admin-agent-table"></div>
             </details>
           </div>
 
@@ -4208,11 +4226,23 @@ async function loadClientAgentsCounties() {
 function renderClientAeList() {
   const el = document.getElementById('admin-client-ae-table');
   // Visible in the collapsed <details> summary (2026-08-21) -- so there's still
-  // some orientation ("AEs (4)") without having to open the section first.
+  // some orientation ("AEs (4)") without having to open the section first. The
+  // count badge always reflects the FULL roster, not the search-filtered view.
   const countEl = document.getElementById('admin-client-ae-count');
   if (countEl) countEl.textContent = ALL_CLIENT_AES.length ? `(${ALL_CLIENT_AES.length})` : '';
   if (!ALL_CLIENT_AES.length) {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No AEs yet — no one can submit an IO for this client until at least one is added.</p>';
+    return;
+  }
+  // Search (2026-08-21, per Claire: "make it more like the services editor") --
+  // same live-filter-as-you-type pattern the Services tab's own search uses,
+  // now that a real roster can run into the dozens/hundreds of rows.
+  const search = (document.getElementById('admin-client-ae-search')?.value || '').toLowerCase().trim();
+  const rows = search
+    ? ALL_CLIENT_AES.filter(ca => (ALL_AES.find(a => a.id === ca.ae_id)?.name || '').toLowerCase().includes(search) || (ca.label || '').toLowerCase().includes(search))
+    : ALL_CLIENT_AES;
+  if (!rows.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No AEs match this search.</p>';
     return;
   }
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
@@ -4221,7 +4251,7 @@ function renderClientAeList() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello List</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
-  ALL_CLIENT_AES.forEach(ca => {
+  rows.forEach(ca => {
     const inactive = !ca.active;
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const aeNameRaw = ALL_AES.find(a => a.id === ca.ae_id)?.name || null;
@@ -4367,17 +4397,28 @@ function renderClientCountyList() {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No counties yet.</p>';
     return;
   }
+  const search = (document.getElementById('admin-county-search')?.value || '').toLowerCase().trim();
+  const rows = search ? ALL_CLIENT_COUNTIES.filter(c => (c.name || '').toLowerCase().includes(search)) : ALL_CLIENT_COUNTIES;
+  if (!rows.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No counties match this search.</p>';
+    return;
+  }
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">AE</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
-  ALL_CLIENT_COUNTIES.forEach(c => {
+  rows.forEach(c => {
     const inactive = !c.active;
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const clientAe = ALL_CLIENT_AES.find(ca => ca.id === c.client_ae_id);
-    const aeName = clientAe ? (ALL_AES.find(a => a.id === clientAe.ae_id)?.name || '(unknown AE)') : '<span style="color:var(--muted)">—</span>';
+    const aeNamePlain = clientAe ? (ALL_AES.find(a => a.id === clientAe.ae_id)?.name || '(unknown AE)') : null;
+    // Label shown alongside the AE name here too (2026-08-21) -- this is exactly
+    // where knowing WHICH of an AE's 2+ entries a county belongs to matters most.
+    const aeName = aeNamePlain
+      ? esc(aeNamePlain) + (clientAe?.label ? ` <span style="color:var(--muted);font-weight:400">— ${esc(clientAe.label)}</span>` : '')
+      : '<span style="color:var(--muted)">—</span>';
     html += `<tr style="border-bottom:1px solid var(--border);${inactive ? 'background:#FAFAFA' : ''}">
       <td style="padding:8px 10px">${esc(c.name)}${inactiveBadge}</td>
       <td style="padding:8px 10px">${aeName}</td>
@@ -4495,13 +4536,19 @@ function renderClientAgentList() {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No agents yet.</p>';
     return;
   }
+  const search = (document.getElementById('admin-agent-search')?.value || '').toLowerCase().trim();
+  const rows = search ? ALL_CLIENT_AGENTS.filter(a => (a.name || '').toLowerCase().includes(search)) : ALL_CLIENT_AGENTS;
+  if (!rows.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:16px">No agents match this search.</p>';
+    return;
+  }
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Name</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">County</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
-  ALL_CLIENT_AGENTS.forEach(a => {
+  rows.forEach(a => {
     const inactive = !a.active;
     const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
     const countyName = ALL_CLIENT_COUNTIES.find(c => c.id === a.county_id)?.name || '<span style="color:var(--muted)">—</span>';

@@ -18184,3 +18184,34 @@ per-client, correctly). `admin_save_client_ae` extended to persist it.
 again and shows the "already added 2x" hint; the AE table shows both
 entries with their own labels; the County form's AE dropdown shows two
 genuinely distinguishable options for the same AE. `node --check` clean.
+
+## 2026-08-21 — AE/County/Agent editor: search + form-at-top, matching the Services tab
+
+Claire, having now populated the real roster (16 AEs, 62 counties, 142
+agents): "a few small design edits... it looks a little analog right
+now, can we make it more like the services editor?" plus "can we make
+the add AE/County/Agent editor at the top of the section so you don't
+have to scroll?"
+
+**Form now renders ABOVE its table, not below** — the create/edit form
+used to sit after the (potentially 142-row) table in the DOM, so opening
+it via "+ Add" meant scrolling down past the whole list to actually see
+it. Now placed right after each section's header bar, same as the
+Services tab's own New/Edit Service form placement.
+
+**Added a live search box to each of the three lists** — same
+filter-as-you-type pattern as the Services tab's own Search field, in
+the same boxed `#F8FAFC` filter-bar container (background/border/
+border-radius) her screenshot showed missing. The `(count)` badge in
+each collapsed section's title always reflects the FULL roster, not the
+filtered view, so it stays a true "how many total" indicator.
+
+**Counties table also shows each AE's label now**, not just the plain
+name — the exact place knowing which of an AE's 2+ entries a county
+belongs to matters most, same reasoning as the County form's AE dropdown
+fixed in the entry right before this one.
+
+**Verified live** via Playwright: the AE form element now sits before
+the table element in DOM order; searching each of the three boxes
+filters correctly to just the matching row(s); the Counties table shows
+an AE's label alongside its name. `node --check` clean.
