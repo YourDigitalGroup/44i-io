@@ -18307,3 +18307,31 @@ fixture (one spend tactic + Offline Visits Tracking): both the group-
 level and client-level override tables now show
 `"LLO (SEO) (w/ Offline Visits Tracking)"` instead of the bare
 `"Offline Visits Tracking"`. `node --check` clean.
+
+## 2026-08-21 — Accidental Trello board import cleanup + Import Clients checkboxes now default unchecked
+
+Claire: "I accidentally added a bunch of trello boards by accident."
+Turned out to be 11 client records created via the "Import Clients from
+Trello" tool, all created within the same second, all under the "44i"
+group (an internal board, not a real client group) — names like "44i
+Recommendations," "General Questions," "Client Website Requests,"
+"ABC Company - David Test" confirmed these were internal/template lists,
+not real clients. Checked for real data (campaign_lines/orders, all 0)
+and child rows (counties/agents/client_aes, all 0) before deleting;
+Claire confirmed the full list, then ran the delete.
+
+**Root cause, and the actual fix requested:** the import tool's scan
+results start every checkbox CHECKED by default — "select everything,
+then uncheck what isn't a client." That default made sense for the
+original one-time bulk import of a whole real client board, but Claire
+explained she's now past that: "since I have gone through and imported
+the first large import... now it is just one offs... can we update that
+feature to start with everything unchecked." Flipped the default in
+`scanClientImportCandidates()` — every candidate now starts unchecked,
+and the helper text changed from "uncheck anything that isn't a client"
+to "check the ones you actually want to import." Directly prevents a
+repeat of today's accidental batch, now that this tool is for occasional
+one-offs rather than big board imports.
+
+**Verified live** via Playwright: scanning a board's lists now renders
+every checkbox unchecked. `node --check` clean.
