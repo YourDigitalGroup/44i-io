@@ -5186,11 +5186,24 @@ async function submitIO() {
         // Returns the original fallback name unchanged when no variant was picked, so a
         // service with tactic_variants configured but left blank behaves exactly as it
         // did before this existed.
+        // Whether a stored variant string is ALREADY a complete display title -- not just
+        // "contains a colon" (2026-08-21, widened per Claire: "Addressable: Curated"
+        // should read "Location Targeting - Curated Addressable" instead, which has no
+        // colon at all). A colon still counts (e.g. "Addressable: 1st Party", "Targeted
+        // Display: AdRT" -- these belong to a DIFFERENT real-world category than the
+        // section selling them, so the colon-punctuated prefix has to stay exactly as
+        // typed). Also now counts a variant that already STARTS WITH any real section's
+        // own display name, however it's punctuated -- covers "Location Targeting - ..."
+        // without reintroducing a double prefix.
+        function variantIsAlreadyComplete(variant) {
+          if (variant.includes(':')) return true;
+          return SECTIONS.some(s => s.label && variant.toLowerCase().startsWith(s.label.toLowerCase()));
+        }
         function resolveTacticVariantName(originalWorkflow, fallbackName) {
           const li = lineItems.find(li => li.workflow === originalWorkflow && li.tactic_variant);
           if (!li) return fallbackName;
           const variant = li.tactic_variant;
-          if (variant.includes(':')) return variant;
+          if (variantIsAlreadyComplete(variant)) return variant;
           const sectionLabel = SECTIONS.find(s => s.id === CATALOG_ROWS[li.service_id]?.section)?.label;
           return sectionLabel ? `${sectionLabel}: ${variant}` : variant;
         }

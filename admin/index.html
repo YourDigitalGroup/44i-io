@@ -6243,9 +6243,18 @@ function auditOfflineVisitsSuffix(lines) {
 // the only place that pick has ever been recorded is campaign_lines.tactic_label (set
 // later by the Strategist in Campaign Setup) — so the audit checks tactic_label against
 // the service's own tactic_variants list rather than a field it doesn't have yet.
-// Same colon-detection rule as index.html: an already-fully-qualified variant (e.g.
-// "Targeted Display: AdRT") is used as-is; a bare one (e.g. "Geofencing") gets the
-// selling service's own SECTION display name prepended.
+// Same "already complete" rule as index.html's own variantIsAlreadyComplete(): a
+// colon still counts (e.g. "Targeted Display: AdRT", "Addressable: 1st Party" --
+// belong to a genuinely different real-world category than the section selling
+// them), WIDENED (2026-08-21, per Claire -- "Addressable: Curated" changing to
+// "Location Targeting - Curated Addressable", no colon at all) to also count a
+// variant that already STARTS WITH any real section's own display name, however
+// it's punctuated. A bare variant (e.g. "Geofencing") still gets the selling
+// service's own SECTION display name prepended.
+function auditVariantIsAlreadyComplete(variant) {
+  if (variant.includes(':')) return true;
+  return SECTIONS.some(s => s.label && variant.toLowerCase().startsWith(s.label.toLowerCase()));
+}
 function auditTacticVariantName(lines, fallbackName) {
   const li = lines.find(li => {
     const variants = CATALOG_ROWS[li.service_id]?.tactic_variants;
@@ -6253,7 +6262,7 @@ function auditTacticVariantName(lines, fallbackName) {
   });
   if (!li) return fallbackName;
   const variant = li.tactic_label;
-  if (variant.includes(':')) return variant;
+  if (auditVariantIsAlreadyComplete(variant)) return variant;
   const secLabel = sectionLabel(CATALOG_ROWS[li.service_id]?.section);
   return secLabel && secLabel !== CATALOG_ROWS[li.service_id]?.section ? `${secLabel}: ${variant}` : variant;
 }
@@ -6274,7 +6283,7 @@ function auditAcceptablePlainNames(lines, fallbackName) {
     const svc = CATALOG_ROWS[li.service_id];
     if (!Array.isArray(svc?.tactic_variants)) return;
     svc.tactic_variants.forEach(v => {
-      if (v.includes(':')) { names.add(v); return; }
+      if (auditVariantIsAlreadyComplete(v)) { names.add(v); return; }
       const secLabel = sectionLabel(svc.section);
       names.add(secLabel && secLabel !== svc.section ? `${secLabel}: ${v}` : v);
     });
@@ -6373,7 +6382,7 @@ async function auditBuildMasterBaseNames(templateCache) {
       g.rows.forEach(r => {
         if (!Array.isArray(r.tactic_variants)) return;
         r.tactic_variants.forEach(v => {
-          if (v.includes(':')) { set.add(v); return; }
+          if (auditVariantIsAlreadyComplete(v)) { set.add(v); return; }
           const secLabel = sectionLabel(r.section);
           set.add(secLabel && secLabel !== r.section ? `${secLabel}: ${v}` : v);
         });

@@ -19254,3 +19254,61 @@ one group, the first agent correctly matches the pre-existing line
 (re-import updates rather than duplicates), and the second (genuinely
 new) agent correctly gets no existing-line match. No SQL — front-end
 only, `strategist/index.html`.
+
+## 2026-08-21 (cont'd) — Two campaign lines found pointing to the wrong service entirely
+
+While reviewing flagged audit rows, Claire caught two Visit Brookings
+Campaign Setup lines that were tracked under the wrong catalog service
+from the start — not a naming-convention bug, a genuine data-entry
+mistake:
+
+- **YouTube Video**: tracked as `yt-out` (Outstream on Google Network)
+  but should have been `yt-skip` (TruView Skippable). This is very
+  likely the REAL root cause behind the "TruView" audit mismatch
+  investigated earlier today — the audit was correctly comparing
+  against Outstream's template (since that's what the line pointed
+  to), which could never match a real card titled for TruView. The
+  earlier dash-widening fix was still a real, separate bug, just not
+  the actual explanation for this specific case.
+- **Targeted Display**: tracked correctly under `td-geo` (Geotargeting
+  & Audience), but with a stale/mismatched `tactic_label` ("Targeted
+  Display: Audience") — no service change needed there, just a label
+  correction.
+
+**Fixed via direct SQL** (both confirmed pricing_mode/billing_type
+compatible before applying): the YouTube Video line's `service_id` and
+`tactic_label` corrected via `UPDATE campaign_lines` on the one
+existing row (no new line created, unlike `admin_swap_tactic`'s
+proration-based flow, which is for a genuine mid-flight billing
+transition, not a same-tactic-the-whole-time misrecording); the
+Targeted Display line's `tactic_label` corrected the same way, service
+untouched. Both run by Claire.
+
+## 2026-08-21 (cont'd) — Widened the "variant already complete" rule beyond colon-detection
+
+Claire, reviewing `lt-crm`'s "Addressable: Curated" variant, decided
+on a new preferred format: "Location Targeting - Curated Addressable"
+(a hyphen, no colon at all). The existing rule in `resolveTacticVariantName()`/
+`auditTacticVariantName()`/`auditAcceptablePlainNames()`/
+`auditBuildMasterBaseNames()` decided whether a variant was "already a
+complete title" (skip prepending the section name) purely by checking
+for a colon character — this new format has none, which would have
+caused a double prefix ("Location Targeting: Location Targeting -
+Curated Addressable").
+
+**Fixed**: new `variantIsAlreadyComplete()` (index.html) /
+`auditVariantIsAlreadyComplete()` (admin/index.html) — a variant now
+counts as already-complete if it contains a colon (the existing rule,
+still needed for "Addressable: 1st Party"/"Targeted Display: AdRT" —
+these genuinely belong to a different real-world category than the
+section selling them) OR if it already starts with any real section's
+own display name, however it's punctuated. Replaces the 4 inline
+`.includes(':')` checks across both files (kept in sync, as always).
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Ran all 7 existing real variants through the widened rule —
+every one still resolves exactly as before — plus the new hyphenated
+format, which now correctly passes through unprefixed instead of
+double-prefixing. No SQL yet for this one — Claire is still deciding
+the exact wording for the other 5 variants before a bulk `tactic_
+variants` update goes out.
