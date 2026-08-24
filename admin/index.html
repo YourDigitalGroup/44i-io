@@ -6163,9 +6163,15 @@ async function adminSaveClient() {
 // underlying client name, invisible in any screenshot but real in the data -- \s
 // matches those Unicode whitespace variants same as a plain space, so replacing
 // EVERY run of \s+ with one plain space before the dash/trim work below neutralizes
-// them regardless of which client or card carries the irregularity).
+// them regardless of which client or card carries the irregularity). WIDENED (same
+// day, found live via "Targeted Landing Pages (1-5)" failing to match despite looking
+// character-identical) from just hyphen/en-dash/em-dash to every common Unicode
+// dash-like character, including U+2011 NON-BREAKING HYPHEN -- exactly the kind of
+// character some editors silently substitute into a compact number range like "(1-5)"
+// to stop it wrapping across a line, invisible in any UI but a different code point
+// than a plain hyphen. Kept in sync with the identical widened set in index.html.
 function auditNorm(n) {
-  return (n || '').toLowerCase().replace(/[-–—]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
+  return (n || '').toLowerCase().replace(/[-‐‑‒–—―−]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
 }
 function auditIsSkippableTemplateCard(name) {
   const t = auditNorm(name);

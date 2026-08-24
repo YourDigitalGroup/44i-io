@@ -5546,17 +5546,23 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         });
         const existingCards = await existingCardsRes.json();
 
-        // Normalize card names for comparison: lowercase, canonicalize every dash variant
-        // (hyphen/en-dash/em-dash) to a plain hyphen EVERYWHERE in the string (not just at
-        // the end), collapse every run of whitespace to a single plain space, trim, strip
+        // Normalize card names for comparison: lowercase, canonicalize every dash-like
+        // Unicode variant to a plain hyphen EVERYWHERE in the string (not just at the
+        // end), collapse every run of whitespace to a single plain space, trim, strip
         // trailing dashes/colons/whitespace. The dash canonicalization (2026-08-21, found
         // live — Claire: "3B Outdoor Equipment has a card that says 'Search Engine
         // Marketing - 3B Outdoor Equipment' but it came back that it would create a new
         // card") fixes a real bug: every generated card name uses an em dash
         // ("Tactic — Business Name"), but a hand-typed real card almost always uses a plain
         // hyphen -- these used to compare as different strings and would have silently
-        // created a duplicate card on that client's next resell. The whitespace collapse
-        // (2026-08-21, found live via the Trello audit — a real card and its expected name
+        // created a duplicate card on that client's next resell. WIDENED (same day, found
+        // live via "Targeted Landing Pages (1-5)" failing to match despite looking
+        // character-identical in every screenshot) from just hyphen/en-dash/em-dash to
+        // every common Unicode dash-like character, including U+2011 NON-BREAKING HYPHEN --
+        // exactly the kind of character some editors silently substitute into a compact
+        // number range like "(1-5)" to stop it wrapping across a line break, invisible in
+        // any UI but a different code point than a plain hyphen. The whitespace collapse
+        // (same day, same root cause as the dash issue — a real card and its expected name
         // were character-for-character identical AS TYPED, yet still failed to match; the
         // only remaining explanation was a non-breaking space or doubled space somewhere in
         // the underlying client name, invisible in any screenshot but real in the data) —
@@ -5564,7 +5570,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // every run of \s+ with one plain space neutralizes them regardless of which client
         // carries the irregularity. The trailing-strip below still catches template
         // placeholders like "IO -", "Website Monthly Package: 5-page Custom -".
-        const norm = n => (n || '').toLowerCase().replace(/[-–—]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
+        const norm = n => (n || '').toLowerCase().replace(/[-‐‑‒–—―−]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
         // Matches a bare "IO" placeholder (used to skip template placeholder cards, which
         // are never renamed) AND, since the real IO card is now named "IO — <bizName>"
         // (2026-07-17, per Claire), also matches that pattern so a returning client's
