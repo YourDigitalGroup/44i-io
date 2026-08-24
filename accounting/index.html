@@ -355,8 +355,13 @@ function accountingFormatFlightDate(dateStr) {
 // one client record underneath now. Own copy of strategist/index.html's
 // identical helper, per this project's "each portal keeps its own copy"
 // convention.
+// display_group_label (2026-08-21, per Claire -- MS Farm Bureau's agent clients
+// sit under the real group "STMM Digital", but the composed name needs to read
+// "MS Farm Bureau" instead) -- a per-CLIENT override, separate from the real
+// group_name every other filter/lookup still uses unchanged. Falls back to the
+// real group name when unset, same as strategist/index.html's own copy.
 function accountingDisplayClientName(line) {
-  if (line.agent_name && line.county) return `${line.group_name || ''}: ${line.agent_name} (${line.county} County)`;
+  if (line.agent_name && line.county) return `${line.display_group_label || line.group_name || ''}: ${line.agent_name} (${line.county} County)`;
   return line.client_name || '(unknown)';
 }
 
