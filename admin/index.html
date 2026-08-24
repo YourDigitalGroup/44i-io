@@ -6223,15 +6223,19 @@ function auditIsKnownNonTacticCard(cardName, bizName, markerNames) {
   if (/\bdates\b/i.test(cardName) || /\bquestions\b/i.test(cardName)) return true;
   return markerNames.some(n => n && auditNorm(cardName) === auditNorm(n));
 }
-// Offline Visits Tracking card-title suffix (2026-08-21, per Claire — "if they include
-// Offline tracking they add it to the title"): kept in sync with index.html's own
-// offlineVisitsSuffix() — whenever a workflow's active campaign lines include the
-// Offline Visits Tracking modifier (the only is_cpm_adjustment modifier in the catalog
-// today), the real card gets "+ Offline Visits" appended before the business name, so
-// the audit's expected name has to include it too or every such tactic reads as a
-// false mismatch.
+// Offline Visits Tracking card-title suffix. FIXED (2026-08-21, found live via ABRA
+// Auto Body of Brookings): originally checked whether any SIBLING line in the same
+// workflow group was itself the is_cpm_adjustment modifier row — but the modifier
+// never gets its own campaign_lines row at all (it's $0-billed; the trigger
+// [create_campaign_lines_from_order()] instead sets a `has_offline_visits` BOOLEAN
+// directly on the TACTIC's own line, via an accounting_map pairing lookup). That
+// sibling row this was searching for essentially never exists, so this almost never
+// fired even when the modifier genuinely WAS sold. Confirmed live: ABRA's real
+// campaign_lines row has has_offline_visits = true, but is_cpm_adjustment = false
+// (correctly, since lt-geo IS the tactic, not the modifier) — so the old check could
+// never have found it. Now reads the flag directly off the tactic's own row instead.
 function auditOfflineVisitsSuffix(lines) {
-  return lines.some(li => CATALOG_ROWS[li.service_id]?.is_cpm_adjustment) ? ' + Offline Visits' : '';
+  return lines.some(li => li.has_offline_visits) ? ' + Offline Visits' : '';
 }
 // "Which one is it?" variant name for the audit's expected card name (2026-08-21) —
 // kept in sync with index.html's own resolveTacticVariantName(). The IO form now lets
@@ -6276,6 +6280,23 @@ function auditAcceptablePlainNames(lines, fallbackName) {
     });
   });
   return [...names];
+}
+// Builds every "{plain name}{ — bizName}" combination worth checking, for BOTH with
+// and without "+ Offline Visits" (2026-08-21, found live — ABRA Auto Body of
+// Brookings' real card correctly has "+ Offline Visits," but the "missing card"
+// message displayed the expected name WITHOUT it and still flagged the correctly-
+// named real card as missing). `offlineSuffix` (from auditOfflineVisitsSuffix(lines))
+// can only ever CONFIRM the modifier is sold when it's already recorded in tracked
+// campaign_lines — for the ~90% of clients not yet migrated into this system, that
+// modifier may be genuinely sold but simply invisible to this check, the exact same
+// class of gap as auditAcceptablePlainNames() already fixed for variants. Rather than
+// require confirmation before accepting the suffixed form, this tries both forms
+// every time — the confirmed form (if any) stays first, purely so the displayed
+// "expected" guess stays as accurate as possible when tracking DOES already know.
+function auditNamesToCheck(plainNames, offlineSuffix, bizName) {
+  return plainNames.flatMap(p => offlineSuffix
+    ? [`${p}${offlineSuffix} — ${bizName}`, `${p} — ${bizName}`]
+    : [`${p} — ${bizName}`, `${p} + Offline Visits — ${bizName}`]);
 }
 // Resolves a workflow's template to the plain tactic name(s) a real client card should
 // carry (before the " — Business Name" suffix, which is client-specific and added by the
@@ -6505,7 +6526,7 @@ async function adminAuditClientTrelloCards() {
       // Accepts a match on ANY of this template's known variants, not just the one
       // confirmed pick (if tactic_label records one) or the generic combined label —
       // see auditAcceptablePlainNames()'s own comment for why.
-      const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${bizName}`);
+      const acceptable = auditNamesToCheck(auditAcceptablePlainNames(lines, n), offlineSuffix, bizName);
       const expected = acceptable[0]; // best guess, for display only
       const actual = acceptable.map(findActual).find(Boolean);
       rows.push({ workflow: wf, expected, actual });
@@ -6655,7 +6676,7 @@ async function adminAuditAllClientsTrelloCards() {
             // found live: real cards already manually renamed to a specific variant,
             // with no recorded tactic_label pick, were showing as BOTH missing and
             // unrecognized) — see auditAcceptablePlainNames()'s own comment.
-            const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${client.name}`);
+            const acceptable = auditNamesToCheck(auditAcceptablePlainNames(lines, n), offlineSuffix, client.name);
             const expected = acceptable[0]; // best guess, for display only
             if (!acceptable.some(findActual)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
           });

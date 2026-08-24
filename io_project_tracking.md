@@ -19110,3 +19110,105 @@ useful side-effect of the redesign: it now separates "untracked but
 correctly named" (no longer noise) from "actually wrong" (still
 flagged) far more precisely than the previous per-client-only check
 could.
+
+## 2026-08-21 (cont'd) — Real bug: "missing card" check couldn't confirm Offline Visits Tracking either
+
+Claire: "We lost the + Offline Visits in the Audit" — ABRA Auto Body
+of Brookings' real, correctly-named card ("Location Targeting:
+Geofencing + Offline Visits") was flagged as missing, with the
+displayed "Expects..." name missing the suffix entirely. Confirmed
+this client's Offline Visits Tracking IS actually tracked in the
+system (visible in the Strategist Portal) — so this isn't the same
+"not migrated yet" gap as the SEO-tier/Blue-Dolphin cases; something
+about how `auditOfflineVisitsSuffix(lines)` groups/detects the
+modifier for this client specifically isn't working (worth a deeper
+look separately, e.g. a workflow-string mismatch splitting the
+Geofencing and Offline Visits Tracking lines into different `byWorkflow`
+groups) — but regardless of that root cause, the fix is the same shape
+as the earlier variant-flexibility fix: don't require CONFIRMATION
+before accepting a name as valid.
+
+**Fixed**: new `auditNamesToCheck(plainNames, offlineSuffix, bizName)`
+in `admin/index.html` builds BOTH the with-suffix and without-suffix
+version of every acceptable name and checks either as a valid match,
+instead of only trying whichever ONE `auditOfflineVisitsSuffix()`
+could confirm from tracked lines. The confirmed form (when one exists)
+stays listed first, so the displayed "Expects..." guess stays as
+accurate as possible when tracking already knows the real answer;
+when it doesn't know, both forms are tried before flagging anything.
+Wired into both the per-client and bulk audit's mismatch-checking,
+replacing the old `.map(p => `${p}${offlineSuffix} — ${bizName}`)`
+one-name-only construction at both sites.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Reproduced the exact ABRA scenario (offlineSuffix computed as empty,
+real card has the suffix) — now correctly recognized as a match.
+Confirmed the confirmed-offline case still displays the suffixed
+version first (no display regression), and a genuinely unrelated card
+still correctly doesn't match either way (no false-negative
+introduced).
+
+## 2026-08-21 (cont'd) — Root cause of the Offline Visits detection gap: audit read the wrong data source entirely
+
+Claire asked whether the live IO form's own path (order → trigger →
+campaign_lines) needed checking too, not just the imported/legacy
+data — good instinct, since tracing it surfaced the real root cause of
+the ABRA Auto Body false-missing flag, and it wasn't a data gap at
+all.
+
+**How Offline Visits Tracking is actually recorded**: it's a $0-billed
+modifier, so it never gets its own `campaign_lines` row — neither
+insert branch in `create_campaign_lines_from_order()` ever fires for
+it. Instead, the trigger finds the modifier's paired tactic via
+`accounting_map` (`pair_with_service_id`) and sets a boolean,
+`has_offline_visits`, directly on the TACTIC's own line. `auditOfflineVisitsSuffix()`
+was checking for a sibling row with `is_cpm_adjustment: true` sharing
+the workflow — a row that, by design, never exists. It wasn't a
+missing-data problem; the check was reading the wrong mechanism from
+the start.
+
+**Two false leads corrected along the way, logged for honesty**: my
+first two diagnostic queries checking `accounting_map` both had the
+`service_id`/`pair_with_service_id` columns backwards (traced from the
+trigger's own `select am.service_id from accounting_map am where
+am.pair_with_service_id = <modifier id>` — `service_id` is the TACTIC,
+`pair_with_service_id` is the MODIFIER, the reverse of what I assumed
+twice). The corrected query showed `lt-offline` was already properly
+paired to `lt-geo`/`lt-crm`/`lt-event` all along — ABRA's
+`has_offline_visits` was confirmed `true` on the real row. So the
+pairing and the trigger were both working; only the audit's read of
+the data was wrong.
+
+**Real, separate, confirmed gap found in the same sweep**: the
+corrected query showed `mob-offline`, `nd-offline`, `nv-offline`,
+`ottctv-offline`, `pa-offline`, `pv-offline`, `sda-offline`, and
+`yttv-addl` ("Addl. Targeting") all have ZERO real pairings — a
+genuine, catalog-wide gap affecting every section except Location
+Targeting, Streaming TV, and Targeted Display (which already had
+correct pairings). Per Claire's confirmation ("all" — Offline Visits
+Tracking applies to every spend-priced tactic within its own section),
+gave her an idempotent SQL insert pairing each of the 8 gapped
+modifiers to every spend-priced tactic in its own section. Run by
+Claire (confirmed via the standard Supabase "Success" response for an
+INSERT with no RETURNING clause).
+
+**Fixed**: `auditOfflineVisitsSuffix(lines)` now reads
+`li.has_offline_visits` directly off each tactic's own campaign_lines
+row, instead of scanning for a sibling `is_cpm_adjustment` row that
+never exists. Patched both RPCs
+(`admin_get_client_campaign_lines`/`admin_get_all_active_campaign_lines`)
+to actually select `cl.has_offline_visits` in their jsonb output — it
+wasn't exposed at all before this. SQL:
+`audit-rpcs-add-has-offline-visits-2026-08-21.sql`, scratchpad, not
+yet run by Claire. The earlier `auditNamesToCheck()` "accept either
+form" fallback stays in place too — genuinely useful now as a safety
+net for the (much rarer) case where a card was renamed by hand with no
+tracked order behind it at all, rather than the primary mechanism.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Ran the fixed function against ABRA's exact real data
+(`has_offline_visits: true`) — now correctly returns the suffix;
+confirmed a client without the modifier still correctly returns
+nothing; confirmed a line missing the field entirely (e.g. before the
+RPC patch is run) degrades gracefully to no suffix rather than
+throwing.
