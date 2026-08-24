@@ -6223,15 +6223,19 @@ function auditIsKnownNonTacticCard(cardName, bizName, markerNames) {
   if (/\bdates\b/i.test(cardName) || /\bquestions\b/i.test(cardName)) return true;
   return markerNames.some(n => n && auditNorm(cardName) === auditNorm(n));
 }
-// Offline Visits Tracking card-title suffix (2026-08-21, per Claire — "if they include
-// Offline tracking they add it to the title"): kept in sync with index.html's own
-// offlineVisitsSuffix() — whenever a workflow's active campaign lines include the
-// Offline Visits Tracking modifier (the only is_cpm_adjustment modifier in the catalog
-// today), the real card gets "+ Offline Visits" appended before the business name, so
-// the audit's expected name has to include it too or every such tactic reads as a
-// false mismatch.
+// Offline Visits Tracking card-title suffix. FIXED (2026-08-21, found live via ABRA
+// Auto Body of Brookings): originally checked whether any SIBLING line in the same
+// workflow group was itself the is_cpm_adjustment modifier row — but the modifier
+// never gets its own campaign_lines row at all (it's $0-billed; the trigger
+// [create_campaign_lines_from_order()] instead sets a `has_offline_visits` BOOLEAN
+// directly on the TACTIC's own line, via an accounting_map pairing lookup). That
+// sibling row this was searching for essentially never exists, so this almost never
+// fired even when the modifier genuinely WAS sold. Confirmed live: ABRA's real
+// campaign_lines row has has_offline_visits = true, but is_cpm_adjustment = false
+// (correctly, since lt-geo IS the tactic, not the modifier) — so the old check could
+// never have found it. Now reads the flag directly off the tactic's own row instead.
 function auditOfflineVisitsSuffix(lines) {
-  return lines.some(li => CATALOG_ROWS[li.service_id]?.is_cpm_adjustment) ? ' + Offline Visits' : '';
+  return lines.some(li => li.has_offline_visits) ? ' + Offline Visits' : '';
 }
 // "Which one is it?" variant name for the audit's expected card name (2026-08-21) —
 // kept in sync with index.html's own resolveTacticVariantName(). The IO form now lets
