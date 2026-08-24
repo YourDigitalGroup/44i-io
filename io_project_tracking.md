@@ -19312,3 +19312,75 @@ format, which now correctly passes through unprefixed instead of
 double-prefixing. No SQL yet for this one — Claire is still deciding
 the exact wording for the other 5 variants before a bulk `tactic_
 variants` update goes out.
+
+## 2026-08-21 (cont'd) — Location Targeting/Targeted Display naming cleanup + a new per-client display override
+
+A long back-and-forth session cleaning up the naming-standardization
+work from earlier today:
+
+- Confirmed final wording for the 6 Location Targeting variants
+  (colon, not hyphen, after an initial mixup): "Location Targeting:
+  Geofencing," "Location Targeting: 1st Party Addressable," "Location
+  Targeting: CRM Addressable," "Location Targeting: Curated
+  Addressable," "Location Targeting: Event," "Location Targeting:
+  Lookback." Gave Claire the `tactic_variants` update for
+  `lt-geo`/`lt-crm`/`lt-event` plus two idempotent `campaign_lines`
+  corrections (one for the old pre-standardization text, one in case
+  the earlier hyphen version was already applied) — safe to run
+  regardless of current state.
+- Ran a full-system audit (extending the query from earlier today
+  beyond just Location Targeting) and found `td-geo` ("Geotargeting &
+  Audience") has the exact same stale-`accounting_label` problem —
+  it said "Targeted Display: Audience," silently dropping
+  "Geotargeting" entirely. Initially proposed splitting it into
+  `tactic_variants` like the "or" services, but Claire caught the
+  inconsistency: `td-geo` uses "&", which per her own established
+  rule (confirmed earlier for `nd-geo`/`nv-geo`/`pa-geo`/`pv-geo`)
+  means it's a genuine bundle, not a choose-one — corrected course
+  and fixed both `accounting_label` and the one Visit Brookings line
+  that had been set to "Geotargeting" alone, to the full "Targeted
+  Display: Geotargeting & Audience" instead.
+- Closed out the `yt-skip` (TruView) loose end from earlier — Claire
+  confirmed the fuller/correctly-capitalized name should win; updated
+  both `accounting_label` and the Visit Brookings line together so
+  they stay in sync ("YouTube: TruView Skippable :05 (Non-skippable)
+  :12s-3m").
+- Clarified with Claire that these SQL fixes only correct internal
+  records (Strategist Portal display, catalog labels) — they do NOT
+  rename the actual Trello cards. For `lt-*` (tactic_variants-driven),
+  the audit already tolerates any known variant, so no change in
+  audit behavior. For `td-geo`/`yt-skip` (plain single-card templates,
+  no variants), the audit's expected name comes from the LIVE Trello
+  template card, completely independent of these database fields —
+  so those specific real cards still need a manual Trello rename to
+  stop being flagged, separately from today's data cleanup.
+
+**New feature, found via a real display bug**: Claire spotted "STMM
+Digital: Kevin Austin (Lee County)" in the Strategist Portal and
+expected "MS Farm Bureau" instead — turned out MS Farm Bureau's agent
+clients genuinely sit under a real group named "STMM Digital" (not a
+bug), but the composed multi-agent display needs to show "MS Farm
+Bureau" specifically. Rather than renaming the real group (which
+would affect every other group-based lookup/filter), added a new
+per-CLIENT override column instead.
+
+**Built**: `clients.display_group_label` (nullable text). Patched
+`strategist_get_campaign_lines()` and `accounting_get_campaign_lines()`
+to select it alongside the existing `group_name`. Updated
+`strategistDisplayClientName()`/`accountingDisplayClientName()` (both
+files) to prefer `display_group_label` over `group_name` when set,
+falling back to the real group name unchanged for every other client
+— including any OTHER multi-agent client that might exist later
+without this override configured. SQL:
+`strategist-get-campaign-lines-add-display-label-2026-08-21.sql`,
+`accounting-get-campaign-lines-add-display-label-2026-08-21.sql`,
+scratchpad, not yet run by Claire — still need the `alter table` for
+the new column and the `UPDATE` setting it to "MS Farm Bureau" for
+the actual agent client records.
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Ran both display functions with 3 cases: the override set
+(correctly shows "MS Farm Bureau"), no override on a hypothetical
+different multi-agent client under the same real group (correctly
+falls back to "STMM Digital," unaffected), and a normal non-multi-
+agent client (completely unaffected either way).

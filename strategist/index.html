@@ -1896,8 +1896,14 @@ function strategistSetupBlockerPill(line) {
 // strategists/accounting are used to seeing from the old separate-client-per-
 // agent setup, so nothing looks different to them even though there's only
 // one client record underneath now.
+// display_group_label (2026-08-21, per Claire -- MS Farm Bureau's agent clients
+// sit under the real group "STMM Digital", but the composed name needs to read
+// "MS Farm Bureau" instead) -- a per-CLIENT override, separate from the real
+// group_name every other filter/lookup still uses unchanged. Falls back to the
+// real group name when unset, so every other multi-agent client (or a future
+// one) displays exactly as before with zero extra setup.
 function strategistDisplayClientName(line) {
-  if (line.agent_name && line.county) return `${line.group_name || ''}: ${line.agent_name} (${line.county} County)`;
+  if (line.agent_name && line.county) return `${line.display_group_label || line.group_name || ''}: ${line.agent_name} (${line.county} County)`;
   return line.client_name || '(unknown)';
 }
 
