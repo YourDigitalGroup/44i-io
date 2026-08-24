@@ -6277,6 +6277,23 @@ function auditAcceptablePlainNames(lines, fallbackName) {
   });
   return [...names];
 }
+// Builds every "{plain name}{ — bizName}" combination worth checking, for BOTH with
+// and without "+ Offline Visits" (2026-08-21, found live — ABRA Auto Body of
+// Brookings' real card correctly has "+ Offline Visits," but the "missing card"
+// message displayed the expected name WITHOUT it and still flagged the correctly-
+// named real card as missing). `offlineSuffix` (from auditOfflineVisitsSuffix(lines))
+// can only ever CONFIRM the modifier is sold when it's already recorded in tracked
+// campaign_lines — for the ~90% of clients not yet migrated into this system, that
+// modifier may be genuinely sold but simply invisible to this check, the exact same
+// class of gap as auditAcceptablePlainNames() already fixed for variants. Rather than
+// require confirmation before accepting the suffixed form, this tries both forms
+// every time — the confirmed form (if any) stays first, purely so the displayed
+// "expected" guess stays as accurate as possible when tracking DOES already know.
+function auditNamesToCheck(plainNames, offlineSuffix, bizName) {
+  return plainNames.flatMap(p => offlineSuffix
+    ? [`${p}${offlineSuffix} — ${bizName}`, `${p} — ${bizName}`]
+    : [`${p} — ${bizName}`, `${p} + Offline Visits — ${bizName}`]);
+}
 // Resolves a workflow's template to the plain tactic name(s) a real client card should
 // carry (before the " — Business Name" suffix, which is client-specific and added by the
 // caller). `templateCache`, keyed by `${type}:${ref}`, is passed in BY THE CALLER so the
@@ -6505,7 +6522,7 @@ async function adminAuditClientTrelloCards() {
       // Accepts a match on ANY of this template's known variants, not just the one
       // confirmed pick (if tactic_label records one) or the generic combined label —
       // see auditAcceptablePlainNames()'s own comment for why.
-      const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${bizName}`);
+      const acceptable = auditNamesToCheck(auditAcceptablePlainNames(lines, n), offlineSuffix, bizName);
       const expected = acceptable[0]; // best guess, for display only
       const actual = acceptable.map(findActual).find(Boolean);
       rows.push({ workflow: wf, expected, actual });
@@ -6655,7 +6672,7 @@ async function adminAuditAllClientsTrelloCards() {
             // found live: real cards already manually renamed to a specific variant,
             // with no recorded tactic_label pick, were showing as BOTH missing and
             // unrecognized) — see auditAcceptablePlainNames()'s own comment.
-            const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${client.name}`);
+            const acceptable = auditNamesToCheck(auditAcceptablePlainNames(lines, n), offlineSuffix, client.name);
             const expected = acceptable[0]; // best guess, for display only
             if (!acceptable.some(findActual)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
           });

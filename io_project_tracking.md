@@ -19110,3 +19110,40 @@ useful side-effect of the redesign: it now separates "untracked but
 correctly named" (no longer noise) from "actually wrong" (still
 flagged) far more precisely than the previous per-client-only check
 could.
+
+## 2026-08-21 (cont'd) — Real bug: "missing card" check couldn't confirm Offline Visits Tracking either
+
+Claire: "We lost the + Offline Visits in the Audit" — ABRA Auto Body
+of Brookings' real, correctly-named card ("Location Targeting:
+Geofencing + Offline Visits") was flagged as missing, with the
+displayed "Expects..." name missing the suffix entirely. Confirmed
+this client's Offline Visits Tracking IS actually tracked in the
+system (visible in the Strategist Portal) — so this isn't the same
+"not migrated yet" gap as the SEO-tier/Blue-Dolphin cases; something
+about how `auditOfflineVisitsSuffix(lines)` groups/detects the
+modifier for this client specifically isn't working (worth a deeper
+look separately, e.g. a workflow-string mismatch splitting the
+Geofencing and Offline Visits Tracking lines into different `byWorkflow`
+groups) — but regardless of that root cause, the fix is the same shape
+as the earlier variant-flexibility fix: don't require CONFIRMATION
+before accepting a name as valid.
+
+**Fixed**: new `auditNamesToCheck(plainNames, offlineSuffix, bizName)`
+in `admin/index.html` builds BOTH the with-suffix and without-suffix
+version of every acceptable name and checks either as a valid match,
+instead of only trying whichever ONE `auditOfflineVisitsSuffix()`
+could confirm from tracked lines. The confirmed form (when one exists)
+stays listed first, so the displayed "Expects..." guess stays as
+accurate as possible when tracking already knows the real answer;
+when it doesn't know, both forms are tried before flagging anything.
+Wired into both the per-client and bulk audit's mismatch-checking,
+replacing the old `.map(p => `${p}${offlineSuffix} — ${bizName}`)`
+one-name-only construction at both sites.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Reproduced the exact ABRA scenario (offlineSuffix computed as empty,
+real card has the suffix) — now correctly recognized as a match.
+Confirmed the confirmed-offline case still displays the suffixed
+version first (no display regression), and a genuinely unrelated card
+still correctly doesn't match either way (no false-negative
+introduced).
