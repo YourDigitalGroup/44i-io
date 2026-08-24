@@ -19059,3 +19059,54 @@ SEO tier defaults, whitespace, and now this wider dash-variant gap) —
 each was silent until something started actually comparing generated
 names against real ones at scale, which is exactly why this audit
 work has been worth doing.
+
+## 2026-08-21 (cont'd) — Redesigned the unrecognized-card check: catalog-wide, not per-client-tracked
+
+Blue Dolphin Pools' real Website 5-page cards ("Website Monthly
+Package: 5-page Custom," "Optional Monthly Website Support,"
+"ChatBot," "Targeted Landing Pages (1-5)") were all flagged as
+unrecognized — but Claire hasn't imported non-Strategist services into
+Accounting yet, so this client's Website service genuinely has no
+active `campaign_lines` row at all. The unrecognized-card check was
+comparing real cards against only the names generated from what's
+CURRENTLY TRACKED for that client — so every real card for a
+not-yet-imported service looked like a problem purely because nothing
+was recorded for it yet, unrelated to whether the title itself was
+actually right.
+
+Claire's actual goal, stated directly: "I still want to check all of
+the cards whether the service is in the system for that client or
+not. I want to just check title names that they will match." First
+tried an opt-in checkbox to disable the orphan check entirely — Claire
+corrected that she wants it to always run, just checked against the
+full catalog instead of per-client tracking.
+
+**Redesigned.** New `auditBuildMasterBaseNames(templateCache)` builds
+ONE set covering every known valid base tactic name across the ENTIRE
+catalog — every template's resolved name(s), every tactic_variants
+expansion, every "+ Offline Visits" variant, and every no-template
+service's plain workflow name — computed once per audit run, not
+per-client. Both the bulk and per-client audit tools' unrecognized-
+card check now build `{base} — {client.name}` from this master set
+instead of from only the client's own tracked campaign lines, so a
+real, correctly-named card for a service that simply isn't imported
+yet no longer looks like a problem. The bulk audit also now fetches
+every client's Trello cards regardless of whether they have ANY
+tracked lines at all (previously skipped entirely) — Claire wants
+every real card checked either way. The "missing card" (mismatch)
+direction is UNCHANGED — that's still, correctly, scoped to what's
+actually tracked as currently sold, since "will this create a
+duplicate on resell" is inherently about what's being resold.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Reproduced Blue Dolphin Pools' exact scenario with mock data (client
+with zero tracked campaign lines, 4 real Website cards on their list)
+— 3 of the 4 now correctly stop being flagged since they match known
+catalog formats regardless of tracking status; the 4th ("AI Chatbot")
+correctly KEEPS being flagged, since the real template's card is
+actually named "ChatBot," not "AI Chatbot" — a genuine naming
+discrepancy for Claire to look at, not a tool bug. This is a real,
+useful side-effect of the redesign: it now separates "untracked but
+correctly named" (no longer noise) from "actually wrong" (still
+flagged) far more precisely than the previous per-client-only check
+could.

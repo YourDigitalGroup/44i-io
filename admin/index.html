@@ -375,7 +375,7 @@
              report for hundreds of clients would be unreadable). -->
         <div id="admin-client-trello-audit-panel" style="order:3;display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:20px">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">Audit All Clients' Trello Cards</p>
-          <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Checks every client with a Trello List ID against what the system will look for on their next resell — read-only, makes no Trello changes. Can take a while for a large client list (one Trello read per client).</p>
+          <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Checks every client with a Trello List ID against what the system will look for on their next resell, and flags any real card whose title doesn't match a known format anywhere in the catalog — read-only, makes no Trello changes. Can take a while for a large client list (one Trello read per client).</p>
           <div style="display:flex;gap:10px;margin-bottom:14px">
             <button onclick="adminAuditAllClientsTrelloCards()" style="padding:8px 18px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Run Audit</button>
             <button onclick="toggleClientTrelloAuditPanel()" class="btn-quiet-green">Close</button>
@@ -6317,6 +6317,58 @@ async function resolveAuditTemplateNames(templateRow, templateCache) {
   return result;
 }
 
+// Every base tactic name (before " — Business Name") that would be a LEGITIMATE title
+// ANYWHERE in the catalog — not just for services currently tracked as sold for one
+// particular client (2026-08-21, per Claire — "I still want to check all of the cards
+// whether the service is in the system for that client or not. I want to just check
+// title names that they will match"). Non-Strategist services aren't all imported into
+// Accounting yet, so gating the unrecognized-card check on "is this tracked for THIS
+// client" made a real, correctly-named card for an untracked service look like a
+// problem purely because nothing's recorded for it yet — pure noise unrelated to
+// whether the title itself is right. This instead builds ONE master set covering every
+// service in the whole catalog, so a real card is only flagged when its title doesn't
+// match ANY known format, regardless of per-client tracking. Includes the "+ Offline
+// Visits" variant of every base name too, since that's a title variation, not a
+// different tactic. Computed ONCE per audit run (not per client) — the catalog doesn't
+// change mid-run.
+async function auditBuildMasterBaseNames(templateCache) {
+  const bases = new Set();
+  const rows = Object.values(CATALOG_ROWS);
+
+  const groups = {};
+  rows.forEach(r => {
+    if (!r.trello_template_ref) return;
+    const type = r.trello_template_type || 'list';
+    const key = `${type}:${r.trello_template_ref}`;
+    (groups[key] = groups[key] || { trello_template_type: type, trello_template_ref: r.trello_template_ref, rows: [] }).rows.push(r);
+  });
+  await Promise.all(Object.values(groups).map(async g => {
+    const { names } = await resolveAuditTemplateNames(g, templateCache);
+    names.forEach(n => {
+      const set = new Set([n]);
+      // Expand every variant among the services sharing this template — mirrors
+      // auditAcceptablePlainNames()'s own rule, just without needing one specific
+      // client's sold lines to draw from.
+      g.rows.forEach(r => {
+        if (!Array.isArray(r.tactic_variants)) return;
+        r.tactic_variants.forEach(v => {
+          if (v.includes(':')) { set.add(v); return; }
+          const secLabel = sectionLabel(r.section);
+          set.add(secLabel && secLabel !== r.section ? `${secLabel}: ${v}` : v);
+        });
+      });
+      set.forEach(base => { bases.add(base); bases.add(`${base} + Offline Visits`); });
+    });
+  }));
+
+  // Services with a workflow but no template fall back to the plain workflow name.
+  Object.values(CATALOG_ROWS)
+    .filter(r => r.workflow && !r.trello_template_ref)
+    .forEach(r => { bases.add(r.workflow); bases.add(`${r.workflow} + Offline Visits`); });
+
+  return bases;
+}
+
 function toggleTemplateTitlesPanel() {
   const panel = document.getElementById('admin-template-titles-panel');
   const isOpen = panel.style.display !== 'none';
@@ -6423,10 +6475,6 @@ async function adminAuditClientTrelloCards() {
     resultsEl.innerHTML = `<p style="color:#991B1B;font-size:12px">Could not read this client's Trello list — check the List ID.</p>`;
     return;
   }
-  if (!clientLines.length) {
-    resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No active campaign lines found for this client to check against.</p>';
-    return;
-  }
 
   // Group by workflow, same as resolveWorkflowTemplate() groups by workflow among
   // SOLD services on a submission -- here it's grouped by what's currently active
@@ -6443,13 +6491,11 @@ async function adminAuditClientTrelloCards() {
   const templateCache = {};
   const rows = [];
   const bizName = client?.name || '';
-  const expectedNamesForClient = new Set();
   for (const [wf, lines] of Object.entries(byWorkflow)) {
     const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
     const offlineSuffix = auditOfflineVisitsSuffix(lines);
     if (!templateRow) {
       const expected = `${wf}${offlineSuffix} — ${bizName}`;
-      expectedNamesForClient.add(auditNorm(expected));
       rows.push({ workflow: wf, expected, actual: findActual(expected) });
       continue;
     }
@@ -6460,24 +6506,27 @@ async function adminAuditClientTrelloCards() {
       // confirmed pick (if tactic_label records one) or the generic combined label —
       // see auditAcceptablePlainNames()'s own comment for why.
       const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${bizName}`);
-      acceptable.forEach(nm => expectedNamesForClient.add(auditNorm(nm)));
       const expected = acceptable[0]; // best guess, for display only
       const actual = acceptable.map(findActual).find(Boolean);
       rows.push({ workflow: wf, expected, actual });
     });
   }
-  // Reverse direction (2026-08-21, per Claire -- "a full audit of what is currently on
-  // Trello lists and what doesn't match our naming conventions"): any real card that
-  // matched none of the expected names above, and isn't the IO card/a test card/a
-  // Gold/Green marker, gets its own row -- see adminAuditAllClientsTrelloCards()'s
-  // matching comment for the "always new card" (Event-style) caveat.
+  // Reverse direction (2026-08-21, per Claire -- "I still want to check all of the
+  // cards whether the service is in the system for that client or not. I want to just
+  // check title names that they will match"): checks against every known catalog
+  // format regardless of whether it's currently tracked for THIS client, not just the
+  // expected names built above — see auditBuildMasterBaseNames()'s own comment. Any
+  // real card that matches nothing there, and isn't the IO card/a test card/a
+  // Gold/Green marker/a standard Dates or Questions card, gets its own row below.
   const markerNames = await auditFetchMarkerCardNames();
+  const masterBaseNames = await auditBuildMasterBaseNames(templateCache);
+  const masterExpectedForClient = new Set([...masterBaseNames].map(base => auditNorm(`${base} — ${bizName}`)));
   const orphanRows = actualCards
-    .filter(c => !expectedNamesForClient.has(auditNorm(c.name)) && !auditIsKnownNonTacticCard(c.name, bizName, markerNames))
+    .filter(c => !masterExpectedForClient.has(auditNorm(c.name)) && !auditIsKnownNonTacticCard(c.name, bizName, markerNames))
     .map(c => ({ orphan: true, cardName: c.name }));
 
   if (!rows.length && !orphanRows.length) {
-    resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Nothing to check — no sold service maps to a workflow.</p>';
+    resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Nothing to check — no sold service maps to a workflow, and every real card matched something in the catalog.</p>';
     return;
   }
   let html = `<p style="font-size:10px;color:var(--muted);margin-bottom:8px">Doesn't account for "always new card" (Event-style) services, which are meant to create a fresh card every resell.</p>
@@ -6547,6 +6596,13 @@ async function adminAuditAllClientsTrelloCards() {
 
   const markerNames = await auditFetchMarkerCardNames();
   const templateCache = {};
+  // Built ONCE for the whole run, covering every service in the catalog regardless of
+  // whether it's currently tracked as sold for any particular client (2026-08-21, per
+  // Claire -- "I still want to check all of the cards whether the service is in the
+  // system for that client or not. I want to just check title names that they will
+  // match"). See auditBuildMasterBaseNames()'s own comment for why this replaced the
+  // earlier per-client-tracked-only version.
+  const masterBaseNames = await auditBuildMasterBaseNames(templateCache);
   const problems = []; // { groupName, clientName, workflow, expected, kind: 'mismatch'|'error'|'orphan', detail }
   let clientsChecked = 0, workflowsChecked = 0;
 
@@ -6557,72 +6613,70 @@ async function adminAuditAllClientsTrelloCards() {
     // her group list, not just an arbitrary client order.
     const groupName = allGroups.find(g => g.id === client.group_id)?.name || '(no group)';
     const clientLines = linesByClient[client.id] || [];
-    if (clientLines.length) {
-      const byWorkflow = {};
-      clientLines.forEach(li => {
-        const wf = CATALOG_ROWS[li.service_id]?.workflow;
-        if (!wf) return;
-        (byWorkflow[wf] = byWorkflow[wf] || []).push(li);
-      });
 
-      let actualCards = null;
-      if (Object.keys(byWorkflow).length) {
-        try {
-          const res = await fetch(PROXY, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-            body: JSON.stringify({ target: 'trello_get_list_cards', list_id: client.trello_list_id }),
-          }).then(r => r.json());
-          actualCards = Array.isArray(res) ? res : null;
-        } catch (e) { /* falls through to the !actualCards branch below */ }
-        if (!actualCards) {
-          problems.push({ groupName, clientName: client.name, workflow: '(all)', expected: null, kind: 'error', detail: 'Could not read this client\'s Trello list' });
-        } else {
-          const findActual = name => actualCards.find(c => auditNorm(c.name) === auditNorm(name));
-          // Every expected name generated for THIS client, collected as we go (2026-08-21,
-          // per Claire -- "a full audit of what is currently on Trello lists and what
-          // doesn't match our naming conventions") -- once every workflow's been checked,
-          // any real card on the list that matched none of these (and isn't the IO card,
-          // a test card, or a Gold/Green marker) gets flagged as unrecognized below.
-          const expectedNamesForClient = new Set();
-          for (const [wf, lines] of Object.entries(byWorkflow)) {
-            workflowsChecked++;
-            const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
-            const offlineSuffix = auditOfflineVisitsSuffix(lines);
-            if (!templateRow) {
-              const expected = `${wf}${offlineSuffix} — ${client.name}`;
-              expectedNamesForClient.add(auditNorm(expected));
-              if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
-              continue;
-            }
-            const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
-            if (error) { problems.push({ groupName, clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
-            names.forEach(n => {
-              // Accepts a match on ANY of this template's known variants (2026-08-21,
-              // found live: real cards already manually renamed to a specific variant,
-              // with no recorded tactic_label pick, were showing as BOTH missing and
-              // unrecognized) — see auditAcceptablePlainNames()'s own comment.
-              const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${client.name}`);
-              acceptable.forEach(nm => expectedNamesForClient.add(auditNorm(nm)));
-              const expected = acceptable[0]; // best guess, for display only
-              if (!acceptable.some(findActual)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
-            });
+    // Fetched for EVERY client with a Trello list, regardless of whether they have any
+    // tracked campaign lines (2026-08-21, same request as above) -- the unrecognized-
+    // card check below needs to run on every real card either way.
+    let actualCards = null;
+    try {
+      const res = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ target: 'trello_get_list_cards', list_id: client.trello_list_id }),
+      }).then(r => r.json());
+      actualCards = Array.isArray(res) ? res : null;
+    } catch (e) { /* falls through to the !actualCards branch below */ }
+
+    if (!actualCards) {
+      problems.push({ groupName, clientName: client.name, workflow: '(all)', expected: null, kind: 'error', detail: 'Could not read this client\'s Trello list' });
+    } else {
+      const findActual = name => actualCards.find(c => auditNorm(c.name) === auditNorm(name));
+
+      if (clientLines.length) {
+        const byWorkflow = {};
+        clientLines.forEach(li => {
+          const wf = CATALOG_ROWS[li.service_id]?.workflow;
+          if (!wf) return;
+          (byWorkflow[wf] = byWorkflow[wf] || []).push(li);
+        });
+        for (const [wf, lines] of Object.entries(byWorkflow)) {
+          workflowsChecked++;
+          const templateRow = lines.map(li => CATALOG_ROWS[li.service_id]).find(r => r?.trello_template_ref);
+          const offlineSuffix = auditOfflineVisitsSuffix(lines);
+          if (!templateRow) {
+            const expected = `${wf}${offlineSuffix} — ${client.name}`;
+            if (!findActual(expected)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
+            continue;
           }
-          // Reverse direction (2026-08-21): a real card that doesn't match ANY of this
-          // client's expected names and isn't a known non-tactic card (IO/test/marker) --
-          // doesn't necessarily mean a duplicate will be created (this audit's original
-          // purpose), but it IS a naming-convention mismatch worth a human look: a stale
-          // card from a cancelled tactic, a typo'd rename, or a legitimately-sold tactic
-          // this audit has no record of. Doesn't account for "always new card" (Event-
-          // style) services -- an OLDER dated copy of one of those will always look
-          // unrecognized here, since only the CURRENT date range is ever expected.
-          actualCards.forEach(c => {
-            if (expectedNamesForClient.has(auditNorm(c.name))) return;
-            if (auditIsKnownNonTacticCard(c.name, client.name, markerNames)) return;
-            problems.push({ groupName, clientName: client.name, workflow: '(unrecognized card)', expected: null, kind: 'orphan', detail: c.name });
+          const { names, error } = await resolveAuditTemplateNames(templateRow, templateCache);
+          if (error) { problems.push({ groupName, clientName: client.name, workflow: wf, expected: null, kind: 'error', detail: error }); continue; }
+          names.forEach(n => {
+            // Accepts a match on ANY of this template's known variants (2026-08-21,
+            // found live: real cards already manually renamed to a specific variant,
+            // with no recorded tactic_label pick, were showing as BOTH missing and
+            // unrecognized) — see auditAcceptablePlainNames()'s own comment.
+            const acceptable = auditAcceptablePlainNames(lines, n).map(p => `${p}${offlineSuffix} — ${client.name}`);
+            const expected = acceptable[0]; // best guess, for display only
+            if (!acceptable.some(findActual)) problems.push({ groupName, clientName: client.name, workflow: wf, expected, kind: 'mismatch' });
           });
         }
       }
+
+      // Reverse direction (2026-08-21): a real card that doesn't match ANY known catalog
+      // format (regardless of whether that service is currently tracked for THIS
+      // client — see masterBaseNames above) and isn't a known non-tactic card (IO/test/
+      // marker/Dates/Questions) -- doesn't necessarily mean a duplicate will be created
+      // (this audit's original purpose), but it IS a naming-convention mismatch worth a
+      // human look: a stale card from a cancelled tactic, a typo'd rename, or a
+      // genuinely unrecognizable title. Doesn't account for "always new card" (Event-
+      // style) services -- an OLDER dated copy of one of those will always look
+      // unrecognized here, since only the CURRENT date range is ever expected.
+      const masterExpectedForClient = new Set([...masterBaseNames].map(base => auditNorm(`${base} — ${client.name}`)));
+      actualCards.forEach(c => {
+        if (masterExpectedForClient.has(auditNorm(c.name))) return;
+        if (auditIsKnownNonTacticCard(c.name, client.name, markerNames)) return;
+        problems.push({ groupName, clientName: client.name, workflow: '(unrecognized card)', expected: null, kind: 'orphan', detail: c.name });
+      });
     }
     clientsChecked++;
     resultsEl.innerHTML = `<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Checking… (${clientsChecked} / ${clients.length} clients checked, ${problems.length} issue${problems.length !== 1 ? 's' : ''} found so far)</p>`;
