@@ -19212,3 +19212,45 @@ confirmed a client without the modifier still correctly returns
 nothing; confirmed a line missing the field entirely (e.g. before the
 RPC patch is run) degrades gracefully to no suffix rather than
 throwing.
+
+## 2026-08-21 (cont'd) — Bulk Import CSV: added Agent/County columns for MS Farm Bureau
+
+Claire: "Is there a way I can bulk upload those [MS Farm Bureau
+agents] into the strategist portal?" Answer at the time: no —
+Bulk Import's CSV parser had no Agent/County columns at all; only the
+one-at-a-time "+ New Campaign" form supported picking an Agent and
+County for a multi-agent client. She confirmed she's ready to import
+now.
+
+**Built.** Added `Agent`/`County` to `BULK_IMPORT_COLUMNS` — plain
+free text, no roster validation, matching how `campaign_lines.agent_
+name`/`county` are already plain denormalized text columns elsewhere
+(the real order trigger's own agent-split fan-out writes them the same
+way, no foreign key). `strategistParseBulkImport()`'s `identityKey`
+now includes agent_name/county, so several different agents selling
+the SAME tactic each get their own group instead of collapsing into
+one — same identity rule (client + service + agent + county) the
+order trigger's own dedup already uses. Existing-campaign matching
+gained a second path: agent rows rarely have a `platform_campaign_
+name` to match on, so a `(client_id, service_id, agent_name, county)`
+lookup against `ALL_CAMPAIGN_LINES` now catches an already-tracked
+agent and updates their line instead of creating a duplicate,
+re-running the same import safely. `agent_name`/`county` flow through
+to `strategist_save_campaign_line`'s payload. Preview table gained an
+"Agent / County" column so Claire can visually confirm each row before
+confirming — otherwise every agent's row for the same tactic would
+have looked identical in the preview. Updated the panel's own column
+list/help text to document the two new columns and how the multi-agent
+identity/dedup rule works.
+
+**Verified**: `node --check` on the extracted inline script passes.
+Ran the exact live `strategistParseBulkImport()` (extracted directly
+from the file, not a reconstruction) against a realistic MS Farm
+Bureau paste: 2 rows for the same agent/county in different months, 1
+row for a second, different agent, and one pre-existing campaign_lines
+row for the first agent. Confirmed: exactly 2 groups (not 1 — agents
+stay separate), the first agent's 2 month rows correctly merge into
+one group, the first agent correctly matches the pre-existing line
+(re-import updates rather than duplicates), and the second (genuinely
+new) agent correctly gets no existing-line match. No SQL — front-end
+only, `strategist/index.html`.
