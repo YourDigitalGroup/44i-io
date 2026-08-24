@@ -1005,6 +1005,13 @@ const BULK_IMPORT_COLUMNS = [
   { key: 'goal_override', names: ['goal override', 'goal'] },
   { key: 'setup_notes', names: ['setup notes', 'notes'] },
   { key: 'setup_blocker', names: ['setup blocker', 'blocker', 'waiting on'] },
+  // MS Farm Bureau agent backfill (2026-08-21, per Claire -- bulk-importing a
+  // multi-agent client's many per-agent campaigns). Free text, same as platform/
+  // setup_notes -- campaign_lines.agent_name/county are plain denormalized text
+  // columns already (see create_campaign_lines_from_order()'s own agent-split
+  // fan-out), not a roster foreign key, so no roster validation needed here either.
+  { key: 'agent_name', names: ['agent', 'agent name'] },
+  { key: 'county', names: ['county'] },
 ];
 
 // Holds the parsed-but-not-yet-saved plan between strategistPreviewBulkImport()
@@ -1037,7 +1044,7 @@ function strategistOpenBulkImportForm() {
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;margin-bottom:16px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import campaigns (paste from a CSV or a Google Sheets range)</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, In-Platform Override, Goal Override, Setup Notes, Setup Blocker</strong>. <strong>In-Platform Override</strong> and <strong>Goal Override</strong> are both optional — leave blank to keep using the auto-calculated value for that month, same as leaving them blank in the campaign's own detail panel. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. <strong>Tactic</strong> also accepts LLO, Reputation Mgmt., LLO (SEO), and Rep Monitoring (SEO) — flat-fee tactics the team tracks even though they carry no budget of their own. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, and/or Intake Form — same 3 options as the Setup panel; separate more than one with a semicolon, e.g. "Creative; Platform Access") — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Agent, County, Platform, Platform Campaign Name, Split Label, Status, Flight Start, Flight End, Month, Gross Budget, In-Platform Override, Goal Override, Setup Notes, Setup Blocker</strong>. <strong>Agent</strong> and <strong>County</strong> are only needed for a multi-agent client (e.g. MS Farm Bureau) — leave both blank for a normal client. Give the same tactic several rows with a different Agent/County to bring in one campaign per agent; each becomes its own independently-tracked line, same as picking an Agent and County in this form's single-entry "+ New Campaign" tool, and re-importing an agent already on record updates their existing line instead of creating a duplicate. <strong>In-Platform Override</strong> and <strong>Goal Override</strong> are both optional — leave blank to keep using the auto-calculated value for that month, same as leaving them blank in the campaign's own detail panel. Tab- or comma-separated — copying a range directly out of Google Sheets pastes as tab-separated automatically. One row per campaign PER MONTH — give the same campaign several rows (same Client/Tactic/Platform/Platform Campaign Name, different Month) to bring in more than one month's budget at once. <strong>Split Label</strong> is optional — give rows for the same Client/Tactic/Platform a Split Label (e.g. "Region 1", "Region 2") and each becomes its own independently-tracked campaign, in the order they appear in the paste, labeled the same way as a Setup panel split. Leave it blank for a normal, non-split campaign. <strong>Tactic</strong> also accepts LLO, Reputation Mgmt., LLO (SEO), and Rep Monitoring (SEO) — flat-fee tactics the team tracks even though they carry no budget of their own. For a campaign still waiting on something, set <strong>Status</strong> to "pending" and optionally fill in <strong>Setup Notes</strong> (free text) and/or <strong>Setup Blocker</strong> (Creative, Platform Access, and/or Intake Form — same 3 options as the Setup panel; separate more than one with a semicolon, e.g. "Creative; Platform Access") — it'll land in the Setup queue exactly like one entered by hand. Dates as YYYY-MM-DD, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
     <textarea id="bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Platform	Platform Campaign Name	Split Label	Status	Flight Start	Flight End	Month	Gross Budget	In-Platform Override	Goal Override	Setup Notes	Setup Blocker
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-07	1500	750	150-200
 Ridgeline Dental	SEM	Google Ads	Ridgeline Dental - SEM - July		active	2026-07-01	2026-07-31	2026-08	2000
@@ -1253,12 +1260,19 @@ function strategistParseBulkImport(raw, overrides = {}) {
     }
     const platform = get('platform');
     const platformCampaignName = get('platform_campaign_name');
+    const agentName = get('agent_name') || null;
+    const county = get('county') || null;
     // Includes tacticLabel, not just service.id -- otherwise LLO (SEO) and Rep
     // Monitoring (SEO) (same anchor service_id, and typically no distinct
     // platform/title of their own) would collide into ONE group instead of two
     // separate campaigns. Safe for every other case too: multiple month rows
     // for the same real campaign always carry the same tactic text already.
-    const identityKey = [client.id, service.id, tacticMatch.tacticLabel, platform, platformCampaignName].join('|');
+    // Also includes agent_name/county (2026-08-21) -- a multi-agent client (MS Farm
+    // Bureau) sells the SAME tactic to several different agents at once; without
+    // this, every agent's row for "Geofencing" would collapse into ONE group instead
+    // of one per agent, matching the same identity rule the real order trigger's own
+    // agent-split fan-out already uses (client + service + agent + county).
+    const identityKey = [client.id, service.id, tacticMatch.tacticLabel, platform, platformCampaignName, agentName, county].join('|');
     const rowFlightStart = get('flight_start') || null;
     const rowFlightEnd = get('flight_end') || null;
     if (!groups.has(identityKey)) {
@@ -1268,6 +1282,7 @@ function strategistParseBulkImport(raw, overrides = {}) {
         platform_campaign_name: platformCampaignName || null, split_label: get('split_label') || null,
         status, flight_start: rowFlightStart, flight_end: rowFlightEnd,
         setup_notes: get('setup_notes') || null, setup_blocker: setupBlocker,
+        agent_name: agentName, county,
         monthRows: [],
       });
     } else {
@@ -1318,8 +1333,18 @@ function strategistParseBulkImport(raw, overrides = {}) {
   ALL_CAMPAIGN_LINES.forEach(l => {
     if (l.platform_campaign_name) existingByTitle[l.platform_campaign_name.trim().toLowerCase()] = l;
   });
+  // Agent rows rarely carry a platform_campaign_name (2026-08-21) -- falls back to
+  // the SAME (client, service, agent, county) identity the order trigger's own
+  // agent-split fan-out uses for dedup, so re-importing an agent already on record
+  // updates their existing line instead of creating a duplicate.
+  const existingByAgent = {};
+  ALL_CAMPAIGN_LINES.forEach(l => {
+    if (l.agent_name && l.county) existingByAgent[[l.client_id, l.service_id, l.agent_name, l.county].join('|').toLowerCase()] = l;
+  });
   for (const g of groups.values()) {
-    g.existingLineId = g.platform_campaign_name ? existingByTitle[g.platform_campaign_name.trim().toLowerCase()]?.id : null;
+    g.existingLineId = g.platform_campaign_name
+      ? existingByTitle[g.platform_campaign_name.trim().toLowerCase()]?.id
+      : (g.agent_name && g.county ? existingByAgent[[g.client_id, g.service_id, g.agent_name, g.county].join('|').toLowerCase()]?.id : null);
   }
 
   return { groups, errors };
@@ -1354,6 +1379,7 @@ function strategistRenderBulkPreview() {
     const waitingOn = [blockerLabels.join(', ') || null, g.setup_notes].filter(Boolean).join(' — ');
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:6px 8px">${esc(g.tactic_label)}${g.split_label ? ' <span style="color:var(--muted)">— ' + esc(g.split_label) + '</span>' : ''}</td>
+      <td style="padding:6px 8px">${g.agent_name || g.county ? esc([g.agent_name, g.county ? g.county + ' County' : null].filter(Boolean).join(' — ')) : '—'}</td>
       <td style="padding:6px 8px">${esc(g.platform || '—')}</td>
       <td style="padding:6px 8px">${esc(g.platform_campaign_name || '—')}</td>
       <td style="padding:6px 8px">${esc(g.status)}</td>
@@ -1404,7 +1430,7 @@ function strategistRenderBulkPreview() {
   resultsEl.innerHTML = `
     <p style="font-size:12px;font-weight:600;margin:0 0 6px">Preview — nothing saved yet. ${plan.groups.size} campaign(s) found${plan.errors.length ? `, ${plan.errors.length} row issue(s)` : ''}.</p>
     ${plan.groups.size ? `<div style="overflow-x:auto;margin-bottom:10px"><table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:var(--light);text-align:left"><th style="padding:6px 8px">Tactic</th><th style="padding:6px 8px">Platform</th><th style="padding:6px 8px">Title</th><th style="padding:6px 8px">Status</th><th style="padding:6px 8px">Waiting on</th><th style="padding:6px 8px">Months</th><th style="padding:6px 8px">Action</th></tr></thead>
+      <thead><tr style="background:var(--light);text-align:left"><th style="padding:6px 8px">Tactic</th><th style="padding:6px 8px">Agent / County</th><th style="padding:6px 8px">Platform</th><th style="padding:6px 8px">Title</th><th style="padding:6px 8px">Status</th><th style="padding:6px 8px">Waiting on</th><th style="padding:6px 8px">Months</th><th style="padding:6px 8px">Action</th></tr></thead>
       <tbody>${rowsHtml}</tbody>
     </table></div>` : ''}
     ${plan.errors.length ? `<p style="font-size:12px;color:#B91C1C;font-weight:600;margin:4px 0 4px">${plan.errors.length} row(s) need a fix before they'll import:</p><div style="margin-bottom:10px">${errorsHtml}</div>` : ''}
@@ -1473,6 +1499,7 @@ async function strategistConfirmBulkImport() {
             flight_start: g.flight_start, flight_end: g.flight_end,
             status: g.status, assigned_strategist: currentStrategistUser.name,
             setup_notes: g.setup_notes, setup_blocker: g.setup_blocker,
+            agent_name: g.agent_name, county: g.county,
           }
         }) });
         createdCount++;
