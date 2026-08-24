@@ -19022,3 +19022,40 @@ Ran the updated exclusion function against several title variations
 "Questions for AE") — all correctly excluded — while confirming two
 genuine tactic card names are still correctly NOT excluded (so a real
 mismatch/orphan still gets flagged normally).
+
+## 2026-08-21 (cont'd) — Real bug found and fixed: dash regex only covered 3 of the many Unicode dash characters
+
+Orkin of Northeast Arkansas' real "Targeted Landing Pages (1-5)" card
+was flagged as unrecognized despite Claire pasting the exact real
+title and it looking character-identical to the expected name. Ruled
+out the multiple-templates-sharing-one-workflow theory (Claire
+confirmed only one landing-page-tier line exists for this client).
+Traced the strings by hand again and found the pattern: "(1-5)" is
+exactly the kind of compact number range some editors (Word, Google
+Docs, etc.) silently auto-substitute a **non-breaking hyphen** (U+2011)
+into, to stop it wrapping across a line break — visually identical to
+a plain hyphen in every UI, but a completely different Unicode code
+point. `norm()`/`auditNorm()`'s dash regex (`[-–—]`) only ever covered
+hyphen-minus, en dash, and em dash — never this one, or several other
+legitimate Unicode dash-like characters.
+
+**Fixed by widening the regex** from `[-–—]` to
+`[-‐‑‒–—―−]` (hyphen-minus, hyphen U+2010, non-breaking hyphen U+2011,
+figure dash U+2012, en dash, em dash, horizontal bar U+2015, minus
+sign U+2212) in both `norm()` (`index.html`) and `auditNorm()`
+(`admin/index.html`), kept in sync as always.
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Full regression suite: reproduced the exact Orkin failure with
+a non-breaking hyphen standing in for a plain one, confirmed it now
+matches; individually verified each of the 4 newly-added dash
+variants (hyphen U+2010, figure dash, horizontal bar, minus sign) all
+canonicalize correctly; re-confirmed the original em-dash/hyphen case,
+the whitespace-collapse cases, `isIoName()`'s placeholder detection,
+and that two genuinely different tactic names still correctly don't
+match — nothing regressed. This is the fourth real, previously-unknown
+normalization gap found via this audit work today (dash character,
+SEO tier defaults, whitespace, and now this wider dash-variant gap) —
+each was silent until something started actually comparing generated
+names against real ones at scale, which is exactly why this audit
+work has been worth doing.
