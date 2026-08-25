@@ -283,6 +283,7 @@ let PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} }; // service_id -> 
 // all, just a manual override every month).
 let IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // % of Gross Budget, used when a service has no retail_cpm
 let IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending -- e.g. SEM (2026-08-13, mirrors ACCOUNTING_CUT_TIERS' shape but kept as its own column since it must never carry cut_pct, which stays accounting/admin-only)
+let IN_PLATFORM_PCT_FORCE = { group: {} }; // group|service_id -> true when that group's in_platform_pct is flagged to beat the spend tier outright (2026-08-25, MS Farm Bureau)
 let CPC_RATES = { base: {}, group: {} }; // { low, high } $ CPC, used for a clicks-based service's Goal range
 let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, data}], updated_at } -- last paste per platform, overwritten each time
 // The 4 platforms Claire currently pastes manual reports for (2026-08-17, per
@@ -1581,6 +1582,9 @@ async function fetchStrategistData() {
   ALL_STATUS_HISTORY = statusHistory || [];
   PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} };
   IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
+  // Which group|service_id keys are flagged to beat the spend tier outright
+  // (2026-08-25) -- see effectiveInPlatformPct()'s own comment.
+  IN_PLATFORM_PCT_FORCE = { group: {} };
   IN_PLATFORM_TIERS = {};
   CPC_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
@@ -1595,6 +1599,7 @@ async function fetchStrategistData() {
     } else {
       PLATFORM_CPM_RATES.group[r.group_id + '|' + r.service_id] = r.platform_cpm;
       IN_PLATFORM_PCT_RATES.group[r.group_id + '|' + r.service_id] = r.in_platform_pct;
+      if (r.in_platform_pct_force) IN_PLATFORM_PCT_FORCE.group[r.group_id + '|' + r.service_id] = true;
       if (cpc) CPC_RATES.group[r.group_id + '|' + r.service_id] = cpc;
     }
   });
@@ -1713,14 +1718,27 @@ function effectiveInPlatformPctTier(serviceId, grossBudget) {
 // no formula to compute from at all. A tiered rate (when configured) REPLACES
 // the flat base/group rate entirely, same "tiers win outright" rule already
 // used for 44i Cut % -- a group override becomes moot once tiers exist for
-// that service (documented gap, not silently invented).
+// that service, UNLESS that specific override carries in_platform_pct_force
+// (2026-08-25, found live -- Bronson: MS Farm Bureau's per-agent SEM lines
+// each sit under $5,000 on their own, so the catalog-wide tier was silently
+// beating STMM Digital's already-configured 70% group override every time.
+// Claire: scope the fix to MS Farm Bureau only, not a global priority flip --
+// so a group/client override only beats the tier when explicitly flagged to,
+// leaving every other tiered service's existing behavior untouched).
 function effectiveInPlatformPct(serviceId, clientId, groupId, grossBudget) {
+  const client = clientId != null ? ALL_STRATEGIST_CLIENTS.find(c => c.id === clientId) : null;
+  const clientOverride = client?.accounting_overrides?.[serviceId];
+  if (clientOverride?.in_platform_pct_force && clientOverride.in_platform_pct != null) {
+    return Number(clientOverride.in_platform_pct);
+  }
+  const groupKey = groupId + '|' + serviceId;
+  if (IN_PLATFORM_PCT_FORCE.group[groupKey] && IN_PLATFORM_PCT_RATES.group[groupKey] != null) {
+    return Number(IN_PLATFORM_PCT_RATES.group[groupKey]);
+  }
   const tierRate = effectiveInPlatformPctTier(serviceId, grossBudget);
   if (tierRate != null) return tierRate;
-  const client = clientId != null ? ALL_STRATEGIST_CLIENTS.find(c => c.id === clientId) : null;
-  const clientRate = client?.accounting_overrides?.[serviceId]?.in_platform_pct;
+  const clientRate = clientOverride?.in_platform_pct;
   if (clientRate != null) return Number(clientRate);
-  const groupKey = groupId + '|' + serviceId;
   if (IN_PLATFORM_PCT_RATES.group[groupKey] != null) return Number(IN_PLATFORM_PCT_RATES.group[groupKey]);
   return IN_PLATFORM_PCT_RATES.base[serviceId] != null ? Number(IN_PLATFORM_PCT_RATES.base[serviceId]) : null;
 }
