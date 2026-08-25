@@ -324,6 +324,7 @@ let ACCOUNTING_CUT_TIERS = {}; // service_id -> [{ max, cut_pct }, ...] sorted a
 let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} }; // for Expected Spend -- same shape as the Strategist Portal's own PLATFORM_CPM_RATES
 let ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // Expected Spend fallback for a service with no Retail CPM (e.g. SEM)
 let ACCOUNTING_IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending, e.g. SEM (2026-08-13, same shape/lookup as ACCOUNTING_CUT_TIERS, kept as its own column/cache)
+let ACCOUNTING_IN_PLATFORM_PCT_FORCE = { group: {} }; // group_id|service_id -> true when that group's in_platform_pct is flagged to beat the spend tier outright (2026-08-25, MS Farm Bureau)
 let ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} }; // service_id -> pct, group_id|service_id -> pct -- the split % for a service's own auto-add setup fee (accounting_map.setup_fee_cut_pct), can differ from that service's regular 44i Cut %
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
@@ -1456,14 +1457,27 @@ function accountingEffectiveInPlatformPctTier(serviceId, grossBudget) {
   return tier ? Number(tier.in_platform_pct) : null;
 }
 // A tiered rate (when configured) replaces the flat base/group rate
-// entirely -- same "tiers win outright" rule as 44i Cut %.
+// entirely -- same "tiers win outright" rule as 44i Cut % -- UNLESS that
+// specific override carries in_platform_pct_force (2026-08-25, MS Farm
+// Bureau: their per-agent SEM lines each sit under $5,000 on their own, so
+// the catalog-wide tier was silently beating STMM Digital's already-
+// configured 70% group override. Scoped to just the flagged group/client so
+// every other tiered service's existing behavior stays untouched).
 function accountingEffectiveInPlatformPct(serviceId, clientId, groupId, grossBudget) {
+  const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+  const clientOverride = client?.accounting_overrides?.[serviceId];
+  if (clientOverride?.in_platform_pct_force && clientOverride.in_platform_pct != null) {
+    return Number(clientOverride.in_platform_pct);
+  }
+  const groupKey = groupId ? `${groupId}|${serviceId}` : '';
+  if (groupId && ACCOUNTING_IN_PLATFORM_PCT_FORCE.group[groupKey] && ACCOUNTING_IN_PLATFORM_PCT_RATES.group[groupKey] != null) {
+    return Number(ACCOUNTING_IN_PLATFORM_PCT_RATES.group[groupKey]);
+  }
   const tierRate = accountingEffectiveInPlatformPctTier(serviceId, grossBudget);
   if (tierRate != null) return tierRate;
-  const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
-  const clientRate = client?.accounting_overrides?.[serviceId]?.in_platform_pct;
+  const clientRate = clientOverride?.in_platform_pct;
   if (clientRate != null) return Number(clientRate);
-  const groupRate = groupId ? ACCOUNTING_IN_PLATFORM_PCT_RATES.group[`${groupId}|${serviceId}`] : undefined;
+  const groupRate = groupId ? ACCOUNTING_IN_PLATFORM_PCT_RATES.group[groupKey] : undefined;
   if (groupRate != null) return groupRate;
   const baseRate = ACCOUNTING_IN_PLATFORM_PCT_RATES.base[serviceId];
   return baseRate != null ? baseRate : null;
@@ -1570,6 +1584,7 @@ async function fetchAccountingData() {
   ACCOUNTING_IN_PLATFORM_TIERS = {};
   ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} };
   ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
+  ACCOUNTING_IN_PLATFORM_PCT_FORCE = { group: {} };
   ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} };
   (rates || []).forEach(r => {
     if (r.scope === 'base') {
@@ -1584,6 +1599,7 @@ async function fetchAccountingData() {
       ACCOUNTING_CUT_RATES.group[key] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.group[key] = Number(r.platform_cpm);
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.group[key] = Number(r.in_platform_pct);
+      if (r.in_platform_pct_force) ACCOUNTING_IN_PLATFORM_PCT_FORCE.group[key] = true;
       if (r.setup_fee_cut_pct != null) ACCOUNTING_SETUP_FEE_CUT_RATES.group[key] = Number(r.setup_fee_cut_pct);
     } else if (r.scope === 'pairing') {
       ACCOUNTING_CUT_RATES.pairing[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;

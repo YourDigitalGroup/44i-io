@@ -19384,3 +19384,62 @@ passes. Ran both display functions with 3 cases: the override set
 different multi-agent client under the same real group (correctly
 falls back to "STMM Digital," unaffected), and a normal non-multi-
 agent client (completely unaffected either way).
+
+## 2026-08-25 — MS Farm Bureau's SEM In-Platform % silently stuck at 50%
+
+Bronson (strategist) flagged via screenshot: MS Farm Bureau's agent
+campaigns were auto-calculating In-Platform Budget at 50%, but "for
+MSFB clients it is 70% in-platform."
+
+**Root cause, confirmed via `accounting_map`/`groups.accounting_overrides`
+lookups with Claire:** SEM (`sem-bp`) carries a catalog-wide spend tier
+(under $5,000 gross → 50%, $5,000+ → 70%), and `effectiveInPlatformPct()`
+(Strategist Portal)/`accountingEffectiveInPlatformPct()` (Accounting
+Portal) always let that tier win outright over any group or client
+override — a deliberate rule when tiers were first built (2026-08-13).
+STMM Digital (the real group MS Farm Bureau's agent client sits under)
+already had an explicit 70% In-Platform override configured on its own
+Accounting Overrides tab — correctly set, just silently discarded,
+because each individual agent's own campaign line carries a small
+monthly budget that lands well under the $5,000 tier threshold on its
+own, even though MS Farm Bureau's combined SEM spend across all agents
+is well past it.
+
+**Explicitly scoped to MS Farm Bureau only, per Claire — not a global
+priority flip** (other tiered services/groups may rely on the existing
+"tier always wins" behavior). Added a new `in_platform_pct_force`
+boolean, stored inside the SAME override JSON
+(`groups.accounting_overrides['sem-bp'].in_platform_pct_force` /
+the equivalent shape on `clients.accounting_overrides`) — absent/false
+for every other group and client, so nothing else changes behavior.
+
+**Built:**
+- Patched `accounting_get_rates()` and `strategist_get_budgeted_spend_rates()`
+  to also select `in_platform_pct_force` for group-scope rows (SQL below,
+  both given as full `CREATE OR REPLACE FUNCTION`, not yet run by Claire).
+- `strategist/index.html`: new `IN_PLATFORM_PCT_FORCE.group` map, populated
+  alongside `IN_PLATFORM_PCT_RATES.group`. `effectiveInPlatformPct()`
+  rewritten so a client-level force flag is checked first, then a
+  group-level force flag — either returns its override's `in_platform_pct`
+  immediately, BEFORE the spend tier is even computed. Falls through to
+  the exact prior order (tier → client → group → base) when no force flag
+  is set, so unflagged clients/groups are byte-for-byte unaffected.
+- `accounting/index.html`: identical change to
+  `accountingEffectiveInPlatformPct()` and a new
+  `ACCOUNTING_IN_PLATFORM_PCT_FORCE.group` map.
+
+**Verified**: `node --check` on both files' extracted inline scripts
+passes. Ran the exact new `effectiveInPlatformPct()` logic (copied
+verbatim into a standalone harness, not reconstructed) against 7 cases:
+MS Farm Bureau's forced group at both a small ($150) and large ($6,000)
+budget both correctly return 70 (proving the fix isn't accidentally
+still budget-dependent); a different group with its own NON-forced 60%
+override at a small budget still gets the tier's 50 (unaffected); no
+override at all still tiers correctly at both budget levels; a
+client-level force flag also wins over the tier; and a client-level
+override WITHOUT the force flag still loses to the tier, matching
+today's existing behavior exactly. All 7 passed.
+
+**Still needed from Claire:** run the two patched RPCs below, then run
+the SQL setting the force flag on STMM Digital's existing `sem-bp`
+override (group id `4383d6d1-8857-4f44-88e1-250cc7be525f`).
