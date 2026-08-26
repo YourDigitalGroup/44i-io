@@ -19676,3 +19676,28 @@ using the literal `'bottom')`; Bug 2 alone doesn't fix the Gold card
 confirmed live by Claire — she needs to redeploy the edge function AND
 pull this `index.html` change, then test one more time to confirm both
 markers position correctly.
+
+## 2026-08-26 (cont'd) — Bug 2 fix above still failed live; exact `pos` match doesn't beat Trello's own tie-breaking
+
+Both fixes above deployed; the SMTP email confirmed working, but Claire's
+next test still showed a new tactic card landing below Green (screenshot:
+"Website Business Starter: 1-page Custom — Test Business 7" sitting under
+the green "*AE* Questions Here - *Client*" card).
+
+Root cause: the prior fix set `newCardPos` to Green's own `pos` value
+exactly. Trello's API doesn't guarantee a strict-less-than ordering wins a
+tie — when a new card's `pos` exactly equals an existing card's `pos`,
+Trello's own tie-breaking can just as easily place the new card after the
+existing one, which is what happened here.
+
+**Fixed:** instead of matching Green's `pos` exactly, sort `existingCards`
+by `pos` and compute the midpoint between Green's `pos` and the `pos` of
+whatever card sits immediately above it on the list (`0` if Green is
+already first) — `newCardPos = (prevPos + greenPos) / 2`. A position
+strictly between two existing cards is unambiguous, so there's no tie for
+Trello to break. Same fallback to `'bottom'` when Green doesn't exist yet
+(first-ever submission). The 5 call sites that consume `newCardPos` were
+unchanged — only the resolution logic above them changed.
+
+**Verified:** `node --check` passes on the extracted script. Not yet
+confirmed live — needs redeploy + one more test from Claire.
