@@ -6234,6 +6234,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // an AE typed in freehand has no market on file, same limitation as ae-email.
         const marketVal = document.getElementById('ae-market')?.value.trim();
         const overallNotesVal = document.getElementById('campaign-notes')?.value.trim();
+        // Real bug found live (2026-08-25, Claire: "Could not send submission email:
+        // aeName is not defined") -- aeName was only ever declared inside the Trello
+        // setup block's own block-scope above (a separate try/if entirely), so it was
+        // always out of scope by the time this later, independent email block ran --
+        // crashed every single send, not just ones without Trello configured. Read
+        // fresh here instead, same pattern as marketVal/overallNotesVal right above.
+        const aeName = document.getElementById('ae-name').value.trim();
         const emailHtml = `
           <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px">
             <div style="background:${color};padding:16px 20px;border-radius:8px 8px 0 0">

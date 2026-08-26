@@ -19612,3 +19612,23 @@ Doesn't replace the original Step 2 "Next" guard, which stays as a
 backstop. `node --check` passes; verified the boundary logic against 4
 cases (same day as IO date, one day before, one day after, well after) —
 matches "on or before" exactly.
+
+## 2026-08-25 (cont'd) — Real bug found live: submission email always crashed on `aeName`
+
+Claire's first live SMTP test surfaced: `Could not send submission email:
+aeName is not defined`. Root cause: `aeName` was only ever declared
+(`const aeName = ...`) inside Step 2's Trello setup block's own `if`/`else`
+block-scope — a completely separate, earlier block from Step 6's email
+code. By the time Step 6 ran, `aeName` was out of scope entirely,
+regardless of whether the group even had Trello configured — this crashed
+EVERY submission email send, not just some. Given this was never caught
+before today, the email pipeline had presumably never actually fired
+end-to-end with real Mailgun credentials until this test.
+
+**Fixed**: re-read `document.getElementById('ae-name').value.trim()`
+directly inside the Step 6 block, same already-established pattern
+`marketVal`/`overallNotesVal` use right next to it — no dependency on an
+outer scope. Also checked the email template's other referenced variables
+(`ioNumber`, `bizName`, `kocDate`, `kocTime`) — all four are declared near
+the top of `submitIO()`, genuinely in scope for the whole function, so
+`aeName` was the only one with this bug. `node --check` passes.
