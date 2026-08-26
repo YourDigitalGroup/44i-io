@@ -113,7 +113,12 @@ button:active{transform:translateY(0)}
 label.lbl{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
 
 /* Toast (used by showToast() in shared.js) */
-.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none;text-align:center;white-space:nowrap}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none;text-align:center;max-width:min(90vw,480px);white-space:normal}
 .toast.show{display:block}
 .toast.success{background:#10B981;color:#fff}
 .toast.error{background:#EF4444;color:#fff}
+/* Neutral variant (2026-08-25) -- for an explanatory message, not an
+   action's outcome; the info-icon buttons this session added (e.g. Retail
+   CPM Override) are the first callers. Kept out of showToast()'s default
+   type so every existing success/error call is completely unaffected. */
+.toast.info{background:#334155;color:#fff}

@@ -19554,3 +19554,47 @@ card only ever renders the current month + 2 months forward (a fixed
 only reach those 3 months, not an older month from further back in a
 historical import. Still needs Claire's answer on whether that's
 sufficient or the card needs real month navigation added.
+
+## 2026-08-25 (cont'd) — Retail CPM Override added to Campaign Setup; fixed a dead info icon
+
+Claire: wanted the Retail CPM Override field (built earlier today,
+Detail-panel-only) available in Campaign Setup too, so it can be set
+before a campaign goes Active, not just after. Also flagged the "ⓘ"
+next to the field's label wasn't clickable.
+
+**Built:** factored the field out into a shared `retailCpmOverrideFieldHtml(l,
+afterSaveFn)` (afterSaveFn passed as a plain string, since this runs inside
+a template literal well before insertion into the DOM — `'renderStrategist
+DetailPanel'` from the Detail panel, `'renderStrategistDashboard'` from
+Setup, which has no narrower line-scoped re-render of its own). Added to
+the Setup panel's per-line grid, right after Gross/In-Platform/Platform
+CPM/Goal.
+
+**Fixed the "ⓘ":** it was a plain `<span title="...">` — no `cursor:help`,
+no focusability, nothing to actually click, which is exactly what Claire
+ran into. Rebuilt as a real `<button type="button">` with `cursor:help`,
+`aria-label`, and an `onclick` that shows the same text via `showToast()`
+so it works on hover (title) AND on click/touch.
+
+**Real escaping bug caught testing that click handler, not shipped:**
+my first pass ran the help text through `esc()` (HTML-entity escaping)
+before dropping it into the `onclick`'s own JS string — wrong tool for
+that job. The browser HTML-decodes an attribute's value BEFORE handing it
+to the JS engine, so `esc()`'s `&#39;` for the apostrophe in "AE's" would
+have decoded right back into a raw `'` and broken out of the JS string
+literal early (a real bug the "ⓘ" would have silently failed on, or
+thrown, the instant it had any apostrophe in it — this one does). Fixed
+with actual JS-string escaping (`\\` and `\'`) instead, verified with a
+harness that HTML-parses the generated attribute, decodes it, hands the
+result to `eval`, and confirms the exact original text round-trips.
+
+**Also fixed while in there:** `showToast()`'s only two styles were
+green "success" and red "error" — using either for a plain explanation
+would've read as a fake outcome message, and the CSS also had
+`white-space:nowrap` with no max-width, so a full sentence could run off
+the edge of the screen. Added a neutral `.toast.info` style (shared.css,
+all four pages) and switched `.toast` to wrap within a capped width —
+existing short success/error messages are unaffected since they never
+wrapped anyway.
+
+**Verified:** `node --check` passes on the extracted script.

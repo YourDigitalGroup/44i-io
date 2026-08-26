@@ -1950,6 +1950,34 @@ function cpmOverrideBadgeHtml(line) {
   return ` <span title="Retail CPM overridden to $${Number(line.retail_cpm_override).toFixed(2)}" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM $${Number(line.retail_cpm_override).toFixed(2)}</span>`;
 }
 
+// Retail CPM Override field, shared by the Setup panel and the Detail panel
+// (2026-08-25, per Claire -- "can we also add it to the campaign setup?" --
+// it was Detail-panel-only at first). `afterSaveFn` is called by name (a
+// plain string, not a function reference) since this markup is generated
+// inside a template literal well before it's inserted into the DOM --
+// pass 'renderStrategistDetailPanel' from the Detail panel,
+// 'renderStrategistDashboard' from the Setup panel (which has no single
+// line-scoped re-render of its own to call instead).
+function retailCpmOverrideFieldHtml(l, afterSaveFn) {
+  if (l.service_id === 'sem-bp') return '';
+  const standardCpm = strategistEffectiveRetailCpm(l.service_id, l.client_id, l.group_id, null);
+  const helpText = `The AE's actual sold rate, if different from the standard ${standardCpm != null ? '$' + Number(standardCpm).toFixed(2) : 'rate'} -- changes Goal and In-Platform Budget to match.`;
+  // JS-string-escape (NOT esc()) for use inside an inline onclick's own JS
+  // string literal -- the browser HTML-decodes an attribute's value BEFORE
+  // handing it to the JS engine, so an esc()'d apostrophe (&#39;) would
+  // decode right back into a raw ' and still break out of the string early.
+  const helpTextJs = helpText.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return `<div style="margin:-6px 0 14px;font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:8px">
+    <span>Retail CPM Override
+      <button type="button" onclick="event.stopPropagation();showToast('${helpTextJs}', 'info')" title="${esc(helpText)}" aria-label="What is Retail CPM Override?" style="display:inline-flex;cursor:help;border:none;background:none;padding:0;margin:0;font-size:12px;color:var(--muted);vertical-align:middle">ⓘ</button>:</span>
+    <input type="number" step="0.01" min="0" value="${l.retail_cpm_override ?? ''}"
+      placeholder="${standardCpm != null ? 'Standard: $' + Number(standardCpm).toFixed(2) : 'No standard rate set'}"
+      onchange="event.stopPropagation();strategistSaveLine('${l.id}', {retail_cpm_override: this.value}, false).then(${afterSaveFn})"
+      aria-label="Retail CPM override"
+      style="width:110px;padding:3px 6px;border-radius:6px;border:1px ${l.retail_cpm_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
+  </div>`;
+}
+
 // A handful of catalog services are actually 2-3 different tactics sharing one
 // price/catalog row (e.g. "Geofencing or 1st Party Addressable" covers both
 // Geofencing and Addressable: 1st Party) -- which one a given campaign is is
@@ -2411,6 +2439,7 @@ function renderSetupPanel(l) {
           return goal.value != null ? goal.display + ' ' + goal.unit : (goal.manual ? '— (enter manually)' : '—');
         })()}</div></div>
       </div>
+      ${retailCpmOverrideFieldHtml(l, 'renderStrategistDashboard')}
       <div style="display:flex;gap:16px;margin-bottom:12px">
         <div>
           <label class="lbl" for="setup-platform-${l.id}">Platform</label>
@@ -3159,24 +3188,7 @@ function renderStrategistDetailPanel() {
       return cpm != null ? '$' + Number(cpm).toFixed(2) : '— (not set for this service)';
     })()}</strong></div>
 
-    ${l.service_id !== 'sem-bp' ? (() => {
-      // Retail CPM override (2026-08-25, per Claire -- some AEs, e.g. within the
-      // Kingfish group, sell at a real CPM different from the group/catalog
-      // standard. Fixed for the whole campaign's life, so it's one field on the
-      // line itself, not per-month like Gross Budget. Feeds directly into
-      // budgetedImpressions()/computeGoal()/effectiveInPlatformBudget() -- setting
-      // this deliberately also shifts Goal and In-Platform Budget below, since a
-      // real different buying rate genuinely changes both (confirmed with Claire).
-      const standardCpm = strategistEffectiveRetailCpm(l.service_id, l.client_id, l.group_id, null);
-      return `<div style="margin:-6px 0 14px;font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:8px">
-        <span>Retail CPM Override <span title="The AE's actual sold rate, if different from the standard ${standardCpm != null ? '$' + Number(standardCpm).toFixed(2) : 'rate'} -- changes Goal and In-Platform Budget to match.">ⓘ</span>:</span>
-        <input type="number" step="0.01" min="0" value="${l.retail_cpm_override ?? ''}"
-          placeholder="${standardCpm != null ? 'Standard: $' + Number(standardCpm).toFixed(2) : 'No standard rate set'}"
-          onchange="strategistSaveLine('${l.id}', {retail_cpm_override: this.value}, false).then(renderStrategistDetailPanel)"
-          aria-label="Retail CPM override"
-          style="width:110px;padding:3px 6px;border-radius:6px;border:1px ${l.retail_cpm_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
-      </div>`;
-    })() : ''}
+    ${retailCpmOverrideFieldHtml(l, 'renderStrategistDetailPanel')}
 
     ${statusHistory.length ? `<div style="margin-bottom:14px">
       <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Status history</p>
