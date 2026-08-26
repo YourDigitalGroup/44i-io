@@ -7741,8 +7741,14 @@ function renderPriceCells() {
     // resolveTacticVariantName() near the Trello card-creation code. Read (not written) via
     // syncRowInputs(), same pattern as the plain Notes field — no onchange needed.
     const variantOptions = Array.isArray(r.tactic_variants) ? r.tactic_variants : null;
+    const variantChosen = !!selected[r.id]?.tacticVariant;
     const variantHtml = variantOptions && variantOptions.length
-      ? `<select class="tactic-variant-field" style="width:100%;margin-top:4px;padding:4px 6px;font-size:11px;border:1px dashed var(--accent);border-radius:5px">
+      ? `<select class="tactic-variant-field" title="${esc(selected[r.id]?.tacticVariant || 'Which one is it?')}"
+          style="display:block;width:100%;max-width:100%;box-sizing:border-box;margin-top:6px;padding:5px 8px;
+          font-size:12px;line-height:1.3;color:${variantChosen ? 'var(--accent-dark)' : 'var(--muted)'};
+          background:${variantChosen ? 'var(--light)' : '#fff'};
+          border:1px ${variantChosen ? 'solid' : 'dashed'} var(--accent);border-radius:6px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
           <option value="">— Which one? —</option>
           ${variantOptions.map(v => `<option value="${esc(v)}" ${selected[r.id]?.tacticVariant === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
         </select>`
