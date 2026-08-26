@@ -19522,3 +19522,35 @@ rolled-up parent row when any of its children has one (the parent itself
 has no single override value of its own to show). `node --check` passes
 on both files; confirmed the badge helper correctly treats `0` as a real
 override value, not the same as "unset."
+
+## 2026-08-25 (cont'd) — Two more items: Accounting's missing Setup Blocker/notes, and an editable Gross Budget
+
+**Real gap Claire caught:** the Strategist Portal's "Setup Blocker" pill
+(what a pending campaign is waiting on) was built for the Accounting
+Portal's detail card too — the UI code (`ACCT_SETUP_BLOCKER_LABELS`,
+the "Pending — Waiting On" block, the IO Campaign Notes/line-note block)
+has been sitting there this whole time, but `accounting_get_campaign_lines`
+was never patched to actually SELECT `setup_blocker`, `order_line_notes`,
+or join `orders` for `campaign_notes` — so all three always rendered
+blank. Folded the fix into the SAME rewrite already needed for today's
+`retail_cpm_override`/`display_group_label` additions (gave Claire one
+corrected version superseding the one from earlier today — not yet run).
+
+**Gross Budget, editable from Accounting's detail card.** Claire: as the
+rest of the accounting lines get imported, she'll need to backfill/correct
+a month's Gross Budget without a full Bulk Import re-run. Confirmed scope
+directly with her mid-build: Gross Budget only — "Actual spend should
+always reference the platform uploads. We don't need to ever edit that."
+No RPC change needed at all — `accounting_save_campaign_month` already
+supported `gross_budget` (built earlier for the Bulk Import flow, just
+never exposed as a one-off edit). New `accountingSaveMonth()` wrapper,
+same shape as `accountingConfirmMonth()`/`accountingToggleBilledExternally()`;
+the detail card's Gross Budget column is now a real input instead of
+static text. `node --check` passes on the extracted script.
+
+**Known limitation, flagged to Claire, not yet resolved:** the detail
+card only ever renders the current month + 2 months forward (a fixed
+`[0,1,2]` offset), same as before this change — so this new input can
+only reach those 3 months, not an older month from further back in a
+historical import. Still needs Claire's answer on whether that's
+sufficient or the card needs real month navigation added.
