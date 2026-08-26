@@ -459,7 +459,7 @@ function accountingRenderDetailCard() {
     const monthRow = accountingLineActiveInMonth(line, d) ? accountingMonthRowFor(line.id, d) : null;
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
-    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting);
+    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting, line.retail_cpm_override);
     // Setup fee lines split at the Setup Fee Split % instead of the tactic's
     // regular 44i Cut % (2026-08-13) -- they're not spend-tiered or modifier-
     // paired, so the tier/pairing lookups inside accountingEffectiveCutPct
@@ -1494,17 +1494,23 @@ function accountingEffectiveInPlatformPct(serviceId, clientId, groupId, grossBud
 // Client-level Retail CPM (2026-08-20, Phase B) wins over the group's -- same
 // clients.io_pricing a client can now set in Admin's own Client editor,
 // checked before falling through to the group's copy of the same JSONB shape.
-function accountingEffectiveRetailCpm(serviceId, clientId, groupId) {
+// lineOverride (2026-08-25) -- a per-campaign-line Retail CPM the strategist
+// records when an AE (e.g. within the Kingfish group) actually sold at a
+// different real rate than the group/catalog standard. Wins over the
+// client/group rate, same as every other override -- see strategistEffective
+// RetailCpm()'s own comment in strategist/index.html for the full reasoning.
+function accountingEffectiveRetailCpm(serviceId, clientId, groupId, lineOverride) {
+  if (lineOverride != null) return Number(lineOverride);
   const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
   if (client?.io_pricing?.[serviceId] != null) return Number(client.io_pricing[serviceId]);
   if (!groupId) return null;
   const groupClient = ALL_ACCOUNTING_CLIENTS.find(c => c.group_id === groupId && c.group_io_pricing && c.group_io_pricing[serviceId] != null);
   return groupClient ? Number(groupClient.group_io_pricing[serviceId]) : null;
 }
-function accountingComputeExpectedSpend(grossBudget, serviceId, clientId, groupId, inPlatformOverride, hasModifier) {
+function accountingComputeExpectedSpend(grossBudget, serviceId, clientId, groupId, inPlatformOverride, hasModifier, retailCpmLineOverride) {
   if (inPlatformOverride != null) return Number(inPlatformOverride);
   if (grossBudget == null) return null;
-  const retailCpmOverride = accountingEffectiveRetailCpm(serviceId, clientId, groupId);
+  const retailCpmOverride = accountingEffectiveRetailCpm(serviceId, clientId, groupId, retailCpmLineOverride);
   const retailCpm = retailCpmOverride != null ? retailCpmOverride : (CATALOG_ROWS[serviceId]?.retail_cpm != null ? Number(CATALOG_ROWS[serviceId].retail_cpm) : null);
   const platformCpm = accountingEffectivePlatformCpm(serviceId, clientId, groupId, hasModifier);
   if (retailCpm != null && platformCpm != null) {
@@ -1735,7 +1741,7 @@ function accountingBuildRows() {
     const monthRow = accountingMonthRowFor(l.id, accountingCurrentMonth);
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
-    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting);
+    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
     const cutPct = l.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
       : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross);
