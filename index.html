@@ -5609,6 +5609,31 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           return t === 'io' || /^io\s*[-:]/.test(t);
         };
 
+        // Green marker card's position on THIS list, resolved once up front (2026-08-26,
+        // per Claire — new tactic cards were landing PAST the Green card, which must
+        // always stay the true last card on the list). If Green already exists here
+        // (any past submission), every new card created below targets its exact `pos`,
+        // which inserts just above it and pushes it down by one — never past it. Falls
+        // back to 'bottom' when Green doesn't exist yet (mid-way through this client's
+        // very first-ever submission, since Green itself isn't added until after every
+        // tactic card, further below in this same run).
+        let newCardPos = 'bottom';
+        try {
+          const greenTemplateRes = await fetch(PROXY, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+            body: JSON.stringify({ target: 'trello_get_card', card_id: 'n5b8N5HV' })
+          });
+          const greenTemplate = await greenTemplateRes.json();
+          const greenName = greenTemplate?.name;
+          const greenCard = greenName && Array.isArray(existingCards)
+            ? existingCards.find(c => norm(c.name) === norm(greenName))
+            : null;
+          if (greenCard?.pos != null) newCardPos = greenCard.pos;
+        } catch (e) {
+          console.warn('Could not resolve Green marker position — new cards will default to the true bottom:', e.message);
+        }
+
         const existingCardNames = Array.isArray(existingCards)
           ? new Set(existingCards.map(c => norm(c.name)))
           : new Set();
@@ -5910,7 +5935,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               const res = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc, pos: 'bottom' })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc, pos: newCardPos })
               });
               const card = await res.json();
               if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
@@ -5974,7 +5999,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const copyRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_copy_card', card_id: templateCard.id, list_id: clientList.id, name: cn, pos: 'bottom' })
+                  body: JSON.stringify({ target: 'trello_copy_card', card_id: templateCard.id, list_id: clientList.id, name: cn, pos: newCardPos })
                 });
                 const copiedCard = await copyRes.json();
 
@@ -6029,7 +6054,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const copyRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: 'bottom' })
+                  body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: newCardPos })
                 });
                 const copiedCard = await copyRes.json();
                 if (!copiedCard?.id) {
@@ -6054,7 +6079,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const fallbackRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: '', pos: 'bottom' })
+                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: '', pos: newCardPos })
                 });
                 const fallbackCard = await fallbackRes.json();
                 addedCardNames.add(norm(fallbackName));
@@ -6077,7 +6102,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               const plainRes = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: plainName, desc: '', pos: 'bottom' })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: plainName, desc: '', pos: newCardPos })
               });
               const plainCard = await plainRes.json();
               addedCardNames.add(norm(plainName));

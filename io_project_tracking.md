@@ -19632,3 +19632,47 @@ outer scope. Also checked the email template's other referenced variables
 (`ioNumber`, `bizName`, `kocDate`, `kocTime`) — all four are declared near
 the top of `submitIO()`, genuinely in scope for the whole function, so
 `aeName` was the only one with this bug. `node --check` passes.
+
+## 2026-08-26 (cont'd) — Two real Trello-positioning bugs found live: Gold/Green cards and past-Green tactic cards
+
+Claire testing found: a brand-new Gold marker card kept landing at the
+bottom instead of the top (she had to move an earlier one manually), and
+new tactic cards on a resell landed BELOW the Green marker instead of
+above it.
+
+**Bug 1 (edge function) — `trello_copy_card` silently dropped `pos`
+entirely.** Every caller in `index.html` already sends a `pos` (tactic
+cards send `'bottom'`, Gold sends `'top'`, Green sends `'bottom'`), but
+the `claude-proxy` Edge Function's `trello_copy_card` case never included
+`pos` in the actual Trello API request body — `trello_create_card` right
+below it did this correctly, `trello_copy_card` just never did. Every
+copied card (including both markers) has always landed wherever Trello
+defaults to when `pos` is omitted, regardless of what was requested. Fixed
+by adding `pos: body.pos || "bottom"`, matching `trello_create_card`'s own
+pattern. Given to Claire as a full corrected file (not yet redeployed as
+of this entry — needs confirming).
+
+**Bug 2 (`index.html`) — even with `pos` correctly forwarded, `'bottom'`
+still means the literal end of the whole list, which is PAST an
+already-existing Green card.** Every new-tactic-card creation call
+(5 call sites: `trello_create_card`/`trello_copy_card`, for both the
+combined-workflow and single-tactic-card paths) hardcoded `pos: 'bottom'`
+— fine on a client's very first-ever submission (Green doesn't exist yet,
+added after all tactics in that same run), wrong on every later resell
+once Green is already sitting at the true bottom. Fixed: resolves Green's
+live template name once up front (a single `trello_get_card` call, same
+shortLink already used for the marker-card logic below), looks up that
+name's current `pos` in the already-fetched `existingCards`, and uses
+that exact value (`newCardPos`) for every new card created this run
+instead of the literal string `'bottom'` — Trello inserts each new card
+just above Green and pushes it down, rather than past it. Falls back to
+`'bottom'` when Green isn't on the list yet (the first-ever-submission
+case), preserving the original correct behavior there.
+
+**Verified:** `node --check` passes on the extracted script. Both fixes
+needed together — Bug 1 alone doesn't fix past-Green tactic cards (still
+using the literal `'bottom')`; Bug 2 alone doesn't fix the Gold card
+(still silently dropped by the unpatched edge function). Not yet
+confirmed live by Claire — she needs to redeploy the edge function AND
+pull this `index.html` change, then test one more time to confirm both
+markers position correctly.
