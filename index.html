@@ -3370,6 +3370,20 @@ function updateTacticDate(input, id, which) {
   const iso = input.value || null;
   markFieldMissing(input, false);
   if (selected[id]) selected[id][which] = iso;
+  // Blocks a start date on or before the IO date the instant it's picked
+  // (2026-08-25, per Claire) -- the Step 2 "Next" guard below already caught
+  // this, but only once the AE tried to move on to Review; flagging it right
+  // here means the AE sees the problem at the moment they pick the bad date,
+  // not several fields later. Doesn't clear the value -- same non-destructive
+  // "highlight + toast" pattern as the Next guard, so the AE can still see
+  // exactly what they typed while fixing it.
+  if (which === 'start_date' && iso) {
+    const ioDateVal = document.getElementById('io-date').value || new Date().toISOString().slice(0,10);
+    if (iso <= ioDateVal) {
+      markFieldMissing(input, true);
+      showToast(`Start date must be after the IO date (${ioDateVal})`, 'error');
+    }
+  }
   if (iso) autoCheckIfNeeded(id);
   checkServiceDateOverlap(id);
   syncAgentSplitDatesForService(id);
