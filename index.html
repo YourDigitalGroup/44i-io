@@ -5612,11 +5612,14 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // Green marker card's position on THIS list, resolved once up front (2026-08-26,
         // per Claire — new tactic cards were landing PAST the Green card, which must
         // always stay the true last card on the list). If Green already exists here
-        // (any past submission), every new card created below targets its exact `pos`,
-        // which inserts just above it and pushes it down by one — never past it. Falls
-        // back to 'bottom' when Green doesn't exist yet (mid-way through this client's
-        // very first-ever submission, since Green itself isn't added until after every
-        // tactic card, further below in this same run).
+        // (any past submission), every new card created below targets a position
+        // strictly BETWEEN Green and whatever's immediately above it — NOT Green's own
+        // exact pos (found live, same day: an exact match doesn't reliably sort before
+        // the existing card in Trello's own tie-breaking, so the new card kept landing
+        // right after Green instead of before it). Falls back to 'bottom' when Green
+        // doesn't exist yet (mid-way through this client's very first-ever submission,
+        // since Green itself isn't added until after every tactic card, further below
+        // in this same run).
         let newCardPos = 'bottom';
         try {
           const greenTemplateRes = await fetch(PROXY, {
@@ -5626,10 +5629,15 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           });
           const greenTemplate = await greenTemplateRes.json();
           const greenName = greenTemplate?.name;
-          const greenCard = greenName && Array.isArray(existingCards)
-            ? existingCards.find(c => norm(c.name) === norm(greenName))
-            : null;
-          if (greenCard?.pos != null) newCardPos = greenCard.pos;
+          const sortedCards = Array.isArray(existingCards)
+            ? existingCards.filter(c => c.pos != null).sort((a, b) => a.pos - b.pos)
+            : [];
+          const greenIdx = greenName ? sortedCards.findIndex(c => norm(c.name) === norm(greenName)) : -1;
+          if (greenIdx !== -1) {
+            const greenPos = sortedCards[greenIdx].pos;
+            const prevPos = greenIdx > 0 ? sortedCards[greenIdx - 1].pos : 0;
+            newCardPos = (prevPos + greenPos) / 2;
+          }
         } catch (e) {
           console.warn('Could not resolve Green marker position — new cards will default to the true bottom:', e.message);
         }
