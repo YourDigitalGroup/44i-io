@@ -19598,3 +19598,17 @@ existing short success/error messages are unaffected since they never
 wrapped anyway.
 
 **Verified:** `node --check` passes on the extracted script.
+
+## 2026-08-25 (cont'd) — Start-date-before-IO-date now blocked immediately on Step 2
+
+The "start date can't be on or before the IO date" guard already existed
+(2026-08-20), but only fired when the AE clicked "Next" off Step 2 — Claire
+wanted it to flag the instant a bad date is actually picked, not several
+fields later. Added the same check (lexicographic ISO-string comparison,
+inclusive of the IO date itself) directly into `updateTacticDate()`'s
+existing `oninput` handler for `start_date` — highlights the field and
+shows the same toast immediately, without clearing the typed value.
+Doesn't replace the original Step 2 "Next" guard, which stays as a
+backstop. `node --check` passes; verified the boundary logic against 4
+cases (same day as IO date, one day before, one day after, well after) —
+matches "on or before" exactly.
