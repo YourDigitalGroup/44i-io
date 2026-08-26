@@ -19506,3 +19506,19 @@ $10,554.54 to the cent). Confirmed a client-level `io_pricing` override
 still works completely unaffected when no line-level override is set.
 
 **Still needed from Claire:** run the schema + 3 RPC patches below.
+
+**Follow-up, same day — visible "at a glance" marker.** Claire: also mark
+a campaign in both portals when its Retail CPM has been overridden, not
+just show it once someone opens that line's own detail. Added a shared
+`cpmOverrideBadgeHtml(line)` helper (identical copy in both files, same
+convention as `strategistDisplayClientName`/`accountingDisplayClientName`)
+— a small "CPM $X.XX" pill, hover title spells out the full context.
+Placed in: the Strategist Portal's main table Tactic cell AND its Detail
+panel header (so it's visible whether scanning the list or already
+inside one campaign); the Accounting Portal's main table Tactic cell for
+a plain line, the agent-fan-out/split child rows (each child can carry
+its own override), and a lighter "CPM override(s) below" indicator on a
+rolled-up parent row when any of its children has one (the parent itself
+has no single override value of its own to show). `node --check` passes
+on both files; confirmed the badge helper correctly treats `0` as a real
+override value, not the same as "unset."

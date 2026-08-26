@@ -366,6 +366,14 @@ function accountingDisplayClientName(line) {
   return line.client_name || '(unknown)';
 }
 
+// Same badge markup as the Strategist Portal's copy of this line (2026-08-25,
+// per Claire -- a retail_cpm_override needs to be visible at a glance in the
+// main table too, not just once someone opens a line's own detail).
+function cpmOverrideBadgeHtml(line) {
+  if (line.retail_cpm_override == null) return '';
+  return ` <span title="Retail CPM overridden to $${Number(line.retail_cpm_override).toFixed(2)}" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM $${Number(line.retail_cpm_override).toFixed(2)}</span>`;
+}
+
 function accountingFormatFlightRange(start, end) {
   const s = accountingFormatFlightDate(start), e = accountingFormatFlightDate(end);
   if (!s && !e) return '—';
@@ -1807,7 +1815,7 @@ function accountingRenderRow(r) {
     const expanded = ACCOUNTING_EXPANDED_SPLITS.has(r.key);
     let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')" role="button" tabindex="0" aria-expanded="${expanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingToggleSplit('${r.key}')}">
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span></td>
+      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span>${r.children.some(c => c.line.retail_cpm_override != null) ? ' <span title="At least one region below has its own Retail CPM override" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM override(s) below</span>' : ''}</td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
       <td class="num">$${r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
       <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
@@ -1831,7 +1839,7 @@ function accountingRenderRow(r) {
         const isAgentChild = !!(c.line.agent_name && c.line.county);
         html += `<tr class="acct-row acct-child${selected ? ' selected' : ''}"${childTint ? ` style="--child-tint:${esc(childTint)}"` : ''} onclick="event.stopPropagation();accountingSelectLine('${c.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();accountingSelectLine('${c.line.id}')}">
           <td>${isAgentChild ? esc(accountingDisplayClientName(c.line)) : ''}</td>
-          <td>${esc(c.line.split_label || (isAgentChild ? '—' : '(unlabeled split)'))}</td>
+          <td>${esc(c.line.split_label || (isAgentChild ? '—' : '(unlabeled split)'))}${cpmOverrideBadgeHtml(c.line)}</td>
           <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
           <td class="num">${c.gross != null ? '$' + c.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
@@ -1846,7 +1854,7 @@ function accountingRenderRow(r) {
   const selected = r.line.id === accountingSelectedLineId;
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingSelectLine('${r.line.id}')}">
     <td><strong>${esc(accountingDisplayClientName(r.line))}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
     <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>

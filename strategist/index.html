@@ -1941,6 +1941,15 @@ function strategistTacticDisplay(line) {
   return base;
 }
 
+// Marks a campaign at a glance wherever it appears in a table, not just its
+// own Detail panel, so a retail_cpm_override doesn't quietly only show up
+// once someone happens to click into that one line (2026-08-25, per Claire).
+// Same badge markup shared with the Accounting Portal's copy of this line.
+function cpmOverrideBadgeHtml(line) {
+  if (line.retail_cpm_override == null) return '';
+  return ` <span title="Retail CPM overridden to $${Number(line.retail_cpm_override).toFixed(2)}" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM $${Number(line.retail_cpm_override).toFixed(2)}</span>`;
+}
+
 // A handful of catalog services are actually 2-3 different tactics sharing one
 // price/catalog row (e.g. "Geofencing or 1st Party Addressable" covers both
 // Geofencing and Addressable: 1st Party) -- which one a given campaign is is
@@ -3011,7 +3020,7 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>`;
       html += `<tr onclick="strategistSelectLine('${l.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistSelectLine('${l.id}')}" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
         <td style="padding:9px 10px"><strong>${esc(strategistDisplayClientName(l))}</strong></td>
-        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
+        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}${cpmOverrideBadgeHtml(l)}</td>
         ${platformCellHtml}
         <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
         ${metricsCellsHtml}
@@ -3084,7 +3093,7 @@ function renderStrategistDetailPanel() {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
       <h3 style="margin:0;font-size:13px;font-weight:700">${esc(strategistDisplayClientName(l))} / ${(() => {
         const variants = strategistTacticVariantOptions(l);
-        if (!variants) return esc(strategistTacticDisplay(l));
+        if (!variants) return esc(strategistTacticDisplay(l)) + cpmOverrideBadgeHtml(l);
         return `<select id="detail-tactic-variant-${l.id}" onchange="strategistSaveLine('${l.id}', {tactic_label: this.value}, false)" style="padding:3px 6px;border-radius:999px;border:1.5px solid var(--accent-dark);font-size:12.5px;font-weight:700;color:var(--accent-dark);background:#fff">
           <option value="" ${!variants.includes(l.tactic_label) ? 'selected' : ''}>— Choose which one —</option>
           ${variants.map(v => `<option value="${esc(v)}" ${l.tactic_label === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
