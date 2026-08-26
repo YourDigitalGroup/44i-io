@@ -1783,17 +1783,25 @@ function effectiveCpcRange(serviceId, clientId, groupId) {
 // Client-level Retail CPM (2026-08-20, Phase B) wins over the group's -- same
 // clients.io_pricing a client can now set in Admin's own Client editor, checked
 // before falling through to the group's copy of the same JSONB shape.
-function strategistEffectiveRetailCpm(serviceId, clientId, groupId) {
+// lineOverride (2026-08-25, per Claire -- a specific AE within a group, e.g.
+// Kingfish, sometimes sells at a real CPM different from the group/catalog
+// standard; strategists record what the AE's setup notes say). Checked BEFORE
+// the client/group rate -- a specific campaign's actual sold rate always wins
+// over any general default, same "specific beats generic" rule as every other
+// override in this project. Fixed for the whole campaign's life (per Claire),
+// so it lives on campaign_lines itself, not per-month.
+function strategistEffectiveRetailCpm(serviceId, clientId, groupId, lineOverride) {
+  if (lineOverride != null) return Number(lineOverride);
   const client = clientId != null ? ALL_STRATEGIST_CLIENTS.find(c => c.id === clientId) : null;
   if (client?.io_pricing?.[serviceId] != null) return Number(client.io_pricing[serviceId]);
   if (!groupId) return null;
   const groupClient = ALL_STRATEGIST_CLIENTS.find(c => c.group_id === groupId && c.group_io_pricing && c.group_io_pricing[serviceId] != null);
   return groupClient ? Number(groupClient.group_io_pricing[serviceId]) : null;
 }
-function budgetedImpressions(grossBudget, serviceId, clientId, groupId) {
+function budgetedImpressions(grossBudget, serviceId, clientId, groupId, lineOverride) {
   const row = CATALOG_ROWS[serviceId];
   if (grossBudget == null || !row) return null;
-  const retailCpmOverride = strategistEffectiveRetailCpm(serviceId, clientId, groupId);
+  const retailCpmOverride = strategistEffectiveRetailCpm(serviceId, clientId, groupId, lineOverride);
   const retailCpm = retailCpmOverride != null ? retailCpmOverride : (row.retail_cpm != null ? Number(row.retail_cpm) : null);
   if (retailCpm == null) return null;
   return (Number(grossBudget) / retailCpm) * 1000;
@@ -1803,8 +1811,8 @@ function budgetedImpressions(grossBudget, serviceId, clientId, groupId) {
 // live, never stored, same derived-vs-stored principle as everywhere else in this
 // project. Platform CPM is a real number entered per service/group (Admin →
 // Accounting Map / Accounting Overrides), not derived from a flat %.
-function computeInPlatformBudget(grossBudget, serviceId, clientId, groupId, hasModifier) {
-  const impressions = budgetedImpressions(grossBudget, serviceId, clientId, groupId);
+function computeInPlatformBudget(grossBudget, serviceId, clientId, groupId, hasModifier, retailCpmOverride) {
+  const impressions = budgetedImpressions(grossBudget, serviceId, clientId, groupId, retailCpmOverride);
   const platformCpm = effectivePlatformCpm(serviceId, clientId, groupId, hasModifier);
   if (impressions == null || platformCpm == null) {
     // Fallback for a service with no Retail CPM at all (2026-08-10: SEM) --
@@ -1825,10 +1833,10 @@ function computeInPlatformBudget(grossBudget, serviceId, clientId, groupId, hasM
 // In-Platform Budget (like Gross Budget) is itself a per-month figure — lives on
 // campaign_months, not campaign_lines. Every call site that used to call
 // computeInPlatformBudget() directly on a monthRow now goes through this instead.
-function effectiveInPlatformBudget(monthRow, serviceId, clientId, groupId, hasModifier) {
+function effectiveInPlatformBudget(monthRow, serviceId, clientId, groupId, hasModifier, retailCpmOverride) {
   if (!monthRow) return null;
   if (monthRow.in_platform_override != null) return Number(monthRow.in_platform_override);
-  return computeInPlatformBudget(monthRow.gross_budget, serviceId, clientId, groupId, hasModifier);
+  return computeInPlatformBudget(monthRow.gross_budget, serviceId, clientId, groupId, hasModifier, retailCpmOverride);
 }
 
 // Goal: impressions for every platform except SEM (Goal = Budgeted Impressions =
@@ -1933,6 +1941,15 @@ function strategistTacticDisplay(line) {
   return base;
 }
 
+// Marks a campaign at a glance wherever it appears in a table, not just its
+// own Detail panel, so a retail_cpm_override doesn't quietly only show up
+// once someone happens to click into that one line (2026-08-25, per Claire).
+// Same badge markup shared with the Accounting Portal's copy of this line.
+function cpmOverrideBadgeHtml(line) {
+  if (line.retail_cpm_override == null) return '';
+  return ` <span title="Retail CPM overridden to $${Number(line.retail_cpm_override).toFixed(2)}" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM $${Number(line.retail_cpm_override).toFixed(2)}</span>`;
+}
+
 // A handful of catalog services are actually 2-3 different tactics sharing one
 // price/catalog row (e.g. "Geofencing or 1st Party Addressable" covers both
 // Geofencing and Addressable: 1st Party) -- which one a given campaign is is
@@ -1970,7 +1987,7 @@ function computeGoal(line, monthRow) {
     }
     return { value: null, unit, manual: true };
   }
-  const auto = budgetedImpressions(monthRow?.gross_budget, line.service_id, line.client_id, line.group_id);
+  const auto = budgetedImpressions(monthRow?.gross_budget, line.service_id, line.client_id, line.group_id, line.retail_cpm_override);
   return { value: auto, unit, manual: false, display: auto != null ? Math.round(auto).toLocaleString() : null };
 }
 
@@ -2043,7 +2060,7 @@ function pacingPillHtml(pct) {
 // computable yet -- e.g. a campaign with no actuals entered this month.
 function strategistLinePacingSegment(l) {
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
-  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
+  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
   const goal = computeGoal(l, monthRow);
   const spendPacing = pacingPct(monthRow.actual_spend, inPlatform, l.flight_start, l.flight_end, strategistCurrentMonth);
   const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
@@ -2336,7 +2353,7 @@ function renderSetupPanels(lines) {
 function renderSetupPanel(l) {
     const client = strategistDisplayClientName(l);
     const monthRow = setupBudgetRowFor(l.id) || {};
-    const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
+    const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
     const monthRows = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month));
     const isExpanded = STRATEGIST_EXPANDED_SETUP_LINES.has(l.id);
     // Solid white + a real shadow, not the old near-invisible #FAFCFE-on-#F6F6F8
@@ -2964,7 +2981,7 @@ function renderMainTable(lines) {
     html += `<tr style="background:${esc(bg)}"><td class="sticky-group-td" colspan="13" style="position:sticky;z-index:2;background:${esc(bg)};padding:6px 10px;font-size:10.5px;font-weight:700;text-transform:uppercase;color:${fg}">${esc(groupName)}</td></tr>`;
     byGroup[groupName].rows.forEach(l => {
       const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
-      const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
+      const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
       const goal = computeGoal(l, monthRow);
       const spendPacing = pacingPct(monthRow.actual_spend, inPlatform, l.flight_start, l.flight_end, strategistCurrentMonth);
       const actualPerf = goal.unit === 'clicks' ? monthRow.actual_clicks : monthRow.actual_impressions;
@@ -3003,7 +3020,7 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>`;
       html += `<tr onclick="strategistSelectLine('${l.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistSelectLine('${l.id}')}" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
         <td style="padding:9px 10px"><strong>${esc(strategistDisplayClientName(l))}</strong></td>
-        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}</td>
+        <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}${cpmOverrideBadgeHtml(l)}</td>
         ${platformCellHtml}
         <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
         ${metricsCellsHtml}
@@ -3069,14 +3086,14 @@ function renderStrategistDetailPanel() {
   const monthRow = monthRowFor(l.id, strategistCurrentMonth) || {};
   const log = ALL_OPTIMIZE_LOG.filter(o => o.campaign_line_id === l.id);
   const statusHistory = ALL_STATUS_HISTORY.filter(h => h.campaign_line_id === l.id);
-  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
+  const inPlatform = effectiveInPlatformBudget(monthRow, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
   const goal = computeGoal(l, monthRow);
 
   panel.innerHTML = `<div style="border:1px solid var(--border);border-radius:18px;padding:16px 18px;background:#fff;box-shadow:var(--shadow-lg)">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px">
       <h3 style="margin:0;font-size:13px;font-weight:700">${esc(strategistDisplayClientName(l))} / ${(() => {
         const variants = strategistTacticVariantOptions(l);
-        if (!variants) return esc(strategistTacticDisplay(l));
+        if (!variants) return esc(strategistTacticDisplay(l)) + cpmOverrideBadgeHtml(l);
         return `<select id="detail-tactic-variant-${l.id}" onchange="strategistSaveLine('${l.id}', {tactic_label: this.value}, false)" style="padding:3px 6px;border-radius:999px;border:1.5px solid var(--accent-dark);font-size:12.5px;font-weight:700;color:var(--accent-dark);background:#fff">
           <option value="" ${!variants.includes(l.tactic_label) ? 'selected' : ''}>— Choose which one —</option>
           ${variants.map(v => `<option value="${esc(v)}" ${l.tactic_label === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
@@ -3142,6 +3159,25 @@ function renderStrategistDetailPanel() {
       return cpm != null ? '$' + Number(cpm).toFixed(2) : '— (not set for this service)';
     })()}</strong></div>
 
+    ${l.service_id !== 'sem-bp' ? (() => {
+      // Retail CPM override (2026-08-25, per Claire -- some AEs, e.g. within the
+      // Kingfish group, sell at a real CPM different from the group/catalog
+      // standard. Fixed for the whole campaign's life, so it's one field on the
+      // line itself, not per-month like Gross Budget. Feeds directly into
+      // budgetedImpressions()/computeGoal()/effectiveInPlatformBudget() -- setting
+      // this deliberately also shifts Goal and In-Platform Budget below, since a
+      // real different buying rate genuinely changes both (confirmed with Claire).
+      const standardCpm = strategistEffectiveRetailCpm(l.service_id, l.client_id, l.group_id, null);
+      return `<div style="margin:-6px 0 14px;font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:8px">
+        <span>Retail CPM Override <span title="The AE's actual sold rate, if different from the standard ${standardCpm != null ? '$' + Number(standardCpm).toFixed(2) : 'rate'} -- changes Goal and In-Platform Budget to match.">ⓘ</span>:</span>
+        <input type="number" step="0.01" min="0" value="${l.retail_cpm_override ?? ''}"
+          placeholder="${standardCpm != null ? 'Standard: $' + Number(standardCpm).toFixed(2) : 'No standard rate set'}"
+          onchange="strategistSaveLine('${l.id}', {retail_cpm_override: this.value}, false).then(renderStrategistDetailPanel)"
+          aria-label="Retail CPM override"
+          style="width:110px;padding:3px 6px;border-radius:6px;border:1px ${l.retail_cpm_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>
+      </div>`;
+    })() : ''}
+
     ${statusHistory.length ? `<div style="margin-bottom:14px">
       <p style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 6px">Status history</p>
       ${statusHistory.map(h => `<div style="display:flex;align-items:baseline;gap:10px;padding:4px 0;font-size:12px">
@@ -3173,7 +3209,7 @@ function renderStrategistDetailPanel() {
         <span style="width:85px">Impr.</span>
       </div>
       ${ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === l.id).sort((a,b) => a.month.localeCompare(b.month)).map(m => {
-        const autoInPlatform = computeInPlatformBudget(m.gross_budget, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting);
+        const autoInPlatform = computeInPlatformBudget(m.gross_budget, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
         const autoGoal = computeGoal(l, { ...m, goal_override: null });
         return `
         <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;border-top:1px solid var(--border)">

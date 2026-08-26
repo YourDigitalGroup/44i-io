@@ -19443,3 +19443,82 @@ today's existing behavior exactly. All 7 passed.
 **Still needed from Claire:** run the two patched RPCs below, then run
 the SQL setting the force flag on STMM Digital's existing `sem-bp`
 override (group id `4383d6d1-8857-4f44-88e1-250cc7be525f`).
+
+**Resolution (2026-08-25, cont'd):** turned out no group OR client override
+actually existed anywhere for `sem-bp` — the "70%" Claire and Bronson
+described was from an external reference sheet, not anything ever entered
+in the system. Confirmed via three rounds of empty query results before
+finding the real gap. Claire added the 70% via the Client-level Accounting
+Override screen for the "MS Farm Bureau Agents" client itself (not the
+group), then ran the client-scoped version of the force-flag `jsonb_set`.
+Root-cause fix (the `in_platform_pct_force` mechanism itself) was correct
+from the start; this was purely a missing-data issue once traced all the
+way down.
+
+## 2026-08-25 (cont'd) — Per-campaign-line Retail CPM override (Kingfish/AE-specific rates)
+
+Claire: some AEs (e.g. within the Kingfish group) sell a tactic at a real
+CPM different from the catalog/group standard — she wants a way to record
+the AE's actual sold rate per campaign, fixed for that campaign's whole
+life, editable ONLY by a strategist (not exposed to AEs on the public
+form). Walked through a real rate sheet with her to confirm the exact
+mechanics before building: the AE's real CPM (not the standard one) is
+what determines Impressions bought from a given Gross Budget — matching
+this project's existing "Retail CPM" concept (`strategistEffectiveRetailCpm`/
+`accountingEffectiveRetailCpm`, drives Impressions/Goal), NOT "Platform CPM"
+(a separate, Admin/Accounting-only margin figure the AE never sees).
+Confirmed with Claire that the override deliberately cascades into
+In-Platform Budget too (impressions × Platform CPM), matching her real
+sheet's numbers — not something to prevent.
+
+**Built:**
+- `campaign_lines.retail_cpm_override numeric` (new column, SQL below,
+  not yet run).
+- `strategistEffectiveRetailCpm()`/`accountingEffectiveRetailCpm()`: new
+  leading parameter checked BEFORE the client/group rate — a line's own
+  sold-at rate always wins, same "specific beats generic" pattern as every
+  other override in this project. `budgetedImpressions()`/
+  `computeInPlatformBudget()`/`effectiveInPlatformBudget()`/
+  `computeGoal()` (strategist) and `accountingComputeExpectedSpend()`
+  (accounting) all thread the new parameter through — 6 call sites updated
+  in `strategist/index.html`, 2 in `accounting/index.html`.
+- New editable field in the Strategist Portal's campaign Detail panel
+  (shown for every service except SEM, which has no Retail CPM concept at
+  all): "Retail CPM Override," dashed border + standard-rate placeholder
+  when unset, solid accent border once set — same visual convention as
+  every other override field. Saves via the existing
+  `strategist_save_campaign_line` RPC, then re-renders the detail panel
+  immediately so Goal/In-Platform Budget visibly update without a full
+  reload. Deliberately NOT added to the Setup panel or the public IO
+  form — Claire confirmed this is strategist-only.
+- Patched `strategist_get_campaign_lines`, `accounting_get_campaign_lines`
+  (also folding in the still-pending `display_group_label` field while
+  already rewriting this function), and `strategist_save_campaign_line`
+  to read/write the new column (SQL below, not yet run).
+
+**Verified:** `node --check` on both files' extracted inline scripts
+passes. Ran the real formula chain (copied verbatim, not reconstructed)
+against Claire's own YouTube example: no override → 1,080,000 impressions
+(the standard $25 CPM); with the $27.50 override → 981,818 impressions —
+matches her real sheet exactly. Confirmed In-Platform Budget genuinely
+shifts between the two ($11,610 vs $10,554.55, matching her sheet's
+$10,554.54 to the cent). Confirmed a client-level `io_pricing` override
+still works completely unaffected when no line-level override is set.
+
+**Still needed from Claire:** run the schema + 3 RPC patches below.
+
+**Follow-up, same day — visible "at a glance" marker.** Claire: also mark
+a campaign in both portals when its Retail CPM has been overridden, not
+just show it once someone opens that line's own detail. Added a shared
+`cpmOverrideBadgeHtml(line)` helper (identical copy in both files, same
+convention as `strategistDisplayClientName`/`accountingDisplayClientName`)
+— a small "CPM $X.XX" pill, hover title spells out the full context.
+Placed in: the Strategist Portal's main table Tactic cell AND its Detail
+panel header (so it's visible whether scanning the list or already
+inside one campaign); the Accounting Portal's main table Tactic cell for
+a plain line, the agent-fan-out/split child rows (each child can carry
+its own override), and a lighter "CPM override(s) below" indicator on a
+rolled-up parent row when any of its children has one (the parent itself
+has no single override value of its own to show). `node --check` passes
+on both files; confirmed the badge helper correctly treats `0` as a real
+override value, not the same as "unset."
