@@ -80,7 +80,6 @@
   #page-accounting thead th.num, #page-accounting td.num{text-align:right}
   #page-accounting tbody td{padding:9px 12px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;color:var(--text)}
   #page-accounting tfoot td{padding:10px 12px;font-variant-numeric:tabular-nums;color:var(--text);font-size:12.5px}
-  #page-accounting tr.acct-group-row td{background:var(--light);font-weight:700;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase;padding:8px 12px}
   #page-accounting tr.acct-row{cursor:pointer}
   #page-accounting tr.acct-row:hover td{background:var(--light)}
   #page-accounting tr.acct-row.selected td{background:var(--light)}
@@ -577,7 +576,7 @@ function accountingRenderDetailCard() {
               ${line.billed_externally ? accountingStatusPill('external', 'SSH Billing')
                 : m.paused ? accountingStatusPill('paused', 'Paused')
                 : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
-              ${!line.billed_externally && !m.paused ? `<label style="display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'};white-space:nowrap">
+              ${!line.billed_externally && !m.paused ? `<label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'};white-space:nowrap">
                 <input type="checkbox" ${m.manuallyConfirmed ? 'checked' : ''} ${m.actualSpend != null ? 'disabled title="Already confirmed automatically -- real spend is entered for this month"' : ''} onchange="accountingConfirmMonth('${line.id}','${m.monthStr}', this.checked, ${m.gross != null ? m.gross : 'null'})"/> Manually confirm
               </label>` : ''}
             </div>
@@ -941,17 +940,17 @@ function accountingRunBulkMatch() {
       const hasDiscrepancy = pastedGross != null && !isNaN(pastedGross) && systemGross != null && Math.abs(pastedGross - systemGross) > 0.01;
 
       if (hasDiscrepancy) {
-        return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">⚠️ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:#8A6D12">Gross Budget mismatch: your sheet says $${pastedGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}, system says $${systemGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})} for ${esc(accountingMonthLabel(accountingCurrentMonth))}</span></div>`;
+        return `<div style="padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px">⚠️ <strong style="color:var(--text)">${esc(row.clientText)}</strong> — <span style="color:var(--text)">${esc(row.tacticText)}</span> <span style="color:#8A6D12">Gross Budget mismatch: your sheet says $${pastedGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}, system says $${systemGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})} for ${esc(accountingMonthLabel(accountingCurrentMonth))}</span></div>`;
       }
-      return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">✅ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">already in the system</span></div>`;
+      return `<div style="padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px">✅ <strong style="color:var(--text)">${esc(row.clientText)}</strong> — <span style="color:var(--text)">${esc(row.tacticText)}</span> <span style="color:var(--muted)">already in the system</span></div>`;
     }
     if (client) {
-      return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:10px">
-        <span>⚠️ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">client found, this tactic isn't tracked yet</span></span>
+      return `<div style="padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span>⚠️ <strong style="color:var(--text)">${esc(row.clientText)}</strong> — <span style="color:var(--text)">${esc(row.tacticText)}</span> <span style="color:var(--muted)">client found, this tactic isn't tracked yet</span></span>
         <button onclick='accountingOpenAddServiceForm({clientId:"${esc(client.id)}"})' style="padding:4px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">+ Add</button>
       </div>`;
     }
-    return `<div style="padding:7px 10px;border-bottom:1px solid var(--border);font-size:12px">❌ <strong>${esc(row.clientText)}</strong> — ${esc(row.tacticText)} <span style="color:var(--muted)">client not found -- add the client in Admin first</span></div>`;
+    return `<div style="padding:9px 12px;border-bottom:1px solid var(--border);font-size:12.5px">❌ <strong style="color:var(--text)">${esc(row.clientText)}</strong> — <span style="color:var(--text)">${esc(row.tacticText)}</span> <span style="color:var(--muted)">client not found -- add the client in Admin first</span></div>`;
   }).join('');
 
   document.getElementById('acct-bulk-match-results').innerHTML = rows.length
@@ -1164,8 +1163,8 @@ function accountingPreviewBulkImport() {
     const tag = g.existingLineId
       ? 'already in the system -- adding to it'
       : trackable ? 'new campaign' : 'new campaign, accounting-only';
-    return `<div style="padding:6px 0;font-size:12px;border-bottom:1px solid var(--border)">
-      <strong>${esc(g.client.name)}</strong> — ${esc(g.tacticLabel)} <span style="color:var(--muted)">(${g.months.length || 0} month(s), ${tag})</span>
+    return `<div style="padding:9px 12px;font-size:12.5px;border-bottom:1px solid var(--border)">
+      <strong style="color:var(--text)">${esc(g.client.name)}</strong> — <span style="color:var(--text)">${esc(g.tacticLabel)}</span> <span style="color:var(--muted)">(${g.months.length || 0} month(s), ${tag})</span>
     </div>`;
   }).join('');
   if (plan.errors.length) {
@@ -1888,7 +1887,7 @@ function accountingRenderRow(r) {
     const expanded = ACCOUNTING_EXPANDED_SPLITS.has(r.key);
     let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')" role="button" tabindex="0" aria-expanded="${expanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingToggleSplit('${r.key}')}">
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:11px">(${r.totalCount} regions)</span>${r.children.some(c => c.line.retail_cpm_override != null) ? ' <span title="At least one region below has its own Retail CPM override" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM override(s) below</span>' : ''}</td>
+      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:10px">(${r.totalCount} regions)</span>${r.children.some(c => c.line.retail_cpm_override != null) ? ' <span title="At least one region below has its own Retail CPM override" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM override(s) below</span>' : ''}</td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
       <td class="num">$${r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
       <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
