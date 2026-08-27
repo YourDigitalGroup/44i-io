@@ -19882,3 +19882,33 @@ both exist, manual-only (no `trello_card_ids` at all — the actual current
 state of every real campaign right now) resolves correctly, and blank
 manual correctly falls through to automatic. `node --check` passes. Not
 yet tested live.
+
+## 2026-08-27 — Group editor's own tab bar was missed by the 2026-08-18 pill sweep
+
+Claire caught it from a screenshot: the Group editor's "Group Info /
+Custom Pricing / Accounting Overrides" tab bar was still the old
+underline style, even though the 2026-08-18 pass ("Section/status tabs
+converted to pills, matching everything else") was supposed to catch
+every remaining underline-style nav element. Did a full sweep this time
+instead of trusting that pass was complete — grepped every file for
+`border-bottom` tab patterns, `role="tab"` usage, `.tab`/`tab-bar` classes,
+and "underline" — confirmed this Group-editor bar was the ONLY real miss;
+every other `border-bottom` hit in the codebase is print/PDF letterhead
+styling on the IO document itself (table row dividers, section headers),
+not navigation.
+
+**Fixed** (`admin/index.html`): converted `tab-btn-info`/`tab-btn-pricing`/
+`tab-btn-accounting-override` to the exact same rounded-pill markup as
+`adminSection()`'s own tabs (`padding:8px 16px;border-radius:999px;border:
+1.5px solid var(--accent-dark)`, filled `--accent-dark`/white when active,
+white/`--accent-dark` outline when not), and `adminTab()` to toggle
+`background`/`color` instead of `borderBottomColor`. Also brought this bar
+up to the same accessibility standard the correctly-styled tab bars
+already had but this one never got: added `role="tab"`/`aria-selected`/
+`aria-controls` on the buttons and `role="tabpanel"`/`aria-labelledby` on
+the three panels, with `adminTab()` toggling `aria-selected` alongside the
+visual state.
+
+**Verified:** `node --check` passes on the extracted script. Not yet
+confirmed live — needs Claire to open a group's editor and check the tab
+bar renders as filled pills, same shape as the section tabs above it.

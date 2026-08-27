@@ -162,11 +162,14 @@
 
       <!-- Group edit form — tabbed -->
       <div id="admin-group-form" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);overflow:hidden;order:1;margin-bottom:20px">
-        <!-- Tab bar -->
-        <div style="display:flex;border-bottom:1px solid var(--border);background:#fff">
-          <button id="tab-btn-info" onclick="adminTab('info')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid var(--accent-dark);background:transparent;color:var(--accent-dark);cursor:pointer">Group Info</button>
-          <button id="tab-btn-pricing" onclick="adminTab('pricing')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Custom Pricing</button>
-          <button id="tab-btn-accounting-override" onclick="adminTab('accounting-override')" style="padding:12px 20px;font-size:12px;font-weight:700;border:none;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer">Accounting Overrides</button>
+        <!-- Tab bar (2026-08-27 -- converted to the same rounded-pill shape as
+             every other tab/toggle in this app, e.g. the section tabs
+             (section-tab-groups etc.) and Strategist's status tabs, both
+             already converted 2026-08-18; this one was missed by that sweep) -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;padding:14px 20px;border-bottom:1px solid var(--border);background:#fff">
+          <button id="tab-btn-info" role="tab" aria-selected="true" aria-controls="tab-info" onclick="adminTab('info')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:var(--accent-dark);color:#fff;cursor:pointer">Group Info</button>
+          <button id="tab-btn-pricing" role="tab" aria-selected="false" aria-controls="tab-pricing" onclick="adminTab('pricing')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Custom Pricing</button>
+          <button id="tab-btn-accounting-override" role="tab" aria-selected="false" aria-controls="tab-accounting-override" onclick="adminTab('accounting-override')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Accounting Overrides</button>
         </div>
 
         <div style="padding:20px">
@@ -174,7 +177,7 @@
           <input type="hidden" id="admin-group-id"/>
 
           <!-- TAB: Group Info -->
-          <div id="tab-info">
+          <div id="tab-info" role="tabpanel" aria-labelledby="tab-btn-info">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div><label class="lbl" for="admin-name">Group Name</label><input type="text" id="admin-name" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px" oninput="autoSlug(this.value)"/></div>
               <div>
@@ -277,7 +280,7 @@
           </div>
 
           <!-- TAB: Custom Pricing -->
-          <div id="tab-pricing" style="display:none">
+          <div id="tab-pricing" role="tabpanel" aria-labelledby="tab-btn-pricing" style="display:none">
             <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override default prices for this group. Leave a field blank to use the standard rate. Programmatic ad products and SEM are fixed and not shown here.</p>
             <div id="pricing-fields"></div>
             <p style="font-size:10px;color:var(--muted);margin-top:12px">Prices shown to clients on the IO form will reflect these overrides. All other groups remain at standard rates.</p>
@@ -288,7 +291,7 @@
                Deliberately its own tab, not merged into Custom Pricing — per Claire, this
                is internal margin data, a completely different concern from what a client
                is billed. Restricted to super admins, same guard as Custom Pricing. -->
-          <div id="tab-accounting-override" style="display:none">
+          <div id="tab-accounting-override" role="tabpanel" aria-labelledby="tab-btn-accounting-override" style="display:none">
             <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. A CPM-adjustment modifier (like Offline Visits Tracking) shows one row per tactic it can combine with, so each pairing (e.g. Geo-Targeting w/ Offline Tracking vs. Site-Targeting w/ Offline Tracking) can be overridden separately for this group.</p>
             <div id="accounting-override-fields"></div>
             <p style="font-size:10px;color:var(--muted);margin-top:12px">Internal only — never shown to clients or on the printed IO. Affects only how this group's real margin is calculated, not anything on the public form.</p>
@@ -1832,12 +1835,18 @@ async function adminTab(tab) {
   document.getElementById('tab-info').style.display     = tab==='info'    ? 'block' : 'none';
   document.getElementById('tab-pricing').style.display  = tab==='pricing' ? 'block' : 'none';
   document.getElementById('tab-accounting-override').style.display = tab==='accounting-override' ? 'block' : 'none';
-  document.getElementById('tab-btn-info').style.borderBottomColor    = tab==='info'    ? 'var(--accent-dark)' : 'transparent';
-  document.getElementById('tab-btn-pricing').style.borderBottomColor = tab==='pricing' ? 'var(--accent-dark)' : 'transparent';
-  document.getElementById('tab-btn-accounting-override').style.borderBottomColor = tab==='accounting-override' ? 'var(--accent-dark)' : 'transparent';
-  document.getElementById('tab-btn-info').style.color    = tab==='info'    ? 'var(--accent-dark)' : 'var(--muted)';
-  document.getElementById('tab-btn-pricing').style.color = tab==='pricing' ? 'var(--accent-dark)' : 'var(--muted)';
-  document.getElementById('tab-btn-accounting-override').style.color = tab==='accounting-override' ? 'var(--accent-dark)' : 'var(--muted)';
+  // Filled pill when active, white/accent-outline when not (2026-08-27) --
+  // same active/inactive pattern as adminSection()'s own tabs, converted
+  // 2026-08-18; this tab bar was missed by that sweep.
+  document.getElementById('tab-btn-info').style.background    = tab==='info'    ? 'var(--accent-dark)' : '#fff';
+  document.getElementById('tab-btn-pricing').style.background = tab==='pricing' ? 'var(--accent-dark)' : '#fff';
+  document.getElementById('tab-btn-accounting-override').style.background = tab==='accounting-override' ? 'var(--accent-dark)' : '#fff';
+  document.getElementById('tab-btn-info').style.color    = tab==='info'    ? '#fff' : 'var(--accent-dark)';
+  document.getElementById('tab-btn-pricing').style.color = tab==='pricing' ? '#fff' : 'var(--accent-dark)';
+  document.getElementById('tab-btn-accounting-override').style.color = tab==='accounting-override' ? '#fff' : 'var(--accent-dark)';
+  document.getElementById('tab-btn-info').setAttribute('aria-selected', tab==='info' ? 'true' : 'false');
+  document.getElementById('tab-btn-pricing').setAttribute('aria-selected', tab==='pricing' ? 'true' : 'false');
+  document.getElementById('tab-btn-accounting-override').setAttribute('aria-selected', tab==='accounting-override' ? 'true' : 'false');
   if (tab === 'pricing') renderPricingFields();
   if (tab === 'accounting-override') {
     // Accounting Overrides needs the same base Accounting Map data the Accounting Map
