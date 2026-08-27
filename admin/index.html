@@ -306,8 +306,8 @@
       </div><!-- /section-groups -->
 
       <!-- ── SECTION: Orders ── -->
-      <div id="section-orders" role="tabpanel" aria-labelledby="section-tab-orders" tabindex="0" style="display:none">
-        <div style="margin-bottom:16px">
+      <div id="section-orders" role="tabpanel" aria-labelledby="section-tab-orders" tabindex="0" style="display:none;flex-direction:column">
+        <div style="margin-bottom:16px;order:2">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Submitted Orders</p>
 
           <!-- Filters -->
@@ -344,8 +344,15 @@
           </div>
         </div>
 
-        <!-- Order detail panel (read-only for Phase 1) -->
-        <div id="admin-order-detail" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-top:16px">
+        <!-- Order detail panel (read-only for Phase 1) -- order:1 (2026-08-27,
+             per Claire: "the view in submitted orders opens at the bottom
+             can we have it match how every other editor options") so it
+             renders ABOVE the orders list/filters, same flex-order trick
+             already used by admin-group-form (order:1) and
+             admin-client-form (order:4) to appear above their own lists
+             regardless of DOM position -- #section-orders just never got
+             the matching display:flex treatment those sections have. -->
+        <div id="admin-order-detail" style="display:none;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:20px;margin-bottom:16px;order:1">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
             <p style="font-size:14px;font-weight:700;color:var(--text)" id="admin-order-detail-title">Order Detail</p>
             <button onclick="closeOrderDetail()" class="btn-quiet-green">✕ Close</button>
@@ -2495,12 +2502,15 @@ function adminSection(section) {
   const sections = ['groups','orders','clients','map','sections','intake','ae','strategists','legal','notifications','reconcile','users','accounting'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
-    // 'groups', 'clients', 'users', and 'accounting' need display:flex specifically —
-    // all four use flex `order` on their edit form so it renders above the list
-    // regardless of DOM source order (see their markup). Setting plain 'block' here
-    // would silently cancel that ordering the moment this tab is shown, which is
-    // exactly what was happening before this was special-cased for 'groups'.
-    if (panel) panel.style.display = s !== section ? 'none' : ((s === 'groups' || s === 'clients' || s === 'users' || s === 'accounting') ? 'flex' : 'block');
+    // 'groups', 'orders', 'clients', 'users', and 'accounting' need display:flex
+    // specifically — all five use flex `order` on their edit/detail panel so it
+    // renders above the list regardless of DOM source order (see their markup).
+    // Setting plain 'block' here would silently cancel that ordering the moment
+    // this tab is shown, which is exactly what was happening before this was
+    // special-cased for 'groups' -- and exactly what was still happening for
+    // 'orders' until 2026-08-27, per Claire: "the view in submitted orders
+    // opens at the bottom can we have it match how every other editor options."
+    if (panel) panel.style.display = s !== section ? 'none' : ((s === 'groups' || s === 'orders' || s === 'clients' || s === 'users' || s === 'accounting') ? 'flex' : 'block');
     const tab = document.getElementById('section-tab-' + s);
     if (tab) {
       tab.style.background = (s === section) ? 'var(--accent-dark)' : '#fff';

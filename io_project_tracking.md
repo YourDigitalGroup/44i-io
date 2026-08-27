@@ -19912,3 +19912,31 @@ visual state.
 **Verified:** `node --check` passes on the extracted script. Not yet
 confirmed live — needs Claire to open a group's editor and check the tab
 bar renders as filled pills, same shape as the section tabs above it.
+
+## 2026-08-27 — Order Detail now opens above the list, matching every other editor
+
+Claire: "the view in submitted orders opens at the bottom can we have it
+match how every other editor options." Root cause: `adminSection()`'s own
+comment already explained the pattern — `admin-group-form`/`admin-client-form`/
+etc. use a flex-`order` trick (parent `#section-X` set to `display:flex`,
+the edit panel given `order:1` so it renders ABOVE the list regardless of
+where it sits in the actual HTML) specifically so an editor never buries
+itself under a potentially-long list. `'orders'` was never added to
+`adminSection()`'s flex-needed list (`'groups'`/`'clients'`/`'users'`/
+`'accounting'` only), so `#section-orders` stayed plain `display:block`
+and `#admin-order-detail` — which sits AFTER the filters+table in the raw
+HTML — had no `order` to override that, and just rendered where it
+physically sits: at the bottom, below however many orders are in the list.
+
+**Fixed**: added `flex-direction:column` to `#section-orders`, wrapped the
+filters+table block with `order:2`, gave `#admin-order-detail` `order:1`
+(same value `admin-group-form` uses), and added `'orders'` to
+`adminSection()`'s flex-needed list. No JS logic changes needed beyond
+that one list — `viewOrder()`/`closeOrderDetail()` still just toggle the
+panel's own `display:block`/`none`, unaffected by the parent's `order`
+placement (same as the already-working Group/Client editors).
+
+**Verified:** `node --check` passes on the extracted script. Not yet
+confirmed live — needs Claire to open Submitted Orders, click View on any
+order, and confirm the detail panel now appears above the orders list/
+filters instead of below it.
