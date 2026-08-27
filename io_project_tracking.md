@@ -19701,3 +19701,56 @@ unchanged — only the resolution logic above them changed.
 
 **Verified:** `node --check` passes on the extracted script. Not yet
 confirmed live — needs redeploy + one more test from Claire.
+
+## 2026-08-27 — QUR services: 44i Cut % now overridable per campaign line
+
+Claire: "based on the price the 44i cut % will vary" for QUR (Quote Upon
+Request) services. Confirmed via AskUserQuestion this isn't a fixed price
+tier schedule (unlike SEM's existing spend-tiered Cut %) — since a QUR
+price is set per-quote, the Cut % has to be a manual per-line call too, and
+restricted to QUR services only (not exposed on every line, matching the
+Retail CPM override's own precedent of being a plain per-line field, just
+scoped narrower here per Claire's choice).
+
+**Built** (`accounting/index.html`):
+- New `campaign_lines.cut_pct_override` numeric column (SQL below).
+- `accountingEffectiveCutPct(...)` takes a new `lineOverride` param, checked
+  FIRST — ahead of the pairing rate, the spend tier, and the client/group/
+  base rate — since a line override is the most specific thing that could be
+  true about a QUR line's actual agreed split. Both call sites (main table,
+  detail card) updated to pass `line.cut_pct_override`.
+- `accountingCutPctOverrideFieldHtml(line)` — new editable "44i Cut %
+  Override" input, shown ONLY when `CATALOG_ROWS[line.service_id]
+  ?.default_price == null` (the same QUR check already used elsewhere),
+  placed in the detail card header next to the SSH Billing checkbox.
+- `cutPctOverrideBadgeHtml(line)` — same badge shape as the existing
+  `cpmOverrideBadgeHtml`, shown in the main table's Tactic cell wherever a
+  line (or split child) carries an override, so it's visible without
+  opening the detail card.
+- `accountingSaveCutPctOverride(lineId, value)` — saves via a new RPC (SQL
+  below), same shape as the existing `accountingToggleBilledExternally`.
+
+**SQL given to Claire** (not committed to the repo, per this project's
+standing convention):
+```sql
+alter table campaign_lines add column cut_pct_override numeric;
+
+create or replace function accounting_set_cut_pct_override(
+  p_name text, p_pw text, p_campaign_line_id uuid, p_value numeric
+) returns void as $$
+begin
+  -- (same password-check pattern as accounting_set_billed_externally)
+  update campaign_lines set cut_pct_override = p_value where id = p_campaign_line_id;
+end;
+$$ language plpgsql security definer;
+```
+Claire needs to confirm `accounting_get_campaign_lines` returns this new
+column (if it does `select *`, nothing to change there; if it lists columns
+explicitly, `cut_pct_override` needs adding to that list too).
+
+**Verified:** a standalone harness confirmed the priority order (line
+override beats a spend tier, beats the base rate) and the `0`-is-a-valid-
+override edge case (checked with `!= null`, not truthy, so an explicit 0%
+override doesn't silently fall through to the base rate). `node --check`
+passes on the extracted script. Not yet tested live — needs the SQL run,
+then a real QUR line to set an override on and confirm the split changes.

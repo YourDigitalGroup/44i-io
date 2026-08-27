@@ -374,6 +374,42 @@ function cpmOverrideBadgeHtml(line) {
   return ` <span title="Retail CPM overridden to $${Number(line.retail_cpm_override).toFixed(2)}" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM $${Number(line.retail_cpm_override).toFixed(2)}</span>`;
 }
 
+// Same shape as cpmOverrideBadgeHtml above (2026-08-27, per Claire -- QUR
+// services quote at a varying price, so the 44i Cut % on those lines is a
+// manual per-line call, not a fixed tier). Shown wherever a line renders in
+// the main table, so an overridden split is visible without opening the
+// detail card.
+function cutPctOverrideBadgeHtml(line) {
+  if (line.cut_pct_override == null) return '';
+  return ` <span title="44i Cut % overridden to ${Number(line.cut_pct_override)}%" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Cut ${Number(line.cut_pct_override)}%</span>`;
+}
+
+// Editable "44i Cut % Override" field, QUR services only (2026-08-27, per
+// Claire -- restricted in the UI to services with no catalog default_price,
+// same isQur check accountingDerivedAmount's own comment describes). Not
+// re-checked in accountingEffectiveCutPct itself -- see the comment there.
+function accountingCutPctOverrideFieldHtml(line) {
+  const isQur = CATALOG_ROWS[line.service_id]?.default_price == null;
+  if (!isQur) return '';
+  return `<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted)">
+    44i Cut % Override
+    <input type="number" step="0.01" min="0" max="100" value="${line.cut_pct_override ?? ''}" placeholder="auto"
+      onchange="accountingSaveCutPctOverride('${line.id}', this.value)"
+      style="width:64px;padding:3px 6px;border-radius:6px;border:1px ${line.cut_pct_override != null ? 'solid var(--accent)' : 'dashed var(--border)'};font-size:11.5px"/>%
+  </label>`;
+}
+
+async function accountingSaveCutPctOverride(lineId, value) {
+  try {
+    await sb('rpc/accounting_set_cut_pct_override', { method: 'POST', body: JSON.stringify({
+      p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw,
+      p_campaign_line_id: lineId, p_value: value === '' ? null : Number(value)
+    }) });
+    await fetchAccountingData();
+    renderAccountingDashboard();
+  } catch(e) { showToast('Error saving: ' + e.message, 'error'); }
+}
+
 function accountingFormatFlightRange(start, end) {
   const s = accountingFormatFlightDate(start), e = accountingFormatFlightDate(end);
   if (!s && !e) return '—';
@@ -474,7 +510,7 @@ function accountingRenderDetailCard() {
     // don't apply and would just be dead code for this billing_type anyway.
     const cutPct = line.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(line.service_id, line.client_id, line.group_id)
-      : accountingEffectiveCutPct(line.service_id, line.client_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross);
+      : accountingEffectiveCutPct(line.service_id, line.client_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross, line.cut_pct_override);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
@@ -492,6 +528,7 @@ function accountingRenderDetailCard() {
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11.5px;color:var(--muted)">
           <input type="checkbox" ${line.billed_externally ? 'checked' : ''} onchange="accountingToggleBilledExternally('${line.id}', this.checked)"/> SSH Billing
         </label>
+        ${accountingCutPctOverrideFieldHtml(line)}
         ${line.order_id ? `<button onclick="accountingViewOrder('${esc(line.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
         <button class="acct-detail-close" onclick="accountingCloseDetailCard()">✕ Close</button>
       </div>
@@ -1363,7 +1400,16 @@ function accountingEffectiveCutPctTier(serviceId, grossBudget) {
 // group/pairing `rates` dataset, which has no client scope. Same documented
 // gap as the pre-existing group-override case: a client override of a PAIRING
 // rate isn't supported (hasModifier is only ever a plain boolean).
-function accountingEffectiveCutPct(serviceId, clientId, groupId, hasModifier, grossBudget) {
+// lineOverride (2026-08-27, per Claire — QUR services quote at a varying
+// price, so the 44i Cut % on those lines isn't a fixed tier schedule, it's
+// whatever was actually agreed at quote time) beats every other source,
+// including the pairing rate -- it's a manual call on this exact line, more
+// specific than any tier/client/group/base rate below it. Restricted to QUR
+// services in the UI (accountingCutPctOverrideFieldHtml), but not re-checked
+// here -- a stray value on a non-QUR line would still just mean "use this
+// instead," same as every other override in this chain.
+function accountingEffectiveCutPct(serviceId, clientId, groupId, hasModifier, grossBudget, lineOverride) {
+  if (lineOverride != null) return Number(lineOverride);
   if (hasModifier) {
     const pairingRate = ACCOUNTING_CUT_RATES.pairing[serviceId];
     if (pairingRate != null) return pairingRate;
@@ -1779,7 +1825,7 @@ function accountingBuildRows() {
     const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
     const cutPct = l.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
-      : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross);
+      : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
     // manual confirm from the detail card (for tactics the Strategist Portal
@@ -1866,7 +1912,7 @@ function accountingRenderRow(r) {
         const isAgentChild = !!(c.line.agent_name && c.line.county);
         html += `<tr class="acct-row acct-child${selected ? ' selected' : ''}"${childTint ? ` style="--child-tint:${esc(childTint)}"` : ''} onclick="event.stopPropagation();accountingSelectLine('${c.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();accountingSelectLine('${c.line.id}')}">
           <td>${isAgentChild ? esc(accountingDisplayClientName(c.line)) : ''}</td>
-          <td>${esc(c.line.split_label || (isAgentChild ? '—' : '(unlabeled split)'))}${cpmOverrideBadgeHtml(c.line)}</td>
+          <td>${esc(c.line.split_label || (isAgentChild ? '—' : '(unlabeled split)'))}${cpmOverrideBadgeHtml(c.line)}${cutPctOverrideBadgeHtml(c.line)}</td>
           <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
           <td class="num">${c.gross != null ? '$' + c.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
@@ -1881,7 +1927,7 @@ function accountingRenderRow(r) {
   const selected = r.line.id === accountingSelectedLineId;
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingSelectLine('${r.line.id}')}">
     <td><strong>${esc(accountingDisplayClientName(r.line))}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
     <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
