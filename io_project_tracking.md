@@ -19754,3 +19754,66 @@ override edge case (checked with `!= null`, not truthy, so an explicit 0%
 override doesn't silently fall through to the base rate). `node --check`
 passes on the extracted script. Not yet tested live — needs the SQL run,
 then a real QUR line to set an override on and confirm the split changes.
+
+## 2026-08-27 — Effective-dated pricing/accounting changes, Phase 1: history table + seeding
+
+Claire wants to change a price or 44i/Group split with a **future effective
+date**, so existing orders keep their old numbers and only NEW orders from
+that date forward pick up the new one — plus a timeline she can point to
+later for audit questions. Confirmed via AskUserQuestion (full design in
+`/root/.claude/plans/zany-sleeping-lecun.md`):
+- **Locked at submission, not re-checked monthly** — an order's price/split
+  is decided once, the day it's submitted, and never shifts later even if
+  the schedule changes again while it's still running.
+- **Tiered fields freeze their whole schedule too** — an already-running
+  SEM campaign keeps evaluating against the tier table in effect when it
+  was submitted, not whatever's live today.
+- **Scope**: all pricing AND accounting fields, all three levels (base,
+  group override, client override).
+
+This "lock at submission" answer is what keeps the build simple: the
+existing precedence logic (client beats group beats base; tier beats flat;
+a `force` flag reorders that; a manual per-line override beats all of it)
+doesn't need to become date-aware everywhere it's read today — it only
+needs to run ONCE, at order-creation time, fed by "whichever value was in
+effect on this date" instead of "whichever value is live right now," and
+the result gets frozen onto the campaign line.
+
+**Phase 1 (in progress) — one generic `rate_history` table + `resolve_rate()`
+covers every field at every scope**, rather than ten bespoke tables:
+```sql
+create table rate_history (
+  id uuid primary key default gen_random_uuid(),
+  scope text not null check (scope in ('base','group','client','pairing')),
+  scope_id uuid, service_id text not null, field text not null,
+  value jsonb not null, effective_date date not null,
+  created_at timestamptz not null default now(), created_by text
+);
+```
+plus a `resolve_rate(scope, scope_id, service_id, field, as_of)` SQL
+function picking the latest entry with `effective_date <= as_of`.
+
+**Real discovery while writing the seeding SQL**: group-level accounting
+overrides do NOT live on `accounting_map` (confirmed via
+`information_schema.columns` — no `group_id` column exists there at all).
+They live in `groups.accounting_overrides`, a nested jsonb
+(`{service_id: {field: value}}`), same shape as `clients.accounting_overrides`.
+There's also a third real scope beyond base/group/client — **pairing**
+rates (e.g. Offline Visits Tracking's modifier rate), stored as their own
+`accounting_map` rows keyed by a linked `is_cpm_adjustment` service — so
+`rate_history`'s scope check was widened to `('base','group','client','pairing')`
+before this was caught, by pulling `accounting_get_rates`'s real
+`pg_get_functiondef()` rather than guessing at the schema.
+
+Gave Claire 8 separate seeding INSERT blocks (base accounting rates +
+tiers, pairing rates, group/client accounting overrides via
+`jsonb_each`, group/client price overrides, base catalog price fields) —
+explicitly instructed to run each as its own query, not pasted together,
+so one failing block (e.g. a guessed column that doesn't actually exist)
+can't roll back the ones that already succeeded.
+
+**Verified:** design confirmed against the real `accounting_get_rates`
+function definition and the real `accounting_map` column list (not
+assumed). Not yet run live — waiting on Claire to execute all 8 blocks and
+confirm no errors before moving to Phase 2 (admin UI for adding a dated
+change, proven first on the Services tab price field).
