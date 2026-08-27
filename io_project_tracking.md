@@ -19814,6 +19814,47 @@ can't roll back the ones that already succeeded.
 
 **Verified:** design confirmed against the real `accounting_get_rates`
 function definition and the real `accounting_map` column list (not
-assumed). Not yet run live — waiting on Claire to execute all 8 blocks and
-confirm no errors before moving to Phase 2 (admin UI for adding a dated
-change, proven first on the Services tab price field).
+assumed). All 8 seeding blocks confirmed run successfully by Claire (two
+minor Postgres typing quirks hit and fixed along the way — a bare `null`
+in a `UNION ALL` needs an explicit `::uuid` cast, and a bare date string
+literal needs `::date`, or Postgres infers `text` for both and the INSERT
+rejects them against the real `uuid`/`date` columns). Phase 1 complete —
+moving to Phase 2 (admin UI for adding a dated change) next.
+
+## 2026-08-27 — Strategist Portal: direct link to a campaign's Trello card
+
+Relayed from Samantha (strategist) via Claire's Slack screenshot: "would it
+be possible to add a spot to campaigns for a link to the corresponding
+Trello card... or will this eventually be added automatically." No new
+data collection needed — `orders.trello_card_ids` (keyed by each service's
+`workflow`, same key `admin/index.html` already uses to resolve a card for
+an order) has been stamped automatically at every order's submission all
+along; this was a pure display gap, not a missing-data one.
+
+**Built** (`strategist/index.html`):
+- `strategist_get_campaign_lines` needs one new field added to its
+  `jsonb_build_object` output: `'trello_card_ids', o.trello_card_ids` (SQL
+  below) — it wasn't being returned to the portal at all before this.
+- `strategistTrelloCardUrl(line)` — resolves `CATALOG_ROWS[line.service_id]
+  ?.workflow`, looks that key up in `line.trello_card_ids`, returns
+  `https://trello.com/c/<id>` or `null`. Trello's card-open URL accepts the
+  full card id (not just the short shortLink code), so no extra Trello API
+  call is needed to resolve one — reuses the id already stored verbatim.
+- A "Trello Card ↗" link added next to the existing "View Order" button in
+  both the Campaign Setup panel header and the Active campaign Detail
+  panel header — same placement/styling convention as "View Order".
+
+**SQL given to Claire** (not committed to the repo, per standing
+convention) — add one line to the existing `strategist_get_campaign_lines`
+function's `jsonb_build_object(...)`:
+```sql
+'trello_card_ids', o.trello_card_ids
+```
+
+**Verified:** a standalone harness confirmed the lookup handles every real
+edge case correctly (no `trello_card_ids` at all, a map present but missing
+this line's workflow key, a service missing its own `workflow` field, an
+unrecognized `service_id`) — all resolve to `null` rather than a broken
+link or a thrown error. `node --check` passes on the extracted script. Not
+yet tested live — needs the SQL run, then a real campaign line to confirm
+the link opens the right card.

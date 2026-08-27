@@ -2393,6 +2393,7 @@ function renderSetupPanel(l) {
         <div style="display:flex;align-items:center;gap:8px">
           ${strategistSetupBlockerPill(l)}
           ${l.order_id ? `<button onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">View Order</button>` : ''}
+          ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" onclick="event.stopPropagation()" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;text-decoration:none">Trello Card ↗</a>` : ''}
           <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:20px;background:var(--light);color:var(--muted)">Pending</span>
         </div>
       </div>
@@ -3092,6 +3093,21 @@ function strategistCloseDetailPanel() {
 // otherwise has no reason to fetch the sections table at all.
 let STRATEGIST_SECTIONS = [];
 
+// Trello card link (2026-08-27, per Samantha via Claire -- a strategist
+// wants to jump straight to a campaign's Trello card from the portal
+// instead of hunting for it on the board). No new data to collect for
+// this -- index.html already stamps every tactic card's real Trello id
+// onto orders.trello_card_ids (keyed by the service's own `workflow`,
+// same key admin/index.html already uses to resolve a card for the same
+// order) the moment an order is submitted, so this is a pure display
+// lookup against data that's been there all along. `trello_card_ids` is
+// added to strategist_get_campaign_lines's own jsonb, not fetched here.
+function strategistTrelloCardUrl(line) {
+  const workflow = CATALOG_ROWS[line.service_id]?.workflow;
+  const cardId = workflow ? line.trello_card_ids?.[workflow] : null;
+  return cardId ? `https://trello.com/c/${cardId}` : null;
+}
+
 async function strategistViewOrder(orderId) {
   if (!orderId) return;
   try {
@@ -3134,6 +3150,7 @@ function renderStrategistDetailPanel() {
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent-dark)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
         ${l.order_id ? `<button onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
+        ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;text-decoration:none">Trello Card ↗</a>` : ''}
         <button onclick="strategistCloseDetailPanel()" class="btn-quiet-green">✕ Close</button>
       </div>
     </div>
