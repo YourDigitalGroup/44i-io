@@ -19940,3 +19940,105 @@ placement (same as the already-working Group/Client editors).
 confirmed live — needs Claire to open Submitted Orders, click View on any
 order, and confirm the detail panel now appears above the orders list/
 filters instead of below it.
+
+## 2026-08-27 — Full table/text styling readability sweep across all three portals
+
+Claire, while waiting on a GitHub Actions outage: "could we do a sweep of
+the admin, strategist and accounting portals to make sure every table
+formatting matches all text colors are matching and everything is
+readable... it looks like some of the tables text color and style
+varies." Confirmed scope: fix everything found, prioritizing readability
+of text size and color specifically (not a broader design-system pass —
+semantic status colors like pass/fail red/green were deliberately left
+alone as a separate design-token question, not a readability bug).
+
+Ran a full audit first (one research pass per portal, no edits), then a
+separate fix pass per portal against the audit's findings — this kept the
+"find everything" and "fix it" steps independent so the fix work had a
+concrete, reviewed list to work against rather than fixing-as-discovered.
+
+**Admin Portal** (`admin/index.html`) — the most inconsistent of the
+three, since it has no shared table CSS class at all (every table's style
+is hand-typed inline per render function):
+- **Groups list**: was `font-size:13px` — the only list table in the
+  whole app not at the standard `12.5px` — plus mismatched header/cell
+  padding and letter-spacing. Its `io_slug` ID column also had no
+  size/color treatment at all, unlike every other ID column in the app.
+- **Order Detail line-items table**: smaller font, missing header
+  letter-spacing, and its own Amount column was muted gray while the
+  *same* Amount data one screen back (the Orders list) is normal-color
+  bold-and-right-aligned — same number, two different treatments
+  depending on which table you're looking at it in.
+- **Swap-Tactic proration preview**: smallest table font in the app
+  (11.5px), missing header background entirely, dollar figures with no
+  bold/alignment at all.
+- **Accounting Overrides tables** (group + client editors): minor
+  padding/ID-note-size drift, brought in line.
+- **Accounting Map — the single biggest readability fix**: every dollar/
+  percent column (8 of them) was plain, unbolded, left-aligned text —
+  every other numeric table in the app bolds and right-aligns money so a
+  column of figures is easy to scan; Accounting Map was the one outlier
+  reading as a flat wall of numbers. Now matches.
+- **Intake Forms empty-state row — the actual color bug Claire spotted**:
+  `color:#9CA3AF`, a hardcoded gray that is NOT the app's real muted-gray
+  token (`var(--muted)`) — close enough to look "almost right" but a
+  genuinely different color that would never track a future design
+  change. Replaced with `var(--muted)`.
+- **Reconcile Lists' three result tables**: noticeably smaller/tighter
+  than the picker table sitting right above them in the same tab — so
+  scrolling from the picker into its own results felt like switching to
+  a denser sub-app. Unified to the same sizing. (Their status colors
+  were deliberately left alone — separate scope, see above.)
+
+**Strategist Portal** (`strategist/index.html`) — no hardcoded-color bugs
+found, but real font-size/header-style drift across its many table-like
+(div-based, not real `&lt;table&gt;`) structures:
+- Bulk Import's preview table header was completely unstyled — no size,
+  weight, color, or uppercase treatment at all, so it read as plain data
+  instead of column labels. This was the single worst spot in this
+  portal.
+- Four different "small caps" header-label recipes existed across the
+  file (10px/.04em, 10px/.06em, 10.5px/.05em, 9.5px/none) for what is
+  conceptually the same UI role — unified to one (10px/.04em, matching
+  the main table's own header). Caught two more headers using the
+  retiring 10.5px/.05em variant during review and fixed those too.
+- Several panels ran body text at 12px against the main table's 12.5px —
+  unified.
+- Two spots used `border-top` instead of `border-bottom` for row
+  dividers — normalized to match every real table row's convention.
+
+**Accounting Portal** (`accounting/index.html`) — already the cleanest of
+the three (its two real tables share one correct shared CSS block); the
+drift was concentrated entirely in two "paste and preview" tools that
+aren't real tables:
+- Bulk Match and Bulk Import previews were smaller text (12px vs. 12.5px)
+  with tighter/inconsistent padding, and — despite looking like similar
+  tools — didn't even match each other, let alone the real tables. Their
+  primary row text also had no explicit color at all (relying on
+  inheritance rather than the real tables' explicit `var(--text)`).
+  Unified all of it.
+- Found and removed one genuinely dead CSS rule (`tr.acct-group-row td`)
+  that was never actually matched by any real markup — the live
+  group-banner row uses its own inline per-group dynamic coloring
+  instead, which was left untouched (a deliberate design choice, not the
+  bug).
+- Standardized two of four small-label font-size variants down to 10px;
+  left two accent-colored pill badges alone since they're a different UI
+  role (a bordered badge, not a muted text label) and didn't cleanly map
+  to the same fix.
+
+**Deliberately left out of scope** (per the "readability of text size and
+color" framing, not a broader redesign): hardcoded semantic status
+colors (pass/fail red/green/amber in Reconcile Lists, warning/error
+colors in Accounting's bulk tools), the PDF-export table generators
+(render in an isolated iframe with no access to the app's CSS variables,
+so they intentionally use their own separate palette), and the complete
+lack of hover states on any table row anywhere (an interaction-design
+gap, not a text-readability one).
+
+**Verified:** every portal's changed script block extracted and run
+through `node --check` — all pass. All three agents confirmed via `git
+diff` that only inline `style` attributes changed; no onclick handlers,
+function signatures, or JS logic were touched anywhere. Not yet confirmed
+live — needs Claire to look through each portal once this deploys and
+confirm it reads as consistent.

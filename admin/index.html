@@ -2153,10 +2153,10 @@ function renderAccountingOverrideFields() {
   // auto-add setup fee) rather than appearing only on some rows, for the same reason —
   // an appearing/disappearing column is exactly what broke alignment before.
   const ALL_OVERRIDE_FIELDS = [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }];
-  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+  let html = `<table style="font-size:12.5px;border-collapse:collapse;width:100%">
     <thead><tr style="background:var(--light)">
-      <th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
-      ${ALL_OVERRIDE_FIELDS.map(f => `<th style="padding:8px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${f.label}</th>`).join('')}
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+      ${ALL_OVERRIDE_FIELDS.map(f => `<th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${f.label}</th>`).join('')}
     </tr></thead><tbody>`;
   rows.forEach(row => {
     const override = currentAccountingOverrides[row.overrideKey] || {};
@@ -2164,7 +2164,7 @@ function renderAccountingOverrideFields() {
     // same "custom vs standard at a glance" treatment as renderPricingFields() above.
     const rowIsOverridden = Object.keys(override).length > 0;
     html += `<tr id="acct-row-${esc(row.overrideKey)}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
-      <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(row.idNote)}</div></td>`;
+      <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:11px;font-family:monospace">${esc(row.idNote)}</div></td>`;
     ALL_OVERRIDE_FIELDS.forEach(f => {
       const applicable = f.key !== 'setup_fee_cut_pct' || row.hasSetupFee;
       if (!applicable) {
@@ -2329,16 +2329,16 @@ function renderClientAccountingOverrideFields() {
     return;
   }
   const ALL_OVERRIDE_FIELDS = [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }];
-  let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
+  let html = `<table style="font-size:12.5px;border-collapse:collapse;width:100%">
     <thead><tr style="background:var(--light)">
-      <th style="padding:8px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
-      ${ALL_OVERRIDE_FIELDS.map(f => `<th style="padding:8px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${f.label}</th>`).join('')}
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+      ${ALL_OVERRIDE_FIELDS.map(f => `<th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap">${f.label}</th>`).join('')}
     </tr></thead><tbody>`;
   rows.forEach(row => {
     const override = currentClientAccountingOverrides[row.overrideKey] || {};
     const rowIsOverridden = Object.keys(override).length > 0;
     html += `<tr id="client-acct-row-${esc(row.overrideKey)}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
-      <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="client-acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:10px;font-family:monospace">${esc(row.idNote)}</div></td>`;
+      <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="client-acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:11px;font-family:monospace">${esc(row.idNote)}</div></td>`;
     ALL_OVERRIDE_FIELDS.forEach(f => {
       const applicable = f.key !== 'setup_fee_cut_pct' || row.hasSetupFee;
       if (!applicable) {
@@ -3558,7 +3558,7 @@ function renderAdminIntakeList() {
     </tr></thead><tbody>`;
 
   if (!ALL_INTAKE_FORMS.length) {
-    html += `<tr><td colspan="6" style="text-align:center;padding:24px;color:#9CA3AF">No intake forms yet.</td></tr>`;
+    html += `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--muted)">No intake forms yet.</td></tr>`;
   }
 
   ALL_INTAKE_FORMS.forEach(f => {
@@ -5200,15 +5200,15 @@ function renderAccountingMapRow({ id, displayLabel, indent, defaultRetail, retai
   const missingBadge = missing ? ' <span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">MISSING</span>' : '';
   const labelCell = indent ? `<span style="color:var(--muted)">↳</span> ${esc(displayLabel)}` : esc(displayLabel);
   return `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
-      <td style="padding:8px 10px${indent ? ' 8px 24px' : ''}">${labelCell}${missingBadge}<div style="color:var(--muted);font-size:10.5px;font-family:monospace">${esc(id)}${note ? ' — ' + esc(note) : ''}</div></td>
-      <td style="padding:8px 10px">${defaultRetail != null ? '$' + defaultRetail.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${ydaPct != null ? ydaPct + '%' : '—'}</td>
-      <td style="padding:8px 10px">${cutPctDisplay != null ? cutPctDisplay + '%' : '—'}</td>
-      <td style="padding:8px 10px">${cutDollar != null ? '$' + cutDollar.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${budgetedPctDisplay != null ? budgetedPctDisplay + '%' : '—'}</td>
-      <td style="padding:8px 10px">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px">${platformCpm != null ? '$' + Number(platformCpm).toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px${indent ? ' 8px 24px' : ''}">${labelCell}${missingBadge}<div style="color:var(--muted);font-size:11px;font-family:monospace">${esc(id)}${note ? ' — ' + esc(note) : ''}</div></td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${defaultRetail != null ? '$' + defaultRetail.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${ydaPct != null ? ydaPct + '%' : '—'}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${cutPctDisplay != null ? cutPctDisplay + '%' : '—'}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${cutDollar != null ? '$' + cutDollar.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${budgetedPctDisplay != null ? budgetedPctDisplay + '%' : '—'}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${retailCpm != null ? '$' + retailCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${cutCpm != null ? '$' + cutCpm.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${platformCpm != null ? '$' + Number(platformCpm).toFixed(2) : '—'}</td>
       <td style="padding:8px 10px">${esc(setupFeeSplitDisplay || '—')}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtnHtml}</td>
     </tr>`;
@@ -5258,14 +5258,14 @@ function renderAdminAccountingList() {
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Default Retail</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">YDA (Group Cut %)</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut %</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut $</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Budgeted Spend %</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Retail CPM</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i CPM</th>
-      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Platform CPM</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Default Retail</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">YDA (Group Cut %)</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut %</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i Cut $</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Budgeted Spend %</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Retail CPM</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">44i CPM</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Platform CPM</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Setup Fee Split</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
@@ -6471,11 +6471,11 @@ async function adminListTemplateTitles() {
   // as a number mismatch instead of something only caught by manually recounting.
   const errorCount = rows.filter(r => r.error).length;
   let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:8px">${templated.length} service${templated.length !== 1 ? 's' : ''} with a template linked → ${rows.length} distinct template${rows.length !== 1 ? 's' : ''} shown${errorCount ? ` (${errorCount} couldn't be resolved — see below)` : ''}.</p>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
+    <table style="font-size:12.5px;border-collapse:collapse;width:100%">
     <thead><tr style="background:var(--light)">
-      <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Service(s) Using It</th>
-      <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Template Type</th>
-      <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Live Title(s) on Trello</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service(s) Using It</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Template Type</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Live Title(s) on Trello</th>
     </tr></thead><tbody>`;
   rows.forEach(r => {
     const services = r.services.map(s => esc(s.label)).join('<br>');
@@ -6483,9 +6483,9 @@ async function adminListTemplateTitles() {
       ? `<span style="color:#991B1B;font-weight:600">⚠ ${esc(r.error)}</span>`
       : r.names.map(n => `<span style="font-family:monospace">"${esc(n)}"</span>`).join('<br>');
     html += `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:6px 8px">${services}</td>
-      <td style="padding:6px 8px">${esc(r.type)}${r.type === 'list' ? ` (${r.names.length} card${r.names.length !== 1 ? 's' : ''})` : ''}</td>
-      <td style="padding:6px 8px">${titles}</td>
+      <td style="padding:8px 10px">${services}</td>
+      <td style="padding:8px 10px">${esc(r.type)}${r.type === 'list' ? ` (${r.names.length} card${r.names.length !== 1 ? 's' : ''})` : ''}</td>
+      <td style="padding:8px 10px">${titles}</td>
     </tr>`;
   });
   html += '</tbody></table>';
@@ -6579,11 +6579,11 @@ async function adminAuditClientTrelloCards() {
     return;
   }
   let html = `<p style="font-size:10px;color:var(--muted);margin-bottom:8px">Doesn't account for "always new card" (Event-style) services, which are meant to create a fresh card every resell.</p>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
+    <table style="font-size:12.5px;border-collapse:collapse;width:100%">
       <thead><tr style="background:var(--light)">
-        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Workflow</th>
-        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Expected Card Name</th>
-        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Result</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Workflow</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Expected Card Name</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Result</th>
       </tr></thead><tbody>`;
   rows.forEach(r => {
     const result = r.error
@@ -6592,9 +6592,9 @@ async function adminAuditClientTrelloCards() {
         ? `<span style="color:#166534;font-weight:600">✅ Found: "${esc(r.actual.name)}"</span>`
         : `<span style="color:#991B1B;font-weight:700">❌ No match — will create a NEW card on next resell</span>`;
     html += `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:6px 8px">${esc(r.workflow)}</td>
-      <td style="padding:6px 8px;font-family:monospace">${esc(r.expected || '—')}</td>
-      <td style="padding:6px 8px">${result}</td>
+      <td style="padding:8px 10px">${esc(r.workflow)}</td>
+      <td style="padding:8px 10px;font-family:monospace">${esc(r.expected || '—')}</td>
+      <td style="padding:8px 10px">${result}</td>
     </tr>`;
   });
   html += '</tbody></table>';
@@ -6743,12 +6743,12 @@ async function adminAuditAllClientsTrelloCards() {
   // list, not an arbitrary client order.
   problems.sort((a, b) => a.groupName.localeCompare(b.groupName) || a.clientName.localeCompare(b.clientName));
   let html = summary + `<p style="font-size:10px;color:var(--muted);margin-bottom:8px">Doesn't account for "always new card" (Event-style) services, which are meant to create a fresh card every resell -- an older dated copy of one of those will always show up as an unrecognized card below. Only mismatches/errors/unrecognized cards are listed — matches aren't shown.</p>
-    <table style="width:100%;border-collapse:collapse;font-size:12px">
+    <table style="font-size:12.5px;border-collapse:collapse;width:100%">
       <thead><tr style="background:var(--light)">
-        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Group</th>
-        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Client</th>
-        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Workflow</th>
-        <th style="padding:6px 8px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Issue</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Client</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Workflow</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Issue</th>
       </tr></thead><tbody>`;
   problems.forEach(p => {
     const issue = p.kind === 'error'
@@ -6757,10 +6757,10 @@ async function adminAuditAllClientsTrelloCards() {
       ? `<span style="color:#92400E;font-weight:700">❓ Real card "${esc(p.detail)}" doesn't match any expected tactic — stale leftover, typo, or an untracked sale?</span>`
       : `<span style="color:#991B1B;font-weight:700">❌ Expects "${esc(p.expected)}" — no matching card, will create a NEW one on next resell</span>`;
     html += `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:6px 8px">${esc(p.groupName)}</td>
-      <td style="padding:6px 8px">${esc(p.clientName)}</td>
-      <td style="padding:6px 8px">${esc(p.workflow)}</td>
-      <td style="padding:6px 8px">${issue}</td>
+      <td style="padding:8px 10px">${esc(p.groupName)}</td>
+      <td style="padding:8px 10px">${esc(p.clientName)}</td>
+      <td style="padding:8px 10px">${esc(p.workflow)}</td>
+      <td style="padding:8px 10px">${issue}</td>
     </tr>`;
   });
   html += '</tbody></table>';
@@ -7759,7 +7759,7 @@ function viewOrderDetail(orderId) {
       // is the SAME campaign_lines row continuing, not a new one like Swap creates).
       const currentEndDate = item.end_date || o.campaign_end || '';
       const renewBtn = `<button type="button" onclick="adminToggleRenewPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(currentEndDate)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button>`;
-      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(displayLabel)}${kocBadge}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${amtCellHtml}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:6px 10px;border-bottom:1px solid var(--border)"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${cancelBtn}</div></td></tr>
+      return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px">${esc(displayLabel)}${kocBadge}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:8px 10px;font-weight:600;text-align:right">${amtCellHtml}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${cancelBtn}</div></td></tr>
         <tr id="edit-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="renew-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
@@ -7879,14 +7879,14 @@ function viewOrderDetail(orderId) {
       <button type="button" onclick="adminToggleSwapPanel('${esc(o.id)}')" style="padding:5px 12px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:700;cursor:pointer">⇄ Swap Tactic</button>
     </div>
     <div id="swap-panel-${esc(o.id)}" style="display:none;margin-bottom:14px"></div>
-    <table style="width:100%;border-collapse:collapse;font-size:12px;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-bottom:18px">
+    <table style="font-size:12.5px;border-collapse:collapse;width:100%;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-bottom:18px">
       <thead><tr style="background:var(--light)">
-        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Service</th>
-        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Start</th>
-        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">End</th>
-        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Amount</th>
-        <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Notes</th>
-        <th style="padding:7px 10px"></th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Start</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">End</th>
+        <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Amount</th>
+        <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Notes</th>
+        <th style="padding:9px 10px"></th>
       </tr></thead>
       <tbody>${liRows}</tbody>
     </table>
@@ -8405,12 +8405,12 @@ function adminUpdateSwapPreview(orderId) {
   const startingLabel = CATALOG_ROWS[startingId]?.accounting_label || CATALOG_ROWS[startingId]?.label || startingId;
   previewEl.innerHTML = `
     <div style="font-size:10.5px;color:#1F7A42;background:#E7F5EC;display:inline-block;padding:2px 8px;border-radius:20px;font-weight:700;margin-bottom:6px">Auto-computed, shown before submitting</div>
-    <table style="width:100%;border-collapse:collapse;font-size:11.5px">
-      <thead><tr><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Line</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Covers</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;text-transform:uppercase;color:var(--muted)">Amount</th></tr></thead>
+    <table style="font-size:12.5px;border-collapse:collapse;width:100%">
+      <thead><tr style="background:var(--light)"><th style="text-align:left;padding:0 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Line</th><th style="text-align:left;padding:0 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Covers</th><th style="text-align:right;padding:0 8px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Amount</th></tr></thead>
       <tbody>
-        <tr><td style="padding:4px 8px">${esc(endingLabel)} (current, ending)</td><td style="padding:4px 8px">${endingDays} day${endingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(endingAmt)}</td></tr>
-        <tr><td style="padding:4px 8px">${esc(startingLabel)} (new, starting)</td><td style="padding:4px 8px">${startingDays} day${startingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px">${fmt(startingAmt)}</td></tr>
-        <tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:4px 8px">Total</td><td style="padding:4px 8px">${totalDays} days</td><td style="padding:4px 8px">${fmt(budget)}</td></tr>
+        <tr><td style="padding:4px 8px">${esc(endingLabel)} (current, ending)</td><td style="padding:4px 8px">${endingDays} day${endingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px;font-weight:600;text-align:right">${fmt(endingAmt)}</td></tr>
+        <tr><td style="padding:4px 8px">${esc(startingLabel)} (new, starting)</td><td style="padding:4px 8px">${startingDays} day${startingDays === 1 ? '' : 's'}</td><td style="padding:4px 8px;font-weight:600;text-align:right">${fmt(startingAmt)}</td></tr>
+        <tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:4px 8px">Total</td><td style="padding:4px 8px">${totalDays} days</td><td style="padding:4px 8px;text-align:right">${fmt(budget)}</td></tr>
       </tbody>
     </table>`;
 }
@@ -8722,15 +8722,15 @@ function renderAdminGroups() {
     el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">No groups yet. Click + New Group to add one.</p>';
     return;
   }
-  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+  el.innerHTML = `<table style="font-size:12.5px;border-collapse:collapse;width:100%">
     <thead><tr style="background:var(--light)">
-      <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Group</th>
-      <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Slug</th>
-      <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Account Manager</th>
-      <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Pricing</th>
-      <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Accounting</th>
-      <th style="padding:9px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Trello</th>
-      <th style="padding:9px 12px"></th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Slug</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Account Manager</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Pricing</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Accounting</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello</th>
+      <th style="padding:9px 10px"></th>
     </tr></thead>
     <tbody>${allGroups.map(g => {
       // Found live by Claire (2026-07-10): deactivating a service doesn't clear its
@@ -8777,18 +8777,18 @@ function renderAdminGroups() {
       const deactivateBtn = currentAdminUser?.role === 'am' ? '' :
         `<button onclick="adminToggleGroupActive('${esc(g.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
       return `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
-        <td style="padding:10px 12px">
+        <td style="padding:8px 10px">
           <div style="display:flex;align-items:center;gap:8px">
             <div style="width:10px;height:10px;border-radius:50%;background:${esc(g.brand_color||'#1C9BD7')};flex-shrink:0"></div>
             <strong>${esc(g.name)}</strong>${inactiveBadge}
           </div>
         </td>
-        <td style="padding:10px 12px;color:var(--muted);font-family:monospace">${esc(g.io_slug||'—')}</td>
-        <td style="padding:10px 12px;color:var(--muted)">${esc(g.am_name||'—')}<br><span style="font-size:11px">${esc(g.am_email||'')}</span></td>
-        <td style="padding:10px 12px">${pricingBadge}</td>
-        <td style="padding:10px 12px">${acctBadge}</td>
-        <td style="padding:10px 12px;color:var(--muted);font-size:11px;font-family:monospace">${g.trello_board_id ? esc(g.trello_board_id.slice(0,8))+'...' : '—'}</td>
-        <td style="padding:10px 12px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
+        <td style="padding:8px 10px;font-size:11px;color:var(--muted);font-family:monospace">${esc(g.io_slug||'—')}</td>
+        <td style="padding:8px 10px;color:var(--muted)">${esc(g.am_name||'—')}<br><span style="font-size:11px">${esc(g.am_email||'')}</span></td>
+        <td style="padding:8px 10px">${pricingBadge}</td>
+        <td style="padding:8px 10px">${acctBadge}</td>
+        <td style="padding:8px 10px;color:var(--muted);font-size:11px;font-family:monospace">${g.trello_board_id ? esc(g.trello_board_id.slice(0,8))+'...' : '—'}</td>
+        <td style="padding:8px 10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
           <button onclick="adminEditGroup('${esc(g.id)}')" class="btn-quiet-green">Edit</button>
           ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}','pricing')" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Pricing</button>`}
           ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}','accounting-override')" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Accounting</button>`}
