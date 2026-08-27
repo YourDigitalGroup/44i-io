@@ -19858,3 +19858,27 @@ unrecognized `service_id`) — all resolve to `null` rather than a broken
 link or a thrown error. `node --check` passes on the extracted script. Not
 yet tested live — needs the SQL run, then a real campaign line to confirm
 the link opens the right card.
+
+**Follow-up same day**: Claire clarified every CURRENT campaign is still a
+manual upload (the real form isn't in use yet), so the automatic lookup
+above has nothing to resolve for any of today's lines — the manual
+fallback is the actually-needed piece right now, not an edge case. Added
+`campaign_lines.trello_card_url` (plain text, human-pasted) and an editable
+input in the Detail panel, right next to the existing "Reference link to
+the live campaign" field, following the same convention. `strategistTrelloCardUrl(line)`
+now checks this manual field FIRST — a human pasting a link deliberately
+beats an auto-resolved one, same "specific beats generic" precedence as
+every other override this session.
+
+Saved through the existing generic `strategistSaveLine()` → `strategist_save_campaign_line`
+RPC, unchanged — the same call already saves `platform_url`/`retail_cpm_override`
+today, so this is presumed to work the same way without an RPC change,
+though this hasn't been confirmed against the RPC's actual body (can't see
+server-side SQL directly). If saving a link doesn't stick, the RPC likely
+needs `trello_card_url` added to whatever column allowlist it uses.
+
+**Verified:** harness re-run confirming manual link beats automatic when
+both exist, manual-only (no `trello_card_ids` at all — the actual current
+state of every real campaign right now) resolves correctly, and blank
+manual correctly falls through to automatic. `node --check` passes. Not
+yet tested live.

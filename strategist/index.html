@@ -3102,7 +3102,17 @@ let STRATEGIST_SECTIONS = [];
 // order) the moment an order is submitted, so this is a pure display
 // lookup against data that's been there all along. `trello_card_ids` is
 // added to strategist_get_campaign_lines's own jsonb, not fetched here.
+//
+// campaign_lines.trello_card_url (2026-08-27, per Claire -- a manually-
+// uploaded campaign, e.g. added through Accounting's "+ Add Service"
+// instead of the real IO form, never went through submitIO() and so has
+// no order-level trello_card_ids to resolve at all) is a plain manual
+// fallback a strategist can paste in themselves -- checked FIRST, same
+// "specific beats generic" precedence as every other override in this
+// project, since a human explicitly pasting a link is more certain than
+// an auto-resolved one.
 function strategistTrelloCardUrl(line) {
+  if (line.trello_card_url) return line.trello_card_url;
   const workflow = CATALOG_ROWS[line.service_id]?.workflow;
   const cardId = workflow ? line.trello_card_ids?.[workflow] : null;
   return cardId ? `https://trello.com/c/${cardId}` : null;
@@ -3150,6 +3160,7 @@ function renderStrategistDetailPanel() {
         <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent-dark)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
         ${l.order_id ? `<button onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
+        <input id="detail-trello-card-url-${l.id}" value="${esc(l.trello_card_url || '')}" placeholder="Paste a Trello card link (only needed if not auto-filled)" onchange="strategistSaveLine('${l.id}', {trello_card_url: this.value}, false)" style="width:230px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;text-decoration:none">Trello Card ↗</a>` : ''}
         <button onclick="strategistCloseDetailPanel()" class="btn-quiet-green">✕ Close</button>
       </div>
