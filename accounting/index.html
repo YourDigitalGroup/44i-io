@@ -1901,14 +1901,18 @@ function accountingBuildRows() {
 function accountingRenderRow(r) {
   if (r.isRollup) {
     const expanded = ACCOUNTING_EXPANDED_SPLITS.has(r.key);
+    // Same paused-dollar-graying treatment as the plain-row branch below —
+    // a rollup only counts as paused all-or-nothing (accountingRowIsPaused),
+    // same rule its own status pill already uses.
+    const dollarStyle = accountingRowIsPaused(r) ? ' style="color:var(--muted)"' : '';
     let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')" role="button" tabindex="0" aria-expanded="${expanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingToggleSplit('${r.key}')}">
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
       <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:10px">(${r.totalCount} regions)</span>${r.children.some(c => c.line.retail_cpm_override != null) ? ' <span title="At least one region below has its own Retail CPM override" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM override(s) below</span>' : ''}</td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
-      <td class="num">$${r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-      <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
-      <td class="num">${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
-      <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+      <td class="num"${dollarStyle}>$${r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      <td class="num"${dollarStyle}>${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+      <td class="num"${dollarStyle}>${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+      <td class="num"${dollarStyle}>${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
       <td>${accountingRollupStatusPill(r)}</td>
     </tr>`;
     if (expanded) {
@@ -1940,14 +1944,23 @@ function accountingRenderRow(r) {
     return html;
   }
   const selected = r.line.id === accountingSelectedLineId;
+  // Paused dollar cells gray out here too (2026-08-27, per Claire: "right now
+  // is shows paused but the amount still shows") -- the Detail card's own
+  // monthly table has done this since 2026-08-12 (dollarStyle, further down
+  // this file), but the main table never got the matching treatment, so a
+  // paused row's figures looked exactly as "live" as an active one, right
+  // next to its own Paused pill. Same style, same reasoning: the number
+  // itself stays visible (still useful to know what was budgeted), just
+  // visually de-emphasized instead of looking like real activity.
+  const dollarStyle = accountingRowIsPaused(r) ? ' style="color:var(--muted)"' : '';
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingSelectLine('${r.line.id}')}">
     <td><strong>${esc(accountingDisplayClientName(r.line))}</strong></td>
     <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
-    <td class="num">${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
-    <td class="num">${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
-    <td class="num">${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
-    <td class="num">${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+    <td class="num"${dollarStyle}>${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+    <td class="num"${dollarStyle}>${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+    <td class="num"${dollarStyle}>${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
+    <td class="num"${dollarStyle}>${r.actualSpend != null ? '$' + r.actualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td>${accountingLineStatusPill(r)}</td>
   </tr>`;
 }

@@ -20233,3 +20233,33 @@ handled in both functions. No schema/RPC change needed — the column and
 **Verified:** `node --check` passes on the extracted script. Not yet
 tested live — needs Claire to confirm a pasted link on a pending
 campaign survives Save Draft/Confirm & Activate.
+
+## 2026-08-27 (cont'd) — Main table now grays out dollar figures for paused rows too
+
+Claire: "Should we update the accounting portal to have a similar view?
+right now is shows paused but the amount still shows." Confirmed she
+wants the number kept (not zeroed — matches her earlier "keep them
+independent" decision), just visually de-emphasized. Checked the code:
+the Detail card's own monthly table has grayed out paused rows'
+dollar cells since 2026-08-12 (`dollarStyle`), but the MAIN table — what
+anyone actually looks at day to day — never got the matching treatment,
+so a paused row's Revenue/44i Revenue/Expected Spend/Actual Spend showed
+in full color right next to its own "Paused" pill, reading as if nothing
+had changed.
+
+**Fixed** (`accounting/index.html`, `accountingRenderRow()`): both the
+plain-row and rollup-row branches now compute the same `dollarStyle`
+(`color:var(--muted)`) via the existing `accountingRowIsPaused(r)` helper
+— already used by the row's own status pill, so "looks paused" and "is
+labeled Paused" can never disagree. A rollup (region-split campaign) only
+grays out when ALL its children are paused, same all-or-nothing rule its
+status pill already uses — a partially-paused split stays full color,
+correctly signaling "some of this is still active."
+
+**Verified:** a standalone harness confirmed a plain paused row grays
+out, a plain active row doesn't, a fully-paused rollup grays out, and a
+PARTIALLY-paused rollup correctly stays full color (matching the
+existing all-or-nothing status-pill rule rather than graying out
+prematurely). `node --check` passes on the extracted script. Not yet
+tested live — needs Claire to confirm a paused campaign's row now reads
+visually muted in the main table.
