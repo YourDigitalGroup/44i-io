@@ -1950,6 +1950,7 @@ const CUSTOM_BADGE = '<span style="margin-left:6px;padding:1px 6px;border-radius
 function renderPricingFields() {
   const container = document.getElementById('pricing-fields');
   let html = '';
+  const currentGroupId = document.getElementById('admin-group-id')?.value || '';
   PRICEABLE_SERVICES.forEach(section => {
     html += `<div style="margin-bottom:20px">
       <div style="font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">${section.section}</div>
@@ -1967,6 +1968,14 @@ function renderPricingFields() {
       // border color alone is easy to miss; a tinted row background is much easier to
       // scan for. Same OVERRIDE_ROW_STYLE/CUSTOM_BADGE used by the Accounting Overrides
       // table below, for one consistent visual language across both tabs.
+      // Scheduled-change icon (2026-08-28), same generic engine as Accounting Map/
+      // Overrides — a group's Custom Pricing override is a single flat number per
+      // service (io_pricing[id]), so rate_history's `field` is a fixed 'price' rather
+      // than one of several column names.
+      const canSchedule = currentGroupId;
+      const historyIcon = canSchedule
+        ? `<button type="button" title="Schedule a dated change" onclick="adminTogglePricingHistoryPanel('group','group','${esc(currentGroupId)}','${item.id}')" style="border:none;background:none;cursor:pointer;padding:0;font-size:11px;color:var(--muted)">🕐</button>`
+        : '';
       html += `<div id="price-row-${item.id}" style="display:flex;align-items:center;gap:14px;max-width:420px;padding:4px 8px;border-radius:6px;margin:-4px -8px;${isOverridden ? OVERRIDE_ROW_STYLE : ''}">
         <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4;min-width:0">${item.label}${isOverridden ? CUSTOM_BADGE : ''}</label>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
@@ -1979,12 +1988,58 @@ function renderPricingFields() {
             style="width:74px;padding:5px 8px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
             oninput="onPriceInput('${item.id}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:24px">${fieldType}</span>
+          ${historyIcon}
         </div>
       </div>`;
     });
     html += `</div></div>`;
   });
   container.innerHTML = html;
+}
+
+// Shared scheduled-change panel for Custom Pricing (group + client, 2026-08-28) —
+// a single-value-per-service field, so unlike renderAccountingOverrideFields()'s
+// per-field icon this panel just toggles below the one price row for that service.
+// `prefix` distinguishes group ('group') vs client ('client') DOM-id/state routing —
+// kept distinct from Accounting Overrides' own 'acct'/'client-acct' rowPrefix values
+// to avoid confusion between the two separate override mechanisms.
+function adminTogglePricingHistoryPanel(prefix, scope, scopeId, serviceId) {
+  const panelId = `${prefix}-price-history-panel-${serviceId}`;
+  const existing = document.getElementById(panelId);
+  if (existing) { existing.remove(); return; }
+  const rowId = (prefix === 'client' ? 'client-price-row-' : 'price-row-') + serviceId;
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const histPrefix = `${prefix}-price-hist-${serviceId}`;
+  const panel = document.createElement('div');
+  panel.id = panelId;
+  panel.style.cssText = 'background:var(--light);padding:10px 14px;margin:2px 0 8px;border-radius:6px;max-width:420px';
+  panel.innerHTML = `
+    <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">Schedule a price change:</label>
+    <div id="${histPrefix}-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <input type="number" step="0.01" id="${histPrefix}-history-value" placeholder="New value" style="width:90px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+      <span style="font-size:10px;color:var(--muted)">effective</span>
+      <input type="date" id="${histPrefix}-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+      <button type="button" onclick="adminSavePricingFieldHistory('${prefix}','${scope}','${esc(scopeId)}','${serviceId}')" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+    </div>`;
+  row.insertAdjacentElement('afterend', panel);
+  adminLoadRateHistory(histPrefix, scope, scopeId, serviceId, 'price');
+}
+
+async function adminSavePricingFieldHistory(prefix, scope, scopeId, serviceId) {
+  const histPrefix = `${prefix}-price-hist-${serviceId}`;
+  const value = document.getElementById(histPrefix + '-history-value')?.value;
+  const effectiveDate = document.getElementById(histPrefix + '-history-date')?.value;
+  const today = new Date().toISOString().slice(0, 10);
+  const isImmediate = effectiveDate && effectiveDate <= today && value !== '';
+  await adminAddRateHistoryChange(histPrefix, scope, scopeId, serviceId, 'price', async () => {
+    if (!isImmediate) return;
+    if (prefix === 'client') onClientPriceInput(serviceId, value);
+    else onPriceInput(serviceId, value);
+    const input = document.getElementById((prefix === 'client' ? 'client-price-' : 'price-') + serviceId);
+    if (input) input.value = value;
+  });
 }
 
 function onPriceInput(serviceId, val) {
@@ -2029,6 +2084,7 @@ function renderClientPricingFields() {
   const container = document.getElementById('client-pricing-fields');
   if (!container) return;
   let html = '';
+  const currentClientId = document.getElementById('admin-client-original-id')?.value || '';
   PRICEABLE_SERVICES.forEach(section => {
     html += `<div style="margin-bottom:20px">
       <div style="font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)">${section.section}</div>
@@ -2039,6 +2095,10 @@ function renderClientPricingFields() {
       const displayVal = isOverridden ? override : '';
       const liveDefault = item.field === 'cpm' ? CATALOG_ROWS[item.id]?.retail_cpm : CATALOG_ROWS[item.id]?.default_price;
       const fieldType = item.field === 'recurring' ? '/mo' : (item.field === 'cpm' ? 'CPM' : '');
+      const canSchedule = currentClientId;
+      const historyIcon = canSchedule
+        ? `<button type="button" title="Schedule a dated change" onclick="adminTogglePricingHistoryPanel('client','client','${esc(currentClientId)}','${item.id}')" style="border:none;background:none;cursor:pointer;padding:0;font-size:11px;color:var(--muted)">🕐</button>`
+        : '';
       html += `<div id="client-price-row-${item.id}" style="display:flex;align-items:center;gap:14px;max-width:420px;padding:4px 8px;border-radius:6px;margin:-4px -8px;${isOverridden ? OVERRIDE_ROW_STYLE : ''}">
         <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4;min-width:0">${item.label}${isOverridden ? CUSTOM_BADGE : ''}</label>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
@@ -2051,6 +2111,7 @@ function renderClientPricingFields() {
             style="width:74px;padding:5px 8px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
             oninput="onClientPriceInput('${item.id}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:24px">${fieldType}</span>
+          ${historyIcon}
         </div>
       </div>`;
     });
@@ -2233,6 +2294,12 @@ function renderAccountingOverrideFields() {
   // auto-add setup fee) rather than appearing only on some rows, for the same reason —
   // an appearing/disappearing column is exactly what broke alignment before.
   const ALL_OVERRIDE_FIELDS = [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }, { key: 'spend_tier_top_cut_pct', label: 'Top-Tier 44i Cut % (spend tiers)', suffix: '%' }];
+  // Scheduled-change icon (2026-08-28) only offered for a real service row
+  // (not a pairing row, whose overrideKey is a composite `tacticId|
+  // modifierId` rate_history doesn't model yet) and only once this group
+  // has actually been saved once (has a real id to attach history to).
+  const currentGroupId = document.getElementById('admin-group-id')?.value || '';
+  const HISTORY_SYNCABLE_FIELDS = new Set(['fortyfouri_cut_pct', 'platform_cpm', 'in_platform_pct', 'cpc_low', 'cpc_high', 'setup_fee_cut_pct']);
   let html = `<table style="font-size:12.5px;border-collapse:collapse;width:100%">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
@@ -2243,6 +2310,7 @@ function renderAccountingOverrideFields() {
     // Row-level highlight if ANY of this row's fields are overridden, not per-field —
     // same "custom vs standard at a glance" treatment as renderPricingFields() above.
     const rowIsOverridden = Object.keys(override).length > 0;
+    const isPairingRow = row.overrideKey.includes('|');
     html += `<tr id="acct-row-${esc(row.overrideKey)}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
       <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:11px;font-family:monospace">${esc(row.idNote)}</div></td>`;
     ALL_OVERRIDE_FIELDS.forEach(f => {
@@ -2254,6 +2322,10 @@ function renderAccountingOverrideFields() {
       const val = override[f.key];
       const isOverridden = val !== undefined;
       const liveDefault = row.fields[f.key] ?? '—';
+      const canSchedule = currentGroupId && !isPairingRow && HISTORY_SYNCABLE_FIELDS.has(f.key);
+      const historyIcon = canSchedule
+        ? `<button type="button" title="Schedule a dated change" onclick="adminToggleOverrideHistoryRow('acct','${esc(row.overrideKey)}','group','${esc(currentGroupId)}','${f.key}','${esc(f.label)}')" style="border:none;background:none;cursor:pointer;padding:0;font-size:11px;color:var(--muted)">🕐</button>`
+        : '';
       html += `<td style="padding:8px 10px;text-align:right">
         <div style="display:inline-flex;align-items:center;gap:3px">
           <input type="number" step="0.01"
@@ -2264,10 +2336,11 @@ function renderAccountingOverrideFields() {
             style="width:64px;padding:5px 6px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
             oninput="onAccountingOverrideInput('${esc(row.overrideKey)}', '${f.key}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:10px">${f.suffix}</span>
+          ${historyIcon}
         </div>
       </td>`;
     });
-    html += `</tr>`;
+    html += `</tr><tr id="acct-history-row-${esc(row.overrideKey)}" style="display:none"><td colspan="${ALL_OVERRIDE_FIELDS.length + 1}" style="padding:0"></td></tr>`;
   });
   html += `</tbody></table>`;
   container.innerHTML = html;
@@ -2409,6 +2482,10 @@ function renderClientAccountingOverrideFields() {
     return;
   }
   const ALL_OVERRIDE_FIELDS = [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }];
+  // Scheduled-change icon (2026-08-28) — mirrors renderAccountingOverrideFields()'s
+  // group-scope treatment above, at client scope instead.
+  const currentClientId = document.getElementById('admin-client-original-id')?.value || '';
+  const HISTORY_SYNCABLE_FIELDS = new Set(['fortyfouri_cut_pct', 'platform_cpm', 'in_platform_pct', 'cpc_low', 'cpc_high', 'setup_fee_cut_pct']);
   let html = `<table style="font-size:12.5px;border-collapse:collapse;width:100%">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
@@ -2417,6 +2494,7 @@ function renderClientAccountingOverrideFields() {
   rows.forEach(row => {
     const override = currentClientAccountingOverrides[row.overrideKey] || {};
     const rowIsOverridden = Object.keys(override).length > 0;
+    const isPairingRow = row.overrideKey.includes('|');
     html += `<tr id="client-acct-row-${esc(row.overrideKey)}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
       <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="client-acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:11px;font-family:monospace">${esc(row.idNote)}</div></td>`;
     ALL_OVERRIDE_FIELDS.forEach(f => {
@@ -2428,6 +2506,10 @@ function renderClientAccountingOverrideFields() {
       const val = override[f.key];
       const isOverridden = val !== undefined;
       const liveDefault = row.fields[f.key] ?? '—';
+      const canSchedule = currentClientId && !isPairingRow && HISTORY_SYNCABLE_FIELDS.has(f.key);
+      const historyIcon = canSchedule
+        ? `<button type="button" title="Schedule a dated change" onclick="adminToggleOverrideHistoryRow('client-acct','${esc(row.overrideKey)}','client','${esc(currentClientId)}','${f.key}','${esc(f.label)}')" style="border:none;background:none;cursor:pointer;padding:0;font-size:11px;color:var(--muted)">🕐</button>`
+        : '';
       html += `<td style="padding:8px 10px;text-align:right">
         <div style="display:inline-flex;align-items:center;gap:3px">
           <input type="number" step="0.01"
@@ -2438,10 +2520,11 @@ function renderClientAccountingOverrideFields() {
             style="width:64px;padding:5px 6px;border-radius:6px;border:1px solid;font-size:12px;text-align:right;${isOverridden ? OVERRIDE_INPUT_STYLE : DEFAULT_INPUT_STYLE}"
             oninput="onClientAccountingOverrideInput('${esc(row.overrideKey)}', '${f.key}', this.value)"/>
           <span style="font-size:10px;color:var(--muted);min-width:10px">${f.suffix}</span>
+          ${historyIcon}
         </div>
       </td>`;
     });
-    html += `</tr>`;
+    html += `</tr><tr id="client-acct-history-row-${esc(row.overrideKey)}" style="display:none"><td colspan="${ALL_OVERRIDE_FIELDS.length + 1}" style="padding:0"></td></tr>`;
   });
   html += `</tbody></table>`;
   container.innerHTML = html;
@@ -7509,6 +7592,61 @@ async function adminSaveAccountingFieldHistory(field, inputId) {
     await loadAdminAccountingMap();
     const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId && !x.pair_with_service_id);
     if (a) document.getElementById(inputId).value = a[field] ?? '';
+  });
+}
+
+// ── SCHEDULED CHANGES FOR GROUP/CLIENT ACCOUNTING OVERRIDES (2026-08-28) ──
+// A group/client override row has up to 6 fields, each needing its own
+// history — rather than an always-visible box per cell (would badly
+// clutter a dense multi-column table), one shared expandable row per
+// service opens on demand, populated with whichever field's clock icon
+// was clicked. Not offered for a pairing row (a composite `tacticId|
+// modifierId` overrideKey) -- same rate_history scope limitation as the
+// base Accounting Map's own pairing rows.
+function adminToggleOverrideHistoryRow(rowPrefix, overrideKey, scope, scopeId, field, fieldLabel) {
+  const row = document.getElementById(`${rowPrefix}-history-row-${overrideKey}`);
+  if (!row) return;
+  const td = row.querySelector('td');
+  const alreadyOpenForThisField = row.dataset.openField === field && row.style.display !== 'none';
+  if (alreadyOpenForThisField) { row.style.display = 'none'; td.innerHTML = ''; row.dataset.openField = ''; return; }
+  row.dataset.openField = field;
+  const prefix = `${rowPrefix}-hist-${overrideKey}-${field}`;
+  td.innerHTML = `
+    <div style="background:var(--light);padding:10px 14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px">Schedule a change to ${esc(fieldLabel)}:</label>
+      <div id="${prefix}-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="number" step="0.01" id="${prefix}-history-value" placeholder="New value" style="width:90px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+        <span style="font-size:10px;color:var(--muted)">effective</span>
+        <input type="date" id="${prefix}-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+        <button type="button" onclick="adminSaveOverrideFieldHistory('${rowPrefix}','${esc(overrideKey)}','${scope}','${esc(scopeId)}','${field}')" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+  adminLoadRateHistory(prefix, scope, scopeId, overrideKey, field);
+}
+async function adminSaveOverrideFieldHistory(rowPrefix, overrideKey, scope, scopeId, field) {
+  const prefix = `${rowPrefix}-hist-${overrideKey}-${field}`;
+  // Captured BEFORE calling adminAddRateHistoryChange, which clears these
+  // inputs on success -- adminAddRateHistoryChange's own `afterSave`
+  // callback runs AFTER that clearing, so anything it needs from the form
+  // has to be closed over here first, not re-read from the (by then empty)
+  // DOM inputs inside the callback.
+  const value = document.getElementById(prefix + '-history-value')?.value;
+  const effectiveDate = document.getElementById(prefix + '-history-date')?.value;
+  const today = new Date().toISOString().slice(0, 10);
+  const isImmediate = effectiveDate && effectiveDate <= today && value !== '';
+  await adminAddRateHistoryChange(prefix, scope, scopeId, overrideKey, field, async () => {
+    if (!isImmediate) return;
+    // The RPC already wrote the live value straight into groups/clients.
+    // accounting_overrides server-side -- reuse the existing per-field
+    // input handler to refresh this one cell's display (value + custom
+    // badge + row highlight) without a full form reload that could lose
+    // other unsaved edits in the group/client form.
+    const handler = rowPrefix === 'acct' ? onAccountingOverrideInput : onClientAccountingOverrideInput;
+    handler(overrideKey, field, value);
+    const inputEl = document.getElementById(`${rowPrefix === 'acct' ? 'acct-override' : 'client-acct-override'}-${overrideKey}-${field}`);
+    if (inputEl) inputEl.value = value;
   });
 }
 
