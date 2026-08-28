@@ -21040,3 +21040,68 @@ through clean with no intake attachment or banner.
 hook designed); #4 waiting on Claire's approval-model answer; #5 is a
 design constraint to fold into whichever answer #4 lands on, not
 something to build on its own.
+
+---
+
+## 2026-08-28 (cont'd) — Item #2 built: campaign dates on Trello cards + a 10-day-before reminder
+
+Claire pasted the current `claude-proxy` Edge Function source (needed
+per this project's standing convention for anything server-side that
+lives outside this repo). Confirmed `trello_create_card`/`trello_copy_card`/
+`trello_update_card` each build a fixed, small set of fields to send to
+Trello — no `due`/`dueReminder` passthrough existed before this.
+
+**Built (`index.html`)**: `workflowFlightEnd(originalWorkflow)` — same
+min-start/max-end id-filter as the existing `formatCampaignDateRange()`,
+returning the raw end date instead of a formatted string —
+`campaignDueFields(endDate)` wraps that into `{ due, dueReminder }`
+(`dueReminder: 14400` = 10 days in minutes, Trello's own unit for this
+field), or `{}` when there's no end date to set. Wired into every place
+a tactic card gets created or its description refreshed on a resell:
+the single-card template copy, the whole-list template copy, the
+list-fallback create, the no-template plain create, and the existing-
+card description-update path inside `finalizeTacticCard()` (so a resell
+that pushes a campaign's end date out moves the due date/reminder with
+it, not just at first creation). The agent-split branch (MS Farm
+Bureau-style per-agent cards) gets its own version scoped to that
+agent's own rows, not the whole workflow's, since one workflow can cover
+several agents with different end dates.
+
+**Deliberately out of scope**: the IO/Gold/Green marker cards — those
+represent the whole order (which can span several different tactics'
+end dates), so there's no single unambiguous date to put on them. Only
+individual tactic cards get a due date. Flagging this in case Claire
+wants the marker cards to carry something too (e.g. the earliest
+upcoming end date across the whole order) — not built without asking
+first.
+
+**Mechanism, confirmed via AskUserQuestion**: uses Trello's own native
+due-date reminder, not a real scheduled backend check — this app has no
+job runner (static HTML + Supabase, no cron), so building genuine
+server-side automation would need new infrastructure (pg_cron + a
+server-side Trello call). Trello's own reminder fires based on each card
+member's own Trello notification settings once a `dueReminder` is set —
+this depends on the card actually having members (which every tactic
+card already gets via `assignCardMembers()`) and those members having
+Trello notifications enabled, which is outside this app's control.
+
+**SQL/Edge Function delivered**: no SQL this time — the change lives
+entirely in the `claude-proxy` Edge Function (not tracked in this repo).
+Full corrected file given directly to Claire to paste into the Supabase
+dashboard (Edge Functions → claude-proxy) and redeploy — adds
+`due`/`dueReminder` passthrough to all three Trello card targets,
+forwarded straight through only when the caller actually sends them (so
+every other existing caller of these three targets, none of which send
+`due`, is completely unaffected).
+
+**Verified**: a standalone harness confirmed `campaignDueFields` returns
+nothing when there's no end date, and the right `due`/`dueReminder`
+shape when there is; confirmed `workflowFlightEnd` picks the LATEST end
+date across several same-workflow line items, scopes independently per
+workflow, returns null for a workflow with nothing sold, and correctly
+ignores a sibling line item with a missing end date rather than crashing
+or treating it as a real (empty-string) date. `node --check` passes on
+the extracted script. Not yet tested live — needs the Edge Function
+redeployed, then a real order submitted to confirm a tactic card
+actually gets a due date in Trello and the description-refresh path
+updates it correctly on a resell.

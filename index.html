@@ -5854,6 +5854,30 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           return range ? ' ' + range : '';
         }
 
+        // Trello card due date + reminder (2026-08-28, per Claire + AM — "add the
+        // campaign dates to the trello cards and send a reminder 10 days before
+        // the campaign is done"). Uses Trello's OWN native due-date reminder
+        // rather than any new scheduled job — this app has no backend job runner
+        // (static HTML + Supabase, no cron), so this rides entirely on Trello's
+        // built-in "remind card members before due" behavior instead. Requires
+        // the claude-proxy Edge Function's trello_create_card/trello_copy_card/
+        // trello_update_card targets to forward `due`/`dueReminder` to Trello
+        // (see the matching Edge Function update delivered alongside this).
+        const CAMPAIGN_END_REMINDER_MINUTES = 14400; // 10 days, in minutes (Trello's dueReminder unit)
+        // Same min-start/max-end id-filter as formatCampaignDateRange() above, just
+        // returning the raw end date instead of a formatted display string.
+        function workflowFlightEnd(originalWorkflow) {
+          const ids = Object.keys(selected).filter(id => CATALOG_ROWS[id]?.workflow === originalWorkflow);
+          const ends = ids.map(id => selected[id].end_date).filter(Boolean).sort();
+          return ends.length ? ends[ends.length - 1] : null;
+        }
+        // Time-of-day is arbitrary (end of business, UTC) — only the DAY matters for
+        // a "campaign is done" reminder, Trello has no concept of an all-day due date.
+        function campaignDueFields(endDate) {
+          if (!endDate) return {};
+          return { due: `${endDate}T17:00:00.000Z`, dueReminder: CAMPAIGN_END_REMINDER_MINUTES };
+        }
+
         // Shared finishing step for every tactic card, whether just created or already
         // existing: refresh the description to the current services-sold summary, attach
         // a dated PDF of this round's intake answers (if any), and apply the KOC label
@@ -5901,11 +5925,14 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           // cluttering it; the full detail lives in the PDF instead).
           const sellDesc = [formatSiblingLineItems(originalWorkflows[wfIdx]), intake?.bannerHeader].filter(Boolean).join('\n\n');
           await postOrderComment(cardId, `📋 New order submitted:\n\n${formatSiblingLineItems(originalWorkflows[wfIdx])}`);
-          if (sellDesc) {
+          // Due date/reminder refreshed here too, not just at creation — a resell
+          // that pushes a campaign's end date out should move the reminder with it.
+          const dueFields = campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx]));
+          if (sellDesc || Object.keys(dueFields).length) {
             await fetch(PROXY, {
               method: 'POST',
               headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-              body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc: sellDesc.slice(0, 16000) })
+              body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, ...(sellDesc ? { desc: sellDesc.slice(0, 16000) } : {}), ...dueFields })
             });
           }
           if (intake) {
@@ -5985,6 +6012,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               `**Agent:** ${agentName}\n**County:** ${county}\n\n**Services sold to this agent:**\n${descLines}`,
               intake?.bannerHeader,
             ].filter(Boolean).join('\n\n');
+            // This agent's own latest end date, not the whole workflow's — an
+            // agent-split card is scoped to just this agent's rows.
+            const agentEnds = rowsForAgent.map(s => s.end_date).filter(Boolean).sort();
+            const agentDueFields = campaignDueFields(agentEnds.length ? agentEnds[agentEnds.length - 1] : null);
 
             const existing = findExistingCardByName(cn);
             let cardId = null;
@@ -5994,13 +6025,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc })
+                body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc, ...agentDueFields })
               });
             } else if (!existing && !cardExists(cn)) {
               const res = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc, pos: newCardPos })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc, pos: newCardPos, ...agentDueFields })
               });
               const card = await res.json();
               if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
@@ -6064,7 +6095,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const copyRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_copy_card', card_id: templateCard.id, list_id: clientList.id, name: cn, pos: newCardPos })
+                  body: JSON.stringify({ target: 'trello_copy_card', card_id: templateCard.id, list_id: clientList.id, name: cn, pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
                 });
                 const copiedCard = await copyRes.json();
 
@@ -6126,7 +6157,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const copyRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: newCardPos })
+                  body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
                 });
                 const copiedCard = await copyRes.json();
                 if (!copiedCard?.id) {
@@ -6151,7 +6182,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const fallbackRes = await fetch(PROXY, {
                   method: 'POST',
                   headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: '', pos: newCardPos })
+                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: '', pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
                 });
                 const fallbackCard = await fallbackRes.json();
                 addedCardNames.add(norm(fallbackName));
@@ -6174,7 +6205,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               const plainRes = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: plainName, desc: '', pos: newCardPos })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: plainName, desc: '', pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
               });
               const plainCard = await plainRes.json();
               addedCardNames.add(norm(plainName));
