@@ -2464,6 +2464,15 @@ function renderSetupPanel(l) {
           <label class="lbl" for="setup-platform-url-${l.id}">Reference link to the live campaign</label>
           <input id="setup-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="https://..." style="width:260px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
         </div>
+        <!-- Trello card link (2026-08-27, per Claire -- same gap as the Reference
+             link above: a manually-uploaded campaign never reaches the Detail
+             panel's own copy of this field until it's activated, so there was no
+             way to paste one in before then). Same field/column (trello_card_url)
+             as the Detail panel's own copy, checked first by strategistTrelloCardUrl(). -->
+        <div>
+          <label class="lbl" for="setup-trello-card-url-${l.id}">Trello card link <span style="font-weight:400;text-transform:none;letter-spacing:0">(only needed if not auto-filled)</span></label>
+          <input id="setup-trello-card-url-${l.id}" value="${esc(l.trello_card_url || '')}" placeholder="https://trello.com/c/..." style="width:260px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:13px"/>
+        </div>
       </div>
       <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer;margin-bottom:8px">
         <input type="checkbox" id="setup-varies-${l.id}" ${l.budget_varies_by_month ? 'checked' : ''} onchange="strategistToggleVaries('${l.id}', this.checked)"/> Budget is different by month for this campaign
@@ -2913,12 +2922,13 @@ async function strategistConfirmActivate(lineId) {
   const platform = strategistReadPlatformValue('setup-platform-' + lineId);
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const platformUrl = document.getElementById('setup-platform-url-' + lineId).value.trim();
+  const trelloCardUrl = document.getElementById('setup-trello-card-url-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   const blockers = strategistReadSetupBlockers(lineId);
   const variantEl = document.getElementById('setup-tactic-variant-' + lineId);
   if (!platform) { showToast('Pick a platform before activating.', 'error'); return; }
   await strategistSaveLine(lineId, {
-    platform, platform_campaign_name: platformCampaignName || null, platform_url: platformUrl || null, setup_notes: notes || null, setup_blocker: blockers.length ? blockers : null,
+    platform, platform_campaign_name: platformCampaignName || null, platform_url: platformUrl || null, trello_card_url: trelloCardUrl || null, setup_notes: notes || null, setup_blocker: blockers.length ? blockers : null,
     status: 'active', assigned_strategist: currentStrategistUser.name,
     ...strategistReadSetupFlightAndOffline(lineId),
     ...(variantEl && variantEl.value ? { tactic_label: variantEl.value } : {})
@@ -2931,11 +2941,12 @@ async function strategistSaveDraft(lineId) {
   const platform = strategistReadPlatformValue('setup-platform-' + lineId);
   const platformCampaignName = document.getElementById('setup-platform-campaign-name-' + lineId).value.trim();
   const platformUrl = document.getElementById('setup-platform-url-' + lineId).value.trim();
+  const trelloCardUrl = document.getElementById('setup-trello-card-url-' + lineId).value.trim();
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   const blockers = strategistReadSetupBlockers(lineId);
   const variantEl = document.getElementById('setup-tactic-variant-' + lineId);
   await strategistSaveLine(lineId, {
-    platform: platform || null, platform_campaign_name: platformCampaignName || null, platform_url: platformUrl || null, setup_notes: notes || null, setup_blocker: blockers.length ? blockers : null,
+    platform: platform || null, platform_campaign_name: platformCampaignName || null, platform_url: platformUrl || null, trello_card_url: trelloCardUrl || null, setup_notes: notes || null, setup_blocker: blockers.length ? blockers : null,
     ...strategistReadSetupFlightAndOffline(lineId),
     ...(variantEl && variantEl.value ? { tactic_label: variantEl.value } : {})
   });
