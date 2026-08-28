@@ -20147,3 +20147,38 @@ override still gets the base schedule's own top-tier %, a missing
 `node --check` passes on the extracted script. Not yet tested live —
 needs the SQL run, then a real group set up with an override to confirm
 the split changes above $5,000 for that group specifically.
+
+## 2026-08-27 — Campaign Setup panels now always show a Flight date badge
+
+Relayed from a teammate via Claire: "would it be possible to add the
+flight column to campaigns that are in the Campaign Setup? Just so they
+can all be viewed at a glance. Kinda like the 'Starts Sept 1, 26' label."
+
+Checked the existing "Starts X" pill (`strategistSetupBlockerPill()`)
+before just adding a new one alongside it — found a real, related gap:
+that pill only ever showed when a campaign had NO "waiting on" blocker
+checked (Creative/Platform Access/Intake Form/Pending Website) AND its
+flight start was still in the future. The moment a strategist checked any
+blocker, the flight date disappeared entirely, replaced by the blocker
+pill — so the exact campaigns most likely to need a "when does this
+start" glance (the ones stuck waiting on something) were the ones hiding
+it. Also, it only ever showed the START date, not the full flight range
+the teammate specifically referenced.
+
+**Fixed** (`strategist/index.html`, `renderSetupPanel()`): added a
+plain, always-visible Flight range badge to every Campaign Setup panel's
+header — shows for every pending campaign with a `flight_start` set,
+regardless of blocker state, using the existing `strategistFormatFlightRange()`
+helper (same "Oct 10, 26 – Apr 3, 27" / "Oct 10, 26 – Ongoing" formatting
+already used elsewhere in this portal). Removed the old conditional
+"Starts X" pill from `strategistSetupBlockerPill()` since it's now fully
+superseded (shows less info, less often) — a blocker pill and the new
+Flight badge now both show together instead of one replacing the other.
+
+**Verified:** a standalone harness confirmed a normal dated range, an
+open-ended (no end date) campaign correctly shows "Ongoing", and a
+campaign with no flight_start at all renders no badge (rather than an
+empty/broken pill). `node --check` passes on the extracted script. Not
+yet tested live — needs Claire/the teammate to open the Campaign Setup
+tab and confirm every pending campaign shows its flight range, including
+ones with a blocker checked.

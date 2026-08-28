@@ -1910,9 +1910,14 @@ function strategistSetupBlockerPill(line) {
     return `<span style="display:inline-flex;gap:5px">${blockers.map(b =>
       `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#FEF3C7;color:#92400E">${esc(SETUP_BLOCKER_LABELS[b])}</span>`).join('')}</span>`;
   }
-  if (line.flight_start && new Date(line.flight_start + 'T00:00:00') > new Date()) {
-    return `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#DBEAFE;color:#1E40AF">Starts ${esc(strategistFormatFlightDate(line.flight_start))}</span>`;
-  }
+  // The narrower "Starts X" fallback that used to live here (shown only when
+  // unblocked, start-date-only) was removed 2026-08-27 -- superseded by the
+  // Campaign Setup panel header's own always-visible Flight range badge
+  // (renderSetupPanel), which shows for every pending campaign regardless of
+  // blocker state, per a teammate's request relayed by Claire: "add the
+  // flight column to campaigns that are in Campaign Setup... so they can all
+  // be viewed at a glance" -- the old conditional version defeated that,
+  // since a blocked campaign never showed a date at all.
   return '';
 }
 
@@ -2391,6 +2396,7 @@ function renderSetupPanel(l) {
       <div onclick="strategistToggleSetupPanel('${l.id}')" role="button" tabindex="0" aria-expanded="${isExpanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistToggleSetupPanel('${l.id}')}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${isExpanded ? '10px' : '0'};cursor:pointer">
         <h3 style="display:inline;margin:0;font-size:13.5px;font-weight:700"><span aria-hidden="true" style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</h3>
         <div style="display:flex;align-items:center;gap:8px">
+          ${l.flight_start ? `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--muted);white-space:nowrap">${esc(strategistFormatFlightRange(l.flight_start, l.flight_end))}</span>` : ''}
           ${strategistSetupBlockerPill(l)}
           ${l.order_id ? `<button onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">View Order</button>` : ''}
           ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" onclick="event.stopPropagation()" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;text-decoration:none">Trello Card ↗</a>` : ''}
