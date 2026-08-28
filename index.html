@@ -2278,11 +2278,15 @@ function onKocSpecificCalendarClicked() {
 }
 
 function kocIsRequired() {
-  // Returns true if any selected product requires a KOC. A koc:'none' product
-  // never requires one, regardless of its own intake form's status (2026-08-20
-  // fix, per Claire — an incomplete/bypassed intake used to force a KOC here
-  // even for services that don't need a call at all; intake completeness is
-  // tracked and chased separately via the Campaign Intake Forms card).
+  // Returns true if any selected product requires a KOC — general OR
+  // specific-person, either counts. Governs whether the KOC card shows AT ALL;
+  // which of the two sections inside it actually apply is decided separately
+  // by kocGeneralIsRequired()/kocSpecificIsRequired() below. A koc:'none'
+  // product never requires one, regardless of its own intake form's status
+  // (2026-08-20 fix, per Claire — an incomplete/bypassed intake used to force
+  // a KOC here even for services that don't need a call at all; intake
+  // completeness is tracked and chased separately via the Campaign Intake
+  // Forms card).
   return Object.keys(selected).some(id => PRODUCT_CONFIG[id]?.koc === 'required');
 }
 
@@ -2290,6 +2294,17 @@ function kocIsRequired() {
 // it (koc_notify_calendar_url set) — the second, independent KOC requirement.
 function kocSpecificIsRequired() {
   return Object.keys(selected).some(id => PRODUCT_CONFIG[id]?.koc === 'required' && PRODUCT_CONFIG[id]?.koc_notify_calendar_url);
+}
+
+// REWRITTEN 2026-08-28, per Claire — "Traditional Buying only needs Carol, if
+// that is the only service selected that should be the only KOC to schedule,
+// if another service that requires a KOC that is when the 2nd KOC option
+// shows up for that AM." A specific-person service's OWN KOC requirement is
+// fully covered by kocSpecificIsRequired() above — it must NOT also trigger
+// the general AM section on its own. The general section only applies when
+// some OTHER sold service requires a KOC and does NOT name a specific person.
+function kocGeneralIsRequired() {
+  return Object.keys(selected).some(id => PRODUCT_CONFIG[id]?.koc === 'required' && !PRODUCT_CONFIG[id]?.koc_notify_calendar_url);
 }
 
 function updateKocCard() {
@@ -2319,9 +2334,14 @@ function updateKocCard() {
 
   document.getElementById('koc-products-list').innerHTML = html;
 
-  // Calendar link — hero button
+  // Calendar link — hero button. Gated on kocGeneralIsRequired(), NOT just
+  // "does a calendar URL exist" (2026-08-28 fix, per Claire) — a specific-
+  // person service like Traditional Buying must NOT also pull in the general
+  // AM section on its own; this only shows when some OTHER sold service needs
+  // a KOC and doesn't name a specific person.
   const linkRow = document.getElementById('koc-calendar-link-row');
-  if (calUrl) {
+  const generalKocNeeded = kocGeneralIsRequired();
+  if (calUrl && generalKocNeeded) {
     document.getElementById('koc-calendar-link').href = calUrl;
     document.getElementById('koc-am-cal-name').textContent = (amName || '').trim();
     linkRow.style.display = 'block';
@@ -2349,21 +2369,28 @@ function updateKocCard() {
       style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:var(--accent);color:#fff;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.15);margin-bottom:10px">📅 Open ${esc(e.name)}'s Calendar →</a>
   `).join('');
 
-  // Restore lock/unlock state of date/time fields
+  // Restore lock/unlock state of date/time fields — section itself only shown
+  // at all when kocGeneralIsRequired() (2026-08-28 fix, same reasoning as the
+  // calendar link row above).
   const section = document.getElementById('koc-datetime-section');
   const dateEl = document.getElementById('koc-date');
   const timeEl = document.getElementById('koc-time');
   const lockMsg = document.getElementById('koc-lock-msg');
-  if (kocCalendarOpened) {
-    if (section) { section.style.opacity = ''; section.style.pointerEvents = ''; section.style.background = '#F0FDF4'; }
-    if (lockMsg) lockMsg.innerHTML = '✓ <span style="color:#166534">Calendar opened — now enter the date and time you booked</span>';
-    if (dateEl) dateEl.disabled = false;
-    if (timeEl) timeEl.disabled = false;
+  if (!generalKocNeeded) {
+    if (section) section.style.display = 'none';
   } else {
-    if (section) { section.style.opacity = '0.4'; section.style.pointerEvents = 'none'; section.style.background = '#F3F4F6'; }
-    if (lockMsg) lockMsg.textContent = '⬆ Open the calendar above first to unlock these fields';
-    if (dateEl) dateEl.disabled = true;
-    if (timeEl) timeEl.disabled = true;
+    if (section) section.style.display = 'block';
+    if (kocCalendarOpened) {
+      if (section) { section.style.opacity = ''; section.style.pointerEvents = ''; section.style.background = '#F0FDF4'; }
+      if (lockMsg) lockMsg.innerHTML = '✓ <span style="color:#166534">Calendar opened — now enter the date and time you booked</span>';
+      if (dateEl) dateEl.disabled = false;
+      if (timeEl) timeEl.disabled = false;
+    } else {
+      if (section) { section.style.opacity = '0.4'; section.style.pointerEvents = 'none'; section.style.background = '#F3F4F6'; }
+      if (lockMsg) lockMsg.textContent = '⬆ Open the calendar above first to unlock these fields';
+      if (dateEl) dateEl.disabled = true;
+      if (timeEl) timeEl.disabled = true;
+    }
   }
 
   // Second, independent KOC section — shown only when a specific-person tactic
@@ -4483,10 +4510,16 @@ function goStep(n) {
     updateKocCard();
     updateIntakeStatusCard();
     setTimeout(initCanvas, 100);
-    // Scroll to KOC card if it's visible and not filled
+    // Scroll to KOC card if it's visible and something it actually requires
+    // isn't filled yet. Checks whichever KOC(s) actually apply (2026-08-28 fix)
+    // — a Traditional-Buying-only order has no general section to fill, so
+    // checking koc-date alone would scroll here forever even once the
+    // specific-person KOC is done.
     setTimeout(() => {
       const kocCard = document.getElementById('koc-card');
-      if (kocCard && kocCard.style.display !== 'none' && !document.getElementById('koc-date').value) {
+      const generalUnfilled = kocGeneralIsRequired() && !document.getElementById('koc-date').value;
+      const specificUnfilled = kocSpecificIsRequired() && !document.getElementById('koc-date-specific').value;
+      if (kocCard && kocCard.style.display !== 'none' && (generalUnfilled || specificUnfilled)) {
         kocCard.scrollIntoView({behavior:'smooth', block:'center'});
       }
     }, 300);
@@ -4716,10 +4749,17 @@ function buildReview() {
     // Campaign Notes field itself is untouched — still shown separately in the
     // Trello card description and printed IO, just no longer duplicated here.
     ['Additional Notes', document.getElementById('special-instructions')?.value || '—'],
-    ['KOC', [document.getElementById('koc-date').value, document.getElementById('koc-time').value].filter(Boolean).join(' at ') || '—'],
   ];
-  // Second, independent KOC recap row (2026-08-28) — only shown at all when a
-  // specific-person tactic is actually sold, same gating as the Step 3 section.
+  // KOC recap rows (2026-08-28 fix) — the generic "KOC" row is skipped entirely
+  // when ONLY the specific-person KOC applies (e.g. Traditional Buying sold
+  // alone), so the recap doesn't show a confusing "KOC: —" sitting right above
+  // "KOC (Carol Oren): <real date>". Shown normally (even as "—" if unfilled)
+  // whenever the general AM KOC is actually relevant, or when neither KOC
+  // applies at all (matches the original always-shown behavior for a normal,
+  // no-KOC order).
+  if (kocGeneralIsRequired() || !kocSpecificIsRequired()) {
+    recap.push(['KOC', [document.getElementById('koc-date').value, document.getElementById('koc-time').value].filter(Boolean).join(' at ') || '—']);
+  }
   if (kocSpecificIsRequired()) {
     const specificName = PRODUCT_CONFIG[Object.keys(selected).find(id => PRODUCT_CONFIG[id]?.koc_notify_calendar_url)]?.koc_notify_name || 'Specialist';
     recap.push([`KOC (${specificName})`, [document.getElementById('koc-date-specific')?.value, document.getElementById('koc-time-specific')?.value].filter(Boolean).join(' at ') || '—']);
@@ -4979,8 +5019,11 @@ async function submitIO() {
       return;
     }
 
-    // Hard block if KOC required but not scheduled properly
-    if (kocIsRequired() && selectedGroup?.has_koc) {
+    // Hard block if KOC required but not scheduled properly. kocGeneralIsRequired()
+    // (2026-08-28 fix), not kocIsRequired() — a specific-person service like
+    // Traditional Buying sold alone must NOT also demand the general AM's KOC;
+    // that's fully covered by the specific block right below this one.
+    if (kocGeneralIsRequired() && selectedGroup?.has_koc) {
       if (!kocCalendarOpened) {
         showToast('Please open the AM calendar and schedule the Kick-Off Call before submitting', 'error');
         btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
@@ -6690,7 +6733,11 @@ function buildIoDocumentHtml() {
   const ae = esc(document.getElementById('ae-name').value || '—');
   const kocDate = document.getElementById('koc-date')?.value || '';
   const kocTime = document.getElementById('koc-time')?.value || '';
-  let kocDisplay = (kocDate && kocTime) ? `${kocDate} at ${kocTime}` : (kocDate || '—');
+  // kocGeneralIsRequired() gate (2026-08-28 fix) — a specific-person-only order
+  // (e.g. Traditional Buying sold alone) has no general KOC to show at all, so
+  // showing "—" here above the specific line would misleadingly read as if the
+  // regular KOC was skipped rather than simply not applicable.
+  let kocDisplay = kocGeneralIsRequired() ? ((kocDate && kocTime) ? `${kocDate} at ${kocTime}` : (kocDate || '—')) : '';
   // Second, independent KOC (2026-08-28) — appended as a second line in the SAME
   // cell rather than a new grid column, so the printed layout doesn't need
   // restructuring for the rare order that has one.
@@ -6699,8 +6746,10 @@ function buildIoDocumentHtml() {
     const kocSpecificTime = document.getElementById('koc-time-specific')?.value || '';
     const kocSpecificDisplay = (kocSpecificDate && kocSpecificTime) ? `${kocSpecificDate} at ${kocSpecificTime}` : (kocSpecificDate || '—');
     const specificName = esc(PRODUCT_CONFIG[Object.keys(selected).find(id => PRODUCT_CONFIG[id]?.koc_notify_calendar_url)]?.koc_notify_name || 'Specialist');
-    kocDisplay += `<br><span style="font-size:9pt;color:#6B7280">+ ${specificName}: ${kocSpecificDisplay}</span>`;
+    const specificLine = `${specificName}: ${kocSpecificDisplay}`;
+    kocDisplay = kocDisplay ? `${kocDisplay}<br><span style="font-size:9pt;color:#6B7280">+ ${specificLine}</span>` : specificLine;
   }
+  if (!kocDisplay) kocDisplay = '—';
   const campNotes = esc(document.getElementById('campaign-notes').value || '');
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
   const ioDate = document.getElementById('io-date').value || today;
