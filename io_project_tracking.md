@@ -20496,3 +20496,130 @@ varying (falls through to the normal display), and confirmed a
 pause-test pattern ($1,000/$0/$1,000) correctly totals the real intended
 spend rather than double-counting or misreporting the paused month.
 `node --check` passes on `index.html` and `shared.js`.
+
+## 2026-08-28 (cont'd) — Order amendment history built for varying-by-month campaigns
+
+Following up on the earlier design conversation ("let's think about the
+larger change") — confirmed via AskUserQuestion that an amendment should
+NEVER automatically touch live `campaign_lines`/`campaign_months` (stays
+a separate, deliberate Strategist Portal action), and entered plan mode
+given the scope. **Key discovery during planning**: most of the
+infrastructure this needed already existed — `orders.edit_history`
+(jsonb array: service_id/field/old_value/new_value/edited_by/edited_at)
+and `orders.is_revised`, built 2026-08-20 for Admin's existing
+AM-triggered Edit flow, already do exactly what an "amendment log" needs
+to do. This was an extension of an existing feature, not a new one.
+
+**Built:**
+- **Found and fixed a 4th spot with the misleading-average bug**:
+  Admin's own Orders tab editing view (`viewOrderDetail()`,
+  `admin/index.html`) never got today's earlier total-based fix either —
+  now shows the real campaign total for a varying line, matching Trello/
+  Order Detail modal/Print/Review.
+- **`admin/index.html` — the actual risk fix**: a varying-by-month line's
+  Edit button now opens a real month-by-month editor
+  (`adminToggleMonthBudgetsEditPanel()`/`adminSaveMonthBudgetsEdit()`,
+  new functions mirroring the existing flat-edit flow's shape exactly —
+  same Trello-comment-then-PDF-reattach sequence) instead of the flat
+  "New amount" box that would have silently left the real breakdown
+  stale. Saves the whole `month_budgets` array in one edit, recomputes
+  `item.spend` as the new average (server-side, in the RPC), and records
+  ONE `edit_history` entry keyed `field: 'month_budgets'` with the full
+  before/after arrays — not a bare number.
+- **`shared.js` — Amendment History now visible in all three portals**:
+  new `renderAmendmentHistoryHtml()`, wired into `renderOrderDetailModal()`
+  (the shared "View Order" popup every portal's button opens). Renders
+  nothing when `edit_history` is empty (the common case). A
+  `month_budgets` entry gets a real total-based summary ("$1,500.00 total
+  → $1,500.00 total") instead of a raw array dump or a broken
+  `Number(array)`; every other field keeps its existing "$X → $Y" shape.
+- **Scope confirmed deliberately narrow**: no pending-vs-active branching
+  (the existing mechanism already logs unconditionally regardless of
+  status, which is fine — logging a pre-launch correction is harmless,
+  and `campaign_lines.status` isn't even reachable from an order-only
+  edit without a cross-table join); no automatic sync to live campaign
+  data (confirmed via AskUserQuestion).
+
+**SQL given to Claire** (not committed to the repo, per standing
+convention) — extends `admin_edit_order_line_item` to accept
+`p_field = 'month_budgets'` as a jsonb array value, recomputing the
+average server-side in the same statement:
+```sql
+CREATE OR REPLACE FUNCTION public.admin_edit_order_line_item(p_name text, p_pw text, p_order_id uuid, p_service_id text, p_field text, p_new_value text)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  v_role text;
+  v_idx int;
+  v_old_value text;
+  v_line_items jsonb;
+  v_new_avg numeric;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid admin credentials'; end if;
+
+  if p_field not in ('recurring', 'spend', 'fee', 'start_date', 'end_date', 'notes', 'month_budgets') then
+    raise exception 'Field % is not editable', p_field;
+  end if;
+
+  select line_items into v_line_items from orders where id = p_order_id;
+  if v_line_items is null then raise exception 'Order % not found', p_order_id; end if;
+
+  select (t.pos - 1) into v_idx
+  from jsonb_array_elements(v_line_items) with ordinality as t(item, pos)
+  where t.item->>'service_id' = p_service_id
+  limit 1;
+
+  if v_idx is null then raise exception 'Service % not found on this order', p_service_id; end if;
+
+  v_old_value := v_line_items -> v_idx ->> p_field;
+
+  if p_field = 'month_budgets' then
+    select avg((m->>'amount')::numeric) into v_new_avg
+    from jsonb_array_elements(p_new_value::jsonb) m;
+
+    update orders set
+      line_items = jsonb_set(
+        jsonb_set(line_items, array[v_idx::text, 'month_budgets'], p_new_value::jsonb),
+        array[v_idx::text, 'spend'], to_jsonb(round(coalesce(v_new_avg, 0), 2))
+      ),
+      is_revised = true,
+      edit_history = coalesce(edit_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
+        'service_id', p_service_id, 'field', p_field, 'old_value', v_old_value, 'new_value', p_new_value,
+        'edited_by', p_name, 'edited_at', now()
+      ))
+    where id = p_order_id;
+  else
+    update orders set
+      line_items = jsonb_set(
+        line_items,
+        array[v_idx::text, p_field],
+        case when p_field in ('recurring','spend','fee') then to_jsonb(p_new_value::numeric) else to_jsonb(p_new_value) end
+      ),
+      is_revised = true,
+      edit_history = coalesce(edit_history, '[]'::jsonb) || jsonb_build_array(jsonb_build_object(
+        'service_id', p_service_id, 'field', p_field, 'old_value', v_old_value, 'new_value', p_new_value,
+        'edited_by', p_name, 'edited_at', now()
+      ))
+    where id = p_order_id;
+  end if;
+end;
+$function$
+```
+Every existing field's behavior is byte-for-byte unchanged — the only
+addition is the new `month_budgets` branch and its allowlist entry.
+
+**Verified:** a standalone harness confirmed the Amendment History
+summary builder against the real Streaming TV numbers (old $1,500 total
+→ new $1,500 total after a redistribution), a flat-field edit's normal
+"$X → $Y" shape, most-recent-edit-first ordering, malformed-JSON safety
+(falls back to $0 rather than throwing), and an empty-history order
+correctly rendering nothing. `node --check` passes on `admin/index.html`
+and `shared.js`. Not yet tested live — needs the SQL run, then a real
+varying-by-month line edited through Admin to confirm the month-by-month
+editor saves correctly and the Amendment History shows up in all three
+portals' View Order.

@@ -7798,7 +7798,22 @@ function viewOrderDetail(orderId) {
       let amtParts = [];
       if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
       if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
-      if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
+      // Real campaign total instead of the misleading average (2026-08-28,
+      // per Claire) -- Admin's own Orders tab had the same bug already
+      // fixed everywhere else (Trello, Order Detail modal, Print/Review):
+      // item.spend is the AVERAGE of a varying campaign's real month-by-
+      // month amounts, and showing it bare as "$X/mo spend" reads as a
+      // real flat rate.
+      const monthBudgetsForDisplay = Array.isArray(item.month_budgets) ? item.month_budgets : [];
+      const spendVaries = monthBudgetsForDisplay.length > 1 && new Set(monthBudgetsForDisplay.map(m => m.amount)).size > 1;
+      if (item.spend > 0) {
+        if (spendVaries) {
+          const spendTotal = monthBudgetsForDisplay.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+          amtParts.push(fmtMoney(spendTotal) + ' total campaign spend');
+        } else {
+          amtParts.push(fmtMoney(item.spend) + '/mo spend');
+        }
+      }
       if (item.prorated_hosting_amt) amtParts.push('+ $' + item.prorated_hosting_amt.toFixed(2) + ' prorated hosting');
       const kocBadge = item.requires_koc ? '<span style="font-size:9px;background:#FEF3C7;color:#92400E;padding:1px 5px;border-radius:8px;margin-left:4px">KOC</span>' : '';
       // Shows the same disambiguated title Strategist/Accounting show (2026-08-12,
@@ -7833,11 +7848,26 @@ function viewOrderDetail(orderId) {
       let editBtn = '';
       if (editableCandidates.length === 1 && !item.prorated_hosting_amt) {
         const [editField, editVal] = editableCandidates[0];
+        // A varying-by-month line (Whole Campaign Total/Custom by Month)
+        // needs its own month-by-month editor, not the flat "New amount"
+        // box (2026-08-28, found live by Claire -- editing the flat spend
+        // number on one of these silently left the real month_budgets
+        // breakdown untouched and now stale/disconnected from the new
+        // number). The edit_history entry, once one exists, is keyed by
+        // field: 'month_budgets' for these, not the flat field name.
         const lastEdit = Array.isArray(o.edit_history)
-          ? [...o.edit_history].reverse().find(h => h.service_id === item.service_id && h.field === editField)
+          ? [...o.edit_history].reverse().find(h => h.service_id === item.service_id && h.field === (spendVaries && editField === 'spend' ? 'month_budgets' : editField))
           : null;
-        editBtn = `<button type="button" onclick="adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:700;cursor:pointer">✎ Edit</button>`;
-        if (lastEdit) amtCellHtml += `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>`;
+        if (spendVaries && editField === 'spend') {
+          editBtn = `<button type="button" onclick="adminToggleMonthBudgetsEditPanel('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:700;cursor:pointer">✎ Edit</button>`;
+          if (lastEdit) {
+            const oldTotal = (JSON.parse(lastEdit.old_value) || []).reduce((s, m) => s + (Number(m.amount) || 0), 0);
+            amtCellHtml += `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${oldTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>`;
+          }
+        } else {
+          editBtn = `<button type="button" onclick="adminToggleEditPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(editField)}',${editVal})" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:700;cursor:pointer">✎ Edit</button>`;
+          if (lastEdit) amtCellHtml += `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was $${Number(lastEdit.old_value).toLocaleString()} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>`;
+        }
       }
       // AM-triggered Renew (2026-08-20, per Claire's post-meeting follow-up) -- "Renew
       // as is" just pushes flight_end out with no other change; "Renew with
@@ -8283,6 +8313,121 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     // Fresh PDF replaces the old one on both cards (2026-08-20, closing the
     // gap flagged when Edit first shipped) -- one Revised IO Summary,
     // generated once, attached to whichever card(s) were actually found.
+    if (cardIds.length) {
+      try {
+        const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
+        for (const cardId of cardIds) {
+          const attachRes = await fetch(PROXY, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+            body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
+          });
+          if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', cardId, ':', attachRes.status);
+        }
+      } catch (e) {
+        console.warn('Could not generate/attach revised IO PDF:', e.message);
+        showToast('Saved and commented, but the revised PDF could not be attached', 'error');
+      }
+    }
+  }
+
+  showToast('✅ Change saved');
+  viewOrderDetail(orderId);
+}
+
+// ── AM-TRIGGERED EDIT — MONTH-BY-MONTH VARIANT (2026-08-28) ─────────────
+// A Whole-Campaign-Total/Custom-by-Month line has a real month_budgets
+// breakdown behind its "amount" -- the flat adminToggleEditPanel()/
+// adminSaveLineItemEdit() above would silently change item.spend (the
+// average) while leaving that real breakdown untouched, exactly the risk
+// Claire found live. This variant edits the whole month_budgets array in
+// one save, recomputes item.spend as the new average server-side (see
+// admin_edit_order_line_item's month_budgets branch), and records ONE
+// edit_history entry keyed by field: 'month_budgets' rather than 'spend'.
+function adminToggleMonthBudgetsEditPanel(orderId, serviceId) {
+  const row = document.getElementById(`edit-panel-${serviceId}`);
+  if (!row) return;
+  if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  const o = allOrders.find(x => x.id === orderId);
+  const item = o && (o.line_items || []).find(li => li.service_id === serviceId);
+  const monthBudgets = (item && Array.isArray(item.month_budgets)) ? item.month_budgets : [];
+  const monthRowsHtml = monthBudgets.map((m, i) => {
+    const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span style="width:90px;font-size:11px;color:var(--muted)">${esc(label)}${m.paused ? ' (Paused)' : ''}</span>
+      <input type="number" step="0.01" class="edit-month-value-${esc(serviceId)}" data-month="${esc(m.month)}" data-paused="${m.paused ? '1' : ''}" value="${m.amount}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
+    </div>`;
+  }).join('');
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);padding:12px 14px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:8px">Edit month-by-month amounts:</label>
+      ${monthRowsHtml}
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button type="button" onclick="adminSaveMonthBudgetsEdit('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+        <button type="button" onclick="adminToggleMonthBudgetsEditPanel('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+}
+
+async function adminSaveMonthBudgetsEdit(orderId, serviceId) {
+  const inputs = document.querySelectorAll(`.edit-month-value-${CSS.escape(serviceId)}`);
+  if (!inputs.length) { showToast('Nothing to save', 'error'); return; }
+  const newMonthBudgets = [...inputs].map(inp => ({
+    month: inp.dataset.month,
+    amount: parseFloat(inp.value) || 0,
+    paused: inp.dataset.paused === '1',
+  }));
+
+  try {
+    await sb('rpc/admin_edit_order_line_item', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: serviceId, p_field: 'month_budgets', p_new_value: JSON.stringify(newMonthBudgets),
+      }),
+    });
+  } catch (e) {
+    showToast('Could not save this change: ' + e.message, 'error');
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const svc = CATALOG_ROWS[serviceId] || {};
+  if (o) {
+    const item = (o.line_items || []).find(li => li.service_id === serviceId);
+    const oldMonthBudgets = item ? (item.month_budgets || []) : [];
+    const oldTotal = oldMonthBudgets.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+    const newTotal = newMonthBudgets.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+    if (item) {
+      item.month_budgets = newMonthBudgets;
+      item.spend = newMonthBudgets.length ? Math.round((newTotal / newMonthBudgets.length) * 100) / 100 : 0;
+    }
+    o.is_revised = true;
+    o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field: 'month_budgets', old_value: JSON.stringify(oldMonthBudgets), new_value: JSON.stringify(newMonthBudgets), edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
+
+    const label = svc.accounting_label || svc.label || serviceId;
+    // Real total, not an average (2026-08-28, same convention as every
+    // other budget-mode fix today) -- this is a month-by-month campaign,
+    // so "changed from $X to $Y" needs to mean the real campaign totals.
+    const commentText = `✏️ ${label} month-by-month budget changed from $${oldTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total to $${newTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total (by ${currentAdminUser?.name || 'AM'}).`;
+    const ioCardId = o.trello_card_ids?.__io_card__;
+    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    for (const cardId of cardIds) {
+      try {
+        const res = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
+        });
+        if (!res.ok) console.warn('Could not post edit comment to card', cardId, ':', res.status);
+      } catch (e) {
+        console.warn('Could not post edit comment to card', cardId, ':', e.message);
+      }
+    }
+    if (!cardIds.length) showToast('Saved, but no Trello card was found — please update Trello by hand', 'error');
+
     if (cardIds.length) {
       try {
         const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
