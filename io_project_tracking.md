@@ -20060,3 +20060,36 @@ next to it.
 **Verified:** `node --check` passes on the extracted script. Not yet
 confirmed live — needs Claire to open a group's editor and confirm the
 IO Slug field now reads as a normal editable box.
+
+## 2026-08-27 — $0 months now auto-mark Paused
+
+Claire, testing the monthly-varying-budget feature: "the only thing I
+think the campaign setup is missing is marking the months that are 0 as
+paused. Do you agree?" Checked the real impact before agreeing (rather
+than just taking the suggestion at face value): a $0 month that ISN'T
+marked Paused isn't excluded from Accounting's "Needs Confirmation"
+bucket (`accounting/index.html` — a month only gets excluded from that
+awaiting-confirmation total if `accountingRowIsPaused()` or
+`accountingRowIsPending()` is true; a $0 gross month with neither flag
+just sits there forever looking like it's awaiting a confirmation that
+will never come, since nobody uploads a platform report for $0 spend).
+Confirmed this is a real, concrete gap, not just cosmetic — agreed with
+Claire's read.
+
+**Fixed** (`strategist/index.html`, both the Campaign Setup panel's
+per-month row and the Active-campaign Detail panel's per-month row): the
+Gross Budget input's `onchange` now saves `paused: true` in the same call
+whenever the typed value is exactly `0`, and `paused: false` whenever it's
+any other real number — so a strategist doesn't need a second click to
+also check the Paused box, and a month that later gets a real budget typed
+back in automatically un-pauses too. A blank/cleared field is deliberately
+NOT treated as `0` (`this.value !== '' && Number(this.value) === 0`) —
+clearing a field isn't the same statement as "this month is intentionally
+$0," and `Number('')` evaluates to `0` in JS, which would have wrongly
+auto-paused every blanked-out field without this guard.
+
+**Verified:** a standalone harness confirmed typing `0`/`0.00` → paused,
+typing a real budget → not paused, and clearing the field → NOT wrongly
+treated as paused (the exact edge case the guard exists for).
+`node --check` passes on the extracted script. Not yet tested live —
+needs Claire to try a $0 month and confirm the Paused box checks itself.
