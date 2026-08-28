@@ -21316,3 +21316,84 @@ alter table services
   add column if not exists koc_notify_trello_handle text,
   add column if not exists koc_notify_calendar_url text;
 ```
+
+---
+
+## 2026-08-28 (cont'd) — Two real bugs found: RPC didn't know the new KOC fields, and a genuine second-KOC requirement
+
+Claire: "Ok I filled it in but it didn't save." Root cause: `adminSaveService()` sends its payload through `admin_save_service`, an RPC that takes the whole form as one `p_data` jsonb blob and writes only the specific keys its own SQL body knows about — the 3 new KOC fields were never added to either its insert or update branch, so they were silently dropped even though the `services` columns existed and the JS payload sent them correctly. Same shape of gap as `admin_add_rate_history` earlier this session — an RPC has to be told about a new field twice: once in the client payload, once in its own SQL.
+
+**SQL delivered to Claire** (full corrected function, not a diff, per
+standing convention) — adds `koc_notify_name`/`koc_notify_trello_handle`/
+`koc_notify_calendar_url` to both the insert column list/values and the
+update `case when p_data ? '...'` branches, same pattern as every other
+optional field already in the function.
+
+**Separately, same message: "We will need to have 2 separate KOC's."**
+Confirms the single shared "click a calendar, unlock one date/time"
+mechanism built earlier today isn't enough — an order can require BOTH
+the regular AM's Kick-Off Call AND a genuinely separate one with Carol
+Oren for Traditional Buying, and both need their own independently
+tracked booked date/time, not one shared pair.
+
+**Built (`index.html`)** — a fully parallel, independent second KOC
+flow, touching every place the first one already did:
+- New `koc-datetime-section-specific` block (Step 2b) with its own
+  `koc-date-specific`/`koc-time-specific` fields, shown only when a
+  specific-person tactic is actually sold.
+- `kocSpecificCalendarOpened` — a separate lock flag from
+  `kocCalendarOpened`; `onKocSpecificCalendarClicked()` unlocks only the
+  specific section (the specific-person calendar button now calls this
+  instead of reusing the general `onKocCalendarClicked()`).
+- `kocSpecificIsRequired()` — true when a sold service both requires a
+  KOC and names a specific person for it.
+- `submitIO()` gained a SECOND, independent hard-block check (own toast
+  wording, own focus target) alongside the existing one — both must
+  pass before submission if both apply.
+- Order payload gained `koc_specific_date`/`koc_specific_time`/
+  `needs_specific_koc`, submitted alongside the existing `koc_date`/
+  `koc_time`/`needs_koc` (this is a direct `orders` table insert, not an
+  RPC — needs the matching new columns, SQL below).
+- Review recap (Step 3), the printed IO (appended as a second line
+  inside the same Kick-Off Call cell rather than restructuring the
+  print grid), draft save/restore, and the full-form reset all extended
+  in parallel — same pattern as the general KOC in each of those five
+  places.
+
+**Real open question, not guessed at**: today's build makes `alc-media`
+(Traditional Buying) satisfy BOTH `kocIsRequired()` AND
+`kocSpecificIsRequired()` at once, since its own `koc_requirement` is
+still `'required'`. That means if Traditional Buying is the ONLY
+KOC-needing tactic on an order (nothing else requiring the regular AM's
+KOC), the AE would currently be asked to book and log TWO separate
+calls — the regular AM's AND Carol's — even though only one tactic sold.
+Flagged to Claire rather than assumed: is that actually correct (a real
+second call always happens for Traditional Buying regardless of what
+else is sold), or should Traditional Buying's OWN KOC route ONLY to
+Carol (no separate generic-AM call for that tactic specifically), with
+the "2 separate KOCs" scenario only kicking in when Traditional Buying
+is combined with some OTHER, unrelated KOC-requiring tactic on the same
+order? Not changed pending her answer — a one-line behavior flip either
+way once she confirms.
+
+**Verified**: a standalone harness (10 checks) confirmed: `alc-media`
+sold alone marks both general and specific KOC required; mixed with a
+normal KOC service still produces just one calendar entry (dedup);
+a normal KOC-only order correctly leaves the specific flag false; an
+order with no KOC-required service at all needs neither; and the
+submission-validation simulation blocks on the general calendar first,
+then the specific one, then finally allows submission once BOTH are
+satisfied — including the ambiguous "alc-media sold alone" case
+mirroring the exact behavior flagged above for Claire to confirm.
+`node --check` passes on the extracted script. Not yet tested live —
+needs both SQL pieces run, then a real order to confirm both KOC
+sections work end to end.
+
+**SQL needed for the order-side fields** (not committed to the repo,
+per standing convention):
+```sql
+alter table orders
+  add column if not exists koc_specific_date date,
+  add column if not exists koc_specific_time text,
+  add column if not exists needs_specific_koc boolean default false;
+```
