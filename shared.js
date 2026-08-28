@@ -338,11 +338,22 @@ function renderOrderDetailModal(order, sections) {
       if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
       if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
       const label = item.accounting_label || item.label || item.service_id || '—';
+      // Budget entry mode pill (2026-08-28, per Claire: "I want it to be
+      // clear what was ordered") -- 'monthly' is the unchanged default and
+      // gets no pill (matches every order before this feature existed);
+      // 'total'/'custom' get a small badge since month_budgets alone can't
+      // tell them apart downstream, and an evenly-split whole-campaign-total
+      // can look identical to a flat monthly rate in the raw numbers.
+      const budgetModePill = item.budget_mode === 'total'
+        ? ' <span style="display:inline-block;padding:1px 6px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Whole Campaign Total</span>'
+        : item.budget_mode === 'custom'
+        ? ' <span style="display:inline-block;padding:1px 6px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Custom by Month</span>'
+        : '';
       return `<tr>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(label)}</td>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || order.campaign_start)}</td>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || order.campaign_end)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}${budgetModePill}</td>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td>
       </tr>`;
     }).join('');

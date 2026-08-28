@@ -2397,6 +2397,7 @@ function renderSetupPanel(l) {
         <h3 style="display:inline;margin:0;font-size:13.5px;font-weight:700"><span aria-hidden="true" style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</h3>
         <div style="display:flex;align-items:center;gap:8px">
           ${l.flight_start ? `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--muted);white-space:nowrap">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</span>` : ''}
+          ${strategistBudgetModePillHtml(l)}
           ${strategistSetupBlockerPill(l)}
           ${l.order_id ? `<button onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">View Order</button>` : ''}
           ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" onclick="event.stopPropagation()" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;text-decoration:none">Trello Card ↗</a>` : ''}
@@ -3135,6 +3136,18 @@ function strategistTrelloCardUrl(line) {
   return cardId ? `https://trello.com/c/${cardId}` : null;
 }
 
+// Budget entry mode pill (2026-08-28, per Claire: "I want it to be clear
+// what was ordered" -- a whole-campaign-total split evenly across months
+// can look identical to a flat monthly rate in the raw numbers, and
+// month_budgets alone can't tell 'total' and 'custom' apart downstream
+// either). 'monthly' is the unchanged default and gets no pill, matching
+// every campaign before this feature existed.
+function strategistBudgetModePillHtml(line) {
+  if (line.budget_entry_mode === 'total') return ` <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--accent-dark);border:1px solid var(--accent);white-space:nowrap">Whole Campaign Total</span>`;
+  if (line.budget_entry_mode === 'custom') return ` <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--accent-dark);border:1px solid var(--accent);white-space:nowrap">Custom by Month</span>`;
+  return '';
+}
+
 async function strategistViewOrder(orderId) {
   if (!orderId) return;
   try {
@@ -3179,6 +3192,7 @@ function renderStrategistDetailPanel() {
         ${l.order_id ? `<button onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
         <input id="detail-trello-card-url-${l.id}" value="${esc(l.trello_card_url || '')}" placeholder="Paste a Trello card link (only needed if not auto-filled)" onchange="strategistSaveLine('${l.id}', {trello_card_url: this.value}, false)" style="width:230px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;text-decoration:none">Trello Card ↗</a>` : ''}
+        ${strategistBudgetModePillHtml(l)}
         <button onclick="strategistCloseDetailPanel()" class="btn-quiet-green">✕ Close</button>
       </div>
     </div>
