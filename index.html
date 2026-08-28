@@ -4916,6 +4916,15 @@ async function submitIO() {
         // strategist-portal trigger seeds one campaign_months row per entry
         // instead of the single flat-rate row it seeds otherwise.
         month_budgets: (data.monthPlan && data.monthPlan.length) ? data.monthPlan.map(m => ({ month: m.month, amount: m.amount, paused: !!m.paused })) : null,
+        // budget_mode (2026-08-28, per Claire: "I want it to be clear what was
+        // ordered") — month_budgets alone can't tell 'total' and 'custom' apart
+        // downstream (both just produce a per-month array with no marker of
+        // which one it was, and an evenly-split whole-campaign-total can look
+        // IDENTICAL to a flat monthly rate repeated every month). This rides
+        // alongside month_budgets explicitly so every portal downstream can
+        // show which of the 3 entry states an AE actually used, not just
+        // reverse-guess from the resulting numbers.
+        budget_mode: data.customizingMonths ? 'custom' : (data.budgetMode === 'total' ? 'total' : 'monthly'),
       };
     });
 

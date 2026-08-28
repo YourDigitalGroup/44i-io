@@ -384,6 +384,17 @@ function cutPctOverrideBadgeHtml(line) {
   return ` <span title="44i Cut % overridden to ${Number(line.cut_pct_override)}%" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Cut ${Number(line.cut_pct_override)}%</span>`;
 }
 
+// Budget entry mode pill (2026-08-28, per Claire: "I want it to be clear
+// what was ordered" -- a whole-campaign-total split evenly across months
+// can look identical to a flat monthly rate in the raw numbers). 'monthly'
+// is the unchanged default and gets no pill, matching every campaign
+// before this feature existed. Same pattern as strategist's own copy.
+function accountingBudgetModePillHtml(line) {
+  if (line.budget_entry_mode === 'total') return `<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--accent-dark);border:1px solid var(--accent);white-space:nowrap">Whole Campaign Total</span>`;
+  if (line.budget_entry_mode === 'custom') return `<span style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--accent-dark);border:1px solid var(--accent);white-space:nowrap">Custom by Month</span>`;
+  return '';
+}
+
 // Editable "44i Cut % Override" field, QUR services only (2026-08-27, per
 // Claire -- restricted in the UI to services with no catalog default_price,
 // same isQur check accountingDerivedAmount's own comment describes). Not
@@ -529,6 +540,7 @@ function accountingRenderDetailCard() {
           <input type="checkbox" ${line.billed_externally ? 'checked' : ''} onchange="accountingToggleBilledExternally('${line.id}', this.checked)"/> SSH Billing
         </label>
         ${accountingCutPctOverrideFieldHtml(line)}
+        ${accountingBudgetModePillHtml(line)}
         ${line.order_id ? `<button onclick="accountingViewOrder('${esc(line.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
         <button class="acct-detail-close" onclick="accountingCloseDetailCard()">✕ Close</button>
       </div>

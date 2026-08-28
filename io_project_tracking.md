@@ -20341,3 +20341,63 @@ in effect ("Since"), not still pending. `node --check` passes on the
 extracted script. Not yet tested live — needs both SQL functions run,
 then a real price change scheduled to confirm it appears correctly and
 (for an immediate date) updates the live field.
+
+## 2026-08-28 — Budget entry mode (Monthly/Total/Custom) now visible downstream
+
+Claire: "can we look at the monthly vs whole campaign flows. I think need
+to add some way to know which was selected... I would also like to add
+that information into the order views on all three portals... since this
+is a new option I want it to be clear what was ordered."
+
+Checked the actual gap first: the 2026-08-20 budget-entry-states feature
+(`index.html`) only ever submitted the RESULTING per-month dollar amounts
+(`month_budgets`) — it never submitted which of the 3 entry states (flat
+Monthly Rate, Whole Campaign Total auto-split, or hand-edited Custom by
+Month) actually produced them. Confirmed this is a real, not just
+cosmetic, gap: a Whole-Campaign-Total split evenly across equal-length
+months produces numbers indistinguishable from a flat monthly rate, and
+Custom vs. Total both just look like "a per-month array" with nothing
+marking which one it was — there was no way to reconstruct the original
+choice from the data after the fact.
+
+**Built:**
+- `index.html` — new `budget_mode` field on each submitted line item
+  (`'monthly'` | `'total'` | `'custom'`, derived from `data.customizingMonths`/
+  `data.budgetMode`), riding alongside the existing `month_budgets`.
+- `shared.js`'s `renderOrderDetailModal()` — the single shared "View
+  Order" modal used by all three portals — now shows a small pill next
+  to a line's Amount ("Whole Campaign Total" / "Custom by Month") when
+  present. Covers Admin/Strategist/Accounting's Order Detail views in one
+  place, per Claire's "all three portals" ask.
+- `strategist/index.html` — `strategistBudgetModePillHtml(line)`, wired
+  into both the Campaign Setup panel header and the Active campaign
+  Detail panel header.
+- `accounting/index.html` — matching `accountingBudgetModePillHtml(line)`,
+  wired into the Detail card header.
+- All four spots deliberately show NO pill for `'monthly'` (the unchanged
+  default) or a missing/null value (every campaign that predates this
+  feature) — a pill only appears when an AE actually used the newer
+  Total/Custom option, exactly matching "since this is a new option I
+  want it to be clear what was ordered."
+
+**Still needed to actually reach the Strategist/Accounting portals**:
+`campaign_lines` needs a new `budget_entry_mode` column, and the
+order-creation trigger (`create_campaign_lines_from_order()`) needs to
+copy the new `budget_mode` field from each line item onto it — asked
+Claire for the trigger's current `pg_get_functiondef()` before touching
+it, per this project's standing convention for trigger changes (can't see
+server-side SQL directly). The two portal RPCs
+(`strategist_get_campaign_lines`/`accounting_get_campaign_lines`) also
+need one line each added to return the new column — full corrected
+functions given once the trigger update is ready, so it's one combined
+SQL delivery instead of two separate ones.
+
+**Verified:** a standalone harness confirmed the pill helper shows the
+right badge for 'total'/'custom' and correctly shows nothing for
+'monthly', null, or a missing field entirely (the exact case every
+existing campaign_lines row is in right now, before the trigger is
+updated). `node --check` passes on all three changed files (`index.html`,
+`shared.js`, `strategist/index.html`, `accounting/index.html`). The
+Order Detail modal pill is already fully live once this deploys (no SQL
+needed there — it reads straight off the order's own JSON); the
+Strategist/Accounting detail-view pills need the SQL above first.
