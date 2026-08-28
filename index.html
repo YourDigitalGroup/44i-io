@@ -5174,16 +5174,32 @@ async function submitIO() {
         // Services that share a workflow but use ONE shared template (e.g. the 4 Digital
         // Advertising services all pointing at the same "Display" card) should be given
         // an identical ref/type value by whoever sets up the catalog.
-        function resolveWorkflowTemplate(originalWorkflow) {
+        // REWRITTEN 2026-08-28 (per Claire — "if there is a trello template
+        // attached that overrides if there is a workflow"): used to resolve to
+        // exactly ONE template for the whole workflow (whichever sold service
+        // came first), silently dropping every OTHER sold service's own distinct
+        // template — found live via a Supabase audit showing basically every
+        // multi-service section in the catalog has this exact mismatch (services
+        // deliberately given their own individual template, per the AM, but
+        // still sharing one `workflow` grouping value). Now returns EVERY
+        // distinct template among this workflow's sold services, deduped by ref
+        // (so two services correctly configured to share one template still only
+        // produce one card, not two identical ones) — the caller loops over all
+        // of them. A sold service with no template of its own contributes
+        // nothing here and simply rides along in the shared description/KOC/
+        // member-tagging logic that already runs per-workflow, same as before.
+        function resolveWorkflowTemplates(originalWorkflow) {
           const soldRows = Object.keys(selected)
             .map(id => CATALOG_ROWS[id])
             .filter(r => r && r.workflow === originalWorkflow && r.trello_template_ref);
-          if (!soldRows.length) return null;
-          const distinctRefs = new Set(soldRows.map(r => r.trello_template_ref));
-          if (distinctRefs.size > 1) {
-            console.warn(`Multiple different Trello templates configured for workflow "${originalWorkflow}" among sold services — using "${soldRows[0].label}"'s template.`);
+          const seenRefs = new Set();
+          const templates = [];
+          for (const r of soldRows) {
+            if (seenRefs.has(r.trello_template_ref)) continue;
+            seenRefs.add(r.trello_template_ref);
+            templates.push({ ref: r.trello_template_ref, type: r.trello_template_type || 'list' });
           }
-          return { ref: soldRows[0].trello_template_ref, type: soldRows[0].trello_template_type || 'list' };
+          return templates;
         }
 
         // Offline Visits Tracking card-title suffix (2026-08-21, per Claire — "if they
@@ -5296,8 +5312,9 @@ async function submitIO() {
         // read of each sold service's own `intake_form_id` (already on `services`,
         // already used everywhere else — this map was a redundant, only-here-until-now
         // parallel path that could silently disagree with the real per-service value).
-        // Same "services sharing a workflow should carry the same value" convention as
-        // resolveWorkflowTemplate() above.
+        // Same "first sold row wins" convention resolveWorkflowTemplates() used to use
+        // for templates before its 2026-08-28 rewrite — intake form resolution is
+        // unchanged here and still has that same limitation (a known, separate gap).
         function resolveWorkflowIntakeFormId(originalWorkflow) {
           const soldRows = Object.keys(selected)
             .map(id => CATALOG_ROWS[id])
@@ -6063,139 +6080,19 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             await createAgentSplitCards(wfIdx, splitsForThisWorkflow);
             continue;
           }
-          const template = resolveWorkflowTemplate(originalWorkflows[wfIdx]);
+          // Every distinct template this workflow's sold services carry (2026-08-28
+          // rewrite — see resolveWorkflowTemplates() above) now gets its own pass
+          // below, instead of one winner silently absorbing every sibling's own
+          // template. A sold service with no template at all just rides along in
+          // the shared per-workflow description/KOC/member-tagging logic.
+          const templates = resolveWorkflowTemplates(originalWorkflows[wfIdx]);
 
-          if (template && template.type === 'card') {
-            // Single-card template (e.g. "Display", "SEM") — copy just this one card,
-            // preserving its own template name rather than the generic workflow name.
-            // Requires the claude-proxy Edge Function's trello_get_card target.
-            const cardInfoRes = await fetch(PROXY, {
-              method: 'POST',
-              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-              body: JSON.stringify({ target: 'trello_get_card', card_id: template.ref })
-            });
-            const templateCard = await cardInfoRes.json();
-
-            if (!templateCard?.id) {
-              // FIXED (2026-07-13, found live): a short "copy link" code (e.g. bN5GJEkd)
-              // works fine for LOOKING UP a card here, but Trello's copy-card endpoint
-              // below rejects it — only the resolved full id works there. If even the
-              // lookup failed, the ref itself is bad (deleted card, wrong id, etc.) —
-              // log it and skip rather than attempt a copy that's certain to fail too.
-              console.warn(`Could not resolve single-card template for workflow "${originalWorkflows[wfIdx]}" (ref ${template.ref}) — no card added. Check the Trello Template field on the relevant service.`);
-            } else {
-              // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
-              // the business name.
-              const cn = resolveTacticVariantName(originalWorkflows[wfIdx], (templateCard.name || wf).trim()) + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
-              const existing = findExistingCardByName(cn);
-              if (existing && !addedCardNames.has(norm(cn))) {
-                addedCardNames.add(norm(cn));
-                await finalizeTacticCard(existing.id, wfIdx);
-              } else if (!existing && !cardExists(cn)) {
-                const copyRes = await fetch(PROXY, {
-                  method: 'POST',
-                  headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_copy_card', card_id: templateCard.id, list_id: clientList.id, name: cn, pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
-                });
-                const copiedCard = await copyRes.json();
-
-                if (copiedCard?.id) {
-                  addedCardNames.add(norm(cn));
-                  cardsAdded++;
-                  await finalizeTacticCard(copiedCard.id, wfIdx);
-                } else {
-                  console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
-                }
-              }
-            }
-          } else if (template && template.type === 'list') {
-            // Whole-list template (e.g. SEO/Website tier packages) — copy every
-            // (non-placeholder) card in it, fetched directly by the stored, stable list id.
-            const tCardsRes = await fetch(PROXY, {
-              method: 'POST',
-              headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-              body: JSON.stringify({ target: 'trello_get_list_cards', list_id: template.ref })
-            });
-            const templateCards = await tCardsRes.json();
-
-            if (Array.isArray(templateCards)) {
-              // KOC label only goes on the FIRST card actually processed for this
-              // workflow (2026-07-15, per Claire) — a whole-list template can copy
-              // several cards for one sold product, and plastering the same label on
-              // every one of them was cluttered. Flips to false after the first genuine
-              // hit; cards skipped above (test cards, IO/AE placeholders, already
-              // handled this run) never touch this flag.
-              let isFirstCardThisWorkflow = true;
-              // A dedicated "___ Process" card (e.g. "SEO Starter Process") takes
-              // over intake-PDF/banner duty for the whole list once a template has
-              // one — matched by name suffix, same convention as the IO/AE Questions
-              // filters right below. A template that hasn't added one yet keeps the
-              // old "every card gets it" behavior so nothing regresses until it does.
-              const hasProcessCard = templateCards.some(c => !c.name.startsWith('🧪') && /process$/i.test(c.name.trim()));
-              for (const card of templateCards) {
-                if (card.name.startsWith('🧪')) continue; // skip test cards
-                let cn = card.name.trim();
-                // Skip any template placeholder named "IO", "IO -", "IO :", etc.
-                if (isIoName(cn)) continue;
-                // Skip AE Questions cards from any template — redundant; the intake
-                // answers now live in the PDF attachment instead
-                if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
-                const attachIntake = !hasProcessCard || /process$/i.test(cn);
-                // Tactic — Client (2026-07-14, per Claire) — appended AFTER the filters
-                // above (which need to match the template's own plain name).
-                cn += offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
-
-                const existing = findExistingCardByName(cn);
-                if (existing && !addedCardNames.has(norm(cn))) {
-                  addedCardNames.add(norm(cn));
-                  await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow, attachIntake);
-                  isFirstCardThisWorkflow = false;
-                  continue;
-                }
-                if (existing || cardExists(cn)) continue; // already handled this run
-
-                const copyRes = await fetch(PROXY, {
-                  method: 'POST',
-                  headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
-                });
-                const copiedCard = await copyRes.json();
-                if (!copiedCard?.id) {
-                  console.warn(`Failed to copy template card "${cn}":`, copiedCard);
-                  continue;
-                }
-                addedCardNames.add(norm(cn));
-                cardsAdded++;
-                await finalizeTacticCard(copiedCard.id, wfIdx, isFirstCardThisWorkflow, attachIntake);
-                isFirstCardThisWorkflow = false;
-              }
-            } else {
-              // Template list id configured but its cards couldn't be read (e.g. the
-              // list was deleted) — fall back to a plain card so submission still works
-              // Tactic — Client (2026-07-14, per Claire)
-              const fallbackName = wf + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
-              const existing = findExistingCardByName(fallbackName);
-              if (existing && !addedCardNames.has(norm(fallbackName))) {
-                addedCardNames.add(norm(fallbackName));
-                await finalizeTacticCard(existing.id, wfIdx);
-              } else if (!existing && !cardExists(fallbackName)) {
-                const fallbackRes = await fetch(PROXY, {
-                  method: 'POST',
-                  headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                  body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: '', pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
-                });
-                const fallbackCard = await fallbackRes.json();
-                addedCardNames.add(norm(fallbackName));
-                cardsAdded++;
-                if (fallbackCard?.id) await finalizeTacticCard(fallbackCard.id, wfIdx);
-              }
-            }
-          } else {
-            // No template — create plain tactic card if not already there. Includes
-            // every sold line item sharing this workflow (2026-07-13) — since this card
-            // has no template content at all, it's the one place a modifier/add-on
-            // riding alongside the main service could otherwise go completely unmentioned.
-            // Tactic — Client (2026-07-14, per Claire)
+          if (!templates.length) {
+            // No template anywhere in this workflow — create plain tactic card if not
+            // already there. Includes every sold line item sharing this workflow
+            // (2026-07-13) — since this card has no template content at all, it's the
+            // one place a modifier/add-on riding alongside the main service could
+            // otherwise go completely unmentioned. Tactic — Client (2026-07-14, per Claire)
             const plainName = wf + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
             const existing = findExistingCardByName(plainName);
             if (existing && !addedCardNames.has(norm(plainName))) {
@@ -6211,6 +6108,140 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               addedCardNames.add(norm(plainName));
               cardsAdded++;
               if (plainCard?.id) await finalizeTacticCard(plainCard.id, wfIdx);
+            }
+            continue;
+          }
+
+          // KOC label only goes on the FIRST card actually processed for this
+          // workflow (2026-07-15, per Claire) — now shared ACROSS every distinct
+          // template this workflow produces (not reset per template), so a
+          // workflow with several real templates still gets the label exactly
+          // once, on whichever of its cards is processed first.
+          let isFirstCardThisWorkflow = true;
+
+          for (const template of templates) {
+            if (template.type === 'card') {
+              // Single-card template (e.g. "Display", "SEM") — copy just this one card,
+              // preserving its own template name rather than the generic workflow name.
+              // Requires the claude-proxy Edge Function's trello_get_card target.
+              const cardInfoRes = await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_get_card', card_id: template.ref })
+              });
+              const templateCard = await cardInfoRes.json();
+
+              if (!templateCard?.id) {
+                // FIXED (2026-07-13, found live): a short "copy link" code (e.g. bN5GJEkd)
+                // works fine for LOOKING UP a card here, but Trello's copy-card endpoint
+                // below rejects it — only the resolved full id works there. If even the
+                // lookup failed, the ref itself is bad (deleted card, wrong id, etc.) —
+                // log it and skip rather than attempt a copy that's certain to fail too.
+                console.warn(`Could not resolve single-card template for workflow "${originalWorkflows[wfIdx]}" (ref ${template.ref}) — no card added. Check the Trello Template field on the relevant service.`);
+                continue;
+              }
+              // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
+              // the business name.
+              const cn = resolveTacticVariantName(originalWorkflows[wfIdx], (templateCard.name || wf).trim()) + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+              const existing = findExistingCardByName(cn);
+              if (existing && !addedCardNames.has(norm(cn))) {
+                addedCardNames.add(norm(cn));
+                await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow);
+                isFirstCardThisWorkflow = false;
+              } else if (!existing && !cardExists(cn)) {
+                const copyRes = await fetch(PROXY, {
+                  method: 'POST',
+                  headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                  body: JSON.stringify({ target: 'trello_copy_card', card_id: templateCard.id, list_id: clientList.id, name: cn, pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
+                });
+                const copiedCard = await copyRes.json();
+
+                if (copiedCard?.id) {
+                  addedCardNames.add(norm(cn));
+                  cardsAdded++;
+                  await finalizeTacticCard(copiedCard.id, wfIdx, isFirstCardThisWorkflow);
+                  isFirstCardThisWorkflow = false;
+                } else {
+                  console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
+                }
+              }
+            } else if (template.type === 'list') {
+              // Whole-list template (e.g. SEO/Website tier packages) — copy every
+              // (non-placeholder) card in it, fetched directly by the stored, stable list id.
+              const tCardsRes = await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_get_list_cards', list_id: template.ref })
+              });
+              const templateCards = await tCardsRes.json();
+
+              if (Array.isArray(templateCards)) {
+                // A dedicated "___ Process" card (e.g. "SEO Starter Process") takes
+                // over intake-PDF/banner duty for the whole list once a template has
+                // one — matched by name suffix, same convention as the IO/AE Questions
+                // filters right below. A template that hasn't added one yet keeps the
+                // old "every card gets it" behavior so nothing regresses until it does.
+                const hasProcessCard = templateCards.some(c => !c.name.startsWith('🧪') && /process$/i.test(c.name.trim()));
+                for (const card of templateCards) {
+                  if (card.name.startsWith('🧪')) continue; // skip test cards
+                  let cn = card.name.trim();
+                  // Skip any template placeholder named "IO", "IO -", "IO :", etc.
+                  if (isIoName(cn)) continue;
+                  // Skip AE Questions cards from any template — redundant; the intake
+                  // answers now live in the PDF attachment instead
+                  if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
+                  const attachIntake = !hasProcessCard || /process$/i.test(cn);
+                  // Tactic — Client (2026-07-14, per Claire) — appended AFTER the filters
+                  // above (which need to match the template's own plain name).
+                  cn += offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+
+                  const existing = findExistingCardByName(cn);
+                  if (existing && !addedCardNames.has(norm(cn))) {
+                    addedCardNames.add(norm(cn));
+                    await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow, attachIntake);
+                    isFirstCardThisWorkflow = false;
+                    continue;
+                  }
+                  if (existing || cardExists(cn)) continue; // already handled this run
+
+                  const copyRes = await fetch(PROXY, {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                    body: JSON.stringify({ target: 'trello_copy_card', card_id: card.id, list_id: clientList.id, name: cn, pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
+                  });
+                  const copiedCard = await copyRes.json();
+                  if (!copiedCard?.id) {
+                    console.warn(`Failed to copy template card "${cn}":`, copiedCard);
+                    continue;
+                  }
+                  addedCardNames.add(norm(cn));
+                  cardsAdded++;
+                  await finalizeTacticCard(copiedCard.id, wfIdx, isFirstCardThisWorkflow, attachIntake);
+                  isFirstCardThisWorkflow = false;
+                }
+              } else {
+                // Template list id configured but its cards couldn't be read (e.g. the
+                // list was deleted) — fall back to a plain card so submission still works
+                // Tactic — Client (2026-07-14, per Claire)
+                const fallbackName = wf + offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+                const existing = findExistingCardByName(fallbackName);
+                if (existing && !addedCardNames.has(norm(fallbackName))) {
+                  addedCardNames.add(norm(fallbackName));
+                  await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow);
+                  isFirstCardThisWorkflow = false;
+                } else if (!existing && !cardExists(fallbackName)) {
+                  const fallbackRes = await fetch(PROXY, {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                    body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: fallbackName, desc: '', pos: newCardPos, ...campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx])) })
+                  });
+                  const fallbackCard = await fallbackRes.json();
+                  addedCardNames.add(norm(fallbackName));
+                  cardsAdded++;
+                  if (fallbackCard?.id) await finalizeTacticCard(fallbackCard.id, wfIdx, isFirstCardThisWorkflow);
+                  isFirstCardThisWorkflow = false;
+                }
+              }
             }
           }
         }

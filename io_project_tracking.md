@@ -21105,3 +21105,81 @@ the extracted script. Not yet tested live — needs the Edge Function
 redeployed, then a real order submitted to confirm a tactic card
 actually gets a due date in Trello and the description-refresh path
 updates it correctly on a resell.
+
+---
+
+## 2026-08-28 (cont'd) — Every workflow's Trello template collision, fixed at the code level
+
+Follow-up from the "Al a carte item never got a card" question earlier
+today — while explaining `workflow`'s purpose, ran an audit query at
+Claire's request and found the problem was NOT isolated: **every
+multi-service section in the catalog** shares this same mismatch (Social
+Media Ads: 4 services, 4 completely different templates, one shared
+`workflow` value; same story for Streaming TV/OTT/CTV, Video
+Advertising, Website, Targeted Landing Pages, and 6 more sections).
+`resolveWorkflowTemplate()` only ever resolved ONE template per workflow
+(whichever sold service came first alphabetically/by iteration order) —
+meaning any time an AE sells two or more services from the same section
+together, only one ever got a real Trello card; the other's own
+correctly-configured template was silently dropped every time.
+
+Claire's call, given the scale: "that seems like a lot of extra
+unnecessary work, could we make it so that if there is a trello template
+attached that overrides if there is a workflow?" — fix it in code
+instead of manually re-keying `workflow` on dozens of catalog rows.
+
+**Root cause**: `resolveWorkflowTemplate(originalWorkflow)` picked
+`soldRows[0]`'s template and discarded every other sold service's own
+`trello_template_ref` for that workflow, with only a `console.warn` (no
+UI, nobody would ever see it) noting the collision.
+
+**Fix (`index.html`)**: rewrote it as `resolveWorkflowTemplates()`
+(plural) — returns EVERY distinct `trello_template_ref` among a
+workflow's sold services (deduped, so two services genuinely configured
+to share one template still correctly produce just one card, not two
+identical ones), instead of picking a single winner. The card-creation
+dispatch loop (previously a single `if (template.type==='card') {...}
+else if (list) {...} else {...}` block run once per workflow) is now a
+loop over every distinct template returned, running the exact same
+per-type logic (single-card copy / whole-list copy / plain fallback) for
+each. A sold service with no template of its own (a modifier riding
+along, e.g. Offline Visits Tracking) still contributes nothing to this
+list and continues to just ride along in the shared per-workflow
+description/member-tagging — unchanged.
+
+**KOC label**: `isFirstCardThisWorkflow` moved from being scoped inside
+a single template's processing to being shared ACROSS every template a
+workflow now produces — so a workflow with 3 separate real templates
+(e.g. Social Media Ads sold as FB+LinkedIn+TikTok) still gets exactly
+ONE "Needs KOC" label total, on whichever card is actually created
+first, not one per template.
+
+**Known follow-on risk, flagged but not addressed in this pass**: intake
+form attachment (`resolveWorkflowIntakeFormId`) has the exact same
+"first sold row wins" shape and is UNCHANGED here — if a workflow that
+now produces several separate single-card-type cards also has an
+intake form configured on one of its services, that same intake PDF
+will attach to ALL of those cards (same mechanism as the original SEO
+bug, just via the single-card branch instead of the whole-list branch).
+The SEO fix from earlier today (a dedicated "process card") only applies
+to whole-list templates, which don't fit this shape. Not building
+anything for this yet — flagging it in case it turns out to matter for
+any of the newly-un-collapsed multi-template workflows.
+
+**Verified**: two standalone harnesses. One directly exercises
+`resolveWorkflowTemplates()` against the REAL Social Media Ads data from
+Claire's own audit query (4 services, 4 distinct templates all sharing
+one workflow) — confirms all 4 resolve when all 4 are sold, only the
+sold subset resolves when fewer are sold, two services deliberately
+sharing one ref still produce just one entry, a template-less modifier
+sibling doesn't block its host's template, an all-modifier workflow
+correctly returns empty (falls back to the existing plain-card path),
+and a missing `trello_template_type` still defaults to `'list'` (matches
+the original code's own fallback). A second harness simulates the
+loop's control flow to confirm the KOC flag is shared correctly across
+3 separate single-card templates, across a mixed list+card template set,
+and correctly lands on the first SUCCESSFUL card copy (not a failed
+first attempt). `node --check` passes on the extracted script. Not yet
+tested live — needs a real order selling 2+ services from one of the 11
+affected sections (e.g. two Social Media Ads platforms together) to
+confirm both cards actually appear in Trello now.
