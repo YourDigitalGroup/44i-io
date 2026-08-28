@@ -20904,3 +20904,10 @@ base Accounting Map, Group/Client Accounting Overrides, and Group/Client
 Custom Pricing — all using the same underlying `rate_history` table and
 generic client-side engine, each with a UI shape suited to its own
 table's density.
+
+**Follow-up same day**: Claire — "Could we make that icon larger? It is
+kinda hard to see." All 4 🕐 icons (Custom Pricing group/client,
+Accounting Overrides group/client) bumped from 11px muted-gray to 16px
+in the accent color (`var(--accent-dark)`, same blue used for the
+Schedule buttons), with a couple px of padding for an easier click
+target. `node --check` passes.
