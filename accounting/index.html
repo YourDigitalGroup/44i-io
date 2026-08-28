@@ -325,6 +325,7 @@ let ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // Expected Spen
 let ACCOUNTING_IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending, e.g. SEM (2026-08-13, same shape/lookup as ACCOUNTING_CUT_TIERS, kept as its own column/cache)
 let ACCOUNTING_IN_PLATFORM_PCT_FORCE = { group: {} }; // group_id|service_id -> true when that group's in_platform_pct is flagged to beat the spend tier outright (2026-08-25, MS Farm Bureau)
 let ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} }; // service_id -> pct, group_id|service_id -> pct -- the split % for a service's own auto-add setup fee (accounting_map.setup_fee_cut_pct), can differ from that service's regular 44i Cut %
+let ACCOUNTING_SPEND_TIER_TOP_OVERRIDE = { group: {} }; // group_id|service_id -> pct -- a group's override of a tiered service's TOP bucket only (e.g. SEM's "$5,000+" tier), 2026-08-27 per Claire
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
 let ACCOUNTING_EXPANDED_SPLITS = new Set(); // rollup keys currently expanded -- always starts empty on load
@@ -1380,11 +1381,24 @@ function accountingSetGroupFilter(groupName) {
 // REPLACE the flat rate entirely -- a group override of the flat rate is
 // irrelevant once tiers exist (documented gap, not silently invented, same
 // as the Offline Visits pairing rate's own group-override gap).
-function accountingEffectiveCutPctTier(serviceId, grossBudget) {
+// groupId (2026-08-27, per Claire — 3 groups need a different 44i Cut %
+// than the base schedule once spend crosses the schedule's TOP breakpoint,
+// e.g. SEM's "$5,000+" tier) — only the top bucket (the one with max==null,
+// "and up") can be overridden per group; lower buckets always come from the
+// base schedule. Deliberately not a whole per-group tier schedule — a group
+// only ever needs to state the one number that differs for it, not
+// duplicate every breakpoint (which would silently go stale if the base
+// schedule's lower breakpoints ever changed).
+function accountingEffectiveCutPctTier(serviceId, groupId, grossBudget) {
   const tiers = ACCOUNTING_CUT_TIERS[serviceId];
   if (!tiers || !tiers.length || grossBudget == null) return null;
   const tier = tiers.find(t => t.max == null || Number(grossBudget) <= Number(t.max));
-  return tier ? Number(tier.cut_pct) : null;
+  if (!tier) return null;
+  if (tier.max == null && groupId) {
+    const topOverride = ACCOUNTING_SPEND_TIER_TOP_OVERRIDE.group[`${groupId}|${serviceId}`];
+    if (topOverride != null) return Number(topOverride);
+  }
+  return Number(tier.cut_pct);
 }
 // hasModifier -- true when EITHER Offline Visits Tracking OR YouTube TV's
 // Addl. Targeting is checked (2026-08-12). Safe to OR them into one flag:
@@ -1413,7 +1427,7 @@ function accountingEffectiveCutPct(serviceId, clientId, groupId, hasModifier, gr
     const pairingRate = ACCOUNTING_CUT_RATES.pairing[serviceId];
     if (pairingRate != null) return pairingRate;
   }
-  const tierRate = accountingEffectiveCutPctTier(serviceId, grossBudget);
+  const tierRate = accountingEffectiveCutPctTier(serviceId, groupId, grossBudget);
   if (tierRate != null) return tierRate;
   const client = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
   const clientRate = client?.accounting_overrides?.[serviceId]?.fortyfouri_cut_pct;
@@ -1672,6 +1686,7 @@ async function fetchAccountingData() {
   ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
   ACCOUNTING_IN_PLATFORM_PCT_FORCE = { group: {} };
   ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} };
+  ACCOUNTING_SPEND_TIER_TOP_OVERRIDE = { group: {} };
   (rates || []).forEach(r => {
     if (r.scope === 'base') {
       ACCOUNTING_CUT_RATES.base[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
@@ -1687,6 +1702,7 @@ async function fetchAccountingData() {
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.group[key] = Number(r.in_platform_pct);
       if (r.in_platform_pct_force) ACCOUNTING_IN_PLATFORM_PCT_FORCE.group[key] = true;
       if (r.setup_fee_cut_pct != null) ACCOUNTING_SETUP_FEE_CUT_RATES.group[key] = Number(r.setup_fee_cut_pct);
+      if (r.spend_tier_top_cut_pct != null) ACCOUNTING_SPEND_TIER_TOP_OVERRIDE.group[key] = Number(r.spend_tier_top_cut_pct);
     } else if (r.scope === 'pairing') {
       ACCOUNTING_CUT_RATES.pairing[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.pairing[r.service_id] = Number(r.platform_cpm);

@@ -20093,3 +20093,57 @@ typing a real budget → not paused, and clearing the field → NOT wrongly
 treated as paused (the exact edge case the guard exists for).
 `node --check` passes on the extracted script. Not yet tested live —
 needs Claire to try a $0 month and confirm the Paused box checks itself.
+
+## 2026-08-27 — Group-level override for a tiered service's TOP spend bucket
+
+Claire: "I have 3 groups that have different SEM % splits if the spend is
+more than $5,000 how can I make that change in the accounting override?"
+Checked the real code before answering: this genuinely wasn't possible
+before today — `accountingEffectiveCutPctTier()`'s own existing comment
+already documented the gap ("When a service has tiers configured, they
+REPLACE the flat rate entirely -- a group override of the flat rate is
+irrelevant once tiers exist"), and there was no group-scope tier storage
+or UI at all. Confirmed via AskUserQuestion this only needs to cover the
+TOP bucket differing (same breakpoints as the base schedule, e.g. SEM's
+existing "$5,000+" tier) — not a fully independent per-group schedule.
+
+**Design**: rather than letting a group store its own COMPLETE tier
+array (which would silently go stale the moment the base schedule's lower
+breakpoints ever changed, since 3 separate group copies would all need
+manually re-syncing), a group can only override the top bucket's own %
+(the tier with `max == null`, "and up"). Lower buckets always come from
+the base schedule — a group only ever has to state the one number that's
+actually different for it.
+
+**Built**:
+- `admin/index.html` — new conditional override field, `spend_tier_top_cut_pct`,
+  added to the group's Accounting Overrides table (`renderAccountingOverrideFields()`),
+  labeled "Top-Tier 44i Cut % (spend tiers)". Only shown for services that
+  actually have `spend_tiers` configured (same conditional-column pattern
+  already used for Setup Fee Split %, which only shows for services with
+  an auto-add setup fee). Its placeholder shows the base schedule's own
+  current top-tier % for reference. Reuses the existing fully-generic
+  save/load mechanism (`onAccountingOverrideInput`) — no other admin code
+  needed to change.
+- `accounting/index.html` — new global `ACCOUNTING_SPEND_TIER_TOP_OVERRIDE.group[groupId|serviceId]`,
+  populated from `accounting_get_rates`'s group-scope rows. `accountingEffectiveCutPctTier(serviceId, groupId, grossBudget)`
+  gained a `groupId` parameter — after resolving which tier a month's
+  spend falls into, if it's the TOP tier (`max == null`) and this group
+  has an override, the override wins; every other tier is untouched.
+  `accountingEffectiveCutPct()` now passes `groupId` through to this call.
+
+**SQL given to Claire** (not committed to the repo, per standing
+convention) — add one line to the existing `accounting_get_rates`
+function's group-scope branch:
+```sql
+'spend_tier_top_cut_pct', (kv.value->>'spend_tier_top_cut_pct')::numeric
+```
+
+**Verified**: a standalone harness confirmed the override only applies
+inside the top bucket (not the lower ones), a different group with no
+override still gets the base schedule's own top-tier %, a missing
+`groupId` falls through cleanly, and the exact-boundary spend amount
+(exactly $5,000) still resolves to the middle tier, not the top one.
+`node --check` passes on the extracted script. Not yet tested live —
+needs the SQL run, then a real group set up with an override to confirm
+the split changes above $5,000 for that group specifically.

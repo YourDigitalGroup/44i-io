@@ -2130,6 +2130,13 @@ function renderAccountingOverrideFields() {
       displayLabel: s.accounting_label || s.label,
       idNote: s.id,
       hasSetupFee: s.auto_add_setup_fee && s.setup_fee != null && s.setup_fee_threshold != null,
+      // 2026-08-27, per Claire: 3 groups need a different 44i Cut % than the
+      // base schedule ONCE spend crosses the schedule's top breakpoint (SEM's
+      // "$5,000+" tier). Rather than duplicating the WHOLE tier schedule per
+      // group (error-prone if the base schedule's lower breakpoints ever
+      // change), this only overrides the top bucket's own %, so a group only
+      // ever needs to state the one number that's actually different for it.
+      hasTiers: !!(base.spend_tiers && base.spend_tiers.length),
       fields: {
         fortyfouri_cut_pct: base.fortyfouri_cut_pct,
         platform_cpm: base.platform_cpm,
@@ -2138,6 +2145,11 @@ function renderAccountingOverrideFields() {
         in_platform_pct: base.in_platform_pct,
         cpc_low: base.cpc_low,
         cpc_high: base.cpc_high,
+        // Standard schedule's own top-bucket % (last entry — tiers are stored
+        // ascending, so the last one is always the "and up" bucket), shown as
+        // this field's placeholder so an admin can see what they're deviating
+        // FROM without having to go check the Accounting Map tab separately.
+        spend_tier_top_cut_pct: base.spend_tiers && base.spend_tiers.length ? base.spend_tiers[base.spend_tiers.length - 1]?.cut_pct : undefined,
       },
     });
   });
@@ -2152,7 +2164,7 @@ function renderAccountingOverrideFields() {
   // Setup Fee Split % is always its own column (disabled/blank where a service has no
   // auto-add setup fee) rather than appearing only on some rows, for the same reason —
   // an appearing/disappearing column is exactly what broke alignment before.
-  const ALL_OVERRIDE_FIELDS = [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }];
+  const ALL_OVERRIDE_FIELDS = [...ACCOUNTING_OVERRIDE_FIELDS, { key: 'setup_fee_cut_pct', label: 'Setup Fee Split %', suffix: '%' }, { key: 'spend_tier_top_cut_pct', label: 'Top-Tier 44i Cut % (spend tiers)', suffix: '%' }];
   let html = `<table style="font-size:12.5px;border-collapse:collapse;width:100%">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
@@ -2166,7 +2178,7 @@ function renderAccountingOverrideFields() {
     html += `<tr id="acct-row-${esc(row.overrideKey)}" style="border-bottom:1px solid var(--border);${rowIsOverridden ? OVERRIDE_ROW_STYLE : ''}">
       <td style="padding:8px 10px">${esc(row.displayLabel)}<span id="acct-badge-${esc(row.overrideKey)}" style="display:${rowIsOverridden ? 'inline' : 'none'}">${CUSTOM_BADGE}</span><div style="color:var(--muted);font-size:11px;font-family:monospace">${esc(row.idNote)}</div></td>`;
     ALL_OVERRIDE_FIELDS.forEach(f => {
-      const applicable = f.key !== 'setup_fee_cut_pct' || row.hasSetupFee;
+      const applicable = (f.key !== 'setup_fee_cut_pct' || row.hasSetupFee) && (f.key !== 'spend_tier_top_cut_pct' || row.hasTiers);
       if (!applicable) {
         html += `<td style="padding:8px 10px;text-align:right;color:var(--muted)">—</td>`;
         return;
