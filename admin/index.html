@@ -811,7 +811,7 @@
                     <input type="number" step="0.01" id="admin-svc-price-history-value" placeholder="New price" style="width:90px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
                     <span style="font-size:10px;color:var(--muted)">effective</span>
                     <input type="date" id="admin-svc-price-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
-                    <button type="button" onclick="adminAddPriceHistoryChange()" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+                    <button type="button" onclick="adminAddRateHistoryChange('admin-svc-price','base',null,document.getElementById('admin-svc-original-id').value,'default_price',async()=>{allServicesMap = await sb('services?order=section,sort_order&select=*') || []; const s = allServicesMap.find(x=>x.id===document.getElementById('admin-svc-original-id').value); if(s) document.getElementById('admin-svc-price').value = s.default_price ?? '';})" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
                   </div>
                 </div>
               </div>
@@ -1529,10 +1529,28 @@
               <label class="lbl" for="admin-accounting-cut-pct">44i Cut % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Group's cut (YDA) is always 100% minus this</span></label>
               <input type="number" step="0.01" id="admin-accounting-cut-pct" placeholder="e.g. 45" oninput="updateAccountingYdaPreview()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
               <p id="admin-accounting-yda-preview" style="font-size:11px;color:var(--muted);margin-top:4px">Group's cut (YDA): —</p>
+              <div id="acct-fortyfouri_cut_pct-history-wrap" style="margin-top:8px;padding:10px 12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                <div id="acct-fortyfouri_cut_pct-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="number" step="0.01" id="acct-fortyfouri_cut_pct-history-value" placeholder="New %" style="width:80px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <span style="font-size:10px;color:var(--muted)">effective</span>
+                  <input type="date" id="acct-fortyfouri_cut_pct-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <button type="button" onclick="adminSaveAccountingFieldHistory('fortyfouri_cut_pct','admin-accounting-cut-pct')" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+                </div>
+              </div>
             </div>
             <div>
               <label class="lbl" for="admin-accounting-platform-cpm">Platform CPM <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— drives In-Platform Budget/Goal in the Strategist Portal</span></label>
               <input type="number" step="0.01" id="admin-accounting-platform-cpm" placeholder="e.g. 3.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <div id="acct-platform_cpm-history-wrap" style="margin-top:8px;padding:10px 12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                <div id="acct-platform_cpm-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="number" step="0.01" id="acct-platform_cpm-history-value" placeholder="New CPM" style="width:80px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <span style="font-size:10px;color:var(--muted)">effective</span>
+                  <input type="date" id="acct-platform_cpm-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <button type="button" onclick="adminSaveAccountingFieldHistory('platform_cpm','admin-accounting-platform-cpm')" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+                </div>
+              </div>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
@@ -1543,16 +1561,43 @@
             <div>
               <label class="lbl" for="admin-accounting-in-platform-pct">In-Platform % (of Gross) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— fallback for a service with no Retail CPM (e.g. SEM), so In-Platform Budget still auto-calculates</span></label>
               <input type="number" step="0.01" id="admin-accounting-in-platform-pct" placeholder="e.g. 50" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <div id="acct-in_platform_pct-history-wrap" style="margin-top:8px;padding:10px 12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                <div id="acct-in_platform_pct-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="number" step="0.01" id="acct-in_platform_pct-history-value" placeholder="New %" style="width:80px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <span style="font-size:10px;color:var(--muted)">effective</span>
+                  <input type="date" id="acct-in_platform_pct-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <button type="button" onclick="adminSaveAccountingFieldHistory('in_platform_pct','admin-accounting-in-platform-pct')" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+                </div>
+              </div>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
             <div>
               <label class="lbl" for="admin-accounting-cpc-low">CPC Low <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for a clicks-based service (e.g. SEM); drives the low end of the Goal range</span></label>
               <input type="number" step="0.01" id="admin-accounting-cpc-low" placeholder="e.g. 4.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <div id="acct-cpc_low-history-wrap" style="margin-top:8px;padding:10px 12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                <div id="acct-cpc_low-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="number" step="0.01" id="acct-cpc_low-history-value" placeholder="New CPC" style="width:80px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <span style="font-size:10px;color:var(--muted)">effective</span>
+                  <input type="date" id="acct-cpc_low-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <button type="button" onclick="adminSaveAccountingFieldHistory('cpc_low','admin-accounting-cpc-low')" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+                </div>
+              </div>
             </div>
             <div>
               <label class="lbl" for="admin-accounting-cpc-high">CPC High <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— high end of the Goal range</span></label>
               <input type="number" step="0.01" id="admin-accounting-cpc-high" placeholder="e.g. 12.00" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              <div id="acct-cpc_high-history-wrap" style="margin-top:8px;padding:10px 12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                <div id="acct-cpc_high-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="number" step="0.01" id="acct-cpc_high-history-value" placeholder="New CPC" style="width:80px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <span style="font-size:10px;color:var(--muted)">effective</span>
+                  <input type="date" id="acct-cpc_high-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                  <button type="button" onclick="adminSaveAccountingFieldHistory('cpc_high','admin-accounting-cpc-high')" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+                </div>
+              </div>
             </div>
           </div>
           <div id="admin-accounting-setup-fee-block" style="display:none;margin-bottom:12px;padding:14px;background:#fff;border-radius:8px;border:1px solid var(--border)">
@@ -1560,6 +1605,15 @@
             <label class="lbl" for="admin-accounting-setup-fee-cut-pct">44i's % of the Setup Fee <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— can differ from 44i Cut % above</span></label>
             <input type="number" step="0.01" id="admin-accounting-setup-fee-cut-pct" placeholder="e.g. 50" oninput="updateAccountingSetupFeePreview()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             <p id="admin-accounting-setup-fee-preview" style="font-size:11px;color:var(--muted);margin-top:4px">Split: —</p>
+            <div id="acct-setup_fee_cut_pct-history-wrap" style="margin-top:8px;padding:10px 12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+              <div id="acct-setup_fee_cut_pct-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input type="number" step="0.01" id="acct-setup_fee_cut_pct-history-value" placeholder="New %" style="width:80px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                <span style="font-size:10px;color:var(--muted)">effective</span>
+                <input type="date" id="acct-setup_fee_cut_pct-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                <button type="button" onclick="adminSaveAccountingFieldHistory('setup_fee_cut_pct','admin-accounting-setup-fee-cut-pct')" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+              </div>
+            </div>
           </div>
           <!-- Spend Tiers (2026-08-13) -- previously SQL-only (accounting_map.spend_tiers/
                in_platform_tiers, added 2026-08-11/13). Rate looked up against the month's
@@ -5467,6 +5521,17 @@ function adminEditAccounting(serviceId, pairWithServiceId) {
   document.getElementById('admin-accounting-cpc-low').value = a?.cpc_low ?? '';
   document.getElementById('admin-accounting-cpc-high').value = a?.cpc_high ?? '';
   updateAccountingYdaPreview();
+  // Scheduled-change widgets (2026-08-28) -- not offered for a pairing
+  // override yet (see adminSaveAccountingFieldHistory's own comment), so
+  // hidden rather than wired to a scope rate_history doesn't model for
+  // that case.
+  ['fortyfouri_cut_pct', 'platform_cpm', 'in_platform_pct', 'cpc_low', 'cpc_high'].forEach(field => {
+    const wrap = document.getElementById('acct-' + field + '-history-wrap');
+    if (!wrap) return;
+    if (pairKey) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    adminLoadRateHistory('acct-' + field, 'base', null, serviceId, field);
+  });
   // Setup Fee Split is a property of the service's own setup fee, never of a pairing
   // with another service's modifier — always hidden while editing a pairing override.
   const setupFeeBlock = document.getElementById('admin-accounting-setup-fee-block');
@@ -5478,6 +5543,7 @@ function adminEditAccounting(serviceId, pairWithServiceId) {
     document.getElementById('admin-accounting-setup-fee-cut-pct').value = a?.setup_fee_cut_pct ?? '';
     updateAccountingSetupFeePreview();
     setupFeeBlock.style.display = 'block';
+    adminLoadRateHistory('acct-setup_fee_cut_pct', 'base', null, serviceId, 'setup_fee_cut_pct');
   } else {
     ACCOUNTING_CURRENT_SETUP_FEE_AMT = null;
     document.getElementById('admin-accounting-setup-fee-cut-pct').value = '';
@@ -7309,7 +7375,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-price-history-wrap').style.display = 'block';
   document.getElementById('admin-svc-price-history-date').value = '';
   document.getElementById('admin-svc-price-history-value').value = '';
-  adminLoadPriceHistory(s.id);
+  adminLoadRateHistory('admin-svc-price', 'base', null, s.id, 'default_price');
   document.getElementById('admin-svc-tactic-variants').value = Array.isArray(s.tactic_variants) ? s.tactic_variants.join(', ') : '';
   document.getElementById('admin-svc-sort').value = s.sort_order ?? '';
   document.getElementById('admin-svc-pricing-mode').value = s.pricing_mode || 'flat';
@@ -7366,62 +7432,84 @@ function adminCancelServiceEdit() {
   document.getElementById('admin-service-form').style.display = 'none';
 }
 
-// ── PRICE HISTORY / EFFECTIVE-DATED CHANGES (2026-08-28, Phase 2) ──────
-// Proving the "schedule a dated change" pattern on this ONE field (base
-// catalog price) before repeating it across the ~9 other pricing/
-// accounting field locations. See rate_history table + resolve_rate()
-// (Phase 1, 2026-08-27) and the full design in the project tracking doc.
-async function adminLoadPriceHistory(serviceId) {
-  const listEl = document.getElementById('admin-svc-price-history-list');
+// ── RATE HISTORY / EFFECTIVE-DATED CHANGES (2026-08-28, Phase 2) ──────
+// Generalized (2026-08-28, same day, per Claire: "I don't see those
+// options for the accounting map or any of the group/client overrides")
+// from a Services-tab-only proof of concept into one reusable widget,
+// now wired into every pricing/accounting field this session's plan
+// called for. `prefix` is a unique DOM-id root per field instance (e.g.
+// 'svc-price', 'acct-cutpct') so multiple instances can coexist on one
+// page without colliding. See rate_history table + resolve_rate() (Phase
+// 1, 2026-08-27) and the full design in the project tracking doc.
+async function adminLoadRateHistory(prefix, scope, scopeId, serviceId, field) {
+  const listEl = document.getElementById(prefix + '-history-list');
+  if (!listEl) return;
   listEl.textContent = 'Loading history…';
   try {
     const rows = await sb('rpc/admin_get_rate_history', { method: 'POST', body: JSON.stringify({
       p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
-      p_scope: 'base', p_scope_id: null, p_service_id: serviceId, p_field: 'default_price'
+      p_scope: scope, p_scope_id: scopeId, p_service_id: serviceId, p_field: field
     }) });
-    adminRenderPriceHistory(rows || []);
+    adminRenderRateHistory(prefix, rows || []);
   } catch(e) {
     listEl.textContent = 'Could not load history: ' + e.message;
   }
 }
-function adminRenderPriceHistory(rows) {
-  const listEl = document.getElementById('admin-svc-price-history-list');
-  if (!rows.length) { listEl.innerHTML = '<em>No scheduled changes yet — the field above is today\'s standard price.</em>'; return; }
+function adminRenderRateHistory(prefix, rows) {
+  const listEl = document.getElementById(prefix + '-history-list');
+  if (!listEl) return;
+  if (!rows.length) { listEl.innerHTML = '<em>No scheduled changes yet — the field above is today\'s standard value.</em>'; return; }
   const today = new Date().toISOString().slice(0,10);
   listEl.innerHTML = rows.map(r => {
     const isFuture = r.effective_date > today;
-    const val = Number(r.value);
     return `<div style="display:flex;justify-content:space-between;padding:3px 0">
-      <span>$${val.toFixed(2)}</span>
+      <span>${Number(r.value)}</span>
       <span style="${isFuture ? 'color:var(--accent-dark);font-weight:600' : ''}">${isFuture ? 'Starts' : 'Since'} ${esc(r.effective_date)}</span>
     </div>`;
   }).join('');
 }
-async function adminAddPriceHistoryChange() {
-  const serviceId = document.getElementById('admin-svc-original-id').value;
-  if (!serviceId) { showToast('Save this service once before scheduling a price change', 'error'); return; }
-  const value = document.getElementById('admin-svc-price-history-value').value;
-  const effectiveDate = document.getElementById('admin-svc-price-history-date').value;
-  if (value === '' || !effectiveDate) { showToast('Enter both a price and an effective date', 'error'); return; }
+// `afterSave` re-reads whatever live column this field maps to and updates
+// the plain input above the widget, since the RPC also writes the live
+// column immediately when the effective date is today or already past —
+// each call site supplies its own (different tables/columns per field).
+async function adminAddRateHistoryChange(prefix, scope, scopeId, serviceId, field, afterSave) {
+  if (!serviceId) { showToast('Save this record once before scheduling a change', 'error'); return; }
+  const value = document.getElementById(prefix + '-history-value').value;
+  const effectiveDate = document.getElementById(prefix + '-history-date').value;
+  if (value === '' || !effectiveDate) { showToast('Enter both a value and an effective date', 'error'); return; }
   try {
     await sb('rpc/admin_add_rate_history', { method: 'POST', body: JSON.stringify({
       p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
-      p_scope: 'base', p_scope_id: null, p_service_id: serviceId, p_field: 'default_price',
+      p_scope: scope, p_scope_id: scopeId, p_service_id: serviceId, p_field: field,
       p_value: parseFloat(value), p_effective_date: effectiveDate
     }) });
-    document.getElementById('admin-svc-price-history-value').value = '';
-    document.getElementById('admin-svc-price-history-date').value = '';
-    // The RPC also updates the live services.default_price column when the
-    // effective date is today or already past, so the field above needs a
-    // fresh read from the server rather than being left showing a stale value.
-    allServicesMap = await sb('services?order=section,sort_order&select=*') || [];
-    const s = allServicesMap.find(x => x.id === serviceId);
-    if (s) document.getElementById('admin-svc-price').value = s.default_price ?? '';
-    adminLoadPriceHistory(serviceId);
-    showToast('Price change scheduled!');
+    document.getElementById(prefix + '-history-value').value = '';
+    document.getElementById(prefix + '-history-date').value = '';
+    if (afterSave) await afterSave();
+    adminLoadRateHistory(prefix, scope, scopeId, serviceId, field);
+    showToast('Change scheduled!');
   } catch(e) {
     showToast('Error scheduling change: ' + e.message, 'error');
   }
+}
+
+// Thin wrapper for the Accounting Map edit form's 6 base-scope fields
+// (2026-08-28, per Claire: "I don't see those options for the accounting
+// map") -- all 6 live in the same form and share the same "refresh from
+// accounting_map" pattern, so one wrapper covers all of them instead of
+// six near-identical ones. Not offered for a PAIRING override
+// (pair_with_service_id set) yet -- that's its own accounting_map row
+// with a composite identity rate_history doesn't model yet; flagged as a
+// known follow-up rather than silently guessed at.
+async function adminSaveAccountingFieldHistory(field, inputId) {
+  const serviceId = document.getElementById('admin-accounting-service-id').value;
+  const pairWithServiceId = document.getElementById('admin-accounting-pair-with-id').value || '';
+  if (pairWithServiceId) { showToast('Scheduled changes aren\'t supported yet for a pairing override', 'error'); return; }
+  await adminAddRateHistoryChange('acct-' + field, 'base', null, serviceId, field, async () => {
+    await loadAdminAccountingMap();
+    const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId && !x.pair_with_service_id);
+    if (a) document.getElementById(inputId).value = a[field] ?? '';
+  });
 }
 
 async function adminSaveService() {

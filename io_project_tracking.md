@@ -20623,3 +20623,67 @@ and `shared.js`. Not yet tested live — needs the SQL run, then a real
 varying-by-month line edited through Admin to confirm the month-by-month
 editor saves correctly and the Amendment History shows up in all three
 portals' View Order.
+
+## 2026-08-28 (cont'd) — Effective-dated pricing, Phase 2 continued: Accounting Map's 6 base fields
+
+Claire: "I don't see those options for the accounting map or any of the
+group/client overrides" — the Services tab's Default Price was the only
+field wired up so far (deliberately, per the plan — prove it on one
+field first).
+
+**Generalized the widget** (`admin/index.html`) from a Services-tab-only
+proof of concept into one reusable engine before repeating it: `adminLoadRateHistory(prefix, scope, scopeId, serviceId, field)` /
+`adminRenderRateHistory(prefix, rows)` / `adminAddRateHistoryChange(prefix,
+scope, scopeId, serviceId, field, afterSave)` — `prefix` is a unique
+DOM-id root per field instance so many can coexist on one page. The
+Services tab's own Default Price widget now runs through this same
+engine (no behavior change there, confirmed by keeping its exact same
+onclick logic, just routed through the generic function).
+
+**Wired into all 6 of the Accounting Map edit form's base-scope fields**:
+44i Cut %, Platform CPM, In-Platform %, CPC Low, CPC High, and Setup Fee
+Split % (its own field, shown only when the service has an auto-add
+setup fee, same as always). New thin wrapper `adminSaveAccountingFieldHistory(field,
+inputId)` covers all 6 with one function since they share the same
+"refresh from accounting_map after saving" pattern.
+
+**Deliberately NOT wired yet**: a PAIRING override (e.g. Offline Visits
+Tracking's rate when combined with a specific tactic) — that's its own
+`accounting_map` row keyed by `(service_id, pair_with_service_id)`, a
+composite identity `rate_history` doesn't model yet. The 6 widgets hide
+themselves entirely when editing a pairing override rather than silently
+scheduling against the wrong scope. Group/client overrides are the next
+piece (Custom Pricing tab + Accounting Overrides tab, both scopes) — not
+done in this pass, flagged to Claire as the immediate next step.
+
+**Real gap caught before shipping**: `admin_add_rate_history`'s live-
+column sync only handled `scope='base'`/`field='default_price'` — without
+extending it, scheduling an immediate (today-or-past) change to any of
+these 6 new fields would silently do nothing visible (the history entry
+would save, but the live `accounting_map` value the rest of the app
+actually reads would never update). SQL below adds one branch per new
+field.
+
+**SQL given to Claire** (not committed to the repo, per standing
+convention) — adds an `accounting_map`-sync branch alongside the existing
+`services.default_price` one:
+```sql
+-- inside admin_add_rate_history, in the `if p_effective_date <= current_date` block:
+if p_effective_date <= current_date then
+  if p_scope = 'base' and p_field = 'default_price' then
+    update services set default_price = p_value where id = p_service_id;
+  elsif p_scope = 'base' and p_field in ('fortyfouri_cut_pct','platform_cpm','in_platform_pct','cpc_low','cpc_high','setup_fee_cut_pct') then
+    execute format('update accounting_map set %I = $1 where service_id = $2 and coalesce(pair_with_service_id, %L) = %L', p_field, '', '') using p_value, p_service_id;
+  end if;
+end if;
+```
+(Full corrected function given directly to Claire, not just the diff,
+per this project's standing "paste-ready" convention.)
+
+**Verified:** `node --check` passes on the extracted script. Confirmed
+every one of the 6 new fields' DOM ids (`acct-<field>-history-list/value/
+date/wrap`) match exactly between the markup and the JS that constructs
+them via `'acct-' + field`, so there's no naming mismatch to silently
+break the widget. Not yet tested live — needs the updated RPC run, then
+a real Accounting Map field scheduled to confirm both the history list
+and the live-value sync work.
