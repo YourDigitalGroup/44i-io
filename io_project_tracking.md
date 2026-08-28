@@ -19814,6 +19814,371 @@ can't roll back the ones that already succeeded.
 
 **Verified:** design confirmed against the real `accounting_get_rates`
 function definition and the real `accounting_map` column list (not
-assumed). Not yet run live — waiting on Claire to execute all 8 blocks and
-confirm no errors before moving to Phase 2 (admin UI for adding a dated
-change, proven first on the Services tab price field).
+assumed). All 8 seeding blocks confirmed run successfully by Claire (two
+minor Postgres typing quirks hit and fixed along the way — a bare `null`
+in a `UNION ALL` needs an explicit `::uuid` cast, and a bare date string
+literal needs `::date`, or Postgres infers `text` for both and the INSERT
+rejects them against the real `uuid`/`date` columns). Phase 1 complete —
+moving to Phase 2 (admin UI for adding a dated change) next.
+
+## 2026-08-27 — Strategist Portal: direct link to a campaign's Trello card
+
+Relayed from Samantha (strategist) via Claire's Slack screenshot: "would it
+be possible to add a spot to campaigns for a link to the corresponding
+Trello card... or will this eventually be added automatically." No new
+data collection needed — `orders.trello_card_ids` (keyed by each service's
+`workflow`, same key `admin/index.html` already uses to resolve a card for
+an order) has been stamped automatically at every order's submission all
+along; this was a pure display gap, not a missing-data one.
+
+**Built** (`strategist/index.html`):
+- `strategist_get_campaign_lines` needs one new field added to its
+  `jsonb_build_object` output: `'trello_card_ids', o.trello_card_ids` (SQL
+  below) — it wasn't being returned to the portal at all before this.
+- `strategistTrelloCardUrl(line)` — resolves `CATALOG_ROWS[line.service_id]
+  ?.workflow`, looks that key up in `line.trello_card_ids`, returns
+  `https://trello.com/c/<id>` or `null`. Trello's card-open URL accepts the
+  full card id (not just the short shortLink code), so no extra Trello API
+  call is needed to resolve one — reuses the id already stored verbatim.
+- A "Trello Card ↗" link added next to the existing "View Order" button in
+  both the Campaign Setup panel header and the Active campaign Detail
+  panel header — same placement/styling convention as "View Order".
+
+**SQL given to Claire** (not committed to the repo, per standing
+convention) — add one line to the existing `strategist_get_campaign_lines`
+function's `jsonb_build_object(...)`:
+```sql
+'trello_card_ids', o.trello_card_ids
+```
+
+**Verified:** a standalone harness confirmed the lookup handles every real
+edge case correctly (no `trello_card_ids` at all, a map present but missing
+this line's workflow key, a service missing its own `workflow` field, an
+unrecognized `service_id`) — all resolve to `null` rather than a broken
+link or a thrown error. `node --check` passes on the extracted script. Not
+yet tested live — needs the SQL run, then a real campaign line to confirm
+the link opens the right card.
+
+**Follow-up same day**: Claire clarified every CURRENT campaign is still a
+manual upload (the real form isn't in use yet), so the automatic lookup
+above has nothing to resolve for any of today's lines — the manual
+fallback is the actually-needed piece right now, not an edge case. Added
+`campaign_lines.trello_card_url` (plain text, human-pasted) and an editable
+input in the Detail panel, right next to the existing "Reference link to
+the live campaign" field, following the same convention. `strategistTrelloCardUrl(line)`
+now checks this manual field FIRST — a human pasting a link deliberately
+beats an auto-resolved one, same "specific beats generic" precedence as
+every other override this session.
+
+Saved through the existing generic `strategistSaveLine()` → `strategist_save_campaign_line`
+RPC, unchanged — the same call already saves `platform_url`/`retail_cpm_override`
+today, so this is presumed to work the same way without an RPC change,
+though this hasn't been confirmed against the RPC's actual body (can't see
+server-side SQL directly). If saving a link doesn't stick, the RPC likely
+needs `trello_card_url` added to whatever column allowlist it uses.
+
+**Verified:** harness re-run confirming manual link beats automatic when
+both exist, manual-only (no `trello_card_ids` at all — the actual current
+state of every real campaign right now) resolves correctly, and blank
+manual correctly falls through to automatic. `node --check` passes. Not
+yet tested live.
+
+## 2026-08-27 — Group editor's own tab bar was missed by the 2026-08-18 pill sweep
+
+Claire caught it from a screenshot: the Group editor's "Group Info /
+Custom Pricing / Accounting Overrides" tab bar was still the old
+underline style, even though the 2026-08-18 pass ("Section/status tabs
+converted to pills, matching everything else") was supposed to catch
+every remaining underline-style nav element. Did a full sweep this time
+instead of trusting that pass was complete — grepped every file for
+`border-bottom` tab patterns, `role="tab"` usage, `.tab`/`tab-bar` classes,
+and "underline" — confirmed this Group-editor bar was the ONLY real miss;
+every other `border-bottom` hit in the codebase is print/PDF letterhead
+styling on the IO document itself (table row dividers, section headers),
+not navigation.
+
+**Fixed** (`admin/index.html`): converted `tab-btn-info`/`tab-btn-pricing`/
+`tab-btn-accounting-override` to the exact same rounded-pill markup as
+`adminSection()`'s own tabs (`padding:8px 16px;border-radius:999px;border:
+1.5px solid var(--accent-dark)`, filled `--accent-dark`/white when active,
+white/`--accent-dark` outline when not), and `adminTab()` to toggle
+`background`/`color` instead of `borderBottomColor`. Also brought this bar
+up to the same accessibility standard the correctly-styled tab bars
+already had but this one never got: added `role="tab"`/`aria-selected`/
+`aria-controls` on the buttons and `role="tabpanel"`/`aria-labelledby` on
+the three panels, with `adminTab()` toggling `aria-selected` alongside the
+visual state.
+
+**Verified:** `node --check` passes on the extracted script. Not yet
+confirmed live — needs Claire to open a group's editor and check the tab
+bar renders as filled pills, same shape as the section tabs above it.
+
+## 2026-08-27 — Order Detail now opens above the list, matching every other editor
+
+Claire: "the view in submitted orders opens at the bottom can we have it
+match how every other editor options." Root cause: `adminSection()`'s own
+comment already explained the pattern — `admin-group-form`/`admin-client-form`/
+etc. use a flex-`order` trick (parent `#section-X` set to `display:flex`,
+the edit panel given `order:1` so it renders ABOVE the list regardless of
+where it sits in the actual HTML) specifically so an editor never buries
+itself under a potentially-long list. `'orders'` was never added to
+`adminSection()`'s flex-needed list (`'groups'`/`'clients'`/`'users'`/
+`'accounting'` only), so `#section-orders` stayed plain `display:block`
+and `#admin-order-detail` — which sits AFTER the filters+table in the raw
+HTML — had no `order` to override that, and just rendered where it
+physically sits: at the bottom, below however many orders are in the list.
+
+**Fixed**: added `flex-direction:column` to `#section-orders`, wrapped the
+filters+table block with `order:2`, gave `#admin-order-detail` `order:1`
+(same value `admin-group-form` uses), and added `'orders'` to
+`adminSection()`'s flex-needed list. No JS logic changes needed beyond
+that one list — `viewOrder()`/`closeOrderDetail()` still just toggle the
+panel's own `display:block`/`none`, unaffected by the parent's `order`
+placement (same as the already-working Group/Client editors).
+
+**Verified:** `node --check` passes on the extracted script. Not yet
+confirmed live — needs Claire to open Submitted Orders, click View on any
+order, and confirm the detail panel now appears above the orders list/
+filters instead of below it.
+
+## 2026-08-27 — Full table/text styling readability sweep across all three portals
+
+Claire, while waiting on a GitHub Actions outage: "could we do a sweep of
+the admin, strategist and accounting portals to make sure every table
+formatting matches all text colors are matching and everything is
+readable... it looks like some of the tables text color and style
+varies." Confirmed scope: fix everything found, prioritizing readability
+of text size and color specifically (not a broader design-system pass —
+semantic status colors like pass/fail red/green were deliberately left
+alone as a separate design-token question, not a readability bug).
+
+Ran a full audit first (one research pass per portal, no edits), then a
+separate fix pass per portal against the audit's findings — this kept the
+"find everything" and "fix it" steps independent so the fix work had a
+concrete, reviewed list to work against rather than fixing-as-discovered.
+
+**Admin Portal** (`admin/index.html`) — the most inconsistent of the
+three, since it has no shared table CSS class at all (every table's style
+is hand-typed inline per render function):
+- **Groups list**: was `font-size:13px` — the only list table in the
+  whole app not at the standard `12.5px` — plus mismatched header/cell
+  padding and letter-spacing. Its `io_slug` ID column also had no
+  size/color treatment at all, unlike every other ID column in the app.
+- **Order Detail line-items table**: smaller font, missing header
+  letter-spacing, and its own Amount column was muted gray while the
+  *same* Amount data one screen back (the Orders list) is normal-color
+  bold-and-right-aligned — same number, two different treatments
+  depending on which table you're looking at it in.
+- **Swap-Tactic proration preview**: smallest table font in the app
+  (11.5px), missing header background entirely, dollar figures with no
+  bold/alignment at all.
+- **Accounting Overrides tables** (group + client editors): minor
+  padding/ID-note-size drift, brought in line.
+- **Accounting Map — the single biggest readability fix**: every dollar/
+  percent column (8 of them) was plain, unbolded, left-aligned text —
+  every other numeric table in the app bolds and right-aligns money so a
+  column of figures is easy to scan; Accounting Map was the one outlier
+  reading as a flat wall of numbers. Now matches.
+- **Intake Forms empty-state row — the actual color bug Claire spotted**:
+  `color:#9CA3AF`, a hardcoded gray that is NOT the app's real muted-gray
+  token (`var(--muted)`) — close enough to look "almost right" but a
+  genuinely different color that would never track a future design
+  change. Replaced with `var(--muted)`.
+- **Reconcile Lists' three result tables**: noticeably smaller/tighter
+  than the picker table sitting right above them in the same tab — so
+  scrolling from the picker into its own results felt like switching to
+  a denser sub-app. Unified to the same sizing. (Their status colors
+  were deliberately left alone — separate scope, see above.)
+
+**Strategist Portal** (`strategist/index.html`) — no hardcoded-color bugs
+found, but real font-size/header-style drift across its many table-like
+(div-based, not real `&lt;table&gt;`) structures:
+- Bulk Import's preview table header was completely unstyled — no size,
+  weight, color, or uppercase treatment at all, so it read as plain data
+  instead of column labels. This was the single worst spot in this
+  portal.
+- Four different "small caps" header-label recipes existed across the
+  file (10px/.04em, 10px/.06em, 10.5px/.05em, 9.5px/none) for what is
+  conceptually the same UI role — unified to one (10px/.04em, matching
+  the main table's own header). Caught two more headers using the
+  retiring 10.5px/.05em variant during review and fixed those too.
+- Several panels ran body text at 12px against the main table's 12.5px —
+  unified.
+- Two spots used `border-top` instead of `border-bottom` for row
+  dividers — normalized to match every real table row's convention.
+
+**Accounting Portal** (`accounting/index.html`) — already the cleanest of
+the three (its two real tables share one correct shared CSS block); the
+drift was concentrated entirely in two "paste and preview" tools that
+aren't real tables:
+- Bulk Match and Bulk Import previews were smaller text (12px vs. 12.5px)
+  with tighter/inconsistent padding, and — despite looking like similar
+  tools — didn't even match each other, let alone the real tables. Their
+  primary row text also had no explicit color at all (relying on
+  inheritance rather than the real tables' explicit `var(--text)`).
+  Unified all of it.
+- Found and removed one genuinely dead CSS rule (`tr.acct-group-row td`)
+  that was never actually matched by any real markup — the live
+  group-banner row uses its own inline per-group dynamic coloring
+  instead, which was left untouched (a deliberate design choice, not the
+  bug).
+- Standardized two of four small-label font-size variants down to 10px;
+  left two accent-colored pill badges alone since they're a different UI
+  role (a bordered badge, not a muted text label) and didn't cleanly map
+  to the same fix.
+
+**Deliberately left out of scope** (per the "readability of text size and
+color" framing, not a broader redesign): hardcoded semantic status
+colors (pass/fail red/green/amber in Reconcile Lists, warning/error
+colors in Accounting's bulk tools), the PDF-export table generators
+(render in an isolated iframe with no access to the app's CSS variables,
+so they intentionally use their own separate palette), and the complete
+lack of hover states on any table row anywhere (an interaction-design
+gap, not a text-readability one).
+
+**Verified:** every portal's changed script block extracted and run
+through `node --check` — all pass. All three agents confirmed via `git
+diff` that only inline `style` attributes changed; no onclick handlers,
+function signatures, or JS logic were touched anywhere. Not yet confirmed
+live — needs Claire to look through each portal once this deploys and
+confirm it reads as consistent.
+
+## 2026-08-27 — IO Slug field looked locked even though it was always editable
+
+Claire: "How can I change current slugs? I see it says I can override but
+it is not letting me... it is grayed out." Checked the actual code: the
+field has never had a `disabled` attribute anywhere — the label text even
+says "auto-generated, override if needed," and its `oninput` handler fully
+supports typing a manual value. The real problem: it uses the same light
+gray `background:#F9FAFB` as the genuinely-locked ID fields elsewhere in
+Admin (Service ID, Section ID, Intake Form ID — all disabled after
+creation, all sharing that same visual treatment), so it visually reads as
+disabled even though it never was. Fixed by changing its background to
+plain white (`#fff`), so it no longer looks like the truly-locked fields
+next to it.
+
+**Verified:** `node --check` passes on the extracted script. Not yet
+confirmed live — needs Claire to open a group's editor and confirm the
+IO Slug field now reads as a normal editable box.
+
+## 2026-08-27 — $0 months now auto-mark Paused
+
+Claire, testing the monthly-varying-budget feature: "the only thing I
+think the campaign setup is missing is marking the months that are 0 as
+paused. Do you agree?" Checked the real impact before agreeing (rather
+than just taking the suggestion at face value): a $0 month that ISN'T
+marked Paused isn't excluded from Accounting's "Needs Confirmation"
+bucket (`accounting/index.html` — a month only gets excluded from that
+awaiting-confirmation total if `accountingRowIsPaused()` or
+`accountingRowIsPending()` is true; a $0 gross month with neither flag
+just sits there forever looking like it's awaiting a confirmation that
+will never come, since nobody uploads a platform report for $0 spend).
+Confirmed this is a real, concrete gap, not just cosmetic — agreed with
+Claire's read.
+
+**Fixed** (`strategist/index.html`, both the Campaign Setup panel's
+per-month row and the Active-campaign Detail panel's per-month row): the
+Gross Budget input's `onchange` now saves `paused: true` in the same call
+whenever the typed value is exactly `0`, and `paused: false` whenever it's
+any other real number — so a strategist doesn't need a second click to
+also check the Paused box, and a month that later gets a real budget typed
+back in automatically un-pauses too. A blank/cleared field is deliberately
+NOT treated as `0` (`this.value !== '' && Number(this.value) === 0`) —
+clearing a field isn't the same statement as "this month is intentionally
+$0," and `Number('')` evaluates to `0` in JS, which would have wrongly
+auto-paused every blanked-out field without this guard.
+
+**Verified:** a standalone harness confirmed typing `0`/`0.00` → paused,
+typing a real budget → not paused, and clearing the field → NOT wrongly
+treated as paused (the exact edge case the guard exists for).
+`node --check` passes on the extracted script. Not yet tested live —
+needs Claire to try a $0 month and confirm the Paused box checks itself.
+
+## 2026-08-27 — Group-level override for a tiered service's TOP spend bucket
+
+Claire: "I have 3 groups that have different SEM % splits if the spend is
+more than $5,000 how can I make that change in the accounting override?"
+Checked the real code before answering: this genuinely wasn't possible
+before today — `accountingEffectiveCutPctTier()`'s own existing comment
+already documented the gap ("When a service has tiers configured, they
+REPLACE the flat rate entirely -- a group override of the flat rate is
+irrelevant once tiers exist"), and there was no group-scope tier storage
+or UI at all. Confirmed via AskUserQuestion this only needs to cover the
+TOP bucket differing (same breakpoints as the base schedule, e.g. SEM's
+existing "$5,000+" tier) — not a fully independent per-group schedule.
+
+**Design**: rather than letting a group store its own COMPLETE tier
+array (which would silently go stale the moment the base schedule's lower
+breakpoints ever changed, since 3 separate group copies would all need
+manually re-syncing), a group can only override the top bucket's own %
+(the tier with `max == null`, "and up"). Lower buckets always come from
+the base schedule — a group only ever has to state the one number that's
+actually different for it.
+
+**Built**:
+- `admin/index.html` — new conditional override field, `spend_tier_top_cut_pct`,
+  added to the group's Accounting Overrides table (`renderAccountingOverrideFields()`),
+  labeled "Top-Tier 44i Cut % (spend tiers)". Only shown for services that
+  actually have `spend_tiers` configured (same conditional-column pattern
+  already used for Setup Fee Split %, which only shows for services with
+  an auto-add setup fee). Its placeholder shows the base schedule's own
+  current top-tier % for reference. Reuses the existing fully-generic
+  save/load mechanism (`onAccountingOverrideInput`) — no other admin code
+  needed to change.
+- `accounting/index.html` — new global `ACCOUNTING_SPEND_TIER_TOP_OVERRIDE.group[groupId|serviceId]`,
+  populated from `accounting_get_rates`'s group-scope rows. `accountingEffectiveCutPctTier(serviceId, groupId, grossBudget)`
+  gained a `groupId` parameter — after resolving which tier a month's
+  spend falls into, if it's the TOP tier (`max == null`) and this group
+  has an override, the override wins; every other tier is untouched.
+  `accountingEffectiveCutPct()` now passes `groupId` through to this call.
+
+**SQL given to Claire** (not committed to the repo, per standing
+convention) — add one line to the existing `accounting_get_rates`
+function's group-scope branch:
+```sql
+'spend_tier_top_cut_pct', (kv.value->>'spend_tier_top_cut_pct')::numeric
+```
+
+**Verified**: a standalone harness confirmed the override only applies
+inside the top bucket (not the lower ones), a different group with no
+override still gets the base schedule's own top-tier %, a missing
+`groupId` falls through cleanly, and the exact-boundary spend amount
+(exactly $5,000) still resolves to the middle tier, not the top one.
+`node --check` passes on the extracted script. Not yet tested live —
+needs the SQL run, then a real group set up with an override to confirm
+the split changes above $5,000 for that group specifically.
+
+## 2026-08-27 — Campaign Setup panels now always show a Flight date badge
+
+Relayed from a teammate via Claire: "would it be possible to add the
+flight column to campaigns that are in the Campaign Setup? Just so they
+can all be viewed at a glance. Kinda like the 'Starts Sept 1, 26' label."
+
+Checked the existing "Starts X" pill (`strategistSetupBlockerPill()`)
+before just adding a new one alongside it — found a real, related gap:
+that pill only ever showed when a campaign had NO "waiting on" blocker
+checked (Creative/Platform Access/Intake Form/Pending Website) AND its
+flight start was still in the future. The moment a strategist checked any
+blocker, the flight date disappeared entirely, replaced by the blocker
+pill — so the exact campaigns most likely to need a "when does this
+start" glance (the ones stuck waiting on something) were the ones hiding
+it. Also, it only ever showed the START date, not the full flight range
+the teammate specifically referenced.
+
+**Fixed** (`strategist/index.html`, `renderSetupPanel()`): added a
+plain, always-visible Flight range badge to every Campaign Setup panel's
+header — shows for every pending campaign with a `flight_start` set,
+regardless of blocker state, using the existing `strategistFormatFlightRange()`
+helper (same "Oct 10, 26 – Apr 3, 27" / "Oct 10, 26 – Ongoing" formatting
+already used elsewhere in this portal). Removed the old conditional
+"Starts X" pill from `strategistSetupBlockerPill()` since it's now fully
+superseded (shows less info, less often) — a blocker pill and the new
+Flight badge now both show together instead of one replacing the other.
+
+**Verified:** a standalone harness confirmed a normal dated range, an
+open-ended (no end date) campaign correctly shows "Ongoing", and a
+campaign with no flight_start at all renders no badge (rather than an
+empty/broken pill). `node --check` passes on the extracted script. Not
+yet tested live — needs Claire/the teammate to open the Campaign Setup
+tab and confirm every pending campaign shows its flight range, including
+ones with a blocker checked.
