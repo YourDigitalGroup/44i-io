@@ -917,6 +917,12 @@ select.qty-field{background-image:none;padding-right:3px}
           <p style="font-size:11px;color:var(--muted);margin-top:10px">A confirmation will be sent to you and the client once booked.</p>
         </div>
 
+        <!-- A tactic whose Kick-Off Call always involves one named person (2026-08-28,
+             per Claire + AM — Traditional Buying → Carol Oren) gets its own extra
+             calendar link here, alongside the AM's own above — not a replacement, since
+             an order can mix this tactic with others that still just need the AM. -->
+        <div id="koc-specific-am-list" style="margin-bottom:16px"></div>
+
         <!-- Step 2: Enter date/time (locked until calendar is clicked) -->
         <div id="koc-datetime-section" style="background:#F3F4F6;border-radius:10px;padding:14px 16px;opacity:0.4;pointer-events:none">
           <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Step 2: Enter the date & time you booked</p>
@@ -2259,6 +2265,26 @@ function updateKocCard() {
   } else {
     linkRow.style.display = 'none';
   }
+
+  // Specific-person calendar link(s) (2026-08-28) — additional to the AM's own
+  // above, not a replacement, since an order can mix a specific-person tactic
+  // with others that still just need the regular AM. Deduped by handle/name so
+  // two services both pointing at the same person don't produce two buttons.
+  const specificAmSeen = new Set();
+  const specificAmEntries = [];
+  alwaysKoc.forEach(id => {
+    const cfg = PRODUCT_CONFIG[id];
+    if (!cfg?.koc_notify_calendar_url) return;
+    const dedupeKey = cfg.koc_notify_trello_handle || cfg.koc_notify_name || cfg.koc_notify_calendar_url;
+    if (specificAmSeen.has(dedupeKey)) return;
+    specificAmSeen.add(dedupeKey);
+    specificAmEntries.push({ name: cfg.koc_notify_name || 'this tactic\'s specialist', url: cfg.koc_notify_calendar_url, label: cfg.label });
+  });
+  document.getElementById('koc-specific-am-list').innerHTML = specificAmEntries.map(e => `
+    <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">${esc(e.label)} needs its own Kick-Off Call with ${esc(e.name)}</p>
+    <a href="${esc(e.url)}" target="_blank" onclick="onKocCalendarClicked()"
+      style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:var(--accent);color:#fff;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.15);margin-bottom:10px">📅 Open ${esc(e.name)}'s Calendar →</a>
+  `).join('');
 
   // Restore lock/unlock state of date/time fields
   const section = document.getElementById('koc-datetime-section');
@@ -5128,11 +5154,21 @@ async function submitIO() {
           web: client?.webStrategistTrello || '',
         };
 
+        // koc_notify_trello_handle (2026-08-28, per Claire + AM — a specific tactic
+        // ["Traditional Buying" / alc-media] needs its KOC to always involve one
+        // named AM, Carol Oren, regardless of who's actually on the order) —
+        // resolved in the SAME batch lookup as everything else below, then merged
+        // into whichever specific tactic card(s) sell that service in
+        // memberIdsForLineItems(). A plain per-service catalog field rather than a
+        // hardcoded id check, so this isn't a one-off special case in code — any
+        // future tactic needing the same treatment just gets this field set too.
+        const kocNotifyHandles = [...new Set(lineItems.map(li => CATALOG_ROWS[li.service_id]?.koc_notify_trello_handle).filter(Boolean))];
+
         // Real Trello card assignment for the AM/AE, resolved once per submission and
         // reused on every card created below (2026-07-17, per Claire). Extended
         // (2026-08-06) to resolve the strategist handles in the SAME lookup, without
         // folding them into amAeMemberIds itself.
-        const allHandlesToResolve = [aeTrello, amTrello, ...Object.values(disciplineHandles)].filter(Boolean);
+        const allHandlesToResolve = [aeTrello, amTrello, ...Object.values(disciplineHandles), ...kocNotifyHandles].filter(Boolean);
         const memberMap = await findBoardMemberIds(selectedGroup.trello_board_id, allHandlesToResolve);
         const resolveHandleMemberId = (handle) => handle ? (memberMap.get(handle.replace(/^@/, '').trim().toLowerCase()) || null) : null;
         const amAeMemberIds = [...new Set([aeTrello, amTrello].map(resolveHandleMemberId).filter(Boolean))];
@@ -5160,7 +5196,15 @@ async function submitIO() {
         function memberIdsForLineItems(items) {
           const disciplines = new Set(items.flatMap(li => serviceDisciplines(CATALOG_ROWS[li.service_id])));
           const strategistIds = [...disciplines].map(d => resolveHandleMemberId(disciplineHandles[d])).filter(Boolean);
-          return [...new Set([...amAeMemberIds, ...strategistIds])];
+          // koc_notify_trello_handle (2026-08-28) — scoped to just the tactic
+          // card(s) that actually sell a service carrying this field, not every
+          // card on the order. Merged into the same Set as everything else, so if
+          // that named AM is ALSO the order's own AM/AE, she naturally only shows
+          // up once — no separate "is it her already?" check needed.
+          const kocNotifyIds = items
+            .map(li => resolveHandleMemberId(CATALOG_ROWS[li.service_id]?.koc_notify_trello_handle))
+            .filter(Boolean);
+          return [...new Set([...amAeMemberIds, ...strategistIds, ...kocNotifyIds])];
         }
 
         // ── Per-service Trello template routing (2026-07-13) ──
@@ -7573,7 +7617,15 @@ function rowToProductConfig(r) {
   const koc = r.koc_requirement || 'none';
   const intake = r.intake_form_id || null;
   if (koc === 'none' && !intake) return null;
-  return { koc, intake, label: r.label };
+  return {
+    koc, intake, label: r.label,
+    // koc_notify_* (2026-08-28) — a tactic whose Kick-Off Call always needs to
+    // involve one named person (e.g. Traditional Buying → Carol Oren), read by
+    // updateKocCard() to show her calendar link on Step 3 alongside the AM's own.
+    koc_notify_name: r.koc_notify_name || null,
+    koc_notify_trello_handle: r.koc_notify_trello_handle || null,
+    koc_notify_calendar_url: r.koc_notify_calendar_url || null,
+  };
 }
 
 // ── PRICE + FREQUENCY DISPLAY (table-driven) ──────────────────────
