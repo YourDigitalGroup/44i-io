@@ -20263,3 +20263,81 @@ existing all-or-nothing status-pill rule rather than graying out
 prematurely). `node --check` passes on the extracted script. Not yet
 tested live — needs Claire to confirm a paused campaign's row now reads
 visually muted in the main table.
+
+## 2026-08-28 — Effective-dated pricing/accounting, Phase 2: first working "schedule a change" UI
+
+First real, usable piece of this feature — proven on ONE field (Services
+tab's Default Price) before repeating the same pattern across the other
+~9 pricing/accounting field locations, per the plan.
+
+**Built** (`admin/index.html`):
+- A small "Price History" box under the Default Price field in the
+  Services editor — shows every scheduled change (past ones as "Since
+  <date>", future ones highlighted as "Starts <date>"), plus a
+  price + effective-date input and a "Schedule" button. Hidden entirely
+  for a brand-new unsaved service (nothing to attach history to yet).
+- `adminLoadPriceHistory(serviceId)` / `adminRenderPriceHistory(rows)` —
+  fetch and render the history list.
+- `adminAddPriceHistoryChange()` — validates both fields are filled,
+  calls the new RPC, then re-fetches the catalog so the Default Price
+  field itself reflects the live value immediately if the new entry's
+  effective date is today or already past (the RPC updates the live
+  `services.default_price` column server-side in that case — see SQL
+  below — so anything reading "today's price" elsewhere in the app,
+  which isn't date-aware yet, still sees the right number without
+  waiting for a broader rollout).
+
+**SQL given to Claire** (not committed to the repo, per standing
+convention):
+```sql
+create or replace function admin_get_rate_history(
+  p_name text, p_pw text, p_scope text, p_scope_id uuid, p_service_id text, p_field text
+) returns table(value jsonb, effective_date date) language plpgsql security definer as $$
+declare
+  v_role text;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid admin credentials'; end if;
+  if v_role not in ('super') then raise exception 'Only a super admin can view pricing history'; end if;
+  return query
+  select rh.value, rh.effective_date from rate_history rh
+  where rh.scope = p_scope and rh.service_id = p_service_id and rh.field = p_field
+    and (rh.scope_id = p_scope_id or (rh.scope_id is null and p_scope_id is null))
+  order by rh.effective_date desc;
+end;
+$$;
+
+create or replace function admin_add_rate_history(
+  p_name text, p_pw text, p_scope text, p_scope_id uuid, p_service_id text, p_field text,
+  p_value numeric, p_effective_date date
+) returns void language plpgsql security definer as $$
+declare
+  v_role text;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid admin credentials'; end if;
+  if v_role not in ('super') then raise exception 'Only a super admin can schedule pricing changes'; end if;
+
+  insert into rate_history (scope, scope_id, service_id, field, value, effective_date, created_by)
+  values (p_scope, p_scope_id, p_service_id, p_field, to_jsonb(p_value), p_effective_date, p_name);
+
+  if p_effective_date <= current_date and p_scope = 'base' and p_field = 'default_price' then
+    update services set default_price = p_value where id = p_service_id;
+  end if;
+end;
+$$;
+```
+Note `admin_add_rate_history`'s live-column sync only handles
+`scope='base'`/`field='default_price'` today — each future field this
+gets wired into (group/client overrides, the other ~9 fields) needs its
+own branch added here, same as this one.
+
+**Verified:** a standalone harness confirmed the history list correctly
+labels a past-dated entry "Since," a future one "Starts," and — the
+important boundary case — an entry dated exactly today reads as already
+in effect ("Since"), not still pending. `node --check` passes on the
+extracted script. Not yet tested live — needs both SQL functions run,
+then a real price change scheduled to confirm it appears correctly and
+(for an immediate date) updates the live field.

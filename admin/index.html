@@ -800,6 +800,20 @@
               <div>
                 <label class="lbl" for="admin-svc-price">Default Price <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— blank = QUR (quote required)</span></label>
                 <input type="number" step="0.01" id="admin-svc-price" placeholder="e.g. 175" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                <!-- Price history / effective-dated change (2026-08-28, Phase 2 of the
+                     effective-dated pricing project) -- proving the pattern on this ONE
+                     field first before repeating it across the other ~9 pricing/
+                     accounting field locations, per the plan. Hidden entirely for a
+                     brand-new unsaved service (no id yet to attach history to). -->
+                <div id="admin-svc-price-history-wrap" style="display:none;margin-top:8px;padding:10px 12px;background:#F8FAFC;border-radius:8px;border:1px solid var(--border)">
+                  <div id="admin-svc-price-history-list" style="font-size:11px;color:var(--muted);margin-bottom:8px"></div>
+                  <div style="display:flex;gap:6px;align-items:center">
+                    <input type="number" step="0.01" id="admin-svc-price-history-value" placeholder="New price" style="width:90px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                    <span style="font-size:10px;color:var(--muted)">effective</span>
+                    <input type="date" id="admin-svc-price-history-date" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
+                    <button type="button" onclick="adminAddPriceHistoryChange()" style="padding:5px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Schedule</button>
+                  </div>
+                </div>
               </div>
               <div>
                 <label class="lbl" for="admin-svc-billing">Billing Type</label>
@@ -7268,6 +7282,7 @@ function adminNewService() {
   // subsection list to whatever that ends up being, not blindly to null.
   populateServiceSubsectionDropdown(document.getElementById('admin-svc-section').value, null);
   onPricingModeChange(false);
+  document.getElementById('admin-svc-price-history-wrap').style.display = 'none';
   document.getElementById('admin-service-form').style.display = 'block';
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
 }
@@ -7291,6 +7306,10 @@ function adminEditService(id) {
   document.getElementById('admin-svc-id').dataset.manuallyEdited = '1'; // FIXED (2026-07-14, found live): without this, autoServiceId() (bound to the Label field's oninput) silently regenerated this disabled-but-still-live ID field to match whatever new label was typed, on every keystroke. That regenerated id — not the service's real one — was what got sent as p_service_id on Save, matching zero rows in the UPDATE (no error raised on a 0-row update), so the label (and nothing else, since a same-session edit to other fields still carried the correct original id right up until the label was touched) silently failed to persist despite the success toast. Same fix already applied to the Sections editor's analogous bug — never carried over here.
   document.getElementById('admin-svc-label').value = s.label || '';
   document.getElementById('admin-svc-accounting-label').value = s.accounting_label || '';
+  document.getElementById('admin-svc-price-history-wrap').style.display = 'block';
+  document.getElementById('admin-svc-price-history-date').value = '';
+  document.getElementById('admin-svc-price-history-value').value = '';
+  adminLoadPriceHistory(s.id);
   document.getElementById('admin-svc-tactic-variants').value = Array.isArray(s.tactic_variants) ? s.tactic_variants.join(', ') : '';
   document.getElementById('admin-svc-sort').value = s.sort_order ?? '';
   document.getElementById('admin-svc-pricing-mode').value = s.pricing_mode || 'flat';
@@ -7345,6 +7364,64 @@ function adminEditService(id) {
 
 function adminCancelServiceEdit() {
   document.getElementById('admin-service-form').style.display = 'none';
+}
+
+// ── PRICE HISTORY / EFFECTIVE-DATED CHANGES (2026-08-28, Phase 2) ──────
+// Proving the "schedule a dated change" pattern on this ONE field (base
+// catalog price) before repeating it across the ~9 other pricing/
+// accounting field locations. See rate_history table + resolve_rate()
+// (Phase 1, 2026-08-27) and the full design in the project tracking doc.
+async function adminLoadPriceHistory(serviceId) {
+  const listEl = document.getElementById('admin-svc-price-history-list');
+  listEl.textContent = 'Loading history…';
+  try {
+    const rows = await sb('rpc/admin_get_rate_history', { method: 'POST', body: JSON.stringify({
+      p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+      p_scope: 'base', p_scope_id: null, p_service_id: serviceId, p_field: 'default_price'
+    }) });
+    adminRenderPriceHistory(rows || []);
+  } catch(e) {
+    listEl.textContent = 'Could not load history: ' + e.message;
+  }
+}
+function adminRenderPriceHistory(rows) {
+  const listEl = document.getElementById('admin-svc-price-history-list');
+  if (!rows.length) { listEl.innerHTML = '<em>No scheduled changes yet — the field above is today\'s standard price.</em>'; return; }
+  const today = new Date().toISOString().slice(0,10);
+  listEl.innerHTML = rows.map(r => {
+    const isFuture = r.effective_date > today;
+    const val = Number(r.value);
+    return `<div style="display:flex;justify-content:space-between;padding:3px 0">
+      <span>$${val.toFixed(2)}</span>
+      <span style="${isFuture ? 'color:var(--accent-dark);font-weight:600' : ''}">${isFuture ? 'Starts' : 'Since'} ${esc(r.effective_date)}</span>
+    </div>`;
+  }).join('');
+}
+async function adminAddPriceHistoryChange() {
+  const serviceId = document.getElementById('admin-svc-original-id').value;
+  if (!serviceId) { showToast('Save this service once before scheduling a price change', 'error'); return; }
+  const value = document.getElementById('admin-svc-price-history-value').value;
+  const effectiveDate = document.getElementById('admin-svc-price-history-date').value;
+  if (value === '' || !effectiveDate) { showToast('Enter both a price and an effective date', 'error'); return; }
+  try {
+    await sb('rpc/admin_add_rate_history', { method: 'POST', body: JSON.stringify({
+      p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+      p_scope: 'base', p_scope_id: null, p_service_id: serviceId, p_field: 'default_price',
+      p_value: parseFloat(value), p_effective_date: effectiveDate
+    }) });
+    document.getElementById('admin-svc-price-history-value').value = '';
+    document.getElementById('admin-svc-price-history-date').value = '';
+    // The RPC also updates the live services.default_price column when the
+    // effective date is today or already past, so the field above needs a
+    // fresh read from the server rather than being left showing a stale value.
+    allServicesMap = await sb('services?order=section,sort_order&select=*') || [];
+    const s = allServicesMap.find(x => x.id === serviceId);
+    if (s) document.getElementById('admin-svc-price').value = s.default_price ?? '';
+    adminLoadPriceHistory(serviceId);
+    showToast('Price change scheduled!');
+  } catch(e) {
+    showToast('Error scheduling change: ' + e.message, 'error');
+  }
 }
 
 async function adminSaveService() {
