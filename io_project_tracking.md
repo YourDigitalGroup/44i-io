@@ -20687,3 +20687,119 @@ them via `'acct-' + field`, so there's no naming mismatch to silently
 break the widget. Not yet tested live — needs the updated RPC run, then
 a real Accounting Map field scheduled to confirm both the history list
 and the live-value sync work.
+
+---
+
+## 2026-08-28 — Effective-dated pricing, part 3: Group + Client Accounting Overrides
+
+Claire: "I don't see those options for the accounting map or any of the
+group/client overrides" — the base Accounting Map fields (previous
+entry) covered "accounting map"; this entry covers "group/client
+overrides," which after confirming with Claire meant the Group and
+Client **Accounting Overrides** tabs specifically (Custom Pricing/
+`io_pricing` is a separate, deliberately deferred next step).
+
+**Why a different UI shape here**: the Accounting Map edit form has one
+field per row, so each field got its own always-visible history widget.
+The Overrides tables are dense — one row per service with up to 8
+columns — so a widget per cell would be unusable. Instead, each
+override cell that supports scheduling gets a small 🕐 icon next to the
+input; clicking it opens ONE shared expandable row per service
+(`acct-history-row-<overrideKey>` / `client-acct-history-row-<overrideKey>`)
+showing that field's history list + schedule form, closing if you click
+the same icon again or re-opens fresh if you click a different field's
+icon on the same row.
+
+**New shared functions** (`admin/index.html`): `adminToggleOverrideHistoryRow(rowPrefix,
+overrideKey, scope, scopeId, field, fieldLabel)` builds/toggles the row;
+`adminSaveOverrideFieldHistory(rowPrefix, overrideKey, scope, scopeId,
+field)` saves through the same generic `adminAddRateHistoryChange`
+engine as Accounting Map, then — only if the scheduled date is
+today-or-earlier — calls the existing `onAccountingOverrideInput`/
+`onClientAccountingOverrideInput` handler to refresh that one cell's
+value/badge without reloading the whole form (so other unsaved edits on
+the page aren't lost).
+
+**Wired into both `renderAccountingOverrideFields()`** (group scope) **and
+`renderClientAccountingOverrideFields()`** (client scope) — same 6
+fields as Accounting Map (44i Cut %, Platform CPM, In-Platform %, CPC
+Low, CPC High, Setup Fee Split %). The icon only appears when: the
+group/client has actually been saved once (needs a real id — checked via
+`admin-group-id`/`admin-client-original-id`), the row isn't a pairing
+override (composite `tacticId|modifierId` key `rate_history` doesn't
+model), and the field is one of the 6 above — explicitly excludes the
+legacy `budgeted_spend_pct` and the separate `spend_tier_top_cut_pct`
+(SEM top-tier override) mechanism built earlier this session, which is
+its own thing, not part of this generic history sync.
+
+**Real gap caught before shipping (same pattern as the Accounting Map
+entry)**: `admin_add_rate_history`'s live-value sync still only knew
+about `scope='base'`. Without extending it, scheduling an immediate
+change on a Group/Client override would save the history row but never
+touch the live `groups.accounting_overrides`/`clients.accounting_overrides`
+jsonb the rest of the app actually reads — the widget would look like it
+worked (toast says "Change scheduled!") but nothing would change.
+
+**SQL given to Claire** (full corrected function, not a diff, per
+standing convention):
+```sql
+create or replace function admin_add_rate_history(
+  p_name text, p_pw text, p_scope text, p_scope_id uuid, p_service_id text, p_field text,
+  p_value numeric, p_effective_date date
+) returns void language plpgsql security definer as $$
+declare
+  v_role text;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid admin credentials'; end if;
+  if v_role not in ('super') then raise exception 'Only a super admin can schedule pricing changes'; end if;
+
+  insert into rate_history (scope, scope_id, service_id, field, value, effective_date, created_by)
+  values (p_scope, p_scope_id, p_service_id, p_field, to_jsonb(p_value), p_effective_date, p_name);
+
+  if p_effective_date <= current_date then
+    if p_scope = 'base' and p_field = 'default_price' then
+      update services set default_price = p_value where id = p_service_id;
+    elsif p_scope = 'base' and p_field in ('fortyfouri_cut_pct','platform_cpm','in_platform_pct','cpc_low','cpc_high','setup_fee_cut_pct') then
+      execute format('update accounting_map set %I = $1 where service_id = $2 and coalesce(pair_with_service_id, %L) = %L', p_field, '', '') using p_value, p_service_id;
+    elsif p_scope = 'group' and p_field in ('fortyfouri_cut_pct','platform_cpm','in_platform_pct','cpc_low','cpc_high','setup_fee_cut_pct') then
+      update groups set accounting_overrides = jsonb_set(
+        coalesce(accounting_overrides, '{}'::jsonb),
+        array[p_service_id, p_field],
+        to_jsonb(p_value),
+        true
+      ) where id = p_scope_id;
+    elsif p_scope = 'client' and p_field in ('fortyfouri_cut_pct','platform_cpm','in_platform_pct','cpc_low','cpc_high','setup_fee_cut_pct') then
+      update clients set accounting_overrides = jsonb_set(
+        coalesce(accounting_overrides, '{}'::jsonb),
+        array[p_service_id, p_field],
+        to_jsonb(p_value),
+        true
+      ) where id = p_scope_id;
+    end if;
+  end if;
+end;
+$$;
+```
+Uses `p_field` inside `format('%I', ...)` for the `accounting_map`
+branch only, safe because `p_field` is checked against a fixed literal
+list first — same reasoning as the previous version. The group/client
+branches don't need `format()` at all since `jsonb_set`'s path is an
+array of plain text values, not an identifier.
+
+**Verified:** `node --check` passes on the extracted script. A
+standalone harness confirmed the icon-gating logic: shows only for a
+saved group/client (real id present), never for a pairing row (composite
+key), and only for the 6 syncable fields (not `budgeted_spend_pct` or
+`spend_tier_top_cut_pct`); and confirmed the "immediate vs. scheduled"
+split treats today's date as immediate (not still-pending), matches a
+future date as not-yet-immediate, and correctly requires both a date and
+a non-empty value. Not yet tested live — needs the updated RPC run, then
+a real Group and Client override scheduled to confirm the icon, history
+list, and live-value refresh all work end to end.
+
+**Still deferred, not started**: Group/Client Custom Pricing
+(`io_pricing`, `renderPricingFields()`/`renderClientPricingFields()`) —
+flagged to Claire as the next piece if she wants the same treatment
+there.
