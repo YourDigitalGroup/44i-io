@@ -348,7 +348,13 @@ function renderOrderDetailModal(order, sections) {
       const amtParts = [];
       if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
       if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
-      if (item.spend > 0) amtParts.push(monthsVary ? 'Varies by month' : (fmtMoney(item.spend) + '/mo spend'));
+      // Real campaign total instead of a bare "Varies by month" (2026-08-28,
+      // per Claire: "can we show the whole campaign total so that is a
+      // visual of what the split should equal") -- gives a concrete number
+      // the breakdown table below can be checked against, matching the same
+      // fix on the Trello comments/descriptions and the Print/Review IO.
+      const monthsTotal = monthBudgets.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+      if (item.spend > 0) amtParts.push(monthsVary ? (fmtMoney(monthsTotal) + ' total') : (fmtMoney(item.spend) + '/mo spend'));
       const label = item.accounting_label || item.label || item.service_id || '—';
       // Budget entry mode pill (2026-08-28, per Claire: "I want it to be
       // clear what was ordered" -- and, once seen live, "we may need to make

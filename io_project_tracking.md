@@ -20455,3 +20455,44 @@ toward the Strategist Portal's own per-month editing instead of Admin's
 flat-value editor, vs. building real month-by-month editing into Admin's
 Edit panel) and it's a real scope/priority call, not a bug with one
 obvious right answer.
+
+## 2026-08-28 (cont'd) — Whole Campaign Total now shown everywhere instead of an average or bare "varies"
+
+Claire, after seeing the Order Detail fix live: "instead of saying varies
+can we show the whole campaign total so that is a visual of what the
+split should equal" — plus "we also need to update the trello comments
+and descriptions to match," and a follow-up catching Print IO too.
+
+Audited every place a varying-by-month campaign's dollar figure gets
+displayed and found the SAME misleading-average bug (or a less-bad but
+still inconsistent "/mo avg" label) in four separate spots beyond the
+Order Detail modal already fixed:
+
+1. **Trello tactic-card comment/description** (`formatSiblingLineItems()`,
+   `index.html`) — already had a partial 2026-08-20 fix (listed the real
+   per-month breakdown), but still LED with the misleading average
+   ("$750.00/mo spend (varies by month)") before that breakdown. Now
+   leads with the real total instead.
+2. **Trello IO marker card's own comment/description** (`servicesDesc`,
+   `index.html`) — had NO varying-month handling at all, the exact same
+   plain-average bug the Order Detail modal had. Fixed the same way,
+   real total + full breakdown.
+3. **Step 2 Review** (`buildReview()`, `index.html`) — already correctly
+   labeled it "avg," not misleadingly presented as a flat rate, but
+   didn't match the new total-based convention. Now shows the total.
+4. **Printed/signed IO document** (`printIO()`, `index.html`) — same "avg"
+   label, same fix — this is the actual signed contract, so it now
+   matches every other place showing the same figure.
+
+All four (plus the Order Detail modal from earlier today) now show the
+real summed campaign total when months vary, instead of either an
+average presented as fact or a bare "varies by month" with no number to
+check the breakdown against.
+
+**Verified:** a standalone harness confirmed the total-calculation logic
+against the real Streaming TV numbers ($140.63 + $1,359.37 = $1,500.00
+total), confirmed a genuinely flat rate correctly does NOT get flagged as
+varying (falls through to the normal display), and confirmed a
+pause-test pattern ($1,000/$0/$1,000) correctly totals the real intended
+spend rather than double-counting or misreporting the paused month.
+`node --check` passes on `index.html` and `shared.js`.

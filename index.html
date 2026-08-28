@@ -4498,8 +4498,14 @@ function buildReview() {
       // seeded flat default still reads as a normal flat rate.
       const variesByMonth = data.monthPlan && data.monthPlan.length > 1 &&
         new Set(data.monthPlan.map(m => m.amount)).size > 1;
+      // Shows the real campaign total instead of the "/mo avg" figure
+      // (2026-08-28, per Claire, for consistency with the same fix on the
+      // Trello card comments/descriptions and the Order Detail modal) --
+      // a concrete total the month-by-month table right below can be
+      // checked against, rather than an average of numbers nobody actually
+      // spent in any single month.
       amtDisplay = variesByMonth
-        ? `${fmt(data.spend)}/mo avg — <span style="color:var(--accent-dark);font-weight:700">varies by month</span>`
+        ? `${fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0))} total — <span style="color:var(--accent-dark);font-weight:700">varies by month</span>`
         : fmt(data.spend) + '/mo campaign';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
@@ -5245,14 +5251,26 @@ async function submitIO() {
             let line = `• ${li.label}`;
             if (li.fee > 0) line += ` — $${li.fee.toLocaleString()} one-time`;
             if (li.recurring > 0) line += ` — $${li.recurring.toLocaleString()}/mo`;
-            if (li.spend > 0) line += ` — $${li.spend.toLocaleString()}/mo spend`;
             // Real per-month breakdown on the Trello card too (2026-08-20) --
-            // same consistency principle as Review/Print: li.spend here is
-            // always the AVERAGE, so a genuinely varying campaign gets its
-            // real month-by-month figures listed instead of reading as one
-            // flat rate to whoever's working the card in Trello.
-            if (li.month_budgets && li.month_budgets.length > 1 && new Set(li.month_budgets.map(m => m.amount)).size > 1) {
-              line += ' (varies by month)';
+            // same consistency principle as Review/Print: li.spend is always
+            // the AVERAGE, which read as a real flat rate to whoever's
+            // working the card in Trello. FIXED 2026-08-28, per Claire (found
+            // live in the Order Detail modal's own version of this same
+            // problem): a varying campaign now shows its actual CAMPAIGN
+            // TOTAL instead of either the misleading average or a bare
+            // "varies by month" with no number attached -- gives a concrete
+            // total the real month-by-month figures below can be checked
+            // against.
+            const monthsVary = li.month_budgets && li.month_budgets.length > 1 && new Set(li.month_budgets.map(m => m.amount)).size > 1;
+            if (li.spend > 0) {
+              if (monthsVary) {
+                const total = li.month_budgets.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+                line += ` — $${total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})} total campaign spend`;
+              } else {
+                line += ` — $${li.spend.toLocaleString()}/mo spend`;
+              }
+            }
+            if (monthsVary) {
               li.month_budgets.forEach(m => {
                 const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
                 line += `\n   – ${label}: $${Number(m.amount).toLocaleString()}${m.paused ? ' (paused)' : ''}`;
@@ -5435,13 +5453,35 @@ async function submitIO() {
           let line = `• ${li.accounting_label || li.label}`;
           if (li.fee > 0) line += ` — $${li.fee.toLocaleString()} one-time`;
           if (li.recurring > 0) line += ` — $${li.recurring.toLocaleString()}/mo`;
-          if (li.spend > 0) line += ` — $${li.spend.toLocaleString()}/mo spend`;
+          // Whole-campaign-total/custom-by-month figures need the same real-
+          // campaign-total fix as formatSiblingLineItems() below (2026-08-28,
+          // per Claire) -- li.spend here is always the AVERAGE of a varying
+          // campaign's real month-by-month amounts, which read as a genuine
+          // flat rate on the IO marker card's own description/comment (this
+          // card's version of the same bug found live in the Order Detail
+          // modal). Shows the real total instead, plus the per-month
+          // breakdown.
+          const monthsVary = li.month_budgets && li.month_budgets.length > 1 && new Set(li.month_budgets.map(m => m.amount)).size > 1;
+          if (li.spend > 0) {
+            if (monthsVary) {
+              const total = li.month_budgets.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+              line += ` — $${total.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})} total campaign spend`;
+            } else {
+              line += ` — $${li.spend.toLocaleString()}/mo spend`;
+            }
+          }
           if (li.prorated_hosting_amt) line += ` | Prorated: $${li.prorated_hosting_amt.toFixed(2)}`;
           if (li.start_date || li.end_date) {
             const isOneTime = CATALOG_ROWS[li.service_id]?.billing_type === 'one_time';
             line += isOneTime
               ? ` | Flight: ${li.start_date || '—'}`
               : ` | Flight: ${li.start_date || '—'} to ${li.end_date || 'Ongoing'}`;
+          }
+          if (monthsVary) {
+            li.month_budgets.forEach(m => {
+              const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+              line += `\n   – ${label}: $${Number(m.amount).toLocaleString()}${m.paused ? ' (paused)' : ''}`;
+            });
           }
           if (li.notes) line += `\n  Notes: ${li.notes}`;
           return line;
@@ -6465,7 +6505,12 @@ function buildIoDocumentHtml() {
         // follows for QUR/qty display above.
         const variesByMonth = data.monthPlan && data.monthPlan.length > 1 &&
           new Set(data.monthPlan.map(m => m.amount)).size > 1;
-        amtCol = variesByMonth ? (fmt(data.spend) + '/mo avg — varies by month') : (fmt(data.spend) + '/mo campaign');
+        // Real campaign total instead of "/mo avg" (2026-08-28, per Claire,
+        // same consistency fix as buildReview()/Trello/Order Detail) -- this
+        // is the signed contract document, so it needs to match those.
+        amtCol = variesByMonth
+          ? (fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0)) + ' total — varies by month')
+          : (fmt(data.spend) + '/mo campaign');
       } else if (data.is_cpm_adjustment) {
         // Explicit "No Charge" rather than falling through to "TBD" — this is a signed
         // contract document, and "TBD" would read as an unfinished price, not an
