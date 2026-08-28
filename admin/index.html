@@ -1974,7 +1974,7 @@ function renderPricingFields() {
       // than one of several column names.
       const canSchedule = currentGroupId;
       const historyIcon = canSchedule
-        ? `<button type="button" title="Schedule a dated change" onclick="adminTogglePricingHistoryPanel('group','group','${esc(currentGroupId)}','${item.id}')" style="border:none;background:none;cursor:pointer;padding:0;font-size:11px;color:var(--muted)">🕐</button>`
+        ? `<button type="button" title="Schedule a dated change" onclick="adminTogglePricingHistoryPanel('group','group','${esc(currentGroupId)}','${item.id}')" style="border:none;background:none;cursor:pointer;padding:2px;font-size:16px;line-height:1;color:var(--accent-dark)">🕐</button>`
         : '';
       html += `<div id="price-row-${item.id}" style="display:flex;align-items:center;gap:14px;max-width:420px;padding:4px 8px;border-radius:6px;margin:-4px -8px;${isOverridden ? OVERRIDE_ROW_STYLE : ''}">
         <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4;min-width:0">${item.label}${isOverridden ? CUSTOM_BADGE : ''}</label>
@@ -2097,7 +2097,7 @@ function renderClientPricingFields() {
       const fieldType = item.field === 'recurring' ? '/mo' : (item.field === 'cpm' ? 'CPM' : '');
       const canSchedule = currentClientId;
       const historyIcon = canSchedule
-        ? `<button type="button" title="Schedule a dated change" onclick="adminTogglePricingHistoryPanel('client','client','${esc(currentClientId)}','${item.id}')" style="border:none;background:none;cursor:pointer;padding:0;font-size:11px;color:var(--muted)">🕐</button>`
+        ? `<button type="button" title="Schedule a dated change" onclick="adminTogglePricingHistoryPanel('client','client','${esc(currentClientId)}','${item.id}')" style="border:none;background:none;cursor:pointer;padding:2px;font-size:16px;line-height:1;color:var(--accent-dark)">🕐</button>`
         : '';
       html += `<div id="client-price-row-${item.id}" style="display:flex;align-items:center;gap:14px;max-width:420px;padding:4px 8px;border-radius:6px;margin:-4px -8px;${isOverridden ? OVERRIDE_ROW_STYLE : ''}">
         <label style="font-size:11px;color:var(--text);flex:1;line-height:1.4;min-width:0">${item.label}${isOverridden ? CUSTOM_BADGE : ''}</label>
@@ -2324,7 +2324,7 @@ function renderAccountingOverrideFields() {
       const liveDefault = row.fields[f.key] ?? '—';
       const canSchedule = currentGroupId && !isPairingRow && HISTORY_SYNCABLE_FIELDS.has(f.key);
       const historyIcon = canSchedule
-        ? `<button type="button" title="Schedule a dated change" onclick="adminToggleOverrideHistoryRow('acct','${esc(row.overrideKey)}','group','${esc(currentGroupId)}','${f.key}','${esc(f.label)}')" style="border:none;background:none;cursor:pointer;padding:0;font-size:11px;color:var(--muted)">🕐</button>`
+        ? `<button type="button" title="Schedule a dated change" onclick="adminToggleOverrideHistoryRow('acct','${esc(row.overrideKey)}','group','${esc(currentGroupId)}','${f.key}','${esc(f.label)}')" style="border:none;background:none;cursor:pointer;padding:2px;font-size:16px;line-height:1;color:var(--accent-dark)">🕐</button>`
         : '';
       html += `<td style="padding:8px 10px;text-align:right">
         <div style="display:inline-flex;align-items:center;gap:3px">
@@ -2508,7 +2508,7 @@ function renderClientAccountingOverrideFields() {
       const liveDefault = row.fields[f.key] ?? '—';
       const canSchedule = currentClientId && !isPairingRow && HISTORY_SYNCABLE_FIELDS.has(f.key);
       const historyIcon = canSchedule
-        ? `<button type="button" title="Schedule a dated change" onclick="adminToggleOverrideHistoryRow('client-acct','${esc(row.overrideKey)}','client','${esc(currentClientId)}','${f.key}','${esc(f.label)}')" style="border:none;background:none;cursor:pointer;padding:0;font-size:11px;color:var(--muted)">🕐</button>`
+        ? `<button type="button" title="Schedule a dated change" onclick="adminToggleOverrideHistoryRow('client-acct','${esc(row.overrideKey)}','client','${esc(currentClientId)}','${f.key}','${esc(f.label)}')" style="border:none;background:none;cursor:pointer;padding:2px;font-size:16px;line-height:1;color:var(--accent-dark)">🕐</button>`
         : '';
       html += `<td style="padding:8px 10px;text-align:right">
         <div style="display:inline-flex;align-items:center;gap:3px">
