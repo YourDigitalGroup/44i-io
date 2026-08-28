@@ -20941,3 +20941,102 @@ showing for Claire in the Strategist/Accounting portals live, the next
 place to look is whether an order was actually submitted AFTER this
 trigger version went live (an order submitted before this existed would
 have a null `budget_entry_mode` and correctly show no pill, by design).
+
+---
+
+## 2026-08-28 (cont'd) — AM follow-up on 5 open items; fixed the bundled-intake-form bug
+
+Claire checked with her AM on the long-parked "wrong intake form on a
+bundled tactic card" question (see 2026-07-15 entry) plus raised 4 new
+asks. Answers/decisions so far:
+
+1. **Bundled intake form — FIXED.** The AM's answer: add a dedicated
+   process card to the template list specifically for holding the
+   intake PDF, rather than attaching it to whichever tactic card happens
+   to be listed first. Claire already added one to the SEO template list
+   — **"SEO Starter Process"**.
+2. **Trello card dates + a reminder 10 days before campaign end —
+   decided, not yet built.** Confirmed via AskUserQuestion: use Trello's
+   own native due-date reminder (set each tactic card's `due` field to
+   its flight end date) rather than building real backend-scheduled
+   automation — this app has no job runner today (static HTML +
+   Supabase, no cron), so a genuinely automated check would need new
+   infrastructure (pg_cron + a server-side Trello call). Blocked on
+   seeing the `claude-proxy` Edge Function's current source for the
+   `trello_create_card`/`trello_update_card`/`trello_copy_card` targets
+   — unlike this repo's own code, that Edge Function lives only in the
+   Supabase dashboard, so (same convention as any server-side change)
+   it needs to be pasted back before extending it to pass `due`/
+   `dueReminder` through to Trello.
+3. **AE-triggered budget/date changes after go-live — confirmed
+   behavior, not yet built.** The AM confirmed AEs/strategists CAN
+   change budgets/dates after a campaign is live (Claire's original
+   assumption that this should be locked down was wrong, her words:
+   "I was wrong with my first assumption"). Adding months = a renewal,
+   a separate flow. A budget change should notify Trello and leave a
+   note on the IO, but the strategist portal stays the actual source of
+   truth for the number — no auto-sync of amounts back INTO the
+   strategist's own numbers, just a record of what changed. This is a
+   new hook needed on the Strategist Portal's existing budget-save paths
+   (multiple `strategist_save_campaign_month` call sites) — not started.
+4. **Let AEs trigger Edit/Cancel/Renew themselves — access model
+   decided, approval model still open.** AEs have no login anywhere in
+   this system today (confirmed via code search — their only touchpoint
+   is the public, unauthenticated IO form). Claire recalled an earlier
+   parked design (2026-08-06 "Cancellation design sketch" entry) for a
+   **companion form** — same no-login, per-group-link pattern as the IO
+   form itself, not a new login/role. Confirmed via AskUserQuestion this
+   is still the intended shape. Still open: whether an AE's action on
+   the companion form takes effect instantly (same as an AM's own
+   Edit/Cancel/Renew today) or creates a pending request an AM has to
+   approve first, given there's still no authentication distinguishing
+   one AE from another — Claire is checking on this.
+5. **Whether these new self-service options apply to bulk-imported
+   legacy campaigns — investigated, real gap found.** Confirmed via code
+   search: bulk-imported campaigns (the old-system migration path) write
+   directly to `campaign_lines` via `strategist_save_campaign_line` with
+   no backing `orders` row at all (`order_id` stays null — the
+   Strategist Portal's own UI already conditionally hides "View Order"
+   for these). The existing AM-triggered Cancel/Edit/Swap/Renew flows in
+   Admin's Order Detail are built entirely around a real `orders` row
+   (`o.id`, `o.line_items` snapshot) — **they have no code path for a
+   bare `campaign_lines` row with no order behind it.** So however the
+   companion form ends up working for real orders, imported legacy
+   campaigns will need a different path (most likely: routed to a
+   strategist/AM instead of being self-serviceable, at least until/
+   unless someone wants to build a second mechanism for orderless
+   lines). Flagging this now so it's factored into the companion form's
+   design rather than discovered after building it.
+
+**Built now**: item 1's fix (`index.html`, `finalizeTacticCard()`).
+Added an `attachIntake` parameter (default `true`, unchanged for every
+existing single-card/no-template/list-fallback caller) — the whole-list
+template branch now looks for a card whose name ends in "Process"
+(case-insensitive, e.g. "SEO Starter Process"); if the list has one, ONLY
+that card gets the intake PDF attachment and the completion-status
+banner in its description — every other card in the list gets neither.
+If a list has NO such card (every other bundle template, for now), the
+old "every card gets it" behavior is preserved exactly, so nothing
+regresses until/unless those templates add their own process card the
+same way. Matched by a name-suffix pattern rather than a hardcoded
+literal or a new catalog column, following the same convention this
+exact code block already uses for its "IO"/"AE Questions" placeholder-
+card filters — extensible to any future bundle that adds its own
+"___ Process" card without further code changes.
+
+**Verified**: a standalone harness confirmed the gating logic across 4
+cases — a list with the new process card correctly scopes intake to
+just that card; a list with none preserves old behavior for every card;
+a test card (🧪) doesn't count toward "does this list have a process
+card"; and the match is case/whitespace tolerant ("SEO Starter PROCESS"
+with extra spaces still matches). `node --check` passes on the extracted
+script. Not yet tested live — needs a real SEO order submitted to
+confirm the intake PDF lands only on "SEO Starter Process" and the other
+SEO cards (Local Landing Optimization, Reputation Monitoring, etc.) come
+through clean with no intake attachment or banner.
+
+**Still outstanding**: items 2-5 above, in order: #2 waiting on the
+`claude-proxy` source paste; #3 not started (needs the Strategist Portal
+hook designed); #4 waiting on Claire's approval-model answer; #5 is a
+design constraint to fold into whichever answer #4 lands on, not
+something to build on its own.

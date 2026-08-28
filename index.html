@@ -5882,12 +5882,20 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           }
         }
 
-        async function finalizeTacticCard(cardId, wfIdx, applyKoc = true) {
+        // attachIntake (2026-08-28, per Claire + AM — SEO's bundled template list
+        // got its own dedicated "___ Process" card for this) — a whole-list
+        // template can copy several cards for one sold product, and the intake
+        // PDF/completion banner used to land on EVERY one of them regardless of
+        // which specific tactic that card represents (found live: an unrelated
+        // TLP card carrying an SEO/AEO intake PDF). Callers scope this to just
+        // the list's process card when one exists; every other caller (single-
+        // card templates, no-template, list-fallback) keeps the old default.
+        async function finalizeTacticCard(cardId, wfIdx, applyKoc = true, attachIntake = true) {
           if (!cardId) return;
           const tacticFormKey = resolveWorkflowIntakeFormId(originalWorkflows[wfIdx]);
           if (tacticFormKey) formKeyCardIds[tacticFormKey] = cardId;
           workflowCardIds[originalWorkflows[wfIdx]] = cardId;
-          const intake = buildIntakeDesc(originalWorkflows[wfIdx]);
+          const intake = attachIntake ? buildIntakeDesc(originalWorkflows[wfIdx]) : null;
           // Card description = services-sold summary + the short completion-status
           // banner (2026-07-15, per Claire — kept visible without the full Q&A
           // cluttering it; the full detail lives in the PDF instead).
@@ -6087,6 +6095,12 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               // hit; cards skipped above (test cards, IO/AE placeholders, already
               // handled this run) never touch this flag.
               let isFirstCardThisWorkflow = true;
+              // A dedicated "___ Process" card (e.g. "SEO Starter Process") takes
+              // over intake-PDF/banner duty for the whole list once a template has
+              // one — matched by name suffix, same convention as the IO/AE Questions
+              // filters right below. A template that hasn't added one yet keeps the
+              // old "every card gets it" behavior so nothing regresses until it does.
+              const hasProcessCard = templateCards.some(c => !c.name.startsWith('🧪') && /process$/i.test(c.name.trim()));
               for (const card of templateCards) {
                 if (card.name.startsWith('🧪')) continue; // skip test cards
                 let cn = card.name.trim();
@@ -6095,6 +6109,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 // Skip AE Questions cards from any template — redundant; the intake
                 // answers now live in the PDF attachment instead
                 if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) continue;
+                const attachIntake = !hasProcessCard || /process$/i.test(cn);
                 // Tactic — Client (2026-07-14, per Claire) — appended AFTER the filters
                 // above (which need to match the template's own plain name).
                 cn += offlineVisitsSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
@@ -6102,7 +6117,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 const existing = findExistingCardByName(cn);
                 if (existing && !addedCardNames.has(norm(cn))) {
                   addedCardNames.add(norm(cn));
-                  await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow);
+                  await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow, attachIntake);
                   isFirstCardThisWorkflow = false;
                   continue;
                 }
@@ -6120,7 +6135,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 }
                 addedCardNames.add(norm(cn));
                 cardsAdded++;
-                await finalizeTacticCard(copiedCard.id, wfIdx, isFirstCardThisWorkflow);
+                await finalizeTacticCard(copiedCard.id, wfIdx, isFirstCardThisWorkflow, attachIntake);
                 isFirstCardThisWorkflow = false;
               }
             } else {
