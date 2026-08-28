@@ -183,7 +183,7 @@
               <div>
                 <label class="lbl" for="admin-slug">IO Slug <span style="font-weight:400;text-transform:none;letter-spacing:0">— auto-generated, override if needed</span></label>
                 <div style="display:flex;gap:8px;align-items:center">
-                  <input type="text" id="admin-slug" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#F9FAFB" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';const sp=document.getElementById('slug-preview');if(sp)sp.textContent=this.value||'...';checkGroupSlugCollision()"/>
+                  <input type="text" id="admin-slug" placeholder="auto" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace;background:#fff" oninput="this.value=this.value.toLowerCase().replace(/[^a-z0-9-]/g,'');this.dataset.manuallyEdited='1';const sp=document.getElementById('slug-preview');if(sp)sp.textContent=this.value||'...';checkGroupSlugCollision()"/>
                   <button type="button" onclick="regenerateSlug()" style="padding:9px 12px;border-radius:7px;border:1.5px solid var(--accent-dark);background:#fff;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--accent-dark)">↺ Auto</button>
                 </div>
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">URL: io.yourdigitalgroupresources.com/<span id="slug-preview" style="color:var(--accent-dark);font-weight:600">...</span></p>

@@ -20042,3 +20042,21 @@ diff` that only inline `style` attributes changed; no onclick handlers,
 function signatures, or JS logic were touched anywhere. Not yet confirmed
 live — needs Claire to look through each portal once this deploys and
 confirm it reads as consistent.
+
+## 2026-08-27 — IO Slug field looked locked even though it was always editable
+
+Claire: "How can I change current slugs? I see it says I can override but
+it is not letting me... it is grayed out." Checked the actual code: the
+field has never had a `disabled` attribute anywhere — the label text even
+says "auto-generated, override if needed," and its `oninput` handler fully
+supports typing a manual value. The real problem: it uses the same light
+gray `background:#F9FAFB` as the genuinely-locked ID fields elsewhere in
+Admin (Service ID, Section ID, Intake Form ID — all disabled after
+creation, all sharing that same visual treatment), so it visually reads as
+disabled even though it never was. Fixed by changing its background to
+plain white (`#fff`), so it no longer looks like the truly-locked fields
+next to it.
+
+**Verified:** `node --check` passes on the extracted script. Not yet
+confirmed live — needs Claire to open a group's editor and confirm the
+IO Slug field now reads as a normal editable box.
