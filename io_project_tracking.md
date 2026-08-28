@@ -20911,3 +20911,33 @@ Accounting Overrides group/client) bumped from 11px muted-gray to 16px
 in the accent color (`var(--accent-dark)`, same blue used for the
 Schedule buttons), with a couple px of padding for an easier click
 target. `node --check` passes.
+
+---
+
+## 2026-08-28 (cont'd) — Correction: Budget Entry Mode SQL was already done, note was stale
+
+While reviewing what's still outstanding, flagged the "Budget entry mode
+(Monthly/Total/Custom)" feature's SQL (2026-08-28 entry above) as
+seemingly never delivered — the note said `campaign_lines` needed a new
+`budget_entry_mode` column, the `create_campaign_lines_from_order()`
+trigger needed to copy it over, and both portal RPCs needed a line
+added, with no later entry confirming any of it happened.
+
+Asked Claire for the trigger's and both RPCs' current definitions to
+actually do the work — turned out all three were **already correct**:
+the trigger already inserts `item->>'budget_mode'` into
+`campaign_lines.budget_entry_mode`, and both `strategist_get_campaign_lines`
+and `accounting_get_campaign_lines` already return `budget_entry_mode`
+in their `jsonb_build_object(...)` output. Confirmed the front-end
+(`strategist/index.html:3150-3151`, `accounting/index.html:395-396`)
+already reads `line.budget_entry_mode` to show the pill.
+
+**Root cause of the stale note**: this must have actually been built and
+shipped later the same day (2026-08-28) as part of other work, without
+its own dedicated tracking entry — a real miss in this session's own
+logging discipline, not a missed feature. No code or SQL change needed;
+this is a documentation correction only. If the Total/Custom pill isn't
+showing for Claire in the Strategist/Accounting portals live, the next
+place to look is whether an order was actually submitted AFTER this
+trigger version went live (an order submitted before this existed would
+have a null `budget_entry_mode` and correctly show no pill, by design).
