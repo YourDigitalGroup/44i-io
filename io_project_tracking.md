@@ -20182,3 +20182,34 @@ empty/broken pill). `node --check` passes on the extracted script. Not
 yet tested live — needs Claire/the teammate to open the Campaign Setup
 tab and confirm every pending campaign shows its flight range, including
 ones with a blocker checked.
+
+## 2026-08-27 (cont'd) — Flight badge showed literal HTML instead of rendering, and GitHub Actions confirmed back
+
+Claire's screenshot right after this deployed: the new Flight badge showed
+literal text like `Jul 1, 26 <span style="white-space:nowrap"> - Sep 30,
+26</span>` instead of a rendered date range. Root cause: my own mistake —
+`strategistFormatFlightRange()`'s own doc comment explicitly warns
+"Returns HTML, not plain text -- callers must NOT wrap this in esc()"
+(it wraps one of the two dates in its own `<span>` to control where the
+range can line-wrap), and I wrapped my new call in `esc()` anyway when
+adding the badge earlier today. The pre-existing call site (the main
+table's own Flight column, line ~3061) correctly does NOT wrap it — I
+just didn't check that convention before adding a second call site.
+Fixed by removing the `esc()` wrapper, matching the existing call site.
+
+**Also confirmed independently while investigating the earlier "GitHub is
+down" report**: pulled the actual failed-deploy logs via the GitHub
+Actions API — this was never a GitHub outage at all. The real error was
+`Failed to connect... Users sometimes get this error when the server
+only supports SFTP` / `Error: Timeout (control socket)` — the deploy
+workflow's FTP step couldn't reach the web host at all, retried 33 times
+with the same result. Something on the hosting side (FTP disabled/
+switched to SFTP-only, changed credentials, or a firewall/IP block)
+was blocking every deploy, unrelated to GitHub Actions' own health. It
+appears to have resolved on the host's side since — this fix's own
+deploy went through and is what surfaced the esc() bug above.
+
+**Verified:** `node --check` passes on the extracted script. Confirmed
+live by Claire's own screenshot (the badge now needs a re-deploy to pick
+up the esc() fix — the screenshot was the deploy immediately before this
+correction).
