@@ -333,29 +333,50 @@ function renderOrderDetailModal(order, sections) {
   const rows = orderedSectionIds.map(sec => {
     const header = `<tr><td colspan="5" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
     const itemRows = bySection[sec].map(item => {
+      // A varying month_budgets breakdown makes a flat "$X/mo spend" figure
+      // actively misleading (2026-08-28, found live by Claire -- "Streaming
+      // TV: Location" showed "$750.00/mo spend" when the real months were
+      // $140.63 then $1,359.37; $750 is just the plain average of the two,
+      // never a real number anyone actually spent in any month). Detect a
+      // real variance (not just "an array exists" -- a flat monthly rate
+      // recorded via month_budgets, if that ever happens, still has every
+      // entry equal and should keep showing the normal figure) and swap the
+      // summary text for "Varies by month" plus a real per-month breakdown
+      // table, instead of presenting an average as if it were a fact.
+      const monthBudgets = Array.isArray(item.month_budgets) ? item.month_budgets : [];
+      const monthsVary = monthBudgets.length > 1 && new Set(monthBudgets.map(m => m.amount)).size > 1;
       const amtParts = [];
       if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
       if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
-      if (item.spend > 0) amtParts.push(fmtMoney(item.spend) + '/mo spend');
+      if (item.spend > 0) amtParts.push(monthsVary ? 'Varies by month' : (fmtMoney(item.spend) + '/mo spend'));
       const label = item.accounting_label || item.label || item.service_id || '—';
       // Budget entry mode pill (2026-08-28, per Claire: "I want it to be
-      // clear what was ordered") -- 'monthly' is the unchanged default and
-      // gets no pill (matches every order before this feature existed);
-      // 'total'/'custom' get a small badge since month_budgets alone can't
-      // tell them apart downstream, and an evenly-split whole-campaign-total
-      // can look identical to a flat monthly rate in the raw numbers.
+      // clear what was ordered" -- and, once seen live, "we may need to make
+      // that pill more distinct" -- solid background instead of the same
+      // light-outline treatment as the Flight/other badges nearby, so it
+      // doesn't blend in) -- 'monthly' is the unchanged default and gets no
+      // pill (matches every order before this feature existed); 'total'/
+      // 'custom' get a small badge since month_budgets alone can't tell them
+      // apart downstream, and an evenly-split whole-campaign-total can look
+      // identical to a flat monthly rate in the raw numbers.
       const budgetModePill = item.budget_mode === 'total'
-        ? ' <span style="display:inline-block;padding:1px 6px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Whole Campaign Total</span>'
+        ? ' <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:var(--accent-dark);color:#fff;font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Whole Campaign Total</span>'
         : item.budget_mode === 'custom'
-        ? ' <span style="display:inline-block;padding:1px 6px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Custom by Month</span>'
+        ? ' <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:var(--accent-dark);color:#fff;font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Custom by Month</span>'
         : '';
+      const breakdownRow = monthsVary ? `<tr><td colspan="5" style="padding:0 10px 8px 24px;border-bottom:1px solid var(--border)">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">
+          <thead><tr><th style="text-align:left;padding:2px 8px;color:var(--muted);font-weight:700;text-transform:uppercase;font-size:9.5px">Month</th><th style="text-align:left;padding:2px 8px;color:var(--muted);font-weight:700;text-transform:uppercase;font-size:9.5px">Amount</th></tr></thead>
+          <tbody>${monthBudgets.map(m => `<tr><td style="padding:2px 8px${m.paused ? ';color:var(--muted)' : ''}">${esc(m.month)}${m.paused ? ' (Paused)' : ''}</td><td style="padding:2px 8px${m.paused ? ';color:var(--muted)' : ''}">${fmtMoney(m.amount)}</td></tr>`).join('')}</tbody>
+        </table>
+      </td></tr>` : '';
       return `<tr>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border)">${esc(label)}</td>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.start_date || order.campaign_start)}</td>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${fmtDate(item.end_date || order.campaign_end)}</td>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted)">${esc(amtParts.join(' + ') || '—')}${budgetModePill}</td>
         <td style="padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td>
-      </tr>`;
+      </tr>${breakdownRow}`;
     }).join('');
     return header + itemRows;
   }).join('') || '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--muted)">No line items on record.</td></tr>';

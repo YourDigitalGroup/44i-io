@@ -3143,8 +3143,12 @@ function strategistTrelloCardUrl(line) {
 // either). 'monthly' is the unchanged default and gets no pill, matching
 // every campaign before this feature existed.
 function strategistBudgetModePillHtml(line) {
-  if (line.budget_entry_mode === 'total') return ` <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--accent-dark);border:1px solid var(--accent);white-space:nowrap">Whole Campaign Total</span>`;
-  if (line.budget_entry_mode === 'custom') return ` <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--accent-dark);border:1px solid var(--accent);white-space:nowrap">Custom by Month</span>`;
+  // Solid background (2026-08-28, per Claire, found live: "we may need to
+  // make that pill more distinct") -- the original light-outline treatment
+  // matched every other badge nearby (Flight range, blockers) too closely
+  // to stand out as the one thing worth a second look.
+  if (line.budget_entry_mode === 'total') return ` <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--accent-dark);color:#fff;white-space:nowrap">Whole Campaign Total</span>`;
+  if (line.budget_entry_mode === 'custom') return ` <span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--accent-dark);color:#fff;white-space:nowrap">Custom by Month</span>`;
   return '';
 }
 
