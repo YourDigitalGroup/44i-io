@@ -302,6 +302,52 @@ function showToast(msg, type='success') {
 // dates, every line item, and any special instructions.
 // Requires `<div id="shared-order-modal">...<div id="shared-order-modal-body">`
 // in the page (both portals have one).
+// Amendment History (2026-08-28, per Claire: "I want to make sure that
+// the orders in the admin, strategist and accounting portals represent
+// the order accurately") -- surfaces orders.edit_history (already built
+// 2026-08-20 for Admin's own AM-triggered Edit flow, and already rendered
+// in Admin's own Orders tab + the Revised-IO PDF) in the SHARED "View
+// Order" modal every portal uses, not just Admin's own view. A
+// 'month_budgets' entry gets a total-based summary (old total -> new
+// total) instead of a raw array dump or a broken Number(array) --
+// same "real total, not an average" convention as every other fix today.
+// Renders nothing at all when edit_history is empty -- the common case
+// for every order that's never been amended, so this never clutters an
+// unamended order's view.
+function renderAmendmentHistoryHtml(order) {
+  const history = Array.isArray(order.edit_history) ? order.edit_history : [];
+  if (!history.length) return '';
+  const fmtMoney = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+  const fmtWhen = s => {
+    if (!s) return '—';
+    const d = new Date(s);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  };
+  const rows = [...history].reverse().map(h => {
+    let summary;
+    if (h.field === 'month_budgets') {
+      let oldTotal = 0, newTotal = 0;
+      try { oldTotal = (JSON.parse(h.old_value) || []).reduce((s, m) => s + (Number(m.amount) || 0), 0); } catch (e) {}
+      try { newTotal = (JSON.parse(h.new_value) || []).reduce((s, m) => s + (Number(m.amount) || 0), 0); } catch (e) {}
+      summary = `Month-by-month budget: ${fmtMoney(oldTotal)} total → ${fmtMoney(newTotal)} total`;
+    } else if (['spend', 'recurring', 'fee'].includes(h.field)) {
+      summary = `${esc(h.field)}: ${fmtMoney(h.old_value)} → ${fmtMoney(h.new_value)}`;
+    } else {
+      summary = `${esc(h.field)}: ${esc(h.old_value || '—')} → ${esc(h.new_value || '—')}`;
+    }
+    return `<tr>
+      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${esc(h.service_id || '—')}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${summary}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(h.edited_by || '—')}, ${fmtWhen(h.edited_at)}</td>
+    </tr>`;
+  }).join('');
+  return `<p style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Amendment History</p>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">
+      <thead><tr style="background:var(--light)"><th style="padding:6px 10px;text-align:left">Service</th><th style="padding:6px 10px;text-align:left">Change</th><th style="padding:6px 10px;text-align:left">By</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
 let sharedOrderModalLastFocus = null; // set on open, restored on close -- see closeOrderDetailModal()
 // `sections` (2026-08-18, per Claire -- "do the same for the view order in Strategist
 // and Accounting" after Admin's own Order Detail got section-grouping + per-service
@@ -404,6 +450,7 @@ function renderOrderDetailModal(order, sections) {
       <thead><tr style="background:var(--light)"><th style="padding:6px 10px;text-align:left">Service</th><th style="padding:6px 10px;text-align:left">Start</th><th style="padding:6px 10px;text-align:left">End</th><th style="padding:6px 10px;text-align:left">Amount</th><th style="padding:6px 10px;text-align:left">Notes</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${renderAmendmentHistoryHtml(order)}
     ${order.special_instructions ? `<div style="padding:10px 12px;background:#FFF7ED;border-left:3px solid #F59E0B;border-radius:5px"><div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Special Instructions</div><div style="font-size:12px;color:#78350F">${esc(order.special_instructions)}</div></div>` : ''}
   `;
   modal.style.display = 'flex';
