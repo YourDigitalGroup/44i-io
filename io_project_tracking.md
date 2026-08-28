@@ -20213,3 +20213,23 @@ deploy went through and is what surfaced the esc() bug above.
 live by Claire's own screenshot (the badge now needs a re-deploy to pick
 up the esc() fix — the screenshot was the deploy immediately before this
 correction).
+
+## 2026-08-27 (cont'd) — Trello card link field added to Campaign Setup too
+
+Claire: "Could we add the place to put the trello link in the campaign
+set up as well" — same gap already solved once before for the Reference
+Link field (2026-08-14): a pending campaign never reaches the Detail
+panel, so the manual Trello-link field added there earlier today had no
+way to be set before a campaign is activated.
+
+**Fixed** (`strategist/index.html`, `renderSetupPanel()`): added a
+"Trello card link" input next to the existing Reference Link field,
+same styling/pattern. Both `strategistConfirmActivate()` and
+`strategistSaveDraft()` now read it and include `trello_card_url` in
+their save payload, mirroring exactly how `platform_url` is already
+handled in both functions. No schema/RPC change needed — the column and
+`strategist_get_campaign_lines` support already exist from earlier today.
+
+**Verified:** `node --check` passes on the extracted script. Not yet
+tested live — needs Claire to confirm a pasted link on a pending
+campaign survives Save Draft/Confirm & Activate.
