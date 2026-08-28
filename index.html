@@ -951,6 +951,41 @@ select.qty-field{background-image:none;padding-right:3px}
             </div>
           </div>
         </div>
+
+        <!-- Step 2b: a fully separate date/time capture for the specific-person KOC
+             (2026-08-28, per Claire — "We will need to have 2 separate KOC's") — an
+             order can require BOTH the regular AM's Kick-Off Call above AND a
+             separate one with a specific person (e.g. Traditional Buying → Carol
+             Oren); these are tracked completely independently, own lock state, own
+             required fields, own submission block. Only shown at all when a
+             specific-person tactic is actually sold (see updateKocCard()). -->
+        <div id="koc-datetime-section-specific" style="display:none;background:#F3F4F6;border-radius:10px;padding:14px 16px;opacity:0.4;pointer-events:none;margin-top:12px">
+          <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Step 2b: Enter the date & time you booked with <span id="koc-specific-cal-name">the specialist</span></p>
+          <p id="koc-lock-msg-specific" style="font-size:11px;color:#92400E;margin-bottom:12px">⬆ Open the calendar above first to unlock these fields</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div>
+              <label class="lbl lbl-required" for="koc-date-specific">KOC Date</label>
+              <input type="date" id="koc-date-specific" disabled/>
+            </div>
+            <div>
+              <label class="lbl lbl-required" for="koc-time-specific">KOC Time</label>
+              <select id="koc-time-specific" disabled style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px">
+                <option value="">Select time...</option>
+                <option value="7:00 AM">7:00 AM</option><option value="7:30 AM">7:30 AM</option>
+                <option value="8:00 AM">8:00 AM</option><option value="8:30 AM">8:30 AM</option>
+                <option value="9:00 AM">9:00 AM</option><option value="9:30 AM">9:30 AM</option>
+                <option value="10:00 AM">10:00 AM</option><option value="10:30 AM">10:30 AM</option>
+                <option value="11:00 AM">11:00 AM</option><option value="11:30 AM">11:30 AM</option>
+                <option value="12:00 PM">12:00 PM</option><option value="12:30 PM">12:30 PM</option>
+                <option value="1:00 PM">1:00 PM</option><option value="1:30 PM">1:30 PM</option>
+                <option value="2:00 PM">2:00 PM</option><option value="2:30 PM">2:30 PM</option>
+                <option value="3:00 PM">3:00 PM</option><option value="3:30 PM">3:30 PM</option>
+                <option value="4:00 PM">4:00 PM</option><option value="4:30 PM">4:30 PM</option>
+                <option value="5:00 PM">5:00 PM</option>
+              </select>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2202,6 +2237,10 @@ function cancelHostingModal() {
 
 
 let kocCalendarOpened = false;
+// A SEPARATE lock flag for the specific-person KOC (2026-08-28, "We will need
+// to have 2 separate KOC's") — an order can require both this AND the regular
+// AM's KOC above at once, tracked completely independently.
+let kocSpecificCalendarOpened = false;
 
 function onKocCalendarClicked() {
   // Unlock the date/time fields after the AM's calendar is opened
@@ -2220,6 +2259,24 @@ function onKocCalendarClicked() {
   if (timeEl) timeEl.disabled = false;
 }
 
+// Unlocks the SEPARATE specific-person date/time fields — bound to that
+// person's own calendar link(s), never the general AM link above.
+function onKocSpecificCalendarClicked() {
+  kocSpecificCalendarOpened = true;
+  const section = document.getElementById('koc-datetime-section-specific');
+  if (section) {
+    section.style.opacity = '';
+    section.style.pointerEvents = '';
+    section.style.background = '#F0FDF4';
+  }
+  const lockMsg = document.getElementById('koc-lock-msg-specific');
+  if (lockMsg) lockMsg.innerHTML = '✓ <span style="color:#166534">Calendar opened — now enter the date and time you booked</span>';
+  const dateEl = document.getElementById('koc-date-specific');
+  const timeEl = document.getElementById('koc-time-specific');
+  if (dateEl) dateEl.disabled = false;
+  if (timeEl) timeEl.disabled = false;
+}
+
 function kocIsRequired() {
   // Returns true if any selected product requires a KOC. A koc:'none' product
   // never requires one, regardless of its own intake form's status (2026-08-20
@@ -2227,6 +2284,12 @@ function kocIsRequired() {
   // even for services that don't need a call at all; intake completeness is
   // tracked and chased separately via the Campaign Intake Forms card).
   return Object.keys(selected).some(id => PRODUCT_CONFIG[id]?.koc === 'required');
+}
+
+// True when a SOLD service both requires a KOC and names a specific person for
+// it (koc_notify_calendar_url set) — the second, independent KOC requirement.
+function kocSpecificIsRequired() {
+  return Object.keys(selected).some(id => PRODUCT_CONFIG[id]?.koc === 'required' && PRODUCT_CONFIG[id]?.koc_notify_calendar_url);
 }
 
 function updateKocCard() {
@@ -2282,7 +2345,7 @@ function updateKocCard() {
   });
   document.getElementById('koc-specific-am-list').innerHTML = specificAmEntries.map(e => `
     <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">${esc(e.label)} needs its own Kick-Off Call with ${esc(e.name)}</p>
-    <a href="${esc(e.url)}" target="_blank" onclick="onKocCalendarClicked()"
+    <a href="${esc(e.url)}" target="_blank" onclick="onKocSpecificCalendarClicked()"
       style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;background:var(--accent);color:#fff;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.15);margin-bottom:10px">📅 Open ${esc(e.name)}'s Calendar →</a>
   `).join('');
 
@@ -2301,6 +2364,35 @@ function updateKocCard() {
     if (lockMsg) lockMsg.textContent = '⬆ Open the calendar above first to unlock these fields';
     if (dateEl) dateEl.disabled = true;
     if (timeEl) timeEl.disabled = true;
+  }
+
+  // Second, independent KOC section — shown only when a specific-person tactic
+  // is actually sold. Named after the first entry (today there's only ever one
+  // such tactic sold at a time in practice; if two different specific people
+  // were ever required on the same order, this shows the first one's name but
+  // still only tracks one shared date/time for the "specialist" KOC as a whole
+  // — not built as a fully generalized N-KOC system since only one such tactic
+  // exists today).
+  const specificSection = document.getElementById('koc-datetime-section-specific');
+  const specificDateEl = document.getElementById('koc-date-specific');
+  const specificTimeEl = document.getElementById('koc-time-specific');
+  const specificLockMsg = document.getElementById('koc-lock-msg-specific');
+  if (specificAmEntries.length > 0) {
+    specificSection.style.display = 'block';
+    document.getElementById('koc-specific-cal-name').textContent = specificAmEntries[0].name;
+    if (kocSpecificCalendarOpened) {
+      specificSection.style.opacity = ''; specificSection.style.pointerEvents = ''; specificSection.style.background = '#F0FDF4';
+      if (specificLockMsg) specificLockMsg.innerHTML = '✓ <span style="color:#166534">Calendar opened — now enter the date and time you booked</span>';
+      if (specificDateEl) specificDateEl.disabled = false;
+      if (specificTimeEl) specificTimeEl.disabled = false;
+    } else {
+      specificSection.style.opacity = '0.4'; specificSection.style.pointerEvents = 'none'; specificSection.style.background = '#F3F4F6';
+      if (specificLockMsg) specificLockMsg.textContent = '⬆ Open the calendar above first to unlock these fields';
+      if (specificDateEl) specificDateEl.disabled = true;
+      if (specificTimeEl) specificTimeEl.disabled = true;
+    }
+  } else {
+    specificSection.style.display = 'none';
   }
 }
 
@@ -4626,6 +4718,12 @@ function buildReview() {
     ['Additional Notes', document.getElementById('special-instructions')?.value || '—'],
     ['KOC', [document.getElementById('koc-date').value, document.getElementById('koc-time').value].filter(Boolean).join(' at ') || '—'],
   ];
+  // Second, independent KOC recap row (2026-08-28) — only shown at all when a
+  // specific-person tactic is actually sold, same gating as the Step 3 section.
+  if (kocSpecificIsRequired()) {
+    const specificName = PRODUCT_CONFIG[Object.keys(selected).find(id => PRODUCT_CONFIG[id]?.koc_notify_calendar_url)]?.koc_notify_name || 'Specialist';
+    recap.push([`KOC (${specificName})`, [document.getElementById('koc-date-specific')?.value, document.getElementById('koc-time-specific')?.value].filter(Boolean).join(' at ') || '—']);
+  }
   document.getElementById('client-recap').innerHTML = recap.map(([k,v]) =>
     `<div><span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">${k}</span><p style="font-size:13px;margin-top:3px;overflow-wrap:anywhere">${esc(v)}</p></div>`
   ).join('');
@@ -4845,6 +4943,8 @@ async function submitIO() {
 
     const kocDate = document.getElementById('koc-date')?.value || '';
     const kocTime = document.getElementById('koc-time')?.value || '';
+    const kocSpecificDate = document.getElementById('koc-date-specific')?.value || '';
+    const kocSpecificTime = document.getElementById('koc-time-specific')?.value || '';
 
     // Pull the latest Notes + Spend values from the service rows into selected{}
     syncRowInputs();
@@ -4891,6 +4991,24 @@ async function submitIO() {
         showToast('Please enter the KOC date you booked', 'error');
         btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
         document.getElementById('koc-date')?.focus();
+        return;
+      }
+    }
+
+    // Second, independent hard block for the specific-person KOC (2026-08-28,
+    // "We will need to have 2 separate KOC's") — checked separately from the
+    // general AM's KOC above, since an order can require both at once.
+    if (kocSpecificIsRequired() && selectedGroup?.has_koc) {
+      if (!kocSpecificCalendarOpened) {
+        showToast('Please open the specialist\'s calendar and schedule that Kick-Off Call before submitting', 'error');
+        btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+        document.getElementById('koc-card')?.scrollIntoView({behavior:'smooth', block:'center'});
+        return;
+      }
+      if (!kocSpecificDate) {
+        showToast('Please enter the date you booked for the specialist\'s Kick-Off Call', 'error');
+        btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+        document.getElementById('koc-date-specific')?.focus();
         return;
       }
     }
@@ -5105,6 +5223,9 @@ async function submitIO() {
       koc_date: kocDate || null,
       koc_time: kocTime || null,
       needs_koc: kocIsRequired(),
+      koc_specific_date: kocSpecificDate || null,
+      koc_specific_time: kocSpecificTime || null,
+      needs_specific_koc: kocSpecificIsRequired(),
       total_onetime: oneTime,
       total_monthly: monthly,
       signer_name: document.getElementById('auth-name').value,
@@ -6569,7 +6690,17 @@ function buildIoDocumentHtml() {
   const ae = esc(document.getElementById('ae-name').value || '—');
   const kocDate = document.getElementById('koc-date')?.value || '';
   const kocTime = document.getElementById('koc-time')?.value || '';
-  const kocDisplay = (kocDate && kocTime) ? `${kocDate} at ${kocTime}` : (kocDate || '—');
+  let kocDisplay = (kocDate && kocTime) ? `${kocDate} at ${kocTime}` : (kocDate || '—');
+  // Second, independent KOC (2026-08-28) — appended as a second line in the SAME
+  // cell rather than a new grid column, so the printed layout doesn't need
+  // restructuring for the rare order that has one.
+  if (kocSpecificIsRequired()) {
+    const kocSpecificDate = document.getElementById('koc-date-specific')?.value || '';
+    const kocSpecificTime = document.getElementById('koc-time-specific')?.value || '';
+    const kocSpecificDisplay = (kocSpecificDate && kocSpecificTime) ? `${kocSpecificDate} at ${kocSpecificTime}` : (kocSpecificDate || '—');
+    const specificName = esc(PRODUCT_CONFIG[Object.keys(selected).find(id => PRODUCT_CONFIG[id]?.koc_notify_calendar_url)]?.koc_notify_name || 'Specialist');
+    kocDisplay += `<br><span style="font-size:9pt;color:#6B7280">+ ${specificName}: ${kocSpecificDisplay}</span>`;
+  }
   const campNotes = esc(document.getElementById('campaign-notes').value || '');
   const today = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
   const ioDate = document.getElementById('io-date').value || today;
@@ -7202,6 +7333,9 @@ function buildDraft() {
     kocDate: document.getElementById('koc-date')?.value || '',
     kocTime: document.getElementById('koc-time')?.value || '',
     kocCalOpened: kocCalendarOpened,
+    kocSpecificDate: document.getElementById('koc-date-specific')?.value || '',
+    kocSpecificTime: document.getElementById('koc-time-specific')?.value || '',
+    kocSpecificCalOpened: kocSpecificCalendarOpened,
     selected: selected,
     intakeData: intakeData,
     hostingChoices: hostingChoices,
@@ -7381,6 +7515,14 @@ function loadDraft() {
       if (kd) { kd.disabled = false; if (d.kocDate) kd.value = d.kocDate; }
       if (kt) { kt.disabled = false; if (d.kocTime) kt.value = d.kocTime; }
     }
+    // Restore the SEPARATE specific-person KOC booking state (2026-08-28)
+    if (d.kocSpecificCalOpened) {
+      kocSpecificCalendarOpened = true;
+      const kds = document.getElementById('koc-date-specific');
+      const kts = document.getElementById('koc-time-specific');
+      if (kds) { kds.disabled = false; if (d.kocSpecificDate) kds.value = d.kocSpecificDate; }
+      if (kts) { kts.disabled = false; if (d.kocSpecificTime) kts.value = d.kocSpecificTime; }
+    }
 
     // Re-apply mutual-exclusivity locks that toggle() would normally enforce.
     // Restoring checkboxes directly skips those side effects, so without this
@@ -7431,6 +7573,7 @@ function resetForm() {
   setAeNameLocked(false);
   window.__lastIoNumber = null; // clear so the next IO generates its own number
   kocCalendarOpened = false;
+  kocSpecificCalendarOpened = false;
   currentIntakeServiceId = null;
   document.querySelectorAll('.koc-row-badge').forEach(el => el.remove());
   // FIXED (2026-07-13, found live): "⚠ Finish Intake"/"📋 Edit Intake" row badges are a
@@ -7478,6 +7621,10 @@ function resetForm() {
   // block used to also clear).
   const kocTimeSel = document.getElementById('koc-time');
   if (kocTimeSel) kocTimeSel.value = '';
+  // Second, independent KOC's own time <select> (2026-08-28) — same blind spot
+  // as koc-time above, its own value needs explicit clearing too.
+  const kocTimeSelSpecific = document.getElementById('koc-time-specific');
+  if (kocTimeSelSpecific) kocTimeSelSpecific.value = '';
   document.querySelectorAll('.spend-missing').forEach(el => markFieldMissing(el, false));
   // Re-default today's dates (wiped above)
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
@@ -7485,6 +7632,8 @@ function resetForm() {
   // Re-lock KOC fields
   const kd = document.getElementById('koc-date'); if (kd) kd.disabled = true;
   const kt = document.getElementById('koc-time'); if (kt) kt.disabled = true;
+  const kds = document.getElementById('koc-date-specific'); if (kds) kds.disabled = true;
+  const kts = document.getElementById('koc-time-specific'); if (kts) kts.disabled = true;
   // Re-arm the submit button (left disabled with spinner text after a successful submit)
   const sbtn = document.getElementById('submit-btn');
   if (sbtn) { sbtn.innerHTML = '✓ Submit Insertion Order'; sbtn.disabled = false; }
