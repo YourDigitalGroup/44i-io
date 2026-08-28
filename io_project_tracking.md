@@ -21397,3 +21397,54 @@ alter table orders
   add column if not exists koc_specific_time text,
   add column if not exists needs_specific_koc boolean default false;
 ```
+
+---
+
+## 2026-08-28 (cont'd) — Resolved: Traditional Buying alone should NOT also require the general AM KOC
+
+Claire's answer to the open question above: "Traditional Buying only
+needs Carol, if that is the only service selected that should be the
+only KOC to schedule, if another service that requires a KOC that is
+when the 2nd KOC option shows up for that AM." Confirms the earlier
+build was too broad — `alc-media`'s own `koc_requirement = 'required'`
+was making it satisfy the GENERAL KOC check too, so an order selling
+Traditional Buying alone incorrectly demanded both calendars.
+
+**Fixed (`index.html`)**: new `kocGeneralIsRequired()` — true only when
+some sold service requires a KOC and does NOT name a specific person
+(`!koc_notify_calendar_url`). `kocSpecificIsRequired()` is unchanged.
+Every place that used to gate on the old blanket `kocIsRequired()` for
+the GENERAL section specifically now uses `kocGeneralIsRequired()`
+instead:
+- The general calendar link row and Step 2 datetime section — both now
+  actually HIDE (not just visually "locked") when nothing requires the
+  general AM KOC. The datetime section never had a hide state at all
+  before this — it was always visible, just grayed out.
+- `submitIO()`'s general hard-block check.
+- The scroll-to-KOC-card trigger — previously checked bare `koc-date`
+  emptiness only, which would have scrolled here forever on a
+  Traditional-Buying-only order even after the real (specific) KOC was
+  fully booked, since the now-irrelevant general field stays empty
+  forever. Now checks whichever KOC(s) actually apply.
+- The Step 3 review recap and the printed IO — both used to always show
+  a "KOC: —" line/segment even when only the specific KOC applied,
+  reading as if a call was skipped rather than simply not applicable.
+  Now the generic "KOC" row/segment is omitted entirely when only the
+  specific one is relevant.
+`kocIsRequired()` itself is untouched — still "does ANY KOC obligation
+exist at all," which correctly still governs whether the KOC card shows
+up in the first place.
+
+**Verified**: rewrote the standalone harness around the exact scenario
+Claire described. Confirms: Traditional Buying sold alone requires the
+specific KOC only, not the general one; adding an unrelated KOC-required
+service to the same order makes BOTH apply; a normal KOC-only order is
+unaffected (still just the general one); and the submission-validation
+simulation now blocks directly on the specialist's calendar for a
+Traditional-Buying-only order (skipping the general check it no longer
+needs), while the mixed case still requires both, in order, exactly as
+before. 10/10 passing. `node --check` passes on the extracted script.
+Not yet tested live — needs both SQL pieces from the two prior entries
+run first, then a real order selling ONLY Traditional Buying to confirm
+just one calendar/one required field shows up, and a second order mixing
+it with another KOC tactic to confirm both show up correctly.
