@@ -20401,3 +20401,57 @@ updated). `node --check` passes on all three changed files (`index.html`,
 Order Detail modal pill is already fully live once this deploys (no SQL
 needed there — it reads straight off the order's own JSON); the
 Strategist/Accounting detail-view pills need the SQL above first.
+
+## 2026-08-28 (cont'd) — Order Detail's "$X/mo spend" was showing a misleading average, plus a real editing gap found
+
+Claire tested live and found two things right away:
+
+**1. The pill blended in.** Fixed — switched from the light-outline
+treatment (matching every other badge nearby) to a solid `--accent-dark`
+background with white text, in all three spots (`shared.js`'s Order
+Detail modal, Strategist's pill, Accounting's pill).
+
+**2. A real, confirmed bug**: the Order Detail modal's "Streaming TV:
+Location" line showed "$750.00/mo spend" — but the real months were
+$140.63 then $1,359.37 (a Whole Campaign Total, day-split across a flight
+that only touches 3 days of one month and 29 of the next). $750 is
+`item.spend`, which by design (see the 2026-08-20 comment in `index.html`)
+is kept as the plain AVERAGE of the real month-by-month amounts so every
+other "$X/mo" display in the app didn't need touching — but showing that
+average AS IF it were a real flat rate, with no indication it's an
+average, is genuinely misleading, exactly as Claire flagged.
+
+**Fixed** (`shared.js`'s `renderOrderDetailModal()`, used by all three
+portals): detects when `item.month_budgets` has more than one entry with
+genuinely different amounts (not just "an array exists" — a flat rate
+that happened to get stored as month_budgets would still show normally),
+and when it does: swaps the misleading "$X/mo spend" text for "Varies by
+month," and adds a real per-month breakdown table underneath the row
+(Month / Amount, with Paused months marked and grayed).
+
+**Verified:** a standalone harness confirmed the real bug case (the
+Streaming TV numbers) correctly gets flagged as varying, a flat rate
+that happened to be stored as month_budgets does NOT get falsely flagged,
+a single-month array can't "vary" by definition, and a flat rate with
+some $0 paused months (the auto-pause feature) correctly still shows the
+breakdown table, since that IS genuinely useful info, not misleading
+noise. `node --check` passes on all three changed files.
+
+**3. Real gap found while investigating — not yet fixed, needs Claire's
+call**: Admin's AM-triggered "Edit" flow (`adminToggleEditPanel()`/
+`adminSaveLineItemEdit()`, 2026-08-20) only ever edits ONE flat number on
+the order's own `line_items` record — its own existing comment already
+documents it "does NOT touch live campaign_lines/campaign_months... an
+edit here is scoped to the order's own record for now." That was a
+reasonable, deliberate scope decision back when every order had one flat
+number. Now that Whole-Campaign-Total/Custom-by-Month orders exist, this
+flow has no awareness of `month_budgets` at all — editing the "amount" on
+one of these lines would silently leave the real month-by-month
+breakdown untouched and now stale/disconnected from the new flat number,
+which is exactly the kind of inaccuracy Claire is trying to eliminate.
+Flagged to her rather than guessed at a fix, since there are two
+reasonable directions (block/redirect editing for a varying-month line
+toward the Strategist Portal's own per-month editing instead of Admin's
+flat-value editor, vs. building real month-by-month editing into Admin's
+Edit panel) and it's a real scope/priority call, not a bug with one
+obvious right answer.
