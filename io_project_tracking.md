@@ -20803,3 +20803,104 @@ list, and live-value refresh all work end to end.
 (`io_pricing`, `renderPricingFields()`/`renderClientPricingFields()`) —
 flagged to Claire as the next piece if she wants the same treatment
 there.
+
+---
+
+## 2026-08-28 — Effective-dated pricing, part 4: Group + Client Custom Pricing (closes out the pricing/overrides scheduling feature)
+
+Claire: "Let's keep going so this gets fully closed out." Extends the
+same scheduled-change feature into the last remaining spot: Group and
+Client **Custom Pricing** (`io_pricing`) — a single retail number per
+service (CPM or recurring price, whichever applies), simpler than
+Accounting Overrides' multi-field-per-service shape.
+
+**Why yet another UI shape**: Custom Pricing is a flat list, one row per
+service, one number each — not a dense table (Accounting Overrides) and
+not a one-field-per-line form (Accounting Map). So the icon opens a
+panel directly under that single price row rather than a shared row
+inside a table. New function `adminTogglePricingHistoryPanel(prefix,
+scope, scopeId, serviceId)` inserts/removes a sibling `<div>` after
+`price-row-<id>`/`client-price-row-<id>`; `adminSavePricingFieldHistory(prefix,
+scope, scopeId, serviceId)` saves through the same generic
+`adminAddRateHistoryChange` engine, using a fixed `field: 'price'` since
+`io_pricing` has no per-column distinction the way `accounting_map` does
+— it's always "the one override number for this service."
+
+**`prefix` values are `'group'`/`'client'`** — deliberately NOT reusing
+Accounting Overrides' `'acct'`/`'client-acct'` prefixes, to keep the two
+separate override mechanisms' DOM ids and mental model apart even though
+both ultimately call the same generic engine.
+
+**Wired into both `renderPricingFields()`** (group) **and
+`renderClientPricingFields()`** (client) — icon only shows once the
+group/client has a real saved id (same "must be saved once" rule as
+everywhere else this feature touches).
+
+**Same gap, same fix needed**: without an `io_pricing` branch,
+`admin_add_rate_history` would save the history row but never touch the
+live `groups.io_pricing`/`clients.io_pricing` jsonb. Final SQL (adds two
+more branches on top of the version given for Group/Client Accounting
+Overrides):
+```sql
+create or replace function admin_add_rate_history(
+  p_name text, p_pw text, p_scope text, p_scope_id uuid, p_service_id text, p_field text,
+  p_value numeric, p_effective_date date
+) returns void language plpgsql security definer as $$
+declare
+  v_role text;
+begin
+  select au.role into v_role from admin_users au
+  where lower(au.name) = lower(p_name) and au.pw_hash = encode(digest(p_pw, 'sha256'), 'hex');
+  if v_role is null then raise exception 'Invalid admin credentials'; end if;
+  if v_role not in ('super') then raise exception 'Only a super admin can schedule pricing changes'; end if;
+
+  insert into rate_history (scope, scope_id, service_id, field, value, effective_date, created_by)
+  values (p_scope, p_scope_id, p_service_id, p_field, to_jsonb(p_value), p_effective_date, p_name);
+
+  if p_effective_date <= current_date then
+    if p_scope = 'base' and p_field = 'default_price' then
+      update services set default_price = p_value where id = p_service_id;
+    elsif p_scope = 'base' and p_field in ('fortyfouri_cut_pct','platform_cpm','in_platform_pct','cpc_low','cpc_high','setup_fee_cut_pct') then
+      execute format('update accounting_map set %I = $1 where service_id = $2 and coalesce(pair_with_service_id, %L) = %L', p_field, '', '') using p_value, p_service_id;
+    elsif p_scope = 'group' and p_field in ('fortyfouri_cut_pct','platform_cpm','in_platform_pct','cpc_low','cpc_high','setup_fee_cut_pct') then
+      update groups set accounting_overrides = jsonb_set(
+        coalesce(accounting_overrides, '{}'::jsonb), array[p_service_id, p_field], to_jsonb(p_value), true
+      ) where id = p_scope_id;
+    elsif p_scope = 'client' and p_field in ('fortyfouri_cut_pct','platform_cpm','in_platform_pct','cpc_low','cpc_high','setup_fee_cut_pct') then
+      update clients set accounting_overrides = jsonb_set(
+        coalesce(accounting_overrides, '{}'::jsonb), array[p_service_id, p_field], to_jsonb(p_value), true
+      ) where id = p_scope_id;
+    elsif p_scope = 'group' and p_field = 'price' then
+      update groups set io_pricing = jsonb_set(
+        coalesce(io_pricing, '{}'::jsonb), array[p_service_id], to_jsonb(p_value), true
+      ) where id = p_scope_id;
+    elsif p_scope = 'client' and p_field = 'price' then
+      update clients set io_pricing = jsonb_set(
+        coalesce(io_pricing, '{}'::jsonb), array[p_service_id], to_jsonb(p_value), true
+      ) where id = p_scope_id;
+    end if;
+  end if;
+end;
+$$;
+```
+This is the complete, final function — running it once replaces every
+earlier version delivered this session; no need to layer them.
+
+**Verified:** `node --check` passes on the extracted script. Extended
+the same standalone harness with 9 more checks covering the pricing
+panel: icon gating requires a real saved group/client id; row-id and
+history-DOM-id construction produce the right group vs. client ids
+(`price-row-`/`client-price-row-`, `group-price-hist-`/`client-price-
+hist-`); and the shared `isImmediate` boundary logic (today = immediate,
+future = not yet) applies the same way here as it does for Accounting
+Map/Overrides. Full harness: 20/20 passing. Not yet tested live — needs
+the SQL run, then a real Group and Client Custom Pricing change
+scheduled to confirm the icon, panel, history list, and live-value
+refresh all work end to end.
+
+**This closes out the effective-dated pricing/overrides feature** across
+all four places a number can be customized: base Services default price,
+base Accounting Map, Group/Client Accounting Overrides, and Group/Client
+Custom Pricing — all using the same underlying `rate_history` table and
+generic client-side engine, each with a UI shape suited to its own
+table's density.
