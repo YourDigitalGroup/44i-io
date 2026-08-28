@@ -21183,3 +21183,62 @@ first attempt). `node --check` passes on the extracted script. Not yet
 tested live — needs a real order selling 2+ services from one of the 11
 affected sections (e.g. two Social Media Ads platforms together) to
 confirm both cards actually appear in Trello now.
+
+---
+
+## 2026-08-28 (cont'd) — Closed the intake-form follow-on risk flagged with the multi-template fix
+
+Direct follow-up to the previous entry's own "known follow-on risk" note
+— Claire asked to fix it now rather than wait. `resolveWorkflowIntakeFormId()`
+had the exact same "first sold row wins" shape as the old
+`resolveWorkflowTemplate()`, and now that one workflow can produce
+several separate single-card-type cards, every one of them would have
+resolved the SAME workflow-wide intake form and attached the identical
+PDF — the SEO bundling bug recurring through the single-card branch
+instead of the whole-list branch it was originally found in.
+
+**Built (`index.html`)**: `resolveWorkflowIntakeFormId(originalWorkflow,
+templateRef)` — new optional `templateRef` param scopes intake
+resolution to just the sold service(s) that actually carry THAT
+specific template, instead of every sold service in the whole workflow.
+`buildIntakeDesc()` and `finalizeTacticCard()` both gained the same
+optional `templateRef` passthrough. The multi-template single-card loop
+(from the previous entry) now passes its own `template.ref` into both
+`finalizeTacticCard()` calls. Every other caller (the whole-list
+branch's one process card, the list-fallback, the no-template plain
+card) omits it and keeps the old whole-workflow scope — correct there
+since each of those only ever produces one place to attach a form
+anyway.
+
+**Verified**: a standalone harness using a Social-Media-Ads-shaped case
+(Facebook has its own intake form, TikTok has a DIFFERENT one, LinkedIn
+has none) confirms: scoping to Facebook's template resolves only
+Facebook's own form, scoping to TikTok's resolves only TikTok's (not
+Facebook's, which was the actual bug this fixes), scoping to LinkedIn's
+template (which configures no intake form) correctly resolves to
+nothing rather than borrowing a sibling's, and omitting `templateRef`
+entirely still reproduces the old whole-workflow "first wins" behavior
+unchanged (used by callers that were never affected by this bug). Also
+confirmed two services deliberately sharing ONE template still correctly
+see each other for intake resolution when scoped to that shared ref.
+`node --check` passes on the extracted script. Not yet tested live —
+needs a real order selling 2+ services with different templates AND
+different intake forms configured, from the same section, to confirm
+each card gets only its own form.
+
+Also, per Claire's request, gave her a read-only SQL query to audit
+which active services have no `trello_template_ref` at all, so she can
+confirm with her AM whether each one intentionally needs no card of its
+own (e.g. a modifier like Offline Visits Tracking, expected to just ride
+along on its host tactic's card) or is missing one that should be added:
+```sql
+select id, label, section, workflow, is_cpm_adjustment, pricing_mode
+from services
+where active is not false
+  and trello_template_ref is null
+order by section, workflow, id;
+```
+`is_cpm_adjustment = true` rows are the modifier-style services (Offline
+Visits Tracking and similar) that are expected to show up here — no
+action needed for those specifically unless the AM says otherwise.
+Every other row is worth a second look.

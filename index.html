@@ -5312,17 +5312,27 @@ async function submitIO() {
         // read of each sold service's own `intake_form_id` (already on `services`,
         // already used everywhere else — this map was a redundant, only-here-until-now
         // parallel path that could silently disagree with the real per-service value).
-        // Same "first sold row wins" convention resolveWorkflowTemplates() used to use
-        // for templates before its 2026-08-28 rewrite — intake form resolution is
-        // unchanged here and still has that same limitation (a known, separate gap).
-        function resolveWorkflowIntakeFormId(originalWorkflow) {
+        // templateRef (2026-08-28, follow-up to resolveWorkflowTemplates()'s rewrite)
+        // — a workflow can now produce SEVERAL separate single-card-type cards, one
+        // per distinct Trello template its sold services carry. Without this, every
+        // one of those cards would still resolve the SAME workflow-wide "first sold
+        // row wins" intake form and all end up with the identical PDF attached —
+        // the exact SEO bundling bug, recurring through this branch instead. When
+        // the caller passes a templateRef (only the multi-template single-card loop
+        // does), this scopes intake resolution to just the sold service(s) that
+        // actually carry THAT specific template, not the whole workflow. Every other
+        // caller (whole-list branch's one process card, no-template plain cards)
+        // omits it and keeps the old whole-workflow scope unchanged — correct there
+        // since each of those only ever produces one place to attach an intake form.
+        function resolveWorkflowIntakeFormId(originalWorkflow, templateRef) {
           const soldRows = Object.keys(selected)
             .map(id => CATALOG_ROWS[id])
-            .filter(r => r && r.workflow === originalWorkflow && r.intake_form_id);
+            .filter(r => r && r.workflow === originalWorkflow && r.intake_form_id)
+            .filter(r => templateRef === undefined || r.trello_template_ref === templateRef);
           if (!soldRows.length) return null;
           const distinctIds = new Set(soldRows.map(r => r.intake_form_id));
           if (distinctIds.size > 1) {
-            console.warn(`Multiple different intake forms configured for workflow "${originalWorkflow}" among sold services — using "${soldRows[0].label}"'s intake form.`);
+            console.warn(`Multiple different intake forms configured for workflow "${originalWorkflow}"${templateRef ? ` (template ${templateRef})` : ''} among sold services — using "${soldRows[0].label}"'s intake form.`);
           }
           return soldRows[0].intake_form_id;
         }
@@ -5347,8 +5357,8 @@ async function submitIO() {
         // formKey for every existing non-split caller (unchanged behavior).
         // agentLabel, when given, is shown under the business name on the PDF
         // itself so it's clear whose answers this particular attachment holds.
-        const buildIntakeDesc = (originalWorkflow, storageKeyOverride, agentLabel) => {
-          const formKey = resolveWorkflowIntakeFormId(originalWorkflow);
+        const buildIntakeDesc = (originalWorkflow, storageKeyOverride, agentLabel, templateRef) => {
+          const formKey = resolveWorkflowIntakeFormId(originalWorkflow, templateRef);
           if (!formKey) return null;
           const formDef = INTAKE_FORMS[formKey];
           if (!formDef) return null;
@@ -5931,12 +5941,17 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // TLP card carrying an SEO/AEO intake PDF). Callers scope this to just
         // the list's process card when one exists; every other caller (single-
         // card templates, no-template, list-fallback) keeps the old default.
-        async function finalizeTacticCard(cardId, wfIdx, applyKoc = true, attachIntake = true) {
+        // templateRef (2026-08-28, follow-up to resolveWorkflowTemplates()'s
+        // rewrite) — the multi-template single-card loop passes its own specific
+        // template ref so intake resolution scopes to just the service(s) that
+        // carry THAT template, not the whole workflow (see resolveWorkflowIntakeFormId's
+        // own comment for why). Every other caller omits it, unchanged.
+        async function finalizeTacticCard(cardId, wfIdx, applyKoc = true, attachIntake = true, templateRef) {
           if (!cardId) return;
-          const tacticFormKey = resolveWorkflowIntakeFormId(originalWorkflows[wfIdx]);
+          const tacticFormKey = resolveWorkflowIntakeFormId(originalWorkflows[wfIdx], templateRef);
           if (tacticFormKey) formKeyCardIds[tacticFormKey] = cardId;
           workflowCardIds[originalWorkflows[wfIdx]] = cardId;
-          const intake = attachIntake ? buildIntakeDesc(originalWorkflows[wfIdx]) : null;
+          const intake = attachIntake ? buildIntakeDesc(originalWorkflows[wfIdx], undefined, undefined, templateRef) : null;
           // Card description = services-sold summary + the short completion-status
           // banner (2026-07-15, per Claire — kept visible without the full Q&A
           // cluttering it; the full detail lives in the PDF instead).
@@ -6146,7 +6161,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               const existing = findExistingCardByName(cn);
               if (existing && !addedCardNames.has(norm(cn))) {
                 addedCardNames.add(norm(cn));
-                await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow);
+                await finalizeTacticCard(existing.id, wfIdx, isFirstCardThisWorkflow, true, template.ref);
                 isFirstCardThisWorkflow = false;
               } else if (!existing && !cardExists(cn)) {
                 const copyRes = await fetch(PROXY, {
@@ -6159,7 +6174,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 if (copiedCard?.id) {
                   addedCardNames.add(norm(cn));
                   cardsAdded++;
-                  await finalizeTacticCard(copiedCard.id, wfIdx, isFirstCardThisWorkflow);
+                  await finalizeTacticCard(copiedCard.id, wfIdx, isFirstCardThisWorkflow, true, template.ref);
                   isFirstCardThisWorkflow = false;
                 } else {
                   console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
