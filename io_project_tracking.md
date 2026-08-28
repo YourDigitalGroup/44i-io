@@ -20941,3 +20941,304 @@ showing for Claire in the Strategist/Accounting portals live, the next
 place to look is whether an order was actually submitted AFTER this
 trigger version went live (an order submitted before this existed would
 have a null `budget_entry_mode` and correctly show no pill, by design).
+
+---
+
+## 2026-08-28 (cont'd) — AM follow-up on 5 open items; fixed the bundled-intake-form bug
+
+Claire checked with her AM on the long-parked "wrong intake form on a
+bundled tactic card" question (see 2026-07-15 entry) plus raised 4 new
+asks. Answers/decisions so far:
+
+1. **Bundled intake form — FIXED.** The AM's answer: add a dedicated
+   process card to the template list specifically for holding the
+   intake PDF, rather than attaching it to whichever tactic card happens
+   to be listed first. Claire already added one to the SEO template list
+   — **"SEO Starter Process"**.
+2. **Trello card dates + a reminder 10 days before campaign end —
+   decided, not yet built.** Confirmed via AskUserQuestion: use Trello's
+   own native due-date reminder (set each tactic card's `due` field to
+   its flight end date) rather than building real backend-scheduled
+   automation — this app has no job runner today (static HTML +
+   Supabase, no cron), so a genuinely automated check would need new
+   infrastructure (pg_cron + a server-side Trello call). Blocked on
+   seeing the `claude-proxy` Edge Function's current source for the
+   `trello_create_card`/`trello_update_card`/`trello_copy_card` targets
+   — unlike this repo's own code, that Edge Function lives only in the
+   Supabase dashboard, so (same convention as any server-side change)
+   it needs to be pasted back before extending it to pass `due`/
+   `dueReminder` through to Trello.
+3. **AE-triggered budget/date changes after go-live — confirmed
+   behavior, not yet built.** The AM confirmed AEs/strategists CAN
+   change budgets/dates after a campaign is live (Claire's original
+   assumption that this should be locked down was wrong, her words:
+   "I was wrong with my first assumption"). Adding months = a renewal,
+   a separate flow. A budget change should notify Trello and leave a
+   note on the IO, but the strategist portal stays the actual source of
+   truth for the number — no auto-sync of amounts back INTO the
+   strategist's own numbers, just a record of what changed. This is a
+   new hook needed on the Strategist Portal's existing budget-save paths
+   (multiple `strategist_save_campaign_month` call sites) — not started.
+4. **Let AEs trigger Edit/Cancel/Renew themselves — access model
+   decided, approval model still open.** AEs have no login anywhere in
+   this system today (confirmed via code search — their only touchpoint
+   is the public, unauthenticated IO form). Claire recalled an earlier
+   parked design (2026-08-06 "Cancellation design sketch" entry) for a
+   **companion form** — same no-login, per-group-link pattern as the IO
+   form itself, not a new login/role. Confirmed via AskUserQuestion this
+   is still the intended shape. Still open: whether an AE's action on
+   the companion form takes effect instantly (same as an AM's own
+   Edit/Cancel/Renew today) or creates a pending request an AM has to
+   approve first, given there's still no authentication distinguishing
+   one AE from another — Claire is checking on this.
+5. **Whether these new self-service options apply to bulk-imported
+   legacy campaigns — investigated, real gap found.** Confirmed via code
+   search: bulk-imported campaigns (the old-system migration path) write
+   directly to `campaign_lines` via `strategist_save_campaign_line` with
+   no backing `orders` row at all (`order_id` stays null — the
+   Strategist Portal's own UI already conditionally hides "View Order"
+   for these). The existing AM-triggered Cancel/Edit/Swap/Renew flows in
+   Admin's Order Detail are built entirely around a real `orders` row
+   (`o.id`, `o.line_items` snapshot) — **they have no code path for a
+   bare `campaign_lines` row with no order behind it.** So however the
+   companion form ends up working for real orders, imported legacy
+   campaigns will need a different path (most likely: routed to a
+   strategist/AM instead of being self-serviceable, at least until/
+   unless someone wants to build a second mechanism for orderless
+   lines). Flagging this now so it's factored into the companion form's
+   design rather than discovered after building it.
+
+**Built now**: item 1's fix (`index.html`, `finalizeTacticCard()`).
+Added an `attachIntake` parameter (default `true`, unchanged for every
+existing single-card/no-template/list-fallback caller) — the whole-list
+template branch now looks for a card whose name ends in "Process"
+(case-insensitive, e.g. "SEO Starter Process"); if the list has one, ONLY
+that card gets the intake PDF attachment and the completion-status
+banner in its description — every other card in the list gets neither.
+If a list has NO such card (every other bundle template, for now), the
+old "every card gets it" behavior is preserved exactly, so nothing
+regresses until/unless those templates add their own process card the
+same way. Matched by a name-suffix pattern rather than a hardcoded
+literal or a new catalog column, following the same convention this
+exact code block already uses for its "IO"/"AE Questions" placeholder-
+card filters — extensible to any future bundle that adds its own
+"___ Process" card without further code changes.
+
+**Verified**: a standalone harness confirmed the gating logic across 4
+cases — a list with the new process card correctly scopes intake to
+just that card; a list with none preserves old behavior for every card;
+a test card (🧪) doesn't count toward "does this list have a process
+card"; and the match is case/whitespace tolerant ("SEO Starter PROCESS"
+with extra spaces still matches). `node --check` passes on the extracted
+script. Not yet tested live — needs a real SEO order submitted to
+confirm the intake PDF lands only on "SEO Starter Process" and the other
+SEO cards (Local Landing Optimization, Reputation Monitoring, etc.) come
+through clean with no intake attachment or banner.
+
+**Still outstanding**: items 2-5 above, in order: #2 waiting on the
+`claude-proxy` source paste; #3 not started (needs the Strategist Portal
+hook designed); #4 waiting on Claire's approval-model answer; #5 is a
+design constraint to fold into whichever answer #4 lands on, not
+something to build on its own.
+
+---
+
+## 2026-08-28 (cont'd) — Item #2 built: campaign dates on Trello cards + a 10-day-before reminder
+
+Claire pasted the current `claude-proxy` Edge Function source (needed
+per this project's standing convention for anything server-side that
+lives outside this repo). Confirmed `trello_create_card`/`trello_copy_card`/
+`trello_update_card` each build a fixed, small set of fields to send to
+Trello — no `due`/`dueReminder` passthrough existed before this.
+
+**Built (`index.html`)**: `workflowFlightEnd(originalWorkflow)` — same
+min-start/max-end id-filter as the existing `formatCampaignDateRange()`,
+returning the raw end date instead of a formatted string —
+`campaignDueFields(endDate)` wraps that into `{ due, dueReminder }`
+(`dueReminder: 14400` = 10 days in minutes, Trello's own unit for this
+field), or `{}` when there's no end date to set. Wired into every place
+a tactic card gets created or its description refreshed on a resell:
+the single-card template copy, the whole-list template copy, the
+list-fallback create, the no-template plain create, and the existing-
+card description-update path inside `finalizeTacticCard()` (so a resell
+that pushes a campaign's end date out moves the due date/reminder with
+it, not just at first creation). The agent-split branch (MS Farm
+Bureau-style per-agent cards) gets its own version scoped to that
+agent's own rows, not the whole workflow's, since one workflow can cover
+several agents with different end dates.
+
+**Deliberately out of scope**: the IO/Gold/Green marker cards — those
+represent the whole order (which can span several different tactics'
+end dates), so there's no single unambiguous date to put on them. Only
+individual tactic cards get a due date. Flagging this in case Claire
+wants the marker cards to carry something too (e.g. the earliest
+upcoming end date across the whole order) — not built without asking
+first.
+
+**Mechanism, confirmed via AskUserQuestion**: uses Trello's own native
+due-date reminder, not a real scheduled backend check — this app has no
+job runner (static HTML + Supabase, no cron), so building genuine
+server-side automation would need new infrastructure (pg_cron + a
+server-side Trello call). Trello's own reminder fires based on each card
+member's own Trello notification settings once a `dueReminder` is set —
+this depends on the card actually having members (which every tactic
+card already gets via `assignCardMembers()`) and those members having
+Trello notifications enabled, which is outside this app's control.
+
+**SQL/Edge Function delivered**: no SQL this time — the change lives
+entirely in the `claude-proxy` Edge Function (not tracked in this repo).
+Full corrected file given directly to Claire to paste into the Supabase
+dashboard (Edge Functions → claude-proxy) and redeploy — adds
+`due`/`dueReminder` passthrough to all three Trello card targets,
+forwarded straight through only when the caller actually sends them (so
+every other existing caller of these three targets, none of which send
+`due`, is completely unaffected).
+
+**Verified**: a standalone harness confirmed `campaignDueFields` returns
+nothing when there's no end date, and the right `due`/`dueReminder`
+shape when there is; confirmed `workflowFlightEnd` picks the LATEST end
+date across several same-workflow line items, scopes independently per
+workflow, returns null for a workflow with nothing sold, and correctly
+ignores a sibling line item with a missing end date rather than crashing
+or treating it as a real (empty-string) date. `node --check` passes on
+the extracted script. Not yet tested live — needs the Edge Function
+redeployed, then a real order submitted to confirm a tactic card
+actually gets a due date in Trello and the description-refresh path
+updates it correctly on a resell.
+
+---
+
+## 2026-08-28 (cont'd) — Every workflow's Trello template collision, fixed at the code level
+
+Follow-up from the "Al a carte item never got a card" question earlier
+today — while explaining `workflow`'s purpose, ran an audit query at
+Claire's request and found the problem was NOT isolated: **every
+multi-service section in the catalog** shares this same mismatch (Social
+Media Ads: 4 services, 4 completely different templates, one shared
+`workflow` value; same story for Streaming TV/OTT/CTV, Video
+Advertising, Website, Targeted Landing Pages, and 6 more sections).
+`resolveWorkflowTemplate()` only ever resolved ONE template per workflow
+(whichever sold service came first alphabetically/by iteration order) —
+meaning any time an AE sells two or more services from the same section
+together, only one ever got a real Trello card; the other's own
+correctly-configured template was silently dropped every time.
+
+Claire's call, given the scale: "that seems like a lot of extra
+unnecessary work, could we make it so that if there is a trello template
+attached that overrides if there is a workflow?" — fix it in code
+instead of manually re-keying `workflow` on dozens of catalog rows.
+
+**Root cause**: `resolveWorkflowTemplate(originalWorkflow)` picked
+`soldRows[0]`'s template and discarded every other sold service's own
+`trello_template_ref` for that workflow, with only a `console.warn` (no
+UI, nobody would ever see it) noting the collision.
+
+**Fix (`index.html`)**: rewrote it as `resolveWorkflowTemplates()`
+(plural) — returns EVERY distinct `trello_template_ref` among a
+workflow's sold services (deduped, so two services genuinely configured
+to share one template still correctly produce just one card, not two
+identical ones), instead of picking a single winner. The card-creation
+dispatch loop (previously a single `if (template.type==='card') {...}
+else if (list) {...} else {...}` block run once per workflow) is now a
+loop over every distinct template returned, running the exact same
+per-type logic (single-card copy / whole-list copy / plain fallback) for
+each. A sold service with no template of its own (a modifier riding
+along, e.g. Offline Visits Tracking) still contributes nothing to this
+list and continues to just ride along in the shared per-workflow
+description/member-tagging — unchanged.
+
+**KOC label**: `isFirstCardThisWorkflow` moved from being scoped inside
+a single template's processing to being shared ACROSS every template a
+workflow now produces — so a workflow with 3 separate real templates
+(e.g. Social Media Ads sold as FB+LinkedIn+TikTok) still gets exactly
+ONE "Needs KOC" label total, on whichever card is actually created
+first, not one per template.
+
+**Known follow-on risk, flagged but not addressed in this pass**: intake
+form attachment (`resolveWorkflowIntakeFormId`) has the exact same
+"first sold row wins" shape and is UNCHANGED here — if a workflow that
+now produces several separate single-card-type cards also has an
+intake form configured on one of its services, that same intake PDF
+will attach to ALL of those cards (same mechanism as the original SEO
+bug, just via the single-card branch instead of the whole-list branch).
+The SEO fix from earlier today (a dedicated "process card") only applies
+to whole-list templates, which don't fit this shape. Not building
+anything for this yet — flagging it in case it turns out to matter for
+any of the newly-un-collapsed multi-template workflows.
+
+**Verified**: two standalone harnesses. One directly exercises
+`resolveWorkflowTemplates()` against the REAL Social Media Ads data from
+Claire's own audit query (4 services, 4 distinct templates all sharing
+one workflow) — confirms all 4 resolve when all 4 are sold, only the
+sold subset resolves when fewer are sold, two services deliberately
+sharing one ref still produce just one entry, a template-less modifier
+sibling doesn't block its host's template, an all-modifier workflow
+correctly returns empty (falls back to the existing plain-card path),
+and a missing `trello_template_type` still defaults to `'list'` (matches
+the original code's own fallback). A second harness simulates the
+loop's control flow to confirm the KOC flag is shared correctly across
+3 separate single-card templates, across a mixed list+card template set,
+and correctly lands on the first SUCCESSFUL card copy (not a failed
+first attempt). `node --check` passes on the extracted script. Not yet
+tested live — needs a real order selling 2+ services from one of the 11
+affected sections (e.g. two Social Media Ads platforms together) to
+confirm both cards actually appear in Trello now.
+
+---
+
+## 2026-08-28 (cont'd) — Closed the intake-form follow-on risk flagged with the multi-template fix
+
+Direct follow-up to the previous entry's own "known follow-on risk" note
+— Claire asked to fix it now rather than wait. `resolveWorkflowIntakeFormId()`
+had the exact same "first sold row wins" shape as the old
+`resolveWorkflowTemplate()`, and now that one workflow can produce
+several separate single-card-type cards, every one of them would have
+resolved the SAME workflow-wide intake form and attached the identical
+PDF — the SEO bundling bug recurring through the single-card branch
+instead of the whole-list branch it was originally found in.
+
+**Built (`index.html`)**: `resolveWorkflowIntakeFormId(originalWorkflow,
+templateRef)` — new optional `templateRef` param scopes intake
+resolution to just the sold service(s) that actually carry THAT
+specific template, instead of every sold service in the whole workflow.
+`buildIntakeDesc()` and `finalizeTacticCard()` both gained the same
+optional `templateRef` passthrough. The multi-template single-card loop
+(from the previous entry) now passes its own `template.ref` into both
+`finalizeTacticCard()` calls. Every other caller (the whole-list
+branch's one process card, the list-fallback, the no-template plain
+card) omits it and keeps the old whole-workflow scope — correct there
+since each of those only ever produces one place to attach a form
+anyway.
+
+**Verified**: a standalone harness using a Social-Media-Ads-shaped case
+(Facebook has its own intake form, TikTok has a DIFFERENT one, LinkedIn
+has none) confirms: scoping to Facebook's template resolves only
+Facebook's own form, scoping to TikTok's resolves only TikTok's (not
+Facebook's, which was the actual bug this fixes), scoping to LinkedIn's
+template (which configures no intake form) correctly resolves to
+nothing rather than borrowing a sibling's, and omitting `templateRef`
+entirely still reproduces the old whole-workflow "first wins" behavior
+unchanged (used by callers that were never affected by this bug). Also
+confirmed two services deliberately sharing ONE template still correctly
+see each other for intake resolution when scoped to that shared ref.
+`node --check` passes on the extracted script. Not yet tested live —
+needs a real order selling 2+ services with different templates AND
+different intake forms configured, from the same section, to confirm
+each card gets only its own form.
+
+Also, per Claire's request, gave her a read-only SQL query to audit
+which active services have no `trello_template_ref` at all, so she can
+confirm with her AM whether each one intentionally needs no card of its
+own (e.g. a modifier like Offline Visits Tracking, expected to just ride
+along on its host tactic's card) or is missing one that should be added:
+```sql
+select id, label, section, workflow, is_cpm_adjustment, pricing_mode
+from services
+where active is not false
+  and trello_template_ref is null
+order by section, workflow, id;
+```
+`is_cpm_adjustment = true` rows are the modifier-style services (Offline
+Visits Tracking and similar) that are expected to show up here — no
+action needed for those specifically unless the AM says otherwise.
+Every other row is worth a second look.
