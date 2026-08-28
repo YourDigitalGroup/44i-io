@@ -940,6 +940,23 @@
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently splitting one tactic into two.</p>
               </div>
             </div>
+            <div style="margin-bottom:4px">
+              <label class="lbl">KOC Notify — Specific Person (optional) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for a tactic whose Kick-Off Call always needs to involve ONE named person regardless of who's on the order (e.g. Traditional Buying → Carol Oren). She's tagged on this service's tactic card in Trello alongside the order's own AM/AE (only once if she IS the order's AM), and her calendar link shows separately on Step 3's KOC screen. Leave all three blank for the normal "just whoever's on the order" behavior — most services should leave this blank.</span></label>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="lbl" for="admin-svc-koc-notify-name">Display Name</label>
+                <input type="text" id="admin-svc-koc-notify-name" placeholder="e.g. Carol Oren" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              </div>
+              <div>
+                <label class="lbl" for="admin-svc-koc-notify-handle">Trello Handle</label>
+                <input type="text" id="admin-svc-koc-notify-handle" placeholder="e.g. caroloren1 (no @)" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace"/>
+              </div>
+              <div>
+                <label class="lbl" for="admin-svc-koc-notify-calendar">Calendar Link</label>
+                <input type="text" id="admin-svc-koc-notify-calendar" placeholder="https://calendly.com/..." style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              </div>
+            </div>
             <div id="admin-svc-tlp-cap-wrap" style="display:none;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl" for="admin-svc-tlp-cap">TLP Page Cap <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— only relevant for TLP tiers. Max pages the intake grid allows for this tier; the client-facing intake form always reads this live, so changing it here takes effect immediately with no code change.</span></label>
@@ -7399,7 +7416,8 @@ function adminNewService() {
    'admin-svc-modifier','admin-svc-cpm',
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
    'admin-svc-spend-min','admin-svc-tlp-cap','admin-svc-trello-template-ref',
-   'admin-svc-cancel-notice-days','admin-svc-cancel-penalty-amt'].forEach(id => {
+   'admin-svc-cancel-notice-days','admin-svc-cancel-penalty-amt',
+   'admin-svc-koc-notify-name','admin-svc-koc-notify-handle','admin-svc-koc-notify-calendar'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
@@ -7469,6 +7487,9 @@ function adminEditService(id) {
   document.getElementById('admin-svc-cpm-adjustment').checked = !!s.is_cpm_adjustment;
   document.getElementById('admin-svc-cpm').value = s.retail_cpm ?? '';
   document.getElementById('admin-svc-koc').value = s.koc_requirement || 'none';
+  document.getElementById('admin-svc-koc-notify-name').value = s.koc_notify_name || '';
+  document.getElementById('admin-svc-koc-notify-handle').value = s.koc_notify_trello_handle || '';
+  document.getElementById('admin-svc-koc-notify-calendar').value = s.koc_notify_calendar_url || '';
   // Multi-discipline (2026-08-07) — same jsonb-array-or-string guard already used for
   // qty_preset_options in index.html, since Supabase can hand this back as either a
   // real JS array or a JSON-encoded string depending on the path it came through.
@@ -7775,6 +7796,9 @@ async function adminSaveService() {
     is_cpm_adjustment: isCpmAdjustmentFinal,
     retail_cpm: retailCpmFinal,
     koc_requirement: document.getElementById('admin-svc-koc').value,
+    koc_notify_name: document.getElementById('admin-svc-koc-notify-name').value.trim() || null,
+    koc_notify_trello_handle: document.getElementById('admin-svc-koc-notify-handle').value.trim().replace(/^@/, '') || null,
+    koc_notify_calendar_url: document.getElementById('admin-svc-koc-notify-calendar').value.trim() || null,
     strategist_disciplines: strategistDisciplinesFinal,
     intake_form_id: intakeFormVal,
     tlp_page_cap: tlpPageCapFinal,

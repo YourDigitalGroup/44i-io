@@ -21242,3 +21242,77 @@ order by section, workflow, id;
 Visits Tracking and similar) that are expected to show up here — no
 action needed for those specifically unless the AM says otherwise.
 Every other row is worth a second look.
+
+---
+
+## 2026-08-28 (cont'd) — KOC routed to a specific named person for one tactic (Traditional Buying → Carol Oren)
+
+Claire: "There is one tactic that requires a KOC and it is with a
+specific AM, so not sure how we would accomplish that." Checked first —
+confirmed KOC was the same for every service today: one global "Needs
+KOC" Trello label, and card-member tagging always resolved to "whichever
+AM/AE submitted this order," never a specific named person independent
+of that. Claire confirmed: service = `alc-media` (Traditional Buying),
+person = Carol Oren (`@caroloren1`). Rule, confirmed: "we would tag both
+AMs for the Traditional Buying unless it is that specific AM it would be
+just her" — i.e. always add Carol into the card's tagged members
+alongside the order's own AM; naturally collapses to just her if she's
+already the order's own AM (Set dedup, no special-case branch needed).
+Follow-up same day: "we also need to have her calendar show up in step
+3."
+
+**New per-service catalog fields** (`services`): `koc_notify_name`,
+`koc_notify_trello_handle`, `koc_notify_calendar_url` — all nullable,
+all optional, blank for essentially every service. A real column
+(matching this project's standing convention), not a hardcoded
+`alc-media` check in JS, so any future tactic needing the same treatment
+just gets these three fields set too.
+
+**Built (`index.html`)**:
+- `memberIdsForLineItems(items)` now also resolves each line item's
+  `koc_notify_trello_handle` (via the SAME batch Trello-member lookup
+  everything else already uses) and merges it into the tagged-member Set
+  for that specific tactic card — not order-wide, just the card(s) that
+  actually sell this service.
+- `rowToProductConfig()` carries the three new fields through to
+  `PRODUCT_CONFIG` so Step 3 can read them.
+- `updateKocCard()` — new `koc-specific-am-list` block renders an
+  ADDITIONAL calendar button per distinct specific-person service sold
+  (deduped by handle/name so two services pointing at the same person
+  only produce one button), alongside the existing generic AM calendar
+  link rather than replacing it — an order can mix Traditional Buying
+  with an unrelated KOC-required tactic that still just needs the
+  regular AM, so both need to stay visible. Clicking either calendar
+  link (the AM's or a specific person's) unlocks the same Step 2 date/
+  time fields — deliberately did NOT build a second, parallel date/time-
+  entry flow for a second KOC, since nothing in the ask called for
+  tracking two separate booked times; flagging this scoping call in case
+  that turns out to be wrong.
+
+**Built (`admin/index.html`)**: new "KOC Notify — Specific Person"
+fields on the Service edit form (Display Name / Trello Handle / Calendar
+Link, all optional) — the write-side editor Claire actually uses, so
+this doesn't require a developer to configure a future tactic the same
+way.
+
+**Verified**: a standalone harness confirmed the member-tagging Set
+correctly tags both Carol and the order's own AM when they differ, tags
+just Carol once when she IS already the order's own AM, and leaves an
+unrelated card's member set completely untouched when it doesn't sell
+the specific-person service; and confirmed the Step 3 calendar-entry
+builder produces one button for the specific-person service, correctly
+ignores a normal KOC-required service mixed into the same order, and
+renders nothing when no specific-person service is sold at all.
+`node --check` passes on both extracted scripts. Not yet tested live —
+needs the three new columns added to `services` (plain `alter table
+add column if not exists`, no data migration), a value set on `alc-
+media` via the new admin fields, and a real order selling it to confirm
+both the Trello tagging and the Step 3 calendar button work end to end.
+
+**SQL needed** (not committed to the repo, per standing convention):
+```sql
+alter table services
+  add column if not exists koc_notify_name text,
+  add column if not exists koc_notify_trello_handle text,
+  add column if not exists koc_notify_calendar_url text;
+```
