@@ -8157,6 +8157,45 @@ function renderAdminPendingRequests() {
 // never going to be covered by the database change alone — this function
 // now does that same Trello work itself, matching each action's own exact
 // comment wording/PDF-reattach behavior, rather than silently skipping it.
+// Notify the requesting AE by email once their companion-form request is
+// resolved (2026-08-31, per Claire — "how are AM's getting notified..." /
+// "let's close that so it is done"). Mirrors the companion form's own
+// notifyAm() email on submission (same send_email proxy target), just the
+// other direction — the AE finds out the outcome instead of only the AM
+// finding out a request came in. Independent of the Trello/PDF follow-up
+// below — sent (or attempted) regardless of whether that succeeds, same
+// "the database change already happened, this is just a courtesy" posture.
+async function notifyRequesterOfResolution(req, status, note) {
+  if (!req.requested_by_email) return;
+  try {
+    const group = allGroups.find(g => g.id === req.group_id);
+    const color = group?.brand_color || '#1C9BD7';
+    const verb = status === 'approved' ? 'Approved' : 'Rejected';
+    const html = `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px">
+      <div style="background:${color};padding:16px 20px;border-radius:8px 8px 0 0">
+        <div style="color:#fff;font-size:16px;font-weight:700">Change Request ${verb} — ${esc(req._group_name || '')}</div>
+      </div>
+      <div style="border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;padding:20px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr><td style="padding:6px 0;color:#6B7280;width:140px">Client</td><td style="padding:6px 0;font-weight:600">${esc(req._client_name || '')}</td></tr>
+          <tr><td style="padding:6px 0;color:#6B7280">Service</td><td style="padding:6px 0">${esc(req._service_label || req.service_id)}</td></tr>
+          <tr><td style="padding:6px 0;color:#6B7280">Action</td><td style="padding:6px 0;text-transform:capitalize">${esc(req.action)}</td></tr>
+          <tr><td style="padding:6px 0;color:#6B7280">Status</td><td style="padding:6px 0;font-weight:600">${verb}</td></tr>
+          ${note ? `<tr><td style="padding:6px 0;color:#6B7280">Note</td><td style="padding:6px 0">${esc(note)}</td></tr>` : ''}
+        </table>
+      </div>
+    </div>`;
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'send_email', to: req.requested_by_email, subject: `Change request ${status}`, html }),
+    });
+    if (!res.ok) console.warn('Could not send resolution email:', res.status);
+  } catch (e) {
+    console.warn('Could not send resolution email:', e.message);
+  }
+}
+
 async function adminApprovePendingRequestClick(id) {
   if (!confirm('Approve this request? This will make the change immediately.')) return;
   const req = ALL_PENDING_REQUESTS.find(r => r.id === id);
@@ -8171,6 +8210,8 @@ async function adminApprovePendingRequestClick(id) {
     showToast('Could not approve: ' + e.message, 'error');
     return;
   }
+
+  notifyRequesterOfResolution(req, 'approved', '');
 
   // The database change succeeded regardless of anything below — Trello/PDF
   // failures here are reported but never undo the approval, same as every
@@ -8289,12 +8330,14 @@ async function adminApprovePendingRequestClick(id) {
 }
 
 async function adminRejectPendingRequestClick(id) {
+  const req = ALL_PENDING_REQUESTS.find(r => r.id === id);
   const note = prompt('Optional note for why this is being rejected:') || '';
   try {
     await sb('rpc/admin_reject_pending_request', {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_request_id: id, p_note: note })
     });
+    if (req) notifyRequesterOfResolution(req, 'rejected', note);
     showToast('Request rejected');
     loadAdminPendingRequests();
   } catch (e) {
