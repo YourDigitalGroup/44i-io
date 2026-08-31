@@ -23088,3 +23088,14 @@ the ability to do stuff from the AM side when needed." Checked Admin's
 code directly to confirm — no order-submission capability exists there
 at all, only the main IO form does, and that's AE-facing. Fixed the note
 to read "Ask your AE to submit a new Insertion Order for it."
+
+Claire, again: "The AE is the one filling out the companion form as
+well... no one other than the AE should be filling out the forms." Right
+— the companion form's own "I am" step already pulls from the AE
+roster (`ae-name`), so the AE reading this note IS the person who'd
+submit the new IO, not someone else to relay a request to. Reworded to
+"Submit a new Insertion Order for it." (dropped "Ask your AE" entirely).
+Confirmed no other companion-form copy misattributes a step to the
+client or the AM — checked the rest of the visible strings ("I am" / AE
+roster, "Which client?", "Your AM has been notified and will review")
+and they're all already correctly AE-facing.

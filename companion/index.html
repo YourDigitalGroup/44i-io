@@ -327,7 +327,7 @@ function renderServiceRow(svc, i) {
         <div class="action-tab" id="tab-${i}-edit" onclick="setServiceAction(${i},'edit')">Edit</div>
         ${isOneTimeOnly(svc) ? '' : `<div class="action-tab" id="tab-${i}-renew" onclick="setServiceAction(${i},'renew')">Renew</div>`}
       </div>
-      ${isOneTimeOnly(svc) ? `<p class="muted-note">Need this one-time service again? Ask your AE to submit a new Insertion Order for it.</p>` : ''}
+      ${isOneTimeOnly(svc) ? `<p class="muted-note">Need this one-time service again? Submit a new Insertion Order for it.</p>` : ''}
       <div id="action-body-${i}"></div>
     </div>
   </div>`;
