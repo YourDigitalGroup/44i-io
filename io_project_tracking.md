@@ -22058,3 +22058,36 @@ live — this is a bigger structural change than the prior two attempts,
 so it specifically needs Claire to re-test the same Social Media Ads
 scroll-through-an-expanded-campaign scenario, on both desktop and a
 phone (mobile layout was touched too, via the new `display:none` rule).
+
+---
+
+## 2026-08-31 (cont'd) — Headers looked "see-through" while scrolling; forced opaque compositing
+
+Claire's read on the remaining issue: "the headers are see through, I
+think if those are filled it would look cleaner." This reframes the
+whole "overlap" symptom from earlier today — it was never really about
+layout position/z-index math at all, it's that a `position:sticky`
+element's background can render as a "passthrough" during scroll on
+Chrome/Safari even when the CSS background color is genuinely solid
+(`var(--light)`, not anything transparent) — the browser can composite
+the sticky element as a thin overlay layer that lets whatever's
+scrolling underneath show through it, which reads exactly as "see
+through" / overlapping text.
+
+**Fix**: added `will-change:transform` to all three sticky elements in
+this scroll box — `.rs-section-head`, `.rs-col-head` (today's new div
+header), and `.summary-table>thead>tr>th` (still used by the Agent/
+County Split table). This promotes each one to its own GPU compositing
+layer, which is the standard fix for exactly this "sticky background
+doesn't paint opaquely during scroll" behavior — it forces the browser
+to paint the element's own background fully rather than blending it
+with content moving underneath.
+
+**Verified**: `node --check` passes. This is a real-GPU-compositing
+rendering behavior that can't be verified by reading code or running a
+headless test (the project's own tracking history already notes a
+similar sticky-header case that passed every headless Chromium check
+but still failed on a real phone) — needs Claire to confirm live,
+ideally on the same device/browser where she saw the see-through
+effect, that the header now reads as a solid, opaque bar while
+scrolling.
