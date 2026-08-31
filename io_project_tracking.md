@@ -22977,3 +22977,42 @@ system.
 **Claire's call**: this is the direction (#3) worth ultimately building
 toward, but explicitly NOT a blocker for Wednesday's launch — parked
 here, not scoped or estimated, until she's ready to revisit it.
+
+## Companion form routing bug — `.htaccess` rewrite rule (2026-08-31)
+
+Companion link on the IO form kept showing "Invalid Link" (the MAIN
+form's error text, confirmed via the browser tab title reading
+"Insertion Order" instead of "Request a Change") no matter what we
+tried — different URL formats, cache-busting query params, incognito,
+different machines, confirming the file genuinely existed on the
+server. Root cause found by reading the live `.htaccess` Claire pasted:
+its very first rewrite rule,
+`RewriteRule ^([a-zA-Z0-9-]+)/?$ /index.html [QSA,L]`, is unconditional
+(no `!-f`/`!-d` guard) and matches "companion" exactly like it matches
+any real single-segment group slug (e.g. "ctg") — with `[L]` it fires
+and stops before the later, correct `!-f`/`!-d` guarded fallback rule
+ever runs. Not a repo file (confirmed via `find`, no `.htaccess` in this
+repo) — gave Claire the exact two `RewriteCond` lines to ask her hosting
+contact to add above that rule. Claire confirmed this fixed it.
+
+## Companion form — active-services query excluded pending lines (2026-08-31)
+
+Once routing was fixed, Claire reported Test Business 9's companion form
+only showed 2 of its 4 ordered services. Ran a diagnostic query joining
+`orders.line_items` to `campaign_lines` and found the 2 missing services
+(Geofencing, Facebook & Instagram) both sitting at
+`campaign_lines.status = 'pending'` (ordered, not yet started by a
+strategist) — `companion_get_active_services` required
+`status = 'active'`, silently excluding anything pending.
+
+Asked Claire whether pending services should be self-serviceable at
+all, and for which actions. Her call: include for all actions (Cancel/
+Edit/Renew), same as active services.
+
+**Fix**: changed the function's filter from
+`coalesce(cl.status, 'active') = 'active'` to
+`coalesce(cl.status, 'active') <> 'cancelled'` — the same `<> 'cancelled'`
+test `admin_renew_service` already uses to find a line, reused instead of
+inventing a new status list. Sent as a `create or replace` (idempotent)
+for Claire to run in Supabase. Not yet re-verified live against Test
+Business 9 after the change — next step once she's re-run it.
