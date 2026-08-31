@@ -22819,3 +22819,36 @@ form again, which has no "my past requests" view). Not something Claire
 asked for, and no existing precedent to model it on (AEs have no login
 anywhere in this system) — worth a decision on whether that's needed
 before launch or can wait.
+
+---
+
+## 2026-08-31 (cont'd) — Added a link to the companion form ON the IO form itself
+
+Claire clarified she expected a visible link on the IO page itself ("need
+to cancel, edit or renew a service?") pointing an AE to the companion
+form, not something she'd need to hand-construct a URL for separately.
+Added a small link right below the header, hidden until a real group has
+loaded (same moment `group-display` itself is revealed in `loadGroup()`,
+since there's no group context to carry over before then) — its `href`
+is built from the exact same `slug` variable that page just used to
+resolve `selectedGroup`, so it can never point at the wrong group. Opens
+in a new tab (`target="_blank"`) so clicking it never risks losing an
+in-progress, not-yet-submitted IO.
+
+**Raised, not yet resolved**: Claire asked whether this would still work
+with the IO form embedded in an iframe on the resource site. The link's
+`href` is a relative URL, which resolves against the IO form's OWN
+origin regardless of the iframe (not the parent page's) — that part is
+fine. The open question is whether the resource site's iframe embed has
+a `sandbox` attribute blocking popups, which would silently prevent the
+new tab from opening — not something visible from this repo, since the
+embed code lives on the resource site itself. Claire will test the link
+live once deployed rather than guess. If the new tab turns out to be
+blocked, the fallback is straightforward: drop `target="_blank"` (the
+link then navigates within the iframe itself, trading away the "don't
+lose an in-progress IO" protection) or navigate `window.top.location`
+instead (breaks out of the iframe entirely, redirecting the whole parent
+page) — not built yet, pending her live test result.
+
+**Verified**: `node --check` passes. Not tested live in an actual iframe
+embed — needs Claire's real-world test on the resource site.
