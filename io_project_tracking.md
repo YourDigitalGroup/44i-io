@@ -21591,3 +21591,91 @@ alter table services add column if not exists qty_option_labels jsonb;
 update services set qty_option_labels = '["Newsletter","Photo/Video","Testimonial","News/Blog","Calendar"]'::jsonb
 where id = 'w-module';
 ```
+
+---
+
+## 2026-08-31 (cont'd) — Two real bugs found while building the test order, before submitting
+
+Claire caught both live, mid-test, before actually submitting the order
+(screenshots of Step 3 + printed IO).
+
+**Bug 1 — unchecking a named-multi-select module left stale state
+visible.** Confirmed: `toggle()`'s uncheck branch already resets the
+generic spend/qty/quoted-price inputs, but never knew about the new
+module checklist row at all — unchecking Website Modules left the
+`module-detail-${id}` row (with its checkboxes still checked) sitting in
+the DOM, and left the Notes textarea still showing the old "Selected:
+X, Y" text. Rechecking the box then looked like it silently remembered
+an unrelated previous pick. Fixed: the uncheck branch now removes the
+module-detail row and clears the Notes field specifically for a
+`qty_option_labels` service, and resets the hidden `.qty-field` to `0`
+(not the normal per_unit default of `1`) so a recheck starts genuinely
+empty, matching the fresh-check behavior.
+
+**Bug 2 — a real, PRE-EXISTING printed-IO bug, unrelated to anything
+built this session, just never exercised until now.** `em-addl` ("Addl.
+Monthly Email") printed as "— × 1 = — one-time" instead of its real
+"$175.00/mo". Root cause: `printIO()`'s Amount-column logic treated ANY
+item with `qty` set as a one-time per-unit fee (`fmt(data.fee) + ' × '
++ qty + ...`), with no check for whether that item's real price is
+actually a RECURRING per-unit rate (`data.recurring`) instead — since
+`em-addl` is `pricing_mode: per_unit` (so `qty` gets set) but has no
+one-time fee configured, `data.fee` was 0, and `fmt()` renders a falsy
+number as "—". The Step 3 Review (`buildReview()`) already had the
+correct per-field (Fee/Recurring are separate columns there) logic and
+was unaffected — only the printed IO's single combined "Amount" column
+had this gap. Fixed: the per-unit-fee branch now also requires `data.fee
+> 0` before triggering, and — for full Review/Print consistency, found
+while fixing the first part — the recurring branch now shows the same
+"× qty =" breakdown when qty > 1 that Review already showed, instead of
+only ever printing a bare total.
+
+**Verified**: `node --check` passes on both extracted scripts. A
+standalone harness against the print Amount-column logic confirms the
+exact em-addl shape now prints "$175/mo" cleanly, the w-module case
+(real one-time fee, qty=3) is completely unaffected, a hypothetical
+per-unit-recurring item with qty=2 now shows its own breakdown, and
+three untouched cases (plain recurring, plain one-time, fee+recurring
+combo — all with no `qty` set at all) are provably unaffected. 6/6
+passing.
+
+**Still open, not yet resolved this pass**:
+- Claire: "I only got one calendar to select" (testing Traditional
+  Buying + another KOC-required service — expected BOTH the general AM
+  calendar and Carol's, only got the general one). Most likely
+  explanation: `koc_notify_calendar_url` never actually saved on
+  `alc-media` after the earlier `admin_save_service` RPC fix — the first
+  save attempt predates that fix and silently failed, and it's not
+  confirmed she re-saved it afterward. Asked her to confirm via `select
+  id, koc_notify_name, koc_notify_trello_handle, koc_notify_calendar_url
+  from services where id = 'alc-media';` before assuming a code bug —
+  the `kocGeneralIsRequired()`/`kocSpecificIsRequired()` logic itself was
+  already verified correct via harness in the earlier entry.
+- Claire: "the headers overlap" scrolling within the Social Media Ads
+  section's month-by-month breakdown. Traced the actual HTML/CSS
+  structure (`.rs-section-scroll` > sticky `.rs-section-head` +
+  `.summary-table` with a plain, non-sticky `<thead>`) and found no
+  code-level reason two elements should visually collide — the only
+  sticky element in that box is the section title bar itself. Not
+  confident enough in a blind fix without seeing the exact scroll
+  position live; asked Claire for more specifics before touching
+  anything here.
+
+**Follow-up, same day — resolved.** Claire: "it was while scrolling in
+the box for that one service" — happening only DURING scroll (not a
+static layout mismatch) is the specific signature of a known Chrome/
+Safari rendering bug: `position:sticky` combined with a
+`border-collapse:collapse` table sibling can flicker/ghost-overlap cells
+during scroll on some GPU-compositing setups, even when nothing in the
+actual layout genuinely overlaps — `.summary-table` had exactly this
+combination (`.rs-section-head` sticky, `.summary-table` collapse).
+Switched to `border-collapse:separate;border-spacing:0`, which sidesteps
+that rendering path entirely while producing the exact same visual
+result (every border here is a single-sided `border-bottom`, not a
+shared multi-cell edge, so collapse vs. separate makes no visible
+difference — purely a rendering-engine internals change). Confirmed no
+`.summary-table` cell relies on collapse-specific double-border removal
+before making this change. Not verified live (this class of bug is
+browser/GPU-specific and can't be reproduced or confirmed via static
+code inspection) — needs Claire to re-test the same scroll behavior to
+confirm it's actually gone.
