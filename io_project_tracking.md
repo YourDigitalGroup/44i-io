@@ -22267,3 +22267,39 @@ is a harmless empty loop. Not tested live in the browser — needs Claire
 to pick a Location Targeting variant, then touch the client dropdown
 again (the exact trigger traced above), and confirm the variant survives
 into the card title this time.
+
+---
+
+## 2026-08-31 (cont'd) — Made the "Which one is it?" variant a required field before submitting
+
+Claire asked, after the sync-timing fix above: "Can we also make
+selecting one of those a requirement?" Previously a service with
+`tactic_variants` configured (e.g. Location Targeting's Geofencing vs.
+1st Party Addressable) could be submitted with the dropdown left blank —
+it would silently fall back to the ambiguous combined catalog label on
+the Trello card title with no warning anywhere that anything was
+unresolved.
+
+Added a hard block in `submitIO()`, same pattern as the existing
+"Named multi-select modules" required-selection check right above it:
+any selected row whose service has a non-empty `tactic_variants` array
+must have `selected[id].tacticVariant` set, or submission stops with a
+toast ("Please select which one applies for [service]...") and scrolls
+to that row. Placed after `syncRowInputs()` already ran (and after
+today's earlier fix making `renderPriceCells()` call it too), so this
+reads the real, current pick rather than a stale one.
+`Array.isArray(...)` guard matches the exact same convention already
+used everywhere else this field is read (`renderPriceCells()`'s own
+`variantOptions` check) — a malformed/non-array value is treated as "no
+variants configured," never blocking, consistent with existing behavior
+rather than introducing a new edge case.
+
+**Verified**: `node --check` passes. Standalone harness
+(`verify_variant_required.js`) confirms: blocks when a variant-required
+row has none picked; allows submission once one's picked; a service with
+no `tactic_variants` at all is never blocked; a non-array value is
+treated as no variants (matches convention, doesn't block); and among
+several selected rows, correctly identifies the SPECIFIC row missing its
+pick rather than a generic "something's wrong" message. Not tested
+live — needs Claire to confirm the toast fires and scrolls to the right
+row when she leaves a Location Targeting-style dropdown blank now.

@@ -5330,6 +5330,25 @@ async function submitIO() {
       }
     }
 
+    // "Which one is it?" tactic variant, now required (2026-08-31, per Claire —
+    // found live via Location Targeting's Trello card getting the full combined
+    // catalog label instead of the specific variant she'd picked): leaving this
+    // blank used to silently submit fine, falling back to the ambiguous combined
+    // label on the card title with no warning anywhere that anything was
+    // unresolved. Same required-selection pattern as the modules check above —
+    // any row whose service has tactic_variants configured must have one picked
+    // before submitting. selected[id].tacticVariant only ever reflects the DOM at
+    // sync time (see syncRowInputs()), which already ran above, so this reads the
+    // real, current pick.
+    for (const id of Object.keys(selected)) {
+      if (Array.isArray(CATALOG_ROWS[id]?.tactic_variants) && CATALOG_ROWS[id].tactic_variants.length && !selected[id].tacticVariant) {
+        showToast(`Please select which one applies for ${CATALOG_ROWS[id]?.label || id} before submitting`, 'error');
+        btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+        document.querySelector(`tr[data-id="${id}"]`)?.scrollIntoView({behavior:'smooth', block:'center'});
+        return;
+      }
+    }
+
     // Determine tier from social media selection — data-driven off each tier
     // service's own `tier` column now, not a hardcoded id check (see tierOfSelected()).
     let tier = tierOfSelected('sm-bp');
