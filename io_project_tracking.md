@@ -22925,3 +22925,55 @@ lookup is a case-sensitive exact match). Asked Claire to confirm the
 real value directly rather than guess further.
 
 **Verified**: `node --check` passes. Not yet re-tested live.
+
+---
+
+## 2026-08-31 (cont'd) — PARKED: shared "Active Websites" Trello list for website-only clients — not a launch blocker
+
+Came up during the Trello card audit, not something the system has hit
+yet in practice — Claire only learned about this internal process last
+Friday and is still working out whether/how it fits the system. Logging
+the shape of it now so a future session doesn't start from zero.
+
+**The real-world pattern**: to keep boards clean, a client who orders
+ONLY a website doesn't get their own dedicated Trello list — their card
+sits in one shared "Active Websites" list on the group's board, alongside
+every other website-only client. If that same client later orders a
+different service, they get their own dedicated list at that point; once
+that add-on service is done, they go back into the shared "Active
+Websites" list. This is a fully manual process today, done by hand in
+Trello, entirely outside this app.
+
+**Why this doesn't fit the system as it exists**: `find_or_create_client`
+is the ONLY path into the `clients` table, and it always creates exactly
+one dedicated Trello list per client, stored permanently as
+`clients.trello_list_id` — every downstream piece (finding a returning
+client's card, filing a new order's card, the IO form's own Client
+Picker) assumes that one-client-one-permanent-list shape. Confirmed with
+Claire: these website-only clients don't show up in the Client Picker at
+all, consistent with them never having been submitted through the IO
+form in the first place — they're managed by hand, not through the
+system.
+
+**Three shapes discussed, from smallest to largest change**:
+1. Keep it fully manual (today's behavior) — the system stays unaware of
+   these clients until the day one of them orders something else, at
+   which point someone creates them for real at that moment.
+2. Bring them into the system with a flag ("lives in a shared list," not
+   a dedicated one) so they're at least visible/searchable — but a new
+   order for one of them would still need new logic to notice the flag
+   and spin up a real dedicated list rather than trying to add a card
+   into the shared one.
+3. Full bidirectional support — the system also knows to move a client
+   BACK into the shared list once their add-on service is finished, not
+   just promote them out of it. This is the shape Claire believes
+   actually matches what the team is doing today, but it's the biggest
+   lift: "is this add-on done" isn't a clean, unambiguous trigger to hang
+   automation off of yet (nothing today marks a `campaign_lines` row's
+   completion in a way built for this purpose), and this would need
+   design work on what "done" means system-wide before it could be
+   automated.
+
+**Claire's call**: this is the direction (#3) worth ultimately building
+toward, but explicitly NOT a blocker for Wednesday's launch — parked
+here, not scoped or estimated, until she's ready to revisit it.
