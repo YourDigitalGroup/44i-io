@@ -22303,3 +22303,48 @@ several selected rows, correctly identifies the SPECIFIC row missing its
 pick rather than a generic "something's wrong" message. Not tested
 live — needs Claire to confirm the toast fires and scrolls to the right
 row when she leaves a Location Targeting-style dropdown blank now.
+
+---
+
+## 2026-08-31 (cont'd) — Carol Oren was STILL landing on the overview IO card, not just the missing tactic card
+
+Claire asked directly: "did you confirm you fixed the card that Carol
+should be tagged on for Traditional Buying, so she doesn't get tagged on
+the IO card?" Honest answer: no — my earlier fix only addressed the
+MISSING Traditional Buying card (the `workflow`-required gap). It never
+touched the separate issue of Carol also being tagged on the general IO
+overview card, which is a real, still-present bug I hadn't actually
+verified.
+
+**Root cause**: `memberIdsForLineItems(items)` computes
+`koc_notify_trello_handle`-based member ids from whatever `items` array
+it's handed. Its own comment already says this is "scoped to just the
+tactic card(s) that actually sell that service, not every card on the
+order" — but the function is ALSO called for the overview IO card with
+the WHOLE order's `lineItems` (its own doc comment says so explicitly:
+"either the whole order, for the overview IO card, or just one tactic's").
+With no way for the function to tell those two callers apart, the
+koc_notify lookup ran unconditionally either way — so the "not every
+card" intent was only ever true by coincidence for the tactic-card
+caller, never actually enforced for the IO-card one. Any service with a
+`koc_notify_trello_handle` set (currently just Traditional Buying →
+Carol) would tag that person on the IO card for EVERY order that
+includes it, regardless of which specific tactic card they're really
+needed on.
+
+**Fix**: added an `includeKocNotify` parameter (default `true`, so every
+existing per-tactic call site — `finalizeTacticCard()`'s two call sites
+— keeps behaving exactly as before with zero changes needed there).
+Only the IO card's own call site now passes `false` explicitly:
+`memberIdsForLineItems(lineItems, false)`.
+
+**Verified**: `node --check` passes. Standalone harness
+(`verify_io_card_members.js`) confirms: the IO card no longer includes
+Carol while still correctly getting the AE and every discipline
+strategist across the whole order (the union behavior its own comment
+describes); the Traditional Buying tactic card itself still gets Carol,
+unaffected; and an unrelated tactic card (no koc_notify_trello_handle on
+that service) never picks her up either way. Not tested against the
+live Trello API — needs Claire to re-submit a test order with
+Traditional Buying selected and confirm Carol now appears ONLY on its
+own tactic card, not the IO card.

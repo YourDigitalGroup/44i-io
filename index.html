@@ -5661,7 +5661,19 @@ async function submitIO() {
           const arr = typeof r.strategist_disciplines === 'string' ? JSON.parse(r.strategist_disciplines) : r.strategist_disciplines;
           return Array.isArray(arr) ? arr : [];
         }
-        function memberIdsForLineItems(items) {
+        // includeKocNotify (2026-08-31, per Claire — confirmed Carol Oren was STILL
+        // landing on the overview IO card too, not just the Traditional Buying tactic
+        // card): the comment below already says koc_notify_trello_handle is "scoped to
+        // just the tactic card(s) that actually sell that service, not every card on
+        // the order" — but this function is ALSO called for the overview IO card with
+        // the WHOLE order's line items (see its own doc comment above), and with no way
+        // to tell those two callers apart, the koc_notify lookup below unconditionally
+        // ran against whatever `items` it was given either way — so the "not every card
+        // on the order" intent was only ever true for the tactic-card caller, not
+        // actually enforced for the IO-card one. Defaults to `true` so every existing
+        // per-tactic call site (finalizeTacticCard(), etc.) keeps behaving exactly as
+        // before; only the IO card's own call site now passes `false`.
+        function memberIdsForLineItems(items, includeKocNotify = true) {
           const disciplines = new Set(items.flatMap(li => serviceDisciplines(CATALOG_ROWS[li.service_id])));
           const strategistIds = [...disciplines].map(d => resolveHandleMemberId(disciplineHandles[d])).filter(Boolean);
           // koc_notify_trello_handle (2026-08-28) — scoped to just the tactic
@@ -5669,9 +5681,11 @@ async function submitIO() {
           // card on the order. Merged into the same Set as everything else, so if
           // that named AM is ALSO the order's own AM/AE, she naturally only shows
           // up once — no separate "is it her already?" check needed.
-          const kocNotifyIds = items
-            .map(li => resolveHandleMemberId(CATALOG_ROWS[li.service_id]?.koc_notify_trello_handle))
-            .filter(Boolean);
+          const kocNotifyIds = includeKocNotify
+            ? items
+                .map(li => resolveHandleMemberId(CATALOG_ROWS[li.service_id]?.koc_notify_trello_handle))
+                .filter(Boolean)
+            : [];
           return [...new Set([...amAeMemberIds, ...strategistIds, ...kocNotifyIds])];
         }
 
@@ -6295,7 +6309,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         await postOrderComment(ioCardId, `📋 New order submitted (IO #${ioNumber}):\n\n${servicesDesc}`);
         // Overview IO card covers the whole order — gets the UNION of every discipline
         // represented across ALL selected line items, not just one tactic's.
-        await assignCardMembers(ioCardId, memberIdsForLineItems(lineItems));
+        // includeKocNotify:false (2026-08-31, per Claire) — a specific-person KOC
+        // contact like Carol Oren (Traditional Buying) belongs on that service's own
+        // tactic card, not the general overview card for the whole order.
+        await assignCardMembers(ioCardId, memberIdsForLineItems(lineItems, false));
 
         // Attach a dated PDF snapshot of THIS submission to the IO card (2026-07-14) —
         // the card's text description above only ever shows the LATEST IO (a returning
