@@ -23099,3 +23099,76 @@ Confirmed no other companion-form copy misattributes a step to the
 client or the AM — checked the rest of the visible strings ("I am" / AE
 roster, "Which client?", "Your AM has been notified and will review")
 and they're all already correctly AE-facing.
+
+## Edit: add tactic variant + dates everywhere (2026-08-31)
+
+Claire: "We are missing the option to change the variant or dates."
+Confirmed via AskUserQuestion this means the same `tactic_variants`
+single-select field the main IO form already uses (not Website Modules'
+separate module-list mechanism), and that dates should be addable to
+EVERY Edit flow, not just the one-time-cost date-only case built
+earlier today.
+
+**SQL** (both idempotent `create or replace`, sent to Claire to run):
+- `companion_get_active_services` — added `tactic_variant` (the
+  currently-selected value, read from the order's own line_items
+  snapshot) to its return columns. The available OPTIONS list isn't
+  returned here — the companion form now also queries the `services`
+  table directly (`services?id=in.(...)&select=id,tactic_variants`),
+  the same anon-readable catalog read the main IO form already does,
+  rather than duplicating that list in a new RPC.
+- `admin_edit_order_line_item` — requested and reviewed the current live
+  `pg_get_functiondef()` first, per standing convention. Added
+  `'tactic_variant'` to the field allowlist; the existing generic ELSE
+  branch already does the right thing for a plain text field
+  (`to_jsonb(p_new_value)`, no numeric cast), so this was a one-line
+  addition, not new branching logic.
+
+**A real structural change, not just a new field**: a single Edit
+submission can now touch dates + variant + amount all at once (matching
+"should almost look like the IO form"), so `requested_changes` for
+action `edit` changed shape from a single `{field, new_value}` pair to
+`{fields: {field1: value1, field2: value2, ...}}`. Updated everywhere
+that shape is read/written:
+- `companion/index.html`: `setServiceAction()`'s edit branch now always
+  renders Start Date (+ End Date, unless one-time-only) and, if the
+  service has `tactic_variants` configured, a Variant dropdown, layered
+  above whichever amount editor already applied (one-time: none: flat
+  retainer: single amount; spend tactic: the 3-mode budget picker).
+  `collectServicePayload()` only includes a field in the `fields` map if
+  it actually changed from the service's current value.
+- `admin/index.html`: new shared `applyFieldChangeLocally(item, field,
+  value)` — one function every Edit path (Pending Requests approval +
+  all three AM-triggered edit panels) now calls to update the local
+  order cache and build a human-readable description, replacing what
+  had been separately-duplicated per-field logic in each handler.
+  **Found and fixed a real bug in the process**: the Pending-Requests-
+  approval loop I wrote earlier today read `item[field]` for
+  `edit_history.old_value` AFTER already mutating `item[field]` above
+  it — silently recording the NEW value as old_value in the audit trail.
+  Fixed by capturing old values before mutation in every branch,
+  verified via a standalone Node harness confirming `historyOldValue`
+  is the pre-mutation value across all four field types (numeric, date,
+  variant, month_budgets).
+  New shared `adminExtraEditFieldsHtml()`/`adminCollectExtraEditFields()`/
+  `adminSaveExtraEditFields()` add Start/End Date + (if configured)
+  Variant fields to all three existing AM-triggered edit panels
+  (flat-amount, date-only-for-one-time, month-by-month) — saved via
+  their own `admin_edit_order_line_item` calls and folded into the
+  SAME Trello comment as whatever else that panel is saving, not a
+  second separate comment.
+- `describeRequestedChanges()` (Admin's Pending Requests list) and
+  `adminApprovePendingRequestClick()`'s edit branch updated for the new
+  `fields` map shape.
+- `admin_approve_pending_request`'s edit branch (server-side) needs the
+  matching update — loop over `requested_changes->'fields'` via
+  `jsonb_each_text` instead of the old single `->>'field'`/`->>'new_value'`
+  read, calling `admin_edit_order_line_item` once per key via
+  `jsonb_each_text` (not `jsonb_each` — unwraps a plain string value
+  without quotes, while still handing back a JSON array like
+  month_budgets as valid JSON text, matching exactly what
+  `admin_edit_order_line_item`'s `p_new_value` already expects).
+- Verified: `node --check` on both files' extracted scripts, plus the
+  standalone harness above for `applyFieldChangeLocally`. Not yet
+  tested end-to-end live (needs both new SQL functions applied first,
+  then a real click-through on both forms).

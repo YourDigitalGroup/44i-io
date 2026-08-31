@@ -7933,6 +7933,112 @@ function pendingFmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso.slice(0,10) + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
 }
+
+// Shared per-field local-cache update + human-readable description
+// (2026-08-31) -- used by every Edit save path (the AM-triggered panels in
+// viewOrderDetail(), and the Pending Requests approval flow below) so a
+// change is described/recorded identically no matter which screen it came
+// from. Mutates `item` in place; returns the description text plus the
+// value edit_history should record as old_value (captured BEFORE the
+// mutation -- a prior version of the approval-loop code read this AFTER
+// mutating item, silently recording the new value as old_value).
+function applyFieldChangeLocally(item, field, value) {
+  let description, historyOldValue;
+  if (field === 'month_budgets') {
+    const oldMonthBudgets = item ? (item.month_budgets || []) : [];
+    historyOldValue = JSON.stringify(oldMonthBudgets);
+    const newMonthBudgets = typeof value === 'string' ? JSON.parse(value) : value;
+    const oldTotal = oldMonthBudgets.reduce((s,m) => s + (Number(m.amount)||0), 0);
+    const newTotal = newMonthBudgets.reduce((s,m) => s + (Number(m.amount)||0), 0);
+    if (item) { item.month_budgets = newMonthBudgets; item.spend = newMonthBudgets.length ? Math.round((newTotal/newMonthBudgets.length)*100)/100 : 0; }
+    description = `month-by-month budget changed from $${oldTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total to $${newTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total`;
+  } else if (field === 'start_date' || field === 'end_date') {
+    historyOldValue = item ? item[field] : null;
+    if (item) item[field] = value;
+    description = `${field === 'start_date' ? 'start' : 'end'} date changed from ${pendingFmtDate(historyOldValue)} to ${pendingFmtDate(value)}`;
+  } else if (field === 'tactic_variant') {
+    historyOldValue = item ? item.tactic_variant : null;
+    if (item) item.tactic_variant = value;
+    description = `variant changed from "${historyOldValue || '—'}" to "${value}"`;
+  } else {
+    historyOldValue = item ? item[field] : null;
+    if (item) item[field] = parseFloat(value);
+    description = `${field} changed from $${Number(historyOldValue).toLocaleString()} to $${Number(value).toLocaleString()}`;
+  }
+  return { description, historyOldValue };
+}
+
+// Start/End Date + (if this service has any configured) tactic Variant --
+// appended to every AM-triggered Edit panel below regardless of pricing
+// type (2026-08-31, per Claire — "we are missing the option to change the
+// variant or dates"). `includeEndDate` is false for a pure one-time cost
+// (no end date, same convention as everywhere else one-time is handled).
+function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
+  const svc = CATALOG_ROWS[serviceId] || {};
+  const variantOptions = Array.isArray(svc.tactic_variants) ? svc.tactic_variants : null;
+  let html = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+    <label style="font-size:11px;font-weight:700;color:var(--muted)">Start:</label>
+    <input type="date" id="edit-extra-start-${esc(serviceId)}" value="${esc(item?.start_date || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>`;
+  if (includeEndDate) {
+    html += `<label style="font-size:11px;font-weight:700;color:var(--muted)">End:</label>
+      <input type="date" id="edit-extra-end-${esc(serviceId)}" value="${esc(item?.end_date || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>`;
+  }
+  html += `</div>`;
+  if (variantOptions && variantOptions.length) {
+    html += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted)">Variant:</label>
+      <select id="edit-extra-variant-${esc(serviceId)}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px">
+        <option value="">— No change —</option>
+        ${variantOptions.map(v => `<option value="${esc(v)}" ${v === item?.tactic_variant ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+      </select>
+    </div>`;
+  }
+  return html;
+}
+
+// Reads back whatever changed in adminExtraEditFieldsHtml()'s fields,
+// compared against the item's CURRENT values -- only changed ones are
+// returned, so an untouched date/variant doesn't show up as a no-op
+// "changed from X to X" alongside whatever else this panel is saving.
+function adminCollectExtraEditFields(serviceId, item) {
+  const fields = {};
+  const startEl = document.getElementById(`edit-extra-start-${serviceId}`);
+  if (startEl && startEl.value && startEl.value !== (item?.start_date || '')) fields.start_date = startEl.value;
+  const endEl = document.getElementById(`edit-extra-end-${serviceId}`);
+  if (endEl && endEl.value && endEl.value !== (item?.end_date || '')) fields.end_date = endEl.value;
+  const variantEl = document.getElementById(`edit-extra-variant-${serviceId}`);
+  if (variantEl && variantEl.value && variantEl.value !== (item?.tactic_variant || '')) fields.tactic_variant = variantEl.value;
+  return fields;
+}
+
+// Saves each extra date/variant field (already changed-only, from
+// adminCollectExtraEditFields()) via its own admin_edit_order_line_item
+// call, mutating the local item cache + collecting a description for each
+// via the same applyFieldChangeLocally() every other Edit path uses.
+// Returns the description strings to fold into the caller's own Trello
+// comment, rather than posting a second separate comment.
+async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
+  const descriptions = [];
+  const historyEntries = [];
+  for (const [field, value] of Object.entries(extraFields)) {
+    try {
+      await sb('rpc/admin_edit_order_line_item', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+          p_order_id: orderId, p_service_id: serviceId, p_field: field, p_new_value: String(value),
+        }),
+      });
+    } catch (e) {
+      console.warn('Could not save', field, ':', e.message);
+      continue;
+    }
+    const { description, historyOldValue } = applyFieldChangeLocally(item, field, value);
+    descriptions.push(description);
+    historyEntries.push({ service_id: serviceId, field, old_value: historyOldValue, new_value: value, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() });
+  }
+  return { descriptions, historyEntries };
+}
 async function loadAdminPendingRequests() {
   const el = document.getElementById('admin-pending-list');
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
@@ -7985,12 +8091,21 @@ function describeRequestedChanges(r) {
   if (r.action === 'cancel') return `Effective ${pendingFmtDate(c.effective_date)}${c.reason ? ' — ' + esc(c.reason) : ''}`;
   if (r.action === 'renew') return `New end date ${pendingFmtDate(c.new_end_date)}${c.new_monthly_budget ? ', new budget $' + Number(c.new_monthly_budget).toLocaleString() + '/mo' : ''}`;
   if (r.action === 'edit') {
-    if (c.field === 'month_budgets') {
-      const arr = typeof c.new_value === 'string' ? JSON.parse(c.new_value) : c.new_value;
-      const total = (arr || []).reduce((s,m) => s + (Number(m.amount)||0), 0);
-      return `New month-by-month total: $${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-    }
-    return `New ${esc(c.field)}: $${Number(c.new_value).toLocaleString()}`;
+    // requested_changes.fields is a map of one or more field:new_value pairs
+    // (2026-08-31, per Claire — dates/variant can now be changed alongside
+    // an amount in one request) rather than a single field/new_value pair.
+    const fields = c.fields || {};
+    const parts = Object.entries(fields).map(([field, value]) => {
+      if (field === 'month_budgets') {
+        const arr = typeof value === 'string' ? JSON.parse(value) : value;
+        const total = (arr || []).reduce((s,m) => s + (Number(m.amount)||0), 0);
+        return `new month-by-month total $${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      }
+      if (field === 'start_date' || field === 'end_date') return `new ${field === 'start_date' ? 'start' : 'end'} date ${pendingFmtDate(value)}`;
+      if (field === 'tactic_variant') return `new variant "${esc(value)}"`;
+      return `new ${esc(field)} $${Number(value).toLocaleString()}`;
+    });
+    return parts.length ? parts.join(', ') : '—';
   }
   return '';
 }
@@ -8102,28 +8217,22 @@ async function adminApprovePendingRequestClick(id) {
       // doesn't touch o.line_items either, so no local cache update needed.
       commentText = `🛑 ${label} cancelled, effective ${c.effective_date}${c.reason ? ' — ' + c.reason : ''} (by ${admin}).`;
     } else if (req.action === 'edit') {
+      // requested_changes.fields is a map of one or more field:new_value
+      // pairs (2026-08-31, per Claire — dates/variant can now be changed
+      // alongside an amount in one request) rather than a single field.
+      // admin_approve_pending_request already applied each field server-side
+      // via its own admin_edit_order_line_item loop; this just replicates
+      // the same local-cache update + one combined Trello comment covering
+      // every field that changed, same as a single-field edit's comment.
       const item = (o.line_items || []).find(li => li.service_id === req.service_id);
-      if (c.field === 'month_budgets') {
-        // Matches adminSaveMonthBudgetsEdit()'s exact wording/local-cache update.
-        const oldMonthBudgets = item ? (item.month_budgets || []) : [];
-        const newMonthBudgets = typeof c.new_value === 'string' ? JSON.parse(c.new_value) : c.new_value;
-        const oldTotal = oldMonthBudgets.reduce((s,m) => s + (Number(m.amount)||0), 0);
-        const newTotal = newMonthBudgets.reduce((s,m) => s + (Number(m.amount)||0), 0);
-        if (item) { item.month_budgets = newMonthBudgets; item.spend = newMonthBudgets.length ? Math.round((newTotal/newMonthBudgets.length)*100)/100 : 0; }
-        commentText = `✏️ ${label} month-by-month budget changed from $${oldTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total to $${newTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total (by ${admin}).`;
-      } else if (c.field === 'start_date') {
-        // Matches adminSaveLineItemDateEdit()'s exact wording/local-cache
-        // update -- a pure one-time cost's date-only edit (2026-08-31).
-        const oldValue = item ? item.start_date : null;
-        if (item) item.start_date = c.new_value;
-        commentText = `📅 ${label} date changed from ${pendingFmtDate(oldValue)} to ${pendingFmtDate(c.new_value)} (by ${admin}).`;
-      } else {
-        // Matches adminSaveLineItemEdit()'s exact wording/local-cache update.
-        const oldValue = item ? item[c.field] : null;
-        if (item) item[c.field] = parseFloat(c.new_value);
-        commentText = `✏️ ${label} ${c.field} changed from $${Number(oldValue).toLocaleString()} to $${Number(c.new_value).toLocaleString()} (by ${admin}).`;
+      const fields = c.fields || {};
+      const descriptions = [];
+      for (const [field, value] of Object.entries(fields)) {
+        const { description, historyOldValue } = applyFieldChangeLocally(item, field, value);
+        descriptions.push(description);
+        if (item) { o.is_revised = true; o.edit_history = [...(o.edit_history||[]), { service_id: req.service_id, field, old_value: historyOldValue, new_value: value, edited_by: admin, edited_at: new Date().toISOString() }]; }
       }
-      if (item) { o.is_revised = true; o.edit_history = [...(o.edit_history||[]), { service_id: req.service_id, field: c.field, old_value: item ? JSON.stringify(item[c.field] ?? '') : null, new_value: c.new_value, edited_by: admin, edited_at: new Date().toISOString() }]; }
+      commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${admin}).`;
       attachRevisedPdf = true;
     } else if (req.action === 'renew') {
       // Matches adminConfirmRenewal()'s exact wording (no PDF reattach there
@@ -8813,12 +8922,17 @@ function adminToggleEditPanel(orderId, serviceId, field, currentValue) {
   const row = document.getElementById(`edit-panel-${serviceId}`);
   if (!row) return;
   if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  const o = allOrders.find(x => x.id === orderId);
+  const item = o && (o.line_items || []).find(li => li.service_id === serviceId);
   row.querySelector('td').innerHTML = `
-    <div style="background:var(--light);padding:12px 14px;display:flex;gap:8px;align-items:center">
-      <label style="font-size:11px;font-weight:700;color:var(--muted)">New amount:</label>
-      <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
-      <button type="button" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
-      <button type="button" onclick="adminToggleEditPanel('${esc(orderId)}','${esc(serviceId)}','${esc(field)}',${currentValue})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
+    <div style="background:var(--light);padding:12px 14px">
+      ${adminExtraEditFieldsHtml(serviceId, item, true)}
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:11px;font-weight:700;color:var(--muted)">New amount:</label>
+        <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
+        <button type="button" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+        <button type="button" onclick="adminToggleEditPanel('${esc(orderId)}','${esc(serviceId)}','${esc(field)}',${currentValue})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
     </div>`;
   row.style.display = 'table-row';
 }
@@ -8850,8 +8964,18 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     o.is_revised = true;
     o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field, old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
 
+    const descriptions = [`${field} changed from $${Number(oldValue).toLocaleString()} to $${Number(newValue).toLocaleString()}`];
+    // Any changed Start/End Date or Variant fields (2026-08-31) get saved
+    // and folded into this SAME comment, not a second separate one.
+    const extraFields = adminCollectExtraEditFields(serviceId, item);
+    if (Object.keys(extraFields).length) {
+      const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
+      descriptions.push(...extra.descriptions);
+      o.edit_history.push(...extra.historyEntries);
+    }
+
     const label = svc.accounting_label || svc.label || serviceId;
-    const commentText = `✏️ ${label} ${field} changed from $${Number(oldValue).toLocaleString()} to $${Number(newValue).toLocaleString()} (by ${currentAdminUser?.name || 'AM'}).`;
+    const commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
@@ -8904,12 +9028,25 @@ function adminToggleEditDatePanel(orderId, serviceId, currentDate) {
   const row = document.getElementById(`edit-panel-${serviceId}`);
   if (!row) return;
   if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  const o = allOrders.find(x => x.id === orderId);
+  const item = o && (o.line_items || []).find(li => li.service_id === serviceId);
+  const svc = CATALOG_ROWS[serviceId] || {};
+  const variantOptions = Array.isArray(svc.tactic_variants) ? svc.tactic_variants : null;
   row.querySelector('td').innerHTML = `
-    <div style="background:var(--light);padding:12px 14px;display:flex;gap:8px;align-items:center">
-      <label style="font-size:11px;font-weight:700;color:var(--muted)">Date:</label>
-      <input type="date" id="edit-date-${esc(serviceId)}" value="${esc(currentDate || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
-      <button type="button" onclick="adminSaveLineItemDateEdit('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
-      <button type="button" onclick="adminToggleEditDatePanel('${esc(orderId)}','${esc(serviceId)}','${esc(currentDate)}')" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
+    <div style="background:var(--light);padding:12px 14px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:${variantOptions && variantOptions.length ? '8px' : '0'}">
+        <label style="font-size:11px;font-weight:700;color:var(--muted)">Date:</label>
+        <input type="date" id="edit-date-${esc(serviceId)}" value="${esc(currentDate || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
+        <button type="button" onclick="adminSaveLineItemDateEdit('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+        <button type="button" onclick="adminToggleEditDatePanel('${esc(orderId)}','${esc(serviceId)}','${esc(currentDate)}')" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+      ${variantOptions && variantOptions.length ? `<div style="display:flex;gap:8px;align-items:center">
+        <label style="font-size:11px;font-weight:700;color:var(--muted)">Variant:</label>
+        <select id="edit-extra-variant-${esc(serviceId)}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px">
+          <option value="">— No change —</option>
+          ${variantOptions.map(v => `<option value="${esc(v)}" ${v === item?.tactic_variant ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+        </select>
+      </div>` : ''}
     </div>`;
   row.style.display = 'table-row';
 }
@@ -8941,8 +9078,18 @@ async function adminSaveLineItemDateEdit(orderId, serviceId) {
     o.is_revised = true;
     o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field: 'start_date', old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
 
+    const descriptions = [`date changed from ${fmtDate(oldValue)} to ${fmtDate(newValue)}`];
+    // A one-time cost has no end date, but can still have a Variant to
+    // change (2026-08-31) -- folded into this same comment.
+    const extraFields = adminCollectExtraEditFields(serviceId, item);
+    if (Object.keys(extraFields).length) {
+      const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
+      descriptions.push(...extra.descriptions);
+      o.edit_history.push(...extra.historyEntries);
+    }
+
     const label = svc.accounting_label || svc.label || serviceId;
-    const commentText = `📅 ${label} date changed from ${fmtDate(oldValue)} to ${fmtDate(newValue)} (by ${currentAdminUser?.name || 'AM'}).`;
+    const commentText = `📅 ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
@@ -9007,6 +9154,7 @@ function adminToggleMonthBudgetsEditPanel(orderId, serviceId) {
   }).join('');
   row.querySelector('td').innerHTML = `
     <div style="background:var(--light);padding:12px 14px">
+      ${adminExtraEditFieldsHtml(serviceId, item, true)}
       <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:8px">Edit month-by-month amounts:</label>
       ${monthRowsHtml}
       <div style="margin-top:8px;display:flex;gap:8px">
@@ -9053,11 +9201,21 @@ async function adminSaveMonthBudgetsEdit(orderId, serviceId) {
     o.is_revised = true;
     o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field: 'month_budgets', old_value: JSON.stringify(oldMonthBudgets), new_value: JSON.stringify(newMonthBudgets), edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
 
-    const label = svc.accounting_label || svc.label || serviceId;
     // Real total, not an average (2026-08-28, same convention as every
     // other budget-mode fix today) -- this is a month-by-month campaign,
     // so "changed from $X to $Y" needs to mean the real campaign totals.
-    const commentText = `✏️ ${label} month-by-month budget changed from $${oldTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total to $${newTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total (by ${currentAdminUser?.name || 'AM'}).`;
+    const descriptions = [`month-by-month budget changed from $${oldTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total to $${newTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} total`];
+    // Any changed Start/End Date or Variant fields (2026-08-31) get saved
+    // and folded into this SAME comment, not a second separate one.
+    const extraFields = adminCollectExtraEditFields(serviceId, item);
+    if (Object.keys(extraFields).length) {
+      const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
+      descriptions.push(...extra.descriptions);
+      o.edit_history.push(...extra.historyEntries);
+    }
+
+    const label = svc.accounting_label || svc.label || serviceId;
+    const commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
