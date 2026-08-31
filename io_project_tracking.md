@@ -23016,3 +23016,60 @@ test `admin_renew_service` already uses to find a line, reused instead of
 inventing a new status list. Sent as a `create or replace` (idempotent)
 for Claire to run in Supabase. Not yet re-verified live against Test
 Business 9 after the change — next step once she's re-run it.
+
+## Edit/Renew field restrictions per service type (2026-08-31)
+
+Claire: "on one time costs they shouldn't be able to change amounts but
+can change dates... the edit and renew should almost look like the IO
+form" — a real gap, since both the companion form and the AM-side
+Edit/Renew UI let someone freely retype the dollar amount on a pure
+one-time cost (e.g. Traditional Media Buying's $5,000 one-time fee),
+something that shouldn't be renegotiable through a change-request flow.
+
+Also surfaced (via AskUserQuestion) and explicitly descoped from
+Wednesday's launch: Claire's first instinct was a "Reorder" action for
+one-time costs in place of Renew. Investigated what approving that would
+actually require — a brand-new order (own client/Trello-card/PDF/email
+flow, currently ~1,400 lines of client-side JS inside `submitIO()`), and
+found service_id is treated as unique-per-order everywhere in the app
+(Edit/Renew/Cancel/Trello lookup/PDF), so a same-order reorder isn't
+safely representable today either. Claire's call: **drop Reorder from
+v1 entirely** — one-time reorders keep going through the normal AE-fills-
+out-a-new-IO process for now, no companion-form entry point yet.
+
+**What shipped instead, in both `companion/index.html` and
+`admin/index.html`:**
+- New classification: a "pure one-time cost" = `fee > 0` with no
+  `recurring`/`spend` component alongside it (a service with a fee AND a
+  recurring/spend component, e.g. a setup fee + monthly retainer, still
+  has an ongoing term and is NOT this — it keeps the existing amount-
+  edit + Renew behavior unchanged).
+  - Companion form: `isOneTimeOnly(svc)` in `companion/index.html`.
+  - Admin: `isPureFee` in the Order Detail line-item render (same test,
+    reusing the existing `editableCandidates` array — one candidate and
+    it's `fee`).
+- For a pure one-time cost: **Renew tab/button is hidden entirely**
+  (nothing to renew), and **Edit shows a date field only** — no amount
+  input. Everything else (flat retainers, spend/campaign tactics with
+  their existing single-amount or 3-mode budget picker) is unchanged.
+- Edit's `requested_changes`/`admin_edit_order_line_item` call for this
+  case uses `field: 'start_date'` — already in that function's existing
+  allowlist, so no SQL change was needed.
+- New admin functions `adminToggleEditDatePanel()`/
+  `adminSaveLineItemDateEdit()` (mirroring `adminToggleEditPanel()`/
+  `adminSaveLineItemEdit()`'s exact Trello-comment/PDF-reattach/
+  edit_history shape, but with date wording — "📅 X date changed from
+  ... to ..." — instead of dollar-amount wording, since `Number(date)`
+  would be nonsense). `adminApprovePendingRequestClick()`'s `edit`
+  branch got a matching `c.field === 'start_date'` case so an AM
+  approving a companion-form date-only request posts the same comment
+  wording, rather than falling into the generic numeric-field branch
+  and calling `Number()` on a date string.
+- Verified via a standalone Node harness: the one-time/mixed/flat/spend
+  classification test against Test Business 9's real 4-service mix plus
+  a synthetic fee+recurring mixed case, confirming the mixed case
+  correctly falls through to the unchanged existing behavior, not the
+  new one-time-only path. `node --check` on both files' extracted
+  scripts.
+- Not yet tested end-to-end live (needs a real one-time-cost service to
+  click through on both the companion form and Admin's Order Detail).
