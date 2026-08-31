@@ -21719,3 +21719,30 @@ computation to unit-test, just comparing two rendering functions'
 literal output strings side by side), cross-checking every column
 (Fee/Amount, Recurring, Flight, Notes) between `buildReview()` and
 `printIO()` for divergence. Not yet re-tested live.
+
+---
+
+## 2026-08-31 (cont'd) — Dropped the redundant "— varies by month" text label
+
+Claire: "I think we could also remove the 'varies by month' since it
+will show the monthly breakdown. Don't you think?" Checked first: yes —
+`buildReview()`/`printIO()` both unconditionally show the real
+month-by-month table directly below any varying-spend line, so the
+"varies by month" text sitting next to the total was telling the reader
+something the table immediately underneath it already shows.
+
+Also checked every OTHER place this same concept is displayed, since
+Claire's actual ask was really "is this consistent" — turns out
+`shared.js`'s Order Detail modal already dropped this exact text back on
+2026-08-28 (just shows the real total, no label), and the Trello
+description builder (`formatSiblingLineItems()`) never carried a bare
+label either — it always paired the total with the real per-month lines
+directly. So `buildReview()`/`printIO()` were the only two places still
+carrying the redundant text; everywhere else already matched what
+Claire's asking for.
+
+**Fixed**: removed the "— varies by month" suffix from both
+`buildReview()`'s and `printIO()`'s varying-spend total display — now
+just shows `"$X total"`, letting the table do the explaining. Confirmed
+via grep that zero remaining occurrences of this text exist outside code
+comments.

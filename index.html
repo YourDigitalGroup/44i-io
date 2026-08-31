@@ -4749,8 +4749,14 @@ function buildReview() {
       // a concrete total the month-by-month table right below can be
       // checked against, rather than an average of numbers nobody actually
       // spent in any single month.
+      // "— varies by month" text dropped (2026-08-31, per Claire — "we could
+      // also remove the 'varies by month' since it will show the monthly
+      // breakdown"): the table is always shown right below this line, so the
+      // label was telling the reader something the table already shows.
+      // Matches shared.js's Order Detail modal, which made this exact same
+      // call back on 2026-08-28 and never carried the text at all.
       amtDisplay = variesByMonth
-        ? `${fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0))} total — <span style="color:var(--accent-dark);font-weight:700">varies by month</span>`
+        ? `${fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0))} total`
         : fmt(data.spend) + '/mo campaign';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
@@ -6962,8 +6968,11 @@ function buildIoDocumentHtml() {
         // Real campaign total instead of "/mo avg" (2026-08-28, per Claire,
         // same consistency fix as buildReview()/Trello/Order Detail) -- this
         // is the signed contract document, so it needs to match those.
+        // "— varies by month" text dropped (2026-08-31, same call as
+        // buildReview()'s identical fix just above) — the breakdown table
+        // right below already shows it varies.
         amtCol = variesByMonth
-          ? (fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0)) + ' total — varies by month')
+          ? (fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0)) + ' total')
           : (fmt(data.spend) + '/mo campaign');
       } else if (data.is_cpm_adjustment) {
         // Explicit "No Charge" rather than falling through to "TBD" — this is a signed
