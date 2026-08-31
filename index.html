@@ -4890,7 +4890,12 @@ function buildReview() {
     // formatISOToMMDDYY() converts back for display, same helper the date inputs
     // themselves use).
     const flightDisplay = flightDisplayFor(id, data, formatISOToMMDDYY);
-    rows.push(`<tr><td class="rs-service">${esc(data.label)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
+    // Resolved "Which one is it?" variant name (2026-08-31, per Claire — this
+    // already resolved correctly on the Trello card title; now shown here too
+    // instead of the raw combined catalog label, so an AE can actually see
+    // their pick took effect before submitting).
+    const displayLabel = resolveVariantDisplayName(id, data.tacticVariant, data.label);
+    rows.push(`<tr><td class="rs-service">${esc(displayLabel)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Real per-month breakdown (2026-08-20) -- reuses the SAME read-only
     // table renderMonthPreviewTable() already builds for Step 2's own
     // preview, so the numbers the AE reviews here are pixel-identical to
@@ -5772,26 +5777,14 @@ async function submitIO() {
         // Returns the original fallback name unchanged when no variant was picked, so a
         // service with tactic_variants configured but left blank behaves exactly as it
         // did before this existed.
-        // Whether a stored variant string is ALREADY a complete display title -- not just
-        // "contains a colon" (2026-08-21, widened per Claire: "Addressable: Curated"
-        // should read "Location Targeting - Curated Addressable" instead, which has no
-        // colon at all). A colon still counts (e.g. "Addressable: 1st Party", "Targeted
-        // Display: AdRT" -- these belong to a DIFFERENT real-world category than the
-        // section selling them, so the colon-punctuated prefix has to stay exactly as
-        // typed). Also now counts a variant that already STARTS WITH any real section's
-        // own display name, however it's punctuated -- covers "Location Targeting - ..."
-        // without reintroducing a double prefix.
-        function variantIsAlreadyComplete(variant) {
-          if (variant.includes(':')) return true;
-          return SECTIONS.some(s => s.label && variant.toLowerCase().startsWith(s.label.toLowerCase()));
-        }
+        // Name-resolution logic itself (variantIsAlreadyComplete()/the section-label
+        // prefixing) now lives in the shared, top-level resolveVariantDisplayName() —
+        // this just finds which line item in THIS workflow carries a picked variant,
+        // same as always.
         function resolveTacticVariantName(originalWorkflow, fallbackName) {
           const li = lineItems.find(li => li.workflow === originalWorkflow && li.tactic_variant);
           if (!li) return fallbackName;
-          const variant = li.tactic_variant;
-          if (variantIsAlreadyComplete(variant)) return variant;
-          const sectionLabel = SECTIONS.find(s => s.id === CATALOG_ROWS[li.service_id]?.section)?.label;
-          return sectionLabel ? `${sectionLabel}: ${variant}` : variant;
+          return resolveVariantDisplayName(li.service_id, li.tactic_variant, fallbackName);
         }
 
         // Lists every sold line item sharing a workflow (2026-07-13) — so a small add-on
@@ -7232,7 +7225,11 @@ function buildIoDocumentHtml() {
       const flightDisplay = flightDisplayFor(id, data, iso => iso
         ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'})
         : '');
-      sectionRows += `<tr><td class="svc-name">${esc(data.label)}</td><td class="svc-amt">${amtCol}</td><td class="svc-flight">${esc(flightDisplay)}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
+      // Resolved "Which one is it?" variant name (2026-08-31, per Claire — same
+      // consistency fix as buildReview(), so the signed contract shows the same
+      // specific name the AE picked, not the raw combined catalog label).
+      const printDisplayLabel = resolveVariantDisplayName(id, data.tacticVariant, data.label);
+      sectionRows += `<tr><td class="svc-name">${esc(printDisplayLabel)}</td><td class="svc-amt">${amtCol}</td><td class="svc-flight">${esc(flightDisplay)}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
       // Real per-month breakdown on the printed/signed document too (2026-08-20)
       // -- same reuse of renderMonthPreviewTable() as buildReview(), so the
       // contract shows the identical numbers the AE reviewed on Step 3.
@@ -8192,6 +8189,34 @@ function friendlyWorkflowName(w) {
   if (!w || !w.startsWith('__standalone__')) return w;
   const id = w.slice('__standalone__'.length);
   return CATALOG_ROWS[id]?.label || id;
+}
+
+// "Which one is it?" variant name resolution (2026-08-21, moved to top level
+// 2026-08-31 per Claire — confirmed she remembered this correctly resolving
+// the Trello CARD TITLE before, but expected the same specific name on Step 3
+// and the printed IO too, and neither ever showed it: this logic previously
+// lived only inside submitIO(), as a closure over `lineItems`/`SECTIONS`, so
+// only the Trello card title could ever call it — buildReview()/printIO() had
+// no access to it at all, not a regression, just never built there). Moved
+// here (both buildReview() and printIO() run outside submitIO()'s scope) and
+// split into two pieces: variantIsAlreadyComplete() (unchanged logic) and
+// resolveVariantDisplayName(), which takes a service id + its chosen variant
+// string directly rather than searching `lineItems` by workflow — Step 3/
+// Print already have the specific row's own data in hand, they don't need
+// submitIO()'s per-workflow lookup at all. submitIO()'s own
+// resolveTacticVariantName() (below, in the submit flow) now delegates to
+// this same function once it's found the relevant line item, so both the
+// Trello card title and Step 3/Print always resolve a variant identically —
+// one source of truth, not two copies that could drift.
+function variantIsAlreadyComplete(variant) {
+  if (variant.includes(':')) return true;
+  return SECTIONS.some(s => s.label && variant.toLowerCase().startsWith(s.label.toLowerCase()));
+}
+function resolveVariantDisplayName(serviceId, variant, fallbackName) {
+  if (!variant) return fallbackName;
+  if (variantIsAlreadyComplete(variant)) return variant;
+  const sectionLabel = SECTIONS.find(s => s.id === CATALOG_ROWS[serviceId]?.section)?.label;
+  return sectionLabel ? `${sectionLabel}: ${variant}` : variant;
 }
 
 // One services-table row → a SERVICE_DATA entry. Reverses the migration
