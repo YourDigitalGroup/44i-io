@@ -22091,3 +22091,51 @@ but still failed on a real phone) — needs Claire to confirm live,
 ideally on the same device/browser where she saw the see-through
 effect, that the header now reads as a solid, opaque bar while
 scrolling.
+
+---
+
+## 2026-08-31 (cont'd) — Claire still saw the same overlap after the will-change fix ("Nope"); traced to a likely CDN/host caching issue, not a code bug
+
+Given three consecutive fixes to this exact spot hadn't visibly changed
+anything for Claire, stopped reasoning about it blind and actually
+tested it: extracted the exact current CSS + the exact HTML structure
+`buildReview()` generates for an expanded varying campaign (a synthetic
+copy of the Facebook & Instagram/Snapchat scenario from her
+screenshots) into a standalone file, and rendered it in a real headless
+Chromium via Playwright, screenshotting at several scroll positions
+(0px, 80px, 150px, 250px). Every single one rendered correctly — the
+sticky column header stays solid and opaque, the data row scrolls
+cleanly out of view behind it, and the nested month-breakdown table's
+own header takes over with no overlap anywhere.
+
+This is strong evidence the code itself (as of commit `9bb41d3`, merged
+to `main` via PR #378) is NOT the problem — confirmed via
+`git merge-base --is-ancestor` that this branch's latest commit is
+actually an ancestor of `origin/main`, so the fix genuinely has been
+merged.
+
+**Suspected real cause**: this project's OWN deploy history
+(`.github/workflows/deploy.yml`) already documents a caching bug on this
+exact host — back on 2026-07-30, `shared.js`/`shared.css` needed a
+`?v=<timestamp>` cache-busting query string added on every deploy
+because "a caching layer in front of io.yourdigitalgroupresources.com
+(CDN or the host's own server-side cache) can keep serving an old
+shared.js indefinitely regardless of how many times a user hard-
+refreshes their OWN browser." That fix was deliberately scoped to only
+`admin/index.html` and `strategist/index.html` (the two pages that load
+`shared.js`/`shared.css`) — `index.html` (the file all of today's fixes
+are in) was left out, with the stated reasoning being just "it doesn't
+load shared.js," which doesn't actually rule out `index.html` ITSELF
+being subject to the same upstream cache. Given the same host almost
+certainly serves `index.html` through the identical caching layer,
+Claire is very likely looking at a stale cached copy of the page, not
+today's actual fixes.
+
+**Not yet fixed** — asked Claire to test in a private/incognito window
+(bypasses her own browser cache entirely) to distinguish: if it renders
+correctly there, it confirms this was purely her own browser's cache; if
+it's still broken there too, the fix is to extend the exact same
+`?v=<timestamp>` cache-busting approach to `index.html` itself in
+`deploy.yml`. Holding off on making that deploy-config change until her
+answer confirms which one it is, rather than guessing at infrastructure
+changes.
