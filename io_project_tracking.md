@@ -21515,3 +21515,79 @@ safer than assuming). Plus the updated `admin_save_service` function
 (full corrected version given directly to Claire, replaces the version
 delivered for the KOC fields — adds `trello_suffix_text` on top of
 everything already there).
+
+---
+
+## 2026-08-31 (cont'd) — Website Modules: named multi-select on a per_unit line, keeping the PDF unchanged
+
+Claire: "Modules needs to act similar to our OR services where you pick
+which one, but this one you can pick multiple." Pulled `w-module`'s real
+row via a SQL audit before designing anything: it's `pricing_mode:
+per_unit`, `default_price: 750`, `unit_label: 'each'` — today the AE
+just types a raw quantity of anonymous "modules" with no record of which
+5 (Newsletter, Photo/Video, Testimonial, News/Blog, Calendar) were
+actually meant. Confirmed the design directly with Claire: "I want to
+try and keep this as close to the PDF IO that we currently use... based
+on the amount of them they pick it updates the number for the per
+unit" — i.e. `w-module` stays exactly one line item, same $750/unit
+pricing/PDF layout, but the quantity comes from a named checklist
+instead of a typed number, and which ones were picked shows on both the
+printed IO and the Trello card.
+
+**Built (`index.html`)**: new `qty_option_labels` column (jsonb array of
+names) — checked in the fee-cell rendering BEFORE the existing
+`qty_preset_options` dropdown logic, since a service wouldn't sensibly
+carry both. When present, the quantity box becomes a read-only running
+count plus a "▾ Choose" link that opens a checklist row below (reusing
+the exact `insertAdjacentHTML('afterend', ...)` expandable-row pattern
+already established by the Whole-Campaign-Total budget detail row).
+`onModuleCheckboxChange()` adds/removes the picked name, sets
+`qty = moduleNames.length`, and writes `notes = "Selected: X, Y"` —
+deliberately reusing the row's EXISTING Notes field rather than
+inventing new plumbing, since Notes already flows into both the printed
+IO (`notesDisplay` in the print template) and the Trello card
+description (`formatSiblingLineItems()`) with zero additional code.
+Toggling the box syncs three things directly: a hidden `.qty-field`
+input (so every existing generic "read qty off this row" helper —
+`syncRowInputs()`, `buildDraft()`, etc. — keeps working completely
+unchanged, same trick already used for the quarter-hour preset
+dropdown), the visible running-count span, and the Notes textarea
+itself.
+
+**Also fixed**: checking the row now starts `qty` at 0 (not the normal
+per_unit default of 1) and auto-opens the checklist immediately, same
+"not discoverable otherwise" precedent as the budget detail row; a new
+submission-time guard blocks with a toast if the box is checked but
+nothing was actually picked from the checklist (mirrors every other
+required-selection check already on this form); and the draft
+save/restore path explicitly re-syncs the checklist/visible count on
+restore, since draft restoration sets `selected[id]` directly rather
+than going through the normal checkbox-click path that would otherwise
+trigger this automatically.
+
+**No admin UI field needed** — confirmed `qty_preset_options` (the
+closest existing precedent, used for Optional Content Support's
+quarter-hour billing) has no admin editor field either; it's set once
+directly via SQL since it's a rare, single-service mechanism. Doing the
+same here rather than building a UI for something that likely only ever
+applies to this one row.
+
+**Verified**: a standalone harness confirmed picking two modules
+produces the right quantity and notes text in pick order; unchecking one
+drops both correctly; unchecking the last one clears notes entirely
+(not a bare "Selected: " with nothing after it); checking the same name
+twice doesn't duplicate it; all 5 picked produces qty=5; and the
+submission-guard simulation blocks when checked-but-empty, passes once
+at least one is picked, and leaves every other per_unit service (real
+typed quantities) completely unaffected. 8/8 passing. `node --check`
+passes on the extracted script. Not yet tested live — needs the SQL run,
+then a real order checking a few modules to confirm the checklist,
+running count, printed IO, and Trello description all show the same
+picked names.
+
+**SQL needed**:
+```sql
+alter table services add column if not exists qty_option_labels jsonb;
+update services set qty_option_labels = '["Newsletter","Photo/Video","Testimonial","News/Blog","Calendar"]'::jsonb
+where id = 'w-module';
+```

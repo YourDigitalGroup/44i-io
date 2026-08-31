@@ -3640,11 +3640,19 @@ function toggle(cb, id) {
     // calc treats (data.qty || 1) as a safe no-op multiplier — existing behavior for
     // non-per-unit items is unchanged.
     if (CATALOG_ROWS[id]?.pricing_mode === 'per_unit') selected[id].qty = 1;
+    // Named multi-select modules (2026-08-31, per Claire — Website Modules:
+    // "pick any of the 5 options... each cost money to do it"). qty here means
+    // "how many were actually picked," so it starts at 0 (nothing picked yet)
+    // rather than the normal per_unit default of 1 — the checklist below is
+    // what drives it up, same "auto-open, not discoverable otherwise"
+    // precedent as the budget detail row right below this.
+    if (CATALOG_ROWS[id]?.qty_option_labels) { selected[id].qty = 0; selected[id].moduleNames = []; }
     row.classList.add('selected');
     // Budget entry form states (2026-08-20) — auto-open as soon as a spend-
     // priced row is checked, per Claire, rather than waiting for a spend
     // value too (an AE may open the toggle before typing an amount).
     if (CATALOG_ROWS[id]?.pricing_mode === 'spend') ensureBudgetDetailOpen(id);
+    if (CATALOG_ROWS[id]?.qty_option_labels) ensureModuleDetailOpen(id);
 
     // Website OTO ↔ MRR mutual exclusivity
     if (WEB_OTO.includes(id)) {
@@ -3945,6 +3953,68 @@ function renderBudgetDetailRow(id) {
     <div style="margin-top:8px"><a href="#" onclick="event.preventDefault();expandCustomizeByMonth('${esc(id)}')" style="font-size:11.5px;font-weight:700;color:var(--accent-dark);text-decoration:none">▾ Customize by month (skip a month, or use a different amount for one)</a></div>
     ${data.customizingMonths && plan.length ? renderMonthPreviewTable(plan, true, id) : ''}
   </td></tr>`;
+}
+
+// ── NAMED MULTI-SELECT MODULES (2026-08-31, per Claire) ──────────────────
+// "Couldn't we set it up similar to the 'or' services but allow them to pick
+// multiple, and based on the amount of them they pick it updates the number
+// for the per unit." Website Modules (id w-module) stays a normal per_unit
+// service — same $ price, same fee = price × qty math every other per_unit
+// service already uses — but instead of a free-typed quantity, `qty_option_labels`
+// (a jsonb array of names on the service row) swaps in a checklist of named
+// options; qty becomes "how many are checked," not a typed number, and the
+// checked names get written into this row's own Notes field (already flows
+// into both the printed IO and the Trello card description with zero extra
+// plumbing — see notesDisplay in the print template and formatSiblingLineItems()).
+function moduleOptionLabels(id) {
+  const raw = CATALOG_ROWS[id]?.qty_option_labels;
+  if (!raw) return [];
+  const arr = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return Array.isArray(arr) ? arr : [];
+}
+function renderModuleDetailRow(id) {
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const colCount = row ? row.children.length : 6;
+  const data = selected[id] || {};
+  const chosen = data.moduleNames || [];
+  const options = moduleOptionLabels(id);
+  return `<tr id="module-detail-${esc(id)}"><td colspan="${colCount}" style="background:var(--light);padding:10px 14px">
+    <p style="font-size:11.5px;font-weight:700;color:var(--text);margin-bottom:8px">Which module(s)? (pick any number — the quantity above updates automatically)</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px 18px">
+      ${options.map(name => `<label style="font-size:12.5px;display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" ${chosen.includes(name) ? 'checked' : ''} onchange="onModuleCheckboxChange('${esc(id)}','${esc(name)}',this.checked)"/> ${esc(name)}</label>`).join('')}
+    </div>
+  </td></tr>`;
+}
+function ensureModuleDetailOpen(id) {
+  if (document.getElementById('module-detail-' + id)) return;
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  if (!row) return;
+  row.insertAdjacentHTML('afterend', renderModuleDetailRow(id));
+}
+function toggleModuleDetail(id) {
+  const existing = document.getElementById('module-detail-' + id);
+  if (existing) { existing.remove(); return; }
+  ensureModuleDetailOpen(id);
+}
+function onModuleCheckboxChange(id, name, checked) {
+  const data = selected[id];
+  if (!data) return;
+  data.moduleNames = data.moduleNames || [];
+  if (checked && !data.moduleNames.includes(name)) data.moduleNames.push(name);
+  else if (!checked) data.moduleNames = data.moduleNames.filter(n => n !== name);
+  data.qty = data.moduleNames.length;
+  data.notes = data.moduleNames.length ? `Selected: ${data.moduleNames.join(', ')}` : '';
+  // Keep every DOM element that mirrors this state in sync — the hidden
+  // .qty-field (so every EXISTING generic "read qty off the row" code path,
+  // e.g. syncRowInputs()/buildDraft(), keeps working completely unchanged),
+  // the visible running count next to the fee, and the Notes textarea itself.
+  const row = document.querySelector(`tr[data-id="${id}"]`);
+  const qtyField = row?.querySelector('.qty-field');
+  if (qtyField) qtyField.value = data.qty;
+  const qtyDisplay = document.getElementById('module-qty-display-' + id);
+  if (qtyDisplay) qtyDisplay.textContent = data.qty;
+  const notesField = row?.querySelector('textarea.notes-field');
+  if (notesField) { notesField.value = data.notes; if (typeof autoGrowNotesField === 'function') autoGrowNotesField(notesField); }
 }
 
 function updateSpend(input, id) {
@@ -5052,6 +5122,19 @@ async function submitIO() {
         showToast('Please enter the date you booked for the specialist\'s Kick-Off Call', 'error');
         btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
         document.getElementById('koc-date-specific')?.focus();
+        return;
+      }
+    }
+
+    // Named multi-select modules (2026-08-31) — checking the row means "I want
+    // at least one," same as every other required selection on this form; a
+    // qty of 0 (box checked, nothing actually picked from the checklist) would
+    // otherwise silently submit as a free $0 line item.
+    for (const id of Object.keys(selected)) {
+      if (CATALOG_ROWS[id]?.qty_option_labels && !(selected[id].qty > 0)) {
+        showToast(`Please pick at least one option for ${CATALOG_ROWS[id]?.label || id} before submitting`, 'error');
+        btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+        document.querySelector(`tr[data-id="${id}"]`)?.scrollIntoView({behavior:'smooth', block:'center'});
         return;
       }
     }
@@ -7505,6 +7588,16 @@ function loadDraft() {
           cb.checked = true;
           selected[id] = data;
           row.classList.add('selected');
+          // Named multi-select modules (2026-08-31) — restoring a draft sets
+          // `selected[id]` directly rather than going through toggle(), so the
+          // checklist row and its visible running count need to be explicitly
+          // (re)synced here; the checkboxes' checked state comes for free once
+          // ensureModuleDetailOpen() renders since it reads selected[id].moduleNames.
+          if (CATALOG_ROWS[id]?.qty_option_labels) {
+            ensureModuleDetailOpen(id);
+            const qtyDisplay = document.getElementById('module-qty-display-' + id);
+            if (qtyDisplay) qtyDisplay.textContent = data.qty || 0;
+          }
         }
         // Restore this row's own flight dates (2026-08-06) — not covered by the generic
         // spendValues/qtyValues restore blocks below since those target class-matched
@@ -8304,12 +8397,24 @@ function renderPriceCells() {
       // col.c-fee comment above; ~76px usable now, so this can go back to a
       // comfortably readable size instead of the too-tight 44px that made it look
       // like a tiny sliver next to the rest of the row).
-      const qtyControl = (Array.isArray(presetOptions) && presetOptions.length)
+      // Named multi-select modules (2026-08-31, per Claire — see the JS-side
+      // comment block near renderModuleDetailRow() for the full mechanism):
+      // `qty_option_labels` takes priority over qty_preset_options — a service
+      // wouldn't sensibly carry both. The quantity here is READ-ONLY (a running
+      // count, not a typed/picked value of its own) since it's fully derived
+      // from the checklist below; ".qty-field" is a hidden input purely so
+      // every existing generic "read qty off the row" helper keeps working
+      // unchanged, same trick already used for presetOptions above.
+      const namedOptions = moduleOptionLabels(id);
+      const qtyControl = namedOptions.length
+        ? `<span id="module-qty-display-${esc(id)}">${selected[id]?.qty || 0}</span><input type="hidden" class="qty-field" value="${selected[id]?.qty || 0}"/>`
+        : (Array.isArray(presetOptions) && presetOptions.length)
         ? `<select class="qty-field" onchange="updateQty(this,'${esc(id)}')" style="width:58px;padding:2px 3px;font-size:11px;border:1px solid var(--border);border-radius:5px" title="Quantity">
             ${presetOptions.map(h => `<option value="${h}" ${h === 1 ? 'selected' : ''}>${esc(qtyOptionLabel(h))}</option>`).join('')}
           </select>`
         : `<input type="number" class="qty-field" min="1" value="1" onchange="updateQty(this,'${esc(id)}')" style="width:36px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity"/>`;
-      feeTd.innerHTML = `<div>${esc(fee)}</div><div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> ${qtyControl}</div>`;
+      feeTd.innerHTML = `<div>${esc(fee)}</div><div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> ${qtyControl}</div>` +
+        (namedOptions.length ? `<div style="margin-top:2px"><a href="#" onclick="event.preventDefault();toggleModuleDetail('${esc(id)}')" style="font-size:10px;font-weight:700;color:var(--accent-dark);text-decoration:none">▾ Choose</a></div>` : '');
     } else {
       feeTd.textContent = fee;
     }
