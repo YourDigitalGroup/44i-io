@@ -21746,3 +21746,224 @@ Claire's asking for.
 just shows `"$X total"`, letting the table do the explaining. Confirmed
 via grep that zero remaining occurrences of this text exist outside code
 comments.
+
+---
+
+## 2026-08-31 (cont'd) — KOC card layout reordered to pair each calendar with its own date/time fields
+
+Both calendars confirmed working live (Carol's info had actually saved
+this time). Claire: "Could we make this look a little cleaner? Maybe
+move the AM date and time under that calendar and then the Carol Oren
+one is right under that link?" — the card was grouping BOTH calendar
+links first, then BOTH date/time blocks after, so the AM's "Step 2"
+fields sat visually far from her own calendar button, right above
+Carol's still-locked "Step 2b" fields.
+
+**Fixed (`index.html`)**: pure markup reorder, no JS touched — moved
+`koc-datetime-section` (the general AM's date/time block) to sit
+directly after the AM's calendar link/confirmation text, BEFORE
+`koc-specific-am-list` (Carol's calendar link) and its own
+`koc-datetime-section-specific` block. Now reads calendar → its own
+date/time → next calendar → its own date/time, instead of both
+calendars then both date/time blocks. All four elements are static
+markup (not dynamically inserted/reordered by JS), so this is zero-risk
+to the actual KOC logic — confirmed each id still appears exactly once
+after the move.
+
+---
+
+## 2026-08-31 (cont'd) — Step 3 summary table columns now line up section to section
+
+Claire: "the columns between services is still messy, do you see how
+things don't line up and how some of the text wraps funny? I think the
+print IO looks good." Root cause: each section on Step 3 renders its own
+SEPARATE `<table>`, and without `table-layout:fixed`, a browser sizes a
+table's columns purely from that ONE table's own content — so the exact
+same Fee/Recurring/Flight/Notes columns landed at a different pixel
+width in every section depending on how long THAT section's service
+names happened to be. A long label (the Modules line, "Newsletter,
+Photo/Video, Testimonial...") could squeeze Flight too narrow in that
+one section to fit a date without wrapping mid-string ("11/21/2" then
+"6" on its own line) — while a short-label section right above it showed
+Flight at a comfortably wide, different size.
+
+**Fixed (`index.html`)**: added an explicit `<colgroup>` (Fee 110px,
+Recurring 130px, Flight 150px, Notes 160px, Service gets whatever's
+left) plus `table-layout:fixed` and a bumped `min-width:720px` (up from
+560px, since the 4 fixed columns alone total 550px — the floor now
+leaves Service the same 170px Step 2's own Service column already
+uses). Applied inline on this specific table only, NOT as a change to
+the shared `.summary-table` CSS class, since that class is also reused
+by the differently-shaped Agent/County Split table (Agent/County/
+Service/Flight/Amount) which must stay completely unaffected.
+
+**Confirmed safe on mobile**: the existing mobile responsive rules
+already convert this table into a stacked-card layout (`display:block`
+on every table element, `table-layout` becomes moot once `display` is
+overridden away from table semantics entirely) with its own
+`min-width:0 !important` specifically to prevent a stale desktop
+min-width from leaving blank space to scroll into (a bug Claire found
+and fixed once already, 2026-08-07) — this new inline style can't
+regress that, since `!important` in the mobile media query wins
+regardless, and `table-layout` has zero visual effect once cells are
+`display:block` anyway.
+
+**Verified**: `node --check` passes on the extracted script. Not yet
+tested live — needs Claire to re-check Step 3 across a few sections with
+genuinely different-length service names to confirm every section's
+Fee/Recurring/Flight/Notes columns now actually align.
+
+---
+
+## 2026-08-31 (cont'd) — The real Social Media Ads bug: the column header row was never sticky at all
+
+Claire, with a screenshot: "either the Service, Fee Recurring, Flight
+and Notes Header doesn't stick." This is the actual root cause of the
+"overlap" reported earlier today — NOT the border-collapse rendering
+flicker (that fix stands, it was a real separate issue, just not this
+one). Only `.rs-section-head` (the "SOCIAL MEDIA ADS" title bar) was
+ever `position:sticky`; the real column-label row (`<thead>`:
+Service/Fee/Recurring/Flight/Notes) was plain, non-sticky content that
+scrolled away with the rest of the table. Past the first screenful, you
+see the section title pinned at the top with a data row (Facebook &
+Instagram's own summary line) butted directly against it and no column
+labels anywhere in between — reading exactly like an overlap, since
+there's nothing separating "the sticky title" from "whatever row
+happens to have scrolled up underneath it."
+
+**Fixed (`index.html`)**: made the thead row ALSO sticky, stacked
+directly below the section title. Two stacked sticky elements need a
+KNOWN height to stack at without covering each other, so
+`.rs-section-head` changed from padding-driven auto height to an
+explicit `height:32px` (flex-centered, same visual result), and
+`.summary-table th` now sticks at `top:32px` — exactly the section
+head's own height, so there's no gap and no overlap between them.
+z-index 3 (section head) vs. 2 (column labels) so the title always wins
+if the two ever compete. Confirmed this one rule correctly covers BOTH
+the per-section services table AND the Agent/County Split table (which
+reuses the identical `.rs-section-scroll`/`.rs-section-head`/
+`.summary-table` structure) — no second version needed. Confirmed
+harmless against the mobile responsive rules, which already set
+`.summary-table thead{display:none}` entirely (replaced by the existing
+`::before` stacked-label technique there), so this new desktop-only
+stickiness has nothing to conflict with on mobile.
+
+**Verified**: pure CSS, `node --check` doesn't apply; confirmed the
+edited block is well-formed by direct re-read. Not yet tested live —
+needs Claire to scroll a multi-row section (Social Media Ads is the
+exact one she flagged) and confirm the column labels now stay visible
+the whole time, stacked cleanly under the section title with no overlap.
+
+---
+
+## 2026-08-31 (cont'd) — Dropped "campaign" from spend-based amounts; found a related Review/Print wording mismatch
+
+Claire: "For the location targeting and similar services do you think we
+could drop the 'campaign' in the print IO?" Agreed and applied to BOTH
+Review and Print (not print alone), since a one-sided change would have
+created a new Review/Print mismatch — the same category of issue fixed
+several times already today. `fmt(data.spend) + '/mo campaign'` →
+`fmt(data.spend) + '/mo'` in both `buildReview()` and `printIO()`'s
+spend-only branch.
+
+**Found while doing this**: `printIO()`'s combo branch (an item with
+BOTH a flat recurring fee AND ad spend on one line) said "campaign,"
+but `buildReview()`'s identical case already said "spend" — a real,
+pre-existing divergence never caught until acting on this specific
+request. Aligned Print to Review's existing wording ("spend," not
+deleted outright) since it's disambiguating which of the two dollar
+figures on that one combined line is the flat fee vs. the variable ad
+spend — unlike the plain spend-only case, there's a real reason to keep
+a word there.
+
+**Verified**: `node --check` passes on the extracted script. Grepped for
+any remaining `/mo campaign` text — zero live occurrences, only
+historical mentions inside comments.
+
+**Also flagged, not yet acted on**: Claire separately noted the SECTION
+SUBTOTAL line (e.g. Social Media Ads showing "$2,000/mo") is confusing.
+Diagnosed why: `sectionMonthly` sums `data.spend` for every item
+uniformly, but for a varying-by-month campaign `data.spend` is the
+AVERAGE (Facebook & Instagram's $2,500 over ~5 months, Snapchat's
+$1,500 over ~2 months) — summing two averages from campaigns that don't
+even run the same number of months and labeling the result "/mo"
+doesn't correspond to any real number. This is the same "misleading
+average" class of bug fixed everywhere else this session, just missed
+at the subtotal level. Proposed splitting the subtotal into genuinely
+flat "$X/mo" plus a separate "$Y total" for varying campaigns, matching
+every other fix today — but flagged that the page-level GRAND TOTAL (top
+of Step 3 and the printed IO) has the exact same underlying issue and is
+more consequential/visible, so held off making any change here pending
+Claire's decision on whether to fix both together or just the section
+subtotals for now.
+
+---
+
+## 2026-08-31 (cont'd) — Fixed the "misleading average" totals bug everywhere it existed, and dropped "First Month Total"
+
+Claire answered "Whatever you think would be the most clear" on the
+subtotal question above. Rather than fix only the Social Media Ads
+subtotal she specifically flagged, fixed the same root cause in all
+THREE places it existed — leaving the other two would have just moved
+the same confusion somewhere else:
+
+1. **`buildReview()`'s Step 3 totals-bar** — `oneTime`/`monthly` no
+   longer blend a varying campaign's `data.spend` (an average) into
+   "monthly." A new `varyingTotal` accumulator sums each varying
+   campaign's REAL total instead, shown in a new totals-bar tile
+   ("Varying Campaign Total") that's hidden entirely when nothing on the
+   order varies.
+2. **`printIO()`'s section subtotals AND grand totals-box** — identical
+   fix: each section's subtotal line now shows up to three parts
+   ("$X one-time" + "$Y/mo" + "$Z total (varying campaigns)") instead of
+   one blended "/mo" figure, and the grand totals-box gets the same
+   three-way split.
+3. **`submitIO()`'s Trello/email order-summary text** — same split
+   applied to the `**Monthly Recurring:**` line feeding the Trello card
+   and confirmation email; added a `**Varying Campaign Total:**` line
+   (shown only when one exists) so that text matches what Step 3 and the
+   printed IO now show.
+
+All three share one new helper, `monthPlanVariesAndTotal(monthPlan)`
+(added near `splitAmountAcrossMonths()`), since `selected[id].monthPlan`
+(internal state) and a line item's `month_budgets` (submitted order
+shape) are structurally identical arrays of `{month, amount, paused}`
+under different field names — one function covers both call shapes.
+Returns `{varies, total}`: `varies` is true only when the plan has more
+than one month AND the amounts actually differ; `total` is the real sum
+across months (only meaningful when `varies` is true — callers fall
+back to the existing flat `data.spend`/`li.spend` otherwise, which is
+already correct for non-varying items).
+
+**Also removed, per a related question Claire raised mid-fix**: "Should
+we remove that First month and then recurring month totals since now
+the flight dates can differ for each service?" `printIO()`'s "First
+Month Total" grand row and its "Subsequent months: $X/mo" note both
+assumed every service on an order shares one shared start date — no
+longer true now that per-service Flight dates exist (this session,
+earlier). Agreed and removed both entirely rather than trying to compute
+a "more correct" first-month figure; replaced with the three standalone
+category rows above (One-Time / Monthly Recurring / Varying Campaign
+Total) plus a plain note pointing to each line's own Flight column:
+"See each service's own Flight dates above for when its billing actually
+starts — services on this IO may not all begin the same month." This
+also made a `firstMonthVaryingTotal` accumulator (added earlier in this
+same edit specifically to feed the now-deleted row) dead code; removed
+it along with its accumulation line and its explanatory comment.
+
+**Verified**: `node --check` passes on the extracted script. Wrote a
+standalone Node harness (`verify_totals.js`) simulating all three
+functions' accumulation logic against fixtures mixing flat fees, flat
+recurring, flat spend, and a genuinely-varying multi-month spend plan
+(3 months: $200/$800/$1,500, average $833.33/mo) — confirmed in every
+location the varying campaign's real $2,500 total is surfaced
+separately and never blended into the "$X/mo" figure, that a
+non-varying plan is correctly excluded from the varying bucket, and
+that `submitIO()`'s Trello/email text includes the new
+"Varying Campaign Total" line only when one exists (confirmed absent
+for an order with no varying campaigns, for backward compatibility with
+every existing order's summary text). Grepped for leftover "First Month
+Total"/`firstMonthVaryingTotal` references after removal — none found.
+Not yet tested live in the browser — needs Claire to run through Step 3
+and the Print/Trello output on an order with at least one genuinely
+varying campaign to confirm the new breakdown reads clearly.

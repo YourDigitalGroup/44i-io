@@ -558,7 +558,17 @@ select.qty-field{background-image:none;padding-right:3px}
    scrollport, not the page. (A sticky element can only stick relative to its
    nearest ancestor that's an actual scroll container -- see io_project_tracking.md
    for the earlier, failed attempt that got this backwards.) */
-.rs-section-head{position:sticky;top:0;z-index:2;background:var(--light);padding:8px 14px;font-size:10.5px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
+/* height:32px + flex (2026-08-31, was padding:8px 14px with an auto height) —
+   found live by Claire: "the Service, Fee Recurring, Flight and Notes Header
+   doesn't stick" — only THIS section title bar was ever sticky; the actual
+   column-label row (<thead>, below) just scrolled away with the rest of the
+   table, so past the first screenful you'd see this title pinned at the top
+   with a data row butted right up against it and no column labels anywhere,
+   reading as "the header doesn't stick"/an overlap. A fixed, known height
+   here is what lets the thead below stick at an exact matching `top` offset
+   (see .summary-table thead th) — two stacked sticky elements need a known
+   height to stack at without one covering the other. */
+.rs-section-head{position:sticky;top:0;z-index:3;background:var(--light);height:32px;box-sizing:border-box;display:flex;align-items:center;padding:0 14px;font-size:10.5px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
 .rs-chevron{display:inline-block;width:10px}
 /* border-collapse:separate;border-spacing:0 (2026-08-31, found live by Claire —
    "the headers overlap" while scrolling within a section's box, specifically):
@@ -571,7 +581,16 @@ select.qty-field{background-image:none;padding-right:3px}
    collapse-specific rendering path entirely — same trick used to fix this
    exact class of bug in other browsers' table implementations. */
 .summary-table{width:100%;min-width:560px;border-collapse:separate;border-spacing:0;font-size:13px}
-.summary-table th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
+/* position:sticky;top:32px (2026-08-31, direct fix for "the header doesn't
+   stick") — stacks this column-label row directly below .rs-section-head's
+   own sticky bar (fixed at height:32px specifically so this offset lines up
+   exactly, no gap and no overlap). Both this table AND the Agent/County Split
+   table below reuse .summary-table + the identical .rs-section-scroll/
+   .rs-section-head wrapper structure, so this one rule correctly covers both
+   without needing a second, separate version. z-index:2, one below the
+   section head's 3, so the section head always wins if either ever needs to
+   render on top of the other. */
+.summary-table th{position:sticky;top:32px;z-index:2;padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
 .summary-table td{padding:9px 14px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
 .summary-table tr:last-child td{border-bottom:none}
 
@@ -900,6 +919,16 @@ select.qty-field{background-image:none;padding-right:3px}
     <div class="totals-bar" id="totals-bar">
       <div class="total-item"><div class="val" id="total-onetime">$0</div><div class="lbl">One-Time Total</div></div>
       <div class="total-item"><div class="val" id="total-monthly">$0/mo</div><div class="lbl">Monthly Recurring</div></div>
+      <!-- Varying-campaign tile (2026-08-31, per Claire — the Grand Total's
+           "Monthly Recurring" figure used to fold each varying-by-month
+           campaign's AVERAGE into this single "/mo" number, same misleading-
+           average issue fixed everywhere else this session, just missed at
+           the total-bar level. A varying campaign's real dollar figure is a
+           TOTAL, not a monthly rate, so it gets its own tile instead of being
+           blended in — hidden entirely (not just $0) when nothing on the
+           order actually varies by month, so a normal order looks completely
+           unchanged. -->
+      <div class="total-item" id="total-varying-wrap" style="display:none"><div class="val" id="total-varying">$0</div><div class="lbl">Varying Campaign Total</div></div>
       <div class="total-item"><div class="val" id="total-items">0</div><div class="lbl">Services Selected</div></div>
     </div>
 
@@ -927,14 +956,13 @@ select.qty-field{background-image:none;padding-right:3px}
           <p style="font-size:11px;color:var(--muted);margin-top:10px">A confirmation will be sent to you and the client once booked.</p>
         </div>
 
-        <!-- A tactic whose Kick-Off Call always involves one named person (2026-08-28,
-             per Claire + AM — Traditional Buying → Carol Oren) gets its own extra
-             calendar link here, alongside the AM's own above — not a replacement, since
-             an order can mix this tactic with others that still just need the AM. -->
-        <div id="koc-specific-am-list" style="margin-bottom:16px"></div>
-
-        <!-- Step 2: Enter date/time (locked until calendar is clicked) -->
-        <div id="koc-datetime-section" style="background:#F3F4F6;border-radius:10px;padding:14px 16px;opacity:0.4;pointer-events:none">
+        <!-- Step 2: Enter date/time (locked until calendar is clicked) — moved
+             directly under the AM's own calendar link (2026-08-31, per Claire —
+             "move the AM date and time under that calendar and then the Carol
+             Oren one is right under that link") so each calendar link and its
+             own date/time fields read as one paired unit, instead of grouping
+             every calendar link first and every date/time block after. -->
+        <div id="koc-datetime-section" style="background:#F3F4F6;border-radius:10px;padding:14px 16px;opacity:0.4;pointer-events:none;margin-bottom:16px">
           <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Step 2: Enter the date & time you booked</p>
           <p id="koc-lock-msg" style="font-size:11px;color:#92400E;margin-bottom:12px">⬆ Open the calendar above first to unlock these fields</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -961,6 +989,12 @@ select.qty-field{background-image:none;padding-right:3px}
             </div>
           </div>
         </div>
+
+        <!-- A tactic whose Kick-Off Call always involves one named person (2026-08-28,
+             per Claire + AM — Traditional Buying → Carol Oren) gets its own extra
+             calendar link here, alongside the AM's own above — not a replacement, since
+             an order can mix this tactic with others that still just need the AM. -->
+        <div id="koc-specific-am-list" style="margin-bottom:16px"></div>
 
         <!-- Step 2b: a fully separate date/time capture for the specific-person KOC
              (2026-08-28, per Claire — "We will need to have 2 separate KOC's") — an
@@ -3836,6 +3870,23 @@ function monthsInFlight(startDateStr, endDateStr) {
   }
   return months;
 }
+// Shared "is this genuinely varying, and if so what's its real total" check
+// (2026-08-31) — the exact same monthsVary/reduce logic was independently
+// duplicated at the per-line DISPLAY level in three places (buildReview(),
+// printIO(), the Trello card description builder) but never applied at the
+// TOTALS level, where every one of those three still summed a plain spend
+// figure (an AVERAGE for a varying campaign) into one blended "$X/mo" total —
+// the same misleading-average issue fixed everywhere else this session, just
+// missed here. Takes the raw month array directly (not a parent object)
+// since the two real shapes in this app — `selected[id].monthPlan` and a
+// submitted line item's `month_budgets` — are structurally identical
+// ({month, amount, paused}) under different field names; this way both can
+// share one helper instead of needing two near-duplicate versions.
+function monthPlanVariesAndTotal(monthPlan) {
+  const varies = !!(monthPlan && monthPlan.length > 1 && new Set(monthPlan.map(m => m.amount)).size > 1);
+  const total = varies ? monthPlan.reduce((s, m) => s + (m.amount || 0), 0) : 0;
+  return { varies, total };
+}
 function splitAmountAcrossMonths(totalAmount, startDateStr, endDateStr) {
   const months = monthsInFlight(startDateStr, endDateStr);
   const totalDays = months.reduce((sum, m) => sum + m.days, 0);
@@ -4658,7 +4709,7 @@ function toggleReviewSection(sectionId) {
 }
 
 function buildReview() {
-  let oneTime = 0, monthly = 0, count = 0;
+  let oneTime = 0, monthly = 0, varyingTotal = 0, count = 0;
   const sectionBoxes = [];
   const workflows = new Set();
 
@@ -4698,7 +4749,12 @@ function buildReview() {
     const recurringTotal = (data.recurring || 0) * qty;
     if (feeTotal > 0) oneTime += feeTotal;
     if (recurringTotal > 0) monthly += recurringTotal;
-    if (data.spend > 0) monthly += data.spend;
+    // Varying-campaign real total tracked separately from genuine "/mo"
+    // spend (2026-08-31) — see monthPlanVariesAndTotal()'s own comment.
+    if (data.spend > 0) {
+      const mv = monthPlanVariesAndTotal(data.monthPlan);
+      if (mv.varies) varyingTotal += mv.total; else monthly += data.spend;
+    }
     if (data.workflow) workflows.add(data.workflow);
     // Fee column: for a one-time per-unit item, shows "$175 × 3 = $525" (the multiplied
     // total lives HERE, not in the Recurring column — showing a one-time total under a
@@ -4755,9 +4811,15 @@ function buildReview() {
       // label was telling the reader something the table already shows.
       // Matches shared.js's Order Detail modal, which made this exact same
       // call back on 2026-08-28 and never carried the text at all.
+      // "campaign" dropped from the flat-rate case (2026-08-31, per Claire —
+      // "could we drop the 'campaign' in the print IO?") -- "$X/mo" already
+      // reads as a spend-based monthly rate on its own; the word wasn't
+      // adding information. Applied here too, not just print, so the two
+      // don't diverge (same principle as every other Review/Print
+      // consistency fix today).
       amtDisplay = variesByMonth
         ? `${fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0))} total`
-        : fmt(data.spend) + '/mo campaign';
+        : fmt(data.spend) + '/mo';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
     } else if (data.is_cpm_adjustment) {
@@ -4810,7 +4872,27 @@ function buildReview() {
     // .chevron/.chevron.expanded markup and rotation the service-section headers
     // already use, rather than a second one-off implementation.
     const rsChevronSvg = `<span class="chevron rs-chevron${isCollapsed ? '' : ' expanded'}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>`;
-    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}">${rsChevronSvg} ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table"><thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
+    // FIXED (2026-08-31, found live by Claire — "the columns between services
+    // is still messy... how some of the text wraps funny"): each section
+    // renders its OWN separate <table>, and without table-layout:fixed a
+    // browser sizes a table's columns purely from THAT table's own content —
+    // so the exact same Fee/Recurring/Flight/Notes columns landed at a
+    // different width in every section depending on how long that section's
+    // service names happened to be, and a long name (e.g. the Modules line)
+    // could squeeze Flight too narrow to fit a date without wrapping
+    // mid-string. A shared, explicit colgroup forces every section's table to
+    // use the IDENTICAL column widths regardless of content, so they finally
+    // line up section to section — same fixed-column-width approach Step 2's
+    // .svc-table already uses for the same reason. Kept inline (not a new
+    // .summary-table variant class) since .summary-table is also reused by
+    // the differently-shaped Agent/County Split table below, which must stay
+    // unaffected. min-width bumped from 560 to 720 so Service still gets
+    // reasonable room at the floor width (110+130+150+160=550px of fixed
+    // columns leaves 170px for Service — the same width Step 2's own Service
+    // column already uses); the existing .rs-section-scroll{overflow:auto}
+    // still provides horizontal scroll as a safety net below that.
+    const summaryColgroup = `<colgroup><col/><col style="width:110px"/><col style="width:130px"/><col style="width:150px"/><col style="width:160px"/></colgroup>`;
+    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}">${rsChevronSvg} ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table" style="table-layout:fixed;min-width:720px">${summaryColgroup}<thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
   });
 
   // Agent/County Split (2026-08-19, per Claire -- "add the agent information
@@ -4825,6 +4907,14 @@ function buildReview() {
   document.getElementById('total-onetime').textContent = fmt(oneTime);
   document.getElementById('total-monthly').textContent = fmt(monthly) + '/mo';
   document.getElementById('total-items').textContent = count;
+  // Varying-campaign tile only shows when the order actually has one
+  // (2026-08-31) — a normal order with nothing varying by month looks
+  // completely unchanged from before this fix.
+  const varyingWrap = document.getElementById('total-varying-wrap');
+  if (varyingWrap) {
+    varyingWrap.style.display = varyingTotal > 0 ? '' : 'none';
+    if (varyingTotal > 0) document.getElementById('total-varying').textContent = fmt(varyingTotal);
+  }
   document.getElementById('summary-body').innerHTML = sectionBoxes.length ? sectionBoxes.join('') : '<div style="text-align:center;color:var(--muted);padding:20px">No services selected</div>';
 
   // Workflows
@@ -5258,7 +5348,18 @@ async function submitIO() {
     // lineItems.fee/recurring are already qty-multiplied (see above), so summing them
     // directly here gives the correct order totals with no further math needed.
     const oneTime = lineItems.reduce((a,li) => a + (li.fee||0), 0) + proratedTotal + setupFeeTotal;
-    const monthly = lineItems.reduce((a,li) => a + (li.recurring||0) + (li.spend||0), 0);
+    // Varying-campaign real total kept separate from genuine "/mo" spend
+    // (2026-08-31) — same fix as buildReview()/printIO()'s totals, this is
+    // the THIRD independent place that was still blending a varying
+    // campaign's plain `spend` (an average) into "monthly" — this one feeds
+    // the Trello/email order summary text below (**Monthly Recurring:** ...).
+    let monthly = lineItems.reduce((a,li) => a + (li.recurring||0), 0);
+    let varyingSpendTotal = 0;
+    lineItems.forEach(li => {
+      if (!(li.spend > 0)) return;
+      const mv = monthPlanVariesAndTotal(li.month_budgets);
+      if (mv.varies) varyingSpendTotal += mv.total; else monthly += li.spend;
+    });
 
     // Use real UUID group_id, or null for dev mode
     const isRealUuid = selectedGroup.id && /^[0-9a-f]{8}-/.test(selectedGroup.id);
@@ -5864,7 +5965,7 @@ async function submitIO() {
 ${servicesDesc}
 
 **One-Time Total:** $${oneTime.toLocaleString()}
-**Monthly Recurring:** $${monthly.toLocaleString()}/mo
+**Monthly Recurring:** $${monthly.toLocaleString()}/mo${varyingSpendTotal > 0 ? `\n**Varying Campaign Total:** $${varyingSpendTotal.toLocaleString()} (see per-month breakdown)` : ''}
 
 **Special Instructions:** ${document.getElementById('special-instructions')?.value||'None'}
 ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.slice(0, 16000);
@@ -6902,14 +7003,14 @@ function buildIoDocumentHtml() {
     grouped[sec].push([id, data]);
   });
 
-  let oneTime = 0, monthly = 0;
+  let oneTime = 0, monthly = 0, varyingTotal = 0;
   let lineItemsHtml = '';
 
   SECTIONS.forEach(secDef => {
     const sec = secDef.id;
     if (!grouped[sec]) return;
     const items = grouped[sec];
-    let sectionOneTime = 0, sectionMonthly = 0;
+    let sectionOneTime = 0, sectionMonthly = 0, sectionVaryingTotal = 0;
     let sectionRows = '';
 
     items.forEach(([id, data]) => {
@@ -6920,7 +7021,16 @@ function buildIoDocumentHtml() {
       const recurringTotal = (data.recurring || 0) * qty;
       if (feeTotal > 0) { oneTime += feeTotal; sectionOneTime += feeTotal; }
       if (recurringTotal > 0) { monthly += recurringTotal; sectionMonthly += recurringTotal; }
-      if (data.spend > 0) { monthly += data.spend; sectionMonthly += data.spend; }
+      // Varying-campaign real total tracked separately from genuine "/mo"
+      // spend (2026-08-31, per Claire — the section subtotal blending a
+      // varying campaign's AVERAGE into "$X/mo" was "a little confusing";
+      // same fix as buildReview()'s totals-bar, see monthPlanVariesAndTotal()).
+      if (data.spend > 0) {
+        const mv = monthPlanVariesAndTotal(data.monthPlan);
+        if (mv.varies) {
+          varyingTotal += mv.total; sectionVaryingTotal += mv.total;
+        } else { monthly += data.spend; sectionMonthly += data.spend; }
+      }
 
       let amtCol = '';
       // QUR items (2026-07-07): checked FIRST, ahead of every other case, so this takes
@@ -6950,7 +7060,13 @@ function buildIoDocumentHtml() {
       } else if (feeTotal > 0) {
         amtCol = fmt(feeTotal) + ' one-time';
       } else if (recurringTotal > 0 && data.spend > 0) {
-        amtCol = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo campaign';
+        // "campaign" -> "spend" (2026-08-31) -- buildReview()'s identical
+        // combo case already says "spend" here, not "campaign"; found this
+        // divergence while acting on Claire's "drop campaign" request below.
+        // Keeping the word (not deleting it outright, unlike the plain
+        // spend-only case) since it's disambiguating WHICH of the two dollar
+        // figures on this one line is the flat fee vs. the variable ad spend.
+        amtCol = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo spend';
       } else if (recurringTotal > 0) {
         // Same "show the × breakdown when qty > 1" treatment buildReview()
         // already gives a recurring per-unit item (2026-08-31 fix, found
@@ -6971,9 +7087,11 @@ function buildIoDocumentHtml() {
         // "— varies by month" text dropped (2026-08-31, same call as
         // buildReview()'s identical fix just above) — the breakdown table
         // right below already shows it varies.
+        // "campaign" dropped (2026-08-31, per Claire — "could we drop the
+        // 'campaign' in the print IO?") -- matches buildReview()'s identical fix.
         amtCol = variesByMonth
           ? (fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0)) + ' total')
-          : (fmt(data.spend) + '/mo campaign');
+          : (fmt(data.spend) + '/mo');
       } else if (data.is_cpm_adjustment) {
         // Explicit "No Charge" rather than falling through to "TBD" — this is a signed
         // contract document, and "TBD" would read as an unfinished price, not an
@@ -7025,10 +7143,17 @@ function buildIoDocumentHtml() {
 
     // Section header + rows + subtotal
     lineItemsHtml += `<tr class="section-row"><td colspan="4">${esc(secDef.label)}</td></tr>` + sectionRows;
-    if (sectionOneTime > 0 || sectionMonthly > 0) {
+    if (sectionOneTime > 0 || sectionMonthly > 0 || sectionVaryingTotal > 0) {
       const parts = [];
       if (sectionOneTime > 0) parts.push(fmt(sectionOneTime) + ' one-time');
       if (sectionMonthly > 0) parts.push(fmt(sectionMonthly) + '/mo');
+      // Kept as its own separate piece, not folded into the "/mo" figure
+      // above (2026-08-31, per Claire — "the subtotal line in Social Media
+      // Ads is a little confusing") — a varying campaign's real dollar total
+      // isn't a monthly rate, so it gets its own clearly-labeled "total"
+      // rather than being blended into a number that would otherwise imply
+      // a flat recurring charge.
+      if (sectionVaryingTotal > 0) parts.push(fmt(sectionVaryingTotal) + ' total (varying campaigns)');
       lineItemsHtml += `<tr class="subtotal-row"><td>Subtotal</td><td class="svc-amt">${parts.join(' + ')}</td><td></td><td></td></tr>`;
     }
   });
@@ -7254,14 +7379,27 @@ function buildIoDocumentHtml() {
 <div class="totals-box">
   <table class="totals-table">
     ${oneTime > 0 ? `<tr><td class="label">One-Time Charges</td><td class="value">${fmt(oneTime)}</td></tr>` : ''}
-    ${monthly > 0 ? `<tr><td class="label">Monthly Recurring</td><td class="value">${fmt(monthly)}/mo</td></tr>` : ''}
-    <tr class="grand">
-      <td class="label">First Month Total</td>
-      <td class="value">${fmt(oneTime + monthly)}</td>
-    </tr>
+    ${monthly > 0 ? `<tr class="grand"><td class="label">Monthly Recurring</td><td class="value">${fmt(monthly)}/mo</td></tr>` : ''}
+    <!-- Shown as its own row, not folded into Monthly Recurring (2026-08-31,
+         per Claire, same fix as the section subtotals above) — a varying
+         campaign's real dollar figure is a multi-month TOTAL, not a flat
+         monthly rate. -->
+    ${varyingTotal > 0 ? `<tr class="grand"><td class="label">Varying Campaign Total <span style="font-weight:400;font-size:9pt">(see breakdown above)</span></td><td class="value">${fmt(varyingTotal)}</td></tr>` : ''}
   </table>
 </div>
-${monthly > 0 ? `<div class="first-month-note">Subsequent months: ${fmt(monthly)}/mo for the duration of the campaign term.</div>` : ''}
+<!-- "First Month Total" + "Subsequent months: $X/mo" removed entirely
+     (2026-08-31, per Claire — "should we remove that... since now the
+     flight dates can differ for each service?"). Both assumed every
+     service on the order shares one start date, so "this month" meant the
+     same thing for all of them — no longer true now that each service has
+     its own independent flight Start/End (see the per-line Flight column).
+     A service starting in November has no business being folded into a
+     "first month" total computed as if everything started today; there's
+     no single correct blended figure once start dates genuinely differ.
+     Each category total (One-Time/Monthly/Varying) stands on its own
+     instead, with each LINE's own Flight column being the source of truth
+     for when it actually starts billing. -->
+${(monthly > 0 || varyingTotal > 0) ? `<div class="first-month-note">See each service's own Flight dates above for when its billing actually starts — services on this IO may not all begin the same month.</div>` : ''}
 
 ${(() => {
   // Agent/County Split (2026-08-19, per Claire -- "add the agent information
