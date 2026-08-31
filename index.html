@@ -4890,11 +4890,13 @@ function buildReview() {
     // formatISOToMMDDYY() converts back for display, same helper the date inputs
     // themselves use).
     const flightDisplay = flightDisplayFor(id, data, formatISOToMMDDYY);
-    // Resolved "Which one is it?" variant name (2026-08-31, per Claire — this
-    // already resolved correctly on the Trello card title; now shown here too
-    // instead of the raw combined catalog label, so an AE can actually see
-    // their pick took effect before submitting).
-    const displayLabel = resolveVariantDisplayName(id, data.tacticVariant, data.label);
+    // Resolved row display name (2026-08-31, per Claire — a picked "Which one
+    // is it?" variant or picked Website Modules already resolved correctly on
+    // the Trello card title; shown here too now instead of the raw combined
+    // catalog label, so an AE can actually see their pick took effect before
+    // submitting). resolveRowDisplayName() tries a tactic variant first, then
+    // picked module names, falling back to data.label unchanged either way.
+    const displayLabel = resolveRowDisplayName(id, data, data.label);
     rows.push(`<tr><td class="rs-service">${esc(displayLabel)}</td><td class="rs-fee">${feeDisplay}</td><td class="rs-recurring">${amtDisplay}</td><td class="rs-flight" style="color:var(--muted);font-size:11px">${esc(flightDisplay)}</td><td class="rs-notes" style="color:var(--muted);font-size:11px">${esc(notesDisplay)}</td></tr>`);
     // Real per-month breakdown (2026-08-20) -- reuses the SAME read-only
     // table renderMonthPreviewTable() already builds for Step 2's own
@@ -5390,6 +5392,11 @@ async function submitIO() {
         // even though nothing else reads it yet; a future step could backfill it onto
         // campaign_lines.tactic_label too, skipping the Strategist's own re-pick.
         tactic_variant: data.tacticVariant || null,
+        // Picked Website Modules names (2026-08-31, per Claire — "act like the
+        // variants" for the Trello card title too, see resolveModuleDisplayName()
+        // near the Trello card-creation code), same "carried on the order even
+        // though nothing but the card title reads it yet" role as tactic_variant.
+        module_names: data.moduleNames?.length ? data.moduleNames : null,
         workflow: data.workflow || null,
         requires_koc: cfg.koc === 'required',
         hosting_choice: hosting?.choice || null,
@@ -5924,15 +5931,34 @@ async function submitIO() {
           // full-color emoji in Trello's card view. No markdown asterisks inside `banner`
           // itself, though — this same string also feeds the PDF's styled div via esc(),
           // and literal "**" is exactly what made the OLD jsPDF-text version messy.
+          // workflowNeedsKoc (2026-08-31, per Claire — "for anything that doesn't
+          // have a completed intake but doesn't require a KOC, can we remove the
+          // note about collecting on a kick-off call?"): the NOT STARTED/PARTIAL
+          // banners below unconditionally told the AM to collect the missing
+          // answers "on the Kick-Off Call" even for a tactic that never has one —
+          // there's nothing to collect there if no KOC is ever scheduled. Checked
+          // against `li.requires_koc` (real per-service data already on every line
+          // item), scoped to just this workflow's own sold service(s), same
+          // pattern as every other per-workflow lookup in this function. The
+          // bypassed banner just below is deliberately left alone —
+          // bypassIntakeFromFooter() (the "Need AM Help" button) explicitly forces
+          // `needs_am_help`, which itself forces a KOC ("KOC will be required," per
+          // its own toast) — so that banner's Kick-Off Call reference is always
+          // real, regardless of this specific service's own requires_koc flag.
+          const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflow && li.requires_koc);
           let banner, bannerColor;
           if (data.bypassed) {
             banner = `⚠️ AM HELP REQUESTED — AE asked the AM to cover this intake on the Kick-Off Call.${data.bypassNote ? ' ' + data.bypassNote : ''}`;
             bannerColor = '#7C3AED';
           } else if (filledCount === 0) {
-            banner = `⚠️ INTAKE NOT STARTED — AE did not fill out this form. AM to collect every answer on the Kick-Off Call.`;
+            banner = workflowNeedsKoc
+              ? `⚠️ INTAKE NOT STARTED — AE did not fill out this form. AM to collect every answer on the Kick-Off Call.`
+              : `⚠️ INTAKE NOT STARTED — AE did not fill out this form.`;
             bannerColor = '#DC2626';
           } else if (filledCount < totalCount) {
-            banner = `⚠️ PARTIALLY COMPLETE (${filledCount} of ${totalCount} answered) — AM to collect remaining items on the Kick-Off Call.`;
+            banner = workflowNeedsKoc
+              ? `⚠️ PARTIALLY COMPLETE (${filledCount} of ${totalCount} answered) — AM to collect remaining items on the Kick-Off Call.`
+              : `⚠️ PARTIALLY COMPLETE (${filledCount} of ${totalCount} answered).`;
             bannerColor = '#B45309';
           } else {
             banner = `✅ COMPLETE — all ${totalCount} questions answered.`;
@@ -6743,6 +6769,17 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 for (const card of templateCards) {
                   if (card.name.startsWith('🧪')) continue; // skip test cards
                   let cn = card.name.trim();
+                  // Picked Website Modules "act like the variants" (2026-08-31, per
+                  // Claire): only swaps THIS specific card's name when it matches the
+                  // selling service's own generic catalog label EXACTLY (Website
+                  // Modules' single-card list template is literally named after the
+                  // combined "Modules (all 5 options)" label) — a narrow, safe
+                  // condition that leaves every OTHER whole-list template's
+                  // distinctly-named subtask cards (SEO Starter Process, SEO Starter
+                  // Package - GBP, etc.) completely untouched, since those names never
+                  // equal any service's own label.
+                  const moduleLi = lineItems.find(li => li.workflow === originalWorkflows[wfIdx] && li.module_names?.length && CATALOG_ROWS[li.service_id]?.label === cn);
+                  if (moduleLi) cn = resolveModuleDisplayName(moduleLi.module_names, cn);
                   // Skip any template placeholder named "IO", "IO -", "IO :", etc.
                   if (isIoName(cn)) continue;
                   // Skip AE Questions cards from any template — redundant; the intake
@@ -7225,10 +7262,11 @@ function buildIoDocumentHtml() {
       const flightDisplay = flightDisplayFor(id, data, iso => iso
         ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'2-digit'})
         : '');
-      // Resolved "Which one is it?" variant name (2026-08-31, per Claire — same
-      // consistency fix as buildReview(), so the signed contract shows the same
-      // specific name the AE picked, not the raw combined catalog label).
-      const printDisplayLabel = resolveVariantDisplayName(id, data.tacticVariant, data.label);
+      // Resolved row display name (2026-08-31, per Claire — same consistency
+      // fix as buildReview(), covering both tactic variants and picked
+      // Website Modules, so the signed contract shows the same specific name
+      // the AE picked, not the raw combined catalog label).
+      const printDisplayLabel = resolveRowDisplayName(id, data, data.label);
       sectionRows += `<tr><td class="svc-name">${esc(printDisplayLabel)}</td><td class="svc-amt">${amtCol}</td><td class="svc-flight">${esc(flightDisplay)}</td><td class="svc-notes">${esc(notesDisplay) || '—'}</td></tr>`;
       // Real per-month breakdown on the printed/signed document too (2026-08-20)
       // -- same reuse of renderMonthPreviewTable() as buildReview(), so the
@@ -8217,6 +8255,34 @@ function resolveVariantDisplayName(serviceId, variant, fallbackName) {
   if (variantIsAlreadyComplete(variant)) return variant;
   const sectionLabel = SECTIONS.find(s => s.id === CATALOG_ROWS[serviceId]?.section)?.label;
   return sectionLabel ? `${sectionLabel}: ${variant}` : variant;
+}
+// "Act like the variants" for Website Modules too (2026-08-31, per Claire,
+// right after confirming the tactic-variant fix above): same underlying idea
+// as resolveVariantDisplayName() — swap the generic, all-options catalog
+// label for the AE's SPECIFIC picks — but a qty_option_labels service (see
+// onModuleCheckboxChange()) lets picking SEVERAL at once, not choosing one of
+// several, so there's no single "which one is it" string to resolve, and no
+// section-prefix ambiguity to solve either (the base name "Modules" is
+// already clear on its own — unlike "Geofencing," it was never confused with
+// anything else). Simplest fit: strip the catalog label's own trailing
+// "(all 5 options)" parenthetical and rebuild it with just the picked names —
+// "Modules (Newsletter, Photo/Video, Testimonial, News/Blog, Calendar)"
+// becomes "Modules (Newsletter, Photo/Video)".
+function resolveModuleDisplayName(moduleNames, fallbackName) {
+  if (!moduleNames || !moduleNames.length) return fallbackName;
+  const base = fallbackName.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  return `${base} (${moduleNames.join(', ')})`;
+}
+// Single entry point for a row's Service-column display name (Step 3, Print) —
+// tries a picked tactic variant first, then picked module names, falling back
+// to the raw catalog label unchanged when neither applies to this row. One
+// shared dispatcher rather than every call site growing its own if/else, so a
+// future third "resolve this row's real name" case has one obvious place to
+// add itself.
+function resolveRowDisplayName(id, data, fallbackName) {
+  if (data?.tacticVariant) return resolveVariantDisplayName(id, data.tacticVariant, fallbackName);
+  if (data?.moduleNames?.length) return resolveModuleDisplayName(data.moduleNames, fallbackName);
+  return fallbackName;
 }
 
 // One services-table row → a SERVICE_DATA entry. Reverses the migration
