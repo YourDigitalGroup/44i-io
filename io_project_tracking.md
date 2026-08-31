@@ -22010,3 +22010,51 @@ use of the old `.summary-table th` selector — none found outside
 comments. Not yet tested live — needs Claire to expand a varying
 campaign's row (e.g. Facebook & Instagram) and scroll through it again to
 confirm the column headers now stay put with no overlap.
+
+---
+
+## 2026-08-31 (cont'd) — Same overlap persisted after scoping the fix; replaced the sticky `<thead>` with a plain sticky div
+
+Claire tested the scoped-selector fix above and reported it "still not
+quite there" — a new screenshot showed the "Facebook & Instagram" data
+row no longer overlapping (that part improved), but now the column-label
+row ("Service/Fee/Recurring/Flight/Notes") and the nested month-
+breakdown table's own header ("Month/Days in Flight/Amount") were
+overlapping EACH OTHER while scrolling — a real, still-broken interaction
+between two `position:sticky` elements inside the same `<table>`, one of
+them several levels deep in a nested table.
+
+Rather than write a fourth CSS-selector patch chasing this — this is the
+third distinct overlap report in this exact spot today — replaced the
+approach entirely: `<table class="summary-table"><thead><tr><th>...`
+for the per-section Review table is GONE. In its place, a plain
+`<div class="rs-col-head">` sits directly below `.rs-section-head`,
+using the identical div + `position:sticky` pattern that bar itself
+already uses reliably (Claire never reported that one broken — only the
+`<table><thead><th>` version). The table itself now starts straight at
+`<tbody>`, so there is no real sticky `<thead>`/`<th>` left in this
+table for anything (including the nested month table) to compete with.
+Column widths on `.rs-col-head`'s five `<div>`s are hand-matched to the
+existing colgroup (110px/130px/150px/160px, Service gets the remainder
+via `flex:1`) so the fake header still lines up with the real columns
+below it. Added `.rs-col-head{display:none}` to the mobile media query,
+since mobile already labels each field via the existing `::before`
+content rules and would otherwise show a redundant header.
+
+Scope check: only the per-section Review table changed. The Agent/County
+Split table (`agentSplitTableHtml()`) still uses a real
+`<table class="summary-table"><thead><th>` — it has no nested per-row
+content and was never reported broken, so it's untouched, and the
+`.summary-table>thead>tr>th` sticky rule from the previous fix stays in
+the stylesheet for it.
+
+**Verified**: `node --check` passes. Confirmed via direct read that the
+generated markup is `.rs-section-head` → `.rs-col-head` → `<table>` with
+no `<thead>`, and grepped for any other code (JS or CSS) that assumed
+this table still had a `<thead>` — the only remaining `.summary-table
+thead`/`<thead>` references are the (harmless, still-needed) mobile
+hide rule and the Agent/County Split table's own markup. Not yet tested
+live — this is a bigger structural change than the prior two attempts,
+so it specifically needs Claire to re-test the same Social Media Ads
+scroll-through-an-expanded-campaign scenario, on both desktop and a
+phone (mobile layout was touched too, via the new `display:none` rule).
