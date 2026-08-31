@@ -325,8 +325,9 @@ function renderServiceRow(svc, i) {
       <div class="action-tabs">
         <div class="action-tab" id="tab-${i}-cancel" onclick="setServiceAction(${i},'cancel')">Cancel</div>
         <div class="action-tab" id="tab-${i}-edit" onclick="setServiceAction(${i},'edit')">Edit</div>
-        <div class="action-tab" id="tab-${i}-renew" onclick="setServiceAction(${i},'renew')">Renew</div>
+        ${isOneTimeOnly(svc) ? '' : `<div class="action-tab" id="tab-${i}-renew" onclick="setServiceAction(${i},'renew')">Renew</div>`}
       </div>
+      ${isOneTimeOnly(svc) ? `<p class="muted-note">Need this one-time service again? Submit a new Insertion Order for it.</p>` : ''}
       <div id="action-body-${i}"></div>
     </div>
   </div>`;
@@ -348,8 +349,18 @@ function isSpendTactic(svc) {
   return svc.spend > 0 || monthsVary(svc.month_budgets);
 }
 
+// A pure one-time cost (a single fee, no recurring/spend component at all) —
+// per Claire (2026-08-31): these shouldn't have their amount touched through
+// this form, only their date. Anything with a recurring/spend component
+// alongside a fee (e.g. a setup fee + monthly retainer) is NOT this — it
+// still has an ongoing term, so Renew and the existing amount-edit flow
+// still make sense for it.
+function isOneTimeOnly(svc) {
+  return svc.fee > 0 && !(svc.recurring > 0) && !isSpendTactic(svc);
+}
+
 function setServiceAction(i, action) {
-  ['cancel','edit','renew'].forEach(a => document.getElementById(`tab-${i}-${a}`).classList.toggle('active', a === action));
+  ['cancel','edit','renew'].forEach(a => document.getElementById(`tab-${i}-${a}`)?.classList.toggle('active', a === action));
   document.getElementById(`svc-chk-${i}`).checked = true;
   document.getElementById(`svc-detail-${i}`).classList.add('open');
   const svc = ACTIVE_SERVICES[i];
@@ -375,7 +386,11 @@ function setServiceAction(i, action) {
         <div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-budget-${i}" placeholder="${svc.recurring || ''}"/></div>`;
     }
   } else if (action === 'edit') {
-    if (isSpendTactic(svc)) {
+    if (isOneTimeOnly(svc)) {
+      // One-time costs: date only, per Claire (2026-08-31) — the amount isn't
+      // client-editable through this form, only the date can be corrected.
+      body.innerHTML = `<div class="field"><label>Date</label><input type="date" id="edit-date-${i}" value="${esc(svc.flight_start || '')}"/></div>`;
+    } else if (isSpendTactic(svc)) {
       body.innerHTML = `
         <div class="action-tabs">
           <div class="action-tab" id="edit-mode-${i}-monthly" onclick="setEditBudgetMode(${i},'monthly')">Monthly Rate</div>
@@ -484,6 +499,11 @@ function collectServicePayload(i) {
       requested_changes: { new_end_date: endDate, new_monthly_budget: null, new_month_budgets: months } };
   }
   if (action === 'edit') {
+    if (isOneTimeOnly(svc)) {
+      const date = document.getElementById(`edit-date-${i}`)?.value;
+      if (!date) return { error: `Please enter a date for ${svc.label}` };
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'start_date', new_value: date } };
+    }
     if (!isSpendTactic(svc)) {
       const field = document.getElementById(`edit-field-${i}`)?.value;
       const amount = document.getElementById(`edit-amount-${i}`)?.value;

@@ -22925,3 +22925,177 @@ lookup is a case-sensitive exact match). Asked Claire to confirm the
 real value directly rather than guess further.
 
 **Verified**: `node --check` passes. Not yet re-tested live.
+
+---
+
+## 2026-08-31 (cont'd) — PARKED: shared "Active Websites" Trello list for website-only clients — not a launch blocker
+
+Came up during the Trello card audit, not something the system has hit
+yet in practice — Claire only learned about this internal process last
+Friday and is still working out whether/how it fits the system. Logging
+the shape of it now so a future session doesn't start from zero.
+
+**The real-world pattern**: to keep boards clean, a client who orders
+ONLY a website doesn't get their own dedicated Trello list — their card
+sits in one shared "Active Websites" list on the group's board, alongside
+every other website-only client. If that same client later orders a
+different service, they get their own dedicated list at that point; once
+that add-on service is done, they go back into the shared "Active
+Websites" list. This is a fully manual process today, done by hand in
+Trello, entirely outside this app.
+
+**Why this doesn't fit the system as it exists**: `find_or_create_client`
+is the ONLY path into the `clients` table, and it always creates exactly
+one dedicated Trello list per client, stored permanently as
+`clients.trello_list_id` — every downstream piece (finding a returning
+client's card, filing a new order's card, the IO form's own Client
+Picker) assumes that one-client-one-permanent-list shape. Confirmed with
+Claire: these website-only clients don't show up in the Client Picker at
+all, consistent with them never having been submitted through the IO
+form in the first place — they're managed by hand, not through the
+system.
+
+**Three shapes discussed, from smallest to largest change**:
+1. Keep it fully manual (today's behavior) — the system stays unaware of
+   these clients until the day one of them orders something else, at
+   which point someone creates them for real at that moment.
+2. Bring them into the system with a flag ("lives in a shared list," not
+   a dedicated one) so they're at least visible/searchable — but a new
+   order for one of them would still need new logic to notice the flag
+   and spin up a real dedicated list rather than trying to add a card
+   into the shared one.
+3. Full bidirectional support — the system also knows to move a client
+   BACK into the shared list once their add-on service is finished, not
+   just promote them out of it. This is the shape Claire believes
+   actually matches what the team is doing today, but it's the biggest
+   lift: "is this add-on done" isn't a clean, unambiguous trigger to hang
+   automation off of yet (nothing today marks a `campaign_lines` row's
+   completion in a way built for this purpose), and this would need
+   design work on what "done" means system-wide before it could be
+   automated.
+
+**Claire's call**: this is the direction (#3) worth ultimately building
+toward, but explicitly NOT a blocker for Wednesday's launch — parked
+here, not scoped or estimated, until she's ready to revisit it.
+
+## Companion form routing bug — `.htaccess` rewrite rule (2026-08-31)
+
+Companion link on the IO form kept showing "Invalid Link" (the MAIN
+form's error text, confirmed via the browser tab title reading
+"Insertion Order" instead of "Request a Change") no matter what we
+tried — different URL formats, cache-busting query params, incognito,
+different machines, confirming the file genuinely existed on the
+server. Root cause found by reading the live `.htaccess` Claire pasted:
+its very first rewrite rule,
+`RewriteRule ^([a-zA-Z0-9-]+)/?$ /index.html [QSA,L]`, is unconditional
+(no `!-f`/`!-d` guard) and matches "companion" exactly like it matches
+any real single-segment group slug (e.g. "ctg") — with `[L]` it fires
+and stops before the later, correct `!-f`/`!-d` guarded fallback rule
+ever runs. Not a repo file (confirmed via `find`, no `.htaccess` in this
+repo) — gave Claire the exact two `RewriteCond` lines to ask her hosting
+contact to add above that rule. Claire confirmed this fixed it.
+
+## Companion form — active-services query excluded pending lines (2026-08-31)
+
+Once routing was fixed, Claire reported Test Business 9's companion form
+only showed 2 of its 4 ordered services. Ran a diagnostic query joining
+`orders.line_items` to `campaign_lines` and found the 2 missing services
+(Geofencing, Facebook & Instagram) both sitting at
+`campaign_lines.status = 'pending'` (ordered, not yet started by a
+strategist) — `companion_get_active_services` required
+`status = 'active'`, silently excluding anything pending.
+
+Asked Claire whether pending services should be self-serviceable at
+all, and for which actions. Her call: include for all actions (Cancel/
+Edit/Renew), same as active services.
+
+**Fix**: changed the function's filter from
+`coalesce(cl.status, 'active') = 'active'` to
+`coalesce(cl.status, 'active') <> 'cancelled'` — the same `<> 'cancelled'`
+test `admin_renew_service` already uses to find a line, reused instead of
+inventing a new status list. Sent as a `create or replace` (idempotent)
+for Claire to run in Supabase. Not yet re-verified live against Test
+Business 9 after the change — next step once she's re-run it.
+
+## Edit/Renew field restrictions per service type (2026-08-31)
+
+Claire: "on one time costs they shouldn't be able to change amounts but
+can change dates... the edit and renew should almost look like the IO
+form" — a real gap, since both the companion form and the AM-side
+Edit/Renew UI let someone freely retype the dollar amount on a pure
+one-time cost (e.g. Traditional Media Buying's $5,000 one-time fee),
+something that shouldn't be renegotiable through a change-request flow.
+
+Also surfaced (via AskUserQuestion) and explicitly descoped from
+Wednesday's launch: Claire's first instinct was a "Reorder" action for
+one-time costs in place of Renew. Investigated what approving that would
+actually require — a brand-new order (own client/Trello-card/PDF/email
+flow, currently ~1,400 lines of client-side JS inside `submitIO()`), and
+found service_id is treated as unique-per-order everywhere in the app
+(Edit/Renew/Cancel/Trello lookup/PDF), so a same-order reorder isn't
+safely representable today either. Claire's call: **drop Reorder from
+v1 entirely** — one-time reorders keep going through the normal AE-fills-
+out-a-new-IO process for now, no companion-form entry point yet.
+
+**What shipped instead, in both `companion/index.html` and
+`admin/index.html`:**
+- New classification: a "pure one-time cost" = `fee > 0` with no
+  `recurring`/`spend` component alongside it (a service with a fee AND a
+  recurring/spend component, e.g. a setup fee + monthly retainer, still
+  has an ongoing term and is NOT this — it keeps the existing amount-
+  edit + Renew behavior unchanged).
+  - Companion form: `isOneTimeOnly(svc)` in `companion/index.html`.
+  - Admin: `isPureFee` in the Order Detail line-item render (same test,
+    reusing the existing `editableCandidates` array — one candidate and
+    it's `fee`).
+- For a pure one-time cost: **Renew tab/button is hidden entirely**
+  (nothing to renew), and **Edit shows a date field only** — no amount
+  input. Everything else (flat retainers, spend/campaign tactics with
+  their existing single-amount or 3-mode budget picker) is unchanged.
+- Edit's `requested_changes`/`admin_edit_order_line_item` call for this
+  case uses `field: 'start_date'` — already in that function's existing
+  allowlist, so no SQL change was needed.
+- New admin functions `adminToggleEditDatePanel()`/
+  `adminSaveLineItemDateEdit()` (mirroring `adminToggleEditPanel()`/
+  `adminSaveLineItemEdit()`'s exact Trello-comment/PDF-reattach/
+  edit_history shape, but with date wording — "📅 X date changed from
+  ... to ..." — instead of dollar-amount wording, since `Number(date)`
+  would be nonsense). `adminApprovePendingRequestClick()`'s `edit`
+  branch got a matching `c.field === 'start_date'` case so an AM
+  approving a companion-form date-only request posts the same comment
+  wording, rather than falling into the generic numeric-field branch
+  and calling `Number()` on a date string.
+- Verified via a standalone Node harness: the one-time/mixed/flat/spend
+  classification test against Test Business 9's real 4-service mix plus
+  a synthetic fee+recurring mixed case, confirming the mixed case
+  correctly falls through to the unchanged existing behavior, not the
+  new one-time-only path. `node --check` on both files' extracted
+  scripts.
+- Not yet tested end-to-end live (needs a real one-time-cost service to
+  click through on both the companion form and Admin's Order Detail).
+
+**Follow-up (same session)**: Claire — "Maybe for those we just add a
+note that they should fill out a new IO?" Added a small note (same
+`.muted-note` style already used elsewhere on the companion form) under
+the action tabs for a one-time-only service. Companion form only — AMs
+already know the process, so no equivalent note added to Admin's Order
+Detail.
+
+Claire then corrected the wording: "The AE should fill out the IO, not
+the AM. The AM doesn't have that option either... the goal is to keep
+most of this in the hands of the AE from an ordering perspective with
+the ability to do stuff from the AM side when needed." Checked Admin's
+code directly to confirm — no order-submission capability exists there
+at all, only the main IO form does, and that's AE-facing. Fixed the note
+to read "Ask your AE to submit a new Insertion Order for it."
+
+Claire, again: "The AE is the one filling out the companion form as
+well... no one other than the AE should be filling out the forms." Right
+— the companion form's own "I am" step already pulls from the AE
+roster (`ae-name`), so the AE reading this note IS the person who'd
+submit the new IO, not someone else to relay a request to. Reworded to
+"Submit a new Insertion Order for it." (dropped "Ask your AE" entirely).
+Confirmed no other companion-form copy misattributes a step to the
+client or the AM — checked the rest of the visible strings ("I am" / AE
+roster, "Which client?", "Your AM has been notified and will review")
+and they're all already correctly AE-facing.
