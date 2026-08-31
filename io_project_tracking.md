@@ -22852,3 +22852,41 @@ page) — not built yet, pending her live test result.
 
 **Verified**: `node --check` passes. Not tested live in an actual iframe
 embed — needs Claire's real-world test on the resource site.
+
+---
+
+## 2026-08-31 (cont'd) — Companion link used the wrong slug format ("?g=" vs. the real path-based links)
+
+Claire clicked the new companion link and got "Invalid Link" — but it
+was the MAIN IO form's exact wording, not companion/index.html's own
+("This link isn't active..."), meaning `/companion/?g=ctg` was somehow
+being served by the wrong file. Traced `loadGroup()` line by line and
+confirmed my change couldn't cause that on its own (it only runs AFTER
+a group has already loaded successfully); tested `/companion/index.html
+?g=ctg` directly too — same failure, ruling out a directory-index
+ambiguity. Suspected a deploy-propagation delay for the brand new
+`companion/` folder — and on her next try, it DID show the correct
+companion-form page with its own accurate message, just now failing to
+find a group for slug "ctg" specifically.
+
+**Real root cause, found from there**: this group's actual working IO
+form link is a bare path — `https://io.yourdigitalgroupresources.com/ctg`
+— not a `?g=ctg` query string. Whatever this host's routing does to make
+that path resolve to the root `index.html` isn't automatically available
+to `/companion/?g=ctg`, confirmed by her actual test. `companion/index.html`'s
+own `getSlug()` was already written to expect a path-based slug under
+`/companion/` (it strips a leading `companion/` segment specifically for
+this) — the bug was purely that `index.html`'s new link was built in the
+WRONG format (`companion/?g=ctg`) instead of matching the real link
+style (`companion/ctg`).
+
+**Fixed**: `companionLink.href` now builds `'companion/' + slug`
+(bare path, matching the real group link's own shape) instead of
+`'companion/?g=' + slug`. Verified `companion/index.html`'s `getSlug()`
+correctly extracts the slug from both this path-based form AND the old
+query-string form (kept as a fallback, in case some other entry point
+into the companion form uses `?g=`), via a direct Node simulation of its
+exact logic — both return "ctg" correctly.
+
+**Verified**: `node --check` passes. Not yet re-tested live — needs
+Claire to click the link again now that it matches the real URL shape.

@@ -3236,7 +3236,14 @@ async function loadGroup() {
     const companionLink = document.getElementById('companion-link');
     const companionBanner = document.getElementById('companion-link-banner');
     if (companionLink && companionBanner) {
-      companionLink.href = 'companion/?g=' + encodeURIComponent(slug);
+      // Path-based, not "?g=" (2026-08-31, found live by Claire — the real
+      // group link is a bare path like "/ctg", not "/?g=ctg"; whatever the
+      // live host's routing does to make that work for the root form isn't
+      // guaranteed to also apply to a query-string link under /companion/,
+      // and testing live confirmed it didn't). companion/index.html's own
+      // getSlug() already strips a leading "companion/" segment specifically
+      // to support this exact path shape, so this just needed to match it.
+      companionLink.href = 'companion/' + encodeURIComponent(slug);
       companionBanner.style.display = 'block';
     }
   } catch(e) {
