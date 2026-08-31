@@ -128,6 +128,14 @@
     <div id="admin-tabs-bar" role="tablist" aria-label="Admin sections" style="display:flex;flex-wrap:wrap;gap:8px;padding:14px 20px;border-bottom:1px solid var(--border);background:#fff">
       <button id="section-tab-groups" role="tab" aria-selected="true" aria-controls="section-groups" onclick="adminSection('groups')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:var(--accent-dark);color:#fff;cursor:pointer">Groups</button>
       <button id="section-tab-orders" role="tab" aria-selected="false" aria-controls="section-orders" onclick="adminSection('orders')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Orders</button>
+      <!-- Pending Requests (2026-08-31) -- companion form's Cancel/Edit/Renew requests
+           land here for AM approval before touching anything. Badge count updates
+           when this tab's own data loads, same precedent as Accounting Map's
+           accounting-missing-badge above (not eagerly on app init) -- email
+           notification on submit (companion/index.html's notifyAm()) is the primary
+           "something needs you" signal, this badge is a secondary confirmation once
+           an AM is already looking at Admin. -->
+      <button id="section-tab-pending" role="tab" aria-selected="false" aria-controls="section-pending" onclick="adminSection('pending')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Pending Requests<span id="pending-requests-badge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:10px"></span></button>
       <button id="section-tab-clients" role="tab" aria-selected="false" aria-controls="section-clients" onclick="adminSection('clients')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Clients</button>
       <button id="section-tab-map" role="tab" aria-selected="false" aria-controls="section-map" onclick="adminSection('map')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Services</button>
       <button id="section-tab-sections" role="tab" aria-selected="false" aria-controls="section-sections" onclick="adminSection('sections')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Sections</button>
@@ -360,6 +368,18 @@
           <div id="admin-order-detail-body"></div>
         </div>
       </div><!-- /section-orders -->
+
+      <!-- ── SECTION: Pending Requests (2026-08-31) ── -->
+      <div id="section-pending" role="tabpanel" aria-labelledby="section-tab-pending" tabindex="0" style="display:none">
+        <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Pending Requests from the Companion Form</p>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-bottom:14px">
+          <input type="checkbox" id="pending-show-resolved" onchange="renderAdminPendingRequests()" style="width:14px;height:14px;accent-color:var(--accent)"/>
+          Also show already-approved/rejected requests
+        </label>
+        <div id="admin-pending-list">
+          <p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>
+        </div>
+      </div><!-- /section-pending -->
 
       <!-- ── SECTION: Clients (profiles — contact info, business type, linked Trello list) ── -->
       <div id="section-clients" role="tabpanel" aria-labelledby="section-tab-clients" tabindex="0" style="display:none;flex-direction:column">
@@ -2682,8 +2702,8 @@ function resetAdminTabState() {
 
 function adminSection(section) {
   resetAdminTabState();
-  // Twelve sections: groups | orders | clients | map | sections | intake | ae | legal | notifications | reconcile | users | accounting
-  const sections = ['groups','orders','clients','map','sections','intake','ae','strategists','legal','notifications','reconcile','users','accounting'];
+  // Fourteen sections: groups | orders | pending | clients | map | sections | intake | ae | strategists | legal | notifications | reconcile | users | accounting
+  const sections = ['groups','orders','pending','clients','map','sections','intake','ae','strategists','legal','notifications','reconcile','users','accounting'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups', 'orders', 'clients', 'users', and 'accounting' need display:flex
@@ -2705,6 +2725,7 @@ function adminSection(section) {
   // Load data for the active section
   if (section === 'groups') loadAdminGroups();
   else if (section === 'orders') loadAdminOrders();
+  else if (section === 'pending') loadAdminPendingRequests();
   else if (section === 'clients') loadAdminClients();
   else if (section === 'map') {
     // Service catalog management is super-admin only (same restriction level as Group
@@ -7905,6 +7926,136 @@ async function adminToggleServiceActive(id, makeActive) {
 }
 
 // ── ORDERS SECTION ─────────────────────────────────────────────
+// ── Pending Requests (2026-08-31, companion form) ──────────────────────────
+// Same load/render split as loadAdminOrders()/renderAdminOrders() just below.
+let ALL_PENDING_REQUESTS = [];
+function pendingFmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso.slice(0,10) + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+}
+async function loadAdminPendingRequests() {
+  const el = document.getElementById('admin-pending-list');
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    ALL_PENDING_REQUESTS = await sb('rpc/admin_get_pending_requests', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
+    // Same lazy-load-if-empty guard as updateAccountingMissingBadge()'s caller --
+    // allServicesMap is only otherwise populated once the Services tab has been
+    // visited, which Pending Requests might be checked before.
+    if (!allServicesMap.length) allServicesMap = await sb('services?order=section,sort_order&select=*') || [];
+    // pending_requests only stores raw ids -- resolve display names for whichever
+    // clients actually show up here (a scoped query, not the whole clients table).
+    const clientIds = [...new Set(ALL_PENDING_REQUESTS.map(r => r.client_id))];
+    let clientNames = {};
+    if (clientIds.length) {
+      const rows = await sb('clients?id=in.(' + clientIds.join(',') + ')&select=id,name') || [];
+      rows.forEach(c => { clientNames[c.id] = c.name; });
+    }
+    ALL_PENDING_REQUESTS.forEach(r => {
+      r._client_name = clientNames[r.client_id] || '(unknown client)';
+      r._group_name = allGroups.find(g => g.id === r.group_id)?.name || '';
+      const svc = allServicesMap.find(s => s.id === r.service_id);
+      r._service_label = svc?.accounting_label || svc?.label || r.service_id;
+    });
+    updatePendingRequestsBadge();
+    renderAdminPendingRequests();
+  } catch (e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading pending requests: ${esc(e.message)}</p>`;
+  }
+}
+
+function updatePendingRequestsBadge() {
+  const badge = document.getElementById('pending-requests-badge');
+  if (!badge) return;
+  const count = ALL_PENDING_REQUESTS.filter(r => r.status === 'pending').length;
+  badge.style.display = count > 0 ? 'inline-block' : 'none';
+  badge.textContent = count;
+}
+
+// Plain-English summary of one request's requested_changes, per action --
+// mirrors the exact fields each underlying admin_cancel_service/
+// admin_edit_order_line_item/admin_renew_service call actually uses (see
+// admin_approve_pending_request), so what an AM reads here always matches
+// what Approve will actually do.
+function describeRequestedChanges(r) {
+  const c = r.requested_changes || {};
+  if (r.action === 'cancel') return `Effective ${pendingFmtDate(c.effective_date)}${c.reason ? ' — ' + esc(c.reason) : ''}`;
+  if (r.action === 'renew') return `New end date ${pendingFmtDate(c.new_end_date)}${c.new_monthly_budget ? ', new budget $' + Number(c.new_monthly_budget).toLocaleString() + '/mo' : ''}`;
+  if (r.action === 'edit') {
+    if (c.field === 'month_budgets') {
+      const arr = typeof c.new_value === 'string' ? JSON.parse(c.new_value) : c.new_value;
+      const total = (arr || []).reduce((s,m) => s + (Number(m.amount)||0), 0);
+      return `New month-by-month total: $${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    }
+    return `New ${esc(c.field)}: $${Number(c.new_value).toLocaleString()}`;
+  }
+  return '';
+}
+
+function renderAdminPendingRequests() {
+  const el = document.getElementById('admin-pending-list');
+  const showResolved = document.getElementById('pending-show-resolved')?.checked;
+  const rows = showResolved ? ALL_PENDING_REQUESTS : ALL_PENDING_REQUESTS.filter(r => r.status === 'pending');
+  if (!rows.length) {
+    el.innerHTML = `<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">${showResolved ? 'No requests yet.' : 'Nothing pending right now.'}</p>`;
+    return;
+  }
+  el.innerHTML = rows.map(r => {
+    const statusBadge = r.status === 'pending'
+      ? `<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 8px;border-radius:10px">PENDING</span>`
+      : r.status === 'approved'
+      ? `<span style="font-size:10px;font-weight:700;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:10px">APPROVED</span>`
+      : `<span style="font-size:10px;font-weight:700;background:#FEE2E2;color:#B3261E;padding:2px 8px;border-radius:10px">REJECTED</span>`;
+    const actions = r.status === 'pending' ? `
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="button" onclick="adminApprovePendingRequestClick('${esc(r.id)}')" style="padding:5px 12px;border-radius:6px;background:#1F7A42;color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Approve</button>
+        <button type="button" onclick="adminRejectPendingRequestClick('${esc(r.id)}')" style="padding:5px 12px;border-radius:6px;background:#fff;border:1.5px solid #B3261E;color:#B3261E;font-size:11px;font-weight:700;cursor:pointer">Reject</button>
+      </div>` : (r.resolved_by ? `<div style="font-size:10.5px;color:var(--muted);margin-top:6px">by ${esc(r.resolved_by)}, ${pendingFmtDate(r.resolved_at)}${r.resolution_note ? ' — ' + esc(r.resolution_note) : ''}</div>` : '');
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div>
+          <div style="font-weight:700;font-size:13.5px">${esc(r._client_name)} — ${esc(r._service_label)}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(r._group_name)} · requested by ${esc(r.requested_by)} · ${pendingFmtDate(r.created_at)}</div>
+        </div>
+        ${statusBadge}
+      </div>
+      <div style="font-size:12.5px;margin-top:8px"><strong style="text-transform:capitalize">${esc(r.action)}:</strong> ${describeRequestedChanges(r)}</div>
+      ${actions}
+    </div>`;
+  }).join('');
+}
+
+async function adminApprovePendingRequestClick(id) {
+  if (!confirm('Approve this request? This will make the change immediately.')) return;
+  try {
+    await sb('rpc/admin_approve_pending_request', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_request_id: id })
+    });
+    showToast('✅ Approved and applied');
+    loadAdminPendingRequests();
+  } catch (e) {
+    showToast('Could not approve: ' + e.message, 'error');
+  }
+}
+
+async function adminRejectPendingRequestClick(id) {
+  const note = prompt('Optional note for why this is being rejected:') || '';
+  try {
+    await sb('rpc/admin_reject_pending_request', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_request_id: id, p_note: note })
+    });
+    showToast('Request rejected');
+    loadAdminPendingRequests();
+  } catch (e) {
+    showToast('Could not reject: ' + e.message, 'error');
+  }
+}
+
 async function loadAdminOrders() {
   const el = document.getElementById('admin-orders-table');
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading orders…</p>';

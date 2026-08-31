@@ -22478,3 +22478,281 @@ confirm on a real order: Website Modules' card title/Step 3/Print all
 show only the picked module names, and a non-KOC service with an
 incomplete intake no longer mentions the Kick-Off Call in its card
 description.
+
+---
+
+## 2026-08-31 (cont'd) — Pre-launch audit (launching Wednesday, sooner than planned)
+
+Claire asked for "a quick audit of the code as it currently stands" for
+peace of mind before Wednesday's launch, before moving on to the
+companion form. Ran two passes: the `code-review` skill against today's
+full diff (came back clean — no findings), then a broader agent-driven
+cold-read of the whole `index.html` file (not just today's changes),
+focused on security, submission-flow correctness, known-but-unresolved
+gaps left in comments, and the "value only saved by a sync-on-next-read
+function, vulnerable to an unrelated re-render" pattern that already
+caused the tactic-variant-dropdown bug earlier today.
+
+**Fixed immediately** (cheap, unambiguous, no judgment call needed):
+the intake modal's textarea field (`showFullIntakeForm()`'s field-
+rendering loop, ~line 2875) rendered a saved answer's text directly
+into `<textarea>...</textarea>` with NO escaping at all — the only sink
+in the whole file found with zero escaping, when every comparable field
+in the same modal (radio/checkbox options, other inputs) escapes at
+least the attribute-quote case. A literal `</textarea>` in a typed
+answer would close the tag early and anything after it becomes live
+markup on the next render of that same field (reopening the modal, or a
+localStorage draft reload). Confirmed this data never flows into
+another viewer's browser (no code path loads a stored order's intake
+answers back into THIS form for a different person — admin's own
+equivalent render already correctly uses `esc()`), so this was
+self-XSS confined to the same AE's own session, not a cross-user attack
+— still a real, free-to-close gap. Fixed by wrapping the interpolated
+value in `esc()`, matching the pattern already used everywhere else in
+this exact file. Verified: `node --check` passes; confirmed reading a
+textarea's `.value` back out still returns the correct decoded plain
+text regardless of how it was escaped on render, so this doesn't affect
+any round-trip save/reload behavior.
+
+**Flagged to Claire, not silently acted on — her call before Wednesday**:
+1. **Trello failure isn't visibly distinguishable from success.** If
+   Trello card creation fails for any reason during submission, the code
+   shows an 8-second auto-dismissing error toast and then continues to
+   the SAME success screen a fully-successful submission shows. The
+   Supabase order record is safe either way (saved before Trello runs),
+   but an AE who's already moved on has no lasting way to tell "this
+   order has no Trello card yet" from a real success.
+2. **`legal_content` table write access** — the signing page's legal
+   text renders via a genuine, unescaped `innerHTML` (almost certainly
+   intentional, so admins can format/bold legal text) — worth confirming
+   that table has the same "no public write" lockdown the `clients`
+   table already has, since anyone able to write to it could inject
+   script onto every client's signing page. Didn't have DB access to
+   check RLS directly.
+3. **Admin's AM-triggered Edit flow still has no awareness of
+   month_budgets** (already known/logged 2026-08-28 — resurfaced here as
+   a launch-relevant reminder, not a new finding): editing a varying-
+   month line's flat number in Admin leaves the real per-month breakdown
+   untouched and now silently stale.
+
+**Noted, not urgent**: one dead function (`toggleBudgetDetail`, superseded
+by the 2026-08-20 auto-open redesign, never removed); the varying-
+campaign total math is correctly computed in all three current call
+sites (`buildReview()`/`submitIO()`/`printIO()`) but is three
+independent implementations rather than one shared calculation, which is
+exactly the kind of duplication that already caused a real 3-location
+bug once this session — worth a future consolidation, not a Wednesday
+blocker. Confirmed the client-side `SUPABASE_KEY` is the public anon
+key, not a privileged one — correct and expected for a page like this.
+Checked all 56 `innerHTML`/`insertAdjacentHTML` sites in the file for
+missing `esc()` on user-derived data — found nothing else besides the
+textarea above. Checked for other instances of the "sync-on-next-read
+value vulnerable to an unrelated re-render" pattern beyond the two
+already-fixed spots — found none currently, but flagged as a standing
+risk for any future per-row control added the same way.
+
+---
+
+## 2026-08-31 (cont'd) — Audit follow-up: all 3 items resolved
+
+Claire's decisions on the 3 flagged audit items:
+
+1. **Trello-failure toast for the AE** — no change wanted. Her call: the
+   AM will catch a missing card when reviewing the order/Trello, an AE
+   warning wouldn't get acted on anyway. Left as-is.
+2. **`legal_content` RLS** — Claire ran the check. Only one policy
+   exists: `legal_content_public_read` (SELECT, roles `anon`/
+   `authenticated`) — no INSERT/UPDATE/DELETE policy for those roles at
+   all, meaning writes are blocked by default under RLS. Correctly
+   locked down, matching `clients`' own existing lockdown. No action
+   needed.
+3. **Correction, not a fix**: I'd flagged "Admin's Edit flow has no
+   awareness of month_budgets" as still-open, based on a tracking-doc
+   note from earlier in the 2026-08-28 session — but that note was
+   written mid-investigation, BEFORE the actual fix landed later that
+   same day (see the "Order amendment history built for varying-by-month
+   campaigns" entry above: `adminToggleMonthBudgetsEditPanel()`/
+   `adminSaveMonthBudgetsEdit()` in `admin/index.html`, the
+   `month_budgets` branch in `admin_edit_order_line_item` — confirmed
+   live via Claire pasting the actual deployed function definition,
+   matches exactly — and `renderAmendmentHistoryHtml()` in `shared.js`,
+   confirmed wired into `renderOrderDetailModal()`). Should have kept
+   reading forward in the tracking doc before reporting this as open.
+   **Claire confirmed live: "Month by month edit looks correct on the AM
+   side."** No SQL or code change was needed — this item is fully closed.
+
+All three pre-launch audit items are now resolved. Moving on to the
+companion form next.
+
+---
+
+## 2026-08-31 (cont'd) — Companion form v1 built: Cancel/Edit/Renew self-service, pending AM approval
+
+Claire confirmed this is needed for Wednesday's launch. Design decisions
+confirmed via AskUserQuestion before building anything: (1) pending AM
+approval, not instant — no AE login exists anywhere in this system, so
+nothing should take effect until an AM reviews it; (2) full scope —
+Cancel + Edit + Renew, not just Cancel; (3) legacy/orderless
+bulk-imported campaigns are explicitly OUT of scope for now — Claire:
+"keep our original way open in the meantime... while we keep working
+through importing," so those just don't show up in the self-service
+checklist at all, no new path built for them; (4) a dedicated "Pending
+Requests" tab in Admin, not folded into Order Detail; (5) notify the AM
+immediately by email on submit, using the exact same recipient-
+resolution mechanism the main IO form's own submission email already
+uses.
+
+**Researched before writing anything** (via a survey agent, to reuse
+existing patterns instead of reinventing them): the group-link/AE-
+roster/client-lookup patterns from `index.html`, how `campaign_lines`
+actually stores active services (confirmed: no budget columns of its
+own — those live in `campaign_months`, but `admin_cancel_service`/
+`admin_edit_order_line_item`/`admin_renew_service` all actually operate
+on the frozen `orders.line_items` snapshot instead), the exact
+parameters the three existing AM-triggered mutation RPCs take, and the
+email-notification mechanism to reuse. Confirmed no pre-existing
+approval-queue pattern to conflict with — the new table is modeled on
+the existing `status_history` audit shape instead of inventing something
+new.
+
+**SQL (handed to Claire, not committed to the repo, per standing
+convention)** — verified against her real, pasted definitions of
+`admin_cancel_service`, `admin_renew_service`, and
+`admin_edit_order_line_item` (already had this one from earlier today)
+before finalizing, so every internal call matches real parameter
+names/order exactly:
+- New `pending_requests` table (client/service/order/action/
+  requested_changes jsonb/requested_by/status/resolved_by/resolved_at),
+  RLS enabled with a public-INSERT-only policy (reading/resolving only
+  ever happens through the SECURITY DEFINER RPCs below, which check real
+  admin credentials themselves).
+- `companion_submit_request()` — anon-callable, validates the order
+  actually belongs to the given client/group and actually contains the
+  given service before inserting, so a malformed/spoofed request can't
+  land in the AM's queue for something that doesn't exist.
+- `companion_get_active_services()` — anon-callable, same trust level as
+  the existing `get_client_service_flights`. Deliberately excludes any
+  `campaign_lines` row with a null `order_id` (a legacy import) — those
+  never appear in the self-service checklist at all, per Claire's scope
+  decision above. Pulls dollar amounts from `orders.line_items`, not
+  `campaign_lines`/`campaign_months`, confirmed via her actual column
+  list that `campaign_lines` has no budget fields of its own.
+- `admin_get_pending_requests()` / `admin_approve_pending_request()` /
+  `admin_reject_pending_request()` — all real admin-credential-gated.
+  **Key design choice**: approving a request does NOT duplicate any
+  mutation logic — it calls the exact same `admin_cancel_service`/
+  `admin_edit_order_line_item`/`admin_renew_service` functions already
+  live today, using the approving AM's own name/password. Trello
+  comments, PDF reattachment, `edit_history` — all of it keeps working
+  exactly as it already does, with zero new mutation code to get wrong.
+
+**`companion/index.html` (new file)** — a fully independent page, same
+"doesn't load shared.js" convention `index.html` itself already follows,
+sharing its group-link/AE-picker/client-picker patterns by direct copy
+(not by extracting them into shared.js, matching how `index.html` and
+`admin/index.html` already each keep their own copies of overlapping
+logic). Flow: "I am" → client picker → a checklist of that client's
+active, self-serviceable services (each showing its current amount and
+flight dates) → per-service Cancel/Edit/Renew tabs that reveal the right
+fields inline (a flat amount box, or a real month-by-month editor when
+`companion_get_active_services()` reports the campaign genuinely varies
+— same `monthsVary`-style detection used everywhere else this session)
+→ submit calls `companion_submit_request()` once per selected service,
+then sends the AM notification email (identical recipient-resolution
+logic to `index.html`'s own Step 6, just a different subject/body).
+
+**`admin/index.html` — new "Pending Requests" tab**: a 14th top-level
+section (`section-pending`), following the exact existing tab/panel
+pattern. Shows each request's client/service/who-requested-it/when,
+a plain-English description of the requested change (a real total for
+a `month_budgets` edit, not a raw array or an average — same convention
+fixed elsewhere this session), and Approve/Reject buttons. A "show
+resolved" checkbox reveals the history once something's been acted on.
+Badge count on the tab itself updates when the tab's own data loads —
+same precedent as the existing Accounting Map's missing-count badge,
+not something eagerly computed at app init (the email notification is
+the primary "something needs you" signal; the badge is a secondary
+confirmation once an AM is already in Admin).
+
+**Verified**: `node --check` passes on both files. Standalone harness
+(`verify_pending_describe.js`) confirms the plain-English change
+description is correct for all three action types, including the
+varying-campaign case showing a real total. A live headless-browser test
+of the companion form's actual rendering (not just logic) confirmed:
+service rows render correctly from mock data, switching between Cancel/
+Edit/Renew tabs shows the right fields, and a genuinely-varying campaign
+correctly shows a full month-by-month editor instead of one flat box. A
+second live-browser test of the new Admin tab's rendering confirmed the
+badge count, the pending-only vs. show-resolved filtering, and the
+plain-English descriptions all render correctly from realistic mock
+data, with zero JS errors in either.
+
+**Not yet verified — needs Claire**: the SQL hasn't been run in
+Supabase yet (sent as a file). Nothing in this feature can be tested
+end-to-end against real data until that's applied — the browser tests
+above proved the RENDERING/LOGIC is correct against mock data, not that
+the real RPCs work together correctly once live. Next step once the SQL
+is run: a real test — submit a Cancel/Edit/Renew request from the
+companion form, confirm it lands in Admin's Pending Requests tab, and
+confirm Approve actually applies the change (Trello comment, PDF
+reattachment, the works) the same way the existing AM-triggered
+Cancel/Edit/Renew buttons already do.
+
+---
+
+## 2026-08-31 (cont'd) — Companion form: all 3 budget modes for Edit AND Renew
+
+Claire: "For edits and renewals we will need to allow for the monthly/
+whole campaign and varying month spends for campaign tactics." v1's Edit
+only offered a flat number OR (if already varying) a month-by-month
+editor — no "Whole Campaign Total" entry mode at all, and Renew only
+ever supported one flat number for the whole renewed term.
+
+**Edit — no new SQL needed**, `admin_edit_order_line_item` already
+accepts a `month_budgets` array. Added the same 3-mode picker (Monthly
+Rate / Whole Campaign Total / Custom by Month) the main IO form's own
+Step 2 already has, scoped only to real spend-priced campaign tactics
+(`isSpendTactic()` — spend > 0 or already-varying `month_budgets`) —
+flat fee/recurring retainers keep the simple single-number edit
+unchanged, same distinction the main IO form itself already draws.
+Ported `monthsInFlight()`/`splitAmountAcrossMonths()` directly from
+`index.html` into `companion/index.html` (same independent-copy
+convention this page already follows) — "Whole Campaign Total" mode
+computes the real per-month split from the entered total, submitted as
+a `month_budgets` array, not a bare number.
+
+**Renew — required extending `admin_renew_service` itself**, since the
+LIVE function only ever supported one flat number for the entire
+renewed term (a single `campaign_months` row). Confirmed via
+AskUserQuestion: a renewal's whole-campaign-total/custom-by-month should
+cover ONLY the newly renewed period (from the month after the current
+`flight_end` through the new end date) — matching the scope the existing
+one-month version already used, never reshaping months already in
+progress. Added an optional `p_new_month_budgets jsonb` parameter; when
+given, it takes priority over `p_new_monthly_budget` and seeds one
+`campaign_months` row per month — same per-month seeding pattern
+`create_campaign_lines_from_order()` already uses for a brand-new
+order's own `month_budgets`, reused here rather than invented twice.
+When omitted, behavior is BYTE-FOR-BYTE identical to before — Admin's
+own existing single-flat-number "Renew" button needs zero changes.
+`admin_approve_pending_request()`'s renew branch updated to pass this
+new parameter through. `companion/index.html`'s Renew tab now offers the
+same 3-mode picker, computing the renewal period's own month list via a
+new `renewalPeriodStart()` helper (month after `flight_end`) before
+splitting or rendering per-month inputs.
+
+**Verified**: `node --check` passes. Live headless-browser test walked
+the full flow: Edit's Monthly Rate mode correctly defaults to the
+current rate; Whole Campaign Total correctly computes 5 months × $500 =
+$2,500 for a Sep–Jan flight; Custom by Month shows the right 5 rows.
+Renew's Total mode correctly identifies Feb 1, 2027 as the renewal
+period start (the month after a Jan 31, 2027 flight_end) for a new June
+30, 2027 end date, and collecting that payload confirmed the $3,000
+entered actually splits proportionally by days across the 5 renewed
+months (Feb 28d/Mar 31d/Apr 30d/May 31d/Jun 30d → $560/$620/$600/$620/
+$600, summing back to exactly $3,000). Zero JS errors. The updated SQL
+(same file, `admin_renew_service` replaced in place, `create or replace`
+throughout so it's safe to re-run in full regardless of whether the
+original version was already applied) was pasted directly to Claire per
+her request, not just sent as a file. Same as before: nothing here can
+be tested end-to-end against real data until she runs it.
