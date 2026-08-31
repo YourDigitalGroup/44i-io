@@ -21660,3 +21660,22 @@ passing.
   confident enough in a blind fix without seeing the exact scroll
   position live; asked Claire for more specifics before touching
   anything here.
+
+**Follow-up, same day — resolved.** Claire: "it was while scrolling in
+the box for that one service" — happening only DURING scroll (not a
+static layout mismatch) is the specific signature of a known Chrome/
+Safari rendering bug: `position:sticky` combined with a
+`border-collapse:collapse` table sibling can flicker/ghost-overlap cells
+during scroll on some GPU-compositing setups, even when nothing in the
+actual layout genuinely overlaps — `.summary-table` had exactly this
+combination (`.rs-section-head` sticky, `.summary-table` collapse).
+Switched to `border-collapse:separate;border-spacing:0`, which sidesteps
+that rendering path entirely while producing the exact same visual
+result (every border here is a single-sided `border-bottom`, not a
+shared multi-cell edge, so collapse vs. separate makes no visible
+difference — purely a rendering-engine internals change). Confirmed no
+`.summary-table` cell relies on collapse-specific double-border removal
+before making this change. Not verified live (this class of bug is
+browser/GPU-specific and can't be reproduced or confirmed via static
+code inspection) — needs Claire to re-test the same scroll behavior to
+confirm it's actually gone.
