@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Request a Change</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+/* Same CSS variable palette/branding approach as the main IO form (index.html)
+   -- this page is a fully independent copy, same convention index.html itself
+   already follows for shared.js (it deliberately doesn't load it either), kept
+   in sync by hand if the shared look-and-feel ever changes. */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --accent:#1C9BD7;
+  --accent-rgb:28,155,215;
+  --accent-text:#0B2436;
+  --accent-on-light:#167aaa;
+  --bg:#fff;
+  --border:#DDE8F0;
+  --text:#1A2332;
+  --muted:#5A6A7A;
+  --light:#EBF4FB;
+  --danger:#B3261E;
+}
+body{font-family:'Montserrat',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+input,select,textarea,button{font-family:inherit}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.wrap{max-width:760px;margin:0 auto;padding:32px 24px 80px}
+.header{background:#1C9BD7;padding:24px 32px;border-radius:14px;margin-bottom:28px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 32px rgba(var(--accent-rgb),.3)}
+.header h1{color:var(--accent-text);font-size:19px;font-weight:800}
+.header p{color:var(--accent-text);font-size:12.5px;opacity:.85;margin-top:2px}
+#logo-chip{display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.95);border-radius:8px;padding:6px 10px}
+#group-logo{height:36px;max-width:150px;object-fit:contain;display:block}
+.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-bottom:18px}
+.card h2{font-size:14px;font-weight:700;margin-bottom:12px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:5px}
+.field input,.field select,.field textarea{width:100%;padding:9px 11px;border-radius:8px;border:1.5px solid var(--border);font-size:13.5px}
+.field textarea{min-height:60px;resize:vertical}
+.svc-row{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.svc-head{display:flex;align-items:flex-start;gap:10px;cursor:pointer}
+.svc-head input[type=checkbox]{width:18px;height:18px;margin-top:2px;accent-color:var(--accent)}
+.svc-title{font-weight:700;font-size:13.5px}
+.svc-meta{font-size:11.5px;color:var(--muted);margin-top:2px}
+.svc-detail{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:none}
+.svc-detail.open{display:block}
+.action-tabs{display:flex;gap:6px;margin-bottom:12px}
+.action-tab{padding:6px 14px;border-radius:999px;border:1.5px solid var(--border);background:#fff;font-size:12px;font-weight:700;cursor:pointer;color:var(--muted)}
+.action-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.month-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:12px}
+.month-row span{width:90px;color:var(--muted)}
+.month-row input{width:110px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);font-size:12px}
+.btn{padding:11px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-secondary{background:#fff;color:var(--text);border:1px solid var(--border)}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none;text-align:center}
+.toast.show{display:block}
+.toast.error{background:#FEE2E2;color:var(--danger)}
+.toast.success{background:#DCFCE7;color:#166534}
+.hidden{display:none !important}
+.muted-note{font-size:12px;color:var(--muted);font-style:italic}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div id="logo-chip"><img id="group-logo" alt="Logo"/></div>
+    <div>
+      <h1>Request a Change</h1>
+      <p>Cancel, edit, or renew an existing service — your AM reviews every request before it takes effect.</p>
+    </div>
+  </div>
+
+  <div id="dead-link" class="card hidden">
+    <p class="muted-note">This link isn't active. Please check with your AM for the correct link.</p>
+  </div>
+
+  <div id="main-content" class="hidden">
+    <div class="card">
+      <h2>I am</h2>
+      <div class="field" id="ae-picker-wrap" style="display:none">
+        <label>Select your name</label>
+        <select id="ae-picker" onchange="applyAePick(this.value)"></select>
+      </div>
+      <div class="field">
+        <label>Your Name</label>
+        <input type="text" id="ae-name" placeholder="Full name"/>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Which client?</h2>
+      <div class="field" id="client-picker-wrap" style="display:none">
+        <label>Select the client</label>
+        <select id="client-picker" onchange="applyClientPick(this.value)">
+          <option value="">— Select a client —</option>
+        </select>
+      </div>
+      <p class="muted-note" id="no-client-note" style="display:none">No clients found for this group yet — check with your AM.</p>
+    </div>
+
+    <div id="services-card" class="card hidden">
+      <h2>Which service(s), and what do you need?</h2>
+      <div id="services-list"></div>
+      <p class="muted-note" id="no-services-note" style="display:none">This client has no self-serviceable active services right now — some may need to go through your AM directly (e.g. imported legacy campaigns).</p>
+    </div>
+
+    <div id="submit-wrap" class="hidden" style="text-align:right">
+      <button class="btn btn-primary" id="submit-btn" onclick="submitRequests()">Submit Request(s)</button>
+    </div>
+  </div>
+
+  <div id="success-screen" class="card hidden" style="text-align:center;padding:40px 22px">
+    <h2 style="font-size:17px;margin-bottom:8px">✅ Request(s) submitted</h2>
+    <p class="muted-note">Your AM has been notified and will review before anything changes.</p>
+    <button class="btn btn-secondary" style="margin-top:16px" onclick="location.reload()">Submit another</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = "https://emydtkhnespbxraiijkx.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVteWR0a2huZXNwYnhyYWlpamt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5MTA3NjUsImV4cCI6MjA5MzQ4Njc2NX0.vh_5f19z2cb4_NU0sEKAcPiiNXhQZp-61bBN7lqEKbI";
+const PROXY = SUPABASE_URL + "/functions/v1/claude-proxy";
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function sb(path, opts={}) {
+  const method = opts.method || 'GET';
+  const body = opts.body || undefined;
+  const prefer = opts.prefer || 'return=representation';
+  const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
+    method,
+    headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: prefer },
+    body
+  });
+  const t = await res.text();
+  if (!res.ok) throw new Error('Supabase error ' + res.status + ': ' + t.slice(0,200));
+  return t ? JSON.parse(t) : null;
+}
+
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + type;
+  setTimeout(() => t.className = 'toast', 8000);
+}
+
+// ── Group resolution — identical pattern to index.html's getSlug()/group load ──
+function getSlug() {
+  const pathSlug = window.location.pathname.replace(/^\/+|\/+$/g, '').replace(/^companion\/?/, '');
+  if (pathSlug) return pathSlug;
+  const p = new URLSearchParams(window.location.search);
+  return p.get('g') || p.get('group') || '';
+}
+
+let selectedGroup = null;
+let AE_ROSTER = [];
+let CLIENT_ROSTER = [];
+let ACTIVE_SERVICES = [];
+let selectedClientId = null;
+
+function hexToRgba(hex, alpha) {
+  const c = hex.replace('#','');
+  return `rgba(${parseInt(c.substr(0,2),16)},${parseInt(c.substr(2,2),16)},${parseInt(c.substr(4,2),16)},${alpha})`;
+}
+
+function applyGroupBranding(group) {
+  const logo = document.getElementById('group-logo');
+  const chip = document.getElementById('logo-chip');
+  if (group.logo_url) {
+    logo.src = group.logo_url;
+    chip.style.display = 'inline-flex';
+    chip.style.background = group.logo_dark_bg ? '#1A2332' : 'rgba(255,255,255,.95)';
+  }
+  if (group.brand_color) {
+    document.querySelector('.header').style.background = group.brand_color;
+    document.documentElement.style.setProperty('--accent', group.brand_color);
+    document.documentElement.style.setProperty('--light', hexToRgba(group.brand_color, 0.08));
+  }
+}
+
+async function loadAeRoster(groupId) {
+  const wrap = document.getElementById('ae-picker-wrap');
+  const sel = document.getElementById('ae-picker');
+  try {
+    AE_ROSTER = await sb('rpc/get_group_aes', { method: 'POST', body: JSON.stringify({ p_group_id: groupId }) }) || [];
+  } catch(e) { console.warn('Could not load AE roster:', e.message); AE_ROSTER = []; }
+  if (!AE_ROSTER.length) { wrap.style.display = 'none'; return; }
+  sel.innerHTML = '<option value="">— New AE —</option>' + AE_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  sel.value = '';
+  wrap.style.display = 'block';
+}
+function applyAePick(id) {
+  const nameEl = document.getElementById('ae-name');
+  if (!id) { nameEl.value = ''; nameEl.disabled = false; return; }
+  const a = AE_ROSTER.find(x => x.id === id);
+  if (!a) return;
+  nameEl.value = a.name || '';
+  nameEl.disabled = true;
+}
+
+async function loadClientRoster(groupId) {
+  const wrap = document.getElementById('client-picker-wrap');
+  const sel = document.getElementById('client-picker');
+  const noNote = document.getElementById('no-client-note');
+  try {
+    CLIENT_ROSTER = await sb('rpc/get_group_clients', { method: 'POST', body: JSON.stringify({ p_group_id: groupId }) }) || [];
+  } catch(e) { console.warn('Could not load client roster:', e.message); CLIENT_ROSTER = []; }
+  if (!CLIENT_ROSTER.length) { wrap.style.display = 'none'; noNote.style.display = 'block'; return; }
+  sel.innerHTML = '<option value="">— Select a client —</option>' + CLIENT_ROSTER.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  wrap.style.display = 'block';
+}
+
+async function applyClientPick(id) {
+  selectedClientId = id || null;
+  const servicesCard = document.getElementById('services-card');
+  const list = document.getElementById('services-list');
+  const noServicesNote = document.getElementById('no-services-note');
+  const submitWrap = document.getElementById('submit-wrap');
+  list.innerHTML = '';
+  noServicesNote.style.display = 'none';
+  submitWrap.classList.add('hidden');
+  if (!id) { servicesCard.classList.add('hidden'); return; }
+
+  servicesCard.classList.remove('hidden');
+  try {
+    ACTIVE_SERVICES = await sb('rpc/companion_get_active_services', {
+      method: 'POST',
+      body: JSON.stringify({ p_group_id: selectedGroup.id, p_client_id: id })
+    }) || [];
+  } catch(e) {
+    console.warn('Could not load active services:', e.message);
+    ACTIVE_SERVICES = [];
+  }
+  if (!ACTIVE_SERVICES.length) { noServicesNote.style.display = 'block'; return; }
+
+  list.innerHTML = ACTIVE_SERVICES.map((svc, i) => renderServiceRow(svc, i)).join('');
+  submitWrap.classList.remove('hidden');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+}
+function fmtMoney(n) {
+  return '$' + Number(n || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function monthsVary(monthBudgets) {
+  return Array.isArray(monthBudgets) && monthBudgets.length > 1 && new Set(monthBudgets.map(m => m.amount)).size > 1;
+}
+
+function renderServiceRow(svc, i) {
+  const varies = monthsVary(svc.month_budgets);
+  const currentAmt = svc.fee > 0 ? fmtMoney(svc.fee) + ' one-time'
+    : varies ? fmtMoney(svc.month_budgets.reduce((s,m) => s + (Number(m.amount)||0), 0)) + ' total (varies by month)'
+    : svc.recurring > 0 ? fmtMoney(svc.recurring) + '/mo'
+    : svc.spend > 0 ? fmtMoney(svc.spend) + '/mo' : '—';
+  return `<div class="svc-row" data-idx="${i}">
+    <div class="svc-head" onclick="toggleServiceDetail(${i})">
+      <input type="checkbox" id="svc-chk-${i}" onclick="event.stopPropagation();toggleServiceDetail(${i}, this.checked)"/>
+      <div>
+        <div class="svc-title">${esc(svc.label)}</div>
+        <div class="svc-meta">${currentAmt} · ${fmtDate(svc.flight_start)} – ${fmtDate(svc.flight_end)}</div>
+      </div>
+    </div>
+    <div class="svc-detail" id="svc-detail-${i}">
+      <div class="action-tabs">
+        <div class="action-tab" id="tab-${i}-cancel" onclick="setServiceAction(${i},'cancel')">Cancel</div>
+        <div class="action-tab" id="tab-${i}-edit" onclick="setServiceAction(${i},'edit')">Edit</div>
+        <div class="action-tab" id="tab-${i}-renew" onclick="setServiceAction(${i},'renew')">Renew</div>
+      </div>
+      <div id="action-body-${i}"></div>
+    </div>
+  </div>`;
+}
+
+function toggleServiceDetail(i, forceChecked) {
+  const chk = document.getElementById(`svc-chk-${i}`);
+  const detail = document.getElementById(`svc-detail-${i}`);
+  if (forceChecked === undefined) { chk.checked = !chk.checked; }
+  detail.classList.toggle('open', chk.checked);
+}
+
+function setServiceAction(i, action) {
+  ['cancel','edit','renew'].forEach(a => document.getElementById(`tab-${i}-${a}`).classList.toggle('active', a === action));
+  document.getElementById(`svc-chk-${i}`).checked = true;
+  document.getElementById(`svc-detail-${i}`).classList.add('open');
+  const svc = ACTIVE_SERVICES[i];
+  const body = document.getElementById(`action-body-${i}`);
+  if (action === 'cancel') {
+    body.innerHTML = `
+      <div class="field"><label>Effective Cancellation Date</label><input type="date" id="cancel-date-${i}"/></div>
+      <div class="field"><label>Reason</label><textarea id="cancel-reason-${i}" placeholder="Why is this being cancelled?"></textarea></div>`;
+  } else if (action === 'renew') {
+    body.innerHTML = `
+      <div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}"/></div>
+      <div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-budget-${i}" placeholder="${svc.recurring || svc.spend || ''}"/></div>`;
+  } else if (action === 'edit') {
+    const varies = monthsVary(svc.month_budgets);
+    if (varies) {
+      const rows = svc.month_budgets.map((m, mi) => {
+        const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', {month:'short', year:'numeric'});
+        return `<div class="month-row"><span>${esc(label)}</span><input type="number" step="0.01" class="edit-month-${i}" data-month="${esc(m.month)}" data-paused="${m.paused ? '1' : ''}" value="${m.amount}"/></div>`;
+      }).join('');
+      body.innerHTML = `<label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Edit month-by-month amounts</label>${rows}`;
+    } else {
+      const field = svc.fee > 0 ? 'fee' : svc.recurring > 0 ? 'recurring' : 'spend';
+      const current = svc[field];
+      body.innerHTML = `<input type="hidden" id="edit-field-${i}" value="${field}"/>
+        <div class="field"><label>New Amount</label><input type="number" step="0.01" id="edit-amount-${i}" value="${current || ''}"/></div>`;
+    }
+  }
+  ACTIVE_SERVICES[i]._action = action;
+}
+
+function collectServicePayload(i) {
+  const svc = ACTIVE_SERVICES[i];
+  const action = svc._action;
+  if (!action) return null;
+  if (action === 'cancel') {
+    const date = document.getElementById(`cancel-date-${i}`)?.value;
+    if (!date) return { error: `Please enter an effective date for ${svc.label}` };
+    return {
+      service_id: svc.service_id, order_id: svc.order_id, action: 'cancel',
+      requested_changes: { effective_date: date, reason: document.getElementById(`cancel-reason-${i}`)?.value || '' }
+    };
+  }
+  if (action === 'renew') {
+    const endDate = document.getElementById(`renew-end-${i}`)?.value;
+    if (!endDate) return { error: `Please enter a new end date for ${svc.label}` };
+    const budgetVal = document.getElementById(`renew-budget-${i}`)?.value;
+    return {
+      service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
+      requested_changes: { new_end_date: endDate, new_monthly_budget: budgetVal ? parseFloat(budgetVal) : null }
+    };
+  }
+  if (action === 'edit') {
+    const varies = monthsVary(svc.month_budgets);
+    if (varies) {
+      const inputs = document.querySelectorAll(`.edit-month-${i}`);
+      const newMonthBudgets = [...inputs].map(inp => ({ month: inp.dataset.month, amount: parseFloat(inp.value) || 0, paused: inp.dataset.paused === '1' }));
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'month_budgets', new_value: JSON.stringify(newMonthBudgets) } };
+    }
+    const field = document.getElementById(`edit-field-${i}`)?.value;
+    const amount = document.getElementById(`edit-amount-${i}`)?.value;
+    if (!amount) return { error: `Please enter a new amount for ${svc.label}` };
+    return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field, new_value: amount } };
+  }
+  return null;
+}
+
+async function submitRequests() {
+  const aeName = document.getElementById('ae-name').value.trim();
+  if (!aeName) { showToast('Please enter your name', 'error'); return; }
+  if (!selectedClientId) { showToast('Please select a client', 'error'); return; }
+
+  const checked = ACTIVE_SERVICES.map((svc, i) => ({ svc, i })).filter(({i}) => document.getElementById(`svc-chk-${i}`)?.checked);
+  if (!checked.length) { showToast('Please select at least one service', 'error'); return; }
+
+  const payloads = [];
+  for (const { i } of checked) {
+    const p = collectServicePayload(i);
+    if (!p) { showToast(`Please choose Cancel, Edit, or Renew for ${ACTIVE_SERVICES[i].label}`, 'error'); return; }
+    if (p.error) { showToast(p.error, 'error'); return; }
+    payloads.push(p);
+  }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Submitting...';
+
+  const aeEmail = AE_ROSTER.find(a => a.name === aeName)?.email || '';
+  const submitted = [];
+  try {
+    for (const p of payloads) {
+      await sb('rpc/companion_submit_request', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_group_id: selectedGroup.id, p_client_id: selectedClientId, p_order_id: p.order_id,
+          p_service_id: p.service_id, p_action: p.action, p_requested_changes: p.requested_changes,
+          p_requested_by: aeName, p_requested_by_email: aeEmail
+        })
+      });
+      submitted.push(p);
+    }
+  } catch (e) {
+    showToast('Could not submit: ' + e.message, 'error');
+    btn.disabled = false; btn.textContent = 'Submit Request(s)';
+    return;
+  }
+
+  await notifyAm(aeName, aeEmail, submitted);
+
+  document.getElementById('main-content').classList.add('hidden');
+  document.getElementById('success-screen').classList.remove('hidden');
+}
+
+// Same recipient-resolution + send_email target as the main IO form's own
+// submission notification (index.html Step 6) — group's io_recipient list +
+// the submitting AE as To, global always_bcc_recipients as Bcc, deduped.
+async function notifyAm(aeName, aeEmail, submitted) {
+  try {
+    const groupRecipients = (selectedGroup.io_recipient || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (aeEmail && !groupRecipients.some(r => r.toLowerCase() === aeEmail.toLowerCase())) groupRecipients.push(aeEmail);
+    let alwaysBcc = [];
+    try {
+      const notifRows = await sb('notification_settings?id=eq.1&select=always_bcc_recipients');
+      const raw = Array.isArray(notifRows) ? notifRows[0]?.always_bcc_recipients : null;
+      alwaysBcc = (raw || '').split(',').map(s => s.trim()).filter(Boolean);
+    } catch (e) { console.warn('Could not load notification_settings:', e.message); }
+    const toLower = new Set(groupRecipients.map(r => r.toLowerCase()));
+    const bccRecipients = alwaysBcc.filter(r => !toLower.has(r.toLowerCase()));
+    let emailTo = groupRecipients.join(',');
+    let emailBcc = bccRecipients.join(',');
+    if (!emailTo && emailBcc) { emailTo = emailBcc; emailBcc = ''; }
+    if (!emailTo) { console.log('No email recipients configured — skipping notification.'); return; }
+
+    const client = CLIENT_ROSTER.find(c => c.id === selectedClientId);
+    const rows = submitted.map(p => {
+      const svc = ACTIVE_SERVICES.find(s => s.service_id === p.service_id);
+      return `<tr><td style="padding:6px 0;color:#6B7280">${esc(svc?.label || p.service_id)}</td><td style="padding:6px 0;font-weight:600;text-transform:capitalize">${esc(p.action)}</td></tr>`;
+    }).join('');
+    const color = selectedGroup?.brand_color || '#1C9BD7';
+    const html = `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px">
+      <div style="background:${color};padding:16px 20px;border-radius:8px 8px 0 0">
+        <div style="color:#fff;font-size:16px;font-weight:700">New Change Request — ${esc(selectedGroup.name || '')}</div>
+      </div>
+      <div style="border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;padding:20px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <tr><td style="padding:6px 0;color:#6B7280;width:140px">Client</td><td style="padding:6px 0;font-weight:600">${esc(client?.name || '')}</td></tr>
+          <tr><td style="padding:6px 0;color:#6B7280">Requested by</td><td style="padding:6px 0">${esc(aeName)}</td></tr>
+        </table>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:12px">${rows}</table>
+        <p style="font-size:12px;color:#6B7280;margin-top:16px">Review and approve/reject in Admin → Pending Requests.</p>
+      </div>
+    </div>`;
+
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      body: JSON.stringify({ target: 'send_email', to: emailTo, bcc: emailBcc, subject: 'New change request pending approval', html })
+    });
+    if (!res.ok) console.warn('Could not send notification email:', res.status);
+  } catch (e) {
+    console.warn('Could not send notification email:', e.message);
+  }
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', async () => {
+  const slug = getSlug();
+  if (!slug) { document.getElementById('dead-link').classList.remove('hidden'); return; }
+  try {
+    const results = await sb('groups?io_slug=eq.' + encodeURIComponent(slug) + '&select=*');
+    selectedGroup = results && results[0];
+  } catch (e) { console.warn('Could not load group:', e.message); }
+  if (!selectedGroup || selectedGroup.active === false) {
+    document.getElementById('dead-link').classList.remove('hidden');
+    return;
+  }
+  applyGroupBranding(selectedGroup);
+  document.getElementById('main-content').classList.remove('hidden');
+  await loadAeRoster(selectedGroup.id);
+  await loadClientRoster(selectedGroup.id);
+});
+</script>
+</body>
+</html>

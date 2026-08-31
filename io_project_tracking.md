@@ -22583,3 +22583,117 @@ Claire's decisions on the 3 flagged audit items:
 
 All three pre-launch audit items are now resolved. Moving on to the
 companion form next.
+
+---
+
+## 2026-08-31 (cont'd) — Companion form v1 built: Cancel/Edit/Renew self-service, pending AM approval
+
+Claire confirmed this is needed for Wednesday's launch. Design decisions
+confirmed via AskUserQuestion before building anything: (1) pending AM
+approval, not instant — no AE login exists anywhere in this system, so
+nothing should take effect until an AM reviews it; (2) full scope —
+Cancel + Edit + Renew, not just Cancel; (3) legacy/orderless
+bulk-imported campaigns are explicitly OUT of scope for now — Claire:
+"keep our original way open in the meantime... while we keep working
+through importing," so those just don't show up in the self-service
+checklist at all, no new path built for them; (4) a dedicated "Pending
+Requests" tab in Admin, not folded into Order Detail; (5) notify the AM
+immediately by email on submit, using the exact same recipient-
+resolution mechanism the main IO form's own submission email already
+uses.
+
+**Researched before writing anything** (via a survey agent, to reuse
+existing patterns instead of reinventing them): the group-link/AE-
+roster/client-lookup patterns from `index.html`, how `campaign_lines`
+actually stores active services (confirmed: no budget columns of its
+own — those live in `campaign_months`, but `admin_cancel_service`/
+`admin_edit_order_line_item`/`admin_renew_service` all actually operate
+on the frozen `orders.line_items` snapshot instead), the exact
+parameters the three existing AM-triggered mutation RPCs take, and the
+email-notification mechanism to reuse. Confirmed no pre-existing
+approval-queue pattern to conflict with — the new table is modeled on
+the existing `status_history` audit shape instead of inventing something
+new.
+
+**SQL (handed to Claire, not committed to the repo, per standing
+convention)** — verified against her real, pasted definitions of
+`admin_cancel_service`, `admin_renew_service`, and
+`admin_edit_order_line_item` (already had this one from earlier today)
+before finalizing, so every internal call matches real parameter
+names/order exactly:
+- New `pending_requests` table (client/service/order/action/
+  requested_changes jsonb/requested_by/status/resolved_by/resolved_at),
+  RLS enabled with a public-INSERT-only policy (reading/resolving only
+  ever happens through the SECURITY DEFINER RPCs below, which check real
+  admin credentials themselves).
+- `companion_submit_request()` — anon-callable, validates the order
+  actually belongs to the given client/group and actually contains the
+  given service before inserting, so a malformed/spoofed request can't
+  land in the AM's queue for something that doesn't exist.
+- `companion_get_active_services()` — anon-callable, same trust level as
+  the existing `get_client_service_flights`. Deliberately excludes any
+  `campaign_lines` row with a null `order_id` (a legacy import) — those
+  never appear in the self-service checklist at all, per Claire's scope
+  decision above. Pulls dollar amounts from `orders.line_items`, not
+  `campaign_lines`/`campaign_months`, confirmed via her actual column
+  list that `campaign_lines` has no budget fields of its own.
+- `admin_get_pending_requests()` / `admin_approve_pending_request()` /
+  `admin_reject_pending_request()` — all real admin-credential-gated.
+  **Key design choice**: approving a request does NOT duplicate any
+  mutation logic — it calls the exact same `admin_cancel_service`/
+  `admin_edit_order_line_item`/`admin_renew_service` functions already
+  live today, using the approving AM's own name/password. Trello
+  comments, PDF reattachment, `edit_history` — all of it keeps working
+  exactly as it already does, with zero new mutation code to get wrong.
+
+**`companion/index.html` (new file)** — a fully independent page, same
+"doesn't load shared.js" convention `index.html` itself already follows,
+sharing its group-link/AE-picker/client-picker patterns by direct copy
+(not by extracting them into shared.js, matching how `index.html` and
+`admin/index.html` already each keep their own copies of overlapping
+logic). Flow: "I am" → client picker → a checklist of that client's
+active, self-serviceable services (each showing its current amount and
+flight dates) → per-service Cancel/Edit/Renew tabs that reveal the right
+fields inline (a flat amount box, or a real month-by-month editor when
+`companion_get_active_services()` reports the campaign genuinely varies
+— same `monthsVary`-style detection used everywhere else this session)
+→ submit calls `companion_submit_request()` once per selected service,
+then sends the AM notification email (identical recipient-resolution
+logic to `index.html`'s own Step 6, just a different subject/body).
+
+**`admin/index.html` — new "Pending Requests" tab**: a 14th top-level
+section (`section-pending`), following the exact existing tab/panel
+pattern. Shows each request's client/service/who-requested-it/when,
+a plain-English description of the requested change (a real total for
+a `month_budgets` edit, not a raw array or an average — same convention
+fixed elsewhere this session), and Approve/Reject buttons. A "show
+resolved" checkbox reveals the history once something's been acted on.
+Badge count on the tab itself updates when the tab's own data loads —
+same precedent as the existing Accounting Map's missing-count badge,
+not something eagerly computed at app init (the email notification is
+the primary "something needs you" signal; the badge is a secondary
+confirmation once an AM is already in Admin).
+
+**Verified**: `node --check` passes on both files. Standalone harness
+(`verify_pending_describe.js`) confirms the plain-English change
+description is correct for all three action types, including the
+varying-campaign case showing a real total. A live headless-browser test
+of the companion form's actual rendering (not just logic) confirmed:
+service rows render correctly from mock data, switching between Cancel/
+Edit/Renew tabs shows the right fields, and a genuinely-varying campaign
+correctly shows a full month-by-month editor instead of one flat box. A
+second live-browser test of the new Admin tab's rendering confirmed the
+badge count, the pending-only vs. show-resolved filtering, and the
+plain-English descriptions all render correctly from realistic mock
+data, with zero JS errors in either.
+
+**Not yet verified — needs Claire**: the SQL hasn't been run in
+Supabase yet (sent as a file). Nothing in this feature can be tested
+end-to-end against real data until that's applied — the browser tests
+above proved the RENDERING/LOGIC is correct against mock data, not that
+the real RPCs work together correctly once live. Next step once the SQL
+is run: a real test — submit a Cancel/Edit/Renew request from the
+companion form, confirm it lands in Admin's Pending Requests tab, and
+confirm Approve actually applies the change (Trello comment, PDF
+reattachment, the works) the same way the existing AM-triggered
+Cancel/Edit/Renew buttons already do.
