@@ -437,6 +437,11 @@ select.qty-field{background-image:none;padding-right:3px}
   .summary-table { min-width: 0 !important; table-layout: auto; }
   .rs-section-scroll { max-height: 340px; }
   .summary-table thead { display: none; }
+  /* .rs-col-head (2026-08-31) is the desktop-only fake sticky column-label
+     row for the per-section Review table -- mobile already labels each field
+     via the ::before content rules below, so showing this too would just
+     duplicate "Fee"/"Recurring"/etc. labels above the stacked cards. */
+  .rs-col-head { display: none; }
   .summary-table, .summary-table tbody, .summary-table tr, .summary-table td { display: block; width: 100%; }
   .summary-table tr {
     /* width: auto (2026-08-14, per Claire -- confirmed live: right edge of a card
@@ -607,6 +612,29 @@ select.qty-field{background-image:none;padding-right:3px}
 .summary-table>thead>tr>th{position:sticky;top:32px;z-index:2;padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
 .summary-table td{padding:9px 14px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
 .summary-table tr:last-child td{border-bottom:none}
+/* .rs-col-head (2026-08-31) -- a plain sticky <div> row replacing the per-
+   section Review table's real <thead><th>, after the scoped-selector fix
+   above still left the column-label row overlapping the nested month-
+   breakdown table's own header once scrolled. A real <table><thead><th>
+   combined with position:sticky is fragile across browsers once a row has
+   further nested content -- this is the third overlap report in this exact
+   spot -- so this sidesteps the whole class of bug by reusing the identical
+   div+position:sticky approach .rs-section-head already handles reliably,
+   instead of patching the table-based approach a fourth time. Column widths
+   are hand-matched to the per-section table's own colgroup (110/130/150/160,
+   Service gets the remainder) so the fake header lines up with the real
+   columns below it; box-sizing:border-box on each cell so the declared width
+   includes its own padding, matching how a <col> width behaves for a table
+   cell. Only used by the per-section Review table -- the Agent/County Split
+   table above still uses a real <thead><th> (no nested rows, never reported
+   broken) and is untouched. */
+.rs-col-head{position:sticky;top:32px;z-index:2;display:flex;background:var(--light);border-bottom:1px solid var(--border)}
+.rs-col-head>div{padding:9px 14px;box-sizing:border-box;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.rs-col-head>div:nth-child(1){flex:1;min-width:170px}
+.rs-col-head>div:nth-child(2){width:110px}
+.rs-col-head>div:nth-child(3){width:130px}
+.rs-col-head>div:nth-child(4){width:150px}
+.rs-col-head>div:nth-child(5){width:160px}
 
 /* Buttons */
 .btn{padding:11px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .2s}
@@ -4906,7 +4934,23 @@ function buildReview() {
     // column already uses); the existing .rs-section-scroll{overflow:auto}
     // still provides horizontal scroll as a safety net below that.
     const summaryColgroup = `<colgroup><col/><col style="width:110px"/><col style="width:130px"/><col style="width:150px"/><col style="width:160px"/></colgroup>`;
-    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}">${rsChevronSvg} ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table" style="table-layout:fixed;min-width:720px">${summaryColgroup}<thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
+    // Plain sticky <div> column-label row (2026-08-31), not a real <thead><th>
+    // (found live by Claire — even after scoping the sticky rule off of the
+    // nested month-breakdown table's own header, the two STILL overlapped
+    // each other). A real <table><thead><th> with position:sticky is a
+    // known-unreliable combination across browsers, especially once a row
+    // contains further nested content (see io_project_tracking.md — this is
+    // the THIRD overlap report in this exact spot, and the project's own
+    // notes already flagged sticky-inside-tables as fragile once). Rather
+    // than chase a fourth CSS-selector patch, this drops the real <thead>
+    // for this table entirely and reuses the exact div+position:sticky
+    // pattern .rs-section-head already uses reliably (mobile already drops
+    // the real <thead> too, in favor of ::before labels, so this isn't a new
+    // kind of trade-off for this table). .rs-col-head's per-column widths
+    // are hand-matched to summaryColgroup's 110/130/150/160 so the fake
+    // header lines up with the real table's columns below it.
+    const rsColHead = `<div class="rs-col-head"><div>Service</div><div>Fee</div><div>Recurring</div><div>Flight</div><div>Notes</div></div>`;
+    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}">${rsChevronSvg} ${esc(secDef.label)}</div>${isCollapsed ? '' : `${rsColHead}<table class="summary-table" style="table-layout:fixed;min-width:720px">${summaryColgroup}<tbody>${rows.join('')}</tbody></table>`}</div>`);
   });
 
   // Agent/County Split (2026-08-19, per Claire -- "add the agent information
