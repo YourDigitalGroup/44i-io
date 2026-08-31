@@ -590,7 +590,21 @@ select.qty-field{background-image:none;padding-right:3px}
    without needing a second, separate version. z-index:2, one below the
    section head's 3, so the section head always wins if either ever needs to
    render on top of the other. */
-.summary-table th{position:sticky;top:32px;z-index:2;padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
+/* Scoped to `> thead > tr > th` (2026-08-31, found live by Claire — a NEW
+   overlap appeared specifically on rows with an expanded month-by-month
+   breakdown, e.g. Facebook & Instagram in Social Media Ads): a bare
+   `.summary-table th` descendant selector doesn't care how deeply nested a
+   `th` is, so it was ALSO grabbing the small Month/Days-in-Flight/Amount
+   table's own header (renderMonthPreviewTable() — a plain inline-styled
+   <table>, embedded in a <td> of a budget-detail <tr> that's a sibling row
+   of the service's own row, but still a DESCENDANT of table.summary-table).
+   That inner header tried to stick at the exact same top:32px slot as the
+   real column-label row, and the two fought for the same band while
+   scrolling — reading as the service row overlapping the column headers.
+   The `>` child-combinator chain only reaches the outer table's OWN
+   <thead>, since the nested table sits behind an intervening tbody/tr/td/
+   table boundary that no direct-child chain crosses. */
+.summary-table>thead>tr>th{position:sticky;top:32px;z-index:2;padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
 .summary-table td{padding:9px 14px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
 .summary-table tr:last-child td{border-bottom:none}
 
