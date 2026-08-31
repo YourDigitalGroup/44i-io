@@ -22348,3 +22348,52 @@ that service) never picks her up either way. Not tested against the
 live Trello API — needs Claire to re-submit a test order with
 Traditional Buying selected and confirm Carol now appears ONLY on its
 own tactic card, not the IO card.
+
+---
+
+## 2026-08-31 (cont'd) — Extended the resolved tactic variant name to Step 3 and Print
+
+Claire tested Location Targeting again, picked "1st Party Addressable,"
+and reported Step 3 was "still showing both" (the raw combined catalog
+label). She said "we had this function working earlier before we
+started making these other changes, what happened?" — a real regression
+would need investigating, but a full grep of every `tactic_variant`/
+`resolveTacticVariantName` reference turned up exactly one consumer:
+the Trello card title, inside `submitIO()`. Nothing in `buildReview()`
+(Step 3) or `printIO()` had ever read `tacticVariant` — not a
+regression, just never built there. Asked Claire directly rather than
+guessing further: confirmed she remembered the CARD TITLE resolving
+correctly before, and — separately, now that it's raised — wants the
+same resolved name shown on Step 3 and Print too, for consistency.
+
+**Built**: moved the actual name-resolution logic out of `submitIO()`'s
+private, workflow-scoped `resolveTacticVariantName()` into two new
+top-level functions usable from anywhere: `variantIsAlreadyComplete()`
+(unchanged logic, just relocated) and `resolveVariantDisplayName(serviceId,
+variant, fallbackName)`, which takes a specific row's own service id +
+picked variant string directly rather than searching `lineItems` by
+workflow — Step 3/Print already have exactly the row they need, they
+don't need submitIO()'s per-workflow lookup machinery at all.
+`submitIO()`'s own `resolveTacticVariantName()` now delegates to this
+same shared function once it's found the relevant line item, so the
+Trello card title and Step 3/Print are guaranteed to resolve identically
+rather than being two copies that could quietly drift apart later.
+Wired into `buildReview()`'s per-row Service cell (`rs-service`) and
+`printIO()`'s per-row Service cell (`svc-name`) — both replace
+`data.label` with `resolveVariantDisplayName(id, data.tacticVariant,
+data.label)`, falling back to the original combined label unchanged
+when nothing's been picked (matches every service that's never had this
+feature at all).
+
+**Verified**: `node --check` passes. Standalone harness
+(`verify_variant_display.js`) confirms: a bare variant gets its section
+label prepended exactly as before; an already-prefixed variant (e.g.
+"Addressable: 1st Party") is used as-is; nothing picked falls back to
+the unchanged combined label; and — the actual point of this
+refactor — calling the shared function twice with identical inputs
+(simulating the Step 3 and Print call sites) always produces the
+identical result, so those two and the Trello card title can never
+show three different names for the same pick. Not tested live — needs
+Claire to pick "1st Party Addressable" again and confirm Step 3 now
+shows "Location Targeting: 1st Party Addressable" (or whatever the
+exact stored variant string resolves to) instead of the combined label.
