@@ -3720,11 +3720,25 @@ function toggle(cb, id) {
       if (warn) warn.remove();
     }
     document.getElementById('budget-detail-' + id)?.remove();
+    // Named multi-select modules (2026-08-31) — FOUND LIVE by Claire, real bug:
+    // unchecking left the checklist row visible (with boxes still checked) and
+    // the auto-filled Notes text still showing "Selected: ...", so rechecking
+    // the box looked like it silently remembered a previous, unrelated pick.
+    // Both need to be torn down here, same as the budget detail row above.
+    if (CATALOG_ROWS[id]?.qty_option_labels) {
+      document.getElementById('module-detail-' + id)?.remove();
+      const notesField = row.querySelector('textarea.notes-field');
+      if (notesField) { notesField.value = ''; autoGrowNotesField(notesField); }
+    }
     // Selector dropped `input[type=number]` (2026-07-16) — a qty_preset_options service
     // (Optional Content Support's quarter-hour dropdown) renders qty as a <select>, not
     // an <input>, which the old tag-scoped selector would never match at all.
     const qtyInput = row.querySelector('.qty-field');
-    if (qtyInput) qtyInput.value = '1';
+    // A named multi-select module resets to 0 (nothing picked), not the normal
+    // per_unit default of 1 — rechecking the box should start from a real "pick
+    // something" state, matching the fresh-check behavior in the `if (cb.checked)`
+    // branch above, not silently imply 1 unit with nothing actually chosen.
+    if (qtyInput) qtyInput.value = CATALOG_ROWS[id]?.qty_option_labels ? '0' : '1';
     const quotedInput = row.querySelector('input[type=number].quoted-price-field');
     if (quotedInput) quotedInput.value = '';
 
@@ -6902,7 +6916,18 @@ function buildIoDocumentHtml() {
       // reasoning as buildReview()'s identical check.
       if (data.is_qur && !data.quotedPriceEntered) {
         amtCol = 'Quote Upon Request';
-      } else if (data.qty != null) {
+      } else if (data.qty != null && data.fee > 0) {
+        // FIXED (2026-08-31, found live by Claire — "Addl. Monthly Email"
+        // printed as "— × 1 = — one-time" instead of its real "$175.00/mo"):
+        // this branch used to trigger for ANY per-unit item just because qty
+        // was set, even one whose real price is a RECURRING per-unit rate
+        // (data.recurring), not a one-time per-unit fee (data.fee) at all —
+        // em-addl has qty set (it's pricing_mode: per_unit) but no one-time
+        // fee, so `fmt(data.fee)`/`fmt(feeTotal)` both rendered "—". Gating on
+        // `data.fee > 0` too lets a qty-but-no-fee item correctly fall through
+        // to the recurring branches below instead, matching what buildReview()
+        // (Step 3) already showed correctly — this print template just hadn't
+        // been exercised by a real per-unit-AND-recurring item until now.
         amtCol = fmt(data.fee) + ' × ' + qty + ' = ' + fmt(feeTotal) + (recurringTotal > 0 || data.spend > 0 ? ' one-time' : '');
       } else if (feeTotal > 0 && (recurringTotal > 0 || data.spend > 0)) {
         amtCol = fmt(feeTotal) + ' setup + ' + fmt(recurringTotal > 0 ? recurringTotal : data.spend) + '/mo';
@@ -6911,7 +6936,12 @@ function buildIoDocumentHtml() {
       } else if (recurringTotal > 0 && data.spend > 0) {
         amtCol = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo campaign';
       } else if (recurringTotal > 0) {
-        amtCol = fmt(recurringTotal) + '/mo';
+        // Same "show the × breakdown when qty > 1" treatment buildReview()
+        // already gives a recurring per-unit item (2026-08-31 fix, found
+        // alongside the "— × 1 = —" bug above) — a qty of 1 doesn't need it
+        // (nothing to break down), so this only changes anything for an
+        // actual multi-unit recurring add-on.
+        amtCol = (qty > 1 ? fmt(data.recurring) + ' × ' + qty + ' = ' + fmt(recurringTotal) : fmt(recurringTotal)) + '/mo';
       } else if (data.spend > 0) {
         // Same "varies by month" consistency check as buildReview() (2026-08-20)
         // -- this is the signed contract document, so it needs to match the
