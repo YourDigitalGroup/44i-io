@@ -256,6 +256,57 @@ function monthsVary(monthBudgets) {
   return Array.isArray(monthBudgets) && monthBudgets.length > 1 && new Set(monthBudgets.map(m => m.amount)).size > 1;
 }
 
+// Ported directly from index.html's own monthsInFlight()/splitAmountAcrossMonths()
+// (2026-08-31, per Claire — "for edits and renewals we will need to allow for
+// the monthly/whole campaign and varying month spends") — the companion form
+// needs the SAME three budget-entry modes (Monthly Rate / Whole Campaign
+// Total / Custom by Month) the main IO form already offers, not just a flat
+// number and an existing-varying-only month editor. Same independent-copy
+// convention this whole page already follows (it doesn't load shared.js
+// either) rather than extracting these into a shared file.
+function monthsInFlight(startDateStr, endDateStr) {
+  if (!startDateStr) return [];
+  const flightStart = new Date(startDateStr + 'T00:00:00');
+  const flightEnd = endDateStr ? new Date(endDateStr + 'T00:00:00') : flightStart;
+  if (flightEnd < flightStart) return [];
+  const months = [];
+  let cursor = new Date(flightStart.getFullYear(), flightStart.getMonth(), 1);
+  const last = new Date(flightEnd.getFullYear(), flightEnd.getMonth(), 1);
+  while (cursor <= last) {
+    const monthStart = new Date(cursor);
+    const monthEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const s = monthStart > flightStart ? monthStart : flightStart;
+    const e = monthEnd < flightEnd ? monthEnd : flightEnd;
+    const days = s > e ? 0 : Math.round((e - s) / 86400000) + 1;
+    months.push({ month: `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`, days });
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  return months;
+}
+function splitAmountAcrossMonths(totalAmount, startDateStr, endDateStr) {
+  const months = monthsInFlight(startDateStr, endDateStr);
+  const totalDays = months.reduce((sum, m) => sum + m.days, 0);
+  let allocated = 0;
+  months.forEach((m, i) => {
+    if (i === months.length - 1) m.amount = Math.round((totalAmount - allocated) * 100) / 100;
+    else { m.amount = Math.round((totalAmount * m.days / totalDays) * 100) / 100; allocated += m.amount; }
+    m.paused = false;
+  });
+  return months;
+}
+function monthLabel(monthStr) {
+  return new Date(monthStr + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+// The renewed period only, starting the month AFTER the current flight_end —
+// same scope admin_renew_service's own existing single-month version already
+// uses, confirmed via AskUserQuestion this extension should never reshape
+// months already in progress.
+function renewalPeriodStart(currentEndDateStr) {
+  const d = currentEndDateStr ? new Date(currentEndDateStr + 'T00:00:00') : new Date();
+  const next = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2,'0')}-01`;
+}
+
 function renderServiceRow(svc, i) {
   const varies = monthsVary(svc.month_budgets);
   const currentAmt = svc.fee > 0 ? fmtMoney(svc.fee) + ' one-time'
@@ -288,6 +339,15 @@ function toggleServiceDetail(i, forceChecked) {
   detail.classList.toggle('open', chk.checked);
 }
 
+// Is this row a real campaign tactic (has ad spend, or already has a real
+// month_budgets breakdown) rather than a flat one-time fee/recurring
+// retainer? Only these get the full 3-mode budget picker below — matches
+// the exact same distinction the main IO form itself already draws (budget
+// entry states only ever exist for spend-priced rows there).
+function isSpendTactic(svc) {
+  return svc.spend > 0 || monthsVary(svc.month_budgets);
+}
+
 function setServiceAction(i, action) {
   ['cancel','edit','renew'].forEach(a => document.getElementById(`tab-${i}-${a}`).classList.toggle('active', a === action));
   document.getElementById(`svc-chk-${i}`).checked = true;
@@ -299,25 +359,88 @@ function setServiceAction(i, action) {
       <div class="field"><label>Effective Cancellation Date</label><input type="date" id="cancel-date-${i}"/></div>
       <div class="field"><label>Reason</label><textarea id="cancel-reason-${i}" placeholder="Why is this being cancelled?"></textarea></div>`;
   } else if (action === 'renew') {
-    body.innerHTML = `
-      <div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}"/></div>
-      <div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-budget-${i}" placeholder="${svc.recurring || svc.spend || ''}"/></div>`;
-  } else if (action === 'edit') {
-    const varies = monthsVary(svc.month_budgets);
-    if (varies) {
-      const rows = svc.month_budgets.map((m, mi) => {
-        const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', {month:'short', year:'numeric'});
-        return `<div class="month-row"><span>${esc(label)}</span><input type="number" step="0.01" class="edit-month-${i}" data-month="${esc(m.month)}" data-paused="${m.paused ? '1' : ''}" value="${m.amount}"/></div>`;
-      }).join('');
-      body.innerHTML = `<label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Edit month-by-month amounts</label>${rows}`;
+    if (isSpendTactic(svc)) {
+      body.innerHTML = `
+        <div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}" onchange="setRenewBudgetMode(${i}, ACTIVE_SERVICES[${i}]._renewMode || 'monthly')"/></div>
+        <div class="action-tabs">
+          <div class="action-tab" id="renew-mode-${i}-monthly" onclick="setRenewBudgetMode(${i},'monthly')">Monthly Rate</div>
+          <div class="action-tab" id="renew-mode-${i}-total" onclick="setRenewBudgetMode(${i},'total')">Whole Campaign Total</div>
+          <div class="action-tab" id="renew-mode-${i}-custom" onclick="setRenewBudgetMode(${i},'custom')">Custom by Month</div>
+        </div>
+        <div id="renew-budget-body-${i}"></div>`;
+      setRenewBudgetMode(i, 'monthly');
     } else {
-      const field = svc.fee > 0 ? 'fee' : svc.recurring > 0 ? 'recurring' : 'spend';
+      body.innerHTML = `
+        <div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}"/></div>
+        <div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-budget-${i}" placeholder="${svc.recurring || ''}"/></div>`;
+    }
+  } else if (action === 'edit') {
+    if (isSpendTactic(svc)) {
+      body.innerHTML = `
+        <div class="action-tabs">
+          <div class="action-tab" id="edit-mode-${i}-monthly" onclick="setEditBudgetMode(${i},'monthly')">Monthly Rate</div>
+          <div class="action-tab" id="edit-mode-${i}-total" onclick="setEditBudgetMode(${i},'total')">Whole Campaign Total</div>
+          <div class="action-tab" id="edit-mode-${i}-custom" onclick="setEditBudgetMode(${i},'custom')">Custom by Month</div>
+        </div>
+        <div id="edit-budget-body-${i}"></div>`;
+      setEditBudgetMode(i, monthsVary(svc.month_budgets) ? 'custom' : 'monthly');
+    } else {
+      const field = svc.fee > 0 ? 'fee' : 'recurring';
       const current = svc[field];
       body.innerHTML = `<input type="hidden" id="edit-field-${i}" value="${field}"/>
         <div class="field"><label>New Amount</label><input type="number" step="0.01" id="edit-amount-${i}" value="${current || ''}"/></div>`;
     }
   }
   ACTIVE_SERVICES[i]._action = action;
+}
+
+// Current real total for a spend tactic, regardless of which mode it's
+// CURRENTLY stored in — a varying campaign's real total (sum of its months),
+// or a flat rate projected across its own remaining flight, so switching
+// into "Whole Campaign Total" mode starts from a sensible number instead of
+// a blank/zero box.
+function currentSpendTotal(svc) {
+  if (monthsVary(svc.month_budgets)) return svc.month_budgets.reduce((s,m) => s + (Number(m.amount)||0), 0);
+  const months = monthsInFlight(svc.flight_start, svc.flight_end);
+  return (svc.spend || 0) * (months.length || 1);
+}
+
+function setEditBudgetMode(i, mode) {
+  const svc = ACTIVE_SERVICES[i];
+  svc._editMode = mode;
+  ['monthly','total','custom'].forEach(m => document.getElementById(`edit-mode-${i}-${m}`)?.classList.toggle('active', m === mode));
+  const body = document.getElementById(`edit-budget-body-${i}`);
+  if (mode === 'monthly') {
+    body.innerHTML = `<div class="field"><label>New Monthly Rate</label><input type="number" step="0.01" id="edit-monthly-${i}" value="${svc.spend || ''}"/></div>`;
+  } else if (mode === 'total') {
+    body.innerHTML = `<div class="field"><label>New Whole Campaign Total</label><input type="number" step="0.01" id="edit-total-${i}" value="${currentSpendTotal(svc) || ''}"/></div>
+      <p class="muted-note">Automatically split evenly across the flight (${fmtDate(svc.flight_start)} – ${fmtDate(svc.flight_end)}).</p>`;
+  } else if (mode === 'custom') {
+    const months = monthsVary(svc.month_budgets) ? svc.month_budgets : monthsInFlight(svc.flight_start, svc.flight_end).map(m => ({ month: m.month, amount: svc.spend || 0, paused: false }));
+    const rows = months.map(m => `<div class="month-row"><span>${esc(monthLabel(m.month))}</span><input type="number" step="0.01" class="edit-month-${i}" data-month="${esc(m.month)}" data-paused="${m.paused ? '1' : ''}" value="${m.amount}"/></div>`).join('');
+    body.innerHTML = `<label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Edit month-by-month amounts</label>${rows}`;
+  }
+}
+
+function setRenewBudgetMode(i, mode) {
+  const svc = ACTIVE_SERVICES[i];
+  svc._renewMode = mode;
+  ['monthly','total','custom'].forEach(m => document.getElementById(`renew-mode-${i}-${m}`)?.classList.toggle('active', m === mode));
+  const body = document.getElementById(`renew-budget-body-${i}`);
+  const periodStart = renewalPeriodStart(svc.flight_end);
+  const newEnd = document.getElementById(`renew-end-${i}`)?.value || '';
+  if (mode === 'monthly') {
+    body.innerHTML = `<div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-monthly-${i}" placeholder="${svc.spend || ''}"/></div>`;
+  } else if (mode === 'total') {
+    body.innerHTML = `<div class="field"><label>Whole Campaign Total for the Renewed Period</label><input type="number" step="0.01" id="renew-total-${i}"/></div>
+      <p class="muted-note">${newEnd ? `Automatically split evenly from ${fmtDate(periodStart)} through the new end date.` : 'Pick a New End Date above first.'}</p>`;
+  } else if (mode === 'custom') {
+    if (!newEnd) { body.innerHTML = `<p class="muted-note">Pick a New End Date above first.</p>`; return; }
+    const months = monthsInFlight(periodStart, newEnd);
+    if (!months.length) { body.innerHTML = `<p class="muted-note">The new end date needs to be after ${fmtDate(svc.flight_end)}.</p>`; return; }
+    const rows = months.map(m => `<div class="month-row"><span>${esc(monthLabel(m.month))}</span><input type="number" step="0.01" class="renew-month-${i}" data-month="${esc(m.month)}" value="${svc.spend || ''}"/></div>`).join('');
+    body.innerHTML = `<label style="display:block;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Set each renewed month's amount</label>${rows}`;
+  }
 }
 
 function collectServicePayload(i) {
@@ -335,23 +458,54 @@ function collectServicePayload(i) {
   if (action === 'renew') {
     const endDate = document.getElementById(`renew-end-${i}`)?.value;
     if (!endDate) return { error: `Please enter a new end date for ${svc.label}` };
-    const budgetVal = document.getElementById(`renew-budget-${i}`)?.value;
-    return {
-      service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
-      requested_changes: { new_end_date: endDate, new_monthly_budget: budgetVal ? parseFloat(budgetVal) : null }
-    };
+    if (!isSpendTactic(svc)) {
+      const budgetVal = document.getElementById(`renew-budget-${i}`)?.value;
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
+        requested_changes: { new_end_date: endDate, new_monthly_budget: budgetVal ? parseFloat(budgetVal) : null } };
+    }
+    const mode = svc._renewMode || 'monthly';
+    if (mode === 'monthly') {
+      const budgetVal = document.getElementById(`renew-monthly-${i}`)?.value;
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
+        requested_changes: { new_end_date: endDate, new_monthly_budget: budgetVal ? parseFloat(budgetVal) : null } };
+    }
+    if (mode === 'total') {
+      const totalVal = document.getElementById(`renew-total-${i}`)?.value;
+      if (!totalVal) return { error: `Please enter a whole campaign total for ${svc.label}'s renewal` };
+      const months = splitAmountAcrossMonths(parseFloat(totalVal), renewalPeriodStart(svc.flight_end), endDate);
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
+        requested_changes: { new_end_date: endDate, new_monthly_budget: null, new_month_budgets: months } };
+    }
+    // custom by month
+    const inputs = document.querySelectorAll(`.renew-month-${i}`);
+    if (!inputs.length) return { error: `Please set each renewed month's amount for ${svc.label}` };
+    const months = [...inputs].map(inp => ({ month: inp.dataset.month, amount: parseFloat(inp.value) || 0, paused: false }));
+    return { service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
+      requested_changes: { new_end_date: endDate, new_monthly_budget: null, new_month_budgets: months } };
   }
   if (action === 'edit') {
-    const varies = monthsVary(svc.month_budgets);
-    if (varies) {
-      const inputs = document.querySelectorAll(`.edit-month-${i}`);
-      const newMonthBudgets = [...inputs].map(inp => ({ month: inp.dataset.month, amount: parseFloat(inp.value) || 0, paused: inp.dataset.paused === '1' }));
-      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'month_budgets', new_value: JSON.stringify(newMonthBudgets) } };
+    if (!isSpendTactic(svc)) {
+      const field = document.getElementById(`edit-field-${i}`)?.value;
+      const amount = document.getElementById(`edit-amount-${i}`)?.value;
+      if (!amount) return { error: `Please enter a new amount for ${svc.label}` };
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field, new_value: amount } };
     }
-    const field = document.getElementById(`edit-field-${i}`)?.value;
-    const amount = document.getElementById(`edit-amount-${i}`)?.value;
-    if (!amount) return { error: `Please enter a new amount for ${svc.label}` };
-    return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field, new_value: amount } };
+    const mode = svc._editMode || 'monthly';
+    if (mode === 'monthly') {
+      const amount = document.getElementById(`edit-monthly-${i}`)?.value;
+      if (!amount) return { error: `Please enter a new monthly rate for ${svc.label}` };
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'spend', new_value: amount } };
+    }
+    if (mode === 'total') {
+      const totalVal = document.getElementById(`edit-total-${i}`)?.value;
+      if (!totalVal) return { error: `Please enter a whole campaign total for ${svc.label}` };
+      const months = splitAmountAcrossMonths(parseFloat(totalVal), svc.flight_start, svc.flight_end);
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'month_budgets', new_value: JSON.stringify(months) } };
+    }
+    // custom by month
+    const inputs = document.querySelectorAll(`.edit-month-${i}`);
+    const newMonthBudgets = [...inputs].map(inp => ({ month: inp.dataset.month, amount: parseFloat(inp.value) || 0, paused: inp.dataset.paused === '1' }));
+    return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'month_budgets', new_value: JSON.stringify(newMonthBudgets) } };
   }
   return null;
 }

@@ -22697,3 +22697,62 @@ companion form, confirm it lands in Admin's Pending Requests tab, and
 confirm Approve actually applies the change (Trello comment, PDF
 reattachment, the works) the same way the existing AM-triggered
 Cancel/Edit/Renew buttons already do.
+
+---
+
+## 2026-08-31 (cont'd) — Companion form: all 3 budget modes for Edit AND Renew
+
+Claire: "For edits and renewals we will need to allow for the monthly/
+whole campaign and varying month spends for campaign tactics." v1's Edit
+only offered a flat number OR (if already varying) a month-by-month
+editor — no "Whole Campaign Total" entry mode at all, and Renew only
+ever supported one flat number for the whole renewed term.
+
+**Edit — no new SQL needed**, `admin_edit_order_line_item` already
+accepts a `month_budgets` array. Added the same 3-mode picker (Monthly
+Rate / Whole Campaign Total / Custom by Month) the main IO form's own
+Step 2 already has, scoped only to real spend-priced campaign tactics
+(`isSpendTactic()` — spend > 0 or already-varying `month_budgets`) —
+flat fee/recurring retainers keep the simple single-number edit
+unchanged, same distinction the main IO form itself already draws.
+Ported `monthsInFlight()`/`splitAmountAcrossMonths()` directly from
+`index.html` into `companion/index.html` (same independent-copy
+convention this page already follows) — "Whole Campaign Total" mode
+computes the real per-month split from the entered total, submitted as
+a `month_budgets` array, not a bare number.
+
+**Renew — required extending `admin_renew_service` itself**, since the
+LIVE function only ever supported one flat number for the entire
+renewed term (a single `campaign_months` row). Confirmed via
+AskUserQuestion: a renewal's whole-campaign-total/custom-by-month should
+cover ONLY the newly renewed period (from the month after the current
+`flight_end` through the new end date) — matching the scope the existing
+one-month version already used, never reshaping months already in
+progress. Added an optional `p_new_month_budgets jsonb` parameter; when
+given, it takes priority over `p_new_monthly_budget` and seeds one
+`campaign_months` row per month — same per-month seeding pattern
+`create_campaign_lines_from_order()` already uses for a brand-new
+order's own `month_budgets`, reused here rather than invented twice.
+When omitted, behavior is BYTE-FOR-BYTE identical to before — Admin's
+own existing single-flat-number "Renew" button needs zero changes.
+`admin_approve_pending_request()`'s renew branch updated to pass this
+new parameter through. `companion/index.html`'s Renew tab now offers the
+same 3-mode picker, computing the renewal period's own month list via a
+new `renewalPeriodStart()` helper (month after `flight_end`) before
+splitting or rendering per-month inputs.
+
+**Verified**: `node --check` passes. Live headless-browser test walked
+the full flow: Edit's Monthly Rate mode correctly defaults to the
+current rate; Whole Campaign Total correctly computes 5 months × $500 =
+$2,500 for a Sep–Jan flight; Custom by Month shows the right 5 rows.
+Renew's Total mode correctly identifies Feb 1, 2027 as the renewal
+period start (the month after a Jan 31, 2027 flight_end) for a new June
+30, 2027 end date, and collecting that payload confirmed the $3,000
+entered actually splits proportionally by days across the 5 renewed
+months (Feb 28d/Mar 31d/Apr 30d/May 31d/Jun 30d → $560/$620/$600/$620/
+$600, summing back to exactly $3,000). Zero JS errors. The updated SQL
+(same file, `admin_renew_service` replaced in place, `create or replace`
+throughout so it's safe to re-run in full regardless of whether the
+original version was already applied) was pasted directly to Claire per
+her request, not just sent as a file. Same as before: nothing here can
+be tested end-to-end against real data until she runs it.
