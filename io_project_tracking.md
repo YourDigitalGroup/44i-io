@@ -21679,3 +21679,43 @@ before making this change. Not verified live (this class of bug is
 browser/GPU-specific and can't be reproduced or confirmed via static
 code inspection) — needs Claire to re-test the same scroll behavior to
 confirm it's actually gone.
+
+---
+
+## 2026-08-31 (cont'd) — Review/Print consistency audit, prompted directly by Claire
+
+Claire: "can you confirm you fixed the formatting in both step 3 and the
+print IO to make sure all of the columns are matching up from service to
+service so it looks clean?" Honest answer given first: the earlier fix
+only addressed the specific em-addl bug she found, not a full audit — so
+did the audit now rather than assume.
+
+**Confirmed already correct/intentional** (no change needed):
+- Fee column always shows the "× qty" breakdown even at qty=1 (both
+  views, matching `buildReview()`'s own documented intent, "ALSO applied
+  to printIO() (same test, same reasoning)" — a comment that predates
+  today's fix and confirms print was SUPPOSED to already match, but had
+  drifted); Recurring column only shows the breakdown when qty > 1 in
+  BOTH views (an intentionally different rule from the Fee column, not
+  an inconsistency).
+- Flight column deliberately uses a different date FORMAT per view
+  (Review: compact MM/DD/YY; Print: a formal document format) — both
+  share the exact same underlying `flightDisplayFor()` logic, just a
+  different formatting callback. Intentional, not a mismatch.
+- Review's 5-column layout (separate Fee/Recurring) vs. Print's 4-column
+  layout (one combined Amount) is a deliberate structural difference —
+  internal clarity vs. contract-document convention — not something to
+  unify.
+
+**Found and fixed — real, if minor, mismatch**: the Notes column joined
+a manual note + a hosting note with a different separator in each view
+(`" | "` in Review, `" — "` in Print) — invisible for the common case of
+only one note present, but a real visible discrepancy for a service
+carrying BOTH at once. Print's separator changed to match Review's.
+
+**Verified**: `node --check` passes on the extracted script. This was a
+direct code-reading audit (not a numeric harness — nothing here is a
+computation to unit-test, just comparing two rendering functions'
+literal output strings side by side), cross-checking every column
+(Fee/Amount, Recurring, Flight, Notes) between `buildReview()` and
+`printIO()` for divergence. Not yet re-tested live.

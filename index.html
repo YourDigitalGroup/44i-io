@@ -6976,7 +6976,12 @@ function buildIoDocumentHtml() {
       }
 
       const hostingNote = hostingChoices[id]?.note || data.hosting_note || '';
-      const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' — ');
+      // Separator matched to buildReview()'s own " | " (2026-08-31, found during
+      // a Review/Print consistency audit) — was " — " here, a genuine visible
+      // mismatch for any service carrying BOTH a manual note and a hosting note
+      // at once (rare, but a real "the document doesn't match the review"
+      // discrepancy exactly like the ones already fixed this session).
+      const notesDisplay = [data.notes, hostingNote].filter(Boolean).join(' | ');
       // Flight column (2026-08-06) — compact "8/15/26–1/10/27" per-tactic format,
       // same idea as the strategist portal's own Flight column, now that dates
       // live per row. Year added (2026-08-07, per Claire) since a printed IO can
