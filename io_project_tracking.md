@@ -21746,3 +21746,26 @@ Claire's asking for.
 just shows `"$X total"`, letting the table do the explaining. Confirmed
 via grep that zero remaining occurrences of this text exist outside code
 comments.
+
+---
+
+## 2026-08-31 (cont'd) — KOC card layout reordered to pair each calendar with its own date/time fields
+
+Both calendars confirmed working live (Carol's info had actually saved
+this time). Claire: "Could we make this look a little cleaner? Maybe
+move the AM date and time under that calendar and then the Carol Oren
+one is right under that link?" — the card was grouping BOTH calendar
+links first, then BOTH date/time blocks after, so the AM's "Step 2"
+fields sat visually far from her own calendar button, right above
+Carol's still-locked "Step 2b" fields.
+
+**Fixed (`index.html`)**: pure markup reorder, no JS touched — moved
+`koc-datetime-section` (the general AM's date/time block) to sit
+directly after the AM's calendar link/confirmation text, BEFORE
+`koc-specific-am-list` (Carol's calendar link) and its own
+`koc-datetime-section-specific` block. Now reads calendar → its own
+date/time → next calendar → its own date/time, instead of both
+calendars then both date/time blocks. All four elements are static
+markup (not dynamically inserted/reordered by JS), so this is zero-risk
+to the actual KOC logic — confirmed each id still appears exactly once
+after the move.

@@ -927,14 +927,13 @@ select.qty-field{background-image:none;padding-right:3px}
           <p style="font-size:11px;color:var(--muted);margin-top:10px">A confirmation will be sent to you and the client once booked.</p>
         </div>
 
-        <!-- A tactic whose Kick-Off Call always involves one named person (2026-08-28,
-             per Claire + AM — Traditional Buying → Carol Oren) gets its own extra
-             calendar link here, alongside the AM's own above — not a replacement, since
-             an order can mix this tactic with others that still just need the AM. -->
-        <div id="koc-specific-am-list" style="margin-bottom:16px"></div>
-
-        <!-- Step 2: Enter date/time (locked until calendar is clicked) -->
-        <div id="koc-datetime-section" style="background:#F3F4F6;border-radius:10px;padding:14px 16px;opacity:0.4;pointer-events:none">
+        <!-- Step 2: Enter date/time (locked until calendar is clicked) — moved
+             directly under the AM's own calendar link (2026-08-31, per Claire —
+             "move the AM date and time under that calendar and then the Carol
+             Oren one is right under that link") so each calendar link and its
+             own date/time fields read as one paired unit, instead of grouping
+             every calendar link first and every date/time block after. -->
+        <div id="koc-datetime-section" style="background:#F3F4F6;border-radius:10px;padding:14px 16px;opacity:0.4;pointer-events:none;margin-bottom:16px">
           <p style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Step 2: Enter the date & time you booked</p>
           <p id="koc-lock-msg" style="font-size:11px;color:#92400E;margin-bottom:12px">⬆ Open the calendar above first to unlock these fields</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
@@ -961,6 +960,12 @@ select.qty-field{background-image:none;padding-right:3px}
             </div>
           </div>
         </div>
+
+        <!-- A tactic whose Kick-Off Call always involves one named person (2026-08-28,
+             per Claire + AM — Traditional Buying → Carol Oren) gets its own extra
+             calendar link here, alongside the AM's own above — not a replacement, since
+             an order can mix this tactic with others that still just need the AM. -->
+        <div id="koc-specific-am-list" style="margin-bottom:16px"></div>
 
         <!-- Step 2b: a fully separate date/time capture for the specific-person KOC
              (2026-08-28, per Claire — "We will need to have 2 separate KOC's") — an
