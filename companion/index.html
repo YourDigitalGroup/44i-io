@@ -241,20 +241,34 @@ async function applyClientPick(id) {
   }
   if (!ACTIVE_SERVICES.length) { noServicesNote.style.display = 'block'; return; }
 
-  // Pull each service's available tactic_variants options straight from the
+  // Pull each service's catalog-level pricing shape straight from the
   // catalog (2026-08-31, per Claire — "we are missing the option to change
-  // the variant") — the same anon-readable `services` table the main IO
-  // form itself reads from, not a new RPC, since companion_get_active_services
-  // only returns the CURRENTLY selected variant (the order's own frozen
-  // value), not the full options list a dropdown needs.
+  // the variant", then "if you can't edit it in the IO form you can't edit
+  // it in the companion form") — the same anon-readable `services` table
+  // the main IO form itself reads from, not a new RPC, since
+  // companion_get_active_services only returns the order's own frozen
+  // values, not the catalog's options/rules a dropdown or an editability
+  // check needs. pricing_mode/default_price decide whether an amount is
+  // editable at all (see isAmountEditable()); tactic_variants and
+  // qty_option_labels are the two different "which one/which ones" option
+  // lists a service can have (never both — a service is one shape or the
+  // other), matching the main IO form's own single-select vs. multi-select
+  // checkbox split for these two mechanisms.
   try {
     const ids = [...new Set(ACTIVE_SERVICES.map(s => s.service_id))];
-    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants`) || [];
-    const variantsById = Object.fromEntries(rows.map(r => [r.id, r.tactic_variants]));
-    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = Array.isArray(variantsById[svc.service_id]) ? variantsById[svc.service_id] : null; });
+    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,pricing_mode,default_price`) || [];
+    const byId = Object.fromEntries(rows.map(r => [r.id, r]));
+    ACTIVE_SERVICES.forEach(svc => {
+      const r = byId[svc.service_id] || {};
+      svc._variantOptions = Array.isArray(r.tactic_variants) ? r.tactic_variants : null;
+      const moduleOptions = typeof r.qty_option_labels === 'string' ? JSON.parse(r.qty_option_labels || 'null') : r.qty_option_labels;
+      svc._moduleOptions = Array.isArray(moduleOptions) ? moduleOptions : null;
+      svc._pricingMode = r.pricing_mode || null;
+      svc._defaultPrice = r.default_price ?? null;
+    });
   } catch(e) {
-    console.warn('Could not load tactic variant options:', e.message);
-    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; });
+    console.warn('Could not load catalog pricing/option data:', e.message);
+    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; svc._moduleOptions = null; svc._pricingMode = null; svc._defaultPrice = null; });
   }
 
   list.innerHTML = ACTIVE_SERVICES.map((svc, i) => renderServiceRow(svc, i)).join('');
@@ -375,6 +389,27 @@ function isOneTimeOnly(svc) {
   return svc.fee > 0 && !(svc.recurring > 0) && !isSpendTactic(svc);
 }
 
+// A Website-Modules-shaped service (per_unit pricing, a fixed catalog price
+// per module, priced by HOW MANY are checked) — the thing actually editable
+// here is which modules are selected, never a dollar amount (2026-08-31,
+// per Claire — "we are missing the module options").
+function isModuleService(svc) {
+  return Array.isArray(svc._moduleOptions) && svc._moduleOptions.length > 0;
+}
+
+// Whether this service's dollar amount is even editable through this form
+// at all, matching Claire's rule of thumb (2026-08-31): "if you can't edit
+// it in the IO form you can't edit it in the companion form." In the main
+// IO form, only two kinds of row ever get a freely-typed amount: a
+// spend-priced campaign tactic (ad budget), or a QUR ("Quote Upon Request")
+// row with no catalog default_price. Every other row's amount is fixed by
+// the catalog (a flat tier price, a one-time fee, a per-module rate) and
+// shown as read-only text there — so it shouldn't be a free-typed number
+// here either, even though nothing stopped it before this fix.
+function isAmountEditable(svc) {
+  return isSpendTactic(svc) || svc._defaultPrice == null;
+}
+
 function setServiceAction(i, action) {
   ['cancel','edit','renew'].forEach(a => document.getElementById(`tab-${i}-${a}`)?.classList.toggle('active', a === action));
   document.getElementById(`svc-chk-${i}`).checked = true;
@@ -396,10 +431,15 @@ function setServiceAction(i, action) {
         </div>
         <div id="renew-budget-body-${i}"></div>`;
       setRenewBudgetMode(i, 'monthly');
-    } else {
+    } else if (isAmountEditable(svc)) {
       body.innerHTML = `
         <div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}"/></div>
         <div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-budget-${i}" placeholder="${svc.recurring || ''}"/></div>`;
+    } else {
+      // A fixed catalog price isn't renegotiable through a renewal any more
+      // than through an edit (2026-08-31, per Claire's rule of thumb) — only
+      // the term itself extends, at the same rate.
+      body.innerHTML = `<div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}"/></div>`;
     }
   } else if (action === 'edit') {
     // Dates and (if this service has any configured) the tactic variant are
@@ -419,7 +459,17 @@ function setServiceAction(i, action) {
         ${svc._variantOptions.map(v => `<option value="${esc(v)}" ${v === svc.tactic_variant ? 'selected' : ''}>${esc(v)}</option>`).join('')}
       </select></div>`;
     }
-    if (oneTime) {
+    // Checked BEFORE isOneTimeOnly — a service like Website Modules is both
+    // (one-time, no ongoing term) and module-configurable, and the thing
+    // actually editable about it is which modules are picked, not its date
+    // alone (2026-08-31, per Claire — "we are missing the module options").
+    if (isModuleService(svc)) {
+      const chosen = Array.isArray(svc.module_names) ? svc.module_names : [];
+      extraFieldsHtml += `<div class="field"><label>Modules</label>
+        <div>${svc._moduleOptions.map(name => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:4px"><input type="checkbox" class="edit-module-${i}" value="${esc(name)}" ${chosen.includes(name) ? 'checked' : ''}/> ${esc(name)}</label>`).join('')}</div>
+      </div>`;
+      body.innerHTML = extraFieldsHtml;
+    } else if (oneTime) {
       // One-time costs: no amount field, per Claire (2026-08-31) — the
       // amount isn't client-editable through this form, only date/variant.
       body.innerHTML = extraFieldsHtml;
@@ -432,11 +482,18 @@ function setServiceAction(i, action) {
         </div>
         <div id="edit-budget-body-${i}"></div>`;
       setEditBudgetMode(i, monthsVary(svc.month_budgets) ? 'custom' : 'monthly');
-    } else {
+    } else if (isAmountEditable(svc)) {
+      // QUR (Quote Upon Request) — the one non-spend case that genuinely had
+      // a freely-typed amount in the main IO form, so it keeps one here too.
       const field = svc.fee > 0 ? 'fee' : 'recurring';
       const current = svc[field];
       body.innerHTML = extraFieldsHtml + `<input type="hidden" id="edit-field-${i}" value="${field}"/>
         <div class="field"><label>New Amount</label><input type="number" step="0.01" id="edit-amount-${i}" value="${current || ''}"/></div>`;
+    } else {
+      // A fixed catalog tier price (e.g. a flat monthly retainer) isn't
+      // editable in the main IO form either — date/variant only, same
+      // rule of thumb as the one-time case above.
+      body.innerHTML = extraFieldsHtml;
     }
   }
   ACTIVE_SERVICES[i]._action = action;
@@ -549,7 +606,15 @@ function collectServicePayload(i) {
     const variantVal = document.getElementById(`edit-variant-${i}`)?.value;
     if (variantVal && variantVal !== svc.tactic_variant) fields.tactic_variant = variantVal;
 
-    if (isOneTimeOnly(svc)) {
+    if (isModuleService(svc)) {
+      const chosen = [...document.querySelectorAll(`.edit-module-${i}:checked`)].map(inp => inp.value);
+      const current = Array.isArray(svc.module_names) ? svc.module_names : [];
+      const changed = chosen.length !== current.length || chosen.some(m => !current.includes(m));
+      if (changed) fields.module_names = JSON.stringify(chosen);
+      if (!Object.keys(fields).length) return { error: `Please change the date, variant, or modules for ${svc.label}` };
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
+    }
+    if (isOneTimeOnly(svc) || !isAmountEditable(svc)) {
       if (!Object.keys(fields).length) return { error: `Please change the date or variant for ${svc.label}` };
       return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
     }
