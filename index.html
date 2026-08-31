@@ -4779,9 +4779,15 @@ function buildReview() {
       // label was telling the reader something the table already shows.
       // Matches shared.js's Order Detail modal, which made this exact same
       // call back on 2026-08-28 and never carried the text at all.
+      // "campaign" dropped from the flat-rate case (2026-08-31, per Claire —
+      // "could we drop the 'campaign' in the print IO?") -- "$X/mo" already
+      // reads as a spend-based monthly rate on its own; the word wasn't
+      // adding information. Applied here too, not just print, so the two
+      // don't diverge (same principle as every other Review/Print
+      // consistency fix today).
       amtDisplay = variesByMonth
         ? `${fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0))} total`
-        : fmt(data.spend) + '/mo campaign';
+        : fmt(data.spend) + '/mo';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
     } else if (data.is_cpm_adjustment) {
@@ -6994,7 +7000,13 @@ function buildIoDocumentHtml() {
       } else if (feeTotal > 0) {
         amtCol = fmt(feeTotal) + ' one-time';
       } else if (recurringTotal > 0 && data.spend > 0) {
-        amtCol = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo campaign';
+        // "campaign" -> "spend" (2026-08-31) -- buildReview()'s identical
+        // combo case already says "spend" here, not "campaign"; found this
+        // divergence while acting on Claire's "drop campaign" request below.
+        // Keeping the word (not deleting it outright, unlike the plain
+        // spend-only case) since it's disambiguating WHICH of the two dollar
+        // figures on this one line is the flat fee vs. the variable ad spend.
+        amtCol = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo spend';
       } else if (recurringTotal > 0) {
         // Same "show the × breakdown when qty > 1" treatment buildReview()
         // already gives a recurring per-unit item (2026-08-31 fix, found
@@ -7015,9 +7027,11 @@ function buildIoDocumentHtml() {
         // "— varies by month" text dropped (2026-08-31, same call as
         // buildReview()'s identical fix just above) — the breakdown table
         // right below already shows it varies.
+        // "campaign" dropped (2026-08-31, per Claire — "could we drop the
+        // 'campaign' in the print IO?") -- matches buildReview()'s identical fix.
         amtCol = variesByMonth
           ? (fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0)) + ' total')
-          : (fmt(data.spend) + '/mo campaign');
+          : (fmt(data.spend) + '/mo');
       } else if (data.is_cpm_adjustment) {
         // Explicit "No Charge" rather than falling through to "TBD" — this is a signed
         // contract document, and "TBD" would read as an unfinished price, not an

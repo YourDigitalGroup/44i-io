@@ -21853,3 +21853,46 @@ edited block is well-formed by direct re-read. Not yet tested live —
 needs Claire to scroll a multi-row section (Social Media Ads is the
 exact one she flagged) and confirm the column labels now stay visible
 the whole time, stacked cleanly under the section title with no overlap.
+
+---
+
+## 2026-08-31 (cont'd) — Dropped "campaign" from spend-based amounts; found a related Review/Print wording mismatch
+
+Claire: "For the location targeting and similar services do you think we
+could drop the 'campaign' in the print IO?" Agreed and applied to BOTH
+Review and Print (not print alone), since a one-sided change would have
+created a new Review/Print mismatch — the same category of issue fixed
+several times already today. `fmt(data.spend) + '/mo campaign'` →
+`fmt(data.spend) + '/mo'` in both `buildReview()` and `printIO()`'s
+spend-only branch.
+
+**Found while doing this**: `printIO()`'s combo branch (an item with
+BOTH a flat recurring fee AND ad spend on one line) said "campaign,"
+but `buildReview()`'s identical case already said "spend" — a real,
+pre-existing divergence never caught until acting on this specific
+request. Aligned Print to Review's existing wording ("spend," not
+deleted outright) since it's disambiguating which of the two dollar
+figures on that one combined line is the flat fee vs. the variable ad
+spend — unlike the plain spend-only case, there's a real reason to keep
+a word there.
+
+**Verified**: `node --check` passes on the extracted script. Grepped for
+any remaining `/mo campaign` text — zero live occurrences, only
+historical mentions inside comments.
+
+**Also flagged, not yet acted on**: Claire separately noted the SECTION
+SUBTOTAL line (e.g. Social Media Ads showing "$2,000/mo") is confusing.
+Diagnosed why: `sectionMonthly` sums `data.spend` for every item
+uniformly, but for a varying-by-month campaign `data.spend` is the
+AVERAGE (Facebook & Instagram's $2,500 over ~5 months, Snapchat's
+$1,500 over ~2 months) — summing two averages from campaigns that don't
+even run the same number of months and labeling the result "/mo"
+doesn't correspond to any real number. This is the same "misleading
+average" class of bug fixed everywhere else this session, just missed
+at the subtotal level. Proposed splitting the subtotal into genuinely
+flat "$X/mo" plus a separate "$Y total" for varying campaigns, matching
+every other fix today — but flagged that the page-level GRAND TOTAL (top
+of Step 3 and the printed IO) has the exact same underlying issue and is
+more consequential/visible, so held off making any change here pending
+Claire's decision on whether to fix both together or just the section
+subtotals for now.
