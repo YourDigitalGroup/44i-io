@@ -22756,3 +22756,66 @@ throughout so it's safe to re-run in full regardless of whether the
 original version was already applied) was pasted directly to Claire per
 her request, not just sent as a file. Same as before: nothing here can
 be tested end-to-end against real data until she runs it.
+
+---
+
+## 2026-08-31 (cont'd) — Real gap found: Approve wasn't posting to Trello at all
+
+Claire asked directly: "what happens when an AM confirms the change or
+doesn't?" Answering that properly required actually tracing what
+`adminApprovePendingRequestClick()` does today — and it exposed a real
+gap in what got built: `admin_approve_pending_request` (the SQL
+function) only ever performs the DATABASE mutation, by calling the same
+`admin_cancel_service`/`admin_edit_order_line_item`/
+`admin_renew_service` functions the existing Cancel/Edit/Renew buttons
+already use. It does NOT post a Trello comment or reattach a revised
+PDF — confirmed by reading `adminSubmitCancellation()`/
+`adminSaveLineItemEdit()`/`adminSaveMonthBudgetsEdit()`/
+`adminConfirmRenewal()` directly: every one of those posts to Trello via
+its OWN separate plain `fetch()` call in client-side JS, entirely
+outside the RPC. A Postgres function has no way to make an HTTP call on
+its own, so this was never something the database change alone could
+have covered — my earlier claim that approving "keeps Trello working
+exactly as it already does" was true of the mutation logic, but
+incomplete about the Trello side effect specifically.
+
+**Fixed**: `adminApprovePendingRequestClick()` now does that Trello work
+itself after a successful approve — resolves the order (lazy-loading
+`allOrders` if the AM opens Pending Requests before ever visiting
+Orders), builds the exact same comment wording each of the four existing
+handlers already uses (cancel/flat-edit/month-budgets-edit/renew, matched
+character-for-character), posts it to both the IO card and the tactic's
+own card, and reattaches a revised PDF for edits (matching that this is
+the one action type the existing handlers already treat that way — cancel
+and renew don't get a PDF reattach either, matching their own existing
+behavior exactly). A Trello/PDF failure here is reported but never undoes
+the already-successful database approval, same fail-open pattern every
+existing handler already uses for its own Trello step.
+
+**Verified**: `node --check` passes. Standalone harness
+(`verify_approve_comments.js`) confirms the comment text for all four
+cases matches each existing handler's real wording exactly (including
+the two pre-existing ones I could directly compare against source), plus
+correctly summarizes the NEW renewed-period-total case as a real dollar
+total, not a raw array or the wrong number.
+
+**Answering Claire's actual question, now that this is fixed** — plain
+answer of what happens:
+- **Approve**: the exact change gets applied via the same functions an
+  AM's own manual Cancel/Edit/Renew buttons already use (so any
+  guardrails/validation those already have still apply) — cancellation
+  status, the order's own snapshot for edits, or the campaign's flight/
+  budget for renewals. A Trello comment posts to both the client's IO
+  card and the specific tactic's card, and edits also get a freshly
+  regenerated PDF attached. The request is marked "approved" with who
+  approved it and when.
+- **Reject**: nothing changes anywhere — no database mutation, no Trello
+  post. The request is marked "rejected," with an optional note the AM
+  can type explaining why, visible later via the "show resolved" toggle.
+
+**Flagged, not built**: rejecting currently has no notification back to
+the AE who submitted it (they'd only find out by checking the companion
+form again, which has no "my past requests" view). Not something Claire
+asked for, and no existing precedent to model it on (AEs have no login
+anywhere in this system) — worth a decision on whether that's needed
+before launch or can wait.
