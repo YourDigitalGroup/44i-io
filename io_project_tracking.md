@@ -22397,3 +22397,84 @@ show three different names for the same pick. Not tested live — needs
 Claire to pick "1st Party Addressable" again and confirm Step 3 now
 shows "Location Targeting: 1st Party Addressable" (or whatever the
 exact stored variant string resolves to) instead of the combined label.
+
+---
+
+## 2026-08-31 (cont'd) — Test Business 9 confirmed the workflow fix works; two follow-up requests
+
+Claire re-tested with a new order (Test Business 9) including Website
+Modules and confirmed it now works — a Trello card was created for it
+(previously missing, now fixed by `effectiveWorkflow()`). Two follow-up
+asks came out of reviewing that card:
+
+**1. "Can we have the trello card and step 3 and the print IO act like
+the variants as well?" for Website Modules.** The card title, Step 3,
+and Print all still showed the full combined catalog label ("Modules
+(Newsletter, Photo/Video, Testimonial, News/Blog, Calendar)") instead of
+just the picked options, even though `onModuleCheckboxChange()` already
+tracks exactly which ones were picked in `selected[id].moduleNames`.
+
+Built the same "act like the variants" treatment used for tactic
+variants, generalized so both share one dispatcher:
+- **`resolveModuleDisplayName(moduleNames, fallbackName)`** (new,
+  top-level, next to `resolveVariantDisplayName()`): unlike a tactic
+  variant (pick ONE of several, section-prefix ambiguity to solve),
+  Website Modules lets picking SEVERAL at once and the base name
+  "Modules" was never ambiguous — so this just strips the catalog
+  label's own trailing `(...)` and rebuilds it with only the picked
+  names: `"Modules (Newsletter, Photo/Video, Testimonial, News/Blog,
+  Calendar)"` → `"Modules (Newsletter, Photo/Video)"`.
+- **`resolveRowDisplayName(id, data, fallbackName)`** (new, top-level):
+  one shared dispatcher for Step 3/Print's Service column — tries a
+  tactic variant first, then picked module names, falls back to the raw
+  label unchanged otherwise. Replaces the direct
+  `resolveVariantDisplayName()` calls added earlier today in
+  `buildReview()`/`printIO()`, so both features share one call site
+  instead of each needing its own.
+- **Trello card title**: added `module_names` to the `lineItems` object
+  (alongside `tactic_variant`, same "carried on the order even though
+  only the card title reads it for now" role). In the whole-list-
+  template loop (where Website Modules' single-card list template
+  lives), added a narrow, exact-match swap: a copied card's name only
+  gets replaced with the resolved module name when it EXACTLY equals
+  the selling service's own catalog label — true for Website Modules
+  (its template card is literally named after the combined label) but
+  false for every other whole-list template's distinctly-named subtask
+  cards (SEO Starter Process, SEO Starter Package - GBP, etc.), so
+  nothing else in a multi-card list template risks getting renamed.
+
+**2. "For anything that doesn't have a completed intake but doesn't
+require a KOC, can we modify this part of the Trello description to
+remove the note about collecting on a kick-off call?"** — she pointed
+at the exact wording: "Geofence Targeting Intake — ⚠️ INTAKE NOT STARTED
+— AE did not fill out this form. AM to collect every answer on the
+Kick-Off Call." A tactic with no KOC scheduled has no Kick-Off Call for
+an AM to collect anything on, so that clause was actively misleading for
+those cases.
+
+Checked first whether the "bypassed" banner ("AM HELP REQUESTED... on
+the Kick-Off Call") needed the same treatment — it doesn't:
+`bypassIntakeFromFooter()` (the intake modal's "Need AM Help" button)
+explicitly shows "KOC will be required" in its own toast when clicked,
+meaning bypassing an intake always forces a KOC to exist for that order.
+Only the NOT STARTED and PARTIALLY COMPLETE banners actually needed the
+fix, added via a new `workflowNeedsKoc` check
+(`lineItems.some(li => li.workflow === originalWorkflow && li.requires_koc)`,
+same per-workflow-scoped pattern as every other lookup in
+`buildIntakeDesc()`) — the Kick-Off Call clause now only appears when
+this specific workflow's own sold service actually requires one.
+
+**Verified**: `node --check` passes on both changes. Two standalone
+harnesses: `verify_modules_koc.js` confirms module names replace the
+option list correctly, the dispatcher picks the right resolver for each
+kind of row, and — the main risk in this specific fix — an SEO whole-
+list template's own distinctly-named subtask card is never mistaken for
+a module card and swapped by mistake. `verify_intake_koc_banner.js`
+confirms the Kick-Off Call clause is dropped for NOT STARTED/PARTIAL
+when no KOC applies, kept when one does, kept unconditionally for the
+bypassed case, and the COMPLETE banner (which never mentioned KOC at
+all) is unaffected either way. Not tested live — needs Claire to
+confirm on a real order: Website Modules' card title/Step 3/Print all
+show only the picked module names, and a non-KOC service with an
+incomplete intake no longer mentions the Kick-Off Call in its card
+description.
