@@ -23077,7 +23077,14 @@ out-a-new-IO process for now, no companion-form entry point yet.
 **Follow-up (same session)**: Claire — "Maybe for those we just add a
 note that they should fill out a new IO?" Added a small note (same
 `.muted-note` style already used elsewhere on the companion form) under
-the action tabs for a one-time-only service: "Need this one-time
-service again? Ask your AM to submit a new Insertion Order for it."
-Companion form only — AMs already know the process, so no equivalent
-note added to Admin's Order Detail.
+the action tabs for a one-time-only service. Companion form only — AMs
+already know the process, so no equivalent note added to Admin's Order
+Detail.
+
+Claire then corrected the wording: "The AE should fill out the IO, not
+the AM. The AM doesn't have that option either... the goal is to keep
+most of this in the hands of the AE from an ordering perspective with
+the ability to do stuff from the AM side when needed." Checked Admin's
+code directly to confirm — no order-submission capability exists there
+at all, only the main IO form does, and that's AE-facing. Fixed the note
+to read "Ask your AE to submit a new Insertion Order for it."
