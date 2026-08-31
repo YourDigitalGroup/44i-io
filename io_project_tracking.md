@@ -21967,3 +21967,46 @@ Total"/`firstMonthVaryingTotal` references after removal — none found.
 Not yet tested live in the browser — needs Claire to run through Step 3
 and the Print/Trello output on an order with at least one genuinely
 varying campaign to confirm the new breakdown reads clearly.
+
+---
+
+## 2026-08-31 (cont'd) — Fixed a NEW sticky-header overlap, specific to expanded month-by-month rows
+
+Claire tested the varying-campaign breakdown live and reported a new
+overlap while scrolling in the Social Media Ads table — screenshot showed
+the "Facebook & Instagram" row's data overlapping the "Service / Fee /
+Recurring / Flight / Notes" column-label header, distinct from the
+overlap fixed earlier today.
+
+**Root cause**: the sticky column-header rule was a bare descendant
+selector, `.summary-table th`. CSS descendant selectors don't care how
+deeply nested a match is — so this rule was ALSO grabbing the `<th>`
+cells of the small Month/Days-in-Flight/Amount table that
+`renderMonthPreviewTable()` renders when a varying campaign's row is
+expanded. That inner table is a plain inline-styled `<table>` sitting in
+a `<td>` of a budget-detail `<tr>` — still a descendant of
+`table.summary-table` even though it's several levels deep (tbody → tr →
+td → table → thead → tr → th). That inner header tried to stick at the
+exact same `top:32px` slot as the real column-label row, and the two
+fought for the same band while scrolling, which is what read as the data
+row overlapping the header. This bug could only ever show up on a row
+with an expanded month breakdown, which is why it's new — Claire's
+varying-campaign testing today is the first time that state has been
+scrolled through.
+
+**Fix**: scoped the selector to `.summary-table>thead>tr>th` (a
+child-combinator chain). This only reaches the outer table's OWN
+`<thead>`, since the nested table's `<thead>` sits behind an intervening
+`tbody`/`tr`/`td`/`table` boundary that no direct-child chain crosses.
+No other rule needed to change — the Agent/County Split table (which
+also uses `.summary-table` but has no nested per-row tables) is
+unaffected, and the mobile media-query rule (`.summary-table thead {
+display: none; }`) already targeted `thead` broadly and doesn't need the
+same scoping since hiding a nested thead on mobile is harmless there.
+
+**Verified**: `node --check` passes on the extracted script (CSS-only
+change, but confirmed nothing else broke). Grepped for every remaining
+use of the old `.summary-table th` selector — none found outside
+comments. Not yet tested live — needs Claire to expand a varying
+campaign's row (e.g. Facebook & Instagram) and scroll through it again to
+confirm the column headers now stay put with no overlap.
