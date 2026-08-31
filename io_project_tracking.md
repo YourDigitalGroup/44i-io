@@ -22890,3 +22890,38 @@ exact logic — both return "ctg" correctly.
 
 **Verified**: `node --check` passes. Not yet re-tested live — needs
 Claire to click the link again now that it matches the real URL shape.
+
+---
+
+## 2026-08-31 (cont'd) — Reverted the path-based link fix — wrong direction
+
+Claire tried `https://io.yourdigitalgroupresources.com/companion/ctg`
+(the path-based form from the previous fix) and got the MAIN form's
+"Invalid Link" again — the wrong-file symptom, not companion's own
+message. Reasoned through why: the working group link (`/ctg`) is a bare
+path the host resolves at the ROOT level, but that trick doesn't extend
+to an arbitrary NESTED path — there's no real file at `/companion/ctg`
+either, and it's evidently falling all the way back to the ROOT
+`index.html`, not `companion/index.html`. This is different from bare
+`/companion/` (no extra segment), which DID correctly load the real
+companion page in an earlier live test — that path exactly matches a
+real, existing directory, which the host serves correctly; anything
+nested and non-existent beneath it apparently doesn't get the same
+per-directory fallback the root level has.
+
+**Reverted** `companionLink.href` back to `'companion/?g=' + slug` (the
+original, pre-"fix" version) — the only form actually confirmed live to
+reach the right file. The bare-path attempt was the wrong direction to
+take this in.
+
+**Still open**: that same query-string URL, tested earlier, DID load the
+correct companion page but then failed to find a group for slug "ctg"
+specifically — separate from the wrong-file routing issue. Could be a
+deploy-propagation/caching artifact (the same class of issue flagged
+earlier this session — intermittent behavior on identical URLs across
+requests would fit a CDN edge-cache inconsistency), or "ctg" might not
+be the EXACT `io_slug` value stored (case/whitespace mismatch — the
+lookup is a case-sensitive exact match). Asked Claire to confirm the
+real value directly rather than guess further.
+
+**Verified**: `node --check` passes. Not yet re-tested live.
