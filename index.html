@@ -573,7 +573,20 @@ select.qty-field{background-image:none;padding-right:3px}
    here is what lets the thead below stick at an exact matching `top` offset
    (see .summary-table thead th) — two stacked sticky elements need a known
    height to stack at without one covering the other. */
-.rs-section-head{position:sticky;top:0;z-index:3;background:var(--light);height:32px;box-sizing:border-box;display:flex;align-items:center;padding:0 14px;font-size:10.5px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
+/* will-change:transform (2026-08-31, per Claire -- "the headers are see
+   through... if those are filled it would look cleaner"): a solid
+   background-color alone doesn't guarantee an opaque paint on a
+   position:sticky element in every browser -- Chrome/Safari can composite
+   a sticky element as a "passthrough" layer during scroll and let content
+   scrolling underneath show through its background, even though the color
+   is genuinely solid, not transparent. Promoting it to its own GPU layer
+   with will-change:transform is the standard fix -- forces the browser to
+   paint this element's background fully opaque on its own layer rather
+   than blending it with whatever's moving underneath. Applied to all three
+   sticky elements in this scroll box (.rs-section-head, .rs-col-head,
+   .summary-table>thead>tr>th) since all three share the identical
+   fragile-background-during-scroll risk. */
+.rs-section-head{position:sticky;top:0;z-index:3;background:var(--light);will-change:transform;height:32px;box-sizing:border-box;display:flex;align-items:center;padding:0 14px;font-size:10.5px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
 .rs-chevron{display:inline-block;width:10px}
 /* border-collapse:separate;border-spacing:0 (2026-08-31, found live by Claire —
    "the headers overlap" while scrolling within a section's box, specifically):
@@ -609,7 +622,7 @@ select.qty-field{background-image:none;padding-right:3px}
    The `>` child-combinator chain only reaches the outer table's OWN
    <thead>, since the nested table sits behind an intervening tbody/tr/td/
    table boundary that no direct-child chain crosses. */
-.summary-table>thead>tr>th{position:sticky;top:32px;z-index:2;padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
+.summary-table>thead>tr>th{position:sticky;top:32px;z-index:2;padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);will-change:transform;border-bottom:1px solid var(--border)}
 .summary-table td{padding:9px 14px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
 .summary-table tr:last-child td{border-bottom:none}
 /* .rs-col-head (2026-08-31) -- a plain sticky <div> row replacing the per-
@@ -628,7 +641,7 @@ select.qty-field{background-image:none;padding-right:3px}
    cell. Only used by the per-section Review table -- the Agent/County Split
    table above still uses a real <thead><th> (no nested rows, never reported
    broken) and is untouched. */
-.rs-col-head{position:sticky;top:32px;z-index:2;display:flex;background:var(--light);border-bottom:1px solid var(--border)}
+.rs-col-head{position:sticky;top:32px;z-index:2;display:flex;background:var(--light);will-change:transform;border-bottom:1px solid var(--border)}
 .rs-col-head>div{padding:9px 14px;box-sizing:border-box;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .rs-col-head>div:nth-child(1){flex:1;min-width:170px}
 .rs-col-head>div:nth-child(2){width:110px}
