@@ -4815,7 +4815,27 @@ function buildReview() {
     // .chevron/.chevron.expanded markup and rotation the service-section headers
     // already use, rather than a second one-off implementation.
     const rsChevronSvg = `<span class="chevron rs-chevron${isCollapsed ? '' : ' expanded'}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"></polyline></svg></span>`;
-    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}">${rsChevronSvg} ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table"><thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
+    // FIXED (2026-08-31, found live by Claire — "the columns between services
+    // is still messy... how some of the text wraps funny"): each section
+    // renders its OWN separate <table>, and without table-layout:fixed a
+    // browser sizes a table's columns purely from THAT table's own content —
+    // so the exact same Fee/Recurring/Flight/Notes columns landed at a
+    // different width in every section depending on how long that section's
+    // service names happened to be, and a long name (e.g. the Modules line)
+    // could squeeze Flight too narrow to fit a date without wrapping
+    // mid-string. A shared, explicit colgroup forces every section's table to
+    // use the IDENTICAL column widths regardless of content, so they finally
+    // line up section to section — same fixed-column-width approach Step 2's
+    // .svc-table already uses for the same reason. Kept inline (not a new
+    // .summary-table variant class) since .summary-table is also reused by
+    // the differently-shaped Agent/County Split table below, which must stay
+    // unaffected. min-width bumped from 560 to 720 so Service still gets
+    // reasonable room at the floor width (110+130+150+160=550px of fixed
+    // columns leaves 170px for Service — the same width Step 2's own Service
+    // column already uses); the existing .rs-section-scroll{overflow:auto}
+    // still provides horizontal scroll as a safety net below that.
+    const summaryColgroup = `<colgroup><col/><col style="width:110px"/><col style="width:130px"/><col style="width:150px"/><col style="width:160px"/></colgroup>`;
+    sectionBoxes.push(`<div class="rs-section-scroll"><div class="rs-section-head" onclick="toggleReviewSection('${esc(sec)}')" role="button" tabindex="0" aria-expanded="${isCollapsed ? 'false' : 'true'}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleReviewSection('${esc(sec)}')}">${rsChevronSvg} ${esc(secDef.label)}</div>${isCollapsed ? '' : `<table class="summary-table" style="table-layout:fixed;min-width:720px">${summaryColgroup}<thead><tr><th>Service</th><th>Fee</th><th>Recurring</th><th>Flight</th><th>Notes</th></tr></thead><tbody>${rows.join('')}</tbody></table>`}</div>`);
   });
 
   // Agent/County Split (2026-08-19, per Claire -- "add the agent information

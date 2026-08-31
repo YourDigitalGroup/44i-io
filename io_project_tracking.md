@@ -21769,3 +21769,46 @@ calendars then both date/time blocks. All four elements are static
 markup (not dynamically inserted/reordered by JS), so this is zero-risk
 to the actual KOC logic — confirmed each id still appears exactly once
 after the move.
+
+---
+
+## 2026-08-31 (cont'd) — Step 3 summary table columns now line up section to section
+
+Claire: "the columns between services is still messy, do you see how
+things don't line up and how some of the text wraps funny? I think the
+print IO looks good." Root cause: each section on Step 3 renders its own
+SEPARATE `<table>`, and without `table-layout:fixed`, a browser sizes a
+table's columns purely from that ONE table's own content — so the exact
+same Fee/Recurring/Flight/Notes columns landed at a different pixel
+width in every section depending on how long THAT section's service
+names happened to be. A long label (the Modules line, "Newsletter,
+Photo/Video, Testimonial...") could squeeze Flight too narrow in that
+one section to fit a date without wrapping mid-string ("11/21/2" then
+"6" on its own line) — while a short-label section right above it showed
+Flight at a comfortably wide, different size.
+
+**Fixed (`index.html`)**: added an explicit `<colgroup>` (Fee 110px,
+Recurring 130px, Flight 150px, Notes 160px, Service gets whatever's
+left) plus `table-layout:fixed` and a bumped `min-width:720px` (up from
+560px, since the 4 fixed columns alone total 550px — the floor now
+leaves Service the same 170px Step 2's own Service column already
+uses). Applied inline on this specific table only, NOT as a change to
+the shared `.summary-table` CSS class, since that class is also reused
+by the differently-shaped Agent/County Split table (Agent/County/
+Service/Flight/Amount) which must stay completely unaffected.
+
+**Confirmed safe on mobile**: the existing mobile responsive rules
+already convert this table into a stacked-card layout (`display:block`
+on every table element, `table-layout` becomes moot once `display` is
+overridden away from table semantics entirely) with its own
+`min-width:0 !important` specifically to prevent a stale desktop
+min-width from leaving blank space to scroll into (a bug Claire found
+and fixed once already, 2026-08-07) — this new inline style can't
+regress that, since `!important` in the mobile media query wins
+regardless, and `table-layout` has zero visual effect once cells are
+`display:block` anyway.
+
+**Verified**: `node --check` passes on the extracted script. Not yet
+tested live — needs Claire to re-check Step 3 across a few sections with
+genuinely different-length service names to confirm every section's
+Fee/Recurring/Flight/Notes columns now actually align.
