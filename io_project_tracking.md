@@ -23172,3 +23172,33 @@ that shape is read/written:
   standalone harness above for `applyFieldChangeLocally`. Not yet
   tested end-to-end live (needs both new SQL functions applied first,
   then a real click-through on both forms).
+
+Claire hit `42P13: cannot change return type of existing function` trying
+to run the `companion_get_active_services` update — Postgres won't let
+`CREATE OR REPLACE` change a function's OUT columns. Gave her a
+`DROP FUNCTION public.companion_get_active_services(uuid, uuid);` to run
+first, same body otherwise. She also asked about the generic "destructive
+operation" warning Supabase shows on any DROP — confirmed it only removes
+the function definition, not data, and the very next statement recreates
+it, so safe to proceed.
+
+## AE notification on request approval/rejection (2026-08-31)
+
+Claire asked "how are AMs getting notified" — turned out to be backwards
+from what she meant: notification already existed for the AM (companion
+form's `notifyAm()` emails the group's `io_recipient` list + the AE's own
+email + `notification_settings.always_bcc_recipients` on submission,
+subject "New change request pending approval"), but nothing notified the
+AE back when the AM actually approved or rejected their request — only a
+Trello comment, which the AE has no reason to be watching.
+
+Claire: "let's close that so it is done." Added
+`notifyRequesterOfResolution(req, status, note)` in `admin/index.html` —
+sends to `req.requested_by_email` (skips silently if empty), mirroring
+`notifyAm()`'s visual style/`send_email` proxy target but in the other
+direction. Called from `adminApprovePendingRequestClick()` right after
+the approval RPC succeeds and from `adminRejectPendingRequestClick()`
+after the reject RPC succeeds (with the AM's optional rejection note
+included in the email) — independent of the Trello/PDF follow-up steps,
+same "the real change already happened, this is just a courtesy" posture
+as everything else in that function. Verified via `node --check`.
