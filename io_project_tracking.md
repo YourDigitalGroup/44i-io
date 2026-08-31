@@ -23073,3 +23073,11 @@ out-a-new-IO process for now, no companion-form entry point yet.
   scripts.
 - Not yet tested end-to-end live (needs a real one-time-cost service to
   click through on both the companion form and Admin's Order Detail).
+
+**Follow-up (same session)**: Claire — "Maybe for those we just add a
+note that they should fill out a new IO?" Added a small note (same
+`.muted-note` style already used elsewhere on the companion form) under
+the action tabs for a one-time-only service: "Need this one-time
+service again? Ask your AM to submit a new Insertion Order for it."
+Companion form only — AMs already know the process, so no equivalent
+note added to Admin's Order Detail.
