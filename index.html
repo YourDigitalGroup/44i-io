@@ -4989,7 +4989,7 @@ function buildReview() {
   document.getElementById('summary-body').innerHTML = sectionBoxes.length ? sectionBoxes.join('') : '<div style="text-align:center;color:var(--muted);padding:20px">No services selected</div>';
 
   // Workflows
-  const chips = [...workflows].map(w => `<span class="chip green">${w}</span>`).join('');
+  const chips = [...workflows].map(w => `<span class="chip green">${friendlyWorkflowName(w)}</span>`).join('');
   document.getElementById('workflow-chips').innerHTML = chips;
   document.getElementById('workflows-card').style.display = workflows.size > 0 ? 'block' : 'none';
 
@@ -5447,7 +5447,7 @@ async function submitIO() {
       console.log('DEV mode submit — skipping Supabase and Trello.');
       showToast('🧪 DEV mode — order NOT saved (no Supabase / no Trello). Reset to try again.', 'success');
       // Still go to the success screen so the AE can see the flow
-      const workflowChips = [...workflows].map(w => `<span class="chip green">${esc(w)}</span>`).join('');
+      const workflowChips = [...workflows].map(w => `<span class="chip green">${esc(friendlyWorkflowName(w))}</span>`).join('');
       document.getElementById('success-chips').innerHTML = workflowChips +
         '<span class="chip" style="background:#FEF3C7;color:#92400E">DEV MODE — NOT SAVED</span>';
       document.getElementById('page-3').style.display = 'none';
@@ -5684,7 +5684,7 @@ async function submitIO() {
         function resolveWorkflowTemplates(originalWorkflow) {
           const soldRows = Object.keys(selected)
             .map(id => CATALOG_ROWS[id])
-            .filter(r => r && r.workflow === originalWorkflow && r.trello_template_ref);
+            .filter(r => r && effectiveWorkflow(r) === originalWorkflow && r.trello_template_ref);
           const seenRefs = new Set();
           const templates = [];
           for (const r of soldRows) {
@@ -5716,7 +5716,7 @@ async function submitIO() {
           const parts = [];
           Object.keys(selected)
             .map(id => CATALOG_ROWS[id])
-            .filter(r => r && r.workflow === originalWorkflow && r.trello_suffix_text)
+            .filter(r => r && effectiveWorkflow(r) === originalWorkflow && r.trello_suffix_text)
             .forEach(r => {
               if (seen.has(r.trello_suffix_text)) return;
               seen.add(r.trello_suffix_text);
@@ -5806,13 +5806,19 @@ async function submitIO() {
         }
 
         // ── Resolve website workflow name ──
+        // friendlyWorkflowName() here (2026-08-31) covers the fallback/failure card-
+        // title paths (plain card, whole-list-template-unreadable fallback) that build
+        // their name from `wf` directly — a standalone service's synthetic
+        // effectiveWorkflow() key should never actually reach a real Trello card title
+        // (the normal single-card/whole-list paths use the real template's own name
+        // instead), but this keeps even the rare failure-fallback name readable.
         const soldWorkflows = [...workflows].map(wf => {
           if (wf === 'Website') {
             if (selected['w-bp'] || selected['wm-10p'] || selected['wm-ecomm']) return 'Website (10-page)';
             if (selected['w-bb'] || selected['wm-5p'])  return 'Website (5-page)';
             return 'Website (1-page)';
           }
-          return wf;
+          return friendlyWorkflowName(wf);
         });
 
         // ── Map intake form data to a tactic (2026-07-13) ──
@@ -5835,7 +5841,7 @@ async function submitIO() {
         function resolveWorkflowIntakeFormId(originalWorkflow, templateRef) {
           const soldRows = Object.keys(selected)
             .map(id => CATALOG_ROWS[id])
-            .filter(r => r && r.workflow === originalWorkflow && r.intake_form_id)
+            .filter(r => r && effectiveWorkflow(r) === originalWorkflow && r.intake_form_id)
             .filter(r => templateRef === undefined || r.trello_template_ref === templateRef);
           if (!soldRows.length) return null;
           const distinctIds = new Set(soldRows.map(r => r.intake_form_id));
@@ -6361,7 +6367,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         function workflowWantsDatedCard(originalWorkflow) {
           return Object.keys(selected).some(id => {
             const r = CATALOG_ROWS[id];
-            return r && r.workflow === originalWorkflow && r.always_new_card;
+            return r && effectiveWorkflow(r) === originalWorkflow && r.always_new_card;
           });
         }
         // Takes THIS workflow's own tactic dates (2026-08-06 — replaces the old
@@ -6370,7 +6376,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // title reflects that tactic's actual flight instead of the whole order's.
         function formatCampaignDateRange(originalWorkflow) {
           const parseLocal = s => s ? new Date(s + 'T12:00:00') : null; // avoid UTC day-shift
-          const ids = Object.keys(selected).filter(id => CATALOG_ROWS[id]?.workflow === originalWorkflow);
+          const ids = Object.keys(selected).filter(id => effectiveWorkflow(CATALOG_ROWS[id]) === originalWorkflow);
           const starts = ids.map(id => selected[id].start_date).filter(Boolean).sort();
           const ends = ids.map(id => selected[id].end_date).filter(Boolean).sort();
           const start = parseLocal(starts[0]);
@@ -6402,7 +6408,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // Same min-start/max-end id-filter as formatCampaignDateRange() above, just
         // returning the raw end date instead of a formatted display string.
         function workflowFlightEnd(originalWorkflow) {
-          const ids = Object.keys(selected).filter(id => CATALOG_ROWS[id]?.workflow === originalWorkflow);
+          const ids = Object.keys(selected).filter(id => effectiveWorkflow(CATALOG_ROWS[id]) === originalWorkflow);
           const ends = ids.map(id => selected[id].end_date).filter(Boolean).sort();
           return ends.length ? ends[ends.length - 1] : null;
         }
@@ -6965,7 +6971,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
     }
 
         // 3. Show success
-    const chips = [...workflows].map(w => `<span class="chip green">${w}</span>`).join('');
+    const chips = [...workflows].map(w => `<span class="chip green">${friendlyWorkflowName(w)}</span>`).join('');
     document.getElementById('success-chips').innerHTML = chips;
     document.getElementById('page-3').style.display = 'none';
     document.getElementById('page-success').style.display = 'block';
@@ -8109,6 +8115,49 @@ function showToast(msg, type='success') {
 //    to load (no hardcoded fallback by design).
 // ════════════════════════════════════════════════════════════════
 
+// A standalone service — its own dedicated Trello template, shared with
+// nothing else — shouldn't need an admin to invent and pick a brand-new
+// Workflow value in the Workflow Manager just so it gets a card at all
+// (2026-08-31, per Claire — "I thought we changed the code to check if
+// there is a trello card ID if there is no workflow so we didn't have to
+// create a bunch of new workflows"). Grepped the whole file and this
+// fallback did NOT actually exist anywhere — found live when Traditional
+// Media Buying & Consultation (`alc-media`) and the new Website Modules
+// service (`w-module`) both had a real `trello_template_ref` configured
+// but no `workflow`, and got silently skipped entirely by every card-
+// creation code path, which all require a truthy workflow before a
+// service is even considered "sold under a workflow." A synthetic,
+// service-ID-derived key (`__standalone__<id>`) is unique per service by
+// construction, so it can never collide with a real, admin-named workflow
+// or with another standalone service's own synthetic key — every one of
+// them still gets its own single-service "workflow" group, and its own
+// card, without touching the catalog at all. Any row that already HAS a
+// real `workflow` value is returned completely unchanged — two services
+// deliberately sharing one workflow still correctly share one card, same
+// as always. Every place in this file that reads a catalog row's
+// `workflow` field to compare against another workflow value goes through
+// this function now, not the raw field, so the synthetic value resolves
+// consistently everywhere (card-template lookup, riding-along suffixes,
+// intake-form resolution, dated-card-title lookup, agent/county split
+// grouping) rather than just at the one spot data first gets copied into
+// `selected{}`.
+function effectiveWorkflow(r) {
+  if (!r) return null;
+  return r.workflow || (r.trello_template_ref ? '__standalone__' + r.id : null);
+}
+// Every "Workflows Triggered" chip (Step 3, dev-mode preview, the real success
+// screen) renders whatever's in a `workflows` Set directly as visible text — a
+// standalone service's synthetic `effectiveWorkflow()` key would otherwise show
+// up to the AE as a literal "__standalone__alc-media" chip instead of a real
+// name. Only used at DISPLAY sites; every grouping/filtering comparison keeps
+// using the raw synthetic key from effectiveWorkflow() unchanged, since that's
+// what actually needs to be unique-and-stable, not human-readable.
+function friendlyWorkflowName(w) {
+  if (!w || !w.startsWith('__standalone__')) return w;
+  const id = w.slice('__standalone__'.length);
+  return CATALOG_ROWS[id]?.label || id;
+}
+
 // One services-table row → a SERVICE_DATA entry. Reverses the migration
 // translations (default_price+billing_type → fee/recurring; modifier/cpm
 // shape preserved so existing reader code behaves identically).
@@ -8143,7 +8192,7 @@ function rowToServiceData(r) {
   // Targeting — Geofencing, a $15 CPM item, showing QUR instead of its rate).
   const priceableMode = (r.pricing_mode || 'flat') === 'flat' || (r.pricing_mode || 'flat') === 'per_unit';
   out.is_qur = priceableMode && r.default_price == null;
-  if (r.workflow) out.workflow = r.workflow;
+  out.workflow = effectiveWorkflow(r);
   // FIXED (2026-07-07, per Claire): modifier items (offline tracking, etc.) are a
   // straight MONTHLY add-on to the total — NOT a CPM-rate adjustment, and NOT something
   // requiring its own separate spend entry. Previously "re-quirked" to preserve old
@@ -8498,9 +8547,21 @@ function renderMultiTableSection(sectionId) {
 
 // Rewrites every service row's price area into a uniform shape:
 //   [checkbox] [service] [Fee] [Frequency] [Spend — ad rows only] [Notes]
-// Runs once after the catalog loads. The Spend <input> (with its onchange and
-// any user value) is preserved; only the price/frequency display cells change.
+// NOT "runs once after the catalog loads" despite what a stale comment further
+// down in this function claims (2026-08-31, found live by Claire — a picked
+// "Which one is it?" tactic variant silently vanished, never reaching Step 3,
+// Print, or the Trello card): this function ALSO runs from
+// reapplyPricingOverrides(), which fires on every client pick (applyClientPick())
+// and dev-group switch — going back to Step 1 and touching the client dropdown
+// again after already picking a variant on Step 2 regenerates every row's HTML
+// straight from `selected[id]`, and the variant dropdown (like Notes/Spend) is
+// only ever WRITTEN into `selected[id]` by syncRowInputs(), not live on change
+// (see its own comment) — so a still-unsynced live pick got silently thrown away
+// with no visible sign anything happened. syncRowInputs() here, before any row
+// gets rewritten, closes that gap for the variant AND for Notes/Spend/Qty/dates
+// alike, not just the one field that happened to get reported.
 function renderPriceCells() {
+  syncRowInputs();
   document.querySelectorAll('tr[data-id]').forEach(row => {
     const id = row.getAttribute('data-id');
     const r = CATALOG_ROWS[id];
@@ -8534,10 +8595,15 @@ function renderPriceCells() {
     // Closes "label drift": refreshes the service name from the catalog's `label` field
     // for EVERY row, not just sections already converted to dynamic generation (alc/rep/
     // llo/gbp). Previously a Supabase label edit only showed up on the form for those 4
-    // sections; static sections kept their hand-typed HTML text forever. Runs ONCE at
-    // page load (before any intake-link button could have been appended into this cell —
-    // confirmed: renderPriceCells has exactly one call site, at startup), so rewriting
-    // this cell's content here is safe — nothing else has written into it yet.
+    // sections; static sections kept their hand-typed HTML text forever.
+    // CORRECTED (2026-08-31) — this used to claim "Runs ONCE at page load... confirmed:
+    // renderPriceCells has exactly one call site, at startup," which was already wrong
+    // when written (reapplyPricingOverrides() calls this too, and this function's OWN
+    // comment further down explicitly describes a bug found via a second call after a
+    // dev-group switch). Not fixed here since nothing has actually reported an
+    // intake-link button going missing after a client pick — flagging it as a real,
+    // untested risk this stale assumption was covering for, worth checking if an
+    // intake-link ever seems to disappear after switching clients mid-session.
     // Uses innerHTML (not textContent) so a note can be appended as its own styled span
     // (e.g. SEM's "$200 min setup fee..." caveat) — both label and note are escaped, so
     // this is exactly as safe as textContent was, just able to add one fixed,

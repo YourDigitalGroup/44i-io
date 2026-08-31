@@ -22139,3 +22139,131 @@ it's still broken there too, the fix is to extend the exact same
 `deploy.yml`. Holding off on making that deploy-config change until her
 answer confirms which one it is, rather than guessing at infrastructure
 changes.
+
+---
+
+## 2026-08-31 (cont'd) — Test Business 8 Trello audit: 3 issues (missing cards, wrong card title, stale variant pick)
+
+Claire submitted a real test order (Test Business 8) and reported three
+Trello-side problems from the resulting board:
+
+1. No card was created for Traditional Media Buying & Consultation
+   (`alc-media`); Carol Oren ended up on the IO overview card only,
+   instead of also on a dedicated Traditional Buying card.
+2. The Location Targeting card's title showed the full combined catalog
+   label ("Geofencing or 1st Party Addressable") instead of just the
+   variant she'd actually picked.
+3. No card was created for the new Website Modules service (`w-module`).
+
+**#1 and #3 — root cause confirmed via SQL she ran**: both
+`alc-media` and `w-module` have a real `trello_template_ref`/
+`trello_template_type` configured (so both are clearly meant to produce
+a card) but `workflow` is `null` on both rows. Every Trello-card-
+creation code path requires a truthy `workflow` before a service is even
+considered "sold under a workflow" (`const workflows = new
+Set(Object.values(selected).filter(s=>s.workflow)...)`) — a null
+workflow means "don't create a card for this" by design (the admin
+Service editor's own Workflow field literally says so: "Leave 'None' if
+this service shouldn't create any Trello card on its own"). Carol still
+landed on the IO card because that assignment runs independently of
+whether any tactic card exists.
+
+Initially suggested Claire just set a workflow name for each in the
+admin editor. She pushed back: "I thought we changed the code to check
+if there is a trello card ID if there is no workflow so we didn't have
+to create a bunch of new workflows." Grepped the whole file and
+confirmed this fallback did NOT actually exist anywhere yet (whether it
+was discussed in an earlier, unlogged conversation or just intended and
+never built, the code itself had no trace of it) — built it now instead
+of asking her to work around a gap:
+
+- **`effectiveWorkflow(r)`** (new, near `rowToServiceData()`): returns
+  `r.workflow` unchanged when set (two services sharing one real
+  workflow still correctly share one card, exactly as before); when
+  `workflow` is null but `trello_template_ref` IS set, returns a
+  synthetic `'__standalone__' + r.id` key instead — unique per service
+  by construction, so it can never collide with a real admin-named
+  workflow or another standalone service's own key. A service with
+  neither workflow nor template still resolves to `null` and stays
+  completely excluded, unchanged from before.
+- Every place in the file that compared a catalog row's raw `workflow`
+  field against another workflow value now goes through
+  `effectiveWorkflow()` instead — `rowToServiceData()` (where `data.workflow`
+  first gets set), `resolveWorkflowTemplates()`, `ridingAlongSuffix()`,
+  `resolveWorkflowIntakeFormId()`, `workflowWantsDatedCard()`,
+  `formatCampaignDateRange()`, `workflowFlightEnd()`. Missing even one of
+  these would have left the synthetic key resolving correctly in the main
+  card-creation loop but silently falling through to the WRONG (or
+  workflow-wide, not standalone) template/intake/date lookup elsewhere —
+  grepped for every remaining raw `.workflow ===` comparison after the
+  edit to make sure none were missed.
+- **`friendlyWorkflowName(w)`** (new): the "Workflows Triggered" chips
+  (Step 3, dev-mode preview, the real success screen) render a
+  `workflows` Set's contents directly as visible text — without this, a
+  standalone service would show as a literal "__standalone__alc-media"
+  chip instead of a real name. Converts a synthetic key back to that
+  service's own catalog `label`; passes any real workflow name through
+  unchanged. Applied at all three chip-rendering call sites plus
+  `soldWorkflows`' own fallback-name derivation (covers the rare
+  template-lookup-failure card-title paths too, though the normal
+  success path never reaches them since a standalone service always has
+  a real template to name itself from).
+
+**Verified**: `node --check` passes. Wrote a standalone harness
+(`verify_workflow.js`) against fixtures mirroring the exact SQL results
+(alc-media/w-module with template-but-no-workflow, a pair of services
+correctly sharing one real "SEM" workflow, and a service with neither) —
+confirmed standalone services get distinct, non-colliding synthetic
+keys; a real shared workflow is completely untouched; a workflow-and-
+template-less service stays excluded; the card-template-lookup filter
+correctly resolves each standalone service via its synthetic key; and
+`friendlyWorkflowName()` correctly reverses the synthetic key back to
+the real label for display while passing real names through unchanged.
+Not yet tested against the live Trello API (can't render/submit a real
+order from here) — needs Claire to re-run a test order with
+`alc-media`/`w-module` selected to confirm both now get real cards, with
+the correct name, without needing any catalog change on her end.
+
+**#2 — Location Targeting's card title**: Claire confirmed she DID pick
+an option in the "Which one is it?" dropdown, ruling out my first
+assumption (that it was simply left blank). Traced it to a real bug in
+`renderPriceCells()`: the variant dropdown, like Notes/Spend, is only
+ever WRITTEN into `selected[id].tacticVariant` by `syncRowInputs()` — it
+has no live `onchange` handler (by design, matching the existing Notes
+pattern) — but `renderPriceCells()` FULLY REGENERATES every row's HTML
+(including that dropdown) from whatever's currently in `selected[id]`,
+and runs more than once: it's also called by `reapplyPricingOverrides()`,
+which fires on every client pick (`applyClientPick()`, Step 1) and dev-
+group switch. A comment inside `renderPriceCells()` itself flatly
+asserted "confirmed: renderPriceCells has exactly one call site, at
+startup" — already factually wrong when written, contradicted by
+another comment two paragraphs below it in the SAME function describing
+a bug found via a second call after a dev-group switch. If the client
+dropdown gets touched again (even re-selecting the same client) after a
+variant's already been picked on Step 2, the row gets rewritten from the
+stale, not-yet-synced `selected[id]` — silently discarding the live
+pick with zero visible sign anything happened. This matches Claire's
+report exactly and doesn't require her to have "forgotten" anything.
+
+**Fix**: `renderPriceCells()` now calls `syncRowInputs()` as its very
+first line, before rewriting any row — captures whatever's live in the
+DOM into `selected{}` first, so a subsequent full re-render is always
+rebuilding from up-to-date data. This closes the same gap for Notes,
+Spend, Qty, and per-tactic dates too, not just the one field that
+happened to get reported — none of those had been reported broken, but
+they rely on the exact same unsynced-until-submit pattern and were
+equally exposed. Also corrected the stale/wrong "exactly one call site"
+comment so it doesn't mislead anyone again, and flagged (not fixed,
+since nothing's actually reported it broken) a related, untested risk
+the same wrong assumption was covering for: an intake-link button
+appended into a row's Service cell could theoretically also get wiped
+by the same re-render, if that scenario ever comes up.
+
+**Verified**: `node --check` passes; confirmed no recursion risk
+(`syncRowInputs()`'s only side effect, `updateDerivedCampaignSummary()`,
+never calls back into `renderPriceCells()`); confirmed by direct code
+trace that `syncRowInputs()` at page-load's one no-selections-yet call
+is a harmless empty loop. Not tested live in the browser — needs Claire
+to pick a Location Targeting variant, then touch the client dropdown
+again (the exact trigger traced above), and confirm the variant survives
+into the card title this time.
