@@ -558,7 +558,17 @@ select.qty-field{background-image:none;padding-right:3px}
    scrollport, not the page. (A sticky element can only stick relative to its
    nearest ancestor that's an actual scroll container -- see io_project_tracking.md
    for the earlier, failed attempt that got this backwards.) */
-.rs-section-head{position:sticky;top:0;z-index:2;background:var(--light);padding:8px 14px;font-size:10.5px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
+/* height:32px + flex (2026-08-31, was padding:8px 14px with an auto height) —
+   found live by Claire: "the Service, Fee Recurring, Flight and Notes Header
+   doesn't stick" — only THIS section title bar was ever sticky; the actual
+   column-label row (<thead>, below) just scrolled away with the rest of the
+   table, so past the first screenful you'd see this title pinned at the top
+   with a data row butted right up against it and no column labels anywhere,
+   reading as "the header doesn't stick"/an overlap. A fixed, known height
+   here is what lets the thead below stick at an exact matching `top` offset
+   (see .summary-table thead th) — two stacked sticky elements need a known
+   height to stack at without one covering the other. */
+.rs-section-head{position:sticky;top:0;z-index:3;background:var(--light);height:32px;box-sizing:border-box;display:flex;align-items:center;padding:0 14px;font-size:10.5px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);cursor:pointer}
 .rs-chevron{display:inline-block;width:10px}
 /* border-collapse:separate;border-spacing:0 (2026-08-31, found live by Claire —
    "the headers overlap" while scrolling within a section's box, specifically):
@@ -571,7 +581,16 @@ select.qty-field{background-image:none;padding-right:3px}
    collapse-specific rendering path entirely — same trick used to fix this
    exact class of bug in other browsers' table implementations. */
 .summary-table{width:100%;min-width:560px;border-collapse:separate;border-spacing:0;font-size:13px}
-.summary-table th{padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
+/* position:sticky;top:32px (2026-08-31, direct fix for "the header doesn't
+   stick") — stacks this column-label row directly below .rs-section-head's
+   own sticky bar (fixed at height:32px specifically so this offset lines up
+   exactly, no gap and no overlap). Both this table AND the Agent/County Split
+   table below reuse .summary-table + the identical .rs-section-scroll/
+   .rs-section-head wrapper structure, so this one rule correctly covers both
+   without needing a second, separate version. z-index:2, one below the
+   section head's 3, so the section head always wins if either ever needs to
+   render on top of the other. */
+.summary-table th{position:sticky;top:32px;z-index:2;padding:9px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--light);border-bottom:1px solid var(--border)}
 .summary-table td{padding:9px 14px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
 .summary-table tr:last-child td{border-bottom:none}
 

@@ -21812,3 +21812,44 @@ regardless, and `table-layout` has zero visual effect once cells are
 tested live — needs Claire to re-check Step 3 across a few sections with
 genuinely different-length service names to confirm every section's
 Fee/Recurring/Flight/Notes columns now actually align.
+
+---
+
+## 2026-08-31 (cont'd) — The real Social Media Ads bug: the column header row was never sticky at all
+
+Claire, with a screenshot: "either the Service, Fee Recurring, Flight
+and Notes Header doesn't stick." This is the actual root cause of the
+"overlap" reported earlier today — NOT the border-collapse rendering
+flicker (that fix stands, it was a real separate issue, just not this
+one). Only `.rs-section-head` (the "SOCIAL MEDIA ADS" title bar) was
+ever `position:sticky`; the real column-label row (`<thead>`:
+Service/Fee/Recurring/Flight/Notes) was plain, non-sticky content that
+scrolled away with the rest of the table. Past the first screenful, you
+see the section title pinned at the top with a data row (Facebook &
+Instagram's own summary line) butted directly against it and no column
+labels anywhere in between — reading exactly like an overlap, since
+there's nothing separating "the sticky title" from "whatever row
+happens to have scrolled up underneath it."
+
+**Fixed (`index.html`)**: made the thead row ALSO sticky, stacked
+directly below the section title. Two stacked sticky elements need a
+KNOWN height to stack at without covering each other, so
+`.rs-section-head` changed from padding-driven auto height to an
+explicit `height:32px` (flex-centered, same visual result), and
+`.summary-table th` now sticks at `top:32px` — exactly the section
+head's own height, so there's no gap and no overlap between them.
+z-index 3 (section head) vs. 2 (column labels) so the title always wins
+if the two ever compete. Confirmed this one rule correctly covers BOTH
+the per-section services table AND the Agent/County Split table (which
+reuses the identical `.rs-section-scroll`/`.rs-section-head`/
+`.summary-table` structure) — no second version needed. Confirmed
+harmless against the mobile responsive rules, which already set
+`.summary-table thead{display:none}` entirely (replaced by the existing
+`::before` stacked-label technique there), so this new desktop-only
+stickiness has nothing to conflict with on mobile.
+
+**Verified**: pure CSS, `node --check` doesn't apply; confirmed the
+edited block is well-formed by direct re-read. Not yet tested live —
+needs Claire to scroll a multi-row section (Social Media Ads is the
+exact one she flagged) and confirm the column labels now stay visible
+the whole time, stacked cleanly under the section title with no overlap.
