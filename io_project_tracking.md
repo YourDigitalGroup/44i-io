@@ -22550,3 +22550,36 @@ textarea above. Checked for other instances of the "sync-on-next-read
 value vulnerable to an unrelated re-render" pattern beyond the two
 already-fixed spots — found none currently, but flagged as a standing
 risk for any future per-row control added the same way.
+
+---
+
+## 2026-08-31 (cont'd) — Audit follow-up: all 3 items resolved
+
+Claire's decisions on the 3 flagged audit items:
+
+1. **Trello-failure toast for the AE** — no change wanted. Her call: the
+   AM will catch a missing card when reviewing the order/Trello, an AE
+   warning wouldn't get acted on anyway. Left as-is.
+2. **`legal_content` RLS** — Claire ran the check. Only one policy
+   exists: `legal_content_public_read` (SELECT, roles `anon`/
+   `authenticated`) — no INSERT/UPDATE/DELETE policy for those roles at
+   all, meaning writes are blocked by default under RLS. Correctly
+   locked down, matching `clients`' own existing lockdown. No action
+   needed.
+3. **Correction, not a fix**: I'd flagged "Admin's Edit flow has no
+   awareness of month_budgets" as still-open, based on a tracking-doc
+   note from earlier in the 2026-08-28 session — but that note was
+   written mid-investigation, BEFORE the actual fix landed later that
+   same day (see the "Order amendment history built for varying-by-month
+   campaigns" entry above: `adminToggleMonthBudgetsEditPanel()`/
+   `adminSaveMonthBudgetsEdit()` in `admin/index.html`, the
+   `month_budgets` branch in `admin_edit_order_line_item` — confirmed
+   live via Claire pasting the actual deployed function definition,
+   matches exactly — and `renderAmendmentHistoryHtml()` in `shared.js`,
+   confirmed wired into `renderOrderDetailModal()`). Should have kept
+   reading forward in the tracking doc before reporting this as open.
+   **Claire confirmed live: "Month by month edit looks correct on the AM
+   side."** No SQL or code change was needed — this item is fully closed.
+
+All three pre-launch audit items are now resolved. Moving on to the
+companion form next.
