@@ -21448,3 +21448,70 @@ Not yet tested live — needs both SQL pieces from the two prior entries
 run first, then a real order selling ONLY Traditional Buying to confirm
 just one calendar/one required field shows up, and a second order mixing
 it with another KOC tactic to confirm both show up correctly.
+
+---
+
+## 2026-08-31 — Generalized the Offline Visits Tracking card-title-suffix mechanism
+
+Claire, Monday: "I have a few services that need to be treated like
+offline tracking for trello" — `em-addl`, `em-template`, `sm-addl`,
+`w-content`. Checked the actual code before answering: `offlineVisitsSuffix()`
+was hardcoded to Offline Visits Tracking specifically — it detected via
+`is_cpm_adjustment` (generic-ish) but always rendered the literal text
+"+ Offline Visits" regardless of which modifier actually matched, so it
+couldn't already support a second riding-along service with its own
+different suffix text. Also `is_cpm_adjustment` itself was ruled out as
+the detection field to reuse, since it also drives unrelated
+`accounting_map` pairing/cut-% logic elsewhere — repurposing it for
+these 4 flat add-on services would have dragged in accounting behavior
+that was never asked for. Confirmed via AskUserQuestion: use each
+service's own catalog label as the suffix text verbatim (no custom
+short wording needed).
+
+**Built (`index.html`)**: renamed to `ridingAlongSuffix()`, driven by a
+new `trello_suffix_text` column instead of `is_cpm_adjustment` — fully
+decoupled from accounting. Multiple riding-along services in the same
+workflow all append (deduped by identical text). All 5 real call sites
+updated (agent-split cards, plain fallback, single-card template, whole-
+list template, list-read-failure fallback).
+
+**Critical backward-compatibility requirement**: Offline Visits
+Tracking's OWN `trello_suffix_text` must be set to exactly `"Offline
+Visits"` — NOT its full label `"Offline Visits Tracking"` — or every
+live Trello card whose name already contains the old hardcoded literal
+text will stop matching on the next resell and get treated as needing a
+brand-new card (duplicate). Flagged prominently in the SQL and in the
+new admin field's own on-page help text.
+
+**Built (`admin/index.html`)**: new "Trello Card Title Suffix (optional)"
+field on the Service edit form, with the resell-duplicate-card warning
+written directly into its help text. Extended `admin_save_service` (SQL
+below) with `trello_suffix_text`, same pattern as every other optional
+field already in that function.
+
+**Verified**: a standalone harness confirmed the exact backward-compat
+case (Offline Visits Tracking still produces literally " + Offline
+Visits"), a new riding-along service produces its own suffix text
+verbatim, two riding-along services in one workflow both append in
+order, a workflow with no riding-along service at all produces an empty
+suffix (no regression for every untouched tactic), and two services
+configured with the identical suffix text dedupe to showing it once.
+`node --check` passes on both extracted scripts. Not yet tested live —
+needs the SQL run, `trello_suffix_text = 'Offline Visits'` set on the
+existing modifier FIRST (before anything else, to avoid a live
+duplicate-card regression), then the 4 new services' `workflow`/
+`trello_suffix_text` configured to actually ride along on their intended
+host tactic.
+
+**SQL needed**: `alter table services add column if not exists
+trello_suffix_text text;`, then Claire sets `trello_suffix_text =
+'Offline Visits'` on Offline Visits Tracking's own row specifically via
+the new admin field (not a blanket `where is_cpm_adjustment = true`
+update — a 2026-08-21 comment in the code says it's the only such
+service today, but `is_cpm_adjustment` also gates unrelated
+`accounting_map` pairing logic elsewhere with its own has_addl_targeting/
+has_offline_visits split, so confirming the exact row count first is
+safer than assuming). Plus the updated `admin_save_service` function
+(full corrected version given directly to Claire, replaces the version
+delivered for the KOC fields — adds `trello_suffix_text` on top of
+everything already there).

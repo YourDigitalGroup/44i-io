@@ -940,6 +940,10 @@
                 <p style="font-size:10px;color:var(--muted);margin-top:4px">Picking from the list (rather than typing) avoids a typo silently splitting one tactic into two.</p>
               </div>
             </div>
+            <div style="margin-bottom:12px">
+              <label class="lbl" for="admin-svc-trello-suffix">Trello Card Title Suffix (optional) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for a service that rides along on a WORKFLOW SIBLING's card instead of getting its own (same Workflow as another service, no Trello Template of its own). When set, its text is appended to that shared card's title, e.g. "Offline Visits" → "...Geofencing + Offline Visits — Client". Leave blank for a normal service — most services should leave this blank. Changing the text on an already-live service will make the next resell look like a brand-new card, since the generated title stops matching the existing one.</span></label>
+              <input type="text" id="admin-svc-trello-suffix" placeholder="e.g. Offline Visits" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+            </div>
             <div style="margin-bottom:4px">
               <label class="lbl">KOC Notify — Specific Person (optional) <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— for a tactic whose Kick-Off Call always needs to involve ONE named person regardless of who's on the order (e.g. Traditional Buying → Carol Oren). She's tagged on this service's tactic card in Trello alongside the order's own AM/AE (only once if she IS the order's AM), and her calendar link shows separately on Step 3's KOC screen. Leave all three blank for the normal "just whoever's on the order" behavior — most services should leave this blank.</span></label>
             </div>
@@ -7417,7 +7421,8 @@ function adminNewService() {
    'admin-svc-setup-fee','admin-svc-setup-threshold','admin-svc-fee-note',
    'admin-svc-spend-min','admin-svc-tlp-cap','admin-svc-trello-template-ref',
    'admin-svc-cancel-notice-days','admin-svc-cancel-penalty-amt',
-   'admin-svc-koc-notify-name','admin-svc-koc-notify-handle','admin-svc-koc-notify-calendar'].forEach(id => {
+   'admin-svc-koc-notify-name','admin-svc-koc-notify-handle','admin-svc-koc-notify-calendar',
+   'admin-svc-trello-suffix'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('admin-svc-auto-setup').value = 'false';
@@ -7490,6 +7495,7 @@ function adminEditService(id) {
   document.getElementById('admin-svc-koc-notify-name').value = s.koc_notify_name || '';
   document.getElementById('admin-svc-koc-notify-handle').value = s.koc_notify_trello_handle || '';
   document.getElementById('admin-svc-koc-notify-calendar').value = s.koc_notify_calendar_url || '';
+  document.getElementById('admin-svc-trello-suffix').value = s.trello_suffix_text || '';
   // Multi-discipline (2026-08-07) — same jsonb-array-or-string guard already used for
   // qty_preset_options in index.html, since Supabase can hand this back as either a
   // real JS array or a JSON-encoded string depending on the path it came through.
@@ -7799,6 +7805,7 @@ async function adminSaveService() {
     koc_notify_name: document.getElementById('admin-svc-koc-notify-name').value.trim() || null,
     koc_notify_trello_handle: document.getElementById('admin-svc-koc-notify-handle').value.trim().replace(/^@/, '') || null,
     koc_notify_calendar_url: document.getElementById('admin-svc-koc-notify-calendar').value.trim() || null,
+    trello_suffix_text: document.getElementById('admin-svc-trello-suffix').value.trim() || null,
     strategist_disciplines: strategistDisciplinesFinal,
     intake_form_id: intakeFormVal,
     tlp_page_cap: tlpPageCapFinal,
