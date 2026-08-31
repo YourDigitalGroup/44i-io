@@ -241,6 +241,22 @@ async function applyClientPick(id) {
   }
   if (!ACTIVE_SERVICES.length) { noServicesNote.style.display = 'block'; return; }
 
+  // Pull each service's available tactic_variants options straight from the
+  // catalog (2026-08-31, per Claire — "we are missing the option to change
+  // the variant") — the same anon-readable `services` table the main IO
+  // form itself reads from, not a new RPC, since companion_get_active_services
+  // only returns the CURRENTLY selected variant (the order's own frozen
+  // value), not the full options list a dropdown needs.
+  try {
+    const ids = [...new Set(ACTIVE_SERVICES.map(s => s.service_id))];
+    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants`) || [];
+    const variantsById = Object.fromEntries(rows.map(r => [r.id, r.tactic_variants]));
+    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = Array.isArray(variantsById[svc.service_id]) ? variantsById[svc.service_id] : null; });
+  } catch(e) {
+    console.warn('Could not load tactic variant options:', e.message);
+    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; });
+  }
+
   list.innerHTML = ACTIVE_SERVICES.map((svc, i) => renderServiceRow(svc, i)).join('');
   submitWrap.classList.remove('hidden');
 }
@@ -386,12 +402,29 @@ function setServiceAction(i, action) {
         <div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-budget-${i}" placeholder="${svc.recurring || ''}"/></div>`;
     }
   } else if (action === 'edit') {
-    if (isOneTimeOnly(svc)) {
-      // One-time costs: date only, per Claire (2026-08-31) — the amount isn't
-      // client-editable through this form, only the date can be corrected.
-      body.innerHTML = `<div class="field"><label>Date</label><input type="date" id="edit-date-${i}" value="${esc(svc.flight_start || '')}"/></div>`;
+    // Dates and (if this service has any configured) the tactic variant are
+    // always editable here regardless of pricing type (2026-08-31, per
+    // Claire — "we are missing the option to change the variant or dates")
+    // — same fields the main IO form itself shows when a service is first
+    // ordered, layered on top of whichever amount editor below applies to
+    // this service's pricing type.
+    const oneTime = isOneTimeOnly(svc);
+    let extraFieldsHtml = `<div class="field"><label>${oneTime ? 'Date' : 'Start Date'}</label><input type="date" id="edit-start-${i}" value="${esc(svc.flight_start || '')}"/></div>`;
+    if (!oneTime) {
+      extraFieldsHtml += `<div class="field"><label>End Date</label><input type="date" id="edit-end-${i}" value="${esc(svc.flight_end || '')}"/></div>`;
+    }
+    if (Array.isArray(svc._variantOptions) && svc._variantOptions.length) {
+      extraFieldsHtml += `<div class="field"><label>Variant</label><select id="edit-variant-${i}">
+        <option value="">— No change —</option>
+        ${svc._variantOptions.map(v => `<option value="${esc(v)}" ${v === svc.tactic_variant ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+      </select></div>`;
+    }
+    if (oneTime) {
+      // One-time costs: no amount field, per Claire (2026-08-31) — the
+      // amount isn't client-editable through this form, only date/variant.
+      body.innerHTML = extraFieldsHtml;
     } else if (isSpendTactic(svc)) {
-      body.innerHTML = `
+      body.innerHTML = extraFieldsHtml + `
         <div class="action-tabs">
           <div class="action-tab" id="edit-mode-${i}-monthly" onclick="setEditBudgetMode(${i},'monthly')">Monthly Rate</div>
           <div class="action-tab" id="edit-mode-${i}-total" onclick="setEditBudgetMode(${i},'total')">Whole Campaign Total</div>
@@ -402,7 +435,7 @@ function setServiceAction(i, action) {
     } else {
       const field = svc.fee > 0 ? 'fee' : 'recurring';
       const current = svc[field];
-      body.innerHTML = `<input type="hidden" id="edit-field-${i}" value="${field}"/>
+      body.innerHTML = extraFieldsHtml + `<input type="hidden" id="edit-field-${i}" value="${field}"/>
         <div class="field"><label>New Amount</label><input type="number" step="0.01" id="edit-amount-${i}" value="${current || ''}"/></div>`;
     }
   }
@@ -499,33 +532,53 @@ function collectServicePayload(i) {
       requested_changes: { new_end_date: endDate, new_monthly_budget: null, new_month_budgets: months } };
   }
   if (action === 'edit') {
+    // Dates + variant are collected alongside whatever amount field applies
+    // (2026-08-31, per Claire) — only included if actually changed from the
+    // service's current value, so an untouched date/variant doesn't show up
+    // as a no-op "changed from X to X" in the AM's review or the Trello
+    // comment. requested_changes now holds a `fields` map (one or more
+    // field:new_value pairs) rather than a single field, since a submission
+    // here can touch dates/variant/amount all at once.
+    const fields = {};
+    const startVal = document.getElementById(`edit-start-${i}`)?.value;
+    if (startVal && startVal !== svc.flight_start) fields.start_date = startVal;
+    if (!isOneTimeOnly(svc)) {
+      const endVal = document.getElementById(`edit-end-${i}`)?.value;
+      if (endVal && endVal !== svc.flight_end) fields.end_date = endVal;
+    }
+    const variantVal = document.getElementById(`edit-variant-${i}`)?.value;
+    if (variantVal && variantVal !== svc.tactic_variant) fields.tactic_variant = variantVal;
+
     if (isOneTimeOnly(svc)) {
-      const date = document.getElementById(`edit-date-${i}`)?.value;
-      if (!date) return { error: `Please enter a date for ${svc.label}` };
-      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'start_date', new_value: date } };
+      if (!Object.keys(fields).length) return { error: `Please change the date or variant for ${svc.label}` };
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
     }
     if (!isSpendTactic(svc)) {
       const field = document.getElementById(`edit-field-${i}`)?.value;
       const amount = document.getElementById(`edit-amount-${i}`)?.value;
       if (!amount) return { error: `Please enter a new amount for ${svc.label}` };
-      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field, new_value: amount } };
+      fields[field] = amount;
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
     }
     const mode = svc._editMode || 'monthly';
     if (mode === 'monthly') {
       const amount = document.getElementById(`edit-monthly-${i}`)?.value;
       if (!amount) return { error: `Please enter a new monthly rate for ${svc.label}` };
-      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'spend', new_value: amount } };
+      fields.spend = amount;
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
     }
     if (mode === 'total') {
       const totalVal = document.getElementById(`edit-total-${i}`)?.value;
       if (!totalVal) return { error: `Please enter a whole campaign total for ${svc.label}` };
       const months = splitAmountAcrossMonths(parseFloat(totalVal), svc.flight_start, svc.flight_end);
-      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'month_budgets', new_value: JSON.stringify(months) } };
+      fields.month_budgets = JSON.stringify(months);
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
     }
     // custom by month
     const inputs = document.querySelectorAll(`.edit-month-${i}`);
     const newMonthBudgets = [...inputs].map(inp => ({ month: inp.dataset.month, amount: parseFloat(inp.value) || 0, paused: inp.dataset.paused === '1' }));
-    return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { field: 'month_budgets', new_value: JSON.stringify(newMonthBudgets) } };
+    fields.month_budgets = JSON.stringify(newMonthBudgets);
+    return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
   }
   return null;
 }
