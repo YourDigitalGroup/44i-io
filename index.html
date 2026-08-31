@@ -919,6 +919,16 @@ select.qty-field{background-image:none;padding-right:3px}
     <div class="totals-bar" id="totals-bar">
       <div class="total-item"><div class="val" id="total-onetime">$0</div><div class="lbl">One-Time Total</div></div>
       <div class="total-item"><div class="val" id="total-monthly">$0/mo</div><div class="lbl">Monthly Recurring</div></div>
+      <!-- Varying-campaign tile (2026-08-31, per Claire — the Grand Total's
+           "Monthly Recurring" figure used to fold each varying-by-month
+           campaign's AVERAGE into this single "/mo" number, same misleading-
+           average issue fixed everywhere else this session, just missed at
+           the total-bar level. A varying campaign's real dollar figure is a
+           TOTAL, not a monthly rate, so it gets its own tile instead of being
+           blended in — hidden entirely (not just $0) when nothing on the
+           order actually varies by month, so a normal order looks completely
+           unchanged. -->
+      <div class="total-item" id="total-varying-wrap" style="display:none"><div class="val" id="total-varying">$0</div><div class="lbl">Varying Campaign Total</div></div>
       <div class="total-item"><div class="val" id="total-items">0</div><div class="lbl">Services Selected</div></div>
     </div>
 
@@ -3860,6 +3870,23 @@ function monthsInFlight(startDateStr, endDateStr) {
   }
   return months;
 }
+// Shared "is this genuinely varying, and if so what's its real total" check
+// (2026-08-31) — the exact same monthsVary/reduce logic was independently
+// duplicated at the per-line DISPLAY level in three places (buildReview(),
+// printIO(), the Trello card description builder) but never applied at the
+// TOTALS level, where every one of those three still summed a plain spend
+// figure (an AVERAGE for a varying campaign) into one blended "$X/mo" total —
+// the same misleading-average issue fixed everywhere else this session, just
+// missed here. Takes the raw month array directly (not a parent object)
+// since the two real shapes in this app — `selected[id].monthPlan` and a
+// submitted line item's `month_budgets` — are structurally identical
+// ({month, amount, paused}) under different field names; this way both can
+// share one helper instead of needing two near-duplicate versions.
+function monthPlanVariesAndTotal(monthPlan) {
+  const varies = !!(monthPlan && monthPlan.length > 1 && new Set(monthPlan.map(m => m.amount)).size > 1);
+  const total = varies ? monthPlan.reduce((s, m) => s + (m.amount || 0), 0) : 0;
+  return { varies, total };
+}
 function splitAmountAcrossMonths(totalAmount, startDateStr, endDateStr) {
   const months = monthsInFlight(startDateStr, endDateStr);
   const totalDays = months.reduce((sum, m) => sum + m.days, 0);
@@ -4682,7 +4709,7 @@ function toggleReviewSection(sectionId) {
 }
 
 function buildReview() {
-  let oneTime = 0, monthly = 0, count = 0;
+  let oneTime = 0, monthly = 0, varyingTotal = 0, count = 0;
   const sectionBoxes = [];
   const workflows = new Set();
 
@@ -4722,7 +4749,12 @@ function buildReview() {
     const recurringTotal = (data.recurring || 0) * qty;
     if (feeTotal > 0) oneTime += feeTotal;
     if (recurringTotal > 0) monthly += recurringTotal;
-    if (data.spend > 0) monthly += data.spend;
+    // Varying-campaign real total tracked separately from genuine "/mo"
+    // spend (2026-08-31) — see monthPlanVariesAndTotal()'s own comment.
+    if (data.spend > 0) {
+      const mv = monthPlanVariesAndTotal(data.monthPlan);
+      if (mv.varies) varyingTotal += mv.total; else monthly += data.spend;
+    }
     if (data.workflow) workflows.add(data.workflow);
     // Fee column: for a one-time per-unit item, shows "$175 × 3 = $525" (the multiplied
     // total lives HERE, not in the Recurring column — showing a one-time total under a
@@ -4875,6 +4907,14 @@ function buildReview() {
   document.getElementById('total-onetime').textContent = fmt(oneTime);
   document.getElementById('total-monthly').textContent = fmt(monthly) + '/mo';
   document.getElementById('total-items').textContent = count;
+  // Varying-campaign tile only shows when the order actually has one
+  // (2026-08-31) — a normal order with nothing varying by month looks
+  // completely unchanged from before this fix.
+  const varyingWrap = document.getElementById('total-varying-wrap');
+  if (varyingWrap) {
+    varyingWrap.style.display = varyingTotal > 0 ? '' : 'none';
+    if (varyingTotal > 0) document.getElementById('total-varying').textContent = fmt(varyingTotal);
+  }
   document.getElementById('summary-body').innerHTML = sectionBoxes.length ? sectionBoxes.join('') : '<div style="text-align:center;color:var(--muted);padding:20px">No services selected</div>';
 
   // Workflows
@@ -5308,7 +5348,18 @@ async function submitIO() {
     // lineItems.fee/recurring are already qty-multiplied (see above), so summing them
     // directly here gives the correct order totals with no further math needed.
     const oneTime = lineItems.reduce((a,li) => a + (li.fee||0), 0) + proratedTotal + setupFeeTotal;
-    const monthly = lineItems.reduce((a,li) => a + (li.recurring||0) + (li.spend||0), 0);
+    // Varying-campaign real total kept separate from genuine "/mo" spend
+    // (2026-08-31) — same fix as buildReview()/printIO()'s totals, this is
+    // the THIRD independent place that was still blending a varying
+    // campaign's plain `spend` (an average) into "monthly" — this one feeds
+    // the Trello/email order summary text below (**Monthly Recurring:** ...).
+    let monthly = lineItems.reduce((a,li) => a + (li.recurring||0), 0);
+    let varyingSpendTotal = 0;
+    lineItems.forEach(li => {
+      if (!(li.spend > 0)) return;
+      const mv = monthPlanVariesAndTotal(li.month_budgets);
+      if (mv.varies) varyingSpendTotal += mv.total; else monthly += li.spend;
+    });
 
     // Use real UUID group_id, or null for dev mode
     const isRealUuid = selectedGroup.id && /^[0-9a-f]{8}-/.test(selectedGroup.id);
@@ -5914,7 +5965,7 @@ async function submitIO() {
 ${servicesDesc}
 
 **One-Time Total:** $${oneTime.toLocaleString()}
-**Monthly Recurring:** $${monthly.toLocaleString()}/mo
+**Monthly Recurring:** $${monthly.toLocaleString()}/mo${varyingSpendTotal > 0 ? `\n**Varying Campaign Total:** $${varyingSpendTotal.toLocaleString()} (see per-month breakdown)` : ''}
 
 **Special Instructions:** ${document.getElementById('special-instructions')?.value||'None'}
 ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.slice(0, 16000);
@@ -6952,14 +7003,14 @@ function buildIoDocumentHtml() {
     grouped[sec].push([id, data]);
   });
 
-  let oneTime = 0, monthly = 0;
+  let oneTime = 0, monthly = 0, varyingTotal = 0;
   let lineItemsHtml = '';
 
   SECTIONS.forEach(secDef => {
     const sec = secDef.id;
     if (!grouped[sec]) return;
     const items = grouped[sec];
-    let sectionOneTime = 0, sectionMonthly = 0;
+    let sectionOneTime = 0, sectionMonthly = 0, sectionVaryingTotal = 0;
     let sectionRows = '';
 
     items.forEach(([id, data]) => {
@@ -6970,7 +7021,16 @@ function buildIoDocumentHtml() {
       const recurringTotal = (data.recurring || 0) * qty;
       if (feeTotal > 0) { oneTime += feeTotal; sectionOneTime += feeTotal; }
       if (recurringTotal > 0) { monthly += recurringTotal; sectionMonthly += recurringTotal; }
-      if (data.spend > 0) { monthly += data.spend; sectionMonthly += data.spend; }
+      // Varying-campaign real total tracked separately from genuine "/mo"
+      // spend (2026-08-31, per Claire — the section subtotal blending a
+      // varying campaign's AVERAGE into "$X/mo" was "a little confusing";
+      // same fix as buildReview()'s totals-bar, see monthPlanVariesAndTotal()).
+      if (data.spend > 0) {
+        const mv = monthPlanVariesAndTotal(data.monthPlan);
+        if (mv.varies) {
+          varyingTotal += mv.total; sectionVaryingTotal += mv.total;
+        } else { monthly += data.spend; sectionMonthly += data.spend; }
+      }
 
       let amtCol = '';
       // QUR items (2026-07-07): checked FIRST, ahead of every other case, so this takes
@@ -7083,10 +7143,17 @@ function buildIoDocumentHtml() {
 
     // Section header + rows + subtotal
     lineItemsHtml += `<tr class="section-row"><td colspan="4">${esc(secDef.label)}</td></tr>` + sectionRows;
-    if (sectionOneTime > 0 || sectionMonthly > 0) {
+    if (sectionOneTime > 0 || sectionMonthly > 0 || sectionVaryingTotal > 0) {
       const parts = [];
       if (sectionOneTime > 0) parts.push(fmt(sectionOneTime) + ' one-time');
       if (sectionMonthly > 0) parts.push(fmt(sectionMonthly) + '/mo');
+      // Kept as its own separate piece, not folded into the "/mo" figure
+      // above (2026-08-31, per Claire — "the subtotal line in Social Media
+      // Ads is a little confusing") — a varying campaign's real dollar total
+      // isn't a monthly rate, so it gets its own clearly-labeled "total"
+      // rather than being blended into a number that would otherwise imply
+      // a flat recurring charge.
+      if (sectionVaryingTotal > 0) parts.push(fmt(sectionVaryingTotal) + ' total (varying campaigns)');
       lineItemsHtml += `<tr class="subtotal-row"><td>Subtotal</td><td class="svc-amt">${parts.join(' + ')}</td><td></td><td></td></tr>`;
     }
   });
@@ -7312,14 +7379,27 @@ function buildIoDocumentHtml() {
 <div class="totals-box">
   <table class="totals-table">
     ${oneTime > 0 ? `<tr><td class="label">One-Time Charges</td><td class="value">${fmt(oneTime)}</td></tr>` : ''}
-    ${monthly > 0 ? `<tr><td class="label">Monthly Recurring</td><td class="value">${fmt(monthly)}/mo</td></tr>` : ''}
-    <tr class="grand">
-      <td class="label">First Month Total</td>
-      <td class="value">${fmt(oneTime + monthly)}</td>
-    </tr>
+    ${monthly > 0 ? `<tr class="grand"><td class="label">Monthly Recurring</td><td class="value">${fmt(monthly)}/mo</td></tr>` : ''}
+    <!-- Shown as its own row, not folded into Monthly Recurring (2026-08-31,
+         per Claire, same fix as the section subtotals above) — a varying
+         campaign's real dollar figure is a multi-month TOTAL, not a flat
+         monthly rate. -->
+    ${varyingTotal > 0 ? `<tr class="grand"><td class="label">Varying Campaign Total <span style="font-weight:400;font-size:9pt">(see breakdown above)</span></td><td class="value">${fmt(varyingTotal)}</td></tr>` : ''}
   </table>
 </div>
-${monthly > 0 ? `<div class="first-month-note">Subsequent months: ${fmt(monthly)}/mo for the duration of the campaign term.</div>` : ''}
+<!-- "First Month Total" + "Subsequent months: $X/mo" removed entirely
+     (2026-08-31, per Claire — "should we remove that... since now the
+     flight dates can differ for each service?"). Both assumed every
+     service on the order shares one start date, so "this month" meant the
+     same thing for all of them — no longer true now that each service has
+     its own independent flight Start/End (see the per-line Flight column).
+     A service starting in November has no business being folded into a
+     "first month" total computed as if everything started today; there's
+     no single correct blended figure once start dates genuinely differ.
+     Each category total (One-Time/Monthly/Varying) stands on its own
+     instead, with each LINE's own Flight column being the source of truth
+     for when it actually starts billing. -->
+${(monthly > 0 || varyingTotal > 0) ? `<div class="first-month-note">See each service's own Flight dates above for when its billing actually starts — services on this IO may not all begin the same month.</div>` : ''}
 
 ${(() => {
   // Agent/County Split (2026-08-19, per Claire -- "add the agent information

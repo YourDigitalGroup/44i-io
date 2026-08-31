@@ -21896,3 +21896,74 @@ of Step 3 and the printed IO) has the exact same underlying issue and is
 more consequential/visible, so held off making any change here pending
 Claire's decision on whether to fix both together or just the section
 subtotals for now.
+
+---
+
+## 2026-08-31 (cont'd) — Fixed the "misleading average" totals bug everywhere it existed, and dropped "First Month Total"
+
+Claire answered "Whatever you think would be the most clear" on the
+subtotal question above. Rather than fix only the Social Media Ads
+subtotal she specifically flagged, fixed the same root cause in all
+THREE places it existed — leaving the other two would have just moved
+the same confusion somewhere else:
+
+1. **`buildReview()`'s Step 3 totals-bar** — `oneTime`/`monthly` no
+   longer blend a varying campaign's `data.spend` (an average) into
+   "monthly." A new `varyingTotal` accumulator sums each varying
+   campaign's REAL total instead, shown in a new totals-bar tile
+   ("Varying Campaign Total") that's hidden entirely when nothing on the
+   order varies.
+2. **`printIO()`'s section subtotals AND grand totals-box** — identical
+   fix: each section's subtotal line now shows up to three parts
+   ("$X one-time" + "$Y/mo" + "$Z total (varying campaigns)") instead of
+   one blended "/mo" figure, and the grand totals-box gets the same
+   three-way split.
+3. **`submitIO()`'s Trello/email order-summary text** — same split
+   applied to the `**Monthly Recurring:**` line feeding the Trello card
+   and confirmation email; added a `**Varying Campaign Total:**` line
+   (shown only when one exists) so that text matches what Step 3 and the
+   printed IO now show.
+
+All three share one new helper, `monthPlanVariesAndTotal(monthPlan)`
+(added near `splitAmountAcrossMonths()`), since `selected[id].monthPlan`
+(internal state) and a line item's `month_budgets` (submitted order
+shape) are structurally identical arrays of `{month, amount, paused}`
+under different field names — one function covers both call shapes.
+Returns `{varies, total}`: `varies` is true only when the plan has more
+than one month AND the amounts actually differ; `total` is the real sum
+across months (only meaningful when `varies` is true — callers fall
+back to the existing flat `data.spend`/`li.spend` otherwise, which is
+already correct for non-varying items).
+
+**Also removed, per a related question Claire raised mid-fix**: "Should
+we remove that First month and then recurring month totals since now
+the flight dates can differ for each service?" `printIO()`'s "First
+Month Total" grand row and its "Subsequent months: $X/mo" note both
+assumed every service on an order shares one shared start date — no
+longer true now that per-service Flight dates exist (this session,
+earlier). Agreed and removed both entirely rather than trying to compute
+a "more correct" first-month figure; replaced with the three standalone
+category rows above (One-Time / Monthly Recurring / Varying Campaign
+Total) plus a plain note pointing to each line's own Flight column:
+"See each service's own Flight dates above for when its billing actually
+starts — services on this IO may not all begin the same month." This
+also made a `firstMonthVaryingTotal` accumulator (added earlier in this
+same edit specifically to feed the now-deleted row) dead code; removed
+it along with its accumulation line and its explanatory comment.
+
+**Verified**: `node --check` passes on the extracted script. Wrote a
+standalone Node harness (`verify_totals.js`) simulating all three
+functions' accumulation logic against fixtures mixing flat fees, flat
+recurring, flat spend, and a genuinely-varying multi-month spend plan
+(3 months: $200/$800/$1,500, average $833.33/mo) — confirmed in every
+location the varying campaign's real $2,500 total is surfaced
+separately and never blended into the "$X/mo" figure, that a
+non-varying plan is correctly excluded from the varying bucket, and
+that `submitIO()`'s Trello/email text includes the new
+"Varying Campaign Total" line only when one exists (confirmed absent
+for an order with no varying campaigns, for backward compatibility with
+every existing order's summary text). Grepped for leftover "First Month
+Total"/`firstMonthVaryingTotal` references after removal — none found.
+Not yet tested live in the browser — needs Claire to run through Step 3
+and the Print/Trello output on an order with at least one genuinely
+varying campaign to confirm the new breakdown reads clearly.
