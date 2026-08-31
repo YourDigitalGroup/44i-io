@@ -22478,3 +22478,75 @@ confirm on a real order: Website Modules' card title/Step 3/Print all
 show only the picked module names, and a non-KOC service with an
 incomplete intake no longer mentions the Kick-Off Call in its card
 description.
+
+---
+
+## 2026-08-31 (cont'd) — Pre-launch audit (launching Wednesday, sooner than planned)
+
+Claire asked for "a quick audit of the code as it currently stands" for
+peace of mind before Wednesday's launch, before moving on to the
+companion form. Ran two passes: the `code-review` skill against today's
+full diff (came back clean — no findings), then a broader agent-driven
+cold-read of the whole `index.html` file (not just today's changes),
+focused on security, submission-flow correctness, known-but-unresolved
+gaps left in comments, and the "value only saved by a sync-on-next-read
+function, vulnerable to an unrelated re-render" pattern that already
+caused the tactic-variant-dropdown bug earlier today.
+
+**Fixed immediately** (cheap, unambiguous, no judgment call needed):
+the intake modal's textarea field (`showFullIntakeForm()`'s field-
+rendering loop, ~line 2875) rendered a saved answer's text directly
+into `<textarea>...</textarea>` with NO escaping at all — the only sink
+in the whole file found with zero escaping, when every comparable field
+in the same modal (radio/checkbox options, other inputs) escapes at
+least the attribute-quote case. A literal `</textarea>` in a typed
+answer would close the tag early and anything after it becomes live
+markup on the next render of that same field (reopening the modal, or a
+localStorage draft reload). Confirmed this data never flows into
+another viewer's browser (no code path loads a stored order's intake
+answers back into THIS form for a different person — admin's own
+equivalent render already correctly uses `esc()`), so this was
+self-XSS confined to the same AE's own session, not a cross-user attack
+— still a real, free-to-close gap. Fixed by wrapping the interpolated
+value in `esc()`, matching the pattern already used everywhere else in
+this exact file. Verified: `node --check` passes; confirmed reading a
+textarea's `.value` back out still returns the correct decoded plain
+text regardless of how it was escaped on render, so this doesn't affect
+any round-trip save/reload behavior.
+
+**Flagged to Claire, not silently acted on — her call before Wednesday**:
+1. **Trello failure isn't visibly distinguishable from success.** If
+   Trello card creation fails for any reason during submission, the code
+   shows an 8-second auto-dismissing error toast and then continues to
+   the SAME success screen a fully-successful submission shows. The
+   Supabase order record is safe either way (saved before Trello runs),
+   but an AE who's already moved on has no lasting way to tell "this
+   order has no Trello card yet" from a real success.
+2. **`legal_content` table write access** — the signing page's legal
+   text renders via a genuine, unescaped `innerHTML` (almost certainly
+   intentional, so admins can format/bold legal text) — worth confirming
+   that table has the same "no public write" lockdown the `clients`
+   table already has, since anyone able to write to it could inject
+   script onto every client's signing page. Didn't have DB access to
+   check RLS directly.
+3. **Admin's AM-triggered Edit flow still has no awareness of
+   month_budgets** (already known/logged 2026-08-28 — resurfaced here as
+   a launch-relevant reminder, not a new finding): editing a varying-
+   month line's flat number in Admin leaves the real per-month breakdown
+   untouched and now silently stale.
+
+**Noted, not urgent**: one dead function (`toggleBudgetDetail`, superseded
+by the 2026-08-20 auto-open redesign, never removed); the varying-
+campaign total math is correctly computed in all three current call
+sites (`buildReview()`/`submitIO()`/`printIO()`) but is three
+independent implementations rather than one shared calculation, which is
+exactly the kind of duplication that already caused a real 3-location
+bug once this session — worth a future consolidation, not a Wednesday
+blocker. Confirmed the client-side `SUPABASE_KEY` is the public anon
+key, not a privileged one — correct and expected for a page like this.
+Checked all 56 `innerHTML`/`insertAdjacentHTML` sites in the file for
+missing `esc()` on user-derived data — found nothing else besides the
+textarea above. Checked for other instances of the "sync-on-next-read
+value vulnerable to an unrelated re-render" pattern beyond the two
+already-fixed spots — found none currently, but flagged as a standing
+risk for any future per-row control added the same way.

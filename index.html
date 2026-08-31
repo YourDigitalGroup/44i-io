@@ -2872,7 +2872,7 @@ function showFullIntakeForm(serviceId, cfg, formDef, existing) {
       const groupLabelId = `intake-label-${esc(cfg.intake)}-${esc(field.key)}`;
       if (field.type === 'textarea') {
         const fieldId = `intake-${esc(cfg.intake)}-${esc(field.key)}`;
-        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label for="${fieldId}">${field.label}</label>${descHtml}<textarea id="${fieldId}" data-key="${field.key}" data-form="${cfg.intake}" rows="3">${val}</textarea></div>`;
+        html += `<div class="${fieldClass}" style="grid-column:1/-1;${wrapStyle}"${showIfAttrs}><label for="${fieldId}">${field.label}</label>${descHtml}<textarea id="${fieldId}" data-key="${field.key}" data-form="${cfg.intake}" rows="3">${esc(val)}</textarea></div>`;
       } else if (field.type === 'radio') {
         const opts = field.options.map(o =>
           `<label><input type="radio" name="intake-${cfg.intake}-${field.key}" value="${o}" ${val===o?'checked':''}/> ${o}</label>`
