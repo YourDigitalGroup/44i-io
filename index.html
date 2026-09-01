@@ -3102,7 +3102,14 @@ function updateIntakeStatusCard() {
     const cfg = PRODUCT_CONFIG[id];
     if (cfg?.intake && !splitServiceIds.has(id)) {
       if (!needed[cfg.intake]) needed[cfg.intake] = { labels:[], sampleId:id };
-      needed[cfg.intake].labels.push(cfg.label);
+      // resolveRowDisplayName() (2026-09-02 fix, found live by Claire) --
+      // this used to push the plain, all-options catalog label (cfg.label,
+      // e.g. "Geofencing or 1st Party Addressable") no matter which variant
+      // the AE actually picked, while the Selected Services Summary right
+      // below this same card already resolves it to the specific
+      // "Location Targeting: Geofencing" -- a visible mismatch on the same
+      // screen. Same resolver Step 3's summary/review already use.
+      needed[cfg.intake].labels.push(resolveRowDisplayName(id, selected[id], cfg.label));
     }
   });
   const agentIntakeRows = [];

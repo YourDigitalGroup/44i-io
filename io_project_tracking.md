@@ -24478,3 +24478,41 @@ sending the decks to Claire:**
 
 Both rebuilt, re-validated (`validate.py` clean), and visually re-confirmed
 before the decks were sent.
+
+## Campaign Intake Forms card showed the wrong service name for a picked variant (2026-09-02)
+
+Claire spotted this live in one of the IO deck's own real-app screenshots
+(Step 3, Campaign Intake Forms card): a Geofencing order with "Location
+Targeting: Geofencing" picked as its variant still listed the intake form
+under the plain, generic "Geofencing or 1st Party Addressable" — while the
+Selected Services Summary table on the exact same screen, just below it,
+correctly showed "Location Targeting: Geofencing". Same order, same screen,
+two different names for the same line — a real live-app bug the training
+screenshot happened to surface, not a training-data problem.
+
+**Root cause**: `updateIntakeStatusCard()` (index.html) built each intake
+form's service-label list by pushing `cfg.label` — the PRODUCT_CONFIG
+entry's plain catalog label — with no awareness of `selected[id].tacticVariant`
+or `.moduleNames` at all. Every other place on the page that names a picked
+service (Selected Services Summary, the printed/signed IO document, Trello
+card titles) goes through `resolveRowDisplayName()` first, which swaps in the
+specific variant/module name when one was picked. This card was simply never
+wired up to that resolver.
+
+**Fix**: `needed[cfg.intake].labels.push(cfg.label)` → `resolveRowDisplayName
+(id, selected[id], cfg.label)` — same resolver, same fallback behavior when no
+variant/modules were picked (still shows the plain label in that case, exactly
+as before). Left the separate per-agent-split intake rows section (a few lines
+below, for the Agent/County Split feature) untouched — that path reads from
+`agentSplitRows`, not `selected`, and none of today's agent-splittable services
+carry tactic_variants, so there's no evidence it has the same gap; flagging
+rather than guessing a fix into code that isn't proven broken.
+
+**Verified**: `node --check` on the extracted inline script. Extracted
+`resolveRowDisplayName`/`resolveVariantDisplayName`/`variantIsAlreadyComplete`
+into a standalone Node harness and reproduced Claire's exact scenario — a
+Geofencing line with `tacticVariant: 'Location Targeting: Geofencing'` now
+resolves to that specific name instead of the generic label, while a line
+with no variant picked still correctly falls back to the plain label
+unchanged (confirms no regression for the ~90% of services that never have
+a variant to begin with).
