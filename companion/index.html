@@ -80,14 +80,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
   <div id="main-content" class="hidden">
     <div class="card">
       <h2>I am</h2>
-      <div class="field" id="ae-picker-wrap" style="display:none">
+      <!-- Roster-only (2026-08-31, per Claire — "Don't allow someone to
+           free type a name, they should have to select one from a
+           dropdown") -- a Cancel/Edit/Renew request is always against an
+           EXISTING order, which was itself placed by a real, already-
+           rostered AE, so there's no "brand-new AE" case to accommodate
+           here the way the main IO form's own free-text fallback exists
+           for. Guarantees a real roster email for notifyAm() too, rather
+           than a free-typed name silently having no email to send to. -->
+      <div class="field hidden" id="ae-picker-wrap">
         <label>Select your name</label>
-        <select id="ae-picker" onchange="applyAePick(this.value)"></select>
+        <select id="ae-picker" onchange="applyAePick(this.value)">
+          <option value="">— Select your name —</option>
+        </select>
       </div>
-      <div class="field">
-        <label>Your Name</label>
-        <input type="text" id="ae-name" placeholder="Full name"/>
-      </div>
+      <p class="muted-note hidden" id="no-ae-note">No AEs found for this group yet — check with your AM to be added to the roster.</p>
+      <input type="hidden" id="ae-name"/>
     </div>
 
     <div class="card">
@@ -164,6 +172,7 @@ let selectedGroup = null;
 let AE_ROSTER = [];
 let CLIENT_ROSTER = [];
 let ACTIVE_SERVICES = [];
+let ORDER_TRELLO_CARDS = {};
 let selectedClientId = null;
 
 function hexToRgba(hex, alpha) {
@@ -189,21 +198,23 @@ function applyGroupBranding(group) {
 async function loadAeRoster(groupId) {
   const wrap = document.getElementById('ae-picker-wrap');
   const sel = document.getElementById('ae-picker');
+  const noAeNote = document.getElementById('no-ae-note');
   try {
     AE_ROSTER = await sb('rpc/get_group_aes', { method: 'POST', body: JSON.stringify({ p_group_id: groupId }) }) || [];
   } catch(e) { console.warn('Could not load AE roster:', e.message); AE_ROSTER = []; }
-  if (!AE_ROSTER.length) { wrap.style.display = 'none'; return; }
-  sel.innerHTML = '<option value="">— New AE —</option>' + AE_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
+  if (!AE_ROSTER.length) { wrap.classList.add('hidden'); noAeNote.classList.remove('hidden'); return; }
+  noAeNote.classList.add('hidden');
+  sel.innerHTML = '<option value="">— Select your name —</option>' + AE_ROSTER.map(a => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
   sel.value = '';
-  wrap.style.display = 'block';
+  document.getElementById('ae-name').value = '';
+  wrap.classList.remove('hidden');
 }
 function applyAePick(id) {
   const nameEl = document.getElementById('ae-name');
-  if (!id) { nameEl.value = ''; nameEl.disabled = false; return; }
+  if (!id) { nameEl.value = ''; return; }
   const a = AE_ROSTER.find(x => x.id === id);
   if (!a) return;
   nameEl.value = a.name || '';
-  nameEl.disabled = true;
 }
 
 async function loadClientRoster(groupId) {
@@ -256,7 +267,7 @@ async function applyClientPick(id) {
   // checkbox split for these two mechanisms.
   try {
     const ids = [...new Set(ACTIVE_SERVICES.map(s => s.service_id))];
-    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price`) || [];
+    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price,workflow,accounting_label`) || [];
     const byId = Object.fromEntries(rows.map(r => [r.id, r]));
     ACTIVE_SERVICES.forEach(svc => {
       const r = byId[svc.service_id] || {};
@@ -267,10 +278,25 @@ async function applyClientPick(id) {
       svc._qtyPresetOptions = Array.isArray(presetOptions) ? presetOptions : null;
       svc._pricingMode = r.pricing_mode || null;
       svc._defaultPrice = r.default_price ?? null;
+      svc._workflow = r.workflow || null;
+      svc._accountingLabel = r.accounting_label || null;
     });
   } catch(e) {
     console.warn('Could not load catalog pricing/option data:', e.message);
-    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; svc._moduleOptions = null; svc._qtyPresetOptions = null; svc._pricingMode = null; svc._defaultPrice = null; });
+    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; svc._moduleOptions = null; svc._qtyPresetOptions = null; svc._pricingMode = null; svc._defaultPrice = null; svc._workflow = null; svc._accountingLabel = null; });
+  }
+
+  // Each service's order's trello_card_ids (2026-08-31, per Claire — a
+  // submitted request should post a heads-up comment to Trello immediately,
+  // not wait until an AM approves it) — a client can have more than one
+  // order, so this is a map keyed by order_id, not a single lookup.
+  try {
+    const orderIds = [...new Set(ACTIVE_SERVICES.map(s => s.order_id))];
+    const orderRows = await sb(`orders?id=in.(${orderIds.map(encodeURIComponent).join(',')})&select=id,trello_card_ids`) || [];
+    ORDER_TRELLO_CARDS = Object.fromEntries(orderRows.map(o => [o.id, o.trello_card_ids || {}]));
+  } catch(e) {
+    console.warn('Could not load order Trello card ids:', e.message);
+    ORDER_TRELLO_CARDS = {};
   }
 
   list.innerHTML = ACTIVE_SERVICES.map((svc, i) => renderServiceRow(svc, i)).join('');
@@ -685,7 +711,7 @@ function collectServicePayload(i) {
 
 async function submitRequests() {
   const aeName = document.getElementById('ae-name').value.trim();
-  if (!aeName) { showToast('Please enter your name', 'error'); return; }
+  if (!aeName) { showToast('Please select your name', 'error'); return; }
   if (!selectedClientId) { showToast('Please select a client', 'error'); return; }
 
   const checked = ACTIVE_SERVICES.map((svc, i) => ({ svc, i })).filter(({i}) => document.getElementById(`svc-chk-${i}`)?.checked);
@@ -723,17 +749,65 @@ async function submitRequests() {
   }
 
   await notifyAm(aeName, aeEmail, submitted);
+  await postSubmitTrelloComments(aeName, submitted);
 
   document.getElementById('main-content').classList.add('hidden');
   document.getElementById('success-screen').classList.remove('hidden');
 }
 
-// Same recipient-resolution + send_email target as the main IO form's own
-// submission notification (index.html Step 6) — group's io_recipient list +
-// the submitting AE as To, global always_bcc_recipients as Bcc, deduped.
+// A heads-up comment posted to Trello the MOMENT a request is submitted
+// (2026-08-31, per Claire — since email is the only other notification
+// channel today, this gives the AM a second, Trello-native way to notice a
+// pending request even if the email doesn't land). Deliberately worded
+// differently from the "✏️/🛑/🔁 ... (by AM)" comment adminApprovePendingRequestClick()
+// posts once approved — this one is a pending notice, not a record of an
+// applied change, so it shouldn't read like one.
+async function postSubmitTrelloComments(aeName, submitted) {
+  const actionVerb = { cancel: 'cancel', edit: 'edit', renew: 'renew' };
+  for (const p of submitted) {
+    try {
+      const svc = ACTIVE_SERVICES.find(s => s.service_id === p.service_id && s.order_id === p.order_id);
+      if (!svc) continue;
+      const label = svc._accountingLabel || svc.label;
+      const cardIds = ORDER_TRELLO_CARDS[p.order_id] || {};
+      const ioCardId = cardIds.__io_card__;
+      const tacticCardId = svc._workflow ? cardIds[svc._workflow] : null;
+      const targets = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+      if (!targets.length) continue;
+      const text = `📝 ${aeName} requested to ${actionVerb[p.action] || p.action} ${label} — awaiting AM approval.`;
+      for (const cardId of targets) {
+        try {
+          const res = await fetch(PROXY, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+            body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text }),
+          });
+          if (!res.ok) console.warn('Could not post pending-request comment to card', cardId, ':', res.status);
+        } catch (e) {
+          console.warn('Could not post pending-request comment to card', cardId, ':', e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not post pending-request Trello comment:', e.message);
+    }
+  }
+}
+
+// Recipient resolution (2026-08-31, corrected per Claire — "IO recipient is
+// for additional group members to get the email, the AE should always get
+// an email"): the group's AM (am_email) is now always included, not just a
+// fallback when io_recipient happens to be empty — io_recipient is ADDITIONAL
+// people on top of the AM, never a replacement for them. Since the AE picker
+// is roster-only now (no free-typed name), aeEmail is always available for a
+// real submission, guaranteeing the submitting AE always gets their own copy
+// too, matching the same "always include the AE" rule.
 async function notifyAm(aeName, aeEmail, submitted) {
   try {
-    const groupRecipients = (selectedGroup.io_recipient || '').split(',').map(s => s.trim()).filter(Boolean);
+    const groupRecipients = [];
+    if (selectedGroup.am_email) groupRecipients.push(selectedGroup.am_email);
+    (selectedGroup.io_recipient || '').split(',').map(s => s.trim()).filter(Boolean).forEach(r => {
+      if (!groupRecipients.some(g => g.toLowerCase() === r.toLowerCase())) groupRecipients.push(r);
+    });
     if (aeEmail && !groupRecipients.some(r => r.toLowerCase() === aeEmail.toLowerCase())) groupRecipients.push(aeEmail);
     let alwaysBcc = [];
     try {
