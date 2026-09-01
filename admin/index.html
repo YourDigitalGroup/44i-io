@@ -8178,11 +8178,19 @@ async function loadAdminPendingRequests() {
     // visited, which Pending Requests might be checked before.
     if (!allServicesMap.length) allServicesMap = await sb('services?order=section,sort_order&select=*') || [];
     // pending_requests only stores raw ids -- resolve display names for whichever
-    // clients actually show up here (a scoped query, not the whole clients table).
+    // clients actually show up here. Goes through admin_get_client_names(), NOT a
+    // direct `clients?...` read (2026-09-01, found live by Claire — every request
+    // showed "(unknown client)" regardless of which client it was; clients has RLS
+    // enabled with zero policies, a hard deny-all for the plain anon key a direct
+    // REST read uses -- same reason every OTHER client-name lookup in this file
+    // already goes through a real SECURITY DEFINER RPC instead).
     const clientIds = [...new Set(ALL_PENDING_REQUESTS.map(r => r.client_id))];
     let clientNames = {};
     if (clientIds.length) {
-      const rows = await sb('clients?id=in.(' + clientIds.join(',') + ')&select=id,name') || [];
+      const rows = await sb('rpc/admin_get_client_names', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_ids: clientIds })
+      }) || [];
       rows.forEach(c => { clientNames[c.id] = c.name; });
     }
     ALL_PENDING_REQUESTS.forEach(r => {
