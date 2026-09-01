@@ -7960,6 +7960,12 @@ function applyFieldChangeLocally(item, field, value) {
     historyOldValue = item ? item.tactic_variant : null;
     if (item) item.tactic_variant = value;
     description = `variant changed from "${historyOldValue || '—'}" to "${value}"`;
+  } else if (field === 'module_names') {
+    const oldModules = item ? (item.module_names || []) : [];
+    historyOldValue = JSON.stringify(oldModules);
+    const newModules = typeof value === 'string' ? JSON.parse(value) : value;
+    if (item) { item.module_names = newModules; item.qty = newModules.length; }
+    description = `modules changed from [${oldModules.join(', ') || 'none'}] to [${newModules.join(', ') || 'none'}]`;
   } else {
     historyOldValue = item ? item[field] : null;
     if (item) item[field] = parseFloat(value);
@@ -7973,9 +7979,16 @@ function applyFieldChangeLocally(item, field, value) {
 // type (2026-08-31, per Claire — "we are missing the option to change the
 // variant or dates"). `includeEndDate` is false for a pure one-time cost
 // (no end date, same convention as everywhere else one-time is handled).
+function adminModuleOptions(serviceId) {
+  const raw = (CATALOG_ROWS[serviceId] || {}).qty_option_labels;
+  const arr = typeof raw === 'string' ? JSON.parse(raw || 'null') : raw;
+  return Array.isArray(arr) ? arr : null;
+}
+
 function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
   const svc = CATALOG_ROWS[serviceId] || {};
   const variantOptions = Array.isArray(svc.tactic_variants) ? svc.tactic_variants : null;
+  const moduleOptions = adminModuleOptions(serviceId);
   let html = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
     <label style="font-size:11px;font-weight:700;color:var(--muted)">Start:</label>
     <input type="date" id="edit-extra-start-${esc(serviceId)}" value="${esc(item?.start_date || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>`;
@@ -7993,6 +8006,17 @@ function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
       </select>
     </div>`;
   }
+  // Website-Modules-shaped service (per_unit, priced by how many are
+  // checked) -- the only thing actually editable about it, since its
+  // per-module rate is a fixed catalog price (2026-08-31, per Claire --
+  // "we are missing the module options").
+  if (moduleOptions && moduleOptions.length) {
+    const chosen = Array.isArray(item?.module_names) ? item.module_names : [];
+    html += `<div style="margin-bottom:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Modules:</label>
+      ${moduleOptions.map(name => `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:3px"><input type="checkbox" class="edit-extra-module-${esc(serviceId)}" value="${esc(name)}" ${chosen.includes(name) ? 'checked' : ''}/> ${esc(name)}</label>`).join('')}
+    </div>`;
+  }
   return html;
 }
 
@@ -8008,6 +8032,13 @@ function adminCollectExtraEditFields(serviceId, item) {
   if (endEl && endEl.value && endEl.value !== (item?.end_date || '')) fields.end_date = endEl.value;
   const variantEl = document.getElementById(`edit-extra-variant-${serviceId}`);
   if (variantEl && variantEl.value && variantEl.value !== (item?.tactic_variant || '')) fields.tactic_variant = variantEl.value;
+  const moduleEls = document.querySelectorAll(`.edit-extra-module-${CSS.escape(serviceId)}`);
+  if (moduleEls.length) {
+    const chosen = [...moduleEls].filter(el => el.checked).map(el => el.value);
+    const current = Array.isArray(item?.module_names) ? item.module_names : [];
+    const changed = chosen.length !== current.length || chosen.some(m => !current.includes(m));
+    if (changed) fields.module_names = JSON.stringify(chosen);
+  }
   return fields;
 }
 
@@ -8103,6 +8134,10 @@ function describeRequestedChanges(r) {
       }
       if (field === 'start_date' || field === 'end_date') return `new ${field === 'start_date' ? 'start' : 'end'} date ${pendingFmtDate(value)}`;
       if (field === 'tactic_variant') return `new variant "${esc(value)}"`;
+      if (field === 'module_names') {
+        const arr = typeof value === 'string' ? JSON.parse(value) : value;
+        return `new modules: ${esc((arr || []).join(', ') || 'none')}`;
+      }
       return `new ${esc(field)} $${Number(value).toLocaleString()}`;
     });
     return parts.length ? parts.join(', ') : '—';
@@ -8543,17 +8578,32 @@ function viewOrderDetail(orderId) {
       // component too (e.g. a setup fee + monthly retainer) still has an
       // ongoing term, so it keeps the normal amount-edit + Renew below.
       const isPureFee = editableCandidates.length === 1 && editableCandidates[0][0] === 'fee';
+      // Whether this service's amount is even editable at all, matching
+      // Claire's rule of thumb (2026-08-31): "if you can't edit it in the
+      // IO form you can't edit it [here]." Only a spend-priced campaign
+      // tactic or a QUR (no catalog default_price) row ever has a
+      // freely-typed amount in the main IO form -- a flat catalog tier
+      // price isn't, even though nothing stopped it from being retyped
+      // here before this fix.
+      const svcCatalogRow = CATALOG_ROWS[item.service_id] || {};
+      const amountEditable = svcCatalogRow.pricing_mode === 'spend' || svcCatalogRow.default_price == null;
+      const isModuleSvc = !!(adminModuleOptions(item.service_id) || []).length;
       let amtCellHtml = esc(amtParts.join(' + ') || '—');
       // A real BUTTON, not a tiny inline text link (2026-08-20, per Claire: "I see the
       // cancel, and swap options but I don't see the edit option") -- same size/style as
       // the Cancel button next to it so it's just as easy to spot, not a subtle ✎
       // character easy to miss among the dollar amount text.
       let editBtn = '';
-      if (isPureFee && !item.prorated_hosting_amt) {
+      if ((isPureFee || isModuleSvc || (editableCandidates.length === 1 && !amountEditable)) && !item.prorated_hosting_amt) {
+        // Covers three cases that all resolve to the SAME date/variant/
+        // modules-only panel: a pure one-time cost, a Modules-shaped
+        // service (whatever its billing_type), and any other single-field
+        // amount that simply isn't editable per the rule above.
         const lastEdit = Array.isArray(o.edit_history)
           ? [...o.edit_history].reverse().find(h => h.service_id === item.service_id && h.field === 'start_date')
           : null;
-        editBtn = `<button type="button" onclick="adminToggleEditDatePanel('${esc(o.id)}','${esc(item.service_id)}','${esc(item.start_date || o.campaign_start || '')}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:700;cursor:pointer">✎ Edit</button>`;
+        const includeEndDate = !isPureFee;
+        editBtn = `<button type="button" onclick="adminToggleEditDatePanel('${esc(o.id)}','${esc(item.service_id)}','${esc(item.start_date || o.campaign_start || '')}',${includeEndDate ? 'true' : 'false'})" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:700;cursor:pointer">✎ Edit</button>`;
         if (lastEdit) amtCellHtml += `<div style="font-size:10px;color:var(--muted);margin-top:3px">Was ${fmtDate(lastEdit.old_value)} · edited by ${esc(lastEdit.edited_by)}, ${fmtDate(lastEdit.edited_at)}</div>`;
       } else if (editableCandidates.length === 1 && !item.prorated_hosting_amt) {
         const [editField, editVal] = editableCandidates[0];
@@ -9067,34 +9117,40 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
 // adminSaveLineItemEdit() above since a date field and its comment/history
 // wording are genuinely different from an amount field, not a variant worth
 // overloading the same functions for.
-function adminToggleEditDatePanel(orderId, serviceId, currentDate) {
+function adminToggleEditDatePanel(orderId, serviceId, currentDate, includeEndDate) {
   const row = document.getElementById(`edit-panel-${serviceId}`);
   if (!row) return;
   if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
   const o = allOrders.find(x => x.id === orderId);
   const item = o && (o.line_items || []).find(li => li.service_id === serviceId);
-  const svc = CATALOG_ROWS[serviceId] || {};
-  const variantOptions = Array.isArray(svc.tactic_variants) ? svc.tactic_variants : null;
+  const dateLabel = includeEndDate ? 'Start Date' : 'Date';
   row.querySelector('td').innerHTML = `
     <div style="background:var(--light);padding:12px 14px">
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:${variantOptions && variantOptions.length ? '8px' : '0'}">
-        <label style="font-size:11px;font-weight:700;color:var(--muted)">Date:</label>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted)">${esc(dateLabel)}:</label>
         <input type="date" id="edit-date-${esc(serviceId)}" value="${esc(currentDate || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
-        <button type="button" onclick="adminSaveLineItemDateEdit('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
-        <button type="button" onclick="adminToggleEditDatePanel('${esc(orderId)}','${esc(serviceId)}','${esc(currentDate)}')" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
+        <button type="button" onclick="adminSaveLineItemDateEdit('${esc(orderId)}','${esc(serviceId)}',${includeEndDate ? 'true' : 'false'})" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+        <button type="button" onclick="adminToggleEditDatePanel('${esc(orderId)}','${esc(serviceId)}','${esc(currentDate)}',${includeEndDate ? 'true' : 'false'})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
       </div>
-      ${variantOptions && variantOptions.length ? `<div style="display:flex;gap:8px;align-items:center">
-        <label style="font-size:11px;font-weight:700;color:var(--muted)">Variant:</label>
-        <select id="edit-extra-variant-${esc(serviceId)}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px">
-          <option value="">— No change —</option>
-          ${variantOptions.map(v => `<option value="${esc(v)}" ${v === item?.tactic_variant ? 'selected' : ''}>${esc(v)}</option>`).join('')}
-        </select>
+      ${includeEndDate ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <label style="font-size:11px;font-weight:700;color:var(--muted)">End Date:</label>
+        <input type="date" id="edit-extra-end-${esc(serviceId)}" value="${esc(item?.end_date || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>
       </div>` : ''}
+      ${adminExtraVariantAndModuleHtml(serviceId, item)}
     </div>`;
   row.style.display = 'table-row';
 }
 
-async function adminSaveLineItemDateEdit(orderId, serviceId) {
+// Variant + Modules only (no dates) -- factored out of
+// adminExtraEditFieldsHtml() so adminToggleEditDatePanel() above can lay its
+// own Date/End Date fields out first, then append these, without rendering
+// a second redundant Start Date field from the shared helper.
+function adminExtraVariantAndModuleHtml(serviceId, item) {
+  const full = adminExtraEditFieldsHtml(serviceId, item, false);
+  return full.replace(/<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">[\s\S]*?<\/div>/, '');
+}
+
+async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
   const input = document.getElementById(`edit-date-${serviceId}`);
   const newValue = input?.value;
   if (!newValue) { showToast('Enter a date', 'error'); return; }
@@ -9121,9 +9177,9 @@ async function adminSaveLineItemDateEdit(orderId, serviceId) {
     o.is_revised = true;
     o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field: 'start_date', old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
 
-    const descriptions = [`date changed from ${fmtDate(oldValue)} to ${fmtDate(newValue)}`];
-    // A one-time cost has no end date, but can still have a Variant to
-    // change (2026-08-31) -- folded into this same comment.
+    const descriptions = [`${includeEndDate ? 'start ' : ''}date changed from ${fmtDate(oldValue)} to ${fmtDate(newValue)}`];
+    // Any End Date/Variant/Modules changes get saved and folded into this
+    // SAME comment (2026-08-31), not a second separate one.
     const extraFields = adminCollectExtraEditFields(serviceId, item);
     if (Object.keys(extraFields).length) {
       const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
@@ -9317,17 +9373,23 @@ function adminToggleRenewPanel(orderId, serviceId, currentEndDate) {
   const currentEndDisplay = currentEndDate
     ? new Date(currentEndDate + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
     : '';
+  // A fixed catalog tier price can't be renegotiated through a renewal any
+  // more than through an edit (2026-08-31, per Claire's rule of thumb) --
+  // "Renew with modifications" (which reveals a free-typed new monthly
+  // budget) only makes sense for a spend-priced tactic or a QUR row.
+  const renewSvcRow = CATALOG_ROWS[serviceId] || {};
+  const renewAmountEditable = renewSvcRow.pricing_mode === 'spend' || renewSvcRow.default_price == null;
   row.querySelector('td').innerHTML = `
     <div style="background:var(--light);border-radius:8px;padding:14px 16px;margin:4px 0">
       <div style="font-size:11.5px;font-weight:700;margin-bottom:8px">Renew: ${esc(CATALOG_ROWS[serviceId]?.accounting_label || CATALOG_ROWS[serviceId]?.label || serviceId)}${currentEndDisplay ? ` <span style="color:var(--muted);font-weight:400">(currently ends ${esc(currentEndDisplay)})</span>` : ''}</div>
-      <div style="display:flex;gap:16px;margin-bottom:10px">
+      ${renewAmountEditable ? `<div style="display:flex;gap:16px;margin-bottom:10px">
         <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
           <input type="radio" name="renew-mode-${serviceId}" value="as-is" checked onchange="adminUpdateRenewMode('${esc(serviceId)}')"/> Renew as is
         </label>
         <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer">
           <input type="radio" name="renew-mode-${serviceId}" value="modify" onchange="adminUpdateRenewMode('${esc(serviceId)}')"/> Renew with modifications
         </label>
-      </div>
+      </div>` : ''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;max-width:420px">
         <div>
           <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New End Date</label>

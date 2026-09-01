@@ -23173,6 +23173,78 @@ that shape is read/written:
   tested end-to-end live (needs both new SQL functions applied first,
   then a real click-through on both forms).
 
+## Three real bugs found live testing Test Business 8 (2026-08-31)
+
+Claire tested the companion form for real and found three issues from
+screenshots:
+
+**1. Amount still editable where it shouldn't be.** "Website SEO/AEO —
+Business Starter" showed a free-typed "New Amount" field in Edit, even
+though its $199/mo is a fixed catalog tier price, not something an AE
+ever types in the main IO form. Claire's rule: **"if you can't edit it
+in the IO form you can't edit it in the companion form."** Root cause:
+the earlier one-time-cost fix only handled `fee`-only rows; a flat
+recurring tier (`recurring > 0`, not spend-priced) fell through to the
+same freely-editable-amount branch as a genuine QUR (Quote Upon
+Request) row, and nothing distinguished them. Checked the main IO
+form's own code and confirmed the real rule: only a spend-priced
+campaign tactic or a QUR row (`services.default_price is null`) ever
+gets a freely-typed amount there — everything else is read-only, driven
+by the catalog. Added `isAmountEditable(svc)` (companion) / equivalent
+inline check (admin) implementing exactly that test, and gated every
+amount-editing UI (Edit's plain-amount field, Renew's "New Monthly
+Budget"/"Renew with modifications") behind it on both companion AND
+admin's own direct-edit flow, not just companion, since it's the same
+underlying bug either way.
+
+**2. Duplicate rows — "Website SEO/AEO" appeared 3 times for the same
+client.** Traced to `companion_get_active_services`'s join: cross
+joining every matching `line_items` array entry per `campaign_lines`
+row could multiply matches (a data entry with more than one match), and
+a separate already-tracked historical bug (duplicate `campaign_lines`
+rows created for one order+service) could add more. Fixed with `DISTINCT
+ON (cl.order_id, cl.service_id)` plus a `LATERAL ... LIMIT 1` line-item
+join, so at most one row ever comes back per real ordered service,
+regardless of either underlying cause. This is a stopgap for display,
+not a fix for the underlying duplicate-creation bug (already tracked
+separately).
+
+**3. Missing module options.** Website Modules
+(checkbox-selected Newsletter/Photo/Video/Testimonial/News-Blog/
+Calendar, priced per module × how many are checked) had no way to
+change WHICH modules are selected — the one thing actually editable
+about that kind of service, per the same rule of thumb as #1 (its
+per-module rate is fixed, only the selection isn't). Added a `Modules`
+checkbox editor wherever a service has `qty_option_labels` configured,
+on both companion and admin, using a new `module_names` field
+(`admin_edit_order_line_item` extended to also recompute `qty` as the
+new module count, mirroring `month_budgets`' recompute-`spend` pattern).
+
+**SQL sent to Claire** (all idempotent):
+- `companion_get_active_services` — DISTINCT ON + LATERAL LIMIT 1 dedup,
+  added `module_names` to output.
+- `admin_edit_order_line_item` — added `'module_names'` to the
+  allowlist + a dedicated branch recomputing `qty` alongside it.
+
+**Frontend**: `isAmountEditable()`/`isModuleService()` added to
+`companion/index.html`; the services-options fetch extended to also
+pull `pricing_mode`/`default_price`/`qty_option_labels` per service (same
+anon `services` read as the tactic_variants fetch). Admin's row-render
+logic and `adminToggleEditDatePanel`/`adminToggleRenewPanel` updated
+with the equivalent `pricing_mode`/`default_price` check read straight
+from the already-loaded `CATALOG_ROWS`. Shared `adminExtraEditFieldsHtml`/
+`adminCollectExtraEditFields`/`applyFieldChangeLocally` extended for
+Modules checkboxes and the `module_names` field, reused by every Edit
+path (companion approval + all three AM-triggered panels) same as
+`tactic_variant` was.
+
+Verified: `node --check` on both files, plus a standalone harness
+confirming the classification (fixed-tier vs. QUR vs. spend-tactic vs.
+one-time vs. module-service) comes out correctly for 5 representative
+real service shapes, including "Website SEO/AEO — Business Starter"
+and "Website One-Time — Modules" specifically. Not yet re-tested live
+against Test Business 8 — next step once Claire runs the SQL.
+
 Claire hit `42P13: cannot change return type of existing function` trying
 to run the `companion_get_active_services` update — Postgres won't let
 `CREATE OR REPLACE` change a function's OUT columns. Gave her a
