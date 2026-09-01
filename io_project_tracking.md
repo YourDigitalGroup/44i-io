@@ -24065,3 +24065,26 @@ client search + status filter work correctly alone and combined; (2)
 Strategist's client search matches case-insensitively and correctly
 shows everything when empty. Not yet live-tested — next step is Claire
 trying both in the real portals.
+
+## Follow-up: the Total row DOES follow the filter (2026-09-02)
+
+Correction from Claire, right after the client search/status filter
+shipped: "I think we could mess with that total row. I just didn't want
+anything in the top part to change." My first pass had the table's
+`<tfoot>` Total row use the same fixed totals as the 5 stat tiles above
+(unchanged regardless of filter) — her actual ask was narrower: only the
+tiles need to stay fixed; the Total row should be a plain sum of whatever
+rows are actually visible below it.
+
+**Fix**: new `visibleTotalGross`/`visibleTotalExpectedSpend`/
+`visibleTotalActualSpend`/`visibleTotalFortyfouri`, computed from
+`visibleRows` (the filtered set) with NO Pending/Paused exclusion — unlike
+the stat tiles, which deliberately treat Pending/Paused as "not real
+revenue yet." Without that distinction, filtering to "Pending" would have
+shown a Total row of $0.00 even with real dollar amounts sitting in every
+row above it, which would have looked broken. `<tfoot>` now reads from
+these instead of the tile totals.
+
+**Verified**: `node --check`. A standalone harness confirming a Pending
+row's real gross counts fully in the Total row when visible, and that
+filtering down to just that row shows its own real total, not zero.
