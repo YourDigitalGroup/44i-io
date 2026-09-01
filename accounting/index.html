@@ -423,9 +423,17 @@ async function accountingSaveCutPctOverride(lineId, value) {
   } catch(e) { showToast('Error saving: ' + e.message, 'error'); }
 }
 
-function accountingFormatFlightRange(start, end) {
+// isOneTime (2026-09-02, per Claire: a one-time fee's flight column showed
+// "Sep 5, 26 – Ongoing" right next to accountingLineActiveInMonth()'s own
+// now-fixed one-billed-month-only behavior -- looked ongoing even after
+// that fix, since a one-time fee's real flight_end genuinely is null (it
+// was never given a real end date at all, there's no "ongoing" to speak of
+// either way) and this function's only fallback for a null end was
+// "Ongoing." A one-time line shows just its single billed date instead.
+function accountingFormatFlightRange(start, end, isOneTime) {
   const s = accountingFormatFlightDate(start), e = accountingFormatFlightDate(end);
   if (!s && !e) return '—';
+  if (isOneTime && !e) return `<div style="white-space:nowrap">${s || '—'}</div>`;
   return `<div style="white-space:nowrap">${s || '—'}</div><div style="white-space:nowrap">– ${e || 'Ongoing'}</div>`;
 }
 // Fuller "Aug 1, 2026 – Jan 31, 2027" format for the detail card header only --
@@ -439,9 +447,11 @@ function accountingFormatFullFlightDate(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).replace(/ /g, '\xa0');
 }
-function accountingFormatFullFlightRange(start, end) {
+// isOneTime -- same reasoning as accountingFormatFlightRange() above.
+function accountingFormatFullFlightRange(start, end, isOneTime) {
   const s = accountingFormatFullFlightDate(start), e = accountingFormatFullFlightDate(end);
   if (!s && !e) return '—';
+  if (isOneTime && !e) return s || '—';
   return `${s || '—'} <span style="white-space:nowrap">– ${e || 'Ongoing'}</span>`;
 }
 function accountingToggleSplit(key) {
@@ -513,7 +523,8 @@ function accountingRenderDetailCard() {
     // accountingLineActiveInMonth, though (2026-08-12 fix) -- a month past
     // this line's own flight_end shows nothing, same as the main table,
     // regardless of what the carry-forward would otherwise compute.
-    const monthRow = accountingLineActiveInMonth(line, d) ? accountingMonthRowFor(line.id, d) : null;
+    const active = accountingLineActiveInMonth(line, d);
+    const monthRow = active ? accountingMonthRowFor(line.id, d) : null;
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting, line.retail_cpm_override);
@@ -528,7 +539,7 @@ function accountingRenderDetailCard() {
     const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
       label: d.toLocaleString('en-US', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(-2),
-      monthStr, gross, actualSpend, expectedSpend, split,
+      monthStr, gross, actualSpend, expectedSpend, split, active,
       confirmed: actualSpend != null || manuallyConfirmed, manuallyConfirmed,
       paused: !!monthRow?.paused,
     };
@@ -537,7 +548,7 @@ function accountingRenderDetailCard() {
   el.innerHTML = `<div class="acct-detail-head">
       <div class="acct-detail-title">${esc(accountingDisplayClientName(line))} — ${esc(line.tactic_label || line.service_id || '—')}</div>
       <div style="display:flex;align-items:center;gap:14px">
-        <div class="acct-detail-sub">${esc(line.group_name || '—')} · ${accountingFormatFullFlightRange(line.flight_start, line.flight_end)}</div>
+        <div class="acct-detail-sub">${esc(line.group_name || '—')} · ${accountingFormatFullFlightRange(line.flight_start, line.flight_end, ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(line.billing_type))}</div>
         <label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:11.5px;color:var(--muted)">
           <input type="checkbox" ${line.billed_externally ? 'checked' : ''} onchange="accountingToggleBilledExternally('${line.id}', this.checked)"/> SSH Billing
         </label>
@@ -571,7 +582,27 @@ function accountingRenderDetailCard() {
           // inline style on the <td> itself, not the <tr>, since #page-accounting
           // tbody td{color:...} is more specific than a color inherited from a
           // styled ancestor <tr> and would otherwise win.
-          const dollarStyle = m.paused ? ' style="color:var(--muted)"' : '';
+          const dollarStyle = (m.paused || !m.active) ? ' style="color:var(--muted)"' : '';
+          // A month the line isn't even active in (2026-09-02, found live by
+          // Claire: a one-time fee's Sep/Oct/Nov detail-card rows still all
+          // showed an editable amount + a "Needs confirmation"/"Manually
+          // confirm" checkbox, even after accountingLineActiveInMonth()
+          // itself was fixed to exclude it from the main table -- this fixed
+          // 3-month [0,1,2] view never checked that flag at the RENDER
+          // level, only when computing which figures to show, so the row
+          // stayed fully interactive regardless) renders as a plain, non-
+          // editable "—" row with no status pill and no confirm checkbox at
+          // all, instead of a blank-but-actionable one.
+          if (!m.active) {
+            return `<tr>
+            <td${dollarStyle}><strong>${esc(m.label)}</strong></td>
+            <td class="num"${dollarStyle}>—</td>
+            <td class="num"${dollarStyle}>—</td>
+            <td class="num"${dollarStyle}>—</td>
+            <td class="num"${dollarStyle}>—</td>
+            <td${dollarStyle}>—</td>
+          </tr>`;
+          }
           return `<tr>
           <td${dollarStyle}><strong>${esc(m.label)}</strong></td>
           <td class="num"${dollarStyle}>
@@ -1960,7 +1991,7 @@ function accountingRenderRow(r) {
         html += `<tr class="acct-row acct-child${selected ? ' selected' : ''}"${childTint ? ` style="--child-tint:${esc(childTint)}"` : ''} onclick="event.stopPropagation();accountingSelectLine('${c.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();accountingSelectLine('${c.line.id}')}">
           <td>${isAgentChild ? esc(accountingDisplayClientName(c.line)) : ''}</td>
           <td>${esc(c.line.split_label || (isAgentChild ? '—' : '(unlabeled split)'))}${cpmOverrideBadgeHtml(c.line)}${cutPctOverrideBadgeHtml(c.line)}</td>
-          <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end)}</td>
+          <td>${accountingFormatFlightRange(c.line.flight_start, c.line.flight_end, ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(c.line.billing_type))}</td>
           <td class="num">${c.gross != null ? '$' + c.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${c.split.fortyfouri != null ? '$' + c.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
           <td class="num">${c.expectedSpend != null ? '$' + c.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
@@ -1984,7 +2015,7 @@ function accountingRenderRow(r) {
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingSelectLine('${r.line.id}')}">
     <td><strong>${esc(accountingDisplayClientName(r.line))}</strong></td>
     <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}</td>
-    <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end)}</td>
+    <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end, ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(r.line.billing_type))}</td>
     <td class="num"${dollarStyle}>${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td class="num"${dollarStyle}>${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td class="num"${dollarStyle}>${r.expectedSpend != null ? '$' + r.expectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
