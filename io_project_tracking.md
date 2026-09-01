@@ -24746,3 +24746,53 @@ old 200px constant. Not verified live inside the actual WordPress iframe —
 Claire, worth testing a "Fill Out" click both near the top and scrolled
 deep into a long order to confirm the popup now appears right where you
 are either way.
+
+## Iframe audit: the same "can't scroll the outer page" bug affected toasts and every validation error too (2026-09-02)
+
+Claire asked "is there anything else we should do to make the format work
+better in the iframe?" — audited for anything else assuming this page's
+own window/document can scroll, the same root cause behind the modal
+positioning bug. Found two more real, previously-unknown categories:
+
+1. **Toast notifications** (`#toast`, `showToast()`) — `position:fixed;
+   top:20px` has the exact same problem the modal did: anchored to one
+   point in the WordPress iframe's own coordinate space, not to wherever
+   the visitor is scrolled to. A toast fired while scrolled deep into the
+   form would appear off-screen.
+2. **Every "scroll to the problem field" validation error** — 12 separate
+   `Element.scrollIntoView()` calls across missing-field checks, KOC/date
+   validation, the AE-picker/agent-split guardrails, etc. `scrollIntoView()`
+   only ever scrolls scroll CONTAINERS within this page's own document —
+   if the WordPress embed genuinely has none internally (Claire's own
+   description: one large, non-scrolling iframe), every one of these has
+   been a silent no-op there this whole time. Confirmed 11 of the 12 have
+   no accompanying `.focus()` call either (only one does), so there's no
+   fallback browser behavior masking this for the rest.
+
+**Fix**:
+- `.toast` changed from `position:fixed;top:20px` to `position:absolute`
+  with `top` set dynamically in `showToast()`, using the same "last click"
+  tracking the modal fix already added.
+- New `revealElement(el)`, replacing all 12 raw `scrollIntoView()` calls:
+  still calls `scrollIntoView()` (correct whenever this page isn't
+  embedded, e.g. testing), posts the same `io-tool-scroll-to-modal`
+  message the modal fix already sends (reusing the exact same message
+  shape/type so nothing changes on the WordPress listener's side to
+  support this too — it already just scrolls to whatever `offsetY` it's
+  given), and adds a brief red highlight flash (new `.io-flash-highlight`
+  CSS animation) directly on the field — a real, visible result on its own
+  even before any WordPress-side listener exists.
+- New `notifyParentScrollToTop()` (posts `offsetY: 0`), added alongside
+  the 3 existing `window.scrollTo({top:0})`/`scrollTop = 0` calls that
+  reset scroll on step navigation and form submission — same reasoning,
+  different trigger.
+
+**Verified**: `node --check` on the extracted inline script. Extracted
+`revealElement()`'s logic into a standalone Node harness with a mocked
+element/window — confirmed it doesn't throw and correctly skips the
+postMessage when not embedded, and posts the right `offsetY` (matching
+the element's real position) when a mocked iframe scenario is simulated;
+confirmed the highlight class gets added in both cases. Grepped for
+`scrollIntoView(` afterward — the only remaining call is inside
+`revealElement()`'s own definition, confirming all 12 original call sites
+were replaced. Not verified live inside the actual WordPress embed.
