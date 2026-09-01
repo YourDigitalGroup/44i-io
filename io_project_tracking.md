@@ -24610,3 +24610,13 @@ weight now that the blurred backdrop already separates the modal from the
 page behind it.
 
 **Verified**: `node --check` on the extracted inline script.
+
+## Removed all color from the modal backdrop, blur only (2026-09-02)
+
+Claire: still "really dark in the iframe" after the navy-tint softening —
+"I just want the background blurred I don't want any color." Removed the
+`rgba(26,35,50,.42)` tint entirely; `.modal-backdrop` is now fully
+transparent with just `backdrop-filter: blur(3px)` doing the work of
+separating the modal from the page behind it.
+
+**Verified**: `node --check` on the extracted inline script.
