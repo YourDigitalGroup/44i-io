@@ -8234,6 +8234,15 @@ async function loadAdminPendingRequests() {
       const svc = allServicesMap.find(s => s.id === r.service_id);
       r._service_label = svc?.accounting_label || svc?.label || r.service_id;
     });
+    // Pulls in whichever orders these requests reference (an order can be
+    // arbitrarily old, so this doesn't rely on admin_get_orders' own
+    // recent-days window) -- describeRequestedChanges() needs each order's
+    // CURRENT line-item values to show a real before → after comparison,
+    // not just the bare requested new value (2026-09-02, per Claire: "the
+    // AM should be able to fully understand what is being requested at a
+    // glance").
+    const orderIds = [...new Set(ALL_PENDING_REQUESTS.map(r => r.order_id))];
+    await Promise.all(orderIds.map(id => adminFindOrderForRequest(id)));
     updatePendingRequestsBadge();
     renderAdminPendingRequests();
   } catch (e) {
@@ -8254,33 +8263,119 @@ function updatePendingRequestsBadge() {
 // admin_edit_order_line_item/admin_renew_service call actually uses (see
 // admin_approve_pending_request), so what an AM reads here always matches
 // what Approve will actually do.
+// (2026-09-02, extended, per Claire — a budget-change request showed only
+// the new total with no context: "The AM should be able to fully understand
+// what is being requested at a glance." Every field now shows the CURRENT
+// value alongside the requested one, not just the new value in isolation --
+// looked up from the order's own live line_items via adminLookupCurrentItem(),
+// which loadAdminPendingRequests() ensures is loaded for every order these
+// requests reference before this ever runs.) Kept PLAIN TEXT (no HTML) since
+// this exact string is also reused verbatim in a Trello comment
+// (buildBatchResolutionLine()) -- the fuller, multi-line month-by-month
+// breakdown a budget change needs lives separately in
+// describeRequestedChangesDetailed(), below, for the Admin UI list only.
+function adminLookupCurrentItem(r) {
+  const order = allOrders.find(o => o.id === r.order_id);
+  return order?.line_items?.find(li => li.service_id === r.service_id) || null;
+}
+function pendingFmtMonth(month) {
+  return new Date(month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
 function describeRequestedChanges(r) {
   const c = r.requested_changes || {};
-  if (r.action === 'cancel') return `Effective ${pendingFmtDate(c.effective_date)}${c.reason ? ' — ' + esc(c.reason) : ''}`;
-  if (r.action === 'renew') return `New end date ${pendingFmtDate(c.new_end_date)}${c.new_monthly_budget ? ', new budget $' + Number(c.new_monthly_budget).toLocaleString() + '/mo' : ''}`;
+  const item = adminLookupCurrentItem(r);
+  if (r.action === 'cancel') {
+    const currentEnd = item?.end_date ? ` (currently running through ${pendingFmtDate(item.end_date)})` : '';
+    return `Effective ${pendingFmtDate(c.effective_date)}${currentEnd}${c.reason ? ' — ' + esc(c.reason) : ''}`;
+  }
+  if (r.action === 'renew') {
+    const currentEnd = item?.end_date ? `${pendingFmtDate(item.end_date)} → ` : '';
+    let budgetNote = '';
+    if (c.new_month_budgets && c.new_month_budgets.length) {
+      const total = c.new_month_budgets.reduce((s,m) => s + (Number(m.amount)||0), 0);
+      budgetNote = `, new renewed-period total $${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    } else if (c.new_monthly_budget != null) {
+      budgetNote = `, new monthly budget $${Number(c.new_monthly_budget).toLocaleString()}/mo`;
+    }
+    return `End date ${currentEnd}${pendingFmtDate(c.new_end_date)}${budgetNote}`;
+  }
   if (r.action === 'edit') {
     // requested_changes.fields is a map of one or more field:new_value pairs
     // (2026-08-31, per Claire — dates/variant can now be changed alongside
     // an amount in one request) rather than a single field/new_value pair.
     const fields = c.fields || {};
-    const parts = Object.entries(fields).map(([field, value]) => {
-      if (field === 'month_budgets') {
-        const arr = typeof value === 'string' ? JSON.parse(value) : value;
-        const total = (arr || []).reduce((s,m) => s + (Number(m.amount)||0), 0);
-        return `new month-by-month total $${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-      }
-      if (field === 'start_date' || field === 'end_date') return `new ${field === 'start_date' ? 'start' : 'end'} date ${pendingFmtDate(value)}`;
-      if (field === 'tactic_variant') return `new variant "${esc(value)}"`;
-      if (field === 'module_names') {
-        const arr = typeof value === 'string' ? JSON.parse(value) : value;
-        return `new modules: ${esc((arr || []).join(', ') || 'none')}`;
-      }
-      if (field === 'qty') return `new quantity ${esc(value)}`;
-      return `new ${esc(field)} $${Number(value).toLocaleString()}`;
-    });
-    return parts.length ? parts.join(', ') : '—';
+    const parts = Object.entries(fields).map(([field, value]) => describeFieldChange(field, value, item, false));
+    return parts.length ? parts.join('; ') : '—';
   }
   return '';
+}
+
+// Richer HTML version for the Admin Pending Requests list only (2026-09-02,
+// per Claire) -- same per-field logic as describeRequestedChanges() above,
+// rendered one block per field, with a full per-month breakdown for a
+// month_budgets change instead of just its total, so an AM can see exactly
+// which months are changing without opening the order.
+function describeRequestedChangesDetailed(r) {
+  if (r.action !== 'edit') return esc(describeRequestedChanges(r));
+  const c = r.requested_changes || {};
+  const item = adminLookupCurrentItem(r);
+  const fields = c.fields || {};
+  const parts = Object.entries(fields).map(([field, value]) => describeFieldChange(field, value, item, true));
+  return parts.length ? parts.join('') : '—';
+}
+
+// Shared per-field before → after description, used by both the plain-text
+// Trello/summary version and the richer Admin-list HTML version above.
+function describeFieldChange(field, value, item, html) {
+  if (field === 'month_budgets') {
+    const newArr = typeof value === 'string' ? JSON.parse(value) : value;
+    const oldArr = Array.isArray(item?.month_budgets) ? item.month_budgets : [];
+    const oldTotal = oldArr.reduce((s,m) => s + (Number(m.amount)||0), 0);
+    const newTotal = newArr.reduce((s,m) => s + (Number(m.amount)||0), 0);
+    const totalLine = `Month-by-month total: $${oldTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} → $${newTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    if (!html) return totalLine;
+    const oldByMonth = Object.fromEntries(oldArr.map(m => [m.month, m]));
+    const newByMonth = Object.fromEntries(newArr.map(m => [m.month, m]));
+    const months = [...new Set([...oldArr.map(m => m.month), ...newArr.map(m => m.month)])].sort();
+    const rows = months.map(month => {
+      const oldM = oldByMonth[month], newM = newByMonth[month];
+      const oldAmt = oldM ? Number(oldM.amount) : null;
+      const newAmt = newM ? Number(newM.amount) : null;
+      if (oldAmt === newAmt && !!oldM?.paused === !!newM?.paused) return null; // this month is unchanged -- skip it
+      const oldTxt = oldAmt != null ? `$${oldAmt.toLocaleString()}${oldM?.paused ? ' (Paused)' : ''}` : '—';
+      const newTxt = newAmt != null ? `$${newAmt.toLocaleString()}${newM?.paused ? ' (Paused)' : ''}` : '(removed)';
+      return `<div style="font-size:11.5px;color:var(--muted);padding-left:14px">${esc(pendingFmtMonth(month))}: ${esc(oldTxt)} → ${esc(newTxt)}</div>`;
+    }).filter(Boolean);
+    return `<div style="margin-top:6px"><strong>${esc(totalLine)}</strong></div>${rows.length ? rows.join('') : '<div style="font-size:11.5px;color:var(--muted);padding-left:14px">(no individual month actually changes)</div>'}`;
+  }
+
+  let line;
+  if (field === 'start_date' || field === 'end_date') {
+    const label = field === 'start_date' ? 'Start date' : 'End date';
+    const oldVal = item?.[field] ? pendingFmtDate(item[field]) : '—';
+    line = `${label}: ${oldVal} → ${pendingFmtDate(value)}`;
+  } else if (field === 'tactic_variant') {
+    const oldVal = item?.tactic_variant || '(none)';
+    line = `Variant: "${oldVal}" → "${value}"`;
+  } else if (field === 'module_names') {
+    const newArr = typeof value === 'string' ? JSON.parse(value) : value;
+    const oldArr = Array.isArray(item?.module_names) ? item.module_names : [];
+    const added = newArr.filter(m => !oldArr.includes(m));
+    const removed = oldArr.filter(m => !newArr.includes(m));
+    const bits = [];
+    if (added.length) bits.push('+' + added.join(', '));
+    if (removed.length) bits.push('−' + removed.join(', '));
+    line = `Modules: ${newArr.join(', ') || 'none'}${bits.length ? ' (' + bits.join(', ') + ')' : ''}`;
+  } else if (field === 'qty') {
+    line = `Quantity: ${item?.qty ?? '—'} → ${value}`;
+  } else {
+    // recurring / spend / fee -- plain dollar-amount fields
+    const label = field === 'recurring' ? 'Monthly amount' : field === 'spend' ? 'Monthly spend' : field === 'fee' ? 'One-time fee' : field;
+    const oldVal = item?.[field];
+    const oldTxt = oldVal != null ? `$${Number(oldVal).toLocaleString()}` : '—';
+    line = `${label}: ${oldTxt} → $${Number(value).toLocaleString()}`;
+  }
+  return html ? `<div style="margin-top:4px">${esc(line)}</div>` : line;
 }
 
 // Groups Pending Requests by SUBMISSION rather than listing one row per
@@ -8329,7 +8424,7 @@ function renderAdminPendingRequests() {
           <div style="font-weight:600;font-size:12.5px">${esc(r._service_label)}</div>
           ${statusBadge}
         </div>
-        <div style="font-size:12px;margin-top:4px"><strong style="text-transform:capitalize">${esc(r.action)}:</strong> ${describeRequestedChanges(r)}</div>
+        <div style="font-size:12px;margin-top:4px"><strong style="text-transform:capitalize">${esc(r.action)}:</strong> ${describeRequestedChangesDetailed(r)}</div>
         ${actions}
       </div>`;
     }).join('');
