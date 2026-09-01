@@ -24620,3 +24620,39 @@ transparent with just `backdrop-filter: blur(3px)` doing the work of
 separating the modal from the page behind it.
 
 **Verified**: `node --check` on the extracted inline script.
+
+## Added back a thin border on the modal box (2026-09-02)
+
+Claire: "we lost the intake form edge definition" — after removing the box
+shadow and then the tinted backdrop, the white modal box had nothing left
+defining its edge against the blurred page behind it. Added
+`border:1px solid var(--border)` to `.modal-box` — same thin neutral
+border every other `.card` on this page already uses — restoring a crisp
+edge without a shadow or any color behind the modal.
+
+**Verified**: `node --check` on the extracted inline script.
+
+## Modal anchored near the top of the iframe instead of centered (2026-09-02)
+
+Claire's web developer's suggested fix for the modal-lands-off-screen
+problem (see the postMessage bridge entry above): change
+`.modal-backdrop`'s `align-items:center` to `align-items:flex-start` with
+`padding-top:200px`. Centering a modal in a large, non-scrolling iframe
+puts it at the vertical midpoint of the iframe's FULL height, not wherever
+the visitor is actually scrolled to. Anchoring near the top instead is a
+much closer match in practice (a visitor generally scrolls an intake
+link/button near the top of their view before clicking it) — and, unlike
+the postMessage bridge, doesn't depend on a cooperating listener existing
+on the WordPress side at all, so it works immediately regardless of
+whether that separate fix ever lands.
+
+**Fix**: `.modal-backdrop`'s `align-items:center` → `align-items:flex-start`,
+`padding:20px` → `padding:200px 20px 20px` (keeps the existing 20px on the
+sides/bottom, adds the 200px offset only at the top). Applies to both the
+intake and hosting modals, which share this one backdrop class.
+
+**Verified**: `node --check` on the extracted inline script. Not verified
+live inside the actual WordPress iframe — Claire, worth a real click-
+through there to confirm 200px reads as the right offset once the modal
+appears (adjust the number if it lands too high/low relative to where
+visitors are typically scrolled when they open it).
