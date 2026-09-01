@@ -24620,3 +24620,14 @@ transparent with just `backdrop-filter: blur(3px)` doing the work of
 separating the modal from the page behind it.
 
 **Verified**: `node --check` on the extracted inline script.
+
+## Added back a thin border on the modal box (2026-09-02)
+
+Claire: "we lost the intake form edge definition" — after removing the box
+shadow and then the tinted backdrop, the white modal box had nothing left
+defining its edge against the blurred page behind it. Added
+`border:1px solid var(--border)` to `.modal-box` — same thin neutral
+border every other `.card` on this page already uses — restoring a crisp
+edge without a shadow or any color behind the modal.
+
+**Verified**: `node --check` on the extracted inline script.
