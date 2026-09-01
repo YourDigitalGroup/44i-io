@@ -23834,3 +23834,85 @@ anything written to the database. Verified: `node --check`. Not yet
 live-tested — next step is Claire re-running the Test Business 9 batch
 (now that it's been cleared) and confirming this specific card gets its
 due date moved to the cancellation's effective date.
+
+## New feature: Strategist Portal "Order Changes" notification + confirm-and-sync (2026-09-02)
+
+Claire found live: she approved a companion-form edit (Location Targeting's
+gross budget $1,000 → $1,200, plus a new end date), but Campaign Setup in
+the Strategist Portal kept showing the old numbers. "View Order" DID show
+the change happened (Amendment History), but nothing flagged that it
+needed action, and there was no fast way to push the new numbers into the
+live campaign anyway. Confirmed over several turns:
+- Should cover ACTIVE campaigns too, not just ones still in setup —
+  arguably more urgent, since an active campaign is spending against a
+  wrong number right now.
+- Her mental model: "a notification dot or banner at the top... when you
+  click into it you see the original order and what the changes are, and
+  a way to confirm the changes we made in the ad platform so then it
+  updates in the strategist portal and accounting portal."
+- The Confirm action should genuinely PUSH the order's new values into
+  `campaign_lines`/`campaign_months` (not just clear a flag) — since
+  Accounting reads the same tables, this is also how Accounting sees the
+  correct numbers, with no separate accounting-side step needed.
+- For an ACTIVE line, Confirm requires an explicit checkbox first: "I've
+  updated this in the ad platform" — can't clear the flag by mistake
+  without actually having made the platform-side change.
+- Open design question resolved via AskUserQuestion: when an order's
+  budget arrives as a single flat number (not a real month-by-month
+  breakdown), Confirm only pushes it into UPCOMING, UNCONFIRMED months —
+  never a month that's already past, and never one Accounting has already
+  confirmed/signed off on.
+
+**What's built**:
+- Two new `campaign_lines` columns: `order_change_acknowledged_by`/`_at`
+  — same "who + when" shape as the existing `campaign_months.confirmed_by`/
+  `confirmed_at` pattern Accounting already uses, reused rather than
+  inventing a new one.
+- `strategist_get_campaign_lines` now also returns the order's
+  `edit_history` (via the join it already has to `orders`) plus the two
+  new acknowledgment columns — no second fetch needed, return type
+  unchanged (`SETOF jsonb`) so this was a normal `CREATE OR REPLACE`.
+- New `strategist_confirm_order_change(p_name, p_pw, p_campaign_line_id,
+  p_platform_confirmed)` RPC: raises if `p_platform_confirmed` isn't true
+  for an active line; otherwise pushes the order's current line_items
+  values for that service into `campaign_lines` (dates, 1:1) and
+  `campaign_months` (a real `month_budgets` array updates/inserts each
+  named month, same per-month upsert `admin_renew_service` already uses;
+  a flat `spend`/`recurring` number only touches upcoming+unconfirmed
+  months per the resolved design question above), then marks the line
+  acknowledged.
+- `strategist/index.html`: a new top-of-page banner (same spot/style as
+  the existing platform-report-freshness banner), showing a count of
+  flagged campaign lines — a line is "flagged" whenever the order has an
+  edit for that line's own `service_id` newer than
+  `coalesce(order_change_acknowledged_at, line's own created_at)` (the
+  `created_at` fallback means a change that predates a line even existing
+  can never spuriously flag it). Clicking the banner expands a panel
+  listing every flagged line with what changed, a "View Order" link (the
+  existing modal), the ad-platform checkbox for active lines, and a
+  Confirm button.
+- `shared.js`: extracted the per-field change-description logic that
+  already lived inline in `renderAmendmentHistoryHtml()` into its own
+  `formatEditHistoryEntrySummary(h)` function, reused by both the existing
+  Amendment History table AND the new Strategist panel — and extended it
+  with the same richer per-field wording (dates, variant, module diff,
+  qty) Admin's Pending Requests list got the same day, so every "what
+  changed" description across the whole app now reads consistently.
+  Bumped every portal's `shared.js?v=` cache-buster since this changed a
+  shared file three other pages load.
+
+**Verified**: `node --check` on `shared.js` and `strategist/index.html`'s
+extracted script. Two standalone harnesses: (1) the flagging logic across
+4 cases — an unflagged edit for the line's OWN service correctly flags it
+and ignores an edit_history entry for a different service on the same
+order; an edit that predates the line's own creation never flags it; an
+edit already acknowledged doesn't re-flag; a NEW edit after an old
+acknowledgment re-flags correctly. (2) The budget-sync branching — a real
+month-by-month array correctly skips an Accounting-confirmed month and
+updates an unconfirmed one; a flat number correctly skips a past month
+and a confirmed future month while updating the current and other
+unconfirmed future months. Not yet live-tested — next steps are Claire
+running the 3 SQL statements (2 new columns, the extended
+`strategist_get_campaign_lines`, the new `strategist_confirm_order_change`
+RPC) and then confirming Location Targeting's own now-stale gross
+budget/end date on Test Business 9 actually flags and syncs correctly.

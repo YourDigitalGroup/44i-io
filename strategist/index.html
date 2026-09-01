@@ -61,6 +61,19 @@
            fetchStrategistData() refreshes PLATFORM_REPORT_CACHE. -->
       <div id="strategist-report-freshness-banner" role="status" aria-live="polite" style="margin-bottom:14px;padding:9px 16px;background:var(--light);border:1px solid var(--border);border-radius:8px;font-size:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center"></div>
 
+      <!-- "Order Changes" notification (2026-09-02, per Claire -- found live: she
+           approved a companion-form edit that changed a campaign's gross budget and
+           end date, but Campaign Setup kept showing the old numbers with nothing
+           flagging that anything needed action. A clickable top-of-page banner
+           (same spot/style as the freshness banner above), one count for however
+           many campaign lines have an order edit newer than their own last
+           acknowledgment -- click it to expand the list, see what changed on each,
+           and Confirm (which pushes the new values into campaign_lines/
+           campaign_months, so Accounting sees them too, without a separate step).
+           Hidden entirely when nothing is flagged -- renderOrderChangesBanner(). -->
+      <div id="strategist-order-changes-banner" role="status" aria-live="polite" style="display:none;margin-bottom:14px;padding:9px 16px;background:#FEF3C7;border:1px solid #F5CE6A;border-radius:8px;font-size:12.5px;cursor:pointer" onclick="strategistToggleOrderChangesPanel()"></div>
+      <div id="strategist-order-changes-panel" style="display:none;margin-bottom:16px"></div>
+
       <!-- Top bar: month picker + My Campaigns/All Strategists scope toggle -->
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:10px">
@@ -166,7 +179,7 @@
   </div>
 </div>
 
-<script src="../shared.js?v=20260813b"></script>
+<script src="../shared.js?v=20260902a"></script>
 <script>
 // Same "don't hardcode a roster" pattern as /admin's login (see that file's 2026-07-18
 // note on LOGIN_ROSTER) — populated from the shared get_login_roster RPC, filtered
@@ -812,6 +825,100 @@ const REPORT_COLUMN_SYNONYMS = {
 // from the RPC) shows "Not yet uploaded" in muted text rather than a blank gap or
 // a misleading date, so it's clear that specific platform's freshness is unknown
 // rather than that it's simply always been fresh.
+// ── "Order Changes" notification (2026-09-02) ───────────────────────────
+// A campaign line is FLAGGED when its order has an edit_history entry for
+// this line's own service_id newer than the line's last acknowledgment
+// (order_change_acknowledged_at) -- falling back to the line's own
+// created_at when it's never been acknowledged, so a change that predates
+// the line even existing can never spuriously flag it. edit_history now
+// rides along on strategist_get_campaign_lines' own order join (as
+// order_edit_history), so no second fetch is needed.
+function strategistFlaggedOrderChanges() {
+  return ALL_CAMPAIGN_LINES.map(l => {
+    const history = Array.isArray(l.order_edit_history) ? l.order_edit_history : [];
+    const cutoff = l.order_change_acknowledged_at || l.created_at;
+    const entries = history.filter(h => h.service_id === l.service_id && (!cutoff || new Date(h.edited_at) > new Date(cutoff)));
+    return entries.length ? { line: l, entries } : null;
+  }).filter(Boolean);
+}
+
+function renderOrderChangesBanner() {
+  const el = document.getElementById('strategist-order-changes-banner');
+  if (!el) return;
+  const flagged = strategistFlaggedOrderChanges();
+  if (!flagged.length) {
+    el.style.display = 'none';
+    document.getElementById('strategist-order-changes-panel').style.display = 'none';
+    document.getElementById('strategist-order-changes-panel').innerHTML = '';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML = `⚠️ <strong>${flagged.length}</strong> campaign${flagged.length > 1 ? 's have' : ' has'} order changes that need review — click to see what changed.`;
+}
+
+function strategistToggleOrderChangesPanel() {
+  const panel = document.getElementById('strategist-order-changes-panel');
+  const isOpen = panel.style.display !== 'none';
+  if (isOpen) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+  panel.style.display = 'block';
+  renderOrderChangesPanelContent();
+}
+
+function renderOrderChangesPanelContent() {
+  const panel = document.getElementById('strategist-order-changes-panel');
+  const flagged = strategistFlaggedOrderChanges();
+  panel.innerHTML = flagged.map(({ line: l, entries }) => {
+    const changesHtml = entries.map(h => `<div style="font-size:12px;margin-top:3px">${formatEditHistoryEntrySummary(h)}</div>`).join('');
+    const isActive = l.status === 'active';
+    const checkboxId = `order-change-platform-confirmed-${l.id}`;
+    const confirmDisabledAttr = isActive ? `disabled` : '';
+    return `<div style="border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:10px;background:#fff">
+      <div style="font-weight:700;font-size:13px">${esc(l.client_name || '')} — ${esc(l.tactic_label || l.service_id)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(l.group_name || '')}</div>
+      <div style="margin-top:8px">${changesHtml}</div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <button type="button" onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:6px;background:#fff;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>
+        ${isActive ? `
+        <label style="font-size:11.5px;display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="${checkboxId}" onchange="document.getElementById('order-change-confirm-${l.id}').disabled = !this.checked"/>
+          I've updated this in the ad platform
+        </label>` : ''}
+        <button type="button" id="order-change-confirm-${l.id}" ${confirmDisabledAttr} onclick="strategistConfirmOrderChange('${esc(l.id)}')" style="padding:5px 12px;border-radius:6px;background:#1F7A42;color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Confirm reviewed</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Pushes the order's CURRENT values for this line's service into
+// campaign_lines/campaign_months (dates 1:1; a real month_budgets array
+// updates/inserts each named month; a flat recurring/spend number only
+// updates upcoming, unconfirmed months -- confirmed by Claire: never
+// silently overwrite a month Accounting already signed off on) and marks
+// the line acknowledged. Requires the ad-platform checkbox for an ACTIVE
+// line -- the RPC itself enforces this too, this is just the UI-side guard
+// (the Confirm button stays disabled until checked).
+async function strategistConfirmOrderChange(lineId) {
+  const checkbox = document.getElementById(`order-change-platform-confirmed-${lineId}`);
+  const platformConfirmed = checkbox ? checkbox.checked : true; // no checkbox at all means a pending line, nothing to confirm
+  try {
+    await sb('rpc/strategist_confirm_order_change', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
+        p_campaign_line_id: lineId, p_platform_confirmed: platformConfirmed,
+      })
+    });
+  } catch (e) {
+    showToast('Could not confirm this change: ' + e.message, 'error');
+    return;
+  }
+  showToast('✅ Reviewed — campaign updated');
+  await fetchStrategistData();
+  renderStrategistDashboard();
+  renderOrderChangesBanner();
+  renderOrderChangesPanelContent();
+}
+
 function renderPlatformReportFreshnessBanner() {
   const el = document.getElementById('strategist-report-freshness-banner');
   if (!el) return;
@@ -1606,6 +1713,7 @@ async function fetchStrategistData() {
   PLATFORM_REPORT_CACHE = {};
   (reportCache || []).forEach(r => { PLATFORM_REPORT_CACHE[r.platform] = { report_month: r.report_month, rows: r.rows || [], updated_at: r.updated_at || null }; });
   renderPlatformReportFreshnessBanner();
+  renderOrderChangesBanner();
   await strategistSweepFlightEndedCampaigns();
 }
 
