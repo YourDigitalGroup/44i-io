@@ -728,9 +728,19 @@ select.qty-field{background-image:none;padding-right:3px}
    below) and scroll naturally WITH the page, while the modal box itself
    gets positioned at the vertical spot of the visitor's own most recent
    click — which is wherever they actually are on the page right now,
-   regardless of how far down that is. No longer flex-centered; the box's
-   own `top` is set directly in JS. */
-.modal-backdrop{position:absolute;top:0;left:0;right:0;background:transparent;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;justify-content:center;padding:0 20px}
+   regardless of how far down that is. No longer flex-centered vertically;
+   the box's own `top` is set directly in JS. `align-items:flex-start` is
+   still required though (2026-09-02, found live by Claire — the white
+   modal box was stretching all the way to the bottom of the page): with
+   no `align-items` at all, flex defaults to `stretch`, sizing the box's
+   HEIGHT to match the backdrop's own (now several-thousand-pixel-tall,
+   set in JS to span the full page) height -- `max-height:90vh` on the box
+   doesn't reliably save this either, since `vh` inside an iframe given a
+   large explicit height resolves against THAT height, not the real
+   browser viewport, so 90vh can itself be many times taller than the
+   actual visible screen. flex-start makes the box take only its own
+   content height, exactly like before this backdrop became `absolute`. */
+.modal-backdrop{position:absolute;top:0;left:0;right:0;background:transparent;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;align-items:flex-start;justify-content:center;padding:0 20px}
 /* box-shadow removed (2026-09-02, per Claire), then the backdrop itself
    went fully transparent right after (see .modal-backdrop above) -- with
    neither a shadow nor a dimmed/tinted backdrop left, the white box had

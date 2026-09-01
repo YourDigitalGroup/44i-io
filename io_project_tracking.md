@@ -24796,3 +24796,29 @@ confirmed the highlight class gets added in both cases. Grepped for
 `scrollIntoView(` afterward — the only remaining call is inside
 `revealElement()`'s own definition, confirming all 12 original call sites
 were replaced. Not verified live inside the actual WordPress embed.
+
+## Modal box was stretching to the bottom of the page (2026-09-02)
+
+Claire, live: "now the intake forms go all the way to the bottom of the
+page." When `.modal-backdrop` switched from `position:fixed` to
+`position:absolute` (see the click-position fix above), the `align-items`
+declaration was dropped entirely since vertical positioning moved to JS
+(`box.style.top`). With no `align-items` at all, flex defaults to
+`stretch`, which sizes the box's HEIGHT to match its flex container — and
+the backdrop's own height is now set in JS to the full page's
+`scrollHeight` (several thousand pixels), so the white modal box stretched
+to match it. `.modal-box`'s own `max-height:90vh` doesn't reliably save
+this either: `vh` inside an iframe with a large explicit HEIGHT resolves
+against THAT height, not the real browser viewport, so `90vh` can itself
+be many times taller than what's actually visible on screen.
+
+**Fix**: restored `align-items:flex-start` on `.modal-backdrop`. This
+doesn't conflict with the click-based positioning — `flex-start` just
+stops the box from stretching to fill the container's height; the JS-set
+`top` (via `position:relative`) still shifts it down from that flex-start
+position exactly as before.
+
+**Verified**: `node --check` on the extracted inline script. Not re-tested
+live in the actual iframe — Claire, worth a click-through to confirm the
+box is back to its normal content-sized height, both near the top and
+scrolled down.
