@@ -24516,3 +24516,37 @@ resolves to that specific name instead of the generic label, while a line
 with no variant picked still correctly falls back to the plain label
 unchanged (confirms no regression for the ~90% of services that never have
 a variant to begin with).
+
+## Softened the intake-modal backdrop for the iframe embed (2026-09-02)
+
+Claire: "in the iframe the grey out when the intake form pops up looks bad."
+`.modal-backdrop` was a flat `rgba(0,0,0,.55)` — a fairly dark, uniform grey
+with no softening, which reads harshly against the surrounding website when
+this page is embedded in an iframe (no border or vignette of its own to
+visually separate it from the host page around it).
+
+**Fix**: switched to a brand-navy tint (`rgba(26,35,50,.42)`, based on
+`--text`'s `#1A2332`) at a lower opacity, plus `backdrop-filter: blur(3px)`
+so it reads as a soft focus-dim rather than a flat grey wall. Degrades
+gracefully on any browser without `backdrop-filter` support — the tinted
+background alone still works.
+
+**Flagging, not fixing (needs Claire's confirmation)**: this page has no
+`postMessage`-based height/scroll coordination with whatever embeds it in
+an iframe. If that iframe is set to a large fixed height so the OUTER page
+scrolls through the form (rather than the iframe having its own internal
+scrollbar), `position:fixed` on the modal backdrop is anchored to the
+iframe's own full rendered height, not to whatever's currently visible on
+screen — which could center the actual intake-form dialog somewhere off in
+the iframe's total height, away from where the user is scrolled, so opening
+it might show only the darkened backdrop with no visible dialog box. I
+can't verify this from code alone without knowing how the live embed is set
+up. Claire — when you saw this, was the actual intake form dialog visible
+and usable (just visually harsh), or did you only see the grey with no
+popup box? That tells us whether this softening is the whole fix or whether
+the iframe embed itself needs a scroll-into-view fix too.
+
+**Verified**: `node --check` on the extracted inline script; confirmed only
+one `.modal-backdrop` rule exists (no duplicate to also update). Not
+verified live inside an actual iframe embed — I don't have a way to render
+this page's real production embed from here.
