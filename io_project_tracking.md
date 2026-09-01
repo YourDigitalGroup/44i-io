@@ -23441,6 +23441,39 @@ recipient-building logic against three scenarios (AM + AE only, AM
 already in io_recipient, no AM on file) — AM always present, no
 duplicates, io_recipient correctly additive rather than primary.
 
+## Live end-to-end test, round 1: "(unknown client)" bug (2026-09-01)
+
+Claire started the real end-to-end companion-form test against Test
+Business 8 and reported every pending request showing "(unknown
+client)" in Admin, regardless of which one it was. Diagnosed instead of
+guessed, in order:
+
+1. `select ... from pending_requests` — `client_id` was a real, correct
+   UUID on every row (companion form is sending the right value).
+2. `select ... from clients where id = '<that uuid>'` — confirmed it's
+   genuinely Test Business 8. So the data is completely correct.
+3. Traced Admin's own lookup code: `loadAdminPendingRequests()` was the
+   ONLY place in the entire admin file doing a **direct** `clients?...`
+   REST read — every other client-name resolution already goes through
+   a real `admin_get_*` SECURITY DEFINER RPC.
+4. `select ... from pg_policies where tablename='clients'` → zero rows.
+   `select relrowsecurity ... from pg_class where oid='public.clients'`
+   → `true`. RLS enabled, zero policies = Postgres denies every row to
+   any non-owner role, including the anon key that direct REST call
+   used — a silent empty result, not an error, so it rendered fine but
+   with nothing to resolve. This was a real bug in code from earlier in
+   this session, not new today, just never exercised with a real client
+   until this test.
+
+**Fix**: new `admin_get_client_names(p_name, p_pw, p_client_ids uuid[])`
+RPC — same real-credential-check pattern every other admin function
+uses, returns `(id, name)` for the requested ids via a SECURITY DEFINER
+function (which reads `clients` with its own privileges regardless of
+the caller's RLS). `loadAdminPendingRequests()` swapped from the direct
+`clients?id=in.(...)` read to this RPC. Verified: `node --check`.
+Not yet re-tested live — next step once Claire runs the SQL and
+re-opens Pending Requests.
+
 Claire hit `42P13: cannot change return type of existing function` trying
 to run the `companion_get_active_services` update — Postgres won't let
 `CREATE OR REPLACE` change a function's OUT columns. Gave her a
