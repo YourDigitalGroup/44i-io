@@ -6809,7 +6809,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   // Package - GBP, etc.) completely untouched, since those names never
                   // equal any service's own label.
                   const moduleLi = lineItems.find(li => li.workflow === originalWorkflows[wfIdx] && li.module_names?.length && CATALOG_ROWS[li.service_id]?.label === cn);
-                  if (moduleLi) cn = resolveModuleDisplayName(moduleLi.module_names, cn);
+                  if (moduleLi) cn = resolveModuleDisplayName(moduleLi.service_id, moduleLi.module_names, cn);
                   // Skip any template placeholder named "IO", "IO -", "IO :", etc.
                   if (isIoName(cn)) continue;
                   // Skip AE Questions cards from any template — redundant; the intake
@@ -8289,19 +8289,16 @@ function resolveVariantDisplayName(serviceId, variant, fallbackName) {
 // "Act like the variants" for Website Modules too (2026-08-31, per Claire,
 // right after confirming the tactic-variant fix above): same underlying idea
 // as resolveVariantDisplayName() — swap the generic, all-options catalog
-// label for the AE's SPECIFIC picks — but a qty_option_labels service (see
-// onModuleCheckboxChange()) lets picking SEVERAL at once, not choosing one of
-// several, so there's no single "which one is it" string to resolve, and no
-// section-prefix ambiguity to solve either (the base name "Modules" is
-// already clear on its own — unlike "Geofencing," it was never confused with
-// anything else). Simplest fit: strip the catalog label's own trailing
-// "(all 5 options)" parenthetical and rebuild it with just the picked names —
-// "Modules (Newsletter, Photo/Video, Testimonial, News/Blog, Calendar)"
-// becomes "Modules (Newsletter, Photo/Video)".
-function resolveModuleDisplayName(moduleNames, fallbackName) {
+// label for the AE's SPECIFIC picks. UNIFIED to the exact same
+// "SectionLabel: detail" format resolveVariantDisplayName() uses (2026-08-31,
+// per Claire — "titling the module cards the same as the variant cards, to
+// make it cleaner") — was its own "Base (detail)" parenthetical style before
+// this, a real inconsistency she caught live.
+function resolveModuleDisplayName(serviceId, moduleNames, fallbackName) {
   if (!moduleNames || !moduleNames.length) return fallbackName;
-  const base = fallbackName.replace(/\s*\([^)]*\)\s*$/, '').trim();
-  return `${base} (${moduleNames.join(', ')})`;
+  const sectionLabel = SECTIONS.find(s => s.id === CATALOG_ROWS[serviceId]?.section)?.label;
+  const detail = moduleNames.join(', ');
+  return sectionLabel ? `${sectionLabel}: ${detail}` : detail;
 }
 // Single entry point for a row's Service-column display name (Step 3, Print) —
 // tries a picked tactic variant first, then picked module names, falling back
@@ -8311,7 +8308,7 @@ function resolveModuleDisplayName(moduleNames, fallbackName) {
 // add itself.
 function resolveRowDisplayName(id, data, fallbackName) {
   if (data?.tacticVariant) return resolveVariantDisplayName(id, data.tacticVariant, fallbackName);
-  if (data?.moduleNames?.length) return resolveModuleDisplayName(data.moduleNames, fallbackName);
+  if (data?.moduleNames?.length) return resolveModuleDisplayName(id, data.moduleNames, fallbackName);
   return fallbackName;
 }
 

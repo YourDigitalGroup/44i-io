@@ -477,7 +477,14 @@ function setServiceAction(i, action) {
     // alone (2026-08-31, per Claire — "we are missing the module options").
     if (isModuleService(svc)) {
       const chosen = Array.isArray(svc.module_names) ? svc.module_names : [];
+      // An order placed before module_names existed only ever recorded a
+      // plain qty number, never WHICH modules were picked (2026-08-31,
+      // found live by Claire — nothing showed as selected). Flag that
+      // honestly rather than silently showing an all-unchecked list that
+      // looks like a bug.
+      const noRecord = !chosen.length && svc.qty > 0;
       extraFieldsHtml += `<div class="field"><label>Modules</label>
+        ${noRecord ? `<p style="font-size:12px;color:var(--muted);font-style:italic;margin-bottom:6px">This order predates individual module tracking — we don't have a record of which ${svc.qty} module(s) were originally picked. Please check whichever are currently active.</p>` : ''}
         <div>${svc._moduleOptions.map(name => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:4px;text-transform:none;font-weight:400;color:var(--text)"><input type="checkbox" class="edit-module-${i}" value="${esc(name)}" ${chosen.includes(name) ? 'checked' : ''} style="width:16px;height:16px;flex:none;accent-color:var(--accent)"/> ${esc(name)}${chosen.includes(name) ? ' <span style="color:var(--muted);font-size:11px">(currently selected)</span>' : ''}</label>`).join('')}</div>
       </div>`;
       body.innerHTML = extraFieldsHtml;
