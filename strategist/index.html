@@ -82,6 +82,7 @@
           <button onclick="strategistShiftMonth(1)" aria-label="Next month" style="padding:6px 10px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-size:13px">›</button>
         </div>
         <div style="display:flex;gap:10px;align-items:center;font-size:12px">
+          <input type="text" id="strategist-client-search" oninput="strategistSetClientSearch(this.value)" placeholder="Search client…" aria-label="Search by client name" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--text);font-size:12px;width:150px"/>
           <select id="strategist-group-filter" onchange="strategistSetGroupFilter(this.value)" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12px;font-weight:600;cursor:pointer">
             <option value="">All Groups</option>
           </select>
@@ -308,6 +309,11 @@ let PLATFORM_REPORT_CACHE = {}; // platform -> { report_month, rows: [{title, da
 const PLATFORM_REPORT_FRESHNESS_PLATFORMS = ['Google Ads', 'Facebook Ads', 'Simpli.fi', 'The Trade Desk'];
 let strategistScope = 'mine';               // 'mine' | 'all'
 let strategistGroupFilter = '';              // '' = all groups, else a group_name
+// Client search (2026-09-02, per Claire -- "if you are looking for
+// something specific like a client... you just have to scroll"). '' = no
+// search, matching every campaign, same "default to everything" posture
+// as every other filter here.
+let strategistClientSearch = '';
 let strategistPacingFilter = '';             // '' = all, else 'good' | 'warn' | 'risk' -- worse of spend/perf pacing
 let strategistStatusTab = 'pending';        // pending | active | paused | complete
 let strategistCurrentMonth = null;          // Date, always day 1
@@ -448,6 +454,14 @@ function strategistSetScope(scope) {
 function strategistSetGroupFilter(groupName) {
   strategistGroupFilter = groupName;
   strategistSelectedLineId = null;
+  renderStrategistDashboard();
+}
+// Doesn't force-close an open detail panel the way the other filters above
+// do -- renderStrategistDetailPanel() looks a selected line up from the
+// FULL ALL_CAMPAIGN_LINES list, not the filtered/visible set, so it stays
+// correct even if a search narrows the table out from under it.
+function strategistSetClientSearch(value) {
+  strategistClientSearch = value;
   renderStrategistDashboard();
 }
 function strategistSetPacingFilter(segment) {
@@ -2349,6 +2363,7 @@ function visibleCampaignLines() {
     if (strategistScope === 'mine' && strategistLineScopeName(l) !== currentStrategistUser.name) return false;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return false;
     if (strategistPacingFilter && strategistLinePacingSegment(l) !== strategistPacingFilter) return false;
+    if (strategistClientSearch.trim() && !(l.client_name || '').toLowerCase().includes(strategistClientSearch.trim().toLowerCase())) return false;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return false;
     return true;
   });
@@ -2379,6 +2394,7 @@ function renderStrategistDashboard() {
     if (strategistScope === 'mine' && strategistLineScopeName(l) !== currentStrategistUser.name) return;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return;
     if (strategistPacingFilter && strategistLinePacingSegment(l) !== strategistPacingFilter) return;
+    if (strategistClientSearch.trim() && !(l.client_name || '').toLowerCase().includes(strategistClientSearch.trim().toLowerCase())) return;
     if (l.status !== 'pending' && !strategistLineActiveInMonth(l, strategistCurrentMonth)) return;
     const eff = strategistEffectiveStatus(l, strategistCurrentMonth);
     if (counts[eff] != null) counts[eff]++;
