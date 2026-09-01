@@ -2633,6 +2633,12 @@ function showAdmin(show) {
     // Default to Orders for a strategist (their only visible tab), Groups for everyone else
     adminSection(isStrategist ? 'orders' : 'groups');
     applyAdminStickyOffsets();
+    // Both badges below now compute right after login, not only once their own
+    // tab has actually been opened (2026-09-02, per Claire — "you don't see
+    // the notification bubbles in a tab until you click it, like the pending
+    // or accounting map tabs"). Not awaited -- fire-and-forget so it never
+    // delays the default tab's own render.
+    if (!isStrategist) eagerlyLoadAdminBadges();
   } else {
     if (wrap) wrap.style.display = 'block';
   }
@@ -5374,6 +5380,37 @@ function updateAccountingMissingBadge() {
   } else {
     badge.style.display = 'none';
   }
+}
+
+// Both the Pending Requests and Accounting Map tab badges used to only ever
+// populate once their own tab was actually clicked open -- despite the
+// Accounting Map badge's own comment already saying its whole POINT was to
+// be "visible without having to open the tab first." Called once right
+// after login (showAdmin(true)) instead, so both counts are visible
+// immediately (2026-09-02, per Claire). Fire-and-forget from the caller;
+// any failure here just leaves that badge hidden rather than surfacing an
+// error toast for something the AM didn't explicitly ask to load. Whichever
+// tab is actually opened later still does its own full, authoritative
+// reload (loadAdminPendingRequests()/loadAdminAccountingMap()) -- this is
+// purely a head start on the count, not a substitute for that.
+async function eagerlyLoadAdminBadges() {
+  try {
+    if (!allServicesMap.length) allServicesMap = await sb('services?order=section,sort_order&select=*') || [];
+  } catch (e) { console.warn('Could not eagerly load services for badges:', e.message); }
+  try {
+    ALL_PENDING_REQUESTS = await sb('rpc/admin_get_pending_requests', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+    updatePendingRequestsBadge();
+  } catch (e) { console.warn('Could not eagerly load pending-requests badge:', e.message); }
+  try {
+    ALL_ACCOUNTING_MAP = await sb('rpc/admin_get_accounting_map', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+    updateAccountingMissingBadge();
+  } catch (e) { console.warn('Could not eagerly load accounting-map badge:', e.message); }
 }
 
 // Rounds a percentage to at most 2 decimal places without padding whole numbers with
