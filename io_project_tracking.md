@@ -24065,3 +24065,97 @@ client search + status filter work correctly alone and combined; (2)
 Strategist's client search matches case-insensitively and correctly
 shows everything when empty. Not yet live-tested — next step is Claire
 trying both in the real portals.
+
+## Follow-up: the Total row DOES follow the filter (2026-09-02)
+
+Correction from Claire, right after the client search/status filter
+shipped: "I think we could mess with that total row. I just didn't want
+anything in the top part to change." My first pass had the table's
+`<tfoot>` Total row use the same fixed totals as the 5 stat tiles above
+(unchanged regardless of filter) — her actual ask was narrower: only the
+tiles need to stay fixed; the Total row should be a plain sum of whatever
+rows are actually visible below it.
+
+**Fix**: new `visibleTotalGross`/`visibleTotalExpectedSpend`/
+`visibleTotalActualSpend`/`visibleTotalFortyfouri`, computed from
+`visibleRows` (the filtered set) with NO Pending/Paused exclusion — unlike
+the stat tiles, which deliberately treat Pending/Paused as "not real
+revenue yet." Without that distinction, filtering to "Pending" would have
+shown a Total row of $0.00 even with real dollar amounts sitting in every
+row above it, which would have looked broken. `<tfoot>` now reads from
+these instead of the tile totals.
+
+**Verified**: `node --check`. A standalone harness confirming a Pending
+row's real gross counts fully in the Total row when visible, and that
+filtering down to just that row shows its own real total, not zero.
+
+## Pre-launch audit: 3 real bugs found and fixed (2026-09-02)
+
+Ran a full audit before tomorrow's launch — syntax check across every
+portal file (all clean), a check for duplicate function declarations and
+orphaned/dangling references from today's renames (all clean), then a
+dedicated subagent trace of the ENTIRE companion-form-to-resolution
+lifecycle in the actual current code, looking specifically for
+integration gaps between the many pieces built today at different times.
+Found 3 real issues:
+
+**1. Stale "current" value in the batched Trello comment (the important
+one).** For a batched edit/renew approval, `adminApprovePendingRequestClick()`
+mutates the order's local line item IMMEDIATELY (so the card title/due
+date and local cache stay current right away, per the "card accuracy
+isn't a notification" rule from earlier today). But the combined Trello
+comment for the whole batch gets built LATER, in `finalizeBatchIfReady()`,
+which called `describeRequestedChanges()` — and that function re-derives
+"current → requested" by reading the order's LIVE line_items. By the time
+the batch actually finalizes, that live state already equals the NEW
+value, so the comment would read something like "End date Jun 1 → Jun 1"
+instead of the real before/after — a genuine regression the "richer
+current-vs-requested" work introduced without accounting for the earlier
+batch-deferral design. The single-item (legacy, non-batched) path never
+had this bug, since its comment text gets built in the same pass as the
+mutation, before anything goes stale.
+
+**Fix**: `adminApprovePendingRequestClick()` now captures the correct
+pre-mutation description into a `resolutionNoteText` variable at the
+exact moment it's still accurate (right when `applyFieldChangeLocally()`/
+the renew branch computes it), and for a BATCHED item only, persists it
+via a new `admin_set_pending_request_note` RPC. `buildBatchResolutionLine()`
+now prefers this stored note over re-deriving from live (possibly stale)
+order data for edit/renew — cancel is unaffected since it never mutates
+the order's own line_items, so `describeRequestedChanges()` stays
+accurate for it at any time. This is also the `p_resolution_note` piece
+that was originally planned for `admin_approve_pending_request` back when
+the batch-grouping feature was designed, but never actually built until
+now.
+
+**2. Error toast immediately clobbered by the success toast.** If the
+Trello/PDF follow-up in `adminApprovePendingRequestClick()` threw, the
+catch block correctly showed an error toast — but the very next
+unconditional lines overwrote it with "✅ Approved and applied," so the
+AM never actually saw the warning telling them to check Trello by hand.
+Fixed by returning right after the error toast instead of falling through
+to the success one (the database change itself is unaffected either way
+— this only ever covers the Trello/PDF follow-up).
+
+**3. Partial companion-form batch submission left the AM unnotified.**
+If item 2 of 3 in a companion-form submission failed mid-loop, the
+function threw and returned immediately — but item 1 was already
+committed to the database with a real `submission_batch_id`. Neither the
+AM email nor the Trello heads-up comment ever fired for it, leaving it
+sitting silently in the queue with no way for the AM to discover it
+except manually checking Admin. Fixed: `submitRequests()` now still calls
+`notifyAm()`/`postSubmitTrelloComments()` for whatever succeeded before
+re-showing the error, and the error message itself now says how many of
+the total actually went through.
+
+**Verified**: `node --check` on every portal file (all pass). Standalone
+harnesses: the batch-resolution-line fix produces the correct real
+before/after for a renew, confirmed cancel never uses the stored note
+(and never needs to). Not yet live-tested — next step is a real batch
+test exercising a renew or edit specifically, to confirm the Trello
+comment shows a real before/after instead of "X → X."
+
+**Also confirmed via live database checks**: `admin_claim_batch_for_comment`
+exists, and both `accounting_get_order_detail`/`strategist_get_order_detail`
+now select `edit_history` — all SQL from today's session is confirmed
+actually deployed, not just handed off.

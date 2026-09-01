@@ -2186,6 +2186,23 @@ function renderAccountingDashboard() {
     return true;
   });
 
+  // The table's own Total row DOES follow the filter (2026-09-02, per
+  // Claire: "I think we could mess with that total row. I just didn't want
+  // anything in the top part to change") -- a plain sum of whatever's
+  // actually visible below it, unlike the stat tiles above (which stay
+  // fixed regardless of filter and deliberately exclude Pending/Paused
+  // rows as "not real revenue yet"). The Total row makes no such exclusion
+  // -- filtering to "Pending," for instance, should show a real total for
+  // those rows, not $0.00 just because the tiles above treat Pending as
+  // zero.
+  let visibleTotalGross = 0, visibleTotalExpectedSpend = 0, visibleTotalActualSpend = 0, visibleTotalFortyfouri = 0;
+  visibleRows.forEach(r => {
+    visibleTotalGross += r.gross || 0;
+    if (r.expectedSpend != null) visibleTotalExpectedSpend += r.expectedSpend;
+    if (r.actualSpend != null) visibleTotalActualSpend += r.actualSpend;
+    visibleTotalFortyfouri += accountingSplitInvoiceable(r).invoiceable;
+  });
+
   const wrap = document.getElementById('accounting-table-wrap');
   if (!rows.length) {
     wrap.innerHTML = '<p style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No campaigns with a budget entered for this month yet.</p>';
@@ -2239,10 +2256,10 @@ function renderAccountingDashboard() {
         <td>Total</td>
         <td></td>
         <td></td>
-        <td class="num">$${totalGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-        <td class="num">$${totalFortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-        <td class="num">$${totalExpectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
-        <td class="num">$${totalActualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+        <td class="num">$${visibleTotalGross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+        <td class="num">$${visibleTotalFortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+        <td class="num">$${visibleTotalExpectedSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+        <td class="num">$${visibleTotalActualSpend.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
         <td></td>
       </tr>
     </tfoot>
