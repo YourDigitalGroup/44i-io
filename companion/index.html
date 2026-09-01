@@ -770,7 +770,22 @@ async function submitRequests() {
       submitted.push(p);
     }
   } catch (e) {
-    showToast('Could not submit: ' + e.message, 'error');
+    // A partial failure here (e.g. item 2 of 3 fails) previously left
+    // whatever DID submit successfully completely unnotified -- those rows
+    // are real, already in the database with a real submission_batch_id,
+    // but neither the AM email nor the Trello heads-up comment ever fired
+    // for them, since the function returned immediately on the first
+    // error (2026-09-02, found in a pre-launch audit). Still notify for
+    // whatever succeeded before re-showing the error, so the AM at least
+    // finds out about the partial submission instead of it sitting
+    // silently in the queue.
+    if (submitted.length) {
+      await notifyAm(aeName, aeEmail, submitted);
+      await postSubmitTrelloComments(aeName, submitted);
+    }
+    showToast(submitted.length
+      ? `${submitted.length} of ${payloads.length} submitted before an error: ${e.message}. The AM has been notified about those. Please try the rest again.`
+      : 'Could not submit: ' + e.message, 'error');
     btn.disabled = false; btn.textContent = 'Submit Request(s)';
     return;
   }

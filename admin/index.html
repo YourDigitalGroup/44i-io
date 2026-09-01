@@ -8603,6 +8603,18 @@ async function adminApprovePendingRequestClick(id) {
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
     let commentText = '';
     let attachRevisedPdf = false;
+    // Captured for edit/renew ONLY, and persisted server-side for a
+    // BATCHED item below (2026-09-02, fixing a real bug found in a
+    // pre-launch audit): describeRequestedChanges() re-derives "current →
+    // requested" by reading the order's LIVE line_items, but for a batched
+    // item that live state has already been mutated by the time
+    // finalizeBatchIfReady() runs later and builds the combined Trello
+    // comment -- producing "Jun 1 → Jun 1" instead of the real before/
+    // after. Captured HERE, before/at the same moment the mutation
+    // happens, while the true old value is still known. Cancel never
+    // mutates the order's own line_items, so it doesn't need this --
+    // describeRequestedChanges() stays accurate for it at any later time.
+    let resolutionNoteText = '';
 
     // Local cache update + card title/due-date refresh always happen
     // immediately, per item, regardless of batching -- only the actual
@@ -8637,6 +8649,7 @@ async function adminApprovePendingRequestClick(id) {
         if (item) { o.is_revised = true; o.edit_history = [...(o.edit_history||[]), { service_id: req.service_id, field, old_value: historyOldValue, new_value: value, edited_by: admin, edited_at: new Date().toISOString() }]; }
       }
       commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${admin}).`;
+      resolutionNoteText = descriptions.join('; ');
       attachRevisedPdf = true;
       // A variant or module change also renames the tactic's own Trello
       // card here too, same as the AM-triggered edit path (2026-08-31, per
@@ -8653,6 +8666,7 @@ async function adminApprovePendingRequestClick(id) {
       // end_date, so it always needs the card's due date pushed too
       // (2026-09-01, per Claire).
       const item = (o.line_items || []).find(li => li.service_id === req.service_id);
+      const oldEndDate = item?.end_date;
       if (item) {
         item.end_date = c.new_end_date;
         await adminUpdateTacticCard(req.order_id, req.service_id, item, { renameTitle: false });
@@ -8665,6 +8679,18 @@ async function adminApprovePendingRequestClick(id) {
         budgetNote = `, new monthly budget $${Number(c.new_monthly_budget).toLocaleString()} starting the renewed term`;
       }
       commentText = `🔁 Renewed ${label} — new end date ${c.new_end_date}${budgetNote} (by ${admin}).`;
+      resolutionNoteText = `End date${oldEndDate ? ' ' + pendingFmtDate(oldEndDate) + ' →' : ':'} ${pendingFmtDate(c.new_end_date)}${budgetNote}`;
+    }
+
+    if (req.submission_batch_id && resolutionNoteText) {
+      try {
+        await sb('rpc/admin_set_pending_request_note', {
+          method: 'POST',
+          body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_request_id: req.id, p_note: resolutionNoteText })
+        });
+      } catch (e) {
+        console.warn('Could not save resolution note for batch comment:', e.message);
+      }
     }
 
     if (!req.submission_batch_id) {
@@ -8710,8 +8736,17 @@ async function adminApprovePendingRequestClick(id) {
       await finalizeBatchIfReady(req.submission_batch_id);
     }
   } catch (e) {
+    // The error toast here was previously getting clobbered immediately by
+    // the unconditional "✅ Approved and applied" success toast right below
+    // (2026-09-02, found in a pre-launch audit) -- the AM never actually
+    // saw the warning telling them to check Trello by hand. The database
+    // change always succeeded regardless (this catch only ever covers the
+    // Trello/PDF follow-up), so still refreshing the list is correct --
+    // just skip the success toast when there was really a failure to show.
     console.warn('Approved, but the Trello follow-up failed:', e.message);
     showToast('Approved, but the Trello update failed — please check the card by hand', 'error');
+    loadAdminPendingRequests();
+    return;
   }
 
   showToast('✅ Approved and applied');
@@ -8747,12 +8782,26 @@ async function adminRejectPendingRequestClick(id) {
 // shown in the Pending Requests list) for the combined batch comment/email,
 // so what an AE reads about "what happened" always matches what they saw
 // requested in the first place.
+// (2026-09-02, fixed a real bug from a pre-launch audit): for an approved
+// edit/renew, describeRequestedChanges() re-derives "current → requested"
+// from the order's LIVE line_items -- but by the time a batch finalizes,
+// that live state has already been mutated to the NEW value (the local
+// cache update happens immediately, per item, regardless of batching), so
+// re-deriving here would show "Jun 1 → Jun 1" instead of the real before/
+// after. adminApprovePendingRequestClick() now captures the correct
+// pre-mutation description into resolution_note at approval time and
+// prefers it here. Cancel never mutates the order's own line_items, so
+// describeRequestedChanges() stays accurate for it regardless of timing --
+// no stored note needed (and resolution_note means something different
+// for a rejected row anyway: the AM's own rejection reason, handled in the
+// branch above).
 function buildBatchResolutionLine(r, label) {
   if (r.status === 'rejected') {
     return `❌ ${label} — ${r.action} request rejected${r.resolution_note ? ': ' + r.resolution_note : ''} (by ${r.resolved_by || 'AM'}).`;
   }
   const emoji = r.action === 'cancel' ? '🛑' : r.action === 'renew' ? '🔁' : '✏️';
-  return `${emoji} ${label} — ${r.action} approved: ${describeRequestedChanges(r)} (by ${r.resolved_by || 'AM'}).`;
+  const detail = (r.action !== 'cancel' && r.resolution_note) ? r.resolution_note : describeRequestedChanges(r);
+  return `${emoji} ${label} — ${r.action} approved: ${detail} (by ${r.resolved_by || 'AM'}).`;
 }
 
 // Once every item in a submission has been approved/rejected, posts ONE
