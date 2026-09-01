@@ -23806,3 +23806,31 @@ dollar-amount fields all show correct current → requested pairs; cancel
 and renew both surface the current end date for context. Not yet
 live-tested — next step is Claire reloading Pending Requests and
 confirming the richer detail renders correctly for a real request.
+
+## Cancel didn't push a Trello due-date update (2026-09-02)
+
+Claire, running the Test Business 9 batch test again: "for the cancel, it
+didn't update the due date." The end_date-driven due-date fix from earlier
+this session only covered Edit (when `end_date` is among the changed
+fields) and Renew (which always moves `end_date`) — Cancel was never
+included, in either the AM-direct `adminSubmitCancellation()` or the
+companion-form `adminApprovePendingRequestClick()`'s cancel branch.
+
+**Why it needed a different approach than Edit/Renew**: a cancellation
+deliberately does NOT rewrite the order's own `line_items.end_date` (confirmed
+by the existing comment right above this code — the order stays a frozen
+record of what was originally sold; the cancellation itself is tracked via
+`effective_date`/reason, not by overwriting the line item). So there's no
+real `item.end_date` change to read for the due-date push — the newly
+"true" end for the tactic is the cancellation's own `effective_date`.
+
+**Fix**: both cancellation paths now call `adminUpdateTacticCard(orderId,
+serviceId, { end_date: effectiveDate }, { renameTitle: false })` — passing
+a synthetic one-field object standing in for the real item, since
+`adminUpdateTacticCard()` only ever reads `item.end_date` when
+`renameTitle` is false (no title-related fields are touched). No SQL
+change needed — this only affects what gets pushed to Trello, not
+anything written to the database. Verified: `node --check`. Not yet
+live-tested — next step is Claire re-running the Test Business 9 batch
+(now that it's been cleared) and confirming this specific card gets its
+due date moved to the cancellation's effective date.

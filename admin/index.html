@@ -8575,6 +8575,13 @@ async function adminApprovePendingRequestClick(id) {
     if (req.action === 'cancel') {
       // Matches adminSubmitCancellation()'s exact wording — that handler
       // doesn't touch o.line_items either, so no local cache update needed.
+      // It DOES need its card's Trello due date pushed to the cancellation's
+      // effective date though (2026-09-02, per Claire), same as
+      // adminSubmitCancellation()'s own fix -- using a synthetic
+      // { end_date: c.effective_date } rather than the real item, since a
+      // cancellation deliberately never rewrites the order's own
+      // line_items.end_date.
+      await adminUpdateTacticCard(req.order_id, req.service_id, { end_date: c.effective_date }, { renameTitle: false });
       commentText = `🛑 ${label} cancelled, effective ${c.effective_date}${c.reason ? ' — ' + c.reason : ''} (by ${admin}).`;
     } else if (req.action === 'edit') {
       // requested_changes.fields is a map of one or more field:new_value
@@ -9440,6 +9447,15 @@ async function adminSubmitCancellation(orderId, serviceId) {
   const ioCardId = o?.trello_card_ids?.__io_card__;
   const tacticCardId = o?.trello_card_ids?.[adminEffectiveWorkflow(svc)];
   const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+  // A cancellation is effectively a new (earlier) end for the tactic, so its
+  // card's Trello due date needs to move too, same as an edit/renewal that
+  // changes end_date (2026-09-02, per Claire: "it didn't update the due date"
+  // for a cancel). Unlike Edit/Renew, a cancellation deliberately does NOT
+  // rewrite the order's own line_items.end_date (the order stays a frozen
+  // record of what was originally sold, cancellation is tracked separately)
+  // -- so this passes p_effective_date directly as a synthetic { end_date }
+  // rather than reading it off the real item, which is intentionally unchanged.
+  await adminUpdateTacticCard(orderId, serviceId, { end_date: effectiveDate }, { renameTitle: false });
   const commentText = `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`;
   for (const cardId of cardIds) {
     try {
