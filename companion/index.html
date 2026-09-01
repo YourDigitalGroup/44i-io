@@ -296,9 +296,24 @@ async function applyClientPick(id) {
   // submitted request should post a heads-up comment to Trello immediately,
   // not wait until an AM approves it) — a client can have more than one
   // order, so this is a map keyed by order_id, not a single lookup.
+  // (2026-09-01, fixed) -- this was a direct `orders?...` REST read, which
+  // silently returned zero rows for any order not created in the last two
+  // hours (`orders`'s own anon SELECT policy, `orders_recent_read`, is
+  // scoped to `created_at > now() - interval '2 hours'`, presumably for the
+  // main IO form's own immediate post-submit flow) -- meaning this lookup
+  // has never actually worked for a real pre-existing order, only ever
+  // looking "fixed" in the narrow window right after a brand-new test order
+  // was created. Same "anon direct read silently finds nothing" class of
+  // bug as admin_get_client_names' fix earlier this session, just a scoped
+  // policy instead of a hard deny-all -- fixed the same way, with a
+  // SECURITY DEFINER RPC scoped to the group/client the requester already
+  // legitimately has (from loadClientRoster()), rather than raw RLS.
   try {
     const orderIds = [...new Set(ACTIVE_SERVICES.map(s => s.order_id))];
-    const orderRows = await sb(`orders?id=in.(${orderIds.map(encodeURIComponent).join(',')})&select=id,trello_card_ids`) || [];
+    const orderRows = await sb('rpc/companion_get_order_trello_cards', {
+      method: 'POST',
+      body: JSON.stringify({ p_group_id: selectedGroup.id, p_client_id: selectedClientId, p_order_ids: orderIds })
+    }) || [];
     ORDER_TRELLO_CARDS = Object.fromEntries(orderRows.map(o => [o.id, o.trello_card_ids || {}]));
   } catch(e) {
     console.warn('Could not load order Trello card ids:', e.message);

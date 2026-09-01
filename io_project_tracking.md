@@ -23722,3 +23722,39 @@ the submit-time notice groups every item onto its order's IO card only
 (zero lines land on any tactic card). Not yet live-tested — next step is
 Claire re-running the Test Business 9 batch test with all these fixes in
 place.
+
+## Companion form's submit-time Trello comment never actually worked for a real order (2026-09-01)
+
+Claire, after the previous two fixes: "Still didn't get a changes requested
+comment in Trello." Diagnosed step by step (not guessed):
+
+1. Had Claire check `orders`'s RLS policies — NOT a hard deny-all like
+   `clients` was; there's a real anon SELECT policy, `orders_recent_read`.
+2. Had her pull that policy's actual `USING` expression:
+   `created_at > (now() - '02:00:00'::interval)` — anon can only read an
+   order that's less than 2 HOURS old.
+
+**Root cause**: `applyClientPick()`'s `ORDER_TRELLO_CARDS` map (added this
+session, to let the companion form post its submit-time Trello heads-up
+comment) was built from a direct `orders?id=in.(...)&select=id,trello_card_ids`
+REST read. That 2-hour policy is presumably there for the main IO form's own
+immediate post-submit flow (re-reading an order right after creating it),
+not for a companion-form edit request against an order that's obviously
+already been live for a while. Every real order a companion-form request
+would ever target is older than 2 hours, so this read has silently returned
+zero rows this ENTIRE time — not a bug introduced by anything today, and not
+the "stale browser tab" explanation given earlier for a similar-sounding
+complaint ("I won't see the requested a change comments") — that theory was
+wrong, or at least incomplete; this RLS gap explains it fully on its own,
+tab freshness aside.
+
+**Fix**: same pattern as `admin_get_client_names`'s fix earlier this
+session — replaced the direct REST read with a new `SECURITY DEFINER` RPC,
+`companion_get_order_trello_cards(p_group_id, p_client_id, p_order_ids)`,
+scoped to the group/client the requester already legitimately has (the
+same client they picked via `loadClientRoster()`), matching the trust
+boundary `companion_submit_request` itself already checks, rather than
+depending on `orders`'s own RLS for an anon caller. Verified: `node --check`.
+Not yet live-tested — next step is Claire re-submitting the Test Business 9
+batch and confirming the IO card actually gets the "requested to change N
+items" comment this time.
