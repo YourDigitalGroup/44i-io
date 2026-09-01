@@ -24656,3 +24656,31 @@ live inside the actual WordPress iframe — Claire, worth a real click-
 through there to confirm 200px reads as the right offset once the modal
 appears (adjust the number if it lands too high/low relative to where
 visitors are typically scrolled when they open it).
+
+## Step 1's "Campaign Dates" card renamed to "IO Details" (2026-09-02)
+
+Claire: "we need to update this part of step one to reference IO not
+campaign since we moved campaign dates per service." This card has held no
+actual campaign date range since the 2026-08-06 change that moved Start/
+Length/End to per-tactic fields on Step 2 — it only ever holds the IO's own
+signing date and a notes field now, so the "Campaign Dates" header and
+"Campaign Notes" label were stale leftovers from before that change.
+
+**Fix**: card header "Campaign Dates" → "IO Details"; field label
+"Campaign Notes" → "IO Notes"; placeholder text "Any notes about campaign
+dates, start conditions, or special scheduling..." → "Any notes about the
+IO date, start conditions, or special scheduling...". Display text only —
+the field's id/db column (`campaign-notes`/`campaign_notes`) is untouched,
+so no other code, RPC, or reporting query needs to change.
+
+**Scoped to Step 1 only, per what Claire asked for** — "Campaign Notes" as
+a label still shows in a few other places that read this same field: the
+Trello card description, the Step 3 Review screen, the printed/signed IO
+PDF, and Admin's Order Detail view. Left those as-is since she scoped this
+specifically to the Step 1 card; flagging in case she wants the same
+rename carried through everywhere else this field's label appears, for
+consistency.
+
+**Verified**: `node --check` on the extracted inline script; grepped for
+remaining "Campaign Dates" text — the only hits left are in code comments
+(historical context about where dates used to live), nothing user-facing.

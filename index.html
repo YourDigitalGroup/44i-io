@@ -892,12 +892,24 @@ select.qty-field{background-image:none;padding-right:3px}
     </div>
 
     <div class="card">
-      <div class="card-head"><h3>Campaign Dates</h3></div>
+      <!-- Header + labels renamed from "Campaign Dates"/"Campaign Notes" to
+           "IO Details"/"IO Notes" (2026-09-02, per Claire — "we need to update
+           this part of step one to reference IO not campaign since we moved
+           campaign dates per service"): this card hasn't held any actual
+           campaign date range since the 2026-08-06 change described below, just
+           the IO's own signing date and a notes field, so "Campaign" in the
+           header/label was stale. Field id/db column (campaign-notes/
+           campaign_notes) intentionally left as-is — this is a display-text-only
+           rename, not a data model change; every other spot reading that same
+           field (Trello card description, Review screen, printed IO PDF, Admin
+           Order Detail) still shows it labeled "Campaign Notes" and wasn't
+           touched, since Claire scoped this to the Step 1 card specifically. -->
+      <div class="card-head"><h3>IO Details</h3></div>
       <!-- Campaign Start/Length/End moved to per-tactic fields on Step 2 (2026-08-06,
            per the AM/Claire: clients often start different tactics at different
            times within the same IO, so one shared date range no longer fit) — every
            selected service on Step 2 gets its own Start/Length/End instead. IO Date
-           (the signing date, not a campaign date) and Campaign Notes stay here. -->
+           (the signing date, not a campaign date) and IO Notes stay here. -->
       <div class="field-group">
         <div>
           <label class="lbl" for="io-date">IO Date</label>
@@ -906,8 +918,8 @@ select.qty-field{background-image:none;padding-right:3px}
       </div>
       <div class="field-group">
         <div>
-          <label class="lbl" for="campaign-notes">Campaign Notes</label>
-          <textarea id="campaign-notes" rows="2" placeholder="Any notes about campaign dates, start conditions, or special scheduling..."></textarea>
+          <label class="lbl" for="campaign-notes">IO Notes</label>
+          <textarea id="campaign-notes" rows="2" placeholder="Any notes about the IO date, start conditions, or special scheduling..."></textarea>
         </div>
       </div>
       <!-- Hidden derived summary (2026-08-06) — kept in sync by updateDerivedCampaignSummary()
