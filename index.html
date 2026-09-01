@@ -699,17 +699,23 @@ select.qty-field{background-image:none;padding-right:3px}
    backdrop-filter degrades gracefully (Safari/Chrome/Edge/Firefox all
    support it; on a browser without it, this is simply an invisible,
    click-catching backdrop with no blur -- never a dark/colored one). */
-/* align-items:flex-start + padding-top:200px (2026-09-02, per Claire's web
-   developer): with the WordPress embed's large, non-scrolling iframe, a
-   modal vertically CENTERED (align-items:center) lands at the vertical
-   midpoint of the iframe's full height, not wherever the visitor is
-   actually scrolled to -- easily off-screen. Anchoring it near the TOP of
-   the iframe instead is a much closer match to where the visitor's
-   scroll position actually is in practice (they generally scroll an
-   intake link/button to near the top of their view before clicking it),
-   without needing the postMessage bridge's cooperating listener on the
-   WordPress side to be in place at all. */
-.modal-backdrop{position:fixed;inset:0;background:transparent;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;align-items:flex-start;justify-content:center;padding:200px 20px 20px}
+/* position:fixed -> position:absolute, top offset dropped from CSS in favor
+   of JS positioning (2026-09-02, per Claire — the flex-start/200px-top fix
+   worked near the top of the page but not further down). Root cause: the
+   WordPress embed is one large, non-scrolling iframe (the outer WordPress
+   page scrolls through the whole tall form, not the iframe itself), so
+   BOTH `position:fixed` centered AND a fixed CSS top-offset are anchored
+   to a single point in the iframe's own coordinate space, not to wherever
+   the visitor is actually scrolled to on the outer page — a fixed 200px
+   offset only happens to land correctly when the visitor is near the top.
+   `position:absolute` (rather than `fixed`) lets the backdrop span the
+   FULL scrollable page (sized in JS, see positionModalNearLastClick()
+   below) and scroll naturally WITH the page, while the modal box itself
+   gets positioned at the vertical spot of the visitor's own most recent
+   click — which is wherever they actually are on the page right now,
+   regardless of how far down that is. No longer flex-centered; the box's
+   own `top` is set directly in JS. */
+.modal-backdrop{position:absolute;top:0;left:0;right:0;background:transparent;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;justify-content:center;padding:0 20px}
 /* box-shadow removed (2026-09-02, per Claire), then the backdrop itself
    went fully transparent right after (see .modal-backdrop above) -- with
    neither a shadow nor a dimmed/tinted backdrop left, the white box had
@@ -2301,6 +2307,7 @@ function promptHosting(serviceId, pageType) {
     ? `<label><input type="radio" name="hosting-pkg" value="ecomm" onchange="onHostingPkgChange('ecomm')"/> ${fmt(fee)} E-Commerce Hosting (${days}-day start)</label>`
     : `<label><input type="radio" name="hosting-pkg" value="${pageType}" onchange="onHostingPkgChange('${pageType}')"/> ${fmt(fee)} Standard Hosting (${days}-day start)</label>`;
   document.getElementById('hosting-modal').style.display = 'flex';
+  positionModalNearLastClick('hosting-modal');
   notifyParentToScrollToModal('hosting-modal');
 }
 
@@ -2584,6 +2591,35 @@ function notifyParentToScrollToModal(backdropId) {
   } catch (e) { /* cross-origin postMessage failures are non-fatal here */ }
 }
 
+// Tracks the vertical position of the visitor's most recent click, captured
+// in the capture phase so it's already known by the time any button's own
+// onclick handler runs and opens a modal (2026-09-02, per Claire — the
+// flex-start/200px-top CSS fix only worked near the top of the page, not
+// further down, since it anchors to a single fixed point regardless of
+// where the visitor actually is). `e.clientY + window.scrollY` gives the
+// click's position within the full document rather than just the visible
+// slice — correct whether or not this page's own window ever scrolls
+// (adds 0 when it doesn't, which is the WordPress embed's actual setup).
+let lastClickDocY = null;
+document.addEventListener('click', e => { lastClickDocY = e.clientY + window.scrollY; }, true);
+
+// Positions a modal at the vertical spot of the visitor's last click,
+// instead of a fixed spot in the page — the actual fix for modals landing
+// off-screen in the WordPress iframe embed (see .modal-backdrop's own CSS
+// comment for the full background). Also sizes the backdrop to the FULL
+// scrollable page height: `position:absolute` with only top/left/right set
+// needs an explicit height here, since body's own height is auto/content-
+// driven and would otherwise resolve against just the visible viewport.
+function positionModalNearLastClick(backdropId) {
+  const backdrop = document.getElementById(backdropId);
+  const box = backdrop && backdrop.querySelector('.modal-box');
+  if (!backdrop || !box) return;
+  backdrop.style.height = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight) + 'px';
+  box.style.position = 'relative';
+  const y = lastClickDocY != null ? Math.max(20, lastClickDocY - 40) : 200;
+  box.style.top = y + 'px';
+}
+
 // ── INTAKE MODAL ──────────────────────────────────────────────
 
 function intakeBackdropClick(e) {
@@ -2636,6 +2672,7 @@ function openIntakeForService(serviceId, forceEdit, storageKeyOverride) {
     document.getElementById('intake-help-btn').style.display = 'none';
     document.getElementById('intake-save-btn').style.display = 'none';
     document.getElementById('intake-modal').style.display = 'flex';
+    positionModalNearLastClick('intake-modal');
     notifyParentToScrollToModal('intake-modal');
     return;
   }
@@ -2643,6 +2680,7 @@ function openIntakeForService(serviceId, forceEdit, storageKeyOverride) {
   // Show full form
   showFullIntakeForm(serviceId, cfg, formDef, existing);
   document.getElementById('intake-modal').style.display = 'flex';
+  positionModalNearLastClick('intake-modal');
   notifyParentToScrollToModal('intake-modal');
 }
 
@@ -6159,7 +6197,7 @@ async function submitIO() {
 **City:** ${document.getElementById('city').value}
 **AE:** ${aeName}${aeTrello ? ' (' + aeTrello + ')' : ''}
 **KOC:** ${kocDate||'—'}${kocTime ? ' at ' + kocTime : ''}${calUrl ? '\nKOC Calendar: ' + calUrl : ''}
-**Campaign Notes:** ${document.getElementById('campaign-notes').value||'None'}
+**IO Notes:** ${document.getElementById('campaign-notes').value||'None'}
 
 **Services Sold:**
 ${servicesDesc}
@@ -7573,7 +7611,7 @@ function buildIoDocumentHtml() {
     <div class="cr-value">${kocDisplay}</div>
   </div>
   <div>
-    <div class="cr-label">Campaign Notes</div>
+    <div class="cr-label">IO Notes</div>
     <div class="cr-value">${campNotes || '—'}</div>
   </div>
 </div>
