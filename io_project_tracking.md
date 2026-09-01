@@ -23503,3 +23503,141 @@ after the reject RPC succeeds (with the AM's optional rejection note
 included in the email) — independent of the Trello/PDF follow-up steps,
 same "the real change already happened, this is just a courtesy" posture
 as everything else in that function. Verified via `node --check`.
+
+## Trello card due date never followed end_date changes (2026-09-01)
+
+Claire, live-testing the companion form: "It also didn't update the due
+date if the end date was changed." A card's Trello title had just been
+made to track variant/module edits (previous entry above this session),
+but its due date stayed frozen forever regardless of what any later edit
+or renewal did to that service's end date.
+
+**Root cause**: `index.html` (main IO form) already has this exact
+mechanism — `campaignDueFields(endDate)` returns `{due:
+'${endDate}T17:00:00.000Z', dueReminder: 14400}` (a native Trello due-date
+reminder, 10 days ahead, set at card-creation time) — but it only runs
+when a card is first created or copied. Nothing in `admin/index.html`
+had ever ported this, so `admin_edit_order_line_item` would happily
+update a line item's `end_date` in Postgres while the Trello card kept
+whatever due date (or none) it was created with.
+
+**Fix**: ported `adminCampaignDueFields(endDate)` into `admin/index.html`
+(identical formula/reminder window). Renamed the existing
+`adminRenameTacticCard()` (which only ever set `name`) to
+`adminUpdateTacticCard(orderId, serviceId, item, {renameTitle})` — one
+`trello_update_card` call that always includes the due fields whenever
+`item.end_date` is set, and includes `name` only when `renameTitle` is
+true (a title change and a due-date change land on the same card, so
+one call handles both instead of two). Wired into every place a line
+item's `end_date` can change:
+- `adminSaveExtraEditFields()` (AM-triggered direct Edit's date/variant/
+  module panel) — trigger condition extended from
+  `'tactic_variant' in extraFields || 'module_names' in extraFields` to
+  also include `'end_date' in extraFields`.
+- `adminApprovePendingRequestClick()`'s `edit` branch (companion-form
+  approval) — same trigger condition extended the same way.
+- `adminApprovePendingRequestClick()`'s `renew` branch (companion-form
+  renewal approval) — previously had NO card-update call at all for
+  renewals; added one unconditionally, since a renewal always moves
+  `end_date`.
+- `adminConfirmRenewal()` (AM-triggered direct Renew, a separate surface
+  from companion-form renewal approval) — same gap, same fix.
+
+Verified: `node --check` on the extracted script, plus a standalone Node
+harness exercising the payload-building logic across 4 cases (end_date-
+only, rename-only, both, neither) — confirmed the due/dueReminder/name
+fields come out correct in each combination and that the "neither
+changed" case correctly skips the Trello call rather than sending an
+empty update. Not yet live-tested against a real Trello card — next step
+is Claire editing/renewing a service's end date and checking the card's
+due date updates.
+
+## Batch grouping for companion-form submissions (2026-09-01)
+
+Claire, after testing several edits submitted at once through the companion
+form and then approving them one by one: "I see comments go to both the IO
+and each individual card that was a lot of notifications. If all of the
+edits were submitted through the companion form at the same time could we
+have them grouped together so there is just one notification per companion
+form submission?" Her design, confirmed via two follow-up AskUserQuestions:
+group Pending Requests by the original SUBMISSION (date submitted, client,
+expand to see every item requested in it), still approve/reject each item
+individually, but **hold the notification until the whole submission is
+resolved**, then send it as one combined notification — and, confirmed in
+this session, that includes the resolution EMAIL back to the AE, not just
+the Trello comment ("confirm this will also update the emailing so there is
+just one email back for each submission instead of one per service
+approval").
+
+**What changed**:
+
+- `pending_requests` gets two new columns: `submission_batch_id uuid` (one
+  id per companion-form Submit click, generated client-side via
+  `crypto.randomUUID()` and passed to every item in that submission) and
+  `batch_comment_posted_at timestamptz` (an atomic claim flag — see below).
+  A row with no `submission_batch_id` is a legacy request submitted before
+  this shipped.
+- `companion_submit_request` takes a new `p_submission_batch_id` param
+  (nullable, default null, so it's backward-compatible) and stores it.
+  `companion/index.html`'s `submitRequests()` generates one id per Submit
+  click and passes it on every `companion_submit_request` call in that
+  batch.
+- New `admin_claim_batch_for_comment(p_name, p_pw, p_batch_id) returns
+  boolean` RPC: checks whether any item in the batch is still `pending`
+  (returns false if so), otherwise atomically flips `batch_comment_posted_at`
+  from null to `now()` for every row in the batch and returns true only if
+  its own UPDATE actually changed rows. This is the concurrency guard —
+  if two AMs (or one AM double-clicking) resolve the last two items of a
+  batch at nearly the same instant, only ONE of their calls can win the
+  UPDATE and get `true` back; the other correctly gets `false` and does
+  nothing. Postgres's own row locking on the UPDATE makes this safe without
+  any extra locking logic.
+- `admin/index.html`'s `renderAdminPendingRequests()` now groups rows by
+  `submission_batch_id` (or the row's own id, as a singleton batch, for a
+  legacy null-batch-id row) — one card per submission showing client name,
+  item count, and an overall PENDING/RESOLVED badge, expandable (click to
+  toggle) to the individual items with their own Approve/Reject buttons,
+  same as before.
+- `adminApprovePendingRequestClick()`/`adminRejectPendingRequestClick()`
+  branch on whether the resolved row has a `submission_batch_id`:
+  - **No batch id (legacy)**: unchanged, byte-for-byte — immediate
+    per-item Trello comment, PDF reattach, and resolution email, exactly
+    as before this feature. Nothing about resolving Claire's own
+    already-submitted test requests changes.
+  - **Has a batch id**: the local order-cache update and the card's own
+    title/due-date refresh (via `adminUpdateTacticCard()`, from the
+    previous fix) still happen immediately per item — that's the card
+    staying data-accurate, not a "notification" in the sense Claire meant.
+    But the actual notification (Trello comment, PDF reattach, resolution
+    email) is deferred: after refreshing `ALL_PENDING_REQUESTS`, a new
+    `finalizeBatchIfReady(batchId)` calls `admin_claim_batch_for_comment`;
+    if it returns true, it gathers every item in the batch, builds one
+    line per item (`buildBatchResolutionLine()`, reusing the exact
+    `describeRequestedChanges()` wording already shown in the Pending
+    Requests list so the notification always matches what was displayed),
+    groups those lines by which Trello card(s) they touch (an item's IO
+    card + its own tactic card — the same two-card targeting every other
+    Trello step here already uses), and posts ONE combined comment per
+    card covering every item that touched it. One revised-IO PDF gets
+    generated and reattached per AFFECTED ORDER (not per item) for any
+    order with at least one approved edit/renew. Finally, one combined
+    resolution email goes to the submitting AE
+    (`notifyRequesterOfBatchResolution()`) listing every item and its
+    outcome (approved/rejected, with any AM note), replacing what would
+    otherwise be `notifyRequesterOfResolution()` firing once per item.
+
+**Verified**: `node --check` on both `admin/index.html` and
+`companion/index.html`'s extracted scripts. A standalone Node harness
+covering: (1) batch grouping correctly separates a real
+`submission_batch_id` group from a legacy null-batch-id row (which becomes
+its own singleton); (2) `buildBatchResolutionLine()` produces the right
+emoji/wording for an approved edit, a rejected cancel, and an approved
+renew; (3) the card/PDF aggregation logic correctly collapses two items on
+the same order that share an IO card into ONE comment with two lines on
+that card, still gives each item's own tactic card its own (correctly
+singular) line, and only marks an order as needing a PDF reattach when it
+has an approved edit/renew — a rejected cancel on its own doesn't trigger
+one. Not yet live-tested end-to-end — next step is Claire submitting a
+multi-service batch, resolving all items, and confirming exactly one
+Trello comment lands on each touched card and exactly one resolution email
+arrives, instead of one per item.

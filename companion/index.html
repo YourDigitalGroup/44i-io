@@ -729,6 +729,11 @@ async function submitRequests() {
   btn.disabled = true; btn.textContent = 'Submitting...';
 
   const aeEmail = AE_ROSTER.find(a => a.name === aeName)?.email || '';
+  // One id per Submit click, shared by every item in this batch (2026-09-01,
+  // per Claire -- "could we have [notifications] based on the submission" --
+  // Admin groups Pending Requests by this id and holds the Trello comment/
+  // resolution email until every item sharing it has been approved/rejected).
+  const submissionBatchId = crypto.randomUUID();
   const submitted = [];
   try {
     for (const p of payloads) {
@@ -737,7 +742,8 @@ async function submitRequests() {
         body: JSON.stringify({
           p_group_id: selectedGroup.id, p_client_id: selectedClientId, p_order_id: p.order_id,
           p_service_id: p.service_id, p_action: p.action, p_requested_changes: p.requested_changes,
-          p_requested_by: aeName, p_requested_by_email: aeEmail
+          p_requested_by: aeName, p_requested_by_email: aeEmail,
+          p_submission_batch_id: submissionBatchId
         })
       });
       submitted.push(p);
