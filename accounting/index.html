@@ -136,6 +136,26 @@
         <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)" aria-label="Filter by group" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer">
           <option value="">All Groups</option>
         </select>
+        <!-- Client search + Status filter (2026-09-02, per Claire -- "if you
+             are looking for something specific like a client... you just
+             have to scroll" / "make it quick at the beginning of the month
+             to find what needs to be confirmed and what is pending without
+             needing to scroll"). Both are pure DISPLAY filters, unlike the
+             Group filter above -- they narrow which rows the TABLE shows
+             but deliberately never touch the stat tiles (Claire: "I don't
+             want it to change any of the totals"), and both default back to
+             "show everything" (empty search / All Statuses) -- see
+             renderAccountingDashboard()'s own comment for exactly where the
+             totals vs. table split happens. -->
+        <input type="text" id="accounting-client-search" oninput="accountingSetClientSearch(this.value)" placeholder="Search client…" aria-label="Search by client name" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--text);background:#fff;font-size:11.5px;width:160px"/>
+        <select id="accounting-status-filter" onchange="accountingSetStatusFilter(this.value)" aria-label="Filter by status" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer">
+          <option value="">All Statuses</option>
+          <option value="needs">Needs Confirmation</option>
+          <option value="pending">Pending</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="paused">Paused</option>
+          <option value="external">SSH Billing</option>
+        </select>
         <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
         <button onclick="accountingOpenBulkMatchForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Match</button>
         <button onclick="accountingOpenBulkImportForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
@@ -328,6 +348,11 @@ let ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} }; // service_id -> p
 let ACCOUNTING_SPEND_TIER_TOP_OVERRIDE = { group: {} }; // group_id|service_id -> pct -- a group's override of a tiered service's TOP bucket only (e.g. SEM's "$5,000+" tier), 2026-08-27 per Claire
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
+// Pure display filters (2026-09-02) -- unlike accountingGroupFilter above,
+// these never touch the stat tiles, only which rows the table shows. Both
+// default to "show everything" (empty string).
+let accountingClientSearch = '';
+let accountingStatusFilter = '';
 let ACCOUNTING_EXPANDED_SPLITS = new Set(); // rollup keys currently expanded -- always starts empty on load
 let accountingSelectedLineId = null; // drives the per-campaign detail card below the stat tiles
 
@@ -1401,6 +1426,41 @@ function accountingSetGroupFilter(groupName) {
   accountingSelectedLineId = null;
   renderAccountingDashboard();
 }
+// Client search + Status filter (2026-09-02) -- deliberately do NOT close
+// the open detail card the way month/group changes do (accountingShiftMonth()/
+// accountingSetGroupFilter() above): narrowing what's visible while typing
+// a search or picking a status doesn't change what's IN the data the way a
+// month/group switch does, so there's no reason to force-close whatever a
+// user was already looking at.
+function accountingSetClientSearch(value) {
+  accountingClientSearch = value;
+  renderAccountingDashboard();
+}
+function accountingSetStatusFilter(value) {
+  accountingStatusFilter = value;
+  renderAccountingDashboard();
+}
+// Single source of truth for a row's status CATEGORY, shared between the
+// status pill functions above and the new Status filter below, so filtering
+// by "Needs Confirmation" always matches exactly the rows actually showing
+// that pill -- same priority order (Billed Externally > Pending > Paused >
+// Confirmed/Needs) as accountingLineStatusPill()/accountingRollupStatusPill().
+// A rollup's own "X of Y confirmed" partial state (visually the same
+// "needs"-colored pill) categorizes as 'needs' here too.
+function accountingRowStatusCategory(r) {
+  if (r.isRollup) {
+    if (r.children.every(c => c.line.billed_externally)) return 'external';
+    if (r.children.every(c => c.line.status === 'pending')) return 'pending';
+    if (r.children.every(c => c.paused)) return 'paused';
+    if (r.confirmedCount === r.totalCount) return 'confirmed';
+    return 'needs';
+  }
+  if (r.line.billed_externally) return 'external';
+  if (r.line.status === 'pending') return 'pending';
+  if (r.paused) return 'paused';
+  if (r.confirmed) return 'confirmed';
+  return 'needs';
+}
 // Real gap found live (2026-08-11, Claire cross-checking against her revenue
 // spreadsheet): every "w/Visits" tactic came out wrong -- e.g. Geofencing is
 // 45% normally but 45.59% with Offline Visits Tracking. This isn't a new
@@ -2112,9 +2172,28 @@ function renderAccountingDashboard() {
 
   accountingRenderDetailCard();
 
+  // Client search + Status filter narrow what the TABLE shows -- computed
+  // from `rows` (the same group/month-filtered set the stat tiles above
+  // already used), applied AFTER those tiles are built so neither filter
+  // can ever change a total (2026-09-02, per Claire: "I don't want it to
+  // change any of the totals... I always want the default to be to show
+  // all service lines that are ordered"). Both default to empty (show
+  // everything), matching that "always show all by default" requirement.
+  const visibleRows = rows.filter(r => {
+    const search = accountingClientSearch.trim().toLowerCase();
+    if (search && !(r.line.client_name || '').toLowerCase().includes(search)) return false;
+    if (accountingStatusFilter && accountingRowStatusCategory(r) !== accountingStatusFilter) return false;
+    return true;
+  });
+
   const wrap = document.getElementById('accounting-table-wrap');
   if (!rows.length) {
     wrap.innerHTML = '<p style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No campaigns with a budget entered for this month yet.</p>';
+    fitAccountingTableHeight();
+    return;
+  }
+  if (!visibleRows.length) {
+    wrap.innerHTML = '<p style="text-align:center;padding:30px;color:var(--muted);font-size:13px">No campaigns match your search/filter.</p>';
     fitAccountingTableHeight();
     return;
   }
@@ -2126,7 +2205,7 @@ function renderAccountingDashboard() {
   // table (2026-08-11, per Claire) -- falls back to the light neutral band
   // if a group has no brand_color set.
   const byGroup = new Map();
-  rows.forEach(r => {
+  visibleRows.forEach(r => {
     const g = r.line.group_name || '(No Group)';
     if (!byGroup.has(g)) byGroup.set(g, { color: r.line.group_color, rows: [] });
     byGroup.get(g).rows.push(r);

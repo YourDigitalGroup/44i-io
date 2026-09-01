@@ -24015,3 +24015,53 @@ longer says "Ongoing."
 strategist portal," clarified as a naming-convention issue — asked her
 for the exact before/after wording to trace which naming function is (or
 isn't) being applied before making any change, rather than guessing.
+
+## New: client search (both portals) + status filter (Accounting only) (2026-09-02)
+
+Claire: "if you are looking for something specific like a client... you
+just have to scroll." Followed by a second ask specifically for
+Accounting: a status filter to quickly find what needs confirming/is
+pending at the start of the month, with two explicit constraints —
+**never change any of the totals**, and **always default to showing
+everything**.
+
+**Client search** — added to both Strategist and Accounting. A plain
+text input, case-insensitive substring match against `client_name`,
+filtering the already-loaded in-memory data (no new fetch/RPC). In
+Accounting it sits alongside the existing Group filter; in Strategist it
+sits alongside the existing Group/Pacing filters and status tabs.
+Strategist's status-tab counts (`renderStrategistDashboard()`'s own
+`counts` loop) also respect the search, matching this file's own existing
+rule that a tab's badge count must always match what actually renders
+when clicked.
+
+**Status filter (Accounting only)** — Strategist already has this
+covered by its own status tabs (Setup/Active/etc.), so this specifically
+fills the gap in Accounting, which only had a Group filter before. New
+`accountingRowStatusCategory(r)` is the single source of truth for a
+row's status bucket (`external`/`pending`/`paused`/`confirmed`/`needs`),
+extracted with the exact same priority order `accountingLineStatusPill()`/
+`accountingRollupStatusPill()` already use, so filtering by "Needs
+Confirmation" always matches exactly the rows actually showing that pill
+— including a rollup's partial "2 of 3 confirmed" state, which
+categorizes as `needs` since it's visually the same pill color.
+
+**Keeping totals untouched** — both new filters apply strictly AFTER
+`renderAccountingDashboard()`'s stat-tile totals are computed from the
+group/month-filtered `rows`. A separate `visibleRows = rows.filter(...)`
+is what the TABLE (and its own Total row) actually renders — the 5 stat
+tiles at the top never see the narrowed set at all. Worth noting for
+Claire: the table's own `<tfoot>` Total row also stays a full total,
+same as the tiles above it — filtering to just "Needs Confirmation," for
+example, will show a Total row that doesn't match the sum of the visible
+rows underneath it, which is the deliberately correct behavior per "I
+don't want it to change any of the totals," just worth being aware the
+Total row is included in that, not only the 5 tiles.
+
+**Verified**: `node --check` on both files. Two standalone harnesses: (1)
+Accounting's status categorization matches the pill priority across 6
+cases (confirmed/needs/pending/paused/external/partial-rollup), and
+client search + status filter work correctly alone and combined; (2)
+Strategist's client search matches case-insensitively and correctly
+shows everything when empty. Not yet live-tested — next step is Claire
+trying both in the real portals.
