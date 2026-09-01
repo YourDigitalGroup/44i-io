@@ -23758,3 +23758,51 @@ depending on `orders`'s own RLS for an anon caller. Verified: `node --check`.
 Not yet live-tested — next step is Claire re-submitting the Test Business 9
 batch and confirming the IO card actually gets the "requested to change N
 items" comment this time.
+
+## Pending Requests list: show before → after for every field, not just the new value (2026-09-02)
+
+Claire, looking at a real pending request card ("Facebook/IG Ads — Edit:
+new month-by-month total $3,000.00"): "This doesn't really give a lot of
+detail... The AM should be able to fully understand what is being
+requested at a glance." The existing `describeRequestedChanges()` only
+ever showed the REQUESTED new value — no current value to compare against,
+and for a month-by-month budget change, only a bare total with no
+per-month breakdown at all.
+
+**Fix**: every field now shows CURRENT → REQUESTED, looked up from the
+order's own live `line_items` via a new `adminLookupCurrentItem(r)` helper
+(`loadAdminPendingRequests()` now also ensures every referenced order is
+loaded via `adminFindOrderForRequest()`, not just the client/service
+names, so this lookup never needs its own separate fetch at render time).
+Split into two layers sharing one `describeFieldChange(field, value, item,
+html)` function:
+- `describeRequestedChanges(r)` — plain text, single line per field (e.g.
+  `End date: Jan 2, 2027 → Jun 1, 2027`, `Variant: "X" → "Y"`, `Modules:
+  Newsletter, Calendar (+Calendar, −Testimonial)`). Kept plain text
+  specifically because this exact string is ALSO reused verbatim in the
+  batch-resolution Trello comment (`buildBatchResolutionLine()`) — HTML
+  tags would show up literally in a Trello comment. For `month_budgets`,
+  this stays a one-line current-total → new-total (unchanged shape from
+  before, just now genuinely "current" instead of nothing at all).
+- `describeRequestedChangesDetailed(r)` — richer HTML version for the
+  Admin Pending Requests list ONLY. Same per-field text, except
+  `month_budgets` gets a full per-month breakdown: bolded total line, then
+  one row per month that ACTUALLY changes amount or paused state (a month
+  with no change is silently omitted, so a 12-month renewal touching only
+  2 months doesn't bury the real information), each showing
+  `Mon YYYY: $old → $new`, with `(removed)` for a month dropped from the
+  new range and `—` for one newly added.
+- Cancel/Renew also gained current-value context: cancel now shows
+  "(currently running through {current end date})" alongside the
+  effective date; renew now shows "{current end date} → {new end date}"
+  instead of just the new date alone.
+
+**Verified**: `node --check`. A standalone harness extracting the real
+functions and testing: the exact Facebook/IG Ads month-by-month scenario
+from Claire's screenshot (unchanged months correctly omitted, changed and
+newly-added months shown correctly, both plain-text total and HTML detail
+match); date, variant, module (added/removed diff), quantity, and flat
+dollar-amount fields all show correct current → requested pairs; cancel
+and renew both surface the current end date for context. Not yet
+live-tested — next step is Claire reloading Pending Requests and
+confirming the richer detail renders correctly for a real request.
