@@ -23373,6 +23373,74 @@ confirming both a variant and a module case now produce the identical
 "SectionLabel: detail" format, and the no-selection-yet case correctly
 falls back to the plain catalog label.
 
+## Companion form notification redesign, ahead of end-to-end test (2026-08-31)
+
+Claire wanted to test the whole companion form flow live and asked for
+a query to check whether the Claude Test Group's AM would get an email
+first, "so this stays an internal test." That surfaced three real,
+related gaps:
+
+1. **Ran the query she asked for** — `groups` row for `ctg` showed
+   `io_recipient: null`, `am_email: james@44i.com`. Confirmed
+   `notifyAm()` never reads `am_email` at all — only `io_recipient` —
+   so nothing would have been emailed for this group's test regardless.
+2. Claire: "I thought we set it up to send an email to the AM." Checked
+   the MAIN IO form's own Step 6 submission email too — same design,
+   not companion-specific: `io_recipient`-only, `am_email` never used
+   anywhere in notifications, in either file. A longstanding gap, not a
+   regression from today's work.
+3. Claire's correction: **`io_recipient` is for ADDITIONAL group
+   members — the AM (`am_email`) should always be included, and the
+   submitting AE should always get their own copy too.** She also
+   flagged that the companion form's AE field allowed free-typing a
+   name (no roster match required), meaning `aeEmail` could silently
+   end up blank with no way to reach the submitter at all. And: since
+   there's an AM-approval step, does anything reach Trello before
+   approval, as a backup to email? Answer at the time: no — only the
+   post-approval comment existed; a submitted-but-not-yet-approved
+   request had no signal anywhere outside the Admin Pending Requests
+   tab itself.
+
+**Fixed all three, per her explicit direction** (this session's scope
+was companion form only — the main IO form's own Step 6 email has the
+identical `io_recipient`-only gap but wasn't touched, flagged instead
+for a separate decision):
+
+- `notifyAm()` rewritten: `am_email` is now always the first recipient
+  (not a fallback), `io_recipient` names are ADDED on top (deduped),
+  then the AE's own email on top of that — matching Claire's stated
+  rule exactly rather than the old "io_recipient primary, AE only if
+  lucky" logic.
+- **AE picker is now roster-only** — per Claire: "Don't allow someone
+  to free type a name, they should have to select one from a
+  dropdown." Removed the free-text "Your Name" input and the
+  "— New AE —" fallback option entirely; `#ae-name` is now a hidden
+  field driven only by picking a real roster entry. A group with no
+  roster shows an explicit "No AEs found... check with your AM" note
+  instead of falling back to typing. Reasoned this is safe specifically
+  for the companion form (unlike the main IO form's own AE picker,
+  which correctly keeps its free-text fallback) because a Cancel/Edit/
+  Renew request is always against an EXISTING order, which was itself
+  placed by an already-rostered AE — there's no legitimate "brand-new
+  AE" case here the way there is for a first-time IO submission.
+  Guarantees `aeEmail` is always resolvable from the roster for a real
+  submission, closing the "silently blank AE email" gap.
+- **New `postSubmitTrelloComments()`** — posts a "📝 {AE} requested to
+  {action} {service} — awaiting AM approval" comment to the relevant
+  card(s) the MOMENT a request is submitted, not just once approved.
+  Deliberately different wording from the existing post-approval
+  comment so a pending notice never reads like an already-applied
+  change. Needed two new lookups added to `applyClientPick()`'s
+  existing catalog fetch: `workflow`/`accounting_label` per service
+  (to resolve which Trello card to comment on and what to call it), and
+  a new `orders?select=id,trello_card_ids` fetch keyed by order_id
+  (`ORDER_TRELLO_CARDS`) since a client can have more than one order.
+
+Verified: `node --check`, plus a standalone harness confirming the new
+recipient-building logic against three scenarios (AM + AE only, AM
+already in io_recipient, no AM on file) — AM always present, no
+duplicates, io_recipient correctly additive rather than primary.
+
 Claire hit `42P13: cannot change return type of existing function` trying
 to run the `companion_get_active_services` update — Postgres won't let
 `CREATE OR REPLACE` change a function's OUT columns. Gave her a
