@@ -24321,3 +24321,198 @@ total/list rather than `$NaN`. Not yet visually confirmed as a rendered
 PDF (html2canvas/jsPDF requires a live browser DOM) — Claire, worth
 generating one against a real edited order to confirm the layout reads
 well end-to-end.
+
+## Training decks: fabricated pricing/variant data fixed, readability bug fixed, Staff deck gets a full IO Form section (2026-09-02)
+
+Claire flagged fabricated/wrong numbers baked into the training deck screenshots
+(these decks screenshot the real app via a Playwright mock, so a bad value in the
+mock JSON shows up as literally wrong text in the PNGs, not just slide copy).
+Fixed the mock at the source (`scratchpad/shots/shoot2.py`) and everywhere
+downstream, then re-shot, re-cropped, and rebuilt all three decks.
+
+**1. Fictional geofencing tactic variant.** The mock invented `"3rd Party
+Geofencing"` as a tactic_variant everywhere (IO form, companion form, admin
+renew example, and — found independently while auditing — the Strategist/
+Accounting mock in `shoot_strat_acct.py` too). The real `lt-geo` catalog row's
+`tactic_variants` are `["Location Targeting: Geofencing", "Location Targeting:
+1st Party Addressable"]` (confirmed via Claire's live DB query). Replaced every
+occurrence with `"Location Targeting: Geofencing"` (picked consistently as "the
+selected variant" throughout) and fixed the `tactic_variants` array itself in
+both mock files. Also corrected a line in the AE IO deck's "Common Mistakes"
+slide that referenced "1st Party vs. 3rd Party Geofencing" by name.
+
+**2. Geofencing priced below its own minimum spend.** Real `spend_minimum` for
+`lt-geo` is $1,000/mo; the mock ran it at $900/mo initially and bumped it to
+only $950/mo in an admin "renew" example — both below the service's own stated
+minimum, which is exactly the kind of inconsistency a trained AE would catch.
+Changed the ordered/typed rate to $1,200/mo everywhere (ACTIVE_SERVICES,
+CATALOG, the IO Step 2 form-fill, the companion edit-panel default) and the
+renewal example to $1,300/mo (still above minimum, reads as a believable bump
+from $1,200). Also corrected the mock's own `spend_minimum` field from 500 to
+1000 for internal consistency (not directly visible, but the mock should not
+contradict the real schema). `sma-fb`'s `spend_minimum` had the same 500-vs-
+1000 mock/real mismatch with no visible screenshot impact (its test values,
+$1,200 and $1,800, were already above the real $1,000 minimum either way) —
+corrected the internal field only.
+
+**3. SEO Business Starter priced wrong.** Mock had `seo-bs` recurring at
+$850/mo; the real `default_price` is $199/mo flat. Fixed in ACTIVE_SERVICES,
+CATALOG, and the catalog lookup used by the companion form.
+
+**4. Website Modules used the wrong service id and price.** Mock used
+`"web-mod"` as the id everywhere; the real id is `"w-module"` (renamed
+throughout `shoot2.py`, including the `tr[data-id=...]` selector — grepped
+`shoot.py`/`shoot3.py`/`shoot_strat_acct.py`/`repro_modules.py` too, no other
+occurrences found). Real `default_price` per module is $750, not $200; the
+mock's 3 selected modules (Newsletter, Photo/Video, Testimonial) now total
+$2,250 (was $600, implying the wrong $200/module).
+
+**Root cause note**: none of these were guessed at — all four real values came
+from Claire's own live Supabase query pasted into the task, and nothing was
+invented beyond what she supplied.
+
+**Readability bug (found independently, reviewing rendered slides):** two
+`addFramedShot()` calls in `deck2/build_companion.js` (confirmation banner and
+admin pending-requests screenshots) declared a `ratio` that didn't match the
+actual captured file's real pixel aspect ratio — both screenshots were full
+3360×2000 page captures with a lot of surrounding white space, but the code
+assumed a much shorter, already-cropped file. Since `addFramedShot` sizes its
+frame *box* off the declared ratio but then fits the *actual* image inside via
+`sizing:{type:"contain"}`, the mismatch made the real image render tiny and
+letterboxed inside an oversized, mostly-empty frame. While auditing this same
+class of bug I found the companion "AE picker" screenshot (`07_companion_
+ae_picker.png`) had an even worse version of it — declared ratio implied a
+~919px-tall crop, but the file was a full uncropped 2000px screenshot, so the
+rendered image on slide 9 came out very small. All three were re-cropped down
+to just their meaningful content with PIL (matching pixel-for-pixel against
+the old, correctly-cropped versions where those still existed, to confirm the
+crop boundary), saved as new files (`08_companion_confirmation_crop.png`,
+`09_admin_pending_crop.png`, and `07_companion_ae_picker.png` re-saved in
+place), and the `ratio` arguments recomputed from the real cropped dimensions.
+Slide 8's layout was also widened/rebalanced (image column widened from 7.3in
+to 7.6in, y-positions reflowed) since the old 1.1in-tall box for the
+confirmation banner was too short regardless of the ratio fix. Checked slide 4
+(companion services list) for the same opportunity: it's already
+width-constrained rather than height-constrained at its current box size, so a
+tighter crop would render at the *same* scale — no benefit, left unchanged.
+
+**Fragility this surfaces (flagging, not fixing):** `08_companion_confirmation
+.png`, `09_admin_pending.png`, `07_companion_ae_picker.png`, and (per an
+earlier fix) `09_admin_pending_ac.png` and the Staff deck's `11_strategist_
+order_changes_banner_ac.png`/`12_final.png`/`13_final.png`/`14_accounting_
+filters_default_ac.png`/`15_accounting_filters_applied_ac.png` are all
+hand-cropped one-off files with no generator script — every time the
+underlying `shoot2.py`/`shoot_strat_acct.py` mock is re-run, these get
+silently overwritten with un-cropped full-page shots unless someone remembers
+to re-crop them by hand (which is exactly what caused this session's
+readability bug in the first place — a prior crop got clobbered by a later
+mock-data fix). Re-derived all of these this session using PIL against the
+freshly-regenerated full-page screenshots (matching each old crop's content
+pixel-for-pixel to confirm the boundary), but the gap itself isn't closed.
+
+**New Staff deck section:** Claire confirmed she wants a full IO Form
+walkthrough folded into the Staff deck (`deck/build.js`), since most staff have
+never seen it. Added 8 new slides after the Agenda, before "The Big Picture"
+— adapted from the standalone AE IO deck's content/screenshots (now-corrected)
+into the Staff deck's own visual style (`newSlide`/`kicker`/`title`/
+`framedImage` helpers, Cambria/Calibri fonts, its own palette — it does not
+share `deck2/palette.js`): what the IO form is, Step 1 (client info), Step 2
+(browsing services, pricing spend/fixed, exclusivity/KOC/intake), and Step 3
+(order recap, client info & signature). Renumbered the Agenda and every
+subsequent slide's page number (+8 throughout). Caught and fixed two layout
+bugs introduced while building this section during visual QA: the Step-3
+screenshots' `y` position was too high and overlapped the slide title on two
+slides, and the "Order Recap" slide's left-column text boxes were too short
+for their content at the narrower width used in this deck, causing two text
+blocks to visually overlap.
+
+**Verified**:
+- `validate.py` (the pptx skill's structural validator) passes clean on all
+  three rebuilt decks (`AE-IO-Form-Training-2026-09-02.pptx`,
+  `AE-Companion-Form-Training-2026-09-09.pptx`,
+  `Staff-Training-2026-09-02.pptx`).
+- `markitdown | grep -iE "3rd Party Geofencing|web-mod|\$900|\$950|\$850.*
+  Business Starter|\$600.*one-time"` returns zero hits on all three.
+- Converted all three decks to JPEGs (`soffice` → pdf → `pdftoppm`) and
+  visually inspected every slide: no leftover fictional variant name, no
+  leftover $900/$950 near Geofencing (all read $1,200 ordered / $1,300
+  renewal), no leftover $850 near Business Starter (reads $199), no leftover
+  $600/$200 near Website Modules (reads $2,250), no leftover `web-mod` id
+  anywhere visible, the two re-cropped companion slides are now legible
+  full-size screenshots instead of tiny letterboxed insets, and the new Staff
+  deck IO section renders cleanly (after the two layout fixes above) with no
+  remaining overflow/overlap.
+- Final slide counts: AE IO deck 15 slides (unchanged), AE Companion deck 11
+  slides (unchanged), Staff deck 20 slides (up from 12 — the new 8-slide IO
+  section).
+
+**Caveats for Claire**: the Playwright capture script (`shoot2.py`) reaches
+the real app via a local `python3 -m http.server 8791` serving the repo root
+plus a Playwright host-resolver rule mapping the production hostname to
+localhost — this worked fine in this session's environment, but if a future
+session can't reach `io.yourdigitalgroupresources.com:8791`, check that a
+local server is actually running on 8791 from the repo root first. The
+still-unscripted one-off crops listed above (`09_admin_pending_ac.png` and the
+Staff deck's strategist/accounting `_ac`/`_final` files) remain a real
+fragility — worth a small follow-up to write an actual crop step into
+`shoot_strat_acct.py`/`shoot2.py` so a future data fix doesn't silently
+reintroduce stale screenshots the way this one did.
+
+**Addendum — two more issues found during my own independent re-verification
+(same "trust but verify" pattern as the rest of this fix), fixed before
+sending the decks to Claire:**
+
+- The re-shot `06_companion_edit_modules.png` showed BOTH the Geofencing panel
+  and the Website Modules panel expanded simultaneously (the capture script
+  apparently didn't collapse the first panel before opening the second one for
+  this screenshot) — the "Editing Details: A Module-Based Service" slide was
+  showing an extra, irrelevant open panel above its actual subject. Re-cropped
+  to just the Modules panel (`06_companion_edit_modules_crop.png`) and updated
+  `build_companion.js`'s `addFramedShot` ratio to match.
+- The new Staff deck's "Review & Signature: Order Recap" slide had its
+  screenshot positioned at `y: 1.15`, inside the title's own box height —
+  fine for the deck's other Step-3 slide ("Client Info & Signature", whose
+  shorter title clears by then) but this slide's longer title visibly
+  overlapped the screenshot. Moved the image to `y: 1.4` (matching the
+  Step 2 slide's already-safe value) in `deck/build.js`.
+
+Both rebuilt, re-validated (`validate.py` clean), and visually re-confirmed
+before the decks were sent.
+
+## Campaign Intake Forms card showed the wrong service name for a picked variant (2026-09-02)
+
+Claire spotted this live in one of the IO deck's own real-app screenshots
+(Step 3, Campaign Intake Forms card): a Geofencing order with "Location
+Targeting: Geofencing" picked as its variant still listed the intake form
+under the plain, generic "Geofencing or 1st Party Addressable" — while the
+Selected Services Summary table on the exact same screen, just below it,
+correctly showed "Location Targeting: Geofencing". Same order, same screen,
+two different names for the same line — a real live-app bug the training
+screenshot happened to surface, not a training-data problem.
+
+**Root cause**: `updateIntakeStatusCard()` (index.html) built each intake
+form's service-label list by pushing `cfg.label` — the PRODUCT_CONFIG
+entry's plain catalog label — with no awareness of `selected[id].tacticVariant`
+or `.moduleNames` at all. Every other place on the page that names a picked
+service (Selected Services Summary, the printed/signed IO document, Trello
+card titles) goes through `resolveRowDisplayName()` first, which swaps in the
+specific variant/module name when one was picked. This card was simply never
+wired up to that resolver.
+
+**Fix**: `needed[cfg.intake].labels.push(cfg.label)` → `resolveRowDisplayName
+(id, selected[id], cfg.label)` — same resolver, same fallback behavior when no
+variant/modules were picked (still shows the plain label in that case, exactly
+as before). Left the separate per-agent-split intake rows section (a few lines
+below, for the Agent/County Split feature) untouched — that path reads from
+`agentSplitRows`, not `selected`, and none of today's agent-splittable services
+carry tactic_variants, so there's no evidence it has the same gap; flagging
+rather than guessing a fix into code that isn't proven broken.
+
+**Verified**: `node --check` on the extracted inline script. Extracted
+`resolveRowDisplayName`/`resolveVariantDisplayName`/`variantIsAlreadyComplete`
+into a standalone Node harness and reproduced Claire's exact scenario — a
+Geofencing line with `tacticVariant: 'Location Targeting: Geofencing'` now
+resolves to that specific name instead of the generic label, while a line
+with no variant picked still correctly falls back to the plain label
+unchanged (confirms no regression for the ~90% of services that never have
+a variant to begin with).
