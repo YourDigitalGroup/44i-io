@@ -24550,3 +24550,63 @@ the iframe embed itself needs a scroll-into-view fix too.
 one `.modal-backdrop` rule exists (no duplicate to also update). Not
 verified live inside an actual iframe embed — I don't have a way to render
 this page's real production embed from here.
+
+## Added a postMessage bridge so the modal can scroll into view in the WordPress iframe embed (2026-09-02)
+
+Follow-up to the backdrop-softening fix above. Claire confirmed the actual
+root cause: the WordPress embed uses one large, non-scrolling iframe sized
+to fit the entire form (deliberately, to avoid double-scrolling — an inner
+scrollbar inside an outer page scrollbar), so the WORDPRESS PAGE scrolls
+through the whole tall iframe rather than the iframe having its own
+viewport. That means `position:fixed` on the intake/hosting modal centers
+on the iframe's FULL height, not on whatever part of it the visitor
+currently has scrolled into view — so the modal can pop up completely off
+their screen, showing only the dimmed backdrop with no visible dialog
+(confirmed by the screenshot Claire sent: backdrop visible, no modal box in
+frame). Claire's team is separately working a fix on the WordPress/iframe
+side; this is the page-side half needed to make that possible.
+
+**Fix**: added `notifyParentToScrollToModal(backdropId)` — on each of the
+three places that show `#intake-modal` or `#hosting-modal`
+(`display = 'flex'`), it now also posts `{ type: 'io-tool-scroll-to-modal',
+offsetY }` to `window.parent`, where `offsetY` is the modal box's vertical
+center measured from the top of this iframe's own content (via
+`getBoundingClientRect()`, read right after the modal becomes visible so
+its centered layout position is already resolved). No-ops harmlessly if
+this page isn't embedded in an iframe (`window.parent === window`) or if
+whatever embeds it never listens for the message — this page has no way to
+know or require that a listener exists.
+
+**What the WordPress side needs to add** (given to Claire, not something
+this repo controls): a small listener on the page that embeds the iframe,
+something like:
+```js
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'io-tool-scroll-to-modal') {
+    var iframe = document.getElementById('YOUR_IFRAME_ID'); // match the real embed
+    var iframeTop = iframe.getBoundingClientRect().top + window.pageYOffset;
+    var targetY = iframeTop + e.data.offsetY - (window.innerHeight / 2);
+    window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+  }
+});
+```
+
+**Verified**: `node --check` on the extracted inline script. Extracted
+`notifyParentToScrollToModal` into a standalone Node harness with mocked
+`window`/`document` objects — confirmed it safely no-ops with no throw when
+not embedded in an iframe (`window.parent === window`, the normal case for
+every non-embedded test/preview of this page), and correctly computes and
+posts the right `offsetY` when a mocked parent/modal-box setup simulates
+the iframe scenario. Not verified against Claire's real WordPress embed —
+that requires her team's listener to actually exist first.
+
+## Removed the modal box's drop shadow (2026-09-02)
+
+Claire, after the backdrop-blur fix above: "can we remove [the shadow],
+blur the background and still have the little backdrop behind the intake
+form?" — keep the blurred/tinted backdrop, just drop the modal box's own
+`box-shadow: 0 24px 64px rgba(0,0,0,.25)`, which read as extra visual
+weight now that the blurred backdrop already separates the modal from the
+page behind it.
+
+**Verified**: `node --check` on the extracted inline script.
