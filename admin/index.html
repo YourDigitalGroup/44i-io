@@ -7960,6 +7960,10 @@ function applyFieldChangeLocally(item, field, value) {
     historyOldValue = item ? item.tactic_variant : null;
     if (item) item.tactic_variant = value;
     description = `variant changed from "${historyOldValue || '—'}" to "${value}"`;
+  } else if (field === 'qty') {
+    historyOldValue = item ? item.qty : null;
+    if (item) item.qty = parseFloat(value);
+    description = `quantity changed from ${historyOldValue ?? 0} to ${value}`;
   } else if (field === 'module_names') {
     const oldModules = item ? (item.module_names || []) : [];
     historyOldValue = JSON.stringify(oldModules);
@@ -8014,7 +8018,27 @@ function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
     const chosen = Array.isArray(item?.module_names) ? item.module_names : [];
     html += `<div style="margin-bottom:8px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Modules:</label>
-      ${moduleOptions.map(name => `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:3px"><input type="checkbox" class="edit-extra-module-${esc(serviceId)}" value="${esc(name)}" ${chosen.includes(name) ? 'checked' : ''}/> ${esc(name)}</label>`).join('')}
+      ${moduleOptions.map(name => `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:3px"><input type="checkbox" class="edit-extra-module-${esc(serviceId)}" value="${esc(name)}" ${chosen.includes(name) ? 'checked' : ''}/> ${esc(name)}${chosen.includes(name) ? ' <span style="color:var(--muted);font-size:11px">(currently selected)</span>' : ''}</label>`).join('')}
+    </div>`;
+  } else if (svc.pricing_mode === 'per_unit') {
+    // A plain per_unit quantity (2026-08-31, per Claire — "should we add a
+    // way to edit the quantity?") -- the per-unit RATE is still fixed by
+    // the catalog, but the quantity itself is exactly what's typed/picked
+    // in the main IO form, same rule of thumb as everything else here.
+    const presetOptions = (() => {
+      const raw = svc.qty_preset_options;
+      const arr = typeof raw === 'string' ? JSON.parse(raw || 'null') : raw;
+      return Array.isArray(arr) ? arr : null;
+    })();
+    const currentQty = item?.qty ?? 1;
+    const qtyControl = presetOptions && presetOptions.length
+      ? `<select id="edit-extra-qty-${esc(serviceId)}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px">
+          ${presetOptions.map(v => `<option value="${esc(v)}" ${Number(v) === Number(currentQty) ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+        </select>`
+      : `<input type="number" min="1" id="edit-extra-qty-${esc(serviceId)}" value="${esc(currentQty)}" style="width:70px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>`;
+    html += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <label style="font-size:11px;font-weight:700;color:var(--muted)">Quantity:</label>
+      ${qtyControl}
     </div>`;
   }
   return html;
@@ -8039,6 +8063,8 @@ function adminCollectExtraEditFields(serviceId, item) {
     const changed = chosen.length !== current.length || chosen.some(m => !current.includes(m));
     if (changed) fields.module_names = JSON.stringify(chosen);
   }
+  const qtyEl = document.getElementById(`edit-extra-qty-${serviceId}`);
+  if (qtyEl && qtyEl.value && Number(qtyEl.value) !== Number(item?.qty ?? 1)) fields.qty = qtyEl.value;
   return fields;
 }
 
@@ -8138,6 +8164,7 @@ function describeRequestedChanges(r) {
         const arr = typeof value === 'string' ? JSON.parse(value) : value;
         return `new modules: ${esc((arr || []).join(', ') || 'none')}`;
       }
+      if (field === 'qty') return `new quantity ${esc(value)}`;
       return `new ${esc(field)} $${Number(value).toLocaleString()}`;
     });
     return parts.length ? parts.join(', ') : '—';
