@@ -23682,3 +23682,43 @@ and computes the same fallback when setting `svc._workflow`. Verified:
 `node --check` on both files' extracted scripts. Not yet re-tested live —
 next step is Claire re-submitting the Test Business 9 batch and confirming
 all 5 cards (IO + 2 named-workflow + 2 standalone) get their comments.
+
+## Trello notification pattern simplified: IO gets the summary+PDF, each service card gets its own line (2026-09-01)
+
+While planning the Test Business 9 re-test, Claire proposed simplifying the
+Trello notification shape further: "we could do the changes requested just
+to the IO and then on approval or rejection we can post to the IO with the
+revised IO and then a comment on each affected service card" — i.e. stop
+duplicating the same comment (and, worse, the same PDF attachment) onto
+both the IO card and every individual tactic card. Confirmed this should
+apply everywhere a revised-PDF reattach happens, not just the companion-form
+flow — also the AM-direct Edit/Cancel/Renew buttons in the Orders tab,
+for consistency (a strategist watching their own tactic card shouldn't get
+a whole-order PDF attachment regardless of which flow triggered the change).
+
+**What changed**:
+- **Submit-time notice** (`companion/index.html`'s `postSubmitTrelloComments()`):
+  previously posted a separate comment to BOTH the IO card and each item's
+  own tactic card, per item. Now posts to the IO card ONLY, one combined
+  comment per order listing every item in that submission — a tactic card
+  no longer hears about a change while it's still pending, only once it's
+  resolved.
+- **Revised PDF reattachment**: every place in `admin/index.html` that
+  regenerates and reattaches the revised-IO PDF (`adminApprovePendingRequestClick()`'s
+  legacy single-item path, `finalizeBatchIfReady()`'s batch path, and the
+  three AM-direct Edit save paths — flat-amount, date-only, and
+  month-budgets) now attaches it to the IO card ONLY, never to the tactic
+  card(s) too. The Trello comment describing what changed still goes to
+  both the IO card and the relevant tactic card(s) exactly as before — only
+  the PDF attachment was ever duplicated needlessly.
+- Batch resolution's per-card comment grouping (`finalizeBatchIfReady()`)
+  already matched the "IO gets everything, tactic gets its own line" shape
+  from when it was first built (a tactic card was only ever a target for
+  the one item that actually touches it) — no change needed there beyond
+  the PDF fix above.
+
+**Verified**: `node --check` on both files. A standalone harness confirming
+the submit-time notice groups every item onto its order's IO card only
+(zero lines land on any tactic card). Not yet live-tested — next step is
+Claire re-running the Test Business 9 batch test with all these fixes in
+place.

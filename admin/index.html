@@ -8544,17 +8544,20 @@ async function adminApprovePendingRequestClick(id) {
       }
       if (!cardIds.length) {
         showToast('Approved, but no Trello card was found — please update Trello by hand', 'error');
-      } else if (attachRevisedPdf) {
+      } else if (attachRevisedPdf && ioCardId) {
+        // Revised PDF goes to the IO card only, not every tactic card too
+        // (2026-09-01, per Claire: "post to the IO with the revised IO...
+        // a comment on each affected service card" -- a tactic card only
+        // needs to know what happened to ITS OWN service, not carry the
+        // whole-order revised summary document).
         try {
           const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
-          for (const cardId of cardIds) {
-            const attachRes = await fetch(PROXY, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-              body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
-            });
-            if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', cardId, ':', attachRes.status);
-          }
+          const attachRes = await fetch(PROXY, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+            body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
+          });
+          if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
         } catch (e) {
           console.warn('Could not generate/attach revised IO PDF:', e.message);
           showToast('Approved and commented, but the revised PDF could not be attached', 'error');
@@ -8643,7 +8646,7 @@ async function finalizeBatchIfReady(batchId) {
 
   const cardLines = {};   // cardId -> [line, ...]
   const pdfOrders = new Set();
-  const orderCardIds = {}; // orderId -> Set of card ids touched by this batch's items
+  const orderIoCardIds = {}; // orderId -> its IO card id (the revised PDF's ONLY destination)
 
   for (const r of batchRows) {
     const o = await adminFindOrderForRequest(r.order_id);
@@ -8654,11 +8657,15 @@ async function finalizeBatchIfReady(batchId) {
     const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
     const targets = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
     if (!targets.length) continue;
+    if (ioCardId) orderIoCardIds[o.id] = ioCardId;
 
+    // The IO card gets EVERY item's line (the whole-submission summary);
+    // a service's own tactic card gets only its own single line, never the
+    // other items in the batch (2026-09-01, per Claire: "post to the IO
+    // with the revised IO... a comment on each affected service card").
     const line = buildBatchResolutionLine(r, label);
     for (const cardId of targets) {
       (cardLines[cardId] = cardLines[cardId] || []).push(line);
-      (orderCardIds[o.id] = orderCardIds[o.id] || new Set()).add(cardId);
     }
     if (r.status === 'approved' && (r.action === 'edit' || r.action === 'renew')) pdfOrders.add(o.id);
   }
@@ -8681,18 +8688,16 @@ async function finalizeBatchIfReady(batchId) {
 
   for (const orderId of pdfOrders) {
     const o = allOrders.find(x => x.id === orderId);
-    const targets = [...(orderCardIds[orderId] || [])];
-    if (!o || !targets.length) continue;
+    const ioCardId = orderIoCardIds[orderId];
+    if (!o || !ioCardId) continue;
     try {
       const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
-      for (const cardId of targets) {
-        const attachRes = await fetch(PROXY, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-          body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
-        });
-        if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', cardId, ':', attachRes.status);
-      }
+      const attachRes = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
+      });
+      if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
     } catch (e) {
       console.warn('Could not generate/attach revised IO PDF for order', orderId, ':', e.message);
     }
@@ -9449,20 +9454,20 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     }
     if (!cardIds.length) showToast('Saved, but no Trello card was found — please update Trello by hand', 'error');
 
-    // Fresh PDF replaces the old one on both cards (2026-08-20, closing the
-    // gap flagged when Edit first shipped) -- one Revised IO Summary,
-    // generated once, attached to whichever card(s) were actually found.
-    if (cardIds.length) {
+    // Revised PDF goes to the IO card only, not every tactic card too
+    // (2026-09-01, per Claire: "post to the IO with the revised IO... a
+    // comment on each affected service card" -- a tactic card only needs
+    // to know what happened to ITS OWN service, not carry the whole-order
+    // revised summary document).
+    if (ioCardId) {
       try {
         const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
-        for (const cardId of cardIds) {
-          const attachRes = await fetch(PROXY, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-            body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
-          });
-          if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', cardId, ':', attachRes.status);
-        }
+        const attachRes = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
+        });
+        if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
       } catch (e) {
         console.warn('Could not generate/attach revised IO PDF:', e.message);
         showToast('Saved and commented, but the revised PDF could not be attached', 'error');
@@ -9569,17 +9574,17 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     }
     if (!cardIds.length) showToast('Saved, but no Trello card was found — please update Trello by hand', 'error');
 
-    if (cardIds.length) {
+    // Revised PDF goes to the IO card only, not every tactic card too
+    // (2026-09-01, per Claire).
+    if (ioCardId) {
       try {
         const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
-        for (const cardId of cardIds) {
-          const attachRes = await fetch(PROXY, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-            body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
-          });
-          if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', cardId, ':', attachRes.status);
-        }
+        const attachRes = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
+        });
+        if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
       } catch (e) {
         console.warn('Could not generate/attach revised IO PDF:', e.message);
         showToast('Saved and commented, but the revised PDF could not be attached', 'error');
@@ -9695,17 +9700,17 @@ async function adminSaveMonthBudgetsEdit(orderId, serviceId) {
     }
     if (!cardIds.length) showToast('Saved, but no Trello card was found — please update Trello by hand', 'error');
 
-    if (cardIds.length) {
+    // Revised PDF goes to the IO card only, not every tactic card too
+    // (2026-09-01, per Claire).
+    if (ioCardId) {
       try {
         const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
-        for (const cardId of cardIds) {
-          const attachRes = await fetch(PROXY, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-            body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
-          });
-          if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', cardId, ':', attachRes.status);
-        }
+        const attachRes = await fetch(PROXY, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
+        });
+        if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
       } catch (e) {
         console.warn('Could not generate/attach revised IO PDF:', e.message);
         showToast('Saved and commented, but the revised PDF could not be attached', 'error');

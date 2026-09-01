@@ -774,33 +774,35 @@ async function submitRequests() {
 // differently from the "✏️/🛑/🔁 ... (by AM)" comment adminApprovePendingRequestClick()
 // posts once approved — this one is a pending notice, not a record of an
 // applied change, so it shouldn't read like one.
+// (2026-09-01, per Claire — "we could do the changes requested just to the
+// IO and then on approval or rejection we can post to the IO with the
+// revised IO and then a comment on each affected service card") — only
+// the IO card gets a submit-time heads-up now, one combined comment per
+// order covering every item in this submission, not a separate comment
+// per item per card. A tactic card only needs to hear about a change once
+// it's actually resolved, not while it's still pending.
 async function postSubmitTrelloComments(aeName, submitted) {
   const actionVerb = { cancel: 'cancel', edit: 'edit', renew: 'renew' };
+  const ioLines = {}; // ioCardId -> [line, ...]
   for (const p of submitted) {
+    const svc = ACTIVE_SERVICES.find(s => s.service_id === p.service_id && s.order_id === p.order_id);
+    if (!svc) continue;
+    const label = svc._accountingLabel || svc.label;
+    const ioCardId = (ORDER_TRELLO_CARDS[p.order_id] || {}).__io_card__;
+    if (!ioCardId) continue;
+    (ioLines[ioCardId] = ioLines[ioCardId] || []).push(`${actionVerb[p.action] || p.action} ${label}`);
+  }
+  for (const [cardId, lines] of Object.entries(ioLines)) {
+    const text = `📝 ${aeName} requested to change ${lines.length} item${lines.length > 1 ? 's' : ''} — awaiting AM approval:\n${lines.map(l => '• ' + l).join('\n')}`;
     try {
-      const svc = ACTIVE_SERVICES.find(s => s.service_id === p.service_id && s.order_id === p.order_id);
-      if (!svc) continue;
-      const label = svc._accountingLabel || svc.label;
-      const cardIds = ORDER_TRELLO_CARDS[p.order_id] || {};
-      const ioCardId = cardIds.__io_card__;
-      const tacticCardId = svc._workflow ? cardIds[svc._workflow] : null;
-      const targets = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
-      if (!targets.length) continue;
-      const text = `📝 ${aeName} requested to ${actionVerb[p.action] || p.action} ${label} — awaiting AM approval.`;
-      for (const cardId of targets) {
-        try {
-          const res = await fetch(PROXY, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-            body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text }),
-          });
-          if (!res.ok) console.warn('Could not post pending-request comment to card', cardId, ':', res.status);
-        } catch (e) {
-          console.warn('Could not post pending-request comment to card', cardId, ':', e.message);
-        }
-      }
+      const res = await fetch(PROXY, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text }),
+      });
+      if (!res.ok) console.warn('Could not post pending-request comment to card', cardId, ':', res.status);
     } catch (e) {
-      console.warn('Could not post pending-request Trello comment:', e.message);
+      console.warn('Could not post pending-request comment to card', cardId, ':', e.message);
     }
   }
 }
