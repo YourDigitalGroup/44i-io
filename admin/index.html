@@ -8140,28 +8140,50 @@ async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
   // not just a comment (2026-08-31, per Claire — "will [an edit] update the
   // card title in both cases?"), so the card always reflects the CURRENT
   // pick rather than staying frozen at whatever was chosen on submission.
-  if ('tactic_variant' in extraFields || 'module_names' in extraFields) {
-    await adminRenameTacticCard(orderId, serviceId, item);
+  // An end_date change also needs to push the card's own Trello due date
+  // (2026-09-01, per Claire — "It also didn't update the due date if the
+  // end date was changed").
+  if ('tactic_variant' in extraFields || 'module_names' in extraFields || 'end_date' in extraFields) {
+    await adminUpdateTacticCard(orderId, serviceId, item, { renameTitle: 'tactic_variant' in extraFields || 'module_names' in extraFields });
   }
   return { descriptions, historyEntries };
 }
 
-async function adminRenameTacticCard(orderId, serviceId, item) {
+// Same Trello due-date/reminder convention as index.html's campaignDueFields()
+// (a native Trello due-date reminder 10 days ahead of the campaign's end) —
+// ported here so admin-side edits, approvals, and renewals keep a tactic
+// card's due date in sync with its line item's end_date too, not just at
+// card-creation time in the main IO form.
+const ADMIN_CAMPAIGN_END_REMINDER_MINUTES = 14400; // 10 days, in minutes (Trello's dueReminder unit)
+function adminCampaignDueFields(endDate) {
+  if (!endDate) return {};
+  return { due: `${endDate}T17:00:00.000Z`, dueReminder: ADMIN_CAMPAIGN_END_REMINDER_MINUTES };
+}
+
+// Updates a tactic's own Trello card: its title (when renameTitle is true,
+// i.e. a variant/module pick changed) and/or its due date (whenever
+// item.end_date is set) — both land on the same card via one
+// trello_update_card call rather than a separate function per field.
+async function adminUpdateTacticCard(orderId, serviceId, item, { renameTitle } = {}) {
   try {
     const o = allOrders.find(x => x.id === orderId);
     const svc = CATALOG_ROWS[serviceId] || {};
     const tacticCardId = svc.workflow ? o?.trello_card_ids?.[svc.workflow] : null;
     if (!tacticCardId) return;
-    const fallbackLabel = svc.accounting_label || svc.label || serviceId;
-    const newTitle = adminResolveTacticCardTitle(serviceId, item, fallbackLabel);
+    const payload = { target: 'trello_update_card', card_id: tacticCardId, ...adminCampaignDueFields(item?.end_date) };
+    if (renameTitle) {
+      const fallbackLabel = svc.accounting_label || svc.label || serviceId;
+      payload.name = adminResolveTacticCardTitle(serviceId, item, fallbackLabel);
+    }
+    if (Object.keys(payload).length <= 2) return; // nothing beyond target/card_id to update
     const res = await fetch(PROXY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
-      body: JSON.stringify({ target: 'trello_update_card', card_id: tacticCardId, name: newTitle }),
+      body: JSON.stringify(payload),
     });
-    if (!res.ok) console.warn('Could not rename Trello card', tacticCardId, ':', res.status);
+    if (!res.ok) console.warn('Could not update Trello card', tacticCardId, ':', res.status);
   } catch (e) {
-    console.warn('Could not rename Trello card:', e.message);
+    console.warn('Could not update Trello card:', e.message);
   }
 }
 async function loadAdminPendingRequests() {
@@ -8416,15 +8438,22 @@ async function adminApprovePendingRequestClick(id) {
       // A variant or module change also renames the tactic's own Trello
       // card here too, same as the AM-triggered edit path (2026-08-31, per
       // Claire) — an approved companion-form request shouldn't leave the
-      // card title any more stale than a direct AM edit would.
-      if (item && ('tactic_variant' in fields || 'module_names' in fields)) {
-        await adminRenameTacticCard(req.order_id, req.service_id, item);
+      // card title any more stale than a direct AM edit would. An end_date
+      // change also needs to push the card's Trello due date (2026-09-01,
+      // per Claire).
+      if (item && ('tactic_variant' in fields || 'module_names' in fields || 'end_date' in fields)) {
+        await adminUpdateTacticCard(req.order_id, req.service_id, item, { renameTitle: 'tactic_variant' in fields || 'module_names' in fields });
       }
     } else if (req.action === 'renew') {
       // Matches adminConfirmRenewal()'s exact wording (no PDF reattach there
-      // either — this stays consistent with it).
+      // either — this stays consistent with it). A renewal always moves
+      // end_date, so it always needs the card's due date pushed too
+      // (2026-09-01, per Claire).
       const item = (o.line_items || []).find(li => li.service_id === req.service_id);
-      if (item) item.end_date = c.new_end_date;
+      if (item) {
+        item.end_date = c.new_end_date;
+        await adminUpdateTacticCard(req.order_id, req.service_id, item, { renameTitle: false });
+      }
       let budgetNote = '';
       if (c.new_month_budgets && c.new_month_budgets.length) {
         const total = c.new_month_budgets.reduce((s,m) => s + (Number(m.amount)||0), 0);
@@ -9556,7 +9585,12 @@ async function adminConfirmRenewal(orderId, serviceId) {
   const svc = CATALOG_ROWS[serviceId] || {};
   if (o) {
     const item = (o.line_items || []).find(li => li.service_id === serviceId);
-    if (item) item.end_date = newEndDate;
+    if (item) {
+      item.end_date = newEndDate;
+      // A renewal always moves end_date, so it always needs the card's
+      // Trello due date pushed too (2026-09-01, per Claire).
+      await adminUpdateTacticCard(orderId, serviceId, item, { renameTitle: false });
+    }
 
     const label = svc.accounting_label || svc.label || serviceId;
     const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';

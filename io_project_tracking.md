@@ -23503,3 +23503,52 @@ after the reject RPC succeeds (with the AM's optional rejection note
 included in the email) — independent of the Trello/PDF follow-up steps,
 same "the real change already happened, this is just a courtesy" posture
 as everything else in that function. Verified via `node --check`.
+
+## Trello card due date never followed end_date changes (2026-09-01)
+
+Claire, live-testing the companion form: "It also didn't update the due
+date if the end date was changed." A card's Trello title had just been
+made to track variant/module edits (previous entry above this session),
+but its due date stayed frozen forever regardless of what any later edit
+or renewal did to that service's end date.
+
+**Root cause**: `index.html` (main IO form) already has this exact
+mechanism — `campaignDueFields(endDate)` returns `{due:
+'${endDate}T17:00:00.000Z', dueReminder: 14400}` (a native Trello due-date
+reminder, 10 days ahead, set at card-creation time) — but it only runs
+when a card is first created or copied. Nothing in `admin/index.html`
+had ever ported this, so `admin_edit_order_line_item` would happily
+update a line item's `end_date` in Postgres while the Trello card kept
+whatever due date (or none) it was created with.
+
+**Fix**: ported `adminCampaignDueFields(endDate)` into `admin/index.html`
+(identical formula/reminder window). Renamed the existing
+`adminRenameTacticCard()` (which only ever set `name`) to
+`adminUpdateTacticCard(orderId, serviceId, item, {renameTitle})` — one
+`trello_update_card` call that always includes the due fields whenever
+`item.end_date` is set, and includes `name` only when `renameTitle` is
+true (a title change and a due-date change land on the same card, so
+one call handles both instead of two). Wired into every place a line
+item's `end_date` can change:
+- `adminSaveExtraEditFields()` (AM-triggered direct Edit's date/variant/
+  module panel) — trigger condition extended from
+  `'tactic_variant' in extraFields || 'module_names' in extraFields` to
+  also include `'end_date' in extraFields`.
+- `adminApprovePendingRequestClick()`'s `edit` branch (companion-form
+  approval) — same trigger condition extended the same way.
+- `adminApprovePendingRequestClick()`'s `renew` branch (companion-form
+  renewal approval) — previously had NO card-update call at all for
+  renewals; added one unconditionally, since a renewal always moves
+  `end_date`.
+- `adminConfirmRenewal()` (AM-triggered direct Renew, a separate surface
+  from companion-form renewal approval) — same gap, same fix.
+
+Verified: `node --check` on the extracted script, plus a standalone Node
+harness exercising the payload-building logic across 4 cases (end_date-
+only, rename-only, both, neither) — confirmed the due/dueReminder/name
+fields come out correct in each combination and that the "neither
+changed" case correctly skips the Trello call rather than sending an
+empty update. Not yet live-tested against a real Trello card — next step
+is Claire editing/renewing a service's end date and checking the card's
+due date updates.
+as everything else in that function. Verified via `node --check`.
