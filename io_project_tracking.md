@@ -24202,3 +24202,15 @@ Not independently re-run in a test harness (pure SQL, no JS to `node
 --check`). Next step is Claire running both statements and confirming
 Test Business 8's Location Targeting now shows "Location Targeting:
 Geofencing" in Strategist/Admin/Accounting.
+
+## Removed stale "Phase 1 — Read Only" notice from Admin's Order Detail (2026-09-02)
+
+Claire spotted leftover copy in Admin's Order Detail view: "Phase 1 — Read
+Only · Edit capability coming in the next release. To make changes today,
+contact the AE or modify the Trello cards directly." This predates the
+AM-triggered Cancel/Edit/Renew flows (built 2026-08-20) and the companion
+form (2026-08-31) — Admin has had real edit capability for weeks, so this
+notice was actively wrong, not just outdated. Removed the banner along
+with the stale "(read-only for Phase 1)" code comment above it.
+
+**Verified**: `node --check`.
