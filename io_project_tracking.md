@@ -24159,3 +24159,58 @@ comment shows a real before/after instead of "X → X."
 exists, and both `accounting_get_order_detail`/`strategist_get_order_detail`
 now select `edit_history` — all SQL from today's session is confirmed
 actually deployed, not just handed off.
+
+## Strategist "Confirm" never synced tactic_label, so the variant never showed anywhere (2026-09-02)
+
+Claire: "The trello card is ok, it is in the strategist admin and
+accounting portals where it is not showing the specific variant."
+Diagnosed via real data, not guessed: confirmed Test Business 8's
+Location Targeting order line already had `tactic_variant` correctly set
+to the fully-resolved "Location Targeting: Geofencing" (via edit_history),
+and confirmed she'd ALREADY clicked Confirm in the new Strategist Order
+Changes panel (`order_change_acknowledged_at` was set) — but
+`campaign_lines.tactic_label` still read the plain catalog label,
+"Geofencing or 1st Party Addressable."
+
+**Root cause**: `strategist_confirm_order_change()` (built earlier today)
+only ever synced `flight_start`/`flight_end` and budget
+(`campaign_months.gross_budget`) into the live campaign data — it never
+touched `tactic_label` at all, even though ALL THREE portals (confirmed
+via grep — Strategist, Accounting, and Admin's own tactic-variant audit)
+display that exact column as the service's name. So confirming a variant
+change updated everything EXCEPT the one field that actually shows the
+variant.
+
+**Fix**: `strategist_confirm_order_change()` now also computes and syncs
+`tactic_label`. A `tactic_variant` value on the order is already the
+fully-resolved "Section: Variant" display string (confirmed via Claire's
+own edit_history data — that's literally what the catalog's own
+`tactic_variants` list stores as each option's value), so it's used
+directly with no extra formatting. A `module_names` change builds its own
+"Section: mod1, mod2" string via a `services`/`sections` join, mirroring
+`adminResolveModuleDisplayName()`'s client-side logic. Neither present
+(a pure date/budget change) leaves `tactic_label` untouched.
+
+Also included a one-time manual `update` for Test Business 8's specific
+line, since Confirm had already run for it before this fix existed —
+`order_change_acknowledged_at` is already set, so the flag won't
+re-appear to trigger another Confirm click on its own.
+
+**Verified**: logically traced against Claire's own real data (the exact
+`tactic_variant` value and campaign_line id from her diagnostic queries).
+Not independently re-run in a test harness (pure SQL, no JS to `node
+--check`). Next step is Claire running both statements and confirming
+Test Business 8's Location Targeting now shows "Location Targeting:
+Geofencing" in Strategist/Admin/Accounting.
+
+## Removed stale "Phase 1 — Read Only" notice from Admin's Order Detail (2026-09-02)
+
+Claire spotted leftover copy in Admin's Order Detail view: "Phase 1 — Read
+Only · Edit capability coming in the next release. To make changes today,
+contact the AE or modify the Trello cards directly." This predates the
+AM-triggered Cancel/Edit/Renew flows (built 2026-08-20) and the companion
+form (2026-08-31) — Admin has had real edit capability for weeks, so this
+notice was actively wrong, not just outdated. Removed the banner along
+with the stale "(read-only for Phase 1)" code comment above it.
+
+**Verified**: `node --check`.
