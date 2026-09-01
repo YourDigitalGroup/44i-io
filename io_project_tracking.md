@@ -23970,3 +23970,48 @@ unaffected by this change. Not yet live-tested — next step is Claire
 running the two `get_order_detail` SQL updates and confirming both Test
 Business 9's Amendment History now shows in Accounting/Strategist and
 that `alc-media` only shows its real September row going forward.
+
+## One-time-fee fix, round 2: the detail card and flight display still looked ongoing (2026-09-02)
+
+Claire, after the previous fix: "It still looks like it is ongoing, it
+stays it in the flight as well as the option to manually confirm." The
+main table fix (`accountingLineActiveInMonth()`) was correct but
+incomplete — two more spots never checked it:
+
+1. **The detail card's month table** (`accountingRenderDetailCard()`)
+   always built a fixed `[0, 1, 2]` (current + 2 months ahead) row set
+   regardless of whether the line was even active in those months — it
+   only used `accountingLineActiveInMonth()` to decide whether to look up
+   real figures (blanking them to `null` when inactive), never to skip
+   the row itself. So a one-time fee's Oct/Nov rows still rendered as a
+   fully live, editable "$0.00 / Needs confirmation / Manually confirm"
+   row. Fixed: each month object now carries its own `active` flag, and
+   an inactive month renders as a plain, non-interactive "—" row (no
+   input, no status pill, no confirm checkbox) instead of a blank-but-
+   actionable one.
+2. **The flight-range display itself** (`accountingFormatFlightRange()`/
+   `accountingFormatFullFlightRange()`, used in the main table, the
+   expanded-split child rows, and the detail card header) always showed
+   "– Ongoing" for a null end date — which is exactly what a one-time fee
+   has, since it was never given a real end date to begin with (there's
+   no "ongoing" concept for it at all). Both functions take a new
+   optional `isOneTime` parameter; when true and there's no end date,
+   they show just the single billed date instead of "– Ongoing". All 3
+   call sites for a real single line (not the multi-line rollup header,
+   left as-is) now pass `ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(line.billing_type)`.
+
+**Verified**: `node --check`. A standalone harness confirming a one-time
+line's flight range shows just its billed date (no "Ongoing"), an
+ordinary open-ended spend campaign is unaffected (still correctly shows
+"Ongoing"), and a one-time line with a real end date (edge case) still
+shows the real range rather than being forced single-date. Not yet
+live-tested — next step is Claire reloading the detail card for Test
+Business 9's Traditional Media Buying & Consultation and confirming Oct/
+Nov now show as plain, non-actionable dashes and the flight column no
+longer says "Ongoing."
+
+**Still open, not yet diagnosed**: Claire separately flagged that
+"Location Targeting didn't get the same treatment as it does in the
+strategist portal," clarified as a naming-convention issue — asked her
+for the exact before/after wording to trace which naming function is (or
+isn't) being applied before making any change, rather than guessing.
