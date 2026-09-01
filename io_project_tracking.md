@@ -24599,3 +24599,14 @@ every non-embedded test/preview of this page), and correctly computes and
 posts the right `offsetY` when a mocked parent/modal-box setup simulates
 the iframe scenario. Not verified against Claire's real WordPress embed —
 that requires her team's listener to actually exist first.
+
+## Removed the modal box's drop shadow (2026-09-02)
+
+Claire, after the backdrop-blur fix above: "can we remove [the shadow],
+blur the background and still have the little backdrop behind the intake
+form?" — keep the blurred/tinted backdrop, just drop the modal box's own
+`box-shadow: 0 24px 64px rgba(0,0,0,.25)`, which read as extra visual
+weight now that the blurred backdrop already separates the modal from the
+page behind it.
+
+**Verified**: `node --check` on the extracted inline script.
