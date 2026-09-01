@@ -671,8 +671,23 @@ select.qty-field{background-image:none;padding-right:3px}
 .legal strong{color:var(--text)}
 
 /* Toast */
-.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none;text-align:center;white-space:nowrap}
+/* position:fixed -> position:absolute (2026-09-02, same root cause as the
+   modal fix above): a fixed top:20px is anchored to one point in the
+   WordPress iframe embed's own coordinate space, not to wherever the
+   visitor is actually scrolled to on the outer page -- a toast fired while
+   scrolled deep into the form would appear off-screen, same as the modal
+   did. `top` is now set in JS (see showToast()) using the same "last
+   click" position tracking the modal already uses. */
+.toast{position:absolute;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);display:none;text-align:center;white-space:nowrap}
 .toast.show{display:block}
+/* Brief highlight flash for a field a validation error points to
+   (2026-09-02) -- see revealElement()'s own comment for why this matters:
+   Element.scrollIntoView() alone does nothing in the WordPress embed (no
+   scrollable container exists inside that iframe to scroll), so without
+   this flash a validation error could point at a field with no visible
+   effect at all. */
+@keyframes io-flash{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,0)}20%,60%{box-shadow:0 0 0 4px rgba(239,68,68,.35)}}
+.io-flash-highlight{animation:io-flash 1.6s ease-out}
 .toast.success{background:#10B981;color:#fff}
 .toast.error{background:#EF4444;color:#fff}
 
@@ -2618,6 +2633,50 @@ function positionModalNearLastClick(backdropId) {
   box.style.position = 'relative';
   const y = lastClickDocY != null ? Math.max(20, lastClickDocY - 40) : 200;
   box.style.top = y + 'px';
+}
+
+// Generalizes the same "the WordPress embed can't be scrolled from inside
+// this iframe" fix to every "scroll to the problem field" validation error
+// (2026-09-02, found auditing for other spots with the same root cause,
+// per Claire — "is there anything else we should do to make the format
+// work better in the iframe?"): `Element.scrollIntoView()` only ever
+// scrolls scroll CONTAINERS within this page's own document -- if the
+// WordPress embed has none (its actual setup: one large, non-scrolling
+// iframe, per Claire), every one of these calls has been a silent no-op
+// there the whole time, with no visible sign the click did anything. Three
+// things happen now instead of a bare scrollIntoView():
+//  1. The scrollIntoView() call itself stays -- still correct whenever
+//     this page is opened directly, not embedded (e.g. testing).
+//  2. The same postMessage the modal fix already sends, generalized to
+//     any element, so a WordPress-side listener (already being built,
+//     per Claire) can scroll the outer page there too.
+//  3. A brief highlight flash directly on the element -- a real, visible
+//     result on its own, with or without that listener existing yet.
+function revealElement(el) {
+  if (!el) return;
+  el.scrollIntoView({behavior:'smooth', block:'center'});
+  try {
+    if (window.parent !== window) {
+      const rect = el.getBoundingClientRect();
+      window.parent.postMessage({ type: 'io-tool-scroll-to-modal', offsetY: rect.top + window.scrollY }, '*');
+    }
+  } catch (e) { /* cross-origin postMessage failures are non-fatal here */ }
+  el.classList.remove('io-flash-highlight');
+  void el.offsetWidth; // restart the CSS animation if it's already mid-flash from a moment ago
+  el.classList.add('io-flash-highlight');
+  setTimeout(() => el.classList.remove('io-flash-highlight'), 1700);
+}
+
+// Same idea as revealElement(), for the few places that reset scroll to
+// the very TOP of this page (step navigation, form reset) rather than to
+// a specific field -- offsetY:0 asks the same WordPress-side listener to
+// scroll to the top of this iframe specifically.
+function notifyParentScrollToTop() {
+  try {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'io-tool-scroll-to-modal', offsetY: 0 }, '*');
+    }
+  } catch (e) { /* cross-origin postMessage failures are non-fatal here */ }
 }
 
 // ── INTAKE MODAL ──────────────────────────────────────────────
@@ -4663,7 +4722,7 @@ function validateStep1() {
       document.getElementById('page-3').style.display = 'none';
       currentStep = 1;
     }
-    firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
+    revealElement(firstMissing);
     firstMissing.focus();
     return false;
   }
@@ -4679,7 +4738,7 @@ function validateStep1() {
   // catches an AE who picked/typed an unregistered/ambiguous county.
   if (isMultiAgentClientActive() && !aeRegisteredForThisClient()) {
     showToast('Your AE profile isn\'t set up for this client\'s Trello board yet — contact your AM before continuing', 'error');
-    document.getElementById('ae-picker-wrap')?.scrollIntoView({behavior:'smooth', block:'center'});
+    revealElement(document.getElementById('ae-picker-wrap'));
     return false;
   }
   return true;
@@ -4763,7 +4822,7 @@ function goStep(n) {
       });
       // Scroll to the first one
       const firstMissing = document.querySelector('.spend-missing');
-      if (firstMissing) firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
+      if (firstMissing) revealElement(firstMissing);
       // FIXED (2026-08-17, per the accessibility/UX audit -- Claire: "fix the
       // should-fix ones too"): this branch used to block navigation with zero
       // message at all, unlike every other validation path on the form -- a user
@@ -4787,7 +4846,7 @@ function goStep(n) {
         if (section) section.style.display = 'block';
       });
       const firstMissing = document.querySelector('.svc-start-cell input.spend-missing');
-      if (firstMissing) firstMissing.scrollIntoView({behavior:'smooth', block:'center'});
+      if (firstMissing) revealElement(firstMissing);
       // Same fix as the spend-problems branch above -- was a silent block.
       const dateLabels = missingDates.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
       showToast('Please enter a start date for: ' + dateLabels, 'error');
@@ -4810,7 +4869,7 @@ function goStep(n) {
         if (section) section.style.display = 'block';
       });
       const firstBad = document.querySelector('.svc-start-cell input.spend-missing');
-      if (firstBad) firstBad.scrollIntoView({behavior:'smooth', block:'center'});
+      if (firstBad) revealElement(firstBad);
       const badLabels = tooEarlyDates.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
       showToast(`Start date must be after the IO date (${ioDateVal}) for: ` + badLabels, 'error');
       return; // Block navigation
@@ -4829,7 +4888,7 @@ function goStep(n) {
       const generalUnfilled = kocGeneralIsRequired() && !document.getElementById('koc-date').value;
       const specificUnfilled = kocSpecificIsRequired() && !document.getElementById('koc-date-specific').value;
       if (kocCard && kocCard.style.display !== 'none' && (generalUnfilled || specificUnfilled)) {
-        kocCard.scrollIntoView({behavior:'smooth', block:'center'});
+        revealElement(kocCard);
       }
     }, 300);
   }
@@ -4849,6 +4908,7 @@ function goStep(n) {
   currentStep = n;
   document.body.scrollTop = 0;
   document.documentElement.scrollTop = 0;
+  notifyParentScrollToTop();
   autoSaveDraft();
 }
 
@@ -5372,7 +5432,7 @@ async function submitIO() {
     const agentSplits = collectAgentSplits();
     if (agentSplits === null) {
       btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
-      document.getElementById('agent-split-card')?.scrollIntoView({behavior:'smooth', block:'center'});
+      revealElement(document.getElementById('agent-split-card'));
       return;
     }
 
@@ -5392,7 +5452,7 @@ async function submitIO() {
         : 'Your AE profile isn\'t set up for this client\'s Trello board yet — contact your AM before submitting this IO';
       showToast(msg, 'error');
       btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
-      document.getElementById('ae-picker-wrap')?.scrollIntoView({behavior:'smooth', block:'center'});
+      revealElement(document.getElementById('ae-picker-wrap'));
       return;
     }
 
@@ -5404,7 +5464,7 @@ async function submitIO() {
       if (!kocCalendarOpened) {
         showToast('Please open the AM calendar and schedule the Kick-Off Call before submitting', 'error');
         btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
-        document.getElementById('koc-card')?.scrollIntoView({behavior:'smooth', block:'center'});
+        revealElement(document.getElementById('koc-card'));
         return;
       }
       if (!kocDate) {
@@ -5422,7 +5482,7 @@ async function submitIO() {
       if (!kocSpecificCalendarOpened) {
         showToast('Please open the specialist\'s calendar and schedule that Kick-Off Call before submitting', 'error');
         btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
-        document.getElementById('koc-card')?.scrollIntoView({behavior:'smooth', block:'center'});
+        revealElement(document.getElementById('koc-card'));
         return;
       }
       if (!kocSpecificDate) {
@@ -5441,7 +5501,7 @@ async function submitIO() {
       if (CATALOG_ROWS[id]?.qty_option_labels && !(selected[id].qty > 0)) {
         showToast(`Please pick at least one option for ${CATALOG_ROWS[id]?.label || id} before submitting`, 'error');
         btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
-        document.querySelector(`tr[data-id="${id}"]`)?.scrollIntoView({behavior:'smooth', block:'center'});
+        revealElement(document.querySelector(`tr[data-id="${id}"]`));
         return;
       }
     }
@@ -5460,7 +5520,7 @@ async function submitIO() {
       if (Array.isArray(CATALOG_ROWS[id]?.tactic_variants) && CATALOG_ROWS[id].tactic_variants.length && !selected[id].tacticVariant) {
         showToast(`Please select which one applies for ${CATALOG_ROWS[id]?.label || id} before submitting`, 'error');
         btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
-        document.querySelector(`tr[data-id="${id}"]`)?.scrollIntoView({behavior:'smooth', block:'center'});
+        revealElement(document.querySelector(`tr[data-id="${id}"]`));
         return;
       }
     }
@@ -5594,6 +5654,7 @@ async function submitIO() {
       document.getElementById('page-success').style.display = 'block';
       setStepsNavEnabled(false);
       window.scrollTo({top:0,behavior:'smooth'});
+      notifyParentScrollToTop();
       // Do NOT clearDraft() in dev — let the user keep playing with the data
       return;
     }
@@ -7153,6 +7214,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
     setStepsNavEnabled(false);
     clearDraft();
     window.scrollTo({top:0,behavior:'smooth'});
+    notifyParentScrollToTop();
 
     // FIXED (2026-07-14, found live): a brand-new client created by THIS submission
     // never showed up in the Client picker for "Submit Another IO" until a hard refresh
@@ -8284,6 +8346,12 @@ function showToast(msg, type='success') {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast show ' + type;
+  // Positioned near the visitor's last click rather than a fixed top:20px
+  // (2026-09-02) -- same reasoning as the modal/backdrop fix: a fixed
+  // offset only lines up with where the visitor actually is when they're
+  // near the top of the WordPress iframe embed's own (non-scrolling)
+  // content. Falls back to 20px if no click has been recorded yet.
+  t.style.top = (lastClickDocY != null ? Math.max(20, lastClickDocY - 60) : 20) + 'px';
   setTimeout(() => t.className = 'toast', 8000);
 }
 
