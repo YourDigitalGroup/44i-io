@@ -10353,8 +10353,23 @@ async function generateAdminIntakePdfBlob(title, formDef, fields) {
 // -- everything an AM or strategist would actually need to see reflects
 // the CURRENT state of the order, not the original signed snapshot.
 async function generateAdminRevisedIoPdfBlob(o) {
-  const color = '#1C9BD7';
+  // Mirrors the original signed IO's own look (2026-09-02, per Claire —
+  // "is there a way to have it mirror the original IO while showing the
+  // changes?"): the group's actual brand_color instead of a hardcoded blue,
+  // a "Submission / Campaign" info block matching what Admin's own Order
+  // Detail view already shows on screen (same fields, no new fetch needed --
+  // ae_name/io_date/koc_date/campaign_start/campaign_end/signer info all
+  // already live on the order record), and the original's Authorization/
+  // signature block, so this reads as "the same order, now updated" rather
+  // than an unrelated bare summary.
+  const group = (typeof allGroups !== 'undefined' && allGroups.find(g => g.id === o.group_id)) || {};
+  const color = group.brand_color || '#1C9BD7';
   const fmt = n => '$' + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = s => {
+    if (!s) return '—';
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
+    return isNaN(d) ? '—' : d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  };
   const items = Array.isArray(o.line_items) ? o.line_items : [];
   let oneTime = 0, monthly = 0;
   const rows = items.map(item => {
@@ -10366,36 +10381,93 @@ async function generateAdminRevisedIoPdfBlob(o) {
     return `<tr>
       <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827">${esc(label)}</td>
       <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151">${esc(amtParts.join(' + ') || '—')}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#6B7280">${esc(item.start_date || '—')} – ${esc(item.end_date || 'Ongoing')}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#6B7280">${fmtDate(item.start_date)} – ${item.end_date ? fmtDate(item.end_date) : 'Ongoing'}</td>
     </tr>`;
   }).join('');
 
+  // Per-field description (2026-09-02 fix): previously ran EVERY field's old/new
+  // value through the currency formatter above, so a date field's old/new (a
+  // "YYYY-MM-DD" string, not a number) rendered as literal "$NaN" -- exactly the
+  // bug Claire spotted on Test Business 9's Revised IO PDF ("end_date: $NaN →
+  // $NaN"). Mirrors applyFieldChangeLocally()'s own per-field dispatch (the
+  // function that ORIGINALLY built each entry's before/after at edit time) so
+  // the same field types get the same human-readable treatment here, just
+  // without that function's side effect of mutating the line item.
+  const describeHistoryValue = (field, value) => {
+    if (field === 'start_date' || field === 'end_date') return fmtDate(value);
+    if (field === 'tactic_variant') return value || '—';
+    if (field === 'qty') return value ?? '0';
+    if (field === 'month_budgets') {
+      const arr = (() => { try { return typeof value === 'string' ? JSON.parse(value) : (value || []); } catch { return []; } })();
+      const total = arr.reduce((s, m) => s + (Number(m?.amount) || 0), 0);
+      return fmt(total) + ' total';
+    }
+    if (field === 'module_names') {
+      const arr = (() => { try { return typeof value === 'string' ? JSON.parse(value) : (value || []); } catch { return []; } })();
+      return arr.length ? arr.join(', ') : 'none';
+    }
+    return fmt(value);
+  };
+  const historyFieldLabels = { start_date: 'Start Date', end_date: 'End Date', tactic_variant: 'Variant', qty: 'Quantity', month_budgets: 'Budget', module_names: 'Modules', spend: 'Spend', fee: 'Fee', recurring: 'Monthly Rate' };
   const historyRows = (o.edit_history || []).slice().reverse().map(h => {
     const label = CATALOG_ROWS[h.service_id]?.accounting_label || CATALOG_ROWS[h.service_id]?.label || h.service_id;
+    const fieldLabel = historyFieldLabels[h.field] || h.field;
     return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#111827">${esc(label)}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#374151">${esc(h.field)}: ${fmt(h.old_value)} → ${fmt(h.new_value)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#374151">${esc(fieldLabel)}: ${esc(describeHistoryValue(h.field, h.old_value))} → ${esc(describeHistoryValue(h.field, h.new_value))}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#6B7280">${esc(h.edited_by)}, ${new Date(h.edited_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</td>
     </tr>`;
   }).join('');
 
+  // Signature block (2026-09-02) -- same fields Admin's own Order Detail view
+  // already reads (o.signature_data/signer_name/signer_title/signed_at), so
+  // the revised document still visibly ties back to the original signed
+  // authorization instead of reading as a disconnected new summary.
+  const sigData = o.signature_data || '';
+  const sigHtml = sigData.startsWith('typed:')
+    ? `<div style="font-family:'Dancing Script',cursive;font-size:22pt;color:#111827">${esc(sigData.replace('typed:',''))}</div>`
+    : sigData.startsWith('data:image')
+      ? `<img src="${esc(sigData)}" style="height:44px;max-width:220px;object-fit:contain"/>`
+      : `<div style="font-size:9pt;color:#9CA3AF;font-style:italic">No signature on file</div>`;
+
   const html = `<div style="font-family:Montserrat,sans-serif;padding:26px 30px;width:690px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${color};padding-bottom:12px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${color};padding-bottom:12px;margin-bottom:14px">
       <div>
-        <div style="font-size:14pt;font-weight:800;color:#111827">Revised IO Summary</div>
-        <div style="font-size:9pt;color:#92300B;font-weight:700;margin-top:2px">● REVISED</div>
+        <div style="font-size:16pt;font-weight:800;color:#111827">Insertion Order</div>
+        <div style="font-size:9pt;color:#92300B;font-weight:700;margin-top:3px">● REVISED</div>
       </div>
       <div style="text-align:right;font-size:8.5pt;color:#6B7280;line-height:1.5">
-        <strong style="color:#374151;font-size:9pt">${esc(o._client_name || o.client_name || '')}</strong><br>
+        <strong style="color:#374151;font-size:10pt">${esc(o._client_name || o.client_name || '')}</strong><br>
+        ${esc(group.name || '')}<br>
         ${new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'})}
       </div>
     </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <div style="font-size:9pt;line-height:1.7;color:#374151">
+        <div><strong>AE:</strong> ${esc(o.ae_name || '—')}</div>
+        <div><strong>IO Date:</strong> ${fmtDate(o.io_date)}</div>
+        <div><strong>KOC:</strong> ${fmtDate(o.koc_date)}${o.koc_time ? ' at ' + esc(o.koc_time) : ''}</div>
+      </div>
+      <div style="font-size:9pt;line-height:1.7;color:#374151">
+        <div><strong>Campaign Start:</strong> ${fmtDate(o.campaign_start)}</div>
+        <div><strong>Campaign End:</strong> ${fmtDate(o.campaign_end)}</div>
+      </div>
+    </div>
+
     <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:14px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Current Services</div>
     <table style="width:100%;border-collapse:collapse">${rows}</table>
     <div style="margin-top:10px;font-size:9.5pt;color:#111827"><strong>One-Time Total:</strong> ${fmt(oneTime)} &nbsp;&nbsp; <strong>Monthly Recurring:</strong> ${fmt(monthly)}/mo</div>
     ${historyRows ? `
     <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Change History</div>
     <table style="width:100%;border-collapse:collapse">${historyRows}</table>` : ''}
+
+    <div style="margin-top:18px;padding:12px 14px;border:1px solid #E5E7EB;border-radius:6px">
+      <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:6px">Original Client Authorization</div>
+      ${sigHtml}
+      <div style="margin-top:4px;font-size:9pt;color:#111827"><strong>${esc(o.signer_name || '—')}</strong>${o.signer_title ? ' — ' + esc(o.signer_title) : ''}</div>
+      <div style="font-size:8pt;color:#6B7280">Signed ${o.signed_at ? new Date(o.signed_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : fmtDate(o.io_date)}</div>
+    </div>
   </div>`;
 
   const iframe = document.createElement('iframe');
