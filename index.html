@@ -758,18 +758,6 @@ select.qty-field{background-image:none;padding-right:3px}
     </div>
   </div>
 
-  <!-- Companion form link (2026-08-31, per Claire — "I thought it was going
-       to be like a link on the IO page saying something like need to cancel,
-       edit or renew a service"): hidden until a real group has loaded
-       (loadGroup() reveals it, same moment group-display itself is shown),
-       since there's no group context to carry over before that. Opens in a
-       new tab so clicking it never risks losing an in-progress IO the AE
-       hasn't submitted yet. Same slug the IO form itself just resolved --
-       companion/index.html reads it via the identical getSlug() pattern. -->
-  <div id="companion-link-banner" style="display:none;text-align:center;margin-bottom:20px">
-    <a id="companion-link" href="#" target="_blank" rel="noopener" style="font-size:12.5px;font-weight:600;color:var(--accent-dark);text-decoration:none">Need to cancel, edit, or renew an existing service? →</a>
-  </div>
-
   <!-- Step indicators -->
   <div class="steps" id="steps-nav">
     <div class="step active" id="step-1" onclick="goStep(1)" role="button" tabindex="0" aria-current="step" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();goStep(1)}"><span class="step-num">Step 1</span><span class="step-label">Client Info</span></div>
@@ -3231,24 +3219,6 @@ async function loadGroup() {
     loadClientRoster(selectedGroup.id);
     document.getElementById('group-display').style.display = 'block';
     document.getElementById('group-name-display').textContent = selectedGroup.name;
-    // Companion form link (2026-08-31) — same slug this page just used to
-    // resolve selectedGroup itself, so it always points at the matching group.
-    const companionLink = document.getElementById('companion-link');
-    const companionBanner = document.getElementById('companion-link-banner');
-    if (companionLink && companionBanner) {
-      // REVERTED back to "?g=" (2026-08-31, found live by Claire): tried the
-      // bare-path form ("companion/ctg") first since the real group link is
-      // a bare path ("/ctg") — but that trick only works at the ROOT level;
-      // "/companion/ctg" isn't a real file either, and testing live showed it
-      // falls all the way back to the ROOT index.html, not companion/index.html
-      // (unlike bare "/companion/" with no extra segment, which DID correctly
-      // load the real companion page in an earlier live test). The host
-      // evidently has no path-based routing for anything nested under
-      // /companion/ — only the query-string form actually reaches the right
-      // file reliably.
-      companionLink.href = 'companion/?g=' + encodeURIComponent(slug);
-      companionBanner.style.display = 'block';
-    }
   } catch(e) {
     console.error('loadGroup error:', e.message, e.stack);
     showGroupError();

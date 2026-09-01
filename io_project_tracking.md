@@ -24214,3 +24214,59 @@ notice was actively wrong, not just outdated. Removed the banner along
 with the stale "(read-only for Phase 1)" code comment above it.
 
 **Verified**: `node --check`.
+
+## Removed the Companion Form link from the public IO form (2026-09-02)
+
+Claire is adding a link to the Companion Form directly on the 44i website
+instead — the whole flow stays inside the same iframe that way, rather
+than opening the Companion Form in a new tab from a link on the IO form
+itself. Removed the `#companion-link-banner` div (with its "Need to
+cancel, edit, or renew an existing service? →" link) from `index.html`,
+and the `loadGroup()` code that populated/revealed it. The Companion
+Form page itself (`companion/index.html`) is untouched — only the
+IO-form-side entry point is gone.
+
+**Verified**: grepped `index.html` for any other reference to
+`companion-link`/`companion-link-banner` (none), `node --check`.
+
+## Companion Form's text color didn't adapt to a group's brand color (2026-09-02)
+
+Claire noticed the Companion Form's text didn't visually match the main
+IO form. Root cause: `index.html`'s `applyGroupBranding()` recomputes
+three CSS variables whenever a group's `brand_color` loads —
+`--accent-rgb`, `--accent-text` (via `pickReadableTextColor()`), and
+`--accent-on-light` (via `ensureReadableOnLight()`) — added 2026-08-17 by
+an accessibility/contrast audit so header/button text always picks
+whichever of white or dark ink actually reads clearly against that
+group's own color, since a flat brightness threshold gets real cases
+wrong (the audit's own default blue included, at only 3.1:1 contrast).
+`companion/index.html`'s copy of `applyGroupBranding()` was never updated
+to match — it only ever set `--accent` and `--light`, leaving
+`--accent-text`/`--accent-on-light` permanently stuck at their default
+values regardless of the group's actual brand color. So the Companion
+Form's header text and `.btn-primary`/`.action-tab.active` buttons (the
+latter two were separately hardcoded to plain `color:#fff` instead of
+using `--accent-text` at all) could go illegible or just visibly
+mismatched from the main IO form for any group whose brand color needs
+dark ink instead of white, or vice versa.
+
+**Fix**: ported `pickReadableTextColor()`, `ensureReadableOnLight()`, and
+`hexToRgbTriplet()` verbatim from `index.html` into `companion/index.html`
+(this page deliberately doesn't load `shared.js`, same as `index.html`
+itself — kept in sync by hand, per this file's existing convention noted
+in both pages' own comments). `applyGroupBranding()` now sets
+`--accent-rgb`/`--accent-text`/`--accent-on-light` the same way
+`index.html` does. Also changed `.btn-primary` and `.action-tab.active`
+from a hardcoded `color:#fff` to `color:var(--accent-text)`, so they pick
+readable ink the same way the IO form's own primary button already does.
+
+**Verified**: `node --check` on the extracted inline script. Extracted
+the three ported functions into a standalone Node harness and ran them
+against a dark brand color, a bright brand color, and the default blue —
+results matched `index.html`'s own documented behavior exactly (e.g. the
+default blue #1C9BD7 correctly picks dark ink, matching the accessibility
+audit's own note that it only reaches 3.1:1 contrast with white; a dark
+navy brand color correctly picks white). Not yet visually confirmed live
+in a browser against a real branded group — Claire, worth a quick look at
+a client group with a distinctly light or dark brand color to confirm the
+header/buttons look right.
