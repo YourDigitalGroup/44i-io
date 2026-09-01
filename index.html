@@ -692,7 +692,18 @@ select.qty-field{background-image:none;padding-right:3px}
 .success-screen p{color:var(--muted);font-size:14px;line-height:1.6;max-width:440px;margin:0 auto 24px}
 
 /* Intake modal */
-.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:8000;display:flex;align-items:center;justify-content:center;padding:20px}
+/* Backdrop softened (2026-09-02, per Claire -- "in the iframe the grey out
+   when the intake form pops up looks bad"): flat rgba(0,0,0,.55) reads as a
+   harsh, industrial grey block against the surrounding website when this
+   page is embedded in an iframe (no border/vignette of its own to blend
+   into the host page). Switched to a brand-navy tint (matches --text) at a
+   lower opacity plus a light blur, which reads as a soft focus-dim rather
+   than a flat grey wall -- same visual language a modal on a modern site
+   uses, and still dark enough to keep the modal box as the clear focal
+   point. backdrop-filter degrades gracefully (Safari/Chrome/Edge/Firefox
+   all support it; if a very old browser doesn't, this line is just
+   ignored and the tinted background alone still works). */
+.modal-backdrop{position:fixed;inset:0;background:rgba(26,35,50,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;align-items:center;justify-content:center;padding:20px}
 .modal-box{background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.25)}
 .modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:1}
 .modal-header h3{font-size:15px;font-weight:700;color:var(--text)}
