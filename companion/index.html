@@ -256,19 +256,21 @@ async function applyClientPick(id) {
   // checkbox split for these two mechanisms.
   try {
     const ids = [...new Set(ACTIVE_SERVICES.map(s => s.service_id))];
-    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,pricing_mode,default_price`) || [];
+    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price`) || [];
     const byId = Object.fromEntries(rows.map(r => [r.id, r]));
     ACTIVE_SERVICES.forEach(svc => {
       const r = byId[svc.service_id] || {};
       svc._variantOptions = Array.isArray(r.tactic_variants) ? r.tactic_variants : null;
       const moduleOptions = typeof r.qty_option_labels === 'string' ? JSON.parse(r.qty_option_labels || 'null') : r.qty_option_labels;
       svc._moduleOptions = Array.isArray(moduleOptions) ? moduleOptions : null;
+      const presetOptions = typeof r.qty_preset_options === 'string' ? JSON.parse(r.qty_preset_options || 'null') : r.qty_preset_options;
+      svc._qtyPresetOptions = Array.isArray(presetOptions) ? presetOptions : null;
       svc._pricingMode = r.pricing_mode || null;
       svc._defaultPrice = r.default_price ?? null;
     });
   } catch(e) {
     console.warn('Could not load catalog pricing/option data:', e.message);
-    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; svc._moduleOptions = null; svc._pricingMode = null; svc._defaultPrice = null; });
+    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; svc._moduleOptions = null; svc._qtyPresetOptions = null; svc._pricingMode = null; svc._defaultPrice = null; });
   }
 
   list.innerHTML = ACTIVE_SERVICES.map((svc, i) => renderServiceRow(svc, i)).join('');
@@ -397,6 +399,16 @@ function isModuleService(svc) {
   return Array.isArray(svc._moduleOptions) && svc._moduleOptions.length > 0;
 }
 
+// A plain per_unit quantity (e.g. "Addl. Monthly Email" -- how many extra
+// emails, a number or a preset dropdown, not a named checkbox list) --
+// (2026-08-31, per Claire — "should we add a way to edit the quantity?").
+// The per-unit RATE is still fixed by the catalog (isAmountEditable stays
+// false for these), but the quantity itself is exactly what's typed/picked
+// in the main IO form, so it's what's editable here too.
+function isPerUnitQtyService(svc) {
+  return svc._pricingMode === 'per_unit' && !isModuleService(svc);
+}
+
 // Whether this service's dollar amount is even editable through this form
 // at all, matching Claire's rule of thumb (2026-08-31): "if you can't edit
 // it in the IO form you can't edit it in the companion form." In the main
@@ -466,8 +478,18 @@ function setServiceAction(i, action) {
     if (isModuleService(svc)) {
       const chosen = Array.isArray(svc.module_names) ? svc.module_names : [];
       extraFieldsHtml += `<div class="field"><label>Modules</label>
-        <div>${svc._moduleOptions.map(name => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:4px"><input type="checkbox" class="edit-module-${i}" value="${esc(name)}" ${chosen.includes(name) ? 'checked' : ''}/> ${esc(name)}</label>`).join('')}</div>
+        <div>${svc._moduleOptions.map(name => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;margin-top:4px;text-transform:none;font-weight:400;color:var(--text)"><input type="checkbox" class="edit-module-${i}" value="${esc(name)}" ${chosen.includes(name) ? 'checked' : ''} style="width:16px;height:16px;flex:none;accent-color:var(--accent)"/> ${esc(name)}${chosen.includes(name) ? ' <span style="color:var(--muted);font-size:11px">(currently selected)</span>' : ''}</label>`).join('')}</div>
       </div>`;
+      body.innerHTML = extraFieldsHtml;
+    } else if (isPerUnitQtyService(svc)) {
+      // A plain per_unit quantity (2026-08-31, per Claire) -- a preset
+      // dropdown if the catalog constrains it to specific values, otherwise
+      // a free number, same as the main IO form's own qty control.
+      const currentQty = svc.qty ?? 1;
+      const qtyControl = Array.isArray(svc._qtyPresetOptions) && svc._qtyPresetOptions.length
+        ? `<select id="edit-qty-${i}">${svc._qtyPresetOptions.map(v => `<option value="${esc(v)}" ${Number(v) === Number(currentQty) ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>`
+        : `<input type="number" min="1" id="edit-qty-${i}" value="${esc(currentQty)}"/>`;
+      extraFieldsHtml += `<div class="field"><label>Quantity</label>${qtyControl}</div>`;
       body.innerHTML = extraFieldsHtml;
     } else if (oneTime) {
       // One-time costs: no amount field, per Claire (2026-08-31) — the
@@ -612,6 +634,12 @@ function collectServicePayload(i) {
       const changed = chosen.length !== current.length || chosen.some(m => !current.includes(m));
       if (changed) fields.module_names = JSON.stringify(chosen);
       if (!Object.keys(fields).length) return { error: `Please change the date, variant, or modules for ${svc.label}` };
+      return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
+    }
+    if (isPerUnitQtyService(svc)) {
+      const qtyVal = document.getElementById(`edit-qty-${i}`)?.value;
+      if (qtyVal && Number(qtyVal) !== Number(svc.qty ?? 1)) fields.qty = qtyVal;
+      if (!Object.keys(fields).length) return { error: `Please change the date, variant, or quantity for ${svc.label}` };
       return { service_id: svc.service_id, order_id: svc.order_id, action: 'edit', requested_changes: { fields } };
     }
     if (isOneTimeOnly(svc) || !isAmountEditable(svc)) {

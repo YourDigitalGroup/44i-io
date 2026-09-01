@@ -23245,6 +23245,57 @@ real service shapes, including "Website SEO/AEO — Business Starter"
 and "Website One-Time — Modules" specifically. Not yet re-tested live
 against Test Business 8 — next step once Claire runs the SQL.
 
+## Follow-up (same day): module checkboxes broken + missing qty editing
+
+Claire tried the Modules editor live and sent screenshots. Two things:
+
+**1. Module checkboxes rendered broken — root cause found by reading the
+CSS, not guessing.** The checkboxes appeared as a stray column of empty
+boxes, disconnected from their (bold, uppercase, gray) label text pushed
+to the far right, with none visibly checked. Traced to
+`companion/index.html`'s own global `.field input,.field select,.field
+textarea{width:100%}` and `.field label{...uppercase;font-weight:700;
+color:var(--muted)}` rules — both meant for the page's normal single-
+input fields, but since the module checkboxes/labels live inside a
+`<div class="field">` too, they inherited both: `width:100%` stretched
+each checkbox to fill its whole flex row (squeezing the checkmark itself
+down to near-invisible and shoving the text off), and the label rule
+made every module name render like a field caption instead of a normal
+checkbox label. This fully explains BOTH of Claire's complaints (broken
+layout AND "can't tell what's picked") as one root cause, not two.
+Fixed by giving each checkbox an explicit `width:16px;height:16px;
+flex:none` and resetting the label's `text-transform`/`font-weight`/
+`color` inline, plus added an explicit "(currently selected)" tag next
+to already-checked modules for clarity. Same "(currently selected)" tag
+added to admin's equivalent module checkboxes for consistency (admin
+has no matching `.field` rule, so it wasn't broken there, just made
+more explicit).
+
+**2. Quantity editing for plain per_unit services.** Claire: "For addl.
+monthly email or similar services should we add a way to edit the
+quantity?" Right — per_unit pricing has three shapes in the catalog:
+`qty_option_labels` (named checkboxes, e.g. Website Modules — already
+built), `qty_preset_options` (a constrained dropdown, e.g. 15-minute
+increments), and a plain free-typed number (the "Addl. Monthly Email"
+case) — the last two had no companion-form equivalent. Added
+`isPerUnitQtyService(svc)` (companion) / an inline check (admin): any
+`pricing_mode: 'per_unit'` service that ISN'T the named-checkbox kind
+gets a Quantity control instead — a dropdown if `qty_preset_options` is
+set, otherwise a plain number input — same rule of thumb as everything
+else: the per-unit RATE stays fixed (not editable), but the quantity is
+exactly what's typed/picked in the main IO form, so it's editable here.
+
+**SQL** (sent to Claire — `companion_get_active_services` changes return
+columns again, so needs `drop function` first same as last time; the
+`admin_edit_order_line_item` allowlist addition doesn't):
+- `companion_get_active_services` — added `qty` to the output.
+- `admin_edit_order_line_item` — added `'qty'` to the allowlist and to
+  the numeric-cast field list (falls through the existing generic ELSE
+  branch, no new branching needed since qty is a plain number like
+  recurring/spend/fee).
+
+Verified: `node --check` on both files after all changes.
+
 Claire hit `42P13: cannot change return type of existing function` trying
 to run the `companion_get_active_services` update — Postgres won't let
 `CREATE OR REPLACE` change a function's OUT columns. Gave her a
