@@ -267,7 +267,7 @@ async function applyClientPick(id) {
   // checkbox split for these two mechanisms.
   try {
     const ids = [...new Set(ACTIVE_SERVICES.map(s => s.service_id))];
-    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price,workflow,accounting_label`) || [];
+    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price,workflow,trello_template_ref,accounting_label`) || [];
     const byId = Object.fromEntries(rows.map(r => [r.id, r]));
     ACTIVE_SERVICES.forEach(svc => {
       const r = byId[svc.service_id] || {};
@@ -278,7 +278,13 @@ async function applyClientPick(id) {
       svc._qtyPresetOptions = Array.isArray(presetOptions) ? presetOptions : null;
       svc._pricingMode = r.pricing_mode || null;
       svc._defaultPrice = r.default_price ?? null;
-      svc._workflow = r.workflow || null;
+      // Mirrors index.html's own effectiveWorkflow() (2026-09-01, found live
+      // by Claire -- Traditional Media/Website Modules have a real
+      // trello_template_ref but no `workflow`, so they get their OWN
+      // standalone card keyed `__standalone__<id>` in trello_card_ids
+      // rather than a named workflow's card. Using the raw `workflow`
+      // field alone silently found no card at all for these).
+      svc._workflow = r.workflow || (r.trello_template_ref ? '__standalone__' + r.id : null);
       svc._accountingLabel = r.accounting_label || null;
     });
   } catch(e) {

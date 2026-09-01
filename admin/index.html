@@ -8160,6 +8160,19 @@ function adminCampaignDueFields(endDate) {
   return { due: `${endDate}T17:00:00.000Z`, dueReminder: ADMIN_CAMPAIGN_END_REMINDER_MINUTES };
 }
 
+// Mirrors index.html's own effectiveWorkflow() (2026-09-01, found live by
+// Claire testing Test Business 9 -- "Traditional Media" and "Website
+// Modules" both have a real trello_template_ref but no `workflow`, so they
+// get their OWN standalone card, keyed `__standalone__<id>` in an order's
+// trello_card_ids, rather than a named workflow's shared card. Every place
+// in this file that looks up a service's tactic card via trello_card_ids
+// needs this, not the raw `.workflow` field, or a standalone service's own
+// edits/cancels/renewals/comments silently find no card at all.
+function adminEffectiveWorkflow(svc) {
+  if (!svc) return null;
+  return svc.workflow || (svc.trello_template_ref ? '__standalone__' + svc.id : null);
+}
+
 // Updates a tactic's own Trello card: its title (when renameTitle is true,
 // i.e. a variant/module pick changed) and/or its due date (whenever
 // item.end_date is set) — both land on the same card via one
@@ -8168,7 +8181,7 @@ async function adminUpdateTacticCard(orderId, serviceId, item, { renameTitle } =
   try {
     const o = allOrders.find(x => x.id === orderId);
     const svc = CATALOG_ROWS[serviceId] || {};
-    const tacticCardId = svc.workflow ? o?.trello_card_ids?.[svc.workflow] : null;
+    const tacticCardId = o?.trello_card_ids?.[adminEffectiveWorkflow(svc)];
     if (!tacticCardId) return;
     const payload = { target: 'trello_update_card', card_id: tacticCardId, ...adminCampaignDueFields(item?.end_date) };
     if (renameTitle) {
@@ -8454,7 +8467,7 @@ async function adminApprovePendingRequestClick(id) {
     const admin = currentAdminUser?.name || 'AM';
     const c = req.requested_changes || {};
     const ioCardId = o.trello_card_ids?.__io_card__;
-    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
     let commentText = '';
     let attachRevisedPdf = false;
@@ -8638,7 +8651,7 @@ async function finalizeBatchIfReady(batchId) {
     const svc = allServicesMap.find(s => s.id === r.service_id) || {};
     const label = svc.accounting_label || svc.label || r.service_id;
     const ioCardId = o.trello_card_ids?.__io_card__;
-    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
     const targets = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
     if (!targets.length) continue;
 
@@ -9325,7 +9338,7 @@ async function adminSubmitCancellation(orderId, serviceId) {
   // so an AM watching the IO card for activity would see edits/renewals but
   // silently miss a cancellation -- the more important one not to miss).
   const ioCardId = o?.trello_card_ids?.__io_card__;
-  const tacticCardId = svc.workflow ? o?.trello_card_ids?.[svc.workflow] : null;
+  const tacticCardId = o?.trello_card_ids?.[adminEffectiveWorkflow(svc)];
   const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
   const commentText = `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`;
   for (const cardId of cardIds) {
@@ -9420,7 +9433,7 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     const label = svc.accounting_label || svc.label || serviceId;
     const commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
-    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
@@ -9540,7 +9553,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     const label = svc.accounting_label || svc.label || serviceId;
     const commentText = `📅 ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
-    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
@@ -9666,7 +9679,7 @@ async function adminSaveMonthBudgetsEdit(orderId, serviceId) {
     const label = svc.accounting_label || svc.label || serviceId;
     const commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
-    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
@@ -9807,7 +9820,7 @@ async function adminConfirmRenewal(orderId, serviceId) {
     const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
     const commentText = `🔁 Renewed ${label} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
-    const tacticCardId = svc.workflow ? o.trello_card_ids?.[svc.workflow] : null;
+    const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
     const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
