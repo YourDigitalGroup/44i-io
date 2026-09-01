@@ -8016,8 +8016,14 @@ function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
   // "we are missing the module options").
   if (moduleOptions && moduleOptions.length) {
     const chosen = Array.isArray(item?.module_names) ? item.module_names : [];
+    // An order placed before module_names existed only ever recorded a
+    // plain qty number, never WHICH modules were picked (2026-08-31, found
+    // live by Claire — nothing showed as selected). Flag that honestly
+    // rather than silently showing an all-unchecked list that looks broken.
+    const noRecord = !chosen.length && item?.qty > 0;
     html += `<div style="margin-bottom:8px">
       <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:4px">Modules:</label>
+      ${noRecord ? `<p style="font-size:11.5px;color:var(--muted);font-style:italic;margin-bottom:6px">This order predates individual module tracking — no record of which ${esc(item.qty)} module(s) were originally picked. Check whichever are currently active.</p>` : ''}
       ${moduleOptions.map(name => `<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:3px"><input type="checkbox" class="edit-extra-module-${esc(serviceId)}" value="${esc(name)}" ${chosen.includes(name) ? 'checked' : ''}/> ${esc(name)}${chosen.includes(name) ? ' <span style="color:var(--muted);font-size:11px">(currently selected)</span>' : ''}</label>`).join('')}
     </div>`;
   } else if (svc.pricing_mode === 'per_unit') {

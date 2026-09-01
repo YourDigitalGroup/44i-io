@@ -23296,6 +23296,29 @@ columns again, so needs `drop function` first same as last time; the
 
 Verified: `node --check` on both files after all changes.
 
+**Follow-up (same day)**: Claire — "I don't see the currently selected.
+Do we need to do the same with the variant options?" Asked her to run a
+diagnostic query on real `w-module` line items rather than guess. Result:
+both real orders checked had `module_names: null` but `qty: 3` — meaning
+those orders were placed before today's `module_names` tracking existed
+(a brand-new mechanism, built earlier this same session) and only ever
+recorded a plain quantity, never which specific modules were picked.
+Confirmed this is a real, unrecoverable data gap, not a code bug — there
+was genuinely nothing for "(currently selected)" to show. Fixed by
+adding an honest note whenever this happens (`module_names` empty but
+`qty > 0`): "This order predates individual module tracking — no record
+of which N module(s) were originally picked. Check whichever are
+currently active." — on both companion and admin, so an AE/AM sees an
+explanation instead of what looks like a broken checkbox list.
+
+On the variant question: no equivalent fix needed — a `<select>`
+dropdown already visually shows its current value as the picked option,
+unlike a checkbox list where nothing distinguishes "already checked"
+without an explicit label. Recommended checking whether the SAME
+missing-old-data situation could affect `tactic_variant` too (the
+diagnostic query above included it) — came back `null` on the same rows,
+consistent with the same explanation, not a separate bug.
+
 Claire hit `42P13: cannot change return type of existing function` trying
 to run the `companion_get_active_services` update — Postgres won't let
 `CREATE OR REPLACE` change a function's OUT columns. Gave her a
