@@ -7978,6 +7978,42 @@ function applyFieldChangeLocally(item, field, value) {
   return { description, historyOldValue };
 }
 
+// Trello card title resolution — ported from index.html's own
+// resolveVariantDisplayName()/resolveModuleDisplayName()/resolveRowDisplayName()
+// (2026-08-31, per Claire — "will [an edit] update the card title in both
+// cases?"). Kept as independent copies here, same "no shared.js, kept in
+// sync by hand" convention this whole file already follows for CATALOG_ROWS
+// itself. Both variant and module titles now use the SAME "SectionLabel:
+// detail" format (per Claire — "titling the module cards the same as the
+// variant cards, to make it cleaner"; modules used to be a different
+// "Base (detail)" parenthetical style).
+function adminVariantIsAlreadyComplete(variant) {
+  if (variant.includes(':')) return true;
+  return SECTIONS.some(s => s.label && variant.toLowerCase().startsWith(s.label.toLowerCase()));
+}
+function adminResolveVariantDisplayName(serviceId, variant, fallbackName) {
+  if (!variant) return fallbackName;
+  if (adminVariantIsAlreadyComplete(variant)) return variant;
+  const sectionLabel = SECTIONS.find(s => s.id === CATALOG_ROWS[serviceId]?.section)?.label;
+  return sectionLabel ? `${sectionLabel}: ${variant}` : variant;
+}
+function adminResolveModuleDisplayName(serviceId, moduleNames, fallbackName) {
+  if (!moduleNames || !moduleNames.length) return fallbackName;
+  const sectionLabel = SECTIONS.find(s => s.id === CATALOG_ROWS[serviceId]?.section)?.label;
+  const detail = moduleNames.join(', ');
+  return sectionLabel ? `${sectionLabel}: ${detail}` : detail;
+}
+// Given a line item's CURRENT state (after whatever edit was just applied),
+// what should its Trello card be titled? Mirrors index.html's
+// resolveRowDisplayName() dispatch order (variant first, then modules, then
+// the plain catalog label) so a card's title always matches what the main
+// IO form itself would have named it if this had been the original pick.
+function adminResolveTacticCardTitle(serviceId, item, fallbackLabel) {
+  if (item?.tactic_variant) return adminResolveVariantDisplayName(serviceId, item.tactic_variant, fallbackLabel);
+  if (item?.module_names?.length) return adminResolveModuleDisplayName(serviceId, item.module_names, fallbackLabel);
+  return fallbackLabel;
+}
+
 // Start/End Date + (if this service has any configured) tactic Variant --
 // appended to every AM-triggered Edit panel below regardless of pricing
 // type (2026-08-31, per Claire — "we are missing the option to change the
@@ -8100,7 +8136,33 @@ async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
     descriptions.push(description);
     historyEntries.push({ service_id: serviceId, field, old_value: historyOldValue, new_value: value, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() });
   }
+  // A variant or module change also renames the tactic's own Trello card,
+  // not just a comment (2026-08-31, per Claire — "will [an edit] update the
+  // card title in both cases?"), so the card always reflects the CURRENT
+  // pick rather than staying frozen at whatever was chosen on submission.
+  if ('tactic_variant' in extraFields || 'module_names' in extraFields) {
+    await adminRenameTacticCard(orderId, serviceId, item);
+  }
   return { descriptions, historyEntries };
+}
+
+async function adminRenameTacticCard(orderId, serviceId, item) {
+  try {
+    const o = allOrders.find(x => x.id === orderId);
+    const svc = CATALOG_ROWS[serviceId] || {};
+    const tacticCardId = svc.workflow ? o?.trello_card_ids?.[svc.workflow] : null;
+    if (!tacticCardId) return;
+    const fallbackLabel = svc.accounting_label || svc.label || serviceId;
+    const newTitle = adminResolveTacticCardTitle(serviceId, item, fallbackLabel);
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+      body: JSON.stringify({ target: 'trello_update_card', card_id: tacticCardId, name: newTitle }),
+    });
+    if (!res.ok) console.warn('Could not rename Trello card', tacticCardId, ':', res.status);
+  } catch (e) {
+    console.warn('Could not rename Trello card:', e.message);
+  }
 }
 async function loadAdminPendingRequests() {
   const el = document.getElementById('admin-pending-list');
@@ -8343,6 +8405,13 @@ async function adminApprovePendingRequestClick(id) {
       }
       commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${admin}).`;
       attachRevisedPdf = true;
+      // A variant or module change also renames the tactic's own Trello
+      // card here too, same as the AM-triggered edit path (2026-08-31, per
+      // Claire) — an approved companion-form request shouldn't leave the
+      // card title any more stale than a direct AM edit would.
+      if (item && ('tactic_variant' in fields || 'module_names' in fields)) {
+        await adminRenameTacticCard(req.order_id, req.service_id, item);
+      }
     } else if (req.action === 'renew') {
       // Matches adminConfirmRenewal()'s exact wording (no PDF reattach there
       // either — this stays consistent with it).

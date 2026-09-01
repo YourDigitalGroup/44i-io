@@ -23319,6 +23319,60 @@ missing-old-data situation could affect `tactic_variant` too (the
 diagnostic query above included it) — came back `null` on the same rows,
 consistent with the same explanation, not a separate bug.
 
+## Trello card title: unify variant/module format + rename on edit (2026-08-31)
+
+Claire, next: "Did we look at titling the module cards the same as the
+variant cards, to make it cleaner? If they make a change will that
+update the card title in both cases?" Checked the code for both —
+answer to both was no, not yet:
+
+- **Title format was inconsistent.** A variant card title used
+  `resolveVariantDisplayName()`'s "SectionLabel: detail" format (e.g.
+  "Location-Based Targeting: 1st Party Addressable"); a module card
+  title used `resolveModuleDisplayName()`'s own different "Base
+  (detail)" parenthetical format (e.g. "Website One-Time — Modules
+  (Newsletter, News/Blog, Testimonial)").
+- **Neither renamed the card on edit.** Confirmed no `trello_update_card`
+  call existed anywhere in the companion-approval or AM-triggered edit
+  paths — both only ever posted a comment. `trello_update_card` itself
+  is a real, already-used proxy target (index.html uses it elsewhere),
+  just never wired into either edit flow.
+
+Asked Claire which unified format she wanted — she picked the
+"SectionLabel: detail" style (the existing variant format), so
+`resolveModuleDisplayName()` was rewritten to match it exactly rather
+than inventing a third style. She also confirmed both should rename the
+card on edit, not just comment.
+
+**index.html**: `resolveModuleDisplayName()` signature changed from
+`(moduleNames, fallbackName)` to `(serviceId, moduleNames,
+fallbackName)` — needed serviceId to look up the section, same as
+`resolveVariantDisplayName()` already does. Both call sites updated
+(the Trello card-naming code, and `resolveRowDisplayName()`'s dispatch).
+
+**admin/index.html**: ported `resolveVariantDisplayName()`/
+`resolveModuleDisplayName()`/`variantIsAlreadyComplete()` as
+`adminResolveVariantDisplayName()`/`adminResolveModuleDisplayName()`/
+`adminVariantIsAlreadyComplete()` — same independent-copy convention
+this whole file already follows for `CATALOG_ROWS` itself, not shared
+with index.html. Added `adminResolveTacticCardTitle(serviceId, item,
+fallbackLabel)` mirroring `resolveRowDisplayName()`'s dispatch (variant
+first, then modules, then the plain catalog label), and a new
+`adminRenameTacticCard(orderId, serviceId, item)` that resolves the
+tactic card id (`CATALOG_ROWS[serviceId].workflow` → `trello_card_ids`)
+and calls `trello_update_card` with the freshly-resolved title. Wired
+into both `adminSaveExtraEditFields()` (covers all three AM-triggered
+edit panels, since they all route extra-field saves through it) and
+`adminApprovePendingRequestClick()`'s edit branch (covers a companion-
+form request once approved) — either path renames the card whenever
+`tactic_variant` or `module_names` was among the changed fields, right
+alongside the existing comment/PDF-reattach step, never instead of it.
+
+Verified: `node --check` on both files, plus a standalone harness
+confirming both a variant and a module case now produce the identical
+"SectionLabel: detail" format, and the no-selection-yet case correctly
+falls back to the plain catalog label.
+
 Claire hit `42P13: cannot change return type of existing function` trying
 to run the `companion_get_active_services` update — Postgres won't let
 `CREATE OR REPLACE` change a function's OUT columns. Gave her a
