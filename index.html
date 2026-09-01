@@ -692,18 +692,14 @@ select.qty-field{background-image:none;padding-right:3px}
 .success-screen p{color:var(--muted);font-size:14px;line-height:1.6;max-width:440px;margin:0 auto 24px}
 
 /* Intake modal */
-/* Backdrop softened (2026-09-02, per Claire -- "in the iframe the grey out
-   when the intake form pops up looks bad"): flat rgba(0,0,0,.55) reads as a
-   harsh, industrial grey block against the surrounding website when this
-   page is embedded in an iframe (no border/vignette of its own to blend
-   into the host page). Switched to a brand-navy tint (matches --text) at a
-   lower opacity plus a light blur, which reads as a soft focus-dim rather
-   than a flat grey wall -- same visual language a modal on a modern site
-   uses, and still dark enough to keep the modal box as the clear focal
-   point. backdrop-filter degrades gracefully (Safari/Chrome/Edge/Firefox
-   all support it; if a very old browser doesn't, this line is just
-   ignored and the tinted background alone still works). */
-.modal-backdrop{position:fixed;inset:0;background:rgba(26,35,50,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;align-items:center;justify-content:center;padding:20px}
+/* Backdrop: no color at all now (2026-09-02, per Claire -- the tinted
+   version still read as "really dark" in the iframe). Just the blur, on a
+   fully transparent background -- the modal box itself (opaque white)
+   is what visually separates from the page now, not a dimming layer.
+   backdrop-filter degrades gracefully (Safari/Chrome/Edge/Firefox all
+   support it; on a browser without it, this is simply an invisible,
+   click-catching backdrop with no blur -- never a dark/colored one). */
+.modal-backdrop{position:fixed;inset:0;background:transparent;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;align-items:center;justify-content:center;padding:20px}
 /* box-shadow removed (2026-09-02, per Claire) -- the blurred, tinted
    backdrop behind it already reads as separation from the page, so the
    drop shadow on top of that was extra visual weight she wanted gone. */
