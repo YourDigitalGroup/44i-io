@@ -2276,6 +2276,7 @@ function promptHosting(serviceId, pageType) {
     ? `<label><input type="radio" name="hosting-pkg" value="ecomm" onchange="onHostingPkgChange('ecomm')"/> ${fmt(fee)} E-Commerce Hosting (${days}-day start)</label>`
     : `<label><input type="radio" name="hosting-pkg" value="${pageType}" onchange="onHostingPkgChange('${pageType}')"/> ${fmt(fee)} Standard Hosting (${days}-day start)</label>`;
   document.getElementById('hosting-modal').style.display = 'flex';
+  notifyParentToScrollToModal('hosting-modal');
 }
 
 function onHostingChoiceChange(val) {
@@ -2533,6 +2534,31 @@ function updateKocCard() {
   }
 }
 
+// postMessage bridge for the WordPress iframe embed (2026-09-02, per Claire
+// — the embed is one large, non-scrolling iframe sized to fit the whole
+// form so the WORDPRESS PAGE scrolls through it, rather than the iframe
+// having its own internal scrollbar). This page has no way to know what
+// part of itself is actually visible on screen in that setup — a modal
+// centered via `position:fixed` centers on the iframe's FULL height, not
+// on wherever the visitor is currently scrolled to, which is why the
+// intake/hosting modal can pop up off-screen with nothing but the dimmed
+// backdrop visible. This tells the parent page where the modal actually
+// landed (in pixels from the top of this iframe's own content) so a
+// listener on the WordPress side can scroll ITSELF to bring it into view.
+// No-ops harmlessly if this page isn't embedded in an iframe, or if the
+// parent page has no listener for it (yet) — this is the page-side half of
+// a two-sided fix; the WordPress embed needs a small companion script.
+function notifyParentToScrollToModal(backdropId) {
+  try {
+    if (window.parent === window) return; // not embedded in an iframe
+    const box = document.querySelector(`#${backdropId} .modal-box`);
+    if (!box) return;
+    const rect = box.getBoundingClientRect();
+    const offsetY = rect.top + rect.height / 2;
+    window.parent.postMessage({ type: 'io-tool-scroll-to-modal', offsetY }, '*');
+  } catch (e) { /* cross-origin postMessage failures are non-fatal here */ }
+}
+
 // ── INTAKE MODAL ──────────────────────────────────────────────
 
 function intakeBackdropClick(e) {
@@ -2585,12 +2611,14 @@ function openIntakeForService(serviceId, forceEdit, storageKeyOverride) {
     document.getElementById('intake-help-btn').style.display = 'none';
     document.getElementById('intake-save-btn').style.display = 'none';
     document.getElementById('intake-modal').style.display = 'flex';
+    notifyParentToScrollToModal('intake-modal');
     return;
   }
 
   // Show full form
   showFullIntakeForm(serviceId, cfg, formDef, existing);
   document.getElementById('intake-modal').style.display = 'flex';
+  notifyParentToScrollToModal('intake-modal');
 }
 
 // No longer takes formKey as a param (2026-08-19) -- always reads the
