@@ -314,30 +314,65 @@ function showToast(msg, type='success') {
 // Renders nothing at all when edit_history is empty -- the common case
 // for every order that's never been amended, so this never clutters an
 // unamended order's view.
+// Plain-English summary of a single edit_history entry (field/old_value/
+// new_value) -- shared by the Amendment History table below AND the
+// Strategist Portal's own "Order Changes" notification (2026-09-02), so
+// every place that describes an order edit uses the same wording. Extended
+// beyond the original month_budgets/dollar-amount cases to also format
+// dates, tactic_variant, module_names (as an added/removed diff), and qty
+// nicely, matching the level of detail Admin's own Pending Requests list
+// got the same day, per Claire: "the AM should be able to fully understand
+// what is being requested at a glance" -- true for a strategist reading an
+// order's history too, not just an AM reviewing a pending request.
+function formatEditHistoryEntrySummary(h) {
+  const fmtMoney = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+  const field = h.field;
+  if (field === 'month_budgets') {
+    let oldTotal = 0, newTotal = 0;
+    try { oldTotal = (JSON.parse(h.old_value) || []).reduce((s, m) => s + (Number(m.amount) || 0), 0); } catch (e) {}
+    try { newTotal = (JSON.parse(h.new_value) || []).reduce((s, m) => s + (Number(m.amount) || 0), 0); } catch (e) {}
+    return `Month-by-month budget: ${fmtMoney(oldTotal)} total → ${fmtMoney(newTotal)} total`;
+  }
+  if (['spend', 'recurring', 'fee'].includes(field)) {
+    const label = field === 'recurring' ? 'Monthly amount' : field === 'spend' ? 'Monthly spend' : 'One-time fee';
+    return `${label}: ${fmtMoney(h.old_value)} → ${fmtMoney(h.new_value)}`;
+  }
+  if (field === 'start_date' || field === 'end_date') {
+    const label = field === 'start_date' ? 'Start date' : 'End date';
+    const fmtD = d => d ? new Date(d.slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    return `${label}: ${fmtD(h.old_value)} → ${fmtD(h.new_value)}`;
+  }
+  if (field === 'tactic_variant') {
+    return `Variant: "${esc(h.old_value || '(none)')}" → "${esc(h.new_value)}"`;
+  }
+  if (field === 'qty') {
+    return `Quantity: ${esc(h.old_value ?? '—')} → ${esc(h.new_value)}`;
+  }
+  if (field === 'module_names') {
+    let oldArr = [], newArr = [];
+    try { oldArr = JSON.parse(h.old_value) || []; } catch (e) {}
+    try { newArr = JSON.parse(h.new_value) || []; } catch (e) {}
+    const added = newArr.filter(m => !oldArr.includes(m));
+    const removed = oldArr.filter(m => !newArr.includes(m));
+    const bits = [];
+    if (added.length) bits.push('+' + added.join(', '));
+    if (removed.length) bits.push('−' + removed.join(', '));
+    return `Modules: ${esc(newArr.join(', ') || 'none')}${bits.length ? ' (' + esc(bits.join(', ')) + ')' : ''}`;
+  }
+  return `${esc(field)}: ${esc(h.old_value || '—')} → ${esc(h.new_value || '—')}`;
+}
 function renderAmendmentHistoryHtml(order) {
   const history = Array.isArray(order.edit_history) ? order.edit_history : [];
   if (!history.length) return '';
-  const fmtMoney = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   const fmtWhen = s => {
     if (!s) return '—';
     const d = new Date(s);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
   const rows = [...history].reverse().map(h => {
-    let summary;
-    if (h.field === 'month_budgets') {
-      let oldTotal = 0, newTotal = 0;
-      try { oldTotal = (JSON.parse(h.old_value) || []).reduce((s, m) => s + (Number(m.amount) || 0), 0); } catch (e) {}
-      try { newTotal = (JSON.parse(h.new_value) || []).reduce((s, m) => s + (Number(m.amount) || 0), 0); } catch (e) {}
-      summary = `Month-by-month budget: ${fmtMoney(oldTotal)} total → ${fmtMoney(newTotal)} total`;
-    } else if (['spend', 'recurring', 'fee'].includes(h.field)) {
-      summary = `${esc(h.field)}: ${fmtMoney(h.old_value)} → ${fmtMoney(h.new_value)}`;
-    } else {
-      summary = `${esc(h.field)}: ${esc(h.old_value || '—')} → ${esc(h.new_value || '—')}`;
-    }
     return `<tr>
       <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${esc(h.service_id || '—')}</td>
-      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${summary}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${formatEditHistoryEntrySummary(h)}</td>
       <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(h.edited_by || '—')}, ${fmtWhen(h.edited_at)}</td>
     </tr>`;
   }).join('');
