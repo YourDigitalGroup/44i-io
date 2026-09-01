@@ -24270,3 +24270,54 @@ navy brand color correctly picks white). Not yet visually confirmed live
 in a browser against a real branded group — Claire, worth a quick look at
 a client group with a distinctly light or dark brand color to confirm the
 header/buttons look right.
+
+## Revised IO PDF: fixed "$NaN" bug and redesigned to mirror the original IO (2026-09-02)
+
+Claire spotted "end_date: $NaN → $NaN" and "start_date: $NaN → $NaN" in
+Test Business 9's Revised IO Summary Change History (attached to Trello).
+Root cause: `generateAdminRevisedIoPdfBlob()`'s Change History table ran
+EVERY field's old/new value through the currency formatter (`fmt()` →
+`Number(value).toLocaleString()`), with no per-field awareness. A date
+field's old/new value is a `"YYYY-MM-DD"` string, not a number —
+`Number("2027-02-28")` is `NaN`. Every other field type it happened to
+handle correctly was numeric (spend/fee/recurring), so this never
+surfaced until a `start_date`/`end_date` edit actually reached this PDF.
+
+Claire separately asked if the Revised IO could "mirror the original IO
+while showing the changes" — the existing version was a much sparser,
+differently-styled "Revised IO Summary" than the original signed IO
+document, using a hardcoded blue instead of the group's own brand color
+and showing none of the submission/campaign context or original
+signature the real IO document has.
+
+**Fix**: added `describeHistoryValue(field, value)`, mirroring
+`applyFieldChangeLocally()`'s own per-field dispatch (the function that
+originally built each `edit_history` entry at edit time) — `start_date`/
+`end_date` now format as real dates, `month_budgets`/`module_names`
+parse their JSON arrays into a real total/list, `tactic_variant`/`qty`
+show their raw value, and only the genuinely-numeric fields (`spend`,
+`fee`, `recurring`) still go through `fmt()`. Field names also get a
+human label (e.g. "End Date" instead of the raw `end_date`) via a new
+`historyFieldLabels` map.
+
+Also redesigned the PDF layout to actually mirror the original: uses the
+order's own group's `brand_color` (via `allGroups.find(g => g.id ===
+o.group_id)`, same lookup Admin's own Order Detail view already does)
+instead of a hardcoded blue, added a Submission/Campaign info block
+(AE, IO Date, KOC, Campaign Start/End — all fields already on the order
+record, same ones Admin's on-screen Order Detail already shows, so no
+new fetch needed) and an "Original Client Authorization" block showing
+the original signature/signer/signed date, so the revised document reads
+as an update to the same signed order rather than an unrelated summary.
+
+**Verified**: `node --check` on the extracted inline script. Extracted
+`describeHistoryValue()`/`fmt()`/`fmtDate()` into a standalone Node
+harness and reproduced Claire's exact reported bug (`end_date`/
+`start_date` with `undefined` old values, same as a first-ever edit on a
+line item) — confirms the fix renders "—" for a missing old date and a
+real formatted date for the new one, instead of "$NaN" either way. Also
+verified `month_budgets` and `module_names` values render as a real
+total/list rather than `$NaN`. Not yet visually confirmed as a rendered
+PDF (html2canvas/jsPDF requires a live browser DOM) — Claire, worth
+generating one against a real edited order to confirm the layout reads
+well end-to-end.
