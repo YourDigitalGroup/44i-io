@@ -699,7 +699,17 @@ select.qty-field{background-image:none;padding-right:3px}
    backdrop-filter degrades gracefully (Safari/Chrome/Edge/Firefox all
    support it; on a browser without it, this is simply an invisible,
    click-catching backdrop with no blur -- never a dark/colored one). */
-.modal-backdrop{position:fixed;inset:0;background:transparent;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;align-items:center;justify-content:center;padding:20px}
+/* align-items:flex-start + padding-top:200px (2026-09-02, per Claire's web
+   developer): with the WordPress embed's large, non-scrolling iframe, a
+   modal vertically CENTERED (align-items:center) lands at the vertical
+   midpoint of the iframe's full height, not wherever the visitor is
+   actually scrolled to -- easily off-screen. Anchoring it near the TOP of
+   the iframe instead is a much closer match to where the visitor's
+   scroll position actually is in practice (they generally scroll an
+   intake link/button to near the top of their view before clicking it),
+   without needing the postMessage bridge's cooperating listener on the
+   WordPress side to be in place at all. */
+.modal-backdrop{position:fixed;inset:0;background:transparent;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);z-index:8000;display:flex;align-items:flex-start;justify-content:center;padding:200px 20px 20px}
 /* box-shadow removed (2026-09-02, per Claire), then the backdrop itself
    went fully transparent right after (see .modal-backdrop above) -- with
    neither a shadow nor a dimmed/tinted backdrop left, the white box had
