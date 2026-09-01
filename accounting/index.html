@@ -1824,6 +1824,20 @@ async function loadAccountingDashboard() {
 function accountingLineActiveInMonth(line, monthDate) {
   const monthKey = accountingMonthKey(monthDate);
   if (line.flight_start && monthKey < accountingMonthKey(new Date(line.flight_start + 'T00:00:00'))) return false;
+  // A one-time fee (ACCOUNTING_ONE_TIME_BILLING_TYPES, defined above
+  // alongside accountingMonthRowFor() -- reused here too) only ever
+  // happened in the single month it was billed. It
+  // typically has no real flight_end (nothing ongoing to bound), which
+  // previously let this function treat it as "active" every month forever
+  // after, so the table kept showing a stray $0.00 "Needs confirmation" row
+  // long after the one month it actually billed in (2026-09-02, found live
+  // by Claire: "one time costs look like they are ongoing in the accounting
+  // portal"). Bounded to its own flight_start month specifically -- the
+  // same "only the one month it was billed" rule accountingMonthRowFor()'s
+  // carry-forward exclusion already applies to these same billing types.
+  if (ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(line.billing_type)) {
+    return !line.flight_start || monthKey === accountingMonthKey(new Date(line.flight_start + 'T00:00:00'));
+  }
   if (line.flight_end && monthKey > accountingMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
   return true;
 }

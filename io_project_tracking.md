@@ -23916,3 +23916,57 @@ running the 3 SQL statements (2 new columns, the extended
 `strategist_get_campaign_lines`, the new `strategist_confirm_order_change`
 RPC) and then confirming Location Targeting's own now-stale gross
 budget/end date on Test Business 9 actually flags and syncs correctly.
+
+## Three real bugs found live, pre-launch-audit pass (2026-09-02)
+
+Claire, reviewing the new Strategist "Order Changes" feature: "A few
+things and then I think we are good to do one more audit."
+
+**1. Admin badges only computed once their tab was clicked.** The
+Accounting Map badge's own existing code comment already said the point
+was to be "visible without having to open the tab first" — but both it
+and the Pending Requests badge only ever actually populated inside their
+own tab's load function. Fixed with a new `eagerlyLoadAdminBadges()`,
+called (fire-and-forget, not blocking the default tab's render) right
+after login in `showAdmin(true)`. Whichever tab is actually opened later
+still does its own full authoritative reload — this is just a head start
+on the count. Verified: `node --check`.
+
+**2. Amendment History missing from Accounting's/Strategist's "View
+Order."** Root cause confirmed by pulling both live function
+definitions: `accounting_get_order_detail`/`strategist_get_order_detail`
+both select a fixed column list from `orders` that never included
+`edit_history` — so `renderOrderDetailModal()`'s shared Amendment History
+section (which reads `order.edit_history`, already working fine in
+Admin's own order view) silently rendered nothing in these two portals.
+One-line addition to each RPC's `jsonb_build_object` — no other change.
+Sent as a `create or replace` for Claire to run.
+
+**3. A one-time fee looked like an ongoing monthly charge in Accounting.**
+Diagnosed via real data, not guessed: confirmed only ONE real
+`campaign_months` row exists for Test Business 9's Traditional Media
+Buying & Consultation (`alc-media`, a one-time $5,000 fee) — September,
+the month it was actually billed. But the Accounting table showed
+October and November too, both blank/"Needs confirmation." Root cause:
+`accountingLineActiveInMonth()` only ever checked `flight_start`/
+`flight_end` — a one-time fee typically has no real `flight_end` (nothing
+ongoing to bound it, shown as "Ongoing" in the UI), so this function
+treated it as "active" every month forever forward. `accountingMonthRowFor()`
+correctly returned nothing for those extra months (it already excludes
+`one_time`/`hosting_proration`/`setup_fee` from carrying a budget
+forward), but the line was never actually EXCLUDED from the table for
+those months — it just showed up with a blank cell instead of being
+skipped entirely. Fixed by bounding a one-time-billing-type line to its
+own `flight_start` month specifically in `accountingLineActiveInMonth()`
+too — the same "only the one month it was billed" rule the carry-forward
+exclusion already uses, just applied to the "is this line active this
+month at all" gate as well, not only the budget-carry-forward gate.
+
+**Verified**: `node --check` on `accounting/index.html`'s extracted
+script. A standalone harness confirming a one-time line is active in its
+billed month, inactive in every month before or after, and that an
+ordinary ongoing spend campaign (no `flight_end`) is completely
+unaffected by this change. Not yet live-tested — next step is Claire
+running the two `get_order_detail` SQL updates and confirming both Test
+Business 9's Amendment History now shows in Accounting/Strategist and
+that `alc-media` only shows its real September row going forward.
