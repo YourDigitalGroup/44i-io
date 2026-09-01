@@ -24656,3 +24656,93 @@ live inside the actual WordPress iframe — Claire, worth a real click-
 through there to confirm 200px reads as the right offset once the modal
 appears (adjust the number if it lands too high/low relative to where
 visitors are typically scrolled when they open it).
+
+## Step 1's "Campaign Dates" card renamed to "IO Details" (2026-09-02)
+
+Claire: "we need to update this part of step one to reference IO not
+campaign since we moved campaign dates per service." This card has held no
+actual campaign date range since the 2026-08-06 change that moved Start/
+Length/End to per-tactic fields on Step 2 — it only ever holds the IO's own
+signing date and a notes field now, so the "Campaign Dates" header and
+"Campaign Notes" label were stale leftovers from before that change.
+
+**Fix**: card header "Campaign Dates" → "IO Details"; field label
+"Campaign Notes" → "IO Notes"; placeholder text "Any notes about campaign
+dates, start conditions, or special scheduling..." → "Any notes about the
+IO date, start conditions, or special scheduling...". Display text only —
+the field's id/db column (`campaign-notes`/`campaign_notes`) is untouched,
+so no other code, RPC, or reporting query needs to change.
+
+**Scoped to Step 1 only, per what Claire asked for** — "Campaign Notes" as
+a label still shows in a few other places that read this same field: the
+Trello card description, the Step 3 Review screen, the printed/signed IO
+PDF, and Admin's Order Detail view. Left those as-is since she scoped this
+specifically to the Step 1 card; flagging in case she wants the same
+rename carried through everywhere else this field's label appears, for
+consistency.
+
+**Verified**: `node --check` on the extracted inline script; grepped for
+remaining "Campaign Dates" text — the only hits left are in code comments
+(historical context about where dates used to live), nothing user-facing.
+
+## "Campaign Notes" label renamed to "IO Notes" in the other two spots (2026-09-02)
+
+Follow-up to the Step 1 card rename above — Claire confirmed she wants the
+same rename carried through everywhere else. Checked all user-facing text
+carefully first rather than assuming: the on-screen Step 3 Review actually
+shows "Additional Notes" (a different field, `special-instructions`, per
+the 2026-08-06 rename noted in a nearby comment) and Admin's Order Detail
+shows plain "Notes:" — neither needed changing. The two real remaining
+spots were the Trello card description (`**Campaign Notes:**`) and the
+printed/signed IO PDF's "Campaign Details" section (`cr-label` "Campaign
+Notes"), both renamed to "IO Notes". Field id/db column still untouched.
+
+**Verified**: `node --check` on the extracted inline script; grepped for
+"Campaign Notes" — zero remaining hits anywhere in `index.html`.
+
+## Modal positioning fixed properly: follows the visitor's last click, not a fixed offset (2026-09-02)
+
+Claire, after confirming the flex-start/200px fix "worked" near the top:
+"when I get further down the page I now have to scroll to the top to see
+it." Root cause confirmed exactly as flagged when that fix went in — a
+fixed CSS top offset (or `position:fixed` centering, before that) is
+anchored to ONE point in the WordPress iframe's own coordinate space,
+which only happens to line up with the visitor's actual scroll position
+when they're near the top. Neither approach could ever work correctly
+further down the page, by construction.
+
+**Fix**: replaced the fixed-offset approach with one that follows the
+visitor's actual position on the page:
+- `.modal-backdrop` changed from `position:fixed` to `position:absolute`
+  (top/left/right:0, no longer flex-centered) so it can span and scroll
+  naturally with the full page rather than being pinned to one spot.
+- A capture-phase `click` listener on `document` records
+  `lastClickDocY = e.clientY + window.scrollY` on every click — the
+  vertical position of whatever the visitor just interacted with, in full-
+  document coordinates (correct whether or not this page's own window
+  ever scrolls internally).
+- New `positionModalNearLastClick(backdropId)`, called right after each of
+  the three places that open `#intake-modal`/`#hosting-modal`: sizes the
+  backdrop to `document.documentElement.scrollHeight` (an explicit height
+  is needed here since `position:absolute` with only top/left/right set
+  would otherwise resolve against just the visible viewport, not the full
+  auto-height page) and sets the modal box's own `top` to just above the
+  last click position (falls back to 200px if no click has been recorded
+  yet — the previous fix's constant, now just a fallback for the
+  vanishingly rare case of a modal opening with no prior click at all).
+
+This also makes the earlier flex-start/200px CSS change and its own log
+entry obsolete — left both fixes' history in this log rather than editing
+it away, per this file's own convention of keeping the record of what was
+tried, not just the final state.
+
+**Verified**: `node --check` on the extracted inline script. Extracted
+`positionModalNearLastClick`'s logic into a standalone Node harness with a
+mocked backdrop/box and simulated clicks — confirmed a click near the top
+of the page positions the modal near the top, a click far down a (mocked)
+4000px-tall page positions the modal at that same far-down spot instead of
+snapping to a fixed offset, and no prior click at all falls back to the
+old 200px constant. Not verified live inside the actual WordPress iframe —
+Claire, worth testing a "Fill Out" click both near the top and scrolled
+deep into a long order to confirm the popup now appears right where you
+are either way.
