@@ -746,9 +746,12 @@ select.qty-field{background-image:none;padding-right:3px}
    neither a shadow nor a dimmed/tinted backdrop left, the white box had
    nothing defining its edge against the blurred page behind it. A thin
    neutral border (same treatment `.card` already uses elsewhere on this
-   page) restores that edge without reintroducing a shadow or any color
-   behind the modal itself. */
-.modal-box{background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:90vh;overflow-y:auto;border:1px solid var(--border)}
+   page) restored that edge without a shadow or any color behind the
+   modal. Shadow added back (2026-09-02, per Claire — "give the form a
+   little more definition") on top of the border/blur, not instead of
+   them: backdrop stays transparent (blur only, no color), border stays
+   for a crisp edge, and this soft shadow adds a bit more depth/lift. */
+.modal-box{background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:90vh;overflow-y:auto;border:1px solid var(--border);box-shadow:0 12px 32px rgba(20,30,45,.18)}
 .modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:1}
 .modal-header h3{font-size:15px;font-weight:700;color:var(--text)}
 .modal-header .modal-product{font-size:11px;color:var(--muted);font-weight:500;margin-top:2px}
