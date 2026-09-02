@@ -24822,3 +24822,14 @@ position exactly as before.
 live in the actual iframe — Claire, worth a click-through to confirm the
 box is back to its normal content-sized height, both near the top and
 scrolled down.
+
+## Added a soft shadow back to the modal box (2026-09-02)
+
+Claire: "give the form a little more definition" — add a drop shadow back
+to the intake-form popup, while keeping the backdrop blurred with no
+color. Added `box-shadow:0 12px 32px rgba(20,30,45,.18)` to `.modal-box`,
+on top of (not instead of) the thin border already there — backdrop stays
+exactly as-is (transparent, blur only), the border keeps the crisp edge,
+and this adds a bit more depth/lift underneath it.
+
+**Verified**: `node --check` on the extracted inline script.
