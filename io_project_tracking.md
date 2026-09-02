@@ -24833,3 +24833,19 @@ exactly as-is (transparent, blur only), the border keeps the crisp edge,
 and this adds a bit more depth/lift underneath it.
 
 **Verified**: `node --check` on the extracted inline script.
+
+## Gave the modal box's own header/footer/body more definition (2026-09-02)
+
+Claire: "the page is really white now, but I don't want to add the color
+back to the blur" — asked for a bit more visual richness inside the
+popup, explicitly without touching the backdrop. Since this is all inside
+the OPAQUE modal box (not the backdrop, which stays exactly as it was —
+transparent, blur only), tinted `.modal-header`/`.modal-footer` with the
+same `#F5F8FA` light background `.card-head` already uses elsewhere on
+this page (for consistency with the rest of the app's visual language,
+not a new color choice), and gave `.modal-body` a faint near-white
+`#FBFCFD` background so the white input fields have some contrast to sit
+against instead of white-on-white. Matched border-radius on header/footer
+to the box's own 16px corners.
+
+**Verified**: `node --check` on the extracted inline script.

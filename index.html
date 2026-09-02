@@ -751,12 +751,18 @@ select.qty-field{background-image:none;padding-right:3px}
    little more definition") on top of the border/blur, not instead of
    them: backdrop stays transparent (blur only, no color), border stays
    for a crisp edge, and this soft shadow adds a bit more depth/lift. */
+/* Header/footer given the same light tint `.card-head` already uses
+   elsewhere on this page, and the body a faint neutral background instead
+   of plain white (2026-09-02, per Claire — "the page is really white now"
+   but "don't want to add the color back to the blur"). This is all inside
+   the opaque modal box itself, not the backdrop -- the backdrop stays
+   exactly as it was, transparent with just the blur. */
 .modal-box{background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:90vh;overflow-y:auto;border:1px solid var(--border);box-shadow:0 12px 32px rgba(20,30,45,.18)}
-.modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#fff;z-index:1}
+.modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#F5F8FA;z-index:1;border-radius:16px 16px 0 0}
 .modal-header h3{font-size:15px;font-weight:700;color:var(--text)}
 .modal-header .modal-product{font-size:11px;color:var(--muted);font-weight:500;margin-top:2px}
-.modal-body{padding:20px 24px}
-.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;bottom:0;background:#fff}
+.modal-body{padding:20px 24px;background:#FBFCFD}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;bottom:0;background:#F5F8FA;border-radius:0 0 16px 16px}
 .modal-section{margin-bottom:20px}
 .modal-section-title{font-size:10px;font-weight:700;color:var(--accent-on-light);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
 .modal-grid{display:grid;gap:12px}
