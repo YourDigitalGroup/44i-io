@@ -24849,3 +24849,25 @@ against instead of white-on-white. Matched border-radius on header/footer
 to the box's own 16px corners.
 
 **Verified**: `node --check` on the extracted inline script.
+
+## Added TikTok Ads to the Strategist Portal's platform picker (2026-09-02)
+
+Claire: "Can we add TikTok to our list of Platforms in the Strategist
+Portal?" — this portal actually has two separate platform lists that
+mean different things, found while looking for where to make the change:
+`PLATFORM_REPORT_FRESHNESS_PLATFORMS` (locked to exactly the 4 platforms
+Claire manually pastes reports for — Google, Facebook, Simpli.fi, The
+Trade Desk, per an earlier comment) and `PLATFORM_OPTIONS` (the general
+dropdown a strategist uses to tag which platform a campaign line runs on).
+Asked which one she meant rather than guessing, since adding to the
+freshness list would imply she's about to start manually pasting TikTok
+reports too — a workflow change, not just a UI addition. She confirmed
+the general picker.
+
+**Fix**: added `'TikTok Ads'` to `PLATFORM_OPTIONS` in
+`strategist/index.html`, keeping the existing alphabetical order. Only one
+copy of this list exists in the codebase (confirmed via grep — no
+duplicate elsewhere needing the same change, unlike some other constants
+in this project that are deliberately kept in sync by hand across files).
+
+**Verified**: `node --check` on the extracted inline script.
