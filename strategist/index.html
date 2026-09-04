@@ -365,7 +365,9 @@ async function sendStrategistNewLoginResetEmail() {
     errEl.style.display = 'block';
     return;
   }
-  const { error } = await sbAuthClientStrategist.auth.resetPasswordForEmail(email);
+  const { error } = await sbAuthClientStrategist.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/reset-password.html',
+  });
   if (error) {
     errEl.textContent = 'Could not send a reset email. Check the address and try again.';
     errEl.style.display = 'block';
