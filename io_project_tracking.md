@@ -25114,3 +25114,8 @@ through the existing login.
 `admin_save_user` — the Users tab's read/write functions. Claire
 confirmed all three save successfully in the Users tab through the
 existing login.
+
+**Fourth batch, same day**: converted `admin_get_clients`,
+`admin_get_clients_missing_trello_list`, `admin_get_orders`,
+`admin_save_client`. Claire confirmed the Clients and Orders tabs both
+open with no errors through the existing login.
