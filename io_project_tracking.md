@@ -25140,3 +25140,9 @@ real Supabase session would call it instead of just going straight to
 This means **Stage 2 is fully complete for the Admin portal** — all 20
 real action RPCs converted, `admin_login` correctly left untouched by
 design, not by oversight.
+
+**Strategist portal, first batch, same day**: converted
+`strategist_get_clients`, `strategist_get_campaign_lines`,
+`strategist_get_campaign_months` — the three functions that load the
+whole dashboard. Claire confirmed the dashboard opens with no errors
+through the existing login.
