@@ -25047,13 +25047,24 @@ The original login (`checkAdminPw()`/`attemptAdminLogin()`) is completely
 unchanged — this is purely additive, zero risk to anyone currently
 logging in the old way.
 
-**Not yet done**: same treatment for `strategist/index.html` (only admin
-has the profile RPC and new modal so far); Stage 2's dual-path RPC guards
-(needed before this new login can actually open a working portal); a
-real password-reset landing page.
-
 **Verified**: `node --check` equivalent (extracted the single inline
-script and ran it through `new Function()`) — no syntax errors. Not yet
-tested against a live Supabase session/browser — that needs Claire (or a
-real invited user) to actually try "Try the new secure login (beta)"
-after accepting her invite email.
+script and ran it through `new Function()`) — no syntax errors. Claire
+tested this live against her own real invite and confirmed it worked:
+"Signed in as Claire (super). This confirms the new login works..." —
+the first real end-to-end proof the Stage 0/1 plumbing is correct.
+
+**Follow-up same day**: added the identical proof-of-concept modal to
+`strategist/index.html` (`#strategist-new-login-modal`, reachable via the
+same "Try the new secure login (beta)" link on the existing strategist
+login). Reuses `admin_get_profile_by_auth_uid()` as-is — it isn't
+admin-specific, it just resolves whatever `admin_users` row matches the
+current Supabase session, so no new RPC was needed. Same deliberate
+non-behavior: confirms identity, does not call `showStrategistPanel(true)`,
+since the strategist RPCs don't accept a Supabase session yet either.
+
+**Not yet done**: Stage 2's dual-path RPC guards (needed before either
+new login can actually open a working portal); a real password-reset
+landing page; the equivalent modal for Accounting (not yet built — no
+Accounting-specific profile RPC exists yet, though the same
+`admin_get_profile_by_auth_uid()` RPC would work there too since
+Accounting logins are also `admin_users` rows).
