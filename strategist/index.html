@@ -1788,6 +1788,39 @@ async function loadStrategistDashboard() {
     return;
   }
   renderStrategistDashboard();
+  strategistOpenDeepLinkedLine();
+}
+
+// Deep link from the Accounting Portal (2026-09-04, per Claire -- "a way to
+// go to a campaign from the accounting portal to the strategist portal in
+// case an admin wants to see if there are notes on it or add any optimize
+// log or notes"). A URL of the form strategist/?line=<campaign_line_id>
+// jumps straight to that line's detail panel instead of leaving the admin
+// to hunt for it manually. Clears every filter that could otherwise hide
+// the line (scope/group/pacing/client search), and moves the viewed month
+// to the line's own flight_start so strategistLineActiveInMonth() doesn't
+// filter it out just because "today" happens to fall outside its flight —
+// same reasoning as picking the right status tab below.
+function strategistOpenDeepLinkedLine() {
+  const params = new URLSearchParams(window.location.search);
+  const lineId = params.get('line');
+  if (!lineId) return;
+  const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
+  if (!line) {
+    showToast('That campaign line was not found, or you don\'t have access to it.', 'error');
+    return;
+  }
+  strategistScope = 'all';
+  strategistGroupFilter = '';
+  strategistPacingFilter = '';
+  strategistClientSearch = '';
+  if (line.flight_start) {
+    const [y, m] = line.flight_start.split('-').map(Number);
+    strategistCurrentMonth = new Date(y, m - 1, 1);
+  }
+  strategistStatusTab = strategistEffectiveStatus(line, strategistCurrentMonth);
+  renderStrategistDashboard();
+  strategistSelectLine(lineId);
 }
 
 // Effective Platform CPM for a service, honoring a group-specific override — same
