@@ -25108,3 +25108,9 @@ way (each one's inline role check swapped for `admin_resolve_role()`).
 Claire ran the SQL and confirmed all three settings screens (Hosting
 Settings, Legal Content, Notification Settings) still save successfully
 through the existing login.
+
+**Third batch, same day**: converted `admin_get_aes`, `admin_get_staff`,
+`admin_get_strategists`, `admin_save_ae`, `admin_save_strategist`,
+`admin_save_user` — the Users tab's read/write functions. Claire
+confirmed all three save successfully in the Users tab through the
+existing login.
