@@ -25480,3 +25480,35 @@ explicitly cites "~43 times... throughout admin/index.html") —
 `strategist/index.html` and `accounting/index.html` weren't audited for
 the same pattern in this pass, since neither had anywhere near the same
 density of scattered role checks to begin with.
+
+## Supabase Auth migration — bringing the Accounting portal into Stage 2 (2026-09-04)
+
+Claire asked to bring Accounting into the migration too — it was never in
+`AUTH_MIGRATION_PLAN.md`'s original inventory at all (built after the plan
+was written), so it had zero Stage 2 coverage until now.
+
+**Converted all 9 Accounting-specific RPCs** to `admin_resolve_role()`:
+`accounting_add_campaign_line`, both overloaded signatures of
+`accounting_confirm_month` (5-arg and 6-arg, same situation as
+`admin_save_accounting_map`/`admin_renew_service` earlier), `accounting_get_campaign_lines`,
+`accounting_get_campaign_months`, `accounting_get_clients`,
+`accounting_get_order_detail`, `accounting_get_rates`,
+`accounting_save_campaign_month`, `accounting_set_billed_externally`.
+
+**Real security gap found and fixed, not just converted**:
+`accounting_set_cut_pct_override` had **no credential check at all** —
+it accepted `p_name`/`p_pw` as parameters (matching every sibling
+function's signature) but never actually verified them in its body,
+unlike every other `accounting_*` function. Anyone able to reach this
+RPC directly could have changed a campaign line's cut percentage
+override with no login whatsoever. Confirmed the frontend
+(`accountingSaveCutPctOverride()`) already sends real `p_name`/`p_pw`
+values on every call, so adding the missing check was purely additive —
+no frontend change needed. Claire tested live (set a Cut % Override on a
+real line) and confirmed it still saves correctly now that the check is
+actually enforced.
+
+**Verified**: read `pg_get_functiondef()` for all 9 functions before
+writing any replacement, per the standing convention. Claire ran both
+SQL batches with no errors and live-tested the one function whose
+behavior genuinely changed.
