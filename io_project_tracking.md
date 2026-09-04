@@ -25152,3 +25152,28 @@ through the existing login.
 `strategist_get_platform_report_cache`. Claire confirmed the dashboard
 still reloads correctly (these three feed the optimize log, budgeted
 spend rates, and platform report freshness banners).
+
+**Strategist portal, third and final batch, same day**: converted
+`strategist_save_campaign_line`, `strategist_save_campaign_month`,
+`strategist_save_optimize_log`, `strategist_save_platform_report_cache`,
+`strategist_delete_optimize_log`. `strategist_save_campaign_line` keeps
+its 2026-09-04 status-history auto-logging (from the Blue Dolphin Pools
+fix earlier this session) completely unchanged — only its role-check
+block was swapped. Claire live-tested against the **Claude Test Group**
+(a real client/campaign line kept specifically for this kind of safe
+testing, per her own suggestion) rather than a real campaign: changed
+status on a test line (exercises the save), added and deleted an
+optimize log note (exercises save + delete). All worked with no errors.
+
+**Stage 2 is now fully complete** — every RPC in `AUTH_MIGRATION_PLAN.md`'s
+inventory (20 real Admin action RPCs + `admin_login` correctly left
+untouched, all 11 Strategist RPCs) now resolves its caller's role via the
+shared `admin_resolve_role()` helper, accepting either a real Supabase
+session or the existing name/password login. Every conversion was a
+one-line swap verified line-by-line against the function's own
+`pg_get_functiondef()` output before writing the replacement, and Claire
+live-tested the actual UI surface for every batch — nothing was changed
+sight-unseen. The legacy password path is completely unaffected end to
+end; the new Supabase-session path is wired correctly but still only
+exercisable through the Stage 1 proof-of-concept login modals, since no
+button in the real UI sends a session token yet (that's Stage 3).
