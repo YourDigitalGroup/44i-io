@@ -24978,3 +24978,82 @@ that month, no `?line=` param is a no-op, and an unknown/inaccessible
 line id fails gracefully (shows an error toast instead of silently doing
 nothing or throwing). The full DOM-rendering path (actually opening the
 panel) wasn't independently re-tested — that would need a live browser.
+
+## Supabase Auth migration — Stage 0 + Stage 1 proof-of-concept (2026-09-04)
+
+Claire: "set up the actual logins using the Supabase authentication so we
+make sure things are fully locked down before we have a lot of people in
+the system." Following the pre-existing `AUTH_MIGRATION_PLAN.md` (6
+stages: add a real auth link column → real accounts + parallel login
+screen → dual-path RPC guards → independent role-gating cleanup →
+live-test → remove the legacy password path → cleanup). Confirmed with
+Claire via AskUserQuestion: full staged rollout (not a faster/riskier
+path), and she'd invite each person herself via the Supabase Dashboard
+rather than a bulk script.
+
+**Stage 0 (done, confirmed by Claire)**: `admin_users` got a new
+`auth_user_id uuid unique` column — she ran the `ALTER TABLE` and pasted
+back the resulting column list, confirming it took. Also confirmed via a
+targeted `SELECT` that every existing account already has a real,
+non-blank email — no cleanup needed before inviting people through the
+dashboard.
+
+**Stage 1 groundwork (done, confirmed by Claire)**: new RPC
+`admin_get_profile_by_auth_uid()` — `SECURITY DEFINER`, looks up
+`admin_users` by `auth_user_id = auth.uid()` (only when `active` is true)
+and returns `{name, email, role}`, raising if nothing matches. This is
+the one piece every future login screen needs: given a real Supabase
+session, resolve it back to an existing admin identity. Claire ran and
+confirmed this (her "Success. No rows returned" reply was this
+statement, not the missing-email check — confirmed explicitly since two
+SQL blocks were sent together and needed disambiguating).
+
+Also given to Claire, to run once she's invited her first few people
+through Authentication → Users → Invite in the Supabase Dashboard (safe
+to re-run any time as more people get invited):
+```sql
+UPDATE admin_users au
+SET auth_user_id = u.id
+FROM auth.users u
+WHERE lower(au.email) = lower(u.email)
+  AND au.auth_user_id IS NULL;
+```
+This is what actually links a freshly-invited Supabase login back to the
+person's existing `admin_users` row, by matching on the same email
+already on file — the reason Stage 0 flagged that invites must go to the
+exact email already stored for each person.
+
+**Stage 1 code (this pass)**: added a second, parallel login modal to
+`admin/index.html` only (`#admin-new-login-modal`), reachable via a
+"Try the new secure login (beta)" link on the existing login modal.
+Loads `@supabase/supabase-js` (jsdelivr CDN, UMD build) and creates a
+`sbAuthClient`. `attemptNewLogin()` calls
+`sbAuthClient.auth.signInWithPassword({email, password})`, then calls
+`admin_get_profile_by_auth_uid()` directly via `fetch()` (not the shared
+`sb()` helper, since that always sends the static anon key — this call
+needs the real session's `access_token` as the Bearer token so
+`auth.uid()` resolves inside the RPC). On success it shows a plain
+confirmation ("Signed in as X (role) — this confirms the new login
+works...") and **does not** call `showAdmin(true)` — deliberately, since
+none of the 33 password-checking RPCs accept a Supabase session yet
+(that's Stage 2), so opening the panel here would look functional while
+every actual save/load inside it would still be silently checking for
+the old `p_name`/`p_pw` params this path never has. `sendNewLoginResetEmail()`
+wraps `auth.resetPasswordForEmail()` for the "Forgot password?" link — no
+custom reset-landing page built yet since there's nothing behind this
+login for someone to reset into yet; that lands when this path goes live.
+
+The original login (`checkAdminPw()`/`attemptAdminLogin()`) is completely
+unchanged — this is purely additive, zero risk to anyone currently
+logging in the old way.
+
+**Not yet done**: same treatment for `strategist/index.html` (only admin
+has the profile RPC and new modal so far); Stage 2's dual-path RPC guards
+(needed before this new login can actually open a working portal); a
+real password-reset landing page.
+
+**Verified**: `node --check` equivalent (extracted the single inline
+script and ran it through `new Function()`) — no syntax errors. Not yet
+tested against a live Supabase session/browser — that needs Claire (or a
+real invited user) to actually try "Try the new secure login (beta)"
+after accepting her invite email.
