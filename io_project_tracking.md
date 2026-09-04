@@ -25323,3 +25323,56 @@ Accounting-specific proof-of-concept modal was built) — its RPCs are
 untouched and still password-only, since Accounting wasn't in the
 original migration plan's inventory at all. Worth a deliberate decision
 later whether it needs the same treatment.
+
+## Order editing: repeated clicks on a slow Save created duplicate Trello activity (2026-09-04)
+
+Claire, testing in the Claude Test Group: clicked "Save" on the AM-triggered
+Edit panel's flat "New amount" field, saw no immediate feedback, clicked it
+2 more times — got 3 Trello notifications and what looked like 3 new
+revised-IO PDFs on the same card.
+
+**Root cause**: `adminSaveLineItemEdit()` (the Edit panel's Save handler)
+does several sequential network calls per click — the RPC save itself, a
+Trello comment post, and a full PDF generation + attach — which together
+take a few real seconds. The Save button had no `disabled` state and no
+in-flight guard, so each of the 3 clicks fired the whole function
+independently: 3 calls to `admin_edit_order_line_item` (each appending its
+own `edit_history` entry with the same old→new value), 3 Trello comments,
+and 3 separately-generated revised-IO PDF attachments — nothing was
+actually creating new orders/IOs despite how it looked; each "new IO" was
+a separate PDF *attachment* of the same revised-IO document.
+
+**Fix**: added a button-id + disable/re-enable guard to `adminSaveLineItemEdit()` —
+the button is disabled and shows "Saving…" the instant it's clicked, a
+second click while `disabled` is a no-op, and it re-enables itself only on
+a validation error or a failed save (a successful save re-renders the
+whole order detail view anyway, which naturally replaces the button).
+
+**Audited every sibling function with the same shape** (found via the
+"AM-triggered Cancel/Edit/Swap" comment block referencing all of them
+together) and found the identical vulnerability in two more, since they
+also do a slow RPC-save-then-Trello-comment sequence with no guard:
+`adminSaveMonthBudgetsEdit()` (the month-by-month variant of the same Edit
+panel) and `adminConfirmRenewal()`/`adminConfirmSwap()` (the Renew and
+Swap Tactic flows). All three got the identical disable/re-enable
+treatment.
+
+**Confirmed already safe, no fix needed**: `adminSubmitCancellation()`
+(Cancel a Service) and `adminApprovePendingRequestClick()`/
+`adminRejectPendingRequestClick()` (pending-request approval) — all three
+call RPCs that re-check the row's current state server-side before doing
+anything (`admin_cancel_service` only updates rows still `<> 'cancelled'`
+and the frontend checks the returned row count before posting anything to
+Trello; `admin_approve_pending_request`/`admin_reject_pending_request`
+both re-check `status = 'pending'` and raise an error otherwise) — a
+repeat click after the first succeeds gets a graceful "nothing to
+cancel"/"already resolved" response instead of silently duplicating
+Trello activity. Worth keeping this "check the real state before acting,
+not just before rendering" pattern in mind for any future AM-triggered
+action.
+
+**Verified**: `node -e (new Function(...))` syntax check on the single
+extracted inline script — no errors. Not independently re-tested against
+a live triple-click in the browser (that needs Claire); the fix mirrors
+the exact shape of the bug she reported and demonstrated (in the Claude
+Test Group).
