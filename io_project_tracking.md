@@ -25129,7 +25129,14 @@ screen loads and saves correctly, both through the existing login.
 
 **Sixth batch, same day**: converted `admin_save_intake_form`,
 `admin_save_section`, `admin_save_service`. Claire confirmed all three
-save with no errors. This completes every Admin RPC except `admin_login`
-itself — the one function everything else in the app depends on, saved
-for last per the plan since it's the highest-traffic and highest-risk of
-the 21.
+save with no errors.
+
+**`admin_login` itself — decided NOT to convert**: pulled its definition
+and concluded it doesn't need the dual-path treatment. It's purely a
+password verifier (`select role where name/pw_hash match`) — its entire
+job is checking a password. There's no scenario where someone holding a
+real Supabase session would call it instead of just going straight to
+`admin_get_profile_by_auth_uid()` (which the new login already does).
+This means **Stage 2 is fully complete for the Admin portal** — all 20
+real action RPCs converted, `admin_login` correctly left untouched by
+design, not by oversight.
