@@ -25101,3 +25101,10 @@ isn't exercisable yet from the frontend — no protected save/load call
 sends a session token yet, only the Stage 1 proof-of-concept modals do —
 so that branch is code-reviewed correct but not yet live-tested; it will
 be, once a Stage 3 live-test wires an actual button to use it.
+
+**Second batch, same day**: converted `admin_save_hosting_setting`,
+`admin_save_legal_content`, `admin_save_notification_settings` the same
+way (each one's inline role check swapped for `admin_resolve_role()`).
+Claire ran the SQL and confirmed all three settings screens (Hosting
+Settings, Legal Content, Notification Settings) still save successfully
+through the existing login.
