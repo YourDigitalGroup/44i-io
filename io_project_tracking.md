@@ -25603,3 +25603,51 @@ before today's `redirectTo` fix.
 **Verified**: `node -e (new Function(...))` syntax check on all 4 changed
 files — no errors. Not yet live-tested (needs the Supabase Dashboard
 allow-list step first, then a real password reset attempt end-to-end).
+Claire confirmed her Supabase account lacks the role to save that
+Dashboard change herself — gave her exact copy to relay to whoever has
+Owner/Admin access: change Site URL from `http://localhost:3000` (the
+default, never configured) to `https://io.yourdigitalgroupresources.com`,
+and add `https://io.yourdigitalgroupresources.com/reset-password.html`
+to Redirect URLs.
+
+## New login didn't survive a page refresh (2026-09-04)
+
+Claire: "anytime I refresh a page... I am prompted to log back in
+again" — then clarified this was already true before today's auth work,
+i.e. it's the password login's own long-standing behavior (documented
+architecture note: plaintext password kept only in a plain JS variable,
+resets on refresh, no sessionStorage/localStorage — by design, since
+storing a raw password client-side would be worse). That one isn't
+getting fixed; there's no safe way to make it survive a refresh without
+persisting a raw password in the browser.
+
+The new Supabase-session login is a different story — real sessions are
+*supposed* to survive a refresh, and originally didn't here only because
+of a deliberate `persistSession:false` set in Stage 3 (this same day) as
+a safety measure against a stale token corrupting the ordinary password
+login. Revisited that reasoning: `supabase-js` already validates and
+auto-refreshes a session on its own, and cleanly resolves to "no
+session" if that fails — the failure mode `persistSession:false` was
+guarding against was never actually reachable in practice.
+
+**Fix**: switched all three portals' Supabase clients to the default
+`persistSession:true`, and added `tryRestoreXSession()` to each portal
+(`admin`/`strategist`/`accounting`) — called once on every page load,
+right after the existing sessionStorage handoff attempt. If a session
+survived from an earlier visit, it's resolved back to a real login via
+`admin_get_profile_by_auth_uid()` (same role-restriction check the
+explicit sign-in flow already does) with no re-typing required; a
+session that no longer resolves to anything (deactivated account,
+wrong role) gets signed out cleanly rather than left stuck.
+
+**Worth knowing**: on a shared/public computer, a persisted session
+means the NEXT person to open the page would be silently logged in as
+whoever last signed in there and didn't explicitly log out — the same
+tradeoff literally every persistent-login web app makes (Gmail, etc.),
+not something unique to this change, but worth remembering if any of
+these portals are ever used on a genuinely shared machine.
+
+**Verified**: `node -e (new Function(...))` syntax check on all 3
+portal files — no errors. Not yet live-tested (needs Claire to sign in
+via the new login, refresh the page, and confirm she's still logged in
+instead of being prompted again).
