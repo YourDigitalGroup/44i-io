@@ -25264,7 +25264,38 @@ Admin RPCs never in the original inventory — `admin_edit_order_line_item`,
 certainly because the plan document predates several features built
 later in this project (the pending-request approval flow, cancel/edit/
 swap tactic flows, rate history) that never got added to its RPC
-inventory. **Not yet converted** — next step is pulling each one's
-current definition and applying the same `admin_resolve_role()` swap,
-the same way as every batch above, before the new Admin login can be
-considered a genuine full replacement.
+inventory. **All ~20 missed Admin RPCs now converted**, same day, four more
+SQL rounds:
+- `admin_cancel_service`, `admin_edit_order_line_item`,
+  `admin_renew_service` (both overloaded signatures — 6-arg and 7-arg,
+  same situation as `admin_save_accounting_map` earlier), `admin_swap_tactic`
+- `admin_approve_pending_request` (internally calls the already-converted
+  `admin_cancel_service`/`admin_edit_order_line_item`/`admin_renew_service`
+  — confirmed this correctly propagates a session, no extra work needed),
+  `admin_reject_pending_request`, `admin_set_pending_request_note`,
+  `admin_claim_batch_for_comment`, `admin_get_pending_requests`
+- `admin_add_rate_history`, `admin_get_rate_history` (both call
+  `public.admin_resolve_role(...)` fully-qualified rather than the
+  one-line bare call the others use, since — unlike every other
+  converted function — these two don't have their own
+  `SET search_path TO 'public', 'extensions'` clause; fully-qualifying
+  avoids depending on the calling role's own default search_path),
+  `admin_get_agents`, `admin_save_agent`, `admin_get_counties`,
+  `admin_save_county`
+- `admin_get_client_aes`, `admin_save_client_ae`, `admin_get_client_names`,
+  `admin_get_client_campaign_lines`, `admin_get_all_active_campaign_lines`,
+  `admin_save_order_intake`
+
+Claire ran all four batches with no errors. Combined with the earlier
+Strategist gap, this means the true RPC count needing Stage 2/3
+treatment was closer to 57 (41 Admin + Strategist real action functions
++ the shared `admin_resolve_role()` helper itself) rather than the
+`AUTH_MIGRATION_PLAN.md` document's original count of 33 — the plan
+predates several features built later this session. **This is now the
+actual complete set** (verified by grepping every literal `rpc/...` call
+site in both `admin/index.html` and `strategist/index.html`, not just
+trusting the plan document a second time).
+
+Next: a real end-to-end live test — sign in via the new login in each
+portal and exercise a cross-section of real actions (not just page
+loads), to build actual confidence before Stage 4 is even considered.
