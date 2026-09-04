@@ -1986,7 +1986,9 @@ async function sendNewLoginResetEmail() {
     errEl.style.display = 'block';
     return;
   }
-  const { error } = await sbAuthClient.auth.resetPasswordForEmail(email);
+  const { error } = await sbAuthClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/reset-password.html',
+  });
   if (error) {
     errEl.textContent = 'Could not send a reset email. Check the address and try again.';
     errEl.style.display = 'block';

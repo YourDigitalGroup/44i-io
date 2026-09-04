@@ -25557,3 +25557,49 @@ mid-session: a real double-submit bug in 6 different save/confirm
 buttons across all 3 portals (see the 2026-09-04 entries above), and a
 genuine missing-credential-check security gap in
 `accounting_set_cut_pct_override`.
+
+## "Forgot password?" link had nowhere to send people (2026-09-04)
+
+Claire tested it end-to-end: clicked "Forgot password?", got the real
+Supabase email, clicked its link — and it went nowhere. Root cause: all
+three portals' `sendXNewLoginResetEmail()` functions called
+`resetPasswordForEmail(email)` with no `redirectTo` — Supabase's reset
+email always links to *some* URL, but without one specified it falls back
+to whatever generic default is on the project (never configured for this
+app), and there was no page anywhere in this repo built to actually
+receive that link and let someone set a new password even if it had
+landed correctly. This was a known, called-out gap from when Stage 1 was
+first built ("no custom reset-landing page built yet since there's
+nothing behind this login for someone to reset into yet") — now that all
+3 portals have a fully working new login, it needed to actually exist.
+
+**Built**: `reset-password.html` at the repo root — one shared landing
+page for all three portals, since they use the same Supabase project and
+the same `admin_users` table regardless of which portal's link sent
+someone here. Supabase's reset link lands with recovery tokens in the URL
+hash; `supabase-js`'s client parses that automatically on load and fires
+a `PASSWORD_RECOVERY` auth event, which the page listens for before
+showing a real "set your new password" form (min 8 characters, must
+match a confirmation field). Calls `auth.updateUser({ password })` to
+actually complete the change. If no recovery session shows up within a
+couple seconds of load (link already used, expired, or just visited
+directly with no token), shows a clear "link expired, go request a new
+one" state instead of a broken, un-submittable form.
+
+Updated all three portals' `resetPasswordForEmail()` calls to pass
+`redirectTo: window.location.origin + '/reset-password.html'`.
+
+**One more step needed, in the Supabase Dashboard, not code** — this is
+the part Claire remembered from another platform: Supabase only honors a
+`redirectTo` URL if it's on that project's allow-list. Gave her:
+**Authentication → URL Configuration → Redirect URLs**, add
+`https://io.yourdigitalgroupresources.com/reset-password.html` (and the
+Site URL field, if blank, should probably be
+`https://io.yourdigitalgroupresources.com` too) — a redirect to a URL not
+on that list gets silently rejected/ignored by Supabase, which is almost
+certainly the deeper reason the very first test link went nowhere even
+before today's `redirectTo` fix.
+
+**Verified**: `node -e (new Function(...))` syntax check on all 4 changed
+files — no errors. Not yet live-tested (needs the Supabase Dashboard
+allow-list step first, then a real password reset attempt end-to-end).
