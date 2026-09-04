@@ -25119,3 +25119,10 @@ existing login.
 `admin_get_clients_missing_trello_list`, `admin_get_orders`,
 `admin_save_client`. Claire confirmed the Clients and Orders tabs both
 open with no errors through the existing login.
+
+**Fifth batch, same day**: converted `admin_get_accounting_map` and
+BOTH overloaded signatures of `admin_save_accounting_map` (a 4-arg and a
+5-arg version — Postgres treats these as two distinct functions, so both
+needed their own `CREATE OR REPLACE`), plus `admin_save_group`. Claire
+confirmed the Groups tab saves with no changes and the Accounting Map
+screen loads and saves correctly, both through the existing login.
