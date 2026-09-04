@@ -25651,3 +25651,33 @@ these portals are ever used on a genuinely shared machine.
 portal files — no errors. Not yet live-tested (needs Claire to sign in
 via the new login, refresh the page, and confirm she's still logged in
 instead of being prompted again).
+
+## Password reset — Supabase Dashboard config confirmed correct, testing paused on rate limit (2026-09-04)
+
+First live test failed: the reset email's link landed on the bare
+`io.yourdigitalgroupresources.com` homepage instead of
+`/reset-password.html`, showing the public IO form's own "Invalid Link
+— contact your account manager" message (unrelated to password reset —
+just what `index.html` shows for any unrecognized link). Root-caused:
+Supabase validates a reset link's `redirectTo` against the project's
+Redirect URLs allow-list **at click time**, not at send time. The
+sequence was: Site URL got updated to the real production domain first,
+Claire tested (redirected to the bare domain — expected, since the
+specific `/reset-password.html` entry wasn't in the allow-list yet), and
+only afterward was that entry added. Claire then confirmed via
+screenshot that both settings are now correct: Site URL =
+`https://io.yourdigitalgroupresources.com`, Redirect URLs contains
+`https://io.yourdigitalgroupresources.com/reset-password.html`.
+
+The original test link's token was already consumed by that first click
+regardless of where it redirected (these are one-time-use), so a retry
+needed a fresh email — but requesting one immediately hit Supabase's own
+built-in rate limit on how often the same account can request a
+password-reset email ("Could not send a reset email. Check the address
+and try again."). This is expected platform throttling, not a bug on
+our end — nothing left to fix in the code or Supabase config right now.
+**Paused here**: Claire will retry once the rate limit clears (she
+expects to check back next week). Both the code (`reset-password.html` +
+all three portals' `redirectTo`) and the Supabase Dashboard settings are
+believed correct and just need one successful real end-to-end run to
+confirm.
