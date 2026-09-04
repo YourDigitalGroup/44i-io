@@ -25424,3 +25424,59 @@ files' extracted inline scripts — no errors. Same as the original fix,
 not independently live-tested against a real triple-click (needs
 Claire); each mirrors the exact pattern already confirmed to fix the
 reported bug.
+
+## Supabase Auth migration — Stage 2b complete: centralized role-gating (2026-09-04)
+
+Per `AUTH_MIGRATION_PLAN.md`'s Stage 2b (independent of everything else in
+the migration, added at Claire's request since Stage 2 already meant
+touching every RPC's role logic): replaced every scattered inline
+`currentAdminUser?.role === 'am'` (and `!== 'am'`) check in
+`admin/index.html` — read and categorized all 46 of them by hand,
+slightly more than the plan's own "~43" estimate — with one declarative
+`ADMIN_ROLE_PERMISSIONS` map (17 named features, e.g.
+`serviceCatalogManage`, `groupPricing`, `clientAccountingOverride`) and a
+single `canSee(feature)` helper that reads it.
+
+**Not a security change** — every one of these gates was always cosmetic
+UI-hiding only; the real enforcement lives server-side in each RPC via
+`admin_resolve_role()`, confirmed unchanged and untouched by this pass.
+Purely a maintainability refactor: adding a future gated feature is now
+"add one line to the map" instead of "remember to copy the right inline
+condition correctly in every place that needs it" — exactly the failure
+mode Claire wanted closed off.
+
+Two checks that weren't simple "blocked for am" gates got folded in too:
+the Strategist/Accounting portal-switcher link visibility (now
+`strategistPortalLink: ['strategist','super']` and
+`accountingPortalLink: ['super']`). Left one check alone: the
+`isStrategist` identity variable used to decide which nav tabs even
+render — that's view-mode branching (which layout to show), not a
+"can this role do X" permission in the map's sense, so forcing it into
+`canSee()` would've added indirection without a real duplication problem
+to solve.
+
+**Verified two ways**: `node -e (new Function(...))` syntax check — no
+errors. Then a standalone Node harness comparing `canSee()`'s output
+against the literal old boolean expression for every feature, across
+every role that can reach this login (`super`/`am`/`strategist` —
+`accounting` is rejected at `admin_login` itself, never reaches this UI
+at all). Found what looked like 15 mismatches for the `strategist` role,
+traced to ground truth rather than dismissed: confirmed via
+`adminSection()`'s own tab-hiding logic (`tab.style.display = isStrategist
+? 'none' : ''`) that a strategist login can never actually open any of
+the 9 tabs those checks live inside (`map`, `sections`, `intake`, `legal`,
+`notifications`, `reconcile`, `users`, `accounting`, plus the Groups
+pricing/accounting sub-tabs) — those inline checks were structurally
+unreachable for that role both before and after this change, so the
+"mismatch" was never an executable behavior difference. The new explicit
+`['super']` allow-list is if anything more defensive than relying solely
+on tab-hiding, matching the "defense in depth" reasoning several of these
+functions' own existing comments already called out. Every role that can
+actually reach a gated code path (`super`, `am`) matches old behavior
+exactly.
+
+Scoped to `admin/index.html` only, matching the plan's own scoping (it
+explicitly cites "~43 times... throughout admin/index.html") —
+`strategist/index.html` and `accounting/index.html` weren't audited for
+the same pattern in this pass, since neither had anywhere near the same
+density of scattered role checks to begin with.
