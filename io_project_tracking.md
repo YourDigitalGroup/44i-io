@@ -25512,3 +25512,20 @@ actually enforced.
 writing any replacement, per the standing convention. Claire ran both
 SQL batches with no errors and live-tested the one function whose
 behavior genuinely changed.
+
+**Stage 1+3 login built directly** (skipped the separate proof-of-concept
+step this time, since the exact working pattern was already proven twice
+today in Admin and Strategist) — added the same "Try the new secure login
+(beta)" modal to `accounting/index.html`: `sbAuthClientAccounting` with
+`persistSession:false`, `attemptAccountingNewLogin()` that signs in, looks
+up the profile via `admin_get_profile_by_auth_uid()`, checks the
+`accounting`/`super` role restriction (matching the password login's own
+`attemptAccountingLogin()`), and opens the real accounting panel on
+success. `accountingLogout()` also signs out of the Supabase session when
+it was used. All three portals (Admin, Strategist, Accounting) now have a
+fully functional parallel login, and every RPC across all three accepts
+either it or the original password login.
+
+**Not yet tested live** — needs Claire to actually sign in via the new
+login and confirm the Accounting dashboard loads and a save works, same
+verification pattern used for Admin and Strategist earlier today.
