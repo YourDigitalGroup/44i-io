@@ -273,16 +273,55 @@ async function checkStrategistPw() {
 // the same admin_get_profile_by_auth_uid() RPC since it isn't admin-specific, just
 // looks up whichever admin_users row matches the current Supabase session. Now
 // that every Strategist RPC accepts a real session (Stage 2, done 2026-09-04),
-// signing in here opens the real strategist panel. persistSession:false for the
-// same reason as /admin's client — see that file's comment for the full why.
+// signing in here opens the real strategist panel. Uses the default
+// persistSession:true — see admin/index.html's comment on its own client for
+// the full reasoning (2026-09-04, per Claire: a refresh shouldn't require
+// logging back in, and a real Supabase session is the mechanism meant to
+// survive one).
 const sbAuthClientStrategist = (typeof supabase !== 'undefined')
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
 if (sbAuthClientStrategist) {
   sbAuthClientStrategist.auth.onAuthStateChange((event, session) => {
     currentSupabaseSession = session;
   });
+}
+
+// Called once on every page load (see DOMContentLoaded below) — restores a
+// session that survived from an earlier visit instead of prompting to log
+// in again. Same shape as admin/index.html's tryRestoreAdminSession().
+async function tryRestoreStrategistSession() {
+  if (!sbAuthClientStrategist) return false;
+  const { data } = await sbAuthClientStrategist.auth.getSession();
+  const session = data?.session;
+  if (!session) return false;
+  let profile;
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/admin_get_profile_by_auth_uid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + session.access_token,
+      },
+      body: JSON.stringify({}),
+    });
+    const t = await res.text();
+    if (!res.ok) throw new Error(t.slice(0, 200));
+    profile = t ? JSON.parse(t) : null;
+  } catch (e) {
+    await sbAuthClientStrategist.auth.signOut();
+    return false;
+  }
+  if (profile.role !== 'strategist' && profile.role !== 'super') {
+    await sbAuthClientStrategist.auth.signOut();
+    return false;
+  }
+  currentSupabaseSession = session;
+  currentStrategistUser = { name: profile.name, email: profile.email || '', role: profile.role, pw: '', viaSession: true };
+  showStrategistPanel(true);
+  return true;
 }
 
 function openStrategistNewLogin() {
@@ -3722,6 +3761,7 @@ async function tryStrategistHandoffLogin() {
 document.addEventListener('DOMContentLoaded', async () => {
   await loadStrategistRoster();
   if (await tryStrategistHandoffLogin()) return;
+  if (await tryRestoreStrategistSession()) return;
   promptStrategistLogin();
 });
 </script>

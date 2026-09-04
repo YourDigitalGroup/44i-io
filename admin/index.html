@@ -1888,21 +1888,65 @@ async function checkAdminPw() {
 // session (Stage 2, done 2026-09-04), signing in here opens the real admin
 // panel, same as the password login.
 //
-// persistSession:false is deliberate: a session from here is NOT saved to
-// localStorage or auto-restored on a later page load. Without that, a
-// stale/expired token left over from an earlier visit could silently
-// attach itself to sb()'s Authorization header on a fresh load and break
-// the ordinary password login for that person, which never expects a
-// session to already exist. Signing in here always requires an explicit,
-// fresh email+password submit within the current page load.
+// Uses the default persistSession:true (2026-09-04, per Claire: "anytime I
+// refresh a page I am prompted to log back in again" -- true of the password
+// login too, but that one can never be fixed without storing a raw password
+// client-side, which this project isn't going to do; a real Supabase session
+// is exactly the mechanism that's SUPPOSED to survive a refresh). A stale or
+// expired session doesn't silently misbehave here -- supabase-js validates
+// and auto-refreshes it, and cleanly resolves to "no session" if that fails
+// (see tryRestoreAdminSession() below, called on every page load) -- so
+// there's no real version of the earlier persistSession:false concern (a bad
+// token corrupting the ordinary password login) actually happening in
+// practice.
 const sbAuthClient = (typeof supabase !== 'undefined')
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
 
 if (sbAuthClient) {
   sbAuthClient.auth.onAuthStateChange((event, session) => {
     currentSupabaseSession = session;
   });
+}
+
+// Called once on every page load (see DOMContentLoaded below), after the
+// legacy sessionStorage handoff attempt -- if a real Supabase session
+// survived from an earlier visit (the whole point of persistSession:true
+// above), silently resolve it back to a real admin login instead of making
+// that person type their email/password in again. Returns false (and signs
+// out of a session that no longer resolves to anything, e.g. a deactivated
+// account) so the caller falls through to the normal login prompt.
+async function tryRestoreAdminSession() {
+  if (!sbAuthClient) return false;
+  const { data } = await sbAuthClient.auth.getSession();
+  const session = data?.session;
+  if (!session) return false;
+  let profile;
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/admin_get_profile_by_auth_uid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + session.access_token,
+      },
+      body: JSON.stringify({}),
+    });
+    const t = await res.text();
+    if (!res.ok) throw new Error(t.slice(0, 200));
+    profile = t ? JSON.parse(t) : null;
+  } catch (e) {
+    await sbAuthClient.auth.signOut();
+    return false;
+  }
+  if (profile.role === 'accounting') {
+    await sbAuthClient.auth.signOut();
+    return false;
+  }
+  currentSupabaseSession = session;
+  currentAdminUser = { name: profile.name, email: profile.email || '', role: profile.role, pw: '', viaSession: true };
+  showAdmin(true);
+  return true;
 }
 
 function openNewLogin() {
@@ -11267,6 +11311,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   await loadLoginRoster();
   if (await tryAdminHandoffLogin()) return;
+  if (await tryRestoreAdminSession()) return;
   // No public form / no gear icon on this page — go straight to the login prompt.
   promptAdmin();
 });
