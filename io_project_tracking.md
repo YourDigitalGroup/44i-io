@@ -25526,6 +25526,34 @@ it was used. All three portals (Admin, Strategist, Accounting) now have a
 fully functional parallel login, and every RPC across all three accepts
 either it or the original password login.
 
-**Not yet tested live** — needs Claire to actually sign in via the new
-login and confirm the Accounting dashboard loads and a save works, same
-verification pattern used for Admin and Strategist earlier today.
+**Live-tested and confirmed**: Claire signed into Accounting via the new
+secure login and confirmed the dashboard loads and a save works
+correctly. All three portals (Admin, Strategist, Accounting) now have a
+fully functional, live-tested alternate login — this closes out the
+Accounting gap entirely, matching the other two portals' migration
+status exactly.
+
+**Full migration status as of end of day 2026-09-04**:
+- Stage 0 (real auth link column) — done
+- Stage 1 (parallel login screens) — done, all 3 portals
+- Stage 2 (every RPC accepts a session) — done, all ~66 real action RPCs
+  across Admin/Strategist/Accounting plus the shared `admin_resolve_role()`
+  helper (the true count kept growing past the plan's original 33 as
+  audits of the actual frontend code turned up RPCs the plan document
+  never listed — always found by grepping every real `rpc/...` call site
+  rather than trusting any inventory a second time)
+- Stage 2b (centralized role-gating cleanup) — done, `admin/index.html`
+  only (the only file with meaningful duplication of this pattern)
+- Stage 3 (new login genuinely functional, not just proof-of-concept) —
+  done and live-tested in all 3 portals
+- Stage 4 (remove the legacy password path) — not started, deliberately
+  saved for a quiet window once more people are actually using the new
+  login day-to-day, not something to rush into today
+- Stage 5 (cleanup — drop `pw_hash`, remove old login UI) — not started,
+  depends on Stage 4
+
+Also fixed along the way, unrelated to the auth work itself but found
+mid-session: a real double-submit bug in 6 different save/confirm
+buttons across all 3 portals (see the 2026-09-04 entries above), and a
+genuine missing-credential-check security gap in
+`accounting_set_cut_pct_override`.
