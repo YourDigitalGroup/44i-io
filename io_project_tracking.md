@@ -24871,3 +24871,72 @@ duplicate elsewhere needing the same change, unlike some other constants
 in this project that are deliberately kept in sync by hand across files).
 
 **Verified**: `node --check` on the extracted inline script.
+
+## Strategist status could silently drift out of sync with its own history log (2026-09-04)
+
+Claire noticed Blue Dolphin Pools' SEM line (44i group) showed "Paused" in
+the Strategist Portal but "Pending" in Accounting. Investigated with her
+own live data (a client name search accidentally matched a same-named
+client in a different group first — corrected the query to scope by
+`group_id`/join `groups` before drawing any conclusion). The real
+`campaign_lines.status` for this line is `'pending'` — Accounting reads
+that column directly and was showing it correctly the whole time.
+
+**Root cause**: the Strategist Portal doesn't display the live `status`
+column directly — it computes an "effective status" per viewed month via
+`strategistHistoricalStatus()`, which trusts the latest matching row in
+`campaign_status_history` over the live column whenever any history
+exists at all, with no fallback to the live value. This line's last
+logged history entry was "Aug 13: active → paused." Its live status was
+later changed to `'pending'` by `strategistConfirmStatusChange()` — but
+that function called `strategist_log_status_change` (writes history) and
+`strategistSaveLine()` (writes the actual `status` column) as two
+**separate, non-atomic RPC calls**, with the history-logging call wrapped
+in a try/catch that showed an error toast on failure but never stopped
+the save from proceeding anyway. If that log call ever failed (network
+blip, timeout, anything), the live status still changed, but no new
+history row was recorded — leaving the stale Aug 13 entry as the
+"latest," permanently misreporting this line as Paused for every month
+from then on, with no way for the strategist to see or fix it (the
+status dropdown itself doesn't even offer a "Pending" option — only
+Active/Paused/Complete — so there was no UI path back to the correct
+display anyway).
+
+**Fix**: moved status-history logging server-side, into
+`strategist_save_campaign_line` itself — it now reads the line's current
+`status` before applying the update, and if `p_data` includes a `status`
+key whose value actually differs from the old one, inserts the
+`campaign_status_history` row in the same call that changes the value
+(a new optional `p_data->>'status_reason'` carries the reason text
+through, replacing the separate RPC's own `p_reason` param). This makes
+the log write atomic with the actual change — it can no longer be
+skipped by a failed second call, and covers every future caller of this
+function, not just the status-dropdown path. Updated
+`strategistConfirmStatusChange()` (`strategist/index.html`) to match —
+it no longer calls `strategist_log_status_change` separately at all,
+just passes `status_reason` through the normal save.
+
+**One-time data correction delivered** (not run by me — no DB access):
+update Blue Dolphin Pools' SEM line's `flight_start` to `2026-10-01`
+(the AM confirmed the campaign start is being pushed back) and insert a
+fresh `paused → pending` history row so the Strategist Portal
+immediately reflects the correct status instead of waiting for some
+future edit to happen to trigger a new (now-correct) log entry.
+
+**Flagging, not fixing**: the status dropdown's missing "Pending" option
+means a strategist still has no way to manually move a line back to
+pending through the UI if this ever needs to happen again by hand
+(rather than via a one-time SQL correction like this one) — worth asking
+Claire whether that's ever a real workflow before adding it, since
+'pending' has so far only ever been an initial/setup-time state, not
+something manually re-selected.
+
+**Verified**: `node --check` on the extracted inline script. The SQL fix
+itself traced by hand against `admin_cancel_service`/`admin_renew_service`/
+`admin_swap_tactic` (confirmed none of the other status-touching paths
+insert into `campaign_status_history` either, so this fix only closes
+the gap for `strategist_save_campaign_line`'s own callers — flagging as a
+known remaining gap for those other paths, not fixed here since none of
+them were shown to have actually caused a real mismatch the way this one
+did). Not run against the live database — Claire needs to execute both
+statements herself.
