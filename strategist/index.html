@@ -3004,16 +3004,18 @@ function strategistCancelStatusChange(lineId, oldStatus) {
   if (el) { el.style.display = 'none'; el.innerHTML = ''; }
 }
 
+// strategist_log_status_change is no longer called separately here (2026-09-04,
+// found live by Claire -- Blue Dolphin Pools/SEM was stuck showing "Paused" in
+// this portal forever after its status was later changed to 'pending', because
+// this function's own log call had failed/been skipped at some point and the
+// code proceeded to save the new status anyway -- the catch block below never
+// stopped strategistSaveLine from running). strategist_save_campaign_line now
+// logs the history entry itself, atomically with the actual status update, so
+// the two can no longer drift apart the way they did here.
 async function strategistConfirmStatusChange(lineId, newStatus, oldStatus) {
   const reasonInput = document.getElementById('status-reason-input-' + lineId);
   const reason = reasonInput ? reasonInput.value.trim() : '';
-  try {
-    await sb('rpc/strategist_log_status_change', { method: 'POST', body: JSON.stringify({
-      p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
-      p_campaign_line_id: lineId, p_old_status: oldStatus, p_new_status: newStatus, p_reason: reason || null
-    }) });
-  } catch(e) { showToast('Error logging status change: ' + e.message, 'error'); }
-  await strategistSaveLine(lineId, { status: newStatus });
+  await strategistSaveLine(lineId, { status: newStatus, status_reason: reason || null });
 }
 
 // setup_blocker is a checkbox group now, not a single <select> -- a campaign
