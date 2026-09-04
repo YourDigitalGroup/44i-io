@@ -25062,9 +25062,181 @@ current Supabase session, so no new RPC was needed. Same deliberate
 non-behavior: confirms identity, does not call `showStrategistPanel(true)`,
 since the strategist RPCs don't accept a Supabase session yet either.
 
-**Not yet done**: Stage 2's dual-path RPC guards (needed before either
-new login can actually open a working portal); a real password-reset
-landing page; the equivalent modal for Accounting (not yet built — no
-Accounting-specific profile RPC exists yet, though the same
-`admin_get_profile_by_auth_uid()` RPC would work there too since
-Accounting logins are also `admin_users` rows).
+**Not yet done**: a real password-reset landing page; the equivalent
+modal for Accounting (not yet built — no Accounting-specific profile RPC
+exists yet, though the same `admin_get_profile_by_auth_uid()` RPC would
+work there too since Accounting logins are also `admin_users` rows).
+
+## Supabase Auth migration — Stage 2, first RPCs converted (2026-09-04)
+
+Started Stage 2 (dual-path guards on the 33 password-checking RPCs),
+lowest-risk first per the plan. Rather than duplicating the same
+`select role from admin_users where name/pw_hash match` block into all
+33 functions, extracted one shared helper:
+
+```sql
+admin_resolve_role(p_name text, p_pw text) returns text
+```
+
+It checks `auth.uid()` first (a real Supabase session, once the frontend
+is sending one) and falls back to the existing name/password check
+otherwise, always returning the same shape (a role string or null) either
+functions already expected. Every RPC's own dual-path change is now a
+one-line swap (`v_role := admin_resolve_role(p_name, p_pw);` in place of
+its old inline `select ... into v_role`), which keeps each function's
+diff small and easy to verify against its old behavior line-by-line.
+
+Converted first (matching the plan's suggested lowest-risk order):
+`admin_rename_workflow`, `admin_delete_workflow`. Claire ran the SQL,
+then live-tested by renaming a real workflow through the existing
+password login — confirmed working with no behavior change.
+
+**Verified**: read `pg_get_functiondef()` for both functions before
+writing the replacement, confirmed the only change is the role-lookup
+block being swapped for the helper call — everything else (error
+messages, the actual update statement, return value) byte-for-byte
+identical. Claire's live rename test is the real-world confirmation the
+old login path is unaffected. The new-session path (`auth.uid()` branch)
+isn't exercisable yet from the frontend — no protected save/load call
+sends a session token yet, only the Stage 1 proof-of-concept modals do —
+so that branch is code-reviewed correct but not yet live-tested; it will
+be, once a Stage 3 live-test wires an actual button to use it.
+
+**Second batch, same day**: converted `admin_save_hosting_setting`,
+`admin_save_legal_content`, `admin_save_notification_settings` the same
+way (each one's inline role check swapped for `admin_resolve_role()`).
+Claire ran the SQL and confirmed all three settings screens (Hosting
+Settings, Legal Content, Notification Settings) still save successfully
+through the existing login.
+
+**Third batch, same day**: converted `admin_get_aes`, `admin_get_staff`,
+`admin_get_strategists`, `admin_save_ae`, `admin_save_strategist`,
+`admin_save_user` — the Users tab's read/write functions. Claire
+confirmed all three save successfully in the Users tab through the
+existing login.
+
+**Fourth batch, same day**: converted `admin_get_clients`,
+`admin_get_clients_missing_trello_list`, `admin_get_orders`,
+`admin_save_client`. Claire confirmed the Clients and Orders tabs both
+open with no errors through the existing login.
+
+**Fifth batch, same day**: converted `admin_get_accounting_map` and
+BOTH overloaded signatures of `admin_save_accounting_map` (a 4-arg and a
+5-arg version — Postgres treats these as two distinct functions, so both
+needed their own `CREATE OR REPLACE`), plus `admin_save_group`. Claire
+confirmed the Groups tab saves with no changes and the Accounting Map
+screen loads and saves correctly, both through the existing login.
+
+**Sixth batch, same day**: converted `admin_save_intake_form`,
+`admin_save_section`, `admin_save_service`. Claire confirmed all three
+save with no errors.
+
+**`admin_login` itself — decided NOT to convert**: pulled its definition
+and concluded it doesn't need the dual-path treatment. It's purely a
+password verifier (`select role where name/pw_hash match`) — its entire
+job is checking a password. There's no scenario where someone holding a
+real Supabase session would call it instead of just going straight to
+`admin_get_profile_by_auth_uid()` (which the new login already does).
+This means **Stage 2 is fully complete for the Admin portal** — all 20
+real action RPCs converted, `admin_login` correctly left untouched by
+design, not by oversight.
+
+**Strategist portal, first batch, same day**: converted
+`strategist_get_clients`, `strategist_get_campaign_lines`,
+`strategist_get_campaign_months` — the three functions that load the
+whole dashboard. Claire confirmed the dashboard opens with no errors
+through the existing login.
+
+**Strategist portal, second batch, same day**: converted
+`strategist_get_budgeted_spend_rates`, `strategist_get_optimize_log`,
+`strategist_get_platform_report_cache`. Claire confirmed the dashboard
+still reloads correctly (these three feed the optimize log, budgeted
+spend rates, and platform report freshness banners).
+
+**Strategist portal, third and final batch, same day**: converted
+`strategist_save_campaign_line`, `strategist_save_campaign_month`,
+`strategist_save_optimize_log`, `strategist_save_platform_report_cache`,
+`strategist_delete_optimize_log`. `strategist_save_campaign_line` keeps
+its 2026-09-04 status-history auto-logging (from the Blue Dolphin Pools
+fix earlier this session) completely unchanged — only its role-check
+block was swapped. Claire live-tested against the **Claude Test Group**
+(a real client/campaign line kept specifically for this kind of safe
+testing, per her own suggestion) rather than a real campaign: changed
+status on a test line (exercises the save), added and deleted an
+optimize log note (exercises save + delete). All worked with no errors.
+
+**Stage 2 is now fully complete** — every RPC in `AUTH_MIGRATION_PLAN.md`'s
+inventory (20 real Admin action RPCs + `admin_login` correctly left
+untouched, all 11 Strategist RPCs) now resolves its caller's role via the
+shared `admin_resolve_role()` helper, accepting either a real Supabase
+session or the existing name/password login. Every conversion was a
+one-line swap verified line-by-line against the function's own
+`pg_get_functiondef()` output before writing the replacement, and Claire
+live-tested the actual UI surface for every batch — nothing was changed
+sight-unseen. The legacy password path is completely unaffected end to
+end; the new Supabase-session path is wired correctly but still only
+exercisable through the Stage 1 proof-of-concept login modals, since no
+button in the real UI sends a session token yet (that's Stage 3).
+
+## Supabase Auth migration — Stage 3: new login now actually works (2026-09-04)
+
+Turned the Stage 1 proof-of-concept modals into a genuinely functional
+second login, now that Stage 2 means every RPC can accept a real session.
+
+**The core problem this had to solve carefully**: `admin/index.html` and
+`strategist/index.html` don't call a single shared function for every RPC
+— `admin/index.html` alone had 28 separate raw `fetch()` calls, each with
+its own hardcoded `Authorization: Bearer <anon key>` header, bypassing
+the shared `sb()` helper entirely. Making the new login "just work" meant
+every one of those call sites, not just `sb()`/`sbAll()`, needed to send
+the real session's access token instead of the anon key whenever a
+session-based login is active — otherwise `auth.uid()` would never
+resolve inside `admin_resolve_role()` for most of the app's real actions.
+
+**Fix**: added a single `sbAuthHeaders()` helper to `shared.js` alongside
+a new `currentSupabaseSession` variable — returns the session's
+`access_token` as the bearer when a session exists, the anon key
+otherwise. `sb()` and `sbAll()` both now build their headers from this.
+All 28 raw `fetch()` blocks in `admin/index.html` (two slightly different
+literal formattings, replaced via a scripted find-and-replace, then
+`node -e` syntax-checked afterward) now do the same.
+`strategist/index.html` had only one such raw block (the login's own
+profile lookup, which correctly keeps its own explicit token since
+`currentSupabaseSession` isn't set yet at that point in the flow) — every
+other Strategist RPC call already went through `sb()`.
+
+**Why sessions are NOT persisted across page loads**
+(`supabase.createClient(url, key, { auth: { persistSession: false } })`
+on both new clients): the biggest risk in this design is a stale or
+expired token silently surviving into a later page load (via
+localStorage) and getting attached to `sb()`'s Authorization header
+before anyone explicitly logs in via the new path — which would break
+the ordinary password login for that same person, since it never expects
+a session to already be present and has no way to know one is lurking.
+With `persistSession:false`, a session only exists for the duration of
+an explicit, successful sign-in within the current page load, and
+`onAuthStateChange` keeps `currentSupabaseSession` in sync with it
+(including the client's automatic in-session token refresh). Both
+`adminLogout()` and `strategistLogout()` also explicitly call
+`sbAuthClient.auth.signOut()` and clear `currentSupabaseSession` when the
+user was signed in via the new path, as a second line of defense against
+any leftover session state before a different login attempt in the same
+tab.
+
+**Behavior change**: `attemptNewLogin()` (admin) and
+`attemptStrategistNewLogin()` (strategist) no longer just show a
+confirmation message — on success they now set `currentAdminUser`/
+`currentStrategistUser` (with a `viaSession: true` marker) and actually
+call `showAdmin(true)`/`showStrategistPanel(true)`, exactly like the
+password login does. The role restriction each portal's password login
+already enforces (accounting can't use `/admin`; only strategist/super
+can use the Strategist portal) is mirrored here too, so the new login
+can't grant broader access than the old one.
+
+**Not yet tested live** — this needs Claire (or a real invited person)
+to actually sign in via "Try the new secure login (beta)" in each portal
+and confirm a real action (loading data, saving something) works
+end-to-end through a session, not just the name/password path. This is
+the real Stage 3 milestone: proving the new login is a complete,
+functional replacement, side by side with the old one, before Stage 4
+(removing the old one) is even considered.

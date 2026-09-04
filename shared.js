@@ -28,6 +28,24 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// ── SUPABASE AUTH SESSION (Stage 3 of AUTH_MIGRATION_PLAN.md) ────────────
+// When someone signs in via a real Supabase session (the new secure login),
+// every RPC call needs to send that session's access_token as the
+// Authorization bearer instead of the static anon key -- that's what lets
+// auth.uid() resolve inside admin_resolve_role() on the server. Falls back
+// to the anon key whenever no session exists, which is the ENTIRE existing
+// name/password login path -- it never sets this, so it is completely
+// unaffected. Deliberately NOT persisted across page loads (each portal's
+// supabase.createClient() is created with persistSession:false) so a stale
+// or expired token from an earlier tab/session can never silently leak into
+// -- and break -- a fresh legacy password login.
+let currentSupabaseSession = null;
+
+function sbAuthHeaders() {
+  const token = (currentSupabaseSession && currentSupabaseSession.access_token) ? currentSupabaseSession.access_token : SUPABASE_KEY;
+  return { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token };
+}
+
 // ── SUPABASE REST HELPER ─────────────────────────────────────────
 async function sb(path, opts={}) {
   const method = opts.method || 'GET';
@@ -36,8 +54,7 @@ async function sb(path, opts={}) {
   const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
     method,
     headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: 'Bearer ' + SUPABASE_KEY,
+      ...sbAuthHeaders(),
       'Content-Type': 'application/json',
       Prefer: prefer,
     },
@@ -83,8 +100,7 @@ async function sbAll(path, opts={}, pageSize=1000) {
     const res = await fetch(SUPABASE_URL + '/rest/v1/' + path, {
       method,
       headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: 'Bearer ' + SUPABASE_KEY,
+        ...sbAuthHeaders(),
         'Content-Type': 'application/json',
         Prefer: prefer,
       },
