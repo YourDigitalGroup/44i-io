@@ -720,7 +720,7 @@ function strategistOpenImportForm() {
     </div>
     <p style="font-size:11px;color:var(--muted);margin:0 0 12px">This creates the campaign as of the current month. Once it's in the list, click into it to add any past months' budgets/actuals you want on record — as far back as makes sense for this one. If split, everything above except the platform applies to the first split only — each split gets its own exact title, entered right on its own row.</p>
     <div style="display:flex;gap:10px">
-      <button onclick="strategistSubmitImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Campaign</button>
+      <button id="strategist-submit-import-btn" onclick="strategistSubmitImport()" style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Add Campaign</button>
       <button onclick="strategistOpenImportForm()" class="btn-quiet-green">Cancel</button>
     </div>
   </div>`;
@@ -833,6 +833,16 @@ function strategistToggleImportSplit(checked) {
 }
 
 async function strategistSubmitImport() {
+  // Same double-submit guard added to admin/index.html's slow save/confirm
+  // buttons the same day (2026-09-04) — this one is a genuine duplicate-data
+  // risk too: it creates a BRAND NEW campaign line (p_id: null) across up to
+  // 4 sequential network calls, with nothing server-side to catch a repeat
+  // click the way an edit-in-place would (there's no existing row to
+  // idempotently no-op against — a second click just creates a second line).
+  const submitBtn = document.getElementById('strategist-submit-import-btn');
+  if (submitBtn?.disabled) return;
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Adding…'; }
+
   const clientSel = document.getElementById('import-client');
   const clientId = clientSel.value;
   const groupId = clientSel.selectedOptions[0]?.dataset.groupId || null;
@@ -861,8 +871,16 @@ async function strategistSubmitImport() {
   const agentName = isMultiAgent ? document.getElementById('import-agent').value : null;
   const county = isMultiAgent ? document.getElementById('import-county').value : null;
 
-  if (!clientId || !serviceId) { showToast('Pick a client and a tactic.', 'error'); return; }
-  if (isMultiAgent && (!agentName || !county)) { showToast('This is a multi-agent client — pick both an Agent and a County.', 'error'); return; }
+  if (!clientId || !serviceId) {
+    showToast('Pick a client and a tactic.', 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Campaign'; }
+    return;
+  }
+  if (isMultiAgent && (!agentName || !county)) {
+    showToast('This is a multi-agent client — pick both an Agent and a County.', 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Campaign'; }
+    return;
+  }
 
   // Same real scenario as the Setup panel's own split form: one price sold across
   // several regions/segments. Read+validate BEFORE creating anything, same as
@@ -874,7 +892,11 @@ async function strategistSubmitImport() {
     const amounts = [...document.querySelectorAll('.split-amount-import')].map(el => el.value);
     const titles = [...document.querySelectorAll('.split-title-import')].map(el => el.value.trim());
     splits = labels.map((label, i) => ({ label, amount: amounts[i], title: titles[i] })).filter(s => s.label && s.amount !== '');
-    if (splits.length < 2) { showToast('Enter a label and amount for at least 2 splits.', 'error'); return; }
+    if (splits.length < 2) {
+      showToast('Enter a label and amount for at least 2 splits.', 'error');
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Campaign'; }
+      return;
+    }
   }
 
   try {
@@ -919,7 +941,10 @@ async function strategistSubmitImport() {
     await strategistApplyCachedReportIfMatch(newId);
     renderStrategistDashboard();
     showToast(isSplit ? `Campaign imported and split into ${splits.length}.` : 'Campaign imported!');
-  } catch(e) { showToast('Error importing campaign: ' + e.message, 'error'); }
+  } catch(e) {
+    showToast('Error importing campaign: ' + e.message, 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Campaign'; }
+  }
 }
 
 // ── "PASTE PLATFORM REPORT" BULK MATCH (2026-08-04) ──────────────

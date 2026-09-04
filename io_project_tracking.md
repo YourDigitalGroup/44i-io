@@ -25376,3 +25376,51 @@ extracted inline script — no errors. Not independently re-tested against
 a live triple-click in the browser (that needs Claire); the fix mirrors
 the exact shape of the bug she reported and demonstrated (in the Claude
 Test Group).
+
+## Follow-up sweep for the same double-submit bug class (2026-09-04)
+
+Claire asked for a full sweep before moving on, rather than assuming the 4
+fixed functions were the only ones. Method: extracted every function
+bound to an `onclick` handler in `admin/index.html`, `strategist/index.html`,
+and `accounting/index.html`, flagged any that either post to Trello or make
+2+ sequential network calls, and checked each for an existing disable-guard.
+
+**Found and fixed 2 more real gaps**, same root cause as the original bug:
+
+- `adminSaveLineItemDateEdit()` (`admin/index.html`) — the date-only variant
+  of the Edit panel, used for pure one-time costs. Missed in the first pass
+  because it's a separate function from `adminSaveLineItemEdit()`, but does
+  the identical slow RPC-save-then-Trello-comment sequence. Same fix
+  (button id + disable/re-enable).
+- `strategistSubmitImport()` (`strategist/index.html`, the "Add Campaign"
+  button) — genuinely worse than the original bug, not just the same
+  shape: it **creates a brand-new campaign line** (`p_id: null`) across up
+  to 4 sequential calls, so unlike an edit-in-place there's no existing row
+  for the database to idempotently no-op against — a second click before
+  the first finishes would create a second real campaign line, not just a
+  duplicate comment. Same fix (button id + disable/re-enable across every
+  early-return and the catch block).
+- `accountingConfirmBulkImport()` (`accounting/index.html`) — the same
+  "create new campaign lines in a loop" shape as `strategistSubmitImport()`
+  above (`accounting_add_campaign_line` per group with no existing line).
+  Notably, `strategistConfirmBulkImport()` — the Strategist portal's own
+  near-identical bulk-import confirm — already had this exact guard
+  (a `BULK_IMPORT_CONFIRMING` flag), so this looks like the fix was applied
+  to one twin function but not its Accounting-side counterpart when the
+  second one was built. Mirrored the same disable/re-enable pattern.
+
+**Checked and confirmed already safe** (no change made):
+`adminApprovePendingRequestClick()` (RPC re-checks `status = 'pending'`
+before doing anything, same protection as `adminSubmitCancellation()`
+found in the first pass); `strategistMatchPastedReport()` (only updates
+existing `campaign_months` rows via upsert — re-running it just
+re-applies the same values, no duplicate rows); `strategistViewOrder()`/
+`accountingViewOrder()`/`loadAdminReconcile()`/
+`adminAuditAllClientsTrelloCards()` (read-only or audit-only, nothing to
+duplicate).
+
+**Verified**: `node -e (new Function(...))` syntax check on all three
+files' extracted inline scripts — no errors. Same as the original fix,
+not independently live-tested against a real triple-click (needs
+Claire); each mirrors the exact pattern already confirmed to fix the
+reported bug.
