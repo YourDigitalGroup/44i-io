@@ -299,6 +299,23 @@ function adminPortalHandoff() {
   } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
 }
 
+// Same handoff pattern, straight to a specific campaign line's own detail
+// panel in the Strategist Portal (2026-09-04, per Claire -- "a way to go
+// from the accounting portal to the strategist portal in case an admin
+// wants to see if there are notes on it or add any optimize log or
+// notes"). Reuses strategist/index.html's EXISTING tryStrategistHandoffLogin()
+// as-is (it already reads these same two keys regardless of which portal
+// wrote them) -- the only new piece is the `?line=` query param, read by
+// strategist/index.html's own strategistOpenDeepLinkedLine().
+function strategistPortalHandoffToLine(lineId) {
+  if (!currentAccountingUser) return;
+  try {
+    sessionStorage.setItem('strategist_handoff_name', currentAccountingUser.name);
+    sessionStorage.setItem('strategist_handoff_pw', currentAccountingUser.pw);
+  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
+  location.href = '../strategist/index.html?line=' + encodeURIComponent(lineId);
+}
+
 // Silent handoff FROM the admin portal's "Go to Accounting Portal" link -- same
 // one-time sessionStorage pattern as the existing admin<->strategist handoff.
 async function tryAccountingHandoffLogin() {
@@ -580,6 +597,7 @@ function accountingRenderDetailCard() {
         ${accountingCutPctOverrideFieldHtml(line)}
         ${accountingBudgetModePillHtml(line)}
         ${line.order_id ? `<button onclick="accountingViewOrder('${esc(line.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
+        ${currentAccountingUser?.role === 'super' ? `<button onclick="strategistPortalHandoffToLine('${esc(line.id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Open in Strategist Portal →</button>` : ''}
         <button class="acct-detail-close" onclick="accountingCloseDetailCard()">✕ Close</button>
       </div>
     </div>

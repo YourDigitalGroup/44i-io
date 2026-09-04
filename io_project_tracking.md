@@ -24940,3 +24940,41 @@ known remaining gap for those other paths, not fixed here since none of
 them were shown to have actually caused a real mismatch the way this one
 did). Not run against the live database — Claire needs to execute both
 statements herself.
+
+## Accounting → Strategist deep link for a specific campaign line (2026-09-04)
+
+Claire: "a way to go to a campaign from the accounting portal to the
+strategist portal in case an admin wants to see if there are notes on it
+or add any optimize log or notes... helps if there are questions about
+performance." Scoped to "get the way to have it work" first, not the
+finer UX details.
+
+**Fix**: added an "Open in Strategist Portal →" button to Accounting's
+line-detail card (next to the existing "View Order" button), gated to
+`currentAccountingUser.role === 'super'` — same restriction the existing
+"Go to Admin" link already uses, since a plain accounting-only login has
+no Strategist Portal access to hand off to anyway.
+
+Reuses the exact handoff mechanism already built for admin↔strategist↔
+accounting (`sessionStorage` name/pw, read once by
+`tryStrategistHandoffLogin()` and cleared immediately either way) — no
+changes needed to that existing login path. The only new piece is a
+`?line=<campaign_line_id>` query param on the URL, read by a new
+`strategistOpenDeepLinkedLine()` in `strategist/index.html`, called once
+right after the dashboard's first data load (covers both a fresh login
+and the handoff-login path, since both funnel through
+`loadStrategistDashboard()`). It clears every filter that could hide the
+line (scope forced to 'all', group/pacing/client-search filters reset),
+jumps the viewed month to the line's own `flight_start` so
+`strategistLineActiveInMonth()` doesn't filter it out just because
+"today" falls outside its flight window, switches to the correct status
+tab via the line's own effective status, then opens its detail panel via
+the existing `strategistSelectLine()`.
+
+**Verified**: `node --check` on both extracted inline scripts. Extracted
+the URL-parsing/month-resolution logic into a standalone Node harness —
+confirmed a real line with a future `flight_start` correctly jumps to
+that month, no `?line=` param is a no-op, and an unknown/inaccessible
+line id fails gracefully (shows an error toast instead of silently doing
+nothing or throwing). The full DOM-rendering path (actually opening the
+panel) wasn't independently re-tested — that would need a live browser.
