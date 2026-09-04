@@ -1712,7 +1712,7 @@
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔐</div>
     <h3 id="admin-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">New Secure Login <span style="font-weight:600;color:var(--muted);font-size:11px">(beta)</span></h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">For testing only right now — sign in with the email + password you set up via your Supabase invite. This won't open the admin panel yet.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with the email + password you set up via your Supabase invite.</p>
     <input type="email" id="admin-new-login-email" placeholder="Email" aria-label="Email" autocomplete="email" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px"/>
     <input type="password" id="admin-new-login-pw" placeholder="Password" aria-label="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptNewLogin()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:12px"/>
     <div id="admin-new-login-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px"></div>
@@ -1847,16 +1847,28 @@ async function checkAdminPw() {
   }
 }
 
-// ── NEW SUPABASE-AUTH LOGIN (Stage 1 proof-of-concept, AUTH_MIGRATION_PLAN.md) ──
-// This does NOT replace attemptAdminLogin()/checkAdminPw() above — it's a parallel
-// path proving a real Supabase session round-trips to an admin_users row via the
-// admin_get_profile_by_auth_uid() RPC. It intentionally does not call showAdmin(true):
-// none of the 33 protected RPCs accept a Supabase session yet (Stage 2), so opening
-// the panel here would look like it works while every save/load call inside it would
-// still silently require the OLD p_name/p_pw params it doesn't have.
+// ── NEW SUPABASE-AUTH LOGIN (Stage 3 of AUTH_MIGRATION_PLAN.md) ──────────
+// Parallel to attemptAdminLogin()/checkAdminPw() above — this is a second,
+// independent way in. Now that every protected RPC accepts a real Supabase
+// session (Stage 2, done 2026-09-04), signing in here opens the real admin
+// panel, same as the password login.
+//
+// persistSession:false is deliberate: a session from here is NOT saved to
+// localStorage or auto-restored on a later page load. Without that, a
+// stale/expired token left over from an earlier visit could silently
+// attach itself to sb()'s Authorization header on a fresh load and break
+// the ordinary password login for that person, which never expects a
+// session to already exist. Signing in here always requires an explicit,
+// fresh email+password submit within the current page load.
 const sbAuthClient = (typeof supabase !== 'undefined')
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
   : null;
+
+if (sbAuthClient) {
+  sbAuthClient.auth.onAuthStateChange((event, session) => {
+    currentSupabaseSession = session;
+  });
+}
 
 function openNewLogin() {
   const modal = document.getElementById('admin-new-login-modal');
@@ -1915,8 +1927,16 @@ async function attemptNewLogin() {
     await sbAuthClient.auth.signOut();
     return;
   }
-  okEl.textContent = `Signed in as ${profile.name} (${profile.role}). This confirms the new login works — full admin access still comes through the login above until the next migration stage.`;
-  okEl.style.display = 'block';
+  if (profile.role === 'accounting') {
+    errEl.textContent = 'This account isn\'t set up for the admin portal — check with a super admin for the right link.';
+    errEl.style.display = 'block';
+    await sbAuthClient.auth.signOut();
+    return;
+  }
+  currentSupabaseSession = data.session;
+  currentAdminUser = { name: profile.name, email: profile.email || '', role: profile.role, pw: '', viaSession: true };
+  closeNewLogin();
+  showAdmin(true);
 }
 
 async function sendNewLoginResetEmail() {
@@ -5986,7 +6006,7 @@ async function scanAeImportCandidates() {
   try {
     const res = await fetch(PROXY, {
       method: 'POST',
-      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ target: 'trello_get_board_members', board_id: group.trello_board_id })
     });
     const members = await res.json();
@@ -6222,7 +6242,7 @@ async function loadAdminReconcile() {
       try {
         const res = await fetch(PROXY, {
           method: 'POST',
-          headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_get_lists', board_id: group.trello_board_id })
         });
         const lists = await res.json();
@@ -6587,7 +6607,7 @@ async function auditFetchMarkerCardNames() {
     try {
       const card = await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_get_card', card_id: shortLink }),
       }).then(r => r.json());
       if (card?.name) names.push(card.name);
@@ -6714,7 +6734,7 @@ async function resolveAuditTemplateNames(templateRow, templateCache) {
     try {
       const templateCard = await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_get_card', card_id: templateRow.trello_template_ref }),
       }).then(r => r.json());
       const name = (templateCard?.name || '').trim();
@@ -6726,7 +6746,7 @@ async function resolveAuditTemplateNames(templateRow, templateCache) {
     try {
       const templateCards = await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_get_list_cards', list_id: templateRow.trello_template_ref }),
       }).then(r => r.json());
       if (!Array.isArray(templateCards)) throw new Error('Template list unreadable');
@@ -6880,7 +6900,7 @@ async function adminAuditClientTrelloCards() {
     const [actualRes, lines] = await Promise.all([
       fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_get_list_cards', list_id: listId }),
       }).then(r => r.json()),
       sb('rpc/admin_get_client_campaign_lines', {
@@ -7044,7 +7064,7 @@ async function adminAuditAllClientsTrelloCards() {
     try {
       const res = await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_get_list_cards', list_id: client.trello_list_id }),
       }).then(r => r.json());
       actualCards = Array.isArray(res) ? res : null;
@@ -7181,7 +7201,7 @@ async function scanClientImportCandidates() {
     // client whose list is archived needs linking here just as much as an active one.
     const res = await fetch(PROXY, {
       method: 'POST',
-      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ target: 'trello_get_lists', board_id: group.trello_board_id, filter: 'all' })
     });
     const lists = await res.json();
@@ -8348,7 +8368,7 @@ async function adminUpdateTacticCard(orderId, serviceId, item, { renameTitle } =
     if (Object.keys(payload).length <= 2) return; // nothing beyond target/card_id to update
     const res = await fetch(PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     if (!res.ok) console.warn('Could not update Trello card', tacticCardId, ':', res.status);
@@ -8647,7 +8667,7 @@ async function notifyRequesterOfResolution(req, status, note) {
     </div>`;
     const res = await fetch(PROXY, {
       method: 'POST',
-      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ target: 'send_email', to: req.requested_by_email, subject: `Change request ${status}`, html }),
     });
     if (!res.ok) console.warn('Could not send resolution email:', res.status);
@@ -8819,7 +8839,7 @@ async function adminApprovePendingRequestClick(id) {
         try {
           const res = await fetch(PROXY, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+            headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
           });
           if (!res.ok) console.warn('Could not post approval comment to card', cardId, ':', res.status);
@@ -8839,7 +8859,7 @@ async function adminApprovePendingRequestClick(id) {
           const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
           const attachRes = await fetch(PROXY, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+            headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
           });
           if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
@@ -8985,7 +9005,7 @@ async function finalizeBatchIfReady(batchId) {
     try {
       const res = await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text }),
       });
       if (!res.ok) console.warn('Could not post batch resolution comment to card', cardId, ':', res.status);
@@ -9002,7 +9022,7 @@ async function finalizeBatchIfReady(batchId) {
       const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
       const attachRes = await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
       });
       if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
@@ -9047,7 +9067,7 @@ async function notifyRequesterOfBatchResolution(batchRows) {
     </div>`;
     const res = await fetch(PROXY, {
       method: 'POST',
-      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ target: 'send_email', to: email, subject: 'Your change request(s) have been resolved', html }),
     });
     if (!res.ok) console.warn('Could not send batch resolution email:', res.status);
@@ -9664,7 +9684,7 @@ async function adminSubmitCancellation(orderId, serviceId) {
     try {
       const res = await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
       });
       if (!res.ok) console.warn('Could not post cancellation comment to card', cardId, ':', res.status);
@@ -9758,7 +9778,7 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
       try {
         const res = await fetch(PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
         });
         if (!res.ok) console.warn('Could not post edit comment to card', cardId, ':', res.status);
@@ -9778,7 +9798,7 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
         const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
         const attachRes = await fetch(PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
         });
         if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
@@ -9878,7 +9898,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
       try {
         const res = await fetch(PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
         });
         if (!res.ok) console.warn('Could not post edit comment to card', cardId, ':', res.status);
@@ -9895,7 +9915,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
         const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
         const attachRes = await fetch(PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
         });
         if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
@@ -10004,7 +10024,7 @@ async function adminSaveMonthBudgetsEdit(orderId, serviceId) {
       try {
         const res = await fetch(PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
         });
         if (!res.ok) console.warn('Could not post edit comment to card', cardId, ':', res.status);
@@ -10021,7 +10041,7 @@ async function adminSaveMonthBudgetsEdit(orderId, serviceId) {
         const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
         const attachRes = await fetch(PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
         });
         if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
@@ -10145,7 +10165,7 @@ async function adminConfirmRenewal(orderId, serviceId) {
       try {
         const res = await fetch(PROXY, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
         });
         if (!res.ok) console.warn('Could not post renewal comment to card', cardId, ':', res.status);
@@ -10285,7 +10305,7 @@ async function adminConfirmSwap(orderId) {
     try {
       await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: swapCommentText }),
       });
     } catch (e) { console.warn('Could not post swap comment to card', cardId, ':', e.message); }
@@ -10302,7 +10322,7 @@ async function adminConfirmSwap(orderId) {
       const desc = `**Started via Swap Tactic**\nReplaces: ${endingSvc.accounting_label || endingSvc.label || endingId}\nEffective: ${effectiveDate}\nAmount: $${Number(result.starting_amount).toLocaleString()} (${result.starting_days} of ${result.total_days} days this month)`;
       const createRes = await fetch(PROXY, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ target: 'trello_create_card', list_id: listId, name: cardName, desc, pos: 'bottom' }),
       });
       const card = await createRes.json();
@@ -10335,7 +10355,7 @@ async function adminNotifyTrelloOfIntakeCompletion(o, formKey) {
   try {
     const commentRes = await fetch(PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: `✅ ${formDef?.title || formKey} intake completed by AM (${currentAdminUser?.name || 'AM'}).` }),
     });
     if (!commentRes.ok) console.warn('Could not post intake-completion comment:', commentRes.status);
@@ -10346,7 +10366,7 @@ async function adminNotifyTrelloOfIntakeCompletion(o, formKey) {
     const { base64, fileName } = await generateAdminIntakePdfBlob(formDef?.title || formKey, formDef, fields);
     const attachRes = await fetch(PROXY, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' }),
     });
     if (!attachRes.ok) console.warn('Could not attach intake PDF:', attachRes.status);
@@ -10827,7 +10847,7 @@ async function adminUploadGroupLogo(file) {
     const base64 = await fileToBase64(file);
     const res = await fetch(PROXY, {
       method: 'POST',
-      headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({
         target: 'upload_group_logo',
         p_name: currentAdminUser?.name || '',
@@ -11110,6 +11130,14 @@ function accountingPortalHandoff() {
 
 // ── LOGOUT (standalone-admin addition — see note 2 above) ──────────
 function adminLogout() {
+  // If this session was signed in via the new Supabase login, sign out of it
+  // too and clear the session so a leftover token can't attach itself to a
+  // later login attempt in the same tab (see sbAuthClient's persistSession:false
+  // note above for why that matters).
+  if (currentAdminUser?.viaSession && sbAuthClient) {
+    sbAuthClient.auth.signOut();
+  }
+  currentSupabaseSession = null;
   currentAdminUser = null;
   const panel = document.getElementById('page-admin');
   if (panel) panel.style.display = 'none';

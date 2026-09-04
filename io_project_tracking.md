@@ -25177,3 +25177,66 @@ sight-unseen. The legacy password path is completely unaffected end to
 end; the new Supabase-session path is wired correctly but still only
 exercisable through the Stage 1 proof-of-concept login modals, since no
 button in the real UI sends a session token yet (that's Stage 3).
+
+## Supabase Auth migration — Stage 3: new login now actually works (2026-09-04)
+
+Turned the Stage 1 proof-of-concept modals into a genuinely functional
+second login, now that Stage 2 means every RPC can accept a real session.
+
+**The core problem this had to solve carefully**: `admin/index.html` and
+`strategist/index.html` don't call a single shared function for every RPC
+— `admin/index.html` alone had 28 separate raw `fetch()` calls, each with
+its own hardcoded `Authorization: Bearer <anon key>` header, bypassing
+the shared `sb()` helper entirely. Making the new login "just work" meant
+every one of those call sites, not just `sb()`/`sbAll()`, needed to send
+the real session's access token instead of the anon key whenever a
+session-based login is active — otherwise `auth.uid()` would never
+resolve inside `admin_resolve_role()` for most of the app's real actions.
+
+**Fix**: added a single `sbAuthHeaders()` helper to `shared.js` alongside
+a new `currentSupabaseSession` variable — returns the session's
+`access_token` as the bearer when a session exists, the anon key
+otherwise. `sb()` and `sbAll()` both now build their headers from this.
+All 28 raw `fetch()` blocks in `admin/index.html` (two slightly different
+literal formattings, replaced via a scripted find-and-replace, then
+`node -e` syntax-checked afterward) now do the same.
+`strategist/index.html` had only one such raw block (the login's own
+profile lookup, which correctly keeps its own explicit token since
+`currentSupabaseSession` isn't set yet at that point in the flow) — every
+other Strategist RPC call already went through `sb()`.
+
+**Why sessions are NOT persisted across page loads**
+(`supabase.createClient(url, key, { auth: { persistSession: false } })`
+on both new clients): the biggest risk in this design is a stale or
+expired token silently surviving into a later page load (via
+localStorage) and getting attached to `sb()`'s Authorization header
+before anyone explicitly logs in via the new path — which would break
+the ordinary password login for that same person, since it never expects
+a session to already be present and has no way to know one is lurking.
+With `persistSession:false`, a session only exists for the duration of
+an explicit, successful sign-in within the current page load, and
+`onAuthStateChange` keeps `currentSupabaseSession` in sync with it
+(including the client's automatic in-session token refresh). Both
+`adminLogout()` and `strategistLogout()` also explicitly call
+`sbAuthClient.auth.signOut()` and clear `currentSupabaseSession` when the
+user was signed in via the new path, as a second line of defense against
+any leftover session state before a different login attempt in the same
+tab.
+
+**Behavior change**: `attemptNewLogin()` (admin) and
+`attemptStrategistNewLogin()` (strategist) no longer just show a
+confirmation message — on success they now set `currentAdminUser`/
+`currentStrategistUser` (with a `viaSession: true` marker) and actually
+call `showAdmin(true)`/`showStrategistPanel(true)`, exactly like the
+password login does. The role restriction each portal's password login
+already enforces (accounting can't use `/admin`; only strategist/super
+can use the Strategist portal) is mirrored here too, so the new login
+can't grant broader access than the old one.
+
+**Not yet tested live** — this needs Claire (or a real invited person)
+to actually sign in via "Try the new secure login (beta)" in each portal
+and confirm a real action (loading data, saving something) works
+end-to-end through a session, not just the name/password path. This is
+the real Stage 3 milestone: proving the new login is a complete,
+functional replacement, side by side with the old one, before Stage 4
+(removing the old one) is even considered.

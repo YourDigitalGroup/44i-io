@@ -189,7 +189,7 @@
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔐</div>
     <h3 id="strategist-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">New Secure Login <span style="font-weight:600;color:var(--muted);font-size:11px">(beta)</span></h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">For testing only right now — sign in with the email + password you set up via your Supabase invite. This won't open the strategist panel yet.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with the email + password you set up via your Supabase invite.</p>
     <input type="email" id="strategist-new-login-email" placeholder="Email" autocomplete="email" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px"/>
     <input type="password" id="strategist-new-login-pw" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptStrategistNewLogin()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:12px"/>
     <div id="strategist-new-login-error" role="alert" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px"></div>
@@ -268,13 +268,22 @@ async function checkStrategistPw() {
   }
 }
 
-// ── NEW SUPABASE-AUTH LOGIN (Stage 1 proof-of-concept, AUTH_MIGRATION_PLAN.md) ──
+// ── NEW SUPABASE-AUTH LOGIN (Stage 3 of AUTH_MIGRATION_PLAN.md) ──────────
 // Same pattern as /admin's version (see io_project_tracking.md 2026-09-04) — reuses
 // the same admin_get_profile_by_auth_uid() RPC since it isn't admin-specific, just
-// looks up whichever admin_users row matches the current Supabase session.
+// looks up whichever admin_users row matches the current Supabase session. Now
+// that every Strategist RPC accepts a real session (Stage 2, done 2026-09-04),
+// signing in here opens the real strategist panel. persistSession:false for the
+// same reason as /admin's client — see that file's comment for the full why.
 const sbAuthClientStrategist = (typeof supabase !== 'undefined')
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
   : null;
+
+if (sbAuthClientStrategist) {
+  sbAuthClientStrategist.auth.onAuthStateChange((event, session) => {
+    currentSupabaseSession = session;
+  });
+}
 
 function openStrategistNewLogin() {
   const modal = document.getElementById('strategist-new-login-modal');
@@ -332,8 +341,16 @@ async function attemptStrategistNewLogin() {
     await sbAuthClientStrategist.auth.signOut();
     return;
   }
-  okEl.textContent = `Signed in as ${profile.name} (${profile.role}). This confirms the new login works — full strategist access still comes through the login above until the next migration stage.`;
-  okEl.style.display = 'block';
+  if (profile.role !== 'strategist' && profile.role !== 'super') {
+    errEl.textContent = 'This account isn\'t set up for the Strategist portal.';
+    errEl.style.display = 'block';
+    await sbAuthClientStrategist.auth.signOut();
+    return;
+  }
+  currentSupabaseSession = data.session;
+  currentStrategistUser = { name: profile.name, email: profile.email || '', role: profile.role, pw: '', viaSession: true };
+  closeStrategistNewLogin();
+  showStrategistPanel(true);
 }
 
 async function sendStrategistNewLoginResetEmail() {
@@ -3639,6 +3656,13 @@ async function strategistDeleteLogEntry(logId) {
 }
 
 function strategistLogout() {
+  // If signed in via the new Supabase login, sign out of it too and clear the
+  // session so a leftover token can't attach itself to a later login attempt
+  // in the same tab (see sbAuthClientStrategist's persistSession:false note above).
+  if (currentStrategistUser?.viaSession && sbAuthClientStrategist) {
+    sbAuthClientStrategist.auth.signOut();
+  }
+  currentSupabaseSession = null;
   currentStrategistUser = null;
   showStrategistPanel(false);
   promptStrategistLogin();
