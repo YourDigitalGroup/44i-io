@@ -1776,6 +1776,41 @@ async function loadLoginRoster() {
 const ADMIN_ORG = '44i Digital';
 let currentAdminUser = null; // {name, email, role, pw} when logged in (pw kept in memory for server RPC calls)
 
+// ── ROLE-BASED UI GATING (Stage 2b of AUTH_MIGRATION_PLAN.md) ──────────────
+// Centralizes what used to be ~46 separate inline `currentAdminUser?.role === 'am'`
+// (and similar) checks scattered throughout this file into one declarative map
+// plus one helper. NOT a security boundary -- every one of these gates is
+// cosmetic UI-hiding only; the real enforcement already lives server-side in
+// each RPC via admin_resolve_role(), which re-checks the caller's role itself
+// regardless of what the UI shows or hides. Purpose is purely maintainability:
+// adding a new gated feature is now "add one line to this map" instead of
+// "remember to copy the right inline condition correctly in every place that
+// needs it" -- the exact failure mode this replaces (a scattered check is easy
+// to add correctly once and easy to forget or get subtly wrong the next time).
+const ADMIN_ROLE_PERMISSIONS = {
+  serviceCatalogManage:     ['super'],
+  hostingSettingsManage:    ['super'],
+  workflowManage:           ['super'],
+  sectionsManage:           ['super'],
+  intakeFormsManage:        ['super'],
+  legalTextEdit:            ['super'],
+  notificationsEdit:        ['super'],
+  trelloReconcile:          ['super'],
+  userManage:               ['super'],
+  accountingMapView:        ['super'],
+  groupPricing:             ['super'],
+  groupAccountingOverride:  ['super'],
+  groupPricingAccounting:   ['super'], // combined guard for adminSaveGroup's single payload branch covering both fields at once
+  groupDeactivate:          ['super'],
+  clientAccountingOverride: ['super'],
+  strategistPortalLink:     ['strategist', 'super'],
+  accountingPortalLink:     ['super'],
+};
+function canSee(feature) {
+  const allowed = ADMIN_ROLE_PERMISSIONS[feature];
+  return !!allowed && allowed.includes(currentAdminUser?.role);
+}
+
 
 function promptAdmin() {
   const modal = document.getElementById('admin-login-modal');
@@ -2084,7 +2119,7 @@ async function adminTab(tab) {
   // AM-tier users cannot view or adjust custom pricing or accounting overrides — both
   // are super-admin-only, same restriction as the base Custom Pricing/Accounting Map
   // screens themselves.
-  if ((tab === 'pricing' || tab === 'accounting-override') && currentAdminUser?.role === 'am') {
+  if ((tab === 'pricing' && !canSee('groupPricing')) || (tab === 'accounting-override' && !canSee('groupAccountingOverride'))) {
     showToast(tab === 'pricing' ? 'Custom pricing can only be changed by a super admin' : 'Accounting overrides can only be changed by a super admin', 'error');
     return;
   }
@@ -2760,12 +2795,12 @@ function showAdmin(show) {
     // super (2026-08-04, per Claire — supers test/use both portals, so it should be
     // one click away, not just for the restricted-view role).
     const strategistLink = document.getElementById('admin-strategist-portal-link');
-    if (strategistLink) strategistLink.style.display = (isStrategist || currentAdminUser?.role === 'super') ? 'inline-block' : 'none';
+    if (strategistLink) strategistLink.style.display = canSee('strategistPortalLink') ? 'inline-block' : 'none';
     // Accounting has no visibility here at all (attemptAdminLogin rejects that role
     // outright), so this link only ever makes sense for a super admin testing/using
     // both portals — no restricted-view role to show it to, unlike the strategist link.
     const accountingLink = document.getElementById('admin-accounting-portal-link');
-    if (accountingLink) accountingLink.style.display = currentAdminUser?.role === 'super' ? 'inline-block' : 'none';
+    if (accountingLink) accountingLink.style.display = canSee('accountingPortalLink') ? 'inline-block' : 'none';
     ['groups','clients','map','sections','intake','ae','legal','notifications','reconcile','users','accounting'].forEach(s => {
       const tab = document.getElementById('section-tab-' + s);
       if (tab) tab.style.display = isStrategist ? 'none' : '';
@@ -2880,23 +2915,23 @@ function adminSection(section) {
     // existing pricing-tab pattern) and the RPC itself already hard-rejects the save
     // server-side regardless of what the UI shows.
     const newBtn = document.getElementById('admin-new-service-btn');
-    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    if (newBtn) newBtn.style.display = canSee('serviceCatalogManage') ? '' : 'none';
     const hostingBtn = document.getElementById('admin-hosting-settings-btn');
-    if (hostingBtn) hostingBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    if (hostingBtn) hostingBtn.style.display = canSee('hostingSettingsManage') ? '' : 'none';
     const workflowsBtn = document.getElementById('admin-workflows-btn');
-    if (workflowsBtn) workflowsBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    if (workflowsBtn) workflowsBtn.style.display = canSee('workflowManage') ? '' : 'none';
     loadSuggestedMap();
   } else if (section === 'sections') {
     // Same restriction level as Suggested Map — section layout is a super-admin-only
     // capability, same reasoning (it changes what every AE/client sees on the live form).
     const newBtn = document.getElementById('admin-new-section-btn');
-    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    if (newBtn) newBtn.style.display = canSee('sectionsManage') ? '' : 'none';
     loadAdminSections();
   } else if (section === 'intake') {
     // Same restriction level as Suggested Map/Sections — editing intake questions
     // changes what every AE/client sees on the live form.
     const newBtn = document.getElementById('admin-new-intake-btn');
-    if (newBtn) newBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+    if (newBtn) newBtn.style.display = canSee('intakeFormsManage') ? '' : 'none';
     loadAdminIntakeForms();
   } else if (section === 'ae') {
     // AM-tier now gets full access here too (2026-07-17, per Claire — same call as
@@ -2912,7 +2947,7 @@ function adminSection(section) {
     // sections) — AM logins can view the current text but Save is disabled, matching
     // the "am can browse, can't change what every AE/client sees" pattern used
     // elsewhere. The RPC itself also hard-rejects this for AM regardless of the UI.
-    const isAm = currentAdminUser?.role === 'am';
+    const isAm = !canSee('legalTextEdit');
     const saveBtn = document.getElementById('admin-legal-save-btn');
     if (saveBtn) saveBtn.style.display = isAm ? 'none' : '';
     const note = document.getElementById('admin-legal-readonly-note');
@@ -2922,7 +2957,7 @@ function adminSection(section) {
   } else if (section === 'notifications') {
     // Same restriction level as Legal Text — this changes what every group's emails CC,
     // not just one group's own settings.
-    const isAm = currentAdminUser?.role === 'am';
+    const isAm = !canSee('notificationsEdit');
     const saveBtn = document.getElementById('admin-notifications-save-btn');
     if (saveBtn) saveBtn.style.display = isAm ? 'none' : '';
     const note = document.getElementById('admin-notifications-readonly-note');
@@ -2935,7 +2970,7 @@ function adminSection(section) {
     // own group. Does NOT auto-scan on tab open (unlike every other tab) — this hits
     // the Trello API once per group with a missing-list client, so it only runs when
     // explicitly requested via the Scan button.
-    const isAm = currentAdminUser?.role === 'am';
+    const isAm = !canSee('trelloReconcile');
     const scanBtn = document.getElementById('admin-reconcile-scan-btn');
     if (scanBtn) scanBtn.style.display = isAm ? 'none' : '';
     if (isAm) {
@@ -2945,7 +2980,7 @@ function adminSection(section) {
   } else if (section === 'users') {
     // Super-admin only — manages login credentials for the whole team, same
     // restriction level as Reconcile/Legal Text/Notifications.
-    const isAm = currentAdminUser?.role === 'am';
+    const isAm = !canSee('userManage');
     const newBtn = document.querySelector('#section-users button[onclick="adminNewUser()"]');
     if (newBtn) newBtn.style.display = isAm ? 'none' : '';
     if (isAm) {
@@ -2958,7 +2993,7 @@ function adminSection(section) {
   } else if (section === 'accounting') {
     // Super-admin only — real margin/spend-allocation data, same restriction level as
     // the Users tab itself.
-    const isAm = currentAdminUser?.role === 'am';
+    const isAm = !canSee('accountingMapView');
     if (isAm) {
       document.getElementById('admin-accounting-form').style.display = 'none';
       document.getElementById('admin-accounting-table').innerHTML =
@@ -3074,7 +3109,7 @@ async function toggleHostingSettings() {
   // adminSection), and adminSaveHostingSettings() hard-blocks the save regardless — but
   // guard the function directly too, same as adminNewService() does, so there's no path
   // that opens this panel for an AM login even if triggered some other way.
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('hostingSettingsManage')) {
     showToast('Hosting settings are restricted to super admins', 'error');
     return;
   }
@@ -3114,7 +3149,7 @@ function renderHostingSettingsRows() {
 }
 
 async function adminSaveHostingSettings() {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('hostingSettingsManage')) {
     showToast('Hosting settings are restricted to super admins', 'error');
     return;
   }
@@ -3153,7 +3188,7 @@ async function adminSaveHostingSettings() {
 // flagged: renaming meant editing N services one at a time with real risk of
 // missing one and silently splitting a tactic into two).
 function toggleWorkflowManager() {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('workflowManage')) {
     showToast('Workflow management is restricted to super admins', 'error');
     return;
   }
@@ -3191,7 +3226,7 @@ function renderWorkflowManagerRows() {
 }
 
 async function adminRenameWorkflow(oldName) {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('workflowManage')) {
     showToast('Workflow management is restricted to super admins', 'error');
     return;
   }
@@ -3222,7 +3257,7 @@ async function adminRenameWorkflow(oldName) {
 }
 
 async function adminDeleteWorkflow(name) {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('workflowManage')) {
     showToast('Workflow management is restricted to super admins', 'error');
     return;
   }
@@ -3367,7 +3402,7 @@ function renderSuggestedMap() {
             ? '<span style="color:var(--muted)">—</span>'
             : `<span style="font-size:10px;color:var(--text);font-weight:600">${esc(freqText)}</span>`;
       const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
-      const isSuperAdmin = currentAdminUser?.role !== 'am';
+      const isSuperAdmin = canSee('serviceCatalogManage');
       // Deactivate is now offered everywhere (2026-07-10) — every section is equally
       // "dynamic-row safe" now that the public form generates all of them from data, so
       // the old per-section restriction (and its disabled "ⓘ" placeholder) no longer
@@ -3539,7 +3574,7 @@ async function loadAdminSections() {
 
 function renderAdminSectionsList() {
   const el = document.getElementById('admin-sections-table');
-  const isSuperAdmin = currentAdminUser?.role !== 'am';
+  const isSuperAdmin = canSee('sectionsManage');
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;width:24px"></th>
@@ -3728,7 +3763,7 @@ function checkSectionIdCollision() {
 }
 
 function adminNewSection() {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('sectionsManage')) {
     showToast('Section management is restricted to super admins', 'error');
     return;
   }
@@ -3745,7 +3780,7 @@ function adminNewSection() {
 }
 
 function adminEditSection(id) {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('sectionsManage')) {
     showToast('Section management is restricted to super admins', 'error');
     return;
   }
@@ -3815,7 +3850,7 @@ async function adminSaveSection() {
 }
 
 async function adminToggleSectionActive(id, makeActive) {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('sectionsManage')) {
     showToast('Section management is restricted to super admins', 'error');
     return;
   }
@@ -3897,7 +3932,7 @@ async function loadAdminIntakeForms() {
 
 function renderAdminIntakeList() {
   const el = document.getElementById('admin-intake-table');
-  const isSuperAdmin = currentAdminUser?.role !== 'am';
+  const isSuperAdmin = canSee('intakeFormsManage');
   let html = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">ID</th>
@@ -4315,7 +4350,7 @@ function renderIntakeFormEditor() {
 }
 
 function adminNewIntakeForm() {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('intakeFormsManage')) {
     showToast('Intake form management is restricted to super admins', 'error');
     return;
   }
@@ -4333,7 +4368,7 @@ function adminNewIntakeForm() {
 }
 
 function adminEditIntakeForm(id) {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('intakeFormsManage')) {
     showToast('Intake form management is restricted to super admins', 'error');
     return;
   }
@@ -4461,7 +4496,7 @@ async function adminSaveIntakeForm() {
 }
 
 async function adminToggleIntakeFormActive(id, makeActive) {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('intakeFormsManage')) {
     showToast('Intake form management is restricted to super admins', 'error');
     return;
   }
@@ -6092,7 +6127,7 @@ async function loadAdminLegalContent() {
 }
 
 async function adminSaveLegalContent() {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('legalTextEdit')) {
     showToast('Legal text can only be changed by a super admin', 'error');
     return;
   }
@@ -6132,7 +6167,7 @@ async function loadAdminNotificationSettings() {
 }
 
 async function adminSaveNotificationSettings() {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('notificationsEdit')) {
     showToast('Notification settings can only be changed by a super admin', 'error');
     return;
   }
@@ -6450,8 +6485,8 @@ async function adminNewClient() {
   currentClientPricingOverrides = {};
   renderClientPricingFields();
   currentClientAccountingOverrides = {};
-  document.getElementById('client-accounting-override-details').style.display = currentAdminUser?.role === 'am' ? 'none' : 'block';
-  if (currentAdminUser?.role !== 'am') {
+  document.getElementById('client-accounting-override-details').style.display = canSee('clientAccountingOverride') ? 'block' : 'none';
+  if (canSee('clientAccountingOverride')) {
     if (!ALL_ACCOUNTING_MAP.length) await loadAdminAccountingMap();
     renderClientAccountingOverrideFields();
   }
@@ -6480,8 +6515,8 @@ async function adminEditClient(id) {
   currentClientPricingOverrides = c.io_pricing ? { ...c.io_pricing } : {};
   renderClientPricingFields();
   currentClientAccountingOverrides = c.accounting_overrides ? { ...c.accounting_overrides } : {};
-  document.getElementById('client-accounting-override-details').style.display = currentAdminUser?.role === 'am' ? 'none' : 'block';
-  if (currentAdminUser?.role !== 'am') {
+  document.getElementById('client-accounting-override-details').style.display = canSee('clientAccountingOverride') ? 'block' : 'none';
+  if (canSee('clientAccountingOverride')) {
     if (!ALL_ACCOUNTING_MAP.length) await loadAdminAccountingMap();
     renderClientAccountingOverrideFields();
   }
@@ -6529,7 +6564,7 @@ async function adminSaveClient() {
   // same restriction as the group-level tab) -- omit the key entirely rather than send a
   // stale/empty currentClientAccountingOverrides that could wipe out real data an AM
   // never had visibility into.
-  if (currentAdminUser?.role !== 'am') {
+  if (canSee('clientAccountingOverride')) {
     payload.accounting_overrides = Object.keys(currentClientAccountingOverrides).length > 0 ? currentClientAccountingOverrides : null;
   }
   try {
@@ -7606,7 +7641,7 @@ function adminNewService() {
   // adminSection), and the RPC itself hard-rejects the save regardless — but guard the
   // function directly too, same as adminTab() does for the pricing tab, so there's no
   // path that opens this form for an AM login.
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('serviceCatalogManage')) {
     showToast('Service catalog management is restricted to super admins', 'error');
     return;
   }
@@ -7661,7 +7696,7 @@ function adminEditService(id) {
   // Same restriction as adminNewService() — this closes the exact gap found live: an
   // AM login could open this form and type into it (the save was already correctly
   // blocked server-side, but the form itself shouldn't have been reachable at all).
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('serviceCatalogManage')) {
     showToast('Service catalog management is restricted to super admins', 'error');
     return;
   }
@@ -8072,7 +8107,7 @@ async function adminSaveService() {
 // SECTIONS/sectionLabel() above). The RPC's own permission/validation is the real
 // safety boundary either way, not the UI.
 async function adminToggleServiceActive(id, makeActive) {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('serviceCatalogManage')) {
     showToast('Service catalog management is restricted to super admins', 'error');
     return;
   }
@@ -10763,7 +10798,7 @@ function renderAdminGroups() {
       const inactive = g.active === false;
       const rowStyle = inactive ? 'background:#FAFAFA' : '';
       const inactiveBadge = inactive ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">INACTIVE</span>' : '';
-      const deactivateBtn = currentAdminUser?.role === 'am' ? '' :
+      const deactivateBtn = !canSee('groupDeactivate') ? '' :
         `<button onclick="adminToggleGroupActive('${esc(g.id)}', ${inactive})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${inactive ? '#BBF7D0' : '#FECACA'};background:${inactive ? '#F0FDF4' : '#FEF2F2'};color:${inactive ? '#166534' : '#B91C1C'}">${inactive ? 'Reactivate' : 'Deactivate'}</button>`;
       return `<tr style="border-bottom:1px solid var(--border);${rowStyle}">
         <td style="padding:8px 10px">
@@ -10779,8 +10814,8 @@ function renderAdminGroups() {
         <td style="padding:8px 10px;color:var(--muted);font-size:11px;font-family:monospace">${g.trello_board_id ? esc(g.trello_board_id.slice(0,8))+'...' : '—'}</td>
         <td style="padding:8px 10px;text-align:right;display:flex;gap:6px;justify-content:flex-end">
           <button onclick="adminEditGroup('${esc(g.id)}')" class="btn-quiet-green">Edit</button>
-          ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}','pricing')" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Pricing</button>`}
-          ${currentAdminUser?.role === 'am' ? '' : `<button onclick="adminEditGroup('${esc(g.id)}','accounting-override')" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Accounting</button>`}
+          ${!canSee('groupPricing') ? '' : `<button onclick="adminEditGroup('${esc(g.id)}','pricing')" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Pricing</button>`}
+          ${!canSee('groupAccountingOverride') ? '' : `<button onclick="adminEditGroup('${esc(g.id)}','accounting-override')" style="padding:5px 12px;border-radius:6px;background:rgba(var(--accent-rgb),0.1);border:1px solid rgba(var(--accent-rgb),0.35);color:var(--accent-dark);font-size:12px;cursor:pointer;font-weight:600">Accounting</button>`}
           ${deactivateBtn}
         </td>
       </tr>`;
@@ -10976,9 +11011,9 @@ async function adminNewGroup() {
   currentPricingOverrides = {};
   currentAccountingOverrides = {};
   const pricingTabBtn = document.getElementById('tab-btn-pricing');
-  if (pricingTabBtn) pricingTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+  if (pricingTabBtn) pricingTabBtn.style.display = canSee('groupPricing') ? '' : 'none';
   const acctOverrideTabBtn = document.getElementById('tab-btn-accounting-override');
-  if (acctOverrideTabBtn) acctOverrideTabBtn.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+  if (acctOverrideTabBtn) acctOverrideTabBtn.style.display = canSee('groupAccountingOverride') ? '' : 'none';
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(null);
   populateDigitalStrategistDropdown('admin-group-digital-strategist', null);
@@ -11052,9 +11087,9 @@ async function adminEditGroup(id, initialTab) {
     } catch(e) {}
   }
   const pricingTabBtn2 = document.getElementById('tab-btn-pricing');
-  if (pricingTabBtn2) pricingTabBtn2.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+  if (pricingTabBtn2) pricingTabBtn2.style.display = canSee('groupPricing') ? '' : 'none';
   const acctOverrideTabBtn2 = document.getElementById('tab-btn-accounting-override');
-  if (acctOverrideTabBtn2) acctOverrideTabBtn2.style.display = currentAdminUser?.role === 'am' ? 'none' : '';
+  if (acctOverrideTabBtn2) acctOverrideTabBtn2.style.display = canSee('groupAccountingOverride') ? '' : 'none';
   adminTab(initialTab || 'info');
   document.getElementById('admin-group-form').style.display = 'block';
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
@@ -11093,7 +11128,7 @@ async function adminSaveGroup() {
   };
   // Only super admins may set pricing. For AM-tier users, omit io_pricing entirely
   // so a PATCH never overwrites the group's existing overrides.
-  if (currentAdminUser?.role !== 'am') {
+  if (canSee('groupPricingAccounting')) {
     payload.io_pricing = Object.keys(currentPricingOverrides).length > 0 ? currentPricingOverrides : null;
     // Same reasoning as io_pricing above — omit entirely for AM-tier so a save from an
     // AM login (Group Info only) can never clobber a super-admin-set accounting override.
@@ -11136,7 +11171,7 @@ async function adminSaveGroup() {
 // fallback (see adminSaveGroup's own comment on why that pattern was removed
 // 2026-07-18).
 async function adminToggleGroupActive(id, makeActive) {
-  if (currentAdminUser?.role === 'am') {
+  if (!canSee('groupDeactivate')) {
     showToast('Deactivating a group is restricted to super admins', 'error');
     return;
   }

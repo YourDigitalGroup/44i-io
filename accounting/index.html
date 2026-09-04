@@ -211,9 +211,33 @@
     <div style="display:flex;gap:9px">
       <button onclick="checkAccountingPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
     </div>
+    <a href="#" onclick="event.preventDefault();document.getElementById('accounting-login-modal').style.display='none';openAccountingNewLogin();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Try the new secure login (beta)</a>
   </div>
 </div>
 
+<!-- NEW SUPABASE-AUTH LOGIN MODAL — same pattern as /admin's and /strategist's
+     (see io_project_tracking.md 2026-09-04). Uses the same admin_get_profile_by_auth_uid()
+     RPC since it isn't admin-specific -- just resolves whatever admin_users row matches
+     the current Supabase session. Every accounting_* RPC now accepts a real session
+     (Stage 2, done 2026-09-04), so this opens the real accounting panel on success. -->
+<div id="accounting-new-login-modal" role="dialog" aria-modal="true" aria-labelledby="accounting-new-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9001;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
+    <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔐</div>
+    <h3 id="accounting-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">New Secure Login <span style="font-weight:600;color:var(--muted);font-size:11px">(beta)</span></h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with the email + password you set up via your Supabase invite.</p>
+    <input type="email" id="accounting-new-login-email" placeholder="Email" autocomplete="email" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px"/>
+    <input type="password" id="accounting-new-login-pw" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptAccountingNewLogin()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:12px"/>
+    <div id="accounting-new-login-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px"></div>
+    <div id="accounting-new-login-success" role="status" style="display:none;color:#1E7E34;font-size:12px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:9px">
+      <button onclick="closeAccountingNewLogin()" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--text);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+      <button onclick="attemptAccountingNewLogin()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Sign In</button>
+    </div>
+    <a href="#" onclick="event.preventDefault();sendAccountingNewLoginResetEmail();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Forgot password?</a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="../shared.js?v=20260902a"></script>
 <script>
 let currentAccountingUser = null; // {name, email, role, pw}
@@ -335,9 +359,121 @@ async function tryAccountingHandoffLogin() {
 }
 
 function accountingLogout() {
+  // If signed in via the new Supabase login, sign out of it too and clear the
+  // session so a leftover token can't attach itself to a later login attempt
+  // in the same tab (see sbAuthClientAccounting's persistSession:false note below).
+  if (currentAccountingUser?.viaSession && sbAuthClientAccounting) {
+    sbAuthClientAccounting.auth.signOut();
+  }
+  currentSupabaseSession = null;
   currentAccountingUser = null;
   showAccountingPanel(false);
   promptAccountingLogin();
+}
+
+// ── NEW SUPABASE-AUTH LOGIN (Stage 1+3 of AUTH_MIGRATION_PLAN.md) ────────
+// Same pattern as /admin's and /strategist's versions (see io_project_tracking.md
+// 2026-09-04) — reuses admin_get_profile_by_auth_uid() since it isn't
+// admin-specific. persistSession:false for the same reason as the other two
+// portals' clients — see admin/index.html's comment for the full why.
+const sbAuthClientAccounting = (typeof supabase !== 'undefined')
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } })
+  : null;
+
+if (sbAuthClientAccounting) {
+  sbAuthClientAccounting.auth.onAuthStateChange((event, session) => {
+    currentSupabaseSession = session;
+  });
+}
+
+function openAccountingNewLogin() {
+  const modal = document.getElementById('accounting-new-login-modal');
+  modal.style.display = 'flex';
+  document.getElementById('accounting-new-login-email').value = '';
+  document.getElementById('accounting-new-login-pw').value = '';
+  document.getElementById('accounting-new-login-error').style.display = 'none';
+  document.getElementById('accounting-new-login-success').style.display = 'none';
+}
+
+function closeAccountingNewLogin() {
+  document.getElementById('accounting-new-login-modal').style.display = 'none';
+}
+
+async function attemptAccountingNewLogin() {
+  const email = document.getElementById('accounting-new-login-email').value.trim();
+  const pw = document.getElementById('accounting-new-login-pw').value;
+  const errEl = document.getElementById('accounting-new-login-error');
+  const okEl = document.getElementById('accounting-new-login-success');
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+  if (!sbAuthClientAccounting) {
+    errEl.textContent = 'Could not load the login library. Check your connection and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!email || !pw) {
+    errEl.textContent = 'Enter your email and password.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const { data, error } = await sbAuthClientAccounting.auth.signInWithPassword({ email, password: pw });
+  if (error || !data?.session) {
+    errEl.textContent = 'Incorrect email or password.';
+    errEl.style.display = 'block';
+    return;
+  }
+  let profile;
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/admin_get_profile_by_auth_uid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + data.session.access_token,
+      },
+      body: JSON.stringify({}),
+    });
+    const t = await res.text();
+    if (!res.ok) throw new Error(t.slice(0, 200));
+    profile = t ? JSON.parse(t) : null;
+  } catch (e) {
+    errEl.textContent = 'Signed in, but no admin account is linked to this login yet. Check with a super admin.';
+    errEl.style.display = 'block';
+    await sbAuthClientAccounting.auth.signOut();
+    return;
+  }
+  if (profile.role !== 'accounting' && profile.role !== 'super') {
+    errEl.textContent = 'This account isn\'t set up for the Accounting portal.';
+    errEl.style.display = 'block';
+    await sbAuthClientAccounting.auth.signOut();
+    return;
+  }
+  currentSupabaseSession = data.session;
+  currentAccountingUser = { name: profile.name, email: profile.email || '', role: profile.role, pw: '', viaSession: true };
+  closeAccountingNewLogin();
+  showAccountingPanel(true);
+}
+
+async function sendAccountingNewLoginResetEmail() {
+  const email = document.getElementById('accounting-new-login-email').value.trim();
+  const errEl = document.getElementById('accounting-new-login-error');
+  const okEl = document.getElementById('accounting-new-login-success');
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+  if (!sbAuthClientAccounting) return;
+  if (!email) {
+    errEl.textContent = 'Enter your email first, then click "Forgot password?" again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const { error } = await sbAuthClientAccounting.auth.resetPasswordForEmail(email);
+  if (error) {
+    errEl.textContent = 'Could not send a reset email. Check the address and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  okEl.textContent = 'If that email has an account, a password reset link is on its way.';
+  okEl.style.display = 'block';
 }
 
 // ══════════════════════════════════════════════════════════════════════════

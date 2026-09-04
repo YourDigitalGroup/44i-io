@@ -25424,3 +25424,108 @@ files' extracted inline scripts — no errors. Same as the original fix,
 not independently live-tested against a real triple-click (needs
 Claire); each mirrors the exact pattern already confirmed to fix the
 reported bug.
+
+## Supabase Auth migration — Stage 2b complete: centralized role-gating (2026-09-04)
+
+Per `AUTH_MIGRATION_PLAN.md`'s Stage 2b (independent of everything else in
+the migration, added at Claire's request since Stage 2 already meant
+touching every RPC's role logic): replaced every scattered inline
+`currentAdminUser?.role === 'am'` (and `!== 'am'`) check in
+`admin/index.html` — read and categorized all 46 of them by hand,
+slightly more than the plan's own "~43" estimate — with one declarative
+`ADMIN_ROLE_PERMISSIONS` map (17 named features, e.g.
+`serviceCatalogManage`, `groupPricing`, `clientAccountingOverride`) and a
+single `canSee(feature)` helper that reads it.
+
+**Not a security change** — every one of these gates was always cosmetic
+UI-hiding only; the real enforcement lives server-side in each RPC via
+`admin_resolve_role()`, confirmed unchanged and untouched by this pass.
+Purely a maintainability refactor: adding a future gated feature is now
+"add one line to the map" instead of "remember to copy the right inline
+condition correctly in every place that needs it" — exactly the failure
+mode Claire wanted closed off.
+
+Two checks that weren't simple "blocked for am" gates got folded in too:
+the Strategist/Accounting portal-switcher link visibility (now
+`strategistPortalLink: ['strategist','super']` and
+`accountingPortalLink: ['super']`). Left one check alone: the
+`isStrategist` identity variable used to decide which nav tabs even
+render — that's view-mode branching (which layout to show), not a
+"can this role do X" permission in the map's sense, so forcing it into
+`canSee()` would've added indirection without a real duplication problem
+to solve.
+
+**Verified two ways**: `node -e (new Function(...))` syntax check — no
+errors. Then a standalone Node harness comparing `canSee()`'s output
+against the literal old boolean expression for every feature, across
+every role that can reach this login (`super`/`am`/`strategist` —
+`accounting` is rejected at `admin_login` itself, never reaches this UI
+at all). Found what looked like 15 mismatches for the `strategist` role,
+traced to ground truth rather than dismissed: confirmed via
+`adminSection()`'s own tab-hiding logic (`tab.style.display = isStrategist
+? 'none' : ''`) that a strategist login can never actually open any of
+the 9 tabs those checks live inside (`map`, `sections`, `intake`, `legal`,
+`notifications`, `reconcile`, `users`, `accounting`, plus the Groups
+pricing/accounting sub-tabs) — those inline checks were structurally
+unreachable for that role both before and after this change, so the
+"mismatch" was never an executable behavior difference. The new explicit
+`['super']` allow-list is if anything more defensive than relying solely
+on tab-hiding, matching the "defense in depth" reasoning several of these
+functions' own existing comments already called out. Every role that can
+actually reach a gated code path (`super`, `am`) matches old behavior
+exactly.
+
+Scoped to `admin/index.html` only, matching the plan's own scoping (it
+explicitly cites "~43 times... throughout admin/index.html") —
+`strategist/index.html` and `accounting/index.html` weren't audited for
+the same pattern in this pass, since neither had anywhere near the same
+density of scattered role checks to begin with.
+
+## Supabase Auth migration — bringing the Accounting portal into Stage 2 (2026-09-04)
+
+Claire asked to bring Accounting into the migration too — it was never in
+`AUTH_MIGRATION_PLAN.md`'s original inventory at all (built after the plan
+was written), so it had zero Stage 2 coverage until now.
+
+**Converted all 9 Accounting-specific RPCs** to `admin_resolve_role()`:
+`accounting_add_campaign_line`, both overloaded signatures of
+`accounting_confirm_month` (5-arg and 6-arg, same situation as
+`admin_save_accounting_map`/`admin_renew_service` earlier), `accounting_get_campaign_lines`,
+`accounting_get_campaign_months`, `accounting_get_clients`,
+`accounting_get_order_detail`, `accounting_get_rates`,
+`accounting_save_campaign_month`, `accounting_set_billed_externally`.
+
+**Real security gap found and fixed, not just converted**:
+`accounting_set_cut_pct_override` had **no credential check at all** —
+it accepted `p_name`/`p_pw` as parameters (matching every sibling
+function's signature) but never actually verified them in its body,
+unlike every other `accounting_*` function. Anyone able to reach this
+RPC directly could have changed a campaign line's cut percentage
+override with no login whatsoever. Confirmed the frontend
+(`accountingSaveCutPctOverride()`) already sends real `p_name`/`p_pw`
+values on every call, so adding the missing check was purely additive —
+no frontend change needed. Claire tested live (set a Cut % Override on a
+real line) and confirmed it still saves correctly now that the check is
+actually enforced.
+
+**Verified**: read `pg_get_functiondef()` for all 9 functions before
+writing any replacement, per the standing convention. Claire ran both
+SQL batches with no errors and live-tested the one function whose
+behavior genuinely changed.
+
+**Stage 1+3 login built directly** (skipped the separate proof-of-concept
+step this time, since the exact working pattern was already proven twice
+today in Admin and Strategist) — added the same "Try the new secure login
+(beta)" modal to `accounting/index.html`: `sbAuthClientAccounting` with
+`persistSession:false`, `attemptAccountingNewLogin()` that signs in, looks
+up the profile via `admin_get_profile_by_auth_uid()`, checks the
+`accounting`/`super` role restriction (matching the password login's own
+`attemptAccountingLogin()`), and opens the real accounting panel on
+success. `accountingLogout()` also signs out of the Supabase session when
+it was used. All three portals (Admin, Strategist, Accounting) now have a
+fully functional parallel login, and every RPC across all three accepts
+either it or the original password login.
+
+**Not yet tested live** — needs Claire to actually sign in via the new
+login and confirm the Accounting dashboard loads and a save works, same
+verification pattern used for Admin and Strategist earlier today.
