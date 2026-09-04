@@ -25296,6 +25296,30 @@ actual complete set** (verified by grepping every literal `rpc/...` call
 site in both `admin/index.html` and `strategist/index.html`, not just
 trusting the plan document a second time).
 
-Next: a real end-to-end live test — sign in via the new login in each
-portal and exercise a cross-section of real actions (not just page
-loads), to build actual confidence before Stage 4 is even considered.
+**Live-tested and confirmed**: Claire signed into Admin via the new
+secure login (not the password login) and confirmed Clients, Orders, and
+a client's detail view (which loads AEs/counties in the background) all
+load correctly. Combined with the earlier Strategist confirmation, both
+new logins are now genuinely functional, side-by-side replacements for
+the password login — not just proof-of-concept modals.
+
+**Where the migration stands now**:
+- Stage 0 (real auth link column) — done
+- Stage 1 (parallel login screens) — done
+- Stage 2 (every RPC accepts a session) — done, all ~57 functions
+- Stage 3 (new login actually works end-to-end) — done and live-tested
+  in both portals
+- Stage 2b (independent frontend role-gating cleanup) — not started,
+  no dependencies, can happen anytime
+- Stage 4 (remove the legacy password path entirely) — not started,
+  the one genuinely risky step, worth scheduling for a deliberately
+  quiet window once more people have actually been invited and are
+  using the new login day-to-day
+- Stage 5 (cleanup — drop `pw_hash`, remove old login UI) — not started,
+  depends on Stage 4
+
+Accounting portal was never in scope for the new login (no
+Accounting-specific proof-of-concept modal was built) — its RPCs are
+untouched and still password-only, since Accounting wasn't in the
+original migration plan's inventory at all. Worth a deliberate decision
+later whether it needs the same treatment.
