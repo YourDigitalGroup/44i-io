@@ -25146,3 +25146,9 @@ design, not by oversight.
 `strategist_get_campaign_months` — the three functions that load the
 whole dashboard. Claire confirmed the dashboard opens with no errors
 through the existing login.
+
+**Strategist portal, second batch, same day**: converted
+`strategist_get_budgeted_spend_rates`, `strategist_get_optimize_log`,
+`strategist_get_platform_report_cache`. Claire confirmed the dashboard
+still reloads correctly (these three feed the optimize log, budgeted
+spend rates, and platform report freshness banners).
