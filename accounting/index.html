@@ -1261,7 +1261,7 @@ function accountingPreviewBulkImport() {
     html += plan.errors.map(e => accountingRenderBulkImportErrorRow(e)).join('');
   }
   html += `<div style="margin-top:12px">
-    <button onclick="accountingConfirmBulkImport()" ${plan.groups.length ? '' : 'disabled'} style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button>
+    <button id="accounting-bulk-import-confirm-btn" onclick="accountingConfirmBulkImport()" ${plan.groups.length ? '' : 'disabled'} style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button>
   </div></div>`;
   resultsEl.innerHTML = html;
 }
@@ -1300,6 +1300,15 @@ function accountingSetBulkImportOverride(rowNum, key, value) {
 
 async function accountingConfirmBulkImport() {
   if (!ACCT_BULK_IMPORT_PLAN || !ACCT_BULK_IMPORT_PLAN.groups.length) return;
+  // Same double-submit guard added to admin/index.html's slow save/confirm
+  // buttons and Strategist's own bulk-import confirm the same day
+  // (2026-09-04) — this one creates brand-new campaign lines in a loop
+  // (accounting_add_campaign_line, one per group with no existing line), so
+  // a repeat click before the first pass finishes would create duplicates.
+  const confirmBtn = document.getElementById('accounting-bulk-import-confirm-btn');
+  if (confirmBtn?.disabled) return;
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; }
+
   const { groups } = ACCT_BULK_IMPORT_PLAN;
   let linesCreated = 0, linesMatched = 0, monthsSaved = 0;
   try {
@@ -1364,7 +1373,10 @@ async function accountingConfirmBulkImport() {
     await fetchAccountingData();
     renderAccountingDashboard();
     showToast(`${linesCreated} new campaign(s) created, ${linesMatched} already-existing campaign(s) matched, ${monthsSaved} month(s) saved.`);
-  } catch(e) { showToast('Error during bulk import: ' + e.message, 'error'); }
+  } catch(e) {
+    showToast('Error during bulk import: ' + e.message, 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Import'; }
+  }
 }
 
 function accountingStatusPill(kind, text) {

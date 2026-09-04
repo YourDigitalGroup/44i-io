@@ -25233,10 +25233,194 @@ already enforces (accounting can't use `/admin`; only strategist/super
 can use the Strategist portal) is mirrored here too, so the new login
 can't grant broader access than the old one.
 
-**Not yet tested live** — this needs Claire (or a real invited person)
-to actually sign in via "Try the new secure login (beta)" in each portal
-and confirm a real action (loading data, saving something) works
-end-to-end through a session, not just the name/password path. This is
-the real Stage 3 milestone: proving the new login is a complete,
-functional replacement, side by side with the old one, before Stage 4
-(removing the old one) is even considered.
+**Live test found a real gap**: Claire tried the new Strategist login and
+got `"Invalid strategist credentials"` loading the dashboard. Root cause:
+my original RPC inventory (carried over from `AUTH_MIGRATION_PLAN.md`,
+written before several newer features existed) was incomplete —
+`strategist_get_status_history` (loaded automatically as part of the
+dashboard) still only accepted the old password check, so a session
+login correctly failed it. Auditing every `rpc/...` call actually present
+in `strategist/index.html` turned up 5 more functions never converted:
+`strategist_get_status_history`, `strategist_get_order_detail`,
+`strategist_confirm_order_change`, `strategist_log_status_change` (kept
+for other callers even though the frontend's own status-change flow no
+longer calls it directly — see the 2026-09-04 Blue Dolphin Pools fix),
+and `strategist_split_campaign_line`. Converted all 5 the same way.
+`get_client_agents`/`get_client_counties` turned out to have no password
+check at all (like `get_login_roster`) — nothing to convert there.
+Claire re-tested the new Strategist login and confirmed it now works
+with no errors.
+
+**Same audit run against `admin/index.html`** turned up roughly 20 more
+Admin RPCs never in the original inventory — `admin_edit_order_line_item`,
+`admin_cancel_service`, `admin_renew_service`, `admin_swap_tactic`,
+`admin_approve_pending_request`, `admin_reject_pending_request`,
+`admin_set_pending_request_note`, `admin_claim_batch_for_comment`,
+`admin_add_rate_history`, `admin_get_rate_history`, `admin_get_agents`,
+`admin_save_agent`, `admin_get_counties`, `admin_save_county`,
+`admin_get_client_aes`, `admin_save_client_ae`, `admin_get_client_names`,
+`admin_get_client_campaign_lines`, `admin_get_all_active_campaign_lines`,
+`admin_get_pending_requests`, `admin_save_order_intake` — almost
+certainly because the plan document predates several features built
+later in this project (the pending-request approval flow, cancel/edit/
+swap tactic flows, rate history) that never got added to its RPC
+inventory. **All ~20 missed Admin RPCs now converted**, same day, four more
+SQL rounds:
+- `admin_cancel_service`, `admin_edit_order_line_item`,
+  `admin_renew_service` (both overloaded signatures — 6-arg and 7-arg,
+  same situation as `admin_save_accounting_map` earlier), `admin_swap_tactic`
+- `admin_approve_pending_request` (internally calls the already-converted
+  `admin_cancel_service`/`admin_edit_order_line_item`/`admin_renew_service`
+  — confirmed this correctly propagates a session, no extra work needed),
+  `admin_reject_pending_request`, `admin_set_pending_request_note`,
+  `admin_claim_batch_for_comment`, `admin_get_pending_requests`
+- `admin_add_rate_history`, `admin_get_rate_history` (both call
+  `public.admin_resolve_role(...)` fully-qualified rather than the
+  one-line bare call the others use, since — unlike every other
+  converted function — these two don't have their own
+  `SET search_path TO 'public', 'extensions'` clause; fully-qualifying
+  avoids depending on the calling role's own default search_path),
+  `admin_get_agents`, `admin_save_agent`, `admin_get_counties`,
+  `admin_save_county`
+- `admin_get_client_aes`, `admin_save_client_ae`, `admin_get_client_names`,
+  `admin_get_client_campaign_lines`, `admin_get_all_active_campaign_lines`,
+  `admin_save_order_intake`
+
+Claire ran all four batches with no errors. Combined with the earlier
+Strategist gap, this means the true RPC count needing Stage 2/3
+treatment was closer to 57 (41 Admin + Strategist real action functions
++ the shared `admin_resolve_role()` helper itself) rather than the
+`AUTH_MIGRATION_PLAN.md` document's original count of 33 — the plan
+predates several features built later this session. **This is now the
+actual complete set** (verified by grepping every literal `rpc/...` call
+site in both `admin/index.html` and `strategist/index.html`, not just
+trusting the plan document a second time).
+
+**Live-tested and confirmed**: Claire signed into Admin via the new
+secure login (not the password login) and confirmed Clients, Orders, and
+a client's detail view (which loads AEs/counties in the background) all
+load correctly. Combined with the earlier Strategist confirmation, both
+new logins are now genuinely functional, side-by-side replacements for
+the password login — not just proof-of-concept modals.
+
+**Where the migration stands now**:
+- Stage 0 (real auth link column) — done
+- Stage 1 (parallel login screens) — done
+- Stage 2 (every RPC accepts a session) — done, all ~57 functions
+- Stage 3 (new login actually works end-to-end) — done and live-tested
+  in both portals
+- Stage 2b (independent frontend role-gating cleanup) — not started,
+  no dependencies, can happen anytime
+- Stage 4 (remove the legacy password path entirely) — not started,
+  the one genuinely risky step, worth scheduling for a deliberately
+  quiet window once more people have actually been invited and are
+  using the new login day-to-day
+- Stage 5 (cleanup — drop `pw_hash`, remove old login UI) — not started,
+  depends on Stage 4
+
+Accounting portal was never in scope for the new login (no
+Accounting-specific proof-of-concept modal was built) — its RPCs are
+untouched and still password-only, since Accounting wasn't in the
+original migration plan's inventory at all. Worth a deliberate decision
+later whether it needs the same treatment.
+
+## Order editing: repeated clicks on a slow Save created duplicate Trello activity (2026-09-04)
+
+Claire, testing in the Claude Test Group: clicked "Save" on the AM-triggered
+Edit panel's flat "New amount" field, saw no immediate feedback, clicked it
+2 more times — got 3 Trello notifications and what looked like 3 new
+revised-IO PDFs on the same card.
+
+**Root cause**: `adminSaveLineItemEdit()` (the Edit panel's Save handler)
+does several sequential network calls per click — the RPC save itself, a
+Trello comment post, and a full PDF generation + attach — which together
+take a few real seconds. The Save button had no `disabled` state and no
+in-flight guard, so each of the 3 clicks fired the whole function
+independently: 3 calls to `admin_edit_order_line_item` (each appending its
+own `edit_history` entry with the same old→new value), 3 Trello comments,
+and 3 separately-generated revised-IO PDF attachments — nothing was
+actually creating new orders/IOs despite how it looked; each "new IO" was
+a separate PDF *attachment* of the same revised-IO document.
+
+**Fix**: added a button-id + disable/re-enable guard to `adminSaveLineItemEdit()` —
+the button is disabled and shows "Saving…" the instant it's clicked, a
+second click while `disabled` is a no-op, and it re-enables itself only on
+a validation error or a failed save (a successful save re-renders the
+whole order detail view anyway, which naturally replaces the button).
+
+**Audited every sibling function with the same shape** (found via the
+"AM-triggered Cancel/Edit/Swap" comment block referencing all of them
+together) and found the identical vulnerability in two more, since they
+also do a slow RPC-save-then-Trello-comment sequence with no guard:
+`adminSaveMonthBudgetsEdit()` (the month-by-month variant of the same Edit
+panel) and `adminConfirmRenewal()`/`adminConfirmSwap()` (the Renew and
+Swap Tactic flows). All three got the identical disable/re-enable
+treatment.
+
+**Confirmed already safe, no fix needed**: `adminSubmitCancellation()`
+(Cancel a Service) and `adminApprovePendingRequestClick()`/
+`adminRejectPendingRequestClick()` (pending-request approval) — all three
+call RPCs that re-check the row's current state server-side before doing
+anything (`admin_cancel_service` only updates rows still `<> 'cancelled'`
+and the frontend checks the returned row count before posting anything to
+Trello; `admin_approve_pending_request`/`admin_reject_pending_request`
+both re-check `status = 'pending'` and raise an error otherwise) — a
+repeat click after the first succeeds gets a graceful "nothing to
+cancel"/"already resolved" response instead of silently duplicating
+Trello activity. Worth keeping this "check the real state before acting,
+not just before rendering" pattern in mind for any future AM-triggered
+action.
+
+**Verified**: `node -e (new Function(...))` syntax check on the single
+extracted inline script — no errors. Not independently re-tested against
+a live triple-click in the browser (that needs Claire); the fix mirrors
+the exact shape of the bug she reported and demonstrated (in the Claude
+Test Group).
+
+## Follow-up sweep for the same double-submit bug class (2026-09-04)
+
+Claire asked for a full sweep before moving on, rather than assuming the 4
+fixed functions were the only ones. Method: extracted every function
+bound to an `onclick` handler in `admin/index.html`, `strategist/index.html`,
+and `accounting/index.html`, flagged any that either post to Trello or make
+2+ sequential network calls, and checked each for an existing disable-guard.
+
+**Found and fixed 2 more real gaps**, same root cause as the original bug:
+
+- `adminSaveLineItemDateEdit()` (`admin/index.html`) — the date-only variant
+  of the Edit panel, used for pure one-time costs. Missed in the first pass
+  because it's a separate function from `adminSaveLineItemEdit()`, but does
+  the identical slow RPC-save-then-Trello-comment sequence. Same fix
+  (button id + disable/re-enable).
+- `strategistSubmitImport()` (`strategist/index.html`, the "Add Campaign"
+  button) — genuinely worse than the original bug, not just the same
+  shape: it **creates a brand-new campaign line** (`p_id: null`) across up
+  to 4 sequential calls, so unlike an edit-in-place there's no existing row
+  for the database to idempotently no-op against — a second click before
+  the first finishes would create a second real campaign line, not just a
+  duplicate comment. Same fix (button id + disable/re-enable across every
+  early-return and the catch block).
+- `accountingConfirmBulkImport()` (`accounting/index.html`) — the same
+  "create new campaign lines in a loop" shape as `strategistSubmitImport()`
+  above (`accounting_add_campaign_line` per group with no existing line).
+  Notably, `strategistConfirmBulkImport()` — the Strategist portal's own
+  near-identical bulk-import confirm — already had this exact guard
+  (a `BULK_IMPORT_CONFIRMING` flag), so this looks like the fix was applied
+  to one twin function but not its Accounting-side counterpart when the
+  second one was built. Mirrored the same disable/re-enable pattern.
+
+**Checked and confirmed already safe** (no change made):
+`adminApprovePendingRequestClick()` (RPC re-checks `status = 'pending'`
+before doing anything, same protection as `adminSubmitCancellation()`
+found in the first pass); `strategistMatchPastedReport()` (only updates
+existing `campaign_months` rows via upsert — re-running it just
+re-applies the same values, no duplicate rows); `strategistViewOrder()`/
+`accountingViewOrder()`/`loadAdminReconcile()`/
+`adminAuditAllClientsTrelloCards()` (read-only or audit-only, nothing to
+duplicate).
+
+**Verified**: `node -e (new Function(...))` syntax check on all three
+files' extracted inline scripts — no errors. Same as the original fix,
+not independently live-tested against a real triple-click (needs
+Claire); each mirrors the exact pattern already confirmed to fix the
+reported bug.

@@ -9725,7 +9725,7 @@ function adminToggleEditPanel(orderId, serviceId, field, currentValue) {
       <div style="display:flex;gap:8px;align-items:center">
         <label style="font-size:11px;font-weight:700;color:var(--muted)">New amount:</label>
         <input type="number" step="0.01" id="edit-value-${esc(serviceId)}" value="${currentValue}" style="width:100px;padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
-        <button type="button" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+        <button type="button" id="edit-save-btn-${esc(serviceId)}" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
         <button type="button" onclick="adminToggleEditPanel('${esc(orderId)}','${esc(serviceId)}','${esc(field)}',${currentValue})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
       </div>
     </div>`;
@@ -9733,9 +9733,23 @@ function adminToggleEditPanel(orderId, serviceId, field, currentValue) {
 }
 
 async function adminSaveLineItemEdit(orderId, serviceId, field) {
+  // Guard against the Save button being clicked multiple times while the first
+  // click is still in flight (found live 2026-09-04, per Claire — this function
+  // does several sequential network calls: the RPC save, a Trello comment post,
+  // and a PDF generation+attach, which is slow enough that a second click
+  // before the first finishes was reaching Trello 2-3 times over, each posting
+  // its own comment and attaching its own copy of the revised IO PDF).
+  const saveBtn = document.getElementById(`edit-save-btn-${serviceId}`);
+  if (saveBtn?.disabled) return;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
   const input = document.getElementById(`edit-value-${serviceId}`);
   const newValue = input?.value;
-  if (newValue === '' || newValue == null) { showToast('Enter a value', 'error'); return; }
+  if (newValue === '' || newValue == null) {
+    showToast('Enter a value', 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    return;
+  }
 
   try {
     await sb('rpc/admin_edit_order_line_item', {
@@ -9747,6 +9761,7 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     });
   } catch (e) {
     showToast('Could not save this change: ' + e.message, 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     return;
   }
 
@@ -9831,7 +9846,7 @@ function adminToggleEditDatePanel(orderId, serviceId, currentDate, includeEndDat
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
         <label style="font-size:11px;font-weight:700;color:var(--muted)">${esc(dateLabel)}:</label>
         <input type="date" id="edit-date-${esc(serviceId)}" value="${esc(currentDate || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--accent);background:#fff;font-size:12px"/>
-        <button type="button" onclick="adminSaveLineItemDateEdit('${esc(orderId)}','${esc(serviceId)}',${includeEndDate ? 'true' : 'false'})" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+        <button type="button" id="edit-date-save-btn-${esc(serviceId)}" onclick="adminSaveLineItemDateEdit('${esc(orderId)}','${esc(serviceId)}',${includeEndDate ? 'true' : 'false'})" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
         <button type="button" onclick="adminToggleEditDatePanel('${esc(orderId)}','${esc(serviceId)}','${esc(currentDate)}',${includeEndDate ? 'true' : 'false'})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
       </div>
       ${includeEndDate ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
@@ -9853,9 +9868,21 @@ function adminExtraVariantAndModuleHtml(serviceId, item) {
 }
 
 async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
+  // Same double-submit guard as adminSaveLineItemEdit() (found the same day,
+  // same root cause — this variant does the identical slow RPC-save-then-
+  // Trello-comment sequence, just missed in the first pass since it lives in
+  // a separate function for the date-only editing path).
+  const saveBtn = document.getElementById(`edit-date-save-btn-${serviceId}`);
+  if (saveBtn?.disabled) return;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
   const input = document.getElementById(`edit-date-${serviceId}`);
   const newValue = input?.value;
-  if (!newValue) { showToast('Enter a date', 'error'); return; }
+  if (!newValue) {
+    showToast('Enter a date', 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    return;
+  }
 
   try {
     await sb('rpc/admin_edit_order_line_item', {
@@ -9867,6 +9894,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     });
   } catch (e) {
     showToast('Could not save this change: ' + e.message, 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     return;
   }
 
@@ -9959,7 +9987,7 @@ function adminToggleMonthBudgetsEditPanel(orderId, serviceId) {
       <label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:8px">Edit month-by-month amounts:</label>
       ${monthRowsHtml}
       <div style="margin-top:8px;display:flex;gap:8px">
-        <button type="button" onclick="adminSaveMonthBudgetsEdit('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
+        <button type="button" id="edit-month-save-btn-${esc(serviceId)}" onclick="adminSaveMonthBudgetsEdit('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
         <button type="button" onclick="adminToggleMonthBudgetsEditPanel('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
       </div>
     </div>`;
@@ -9967,8 +9995,19 @@ function adminToggleMonthBudgetsEditPanel(orderId, serviceId) {
 }
 
 async function adminSaveMonthBudgetsEdit(orderId, serviceId) {
+  // Same double-submit guard as adminSaveLineItemEdit() — this function is just
+  // as slow (RPC save + Trello comment + PDF attach) and was just as vulnerable
+  // to a second click before the first finished (found live 2026-09-04).
+  const saveBtn = document.getElementById(`edit-month-save-btn-${serviceId}`);
+  if (saveBtn?.disabled) return;
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
   const inputs = document.querySelectorAll(`.edit-month-value-${CSS.escape(serviceId)}`);
-  if (!inputs.length) { showToast('Nothing to save', 'error'); return; }
+  if (!inputs.length) {
+    showToast('Nothing to save', 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    return;
+  }
   const newMonthBudgets = [...inputs].map(inp => ({
     month: inp.dataset.month,
     amount: parseFloat(inp.value) || 0,
@@ -9985,6 +10024,7 @@ async function adminSaveMonthBudgetsEdit(orderId, serviceId) {
     });
   } catch (e) {
     showToast('Could not save this change: ' + e.message, 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     return;
   }
 
@@ -10103,7 +10143,7 @@ function adminToggleRenewPanel(orderId, serviceId, currentEndDate) {
         </div>
       </div>
       <div style="display:flex;gap:10px">
-        <button type="button" onclick="adminConfirmRenewal('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#1F7A42;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Renewal</button>
+        <button type="button" id="renew-confirm-btn-${esc(serviceId)}" onclick="adminConfirmRenewal('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#1F7A42;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Renewal</button>
         <button type="button" onclick="adminToggleRenewPanel('${esc(orderId)}','${esc(serviceId)}','${esc(currentEndDate)}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
       </div>
     </div>`;
@@ -10124,10 +10164,21 @@ function adminUpdateRenewMode(serviceId) {
 }
 
 async function adminConfirmRenewal(orderId, serviceId) {
+  // Same double-submit guard as adminSaveLineItemEdit() (found the same day,
+  // same root cause: slow enough that a repeat click before the first
+  // finishes fires the whole flow twice).
+  const confirmBtn = document.getElementById(`renew-confirm-btn-${serviceId}`);
+  if (confirmBtn?.disabled) return;
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; }
+
   const newEndDate = document.getElementById(`renew-end-${serviceId}`)?.value;
   const budgetRaw = document.getElementById(`renew-budget-${serviceId}`)?.value;
   const newBudget = budgetRaw ? parseFloat(budgetRaw) : null;
-  if (!newEndDate) { showToast('Enter a new end date', 'error'); return; }
+  if (!newEndDate) {
+    showToast('Enter a new end date', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
 
   let result;
   try {
@@ -10141,6 +10192,7 @@ async function adminConfirmRenewal(orderId, serviceId) {
     });
   } catch (e) {
     showToast('Could not renew this service: ' + e.message, 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
     return;
   }
 
@@ -10227,7 +10279,7 @@ function adminToggleSwapPanel(orderId) {
       </div>
       <div id="swap-preview-${orderId}"></div>
       <div style="display:flex;gap:10px;margin-top:10px">
-        <button type="button" onclick="adminConfirmSwap('${orderId}')" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Swap</button>
+        <button type="button" id="swap-confirm-btn-${esc(orderId)}" onclick="adminConfirmSwap('${orderId}')" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Swap</button>
         <button type="button" onclick="adminToggleSwapPanel('${orderId}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
       </div>
     </div>`;
@@ -10267,12 +10319,25 @@ function adminUpdateSwapPreview(orderId) {
 }
 
 async function adminConfirmSwap(orderId) {
+  // Same double-submit guard as adminSaveLineItemEdit() (found the same day).
+  const confirmBtn = document.getElementById(`swap-confirm-btn-${orderId}`);
+  if (confirmBtn?.disabled) return;
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; }
+
   const endingId = document.getElementById(`swap-ending-${orderId}`)?.value;
   const startingId = document.getElementById(`swap-starting-${orderId}`)?.value;
   const effectiveDate = document.getElementById(`swap-date-${orderId}`)?.value;
   const budget = document.getElementById(`swap-budget-${orderId}`)?.value;
-  if (!endingId || !startingId || !effectiveDate || !budget) { showToast('All fields are required', 'error'); return; }
-  if (endingId === startingId) { showToast('Ending and starting tactic can\'t be the same service', 'error'); return; }
+  if (!endingId || !startingId || !effectiveDate || !budget) {
+    showToast('All fields are required', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Swap'; }
+    return;
+  }
+  if (endingId === startingId) {
+    showToast('Ending and starting tactic can\'t be the same service', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Swap'; }
+    return;
+  }
 
   let result;
   try {
@@ -10286,6 +10351,7 @@ async function adminConfirmSwap(orderId) {
     });
   } catch (e) {
     showToast('Could not complete the swap: ' + e.message, 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Swap'; }
     return;
   }
 
