@@ -25233,10 +25233,38 @@ already enforces (accounting can't use `/admin`; only strategist/super
 can use the Strategist portal) is mirrored here too, so the new login
 can't grant broader access than the old one.
 
-**Not yet tested live** — this needs Claire (or a real invited person)
-to actually sign in via "Try the new secure login (beta)" in each portal
-and confirm a real action (loading data, saving something) works
-end-to-end through a session, not just the name/password path. This is
-the real Stage 3 milestone: proving the new login is a complete,
-functional replacement, side by side with the old one, before Stage 4
-(removing the old one) is even considered.
+**Live test found a real gap**: Claire tried the new Strategist login and
+got `"Invalid strategist credentials"` loading the dashboard. Root cause:
+my original RPC inventory (carried over from `AUTH_MIGRATION_PLAN.md`,
+written before several newer features existed) was incomplete —
+`strategist_get_status_history` (loaded automatically as part of the
+dashboard) still only accepted the old password check, so a session
+login correctly failed it. Auditing every `rpc/...` call actually present
+in `strategist/index.html` turned up 5 more functions never converted:
+`strategist_get_status_history`, `strategist_get_order_detail`,
+`strategist_confirm_order_change`, `strategist_log_status_change` (kept
+for other callers even though the frontend's own status-change flow no
+longer calls it directly — see the 2026-09-04 Blue Dolphin Pools fix),
+and `strategist_split_campaign_line`. Converted all 5 the same way.
+`get_client_agents`/`get_client_counties` turned out to have no password
+check at all (like `get_login_roster`) — nothing to convert there.
+Claire re-tested the new Strategist login and confirmed it now works
+with no errors.
+
+**Same audit run against `admin/index.html`** turned up roughly 20 more
+Admin RPCs never in the original inventory — `admin_edit_order_line_item`,
+`admin_cancel_service`, `admin_renew_service`, `admin_swap_tactic`,
+`admin_approve_pending_request`, `admin_reject_pending_request`,
+`admin_set_pending_request_note`, `admin_claim_batch_for_comment`,
+`admin_add_rate_history`, `admin_get_rate_history`, `admin_get_agents`,
+`admin_save_agent`, `admin_get_counties`, `admin_save_county`,
+`admin_get_client_aes`, `admin_save_client_ae`, `admin_get_client_names`,
+`admin_get_client_campaign_lines`, `admin_get_all_active_campaign_lines`,
+`admin_get_pending_requests`, `admin_save_order_intake` — almost
+certainly because the plan document predates several features built
+later in this project (the pending-request approval flow, cancel/edit/
+swap tactic flows, rate history) that never got added to its RPC
+inventory. **Not yet converted** — next step is pulling each one's
+current definition and applying the same `admin_resolve_role()` swap,
+the same way as every batch above, before the new Admin login can be
+considered a genuine full replacement.
