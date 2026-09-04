@@ -25126,3 +25126,10 @@ BOTH overloaded signatures of `admin_save_accounting_map` (a 4-arg and a
 needed their own `CREATE OR REPLACE`), plus `admin_save_group`. Claire
 confirmed the Groups tab saves with no changes and the Accounting Map
 screen loads and saves correctly, both through the existing login.
+
+**Sixth batch, same day**: converted `admin_save_intake_form`,
+`admin_save_section`, `admin_save_service`. Claire confirmed all three
+save with no errors. This completes every Admin RPC except `admin_login`
+itself — the one function everything else in the app depends on, saved
+for last per the plan since it's the highest-traffic and highest-risk of
+the 21.
