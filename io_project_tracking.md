@@ -25062,9 +25062,42 @@ current Supabase session, so no new RPC was needed. Same deliberate
 non-behavior: confirms identity, does not call `showStrategistPanel(true)`,
 since the strategist RPCs don't accept a Supabase session yet either.
 
-**Not yet done**: Stage 2's dual-path RPC guards (needed before either
-new login can actually open a working portal); a real password-reset
-landing page; the equivalent modal for Accounting (not yet built — no
-Accounting-specific profile RPC exists yet, though the same
-`admin_get_profile_by_auth_uid()` RPC would work there too since
-Accounting logins are also `admin_users` rows).
+**Not yet done**: a real password-reset landing page; the equivalent
+modal for Accounting (not yet built — no Accounting-specific profile RPC
+exists yet, though the same `admin_get_profile_by_auth_uid()` RPC would
+work there too since Accounting logins are also `admin_users` rows).
+
+## Supabase Auth migration — Stage 2, first RPCs converted (2026-09-04)
+
+Started Stage 2 (dual-path guards on the 33 password-checking RPCs),
+lowest-risk first per the plan. Rather than duplicating the same
+`select role from admin_users where name/pw_hash match` block into all
+33 functions, extracted one shared helper:
+
+```sql
+admin_resolve_role(p_name text, p_pw text) returns text
+```
+
+It checks `auth.uid()` first (a real Supabase session, once the frontend
+is sending one) and falls back to the existing name/password check
+otherwise, always returning the same shape (a role string or null) either
+functions already expected. Every RPC's own dual-path change is now a
+one-line swap (`v_role := admin_resolve_role(p_name, p_pw);` in place of
+its old inline `select ... into v_role`), which keeps each function's
+diff small and easy to verify against its old behavior line-by-line.
+
+Converted first (matching the plan's suggested lowest-risk order):
+`admin_rename_workflow`, `admin_delete_workflow`. Claire ran the SQL,
+then live-tested by renaming a real workflow through the existing
+password login — confirmed working with no behavior change.
+
+**Verified**: read `pg_get_functiondef()` for both functions before
+writing the replacement, confirmed the only change is the role-lookup
+block being swapped for the helper call — everything else (error
+messages, the actual update statement, return value) byte-for-byte
+identical. Claire's live rename test is the real-world confirmation the
+old login path is unaffected. The new-session path (`auth.uid()` branch)
+isn't exercisable yet from the frontend — no protected save/load call
+sends a session token yet, only the Stage 1 proof-of-concept modals do —
+so that branch is code-reviewed correct but not yet live-tested; it will
+be, once a Stage 3 live-test wires an actual button to use it.
