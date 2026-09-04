@@ -1697,9 +1697,35 @@
       <button onclick="closeAdminLogin()" class="btn-quiet-green" style="flex:1">Cancel</button>
       <button onclick="checkAdminPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
     </div>
+    <a href="#" onclick="event.preventDefault();closeAdminLogin();openNewLogin();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Try the new secure login (beta)</a>
   </div>
 </div>
 
+<!-- NEW SUPABASE-AUTH LOGIN MODAL — Stage 1 of the auth migration (see
+     AUTH_MIGRATION_PLAN.md). This is a proof-of-concept sitting alongside the
+     real login above: it proves a real email+password Supabase session can be
+     created and matched back to an admin_users row via admin_get_profile_by_auth_uid().
+     It does NOT yet grant access to the admin panel — none of the 33 protected
+     RPCs accept a Supabase session yet (that's Stage 2). Remove this whole
+     block once Stage 4 makes this the only login. -->
+<div id="admin-new-login-modal" role="dialog" aria-modal="true" aria-labelledby="admin-new-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9001;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
+    <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔐</div>
+    <h3 id="admin-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">New Secure Login <span style="font-weight:600;color:var(--muted);font-size:11px">(beta)</span></h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">For testing only right now — sign in with the email + password you set up via your Supabase invite. This won't open the admin panel yet.</p>
+    <input type="email" id="admin-new-login-email" placeholder="Email" aria-label="Email" autocomplete="email" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px"/>
+    <input type="password" id="admin-new-login-pw" placeholder="Password" aria-label="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptNewLogin()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:12px"/>
+    <div id="admin-new-login-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px"></div>
+    <div id="admin-new-login-success" role="status" style="display:none;color:#1E7E34;font-size:12px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:9px">
+      <button onclick="closeNewLogin()" class="btn-quiet-green" style="flex:1">Cancel</button>
+      <button onclick="attemptNewLogin()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Sign In</button>
+    </div>
+    <a href="#" onclick="event.preventDefault();sendNewLoginResetEmail();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Forgot password?</a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="../shared.js?v=20260902a"></script>
 <script>
 // ── STANDALONE-ADMIN ADAPTATION NOTES ──────────────────────────────
@@ -1819,6 +1845,100 @@ async function checkAdminPw() {
     if (result.error.includes('select your name')) return;
     document.getElementById('admin-pw-input').focus();
   }
+}
+
+// ── NEW SUPABASE-AUTH LOGIN (Stage 1 proof-of-concept, AUTH_MIGRATION_PLAN.md) ──
+// This does NOT replace attemptAdminLogin()/checkAdminPw() above — it's a parallel
+// path proving a real Supabase session round-trips to an admin_users row via the
+// admin_get_profile_by_auth_uid() RPC. It intentionally does not call showAdmin(true):
+// none of the 33 protected RPCs accept a Supabase session yet (Stage 2), so opening
+// the panel here would look like it works while every save/load call inside it would
+// still silently require the OLD p_name/p_pw params it doesn't have.
+const sbAuthClient = (typeof supabase !== 'undefined')
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null;
+
+function openNewLogin() {
+  const modal = document.getElementById('admin-new-login-modal');
+  modal.style.display = 'flex';
+  document.getElementById('admin-new-login-email').value = '';
+  document.getElementById('admin-new-login-pw').value = '';
+  document.getElementById('admin-new-login-error').style.display = 'none';
+  document.getElementById('admin-new-login-success').style.display = 'none';
+  setTimeout(() => document.getElementById('admin-new-login-email').focus(), 100);
+}
+
+function closeNewLogin() {
+  document.getElementById('admin-new-login-modal').style.display = 'none';
+}
+
+async function attemptNewLogin() {
+  const email = document.getElementById('admin-new-login-email').value.trim();
+  const pw = document.getElementById('admin-new-login-pw').value;
+  const errEl = document.getElementById('admin-new-login-error');
+  const okEl = document.getElementById('admin-new-login-success');
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+  if (!sbAuthClient) {
+    errEl.textContent = 'Could not load the login library. Check your connection and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  if (!email || !pw) {
+    errEl.textContent = 'Enter your email and password.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const { data, error } = await sbAuthClient.auth.signInWithPassword({ email, password: pw });
+  if (error || !data?.session) {
+    errEl.textContent = 'Incorrect email or password.';
+    errEl.style.display = 'block';
+    return;
+  }
+  let profile;
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/admin_get_profile_by_auth_uid', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_KEY,
+        Authorization: 'Bearer ' + data.session.access_token,
+      },
+      body: JSON.stringify({}),
+    });
+    const t = await res.text();
+    if (!res.ok) throw new Error(t.slice(0, 200));
+    profile = t ? JSON.parse(t) : null;
+  } catch (e) {
+    errEl.textContent = 'Signed in, but no admin account is linked to this login yet. Check with a super admin.';
+    errEl.style.display = 'block';
+    await sbAuthClient.auth.signOut();
+    return;
+  }
+  okEl.textContent = `Signed in as ${profile.name} (${profile.role}). This confirms the new login works — full admin access still comes through the login above until the next migration stage.`;
+  okEl.style.display = 'block';
+}
+
+async function sendNewLoginResetEmail() {
+  const email = document.getElementById('admin-new-login-email').value.trim();
+  const errEl = document.getElementById('admin-new-login-error');
+  const okEl = document.getElementById('admin-new-login-success');
+  errEl.style.display = 'none';
+  okEl.style.display = 'none';
+  if (!sbAuthClient) return;
+  if (!email) {
+    errEl.textContent = 'Enter your email first, then click "Forgot password?" again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const { error } = await sbAuthClient.auth.resetPasswordForEmail(email);
+  if (error) {
+    errEl.textContent = 'Could not send a reset email. Check the address and try again.';
+    errEl.style.display = 'block';
+    return;
+  }
+  okEl.textContent = 'If that email has an account, a password reset link is on its way.';
+  okEl.style.display = 'block';
 }
 
 // ── AUTO SLUG ──────────────────────────────────────────────────
