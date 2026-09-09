@@ -25914,3 +25914,84 @@ URL whose fetch fails (correctly fails soft, keeps the original src,
 doesn't throw or block the other images). Not yet live-tested against
 a real PDF generation — needs Claire to try the emailed/Trello PDF again
 once this is deployed.
+
+## AE step-by-step reference PDF for the new IO form (2026-09-09)
+
+Requested after 44i's second demo call with client groups — one of the
+groups asked for something AEs could reference if they got stuck filling
+out the new IO form. Claire clarified scope: for AEs themselves, a full
+step-by-step walkthrough, not a client-facing document.
+
+Live screenshots weren't possible in this session — serving the repo
+locally and driving it with Playwright hit the sandbox's outbound network
+policy, which hard-blocks reaching the Supabase host the form depends on
+to load its catalog (`curl` against the agent proxy's status endpoint
+confirmed a `connect_rejected`/403 organizational policy denial, not a
+proxy misconfiguration — not something to retry around). Reported this
+plainly rather than working around it; Claire initially asked about
+reusing screenshots from a prior PowerPoint, but nothing from that
+survived (this environment's scratchpad is session-specific and doesn't
+carry over). Since AEs will have real form access by the time this
+ships, Claire opted to start words-only — the guide doubles as a
+companion while they click through the live form themselves — with
+screenshots as a possible v2 once she can send real ones.
+
+Built as a standalone HTML file rendered to PDF via a local, offline
+Playwright `page.pdf()` call (pure local file rendering — no network
+involved, so the sandbox's Supabase block doesn't apply here). Every
+field label, button label, and card name in the guide was pulled directly
+from `index.html`'s real DOM/IDs rather than from memory, specifically to
+avoid drift from what AEs actually see on screen. Covers, in order: Step
+1 (Client Info — Group & Account Info, Client Information, IO Details),
+Step 2 (Services — per-section pattern, Intake Forms, Special
+Instructions), Step 3 (Review & Submit — Totals, Workflows Triggered,
+Kick-Off Call, Legal & Signature), a dedicated Save Draft section, and a
+short Common Questions list.
+
+Revisions made after Claire's review of the first draft:
+- **Brand colors**: the first draft used an orange/cream palette left
+  over from an earlier Trello-comment mockup in this same scratchpad —
+  not real 44i branding. Pulled the actual palette from `index.html`'s
+  own `:root` CSS variables (`--accent:#1C9BD7`, `--accent-dark:#1580B5`,
+  `--accent2:#0F6E56`, `--warn:#F59E0B`) and rebuilt the guide's
+  stylesheet around those instead.
+- **Draft/tabs behavior clarified**: Claire asked to confirm that two
+  tabs open at once (e.g. two different client orders in progress) get
+  two independent drafts, and just double-checked the "don't close the
+  tab" guidance was clear enough. Traced the actual mechanism
+  (`getDraftKey()` in `index.html`) — the draft key includes a per-tab id
+  stored in `sessionStorage`, which is wiped the moment that tab closes,
+  so a closed tab's draft becomes permanently unreachable (not deleted
+  outright — it sits until the existing 7-day TTL purge — but nothing in
+  the UI can get back to it). Confirmed Claire's understanding was
+  correct and rewrote the Drafts section to state this as a plain
+  before/after rule ("leave the tab open" / "closing it loses access")
+  rather than a softer warning.
+- **Removed the Agent/County Split callout** from Step 2 — Claire noted
+  it only applies to one client group, not worth including in a guide
+  meant for AEs generally.
+- **Added an Intake Forms note** to Step 2, describing the modal that
+  pops open when a service requiring one is checked (short answer,
+  multiple choice, checkbox, or short-list questions, saved via "Save
+  Intake Info"), the "✋ Need AM Help" button, and that the modal can't be
+  dismissed by clicking outside it — read directly from
+  `showFullIntakeForm()`/`openIntakeForService()` in `index.html` to keep
+  field-type descriptions accurate.
+- **Reworded the "Need AM Help" note twice** per Claire's feedback: first
+  to a shorter, more general "if you have a question about how to fill in
+  an intake form" framing (originally described it narrowly as "something
+  only the client's AM would know"), then to drop the Kick-Off Call
+  reference entirely, since most groups filling this out won't have a
+  KOC — landed on "flags that section for your AM to help complete."
+
+**Verified**: content checked against `index.html` source directly (step
+structure/IDs, field labels, button labels, intake modal behavior, draft
+storage key logic) rather than from memory. PDF rendering itself (layout,
+pagination, no text overflow) verified visually by reading the rendered
+PDF back page by page after each revision — real output, not just "the
+script ran without errors." Not yet reviewed by an actual AE or tested
+against the live form side-by-side; screenshots remain a possible v2
+pending Claire sending real ones. File lives at
+`scratchpad/AE-Guide-to-the-New-IO-Form.pdf` (session scratchpad, not
+committed to the repo — this is a reference document, not part of the
+form itself).
