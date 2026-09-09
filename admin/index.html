@@ -413,11 +413,22 @@
           <div id="admin-client-trello-audit-all-results"></div>
         </div>
 
-        <div style="order:2;display:grid;grid-template-columns:1fr 220px;gap:10px;margin-bottom:16px">
+        <div style="order:2;display:grid;grid-template-columns:1fr 220px;gap:10px;margin-bottom:10px">
           <input type="text" id="clients-filter-search" placeholder="Search by client name, contact, or city..." oninput="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
           <select id="clients-filter-group" onchange="renderAdminClients()" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;font-family:inherit;background:#fff">
             <option value="">All groups</option>
           </select>
+        </div>
+        <!-- Hidden clients (2026-09-09) -- a client can be marked `hidden` (e.g. test
+             clients like ABC Floors/ABC Pools under 44i, or anything under Claude Test
+             Group) so it stops showing up in Strategist/Accounting's own client lists
+             and here by default -- but nothing is deleted, and it stays fully usable
+             from the public form for future testing. This checkbox is the only way
+             back to a hidden client in Admin. -->
+        <div style="order:2;margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);cursor:pointer;width:fit-content">
+            <input type="checkbox" id="clients-filter-show-hidden" onchange="renderAdminClients()"/> Show hidden clients
+          </label>
         </div>
 
         <!-- Import-from-Trello panel — scans a group's board for lists with no linked
@@ -2905,7 +2916,7 @@ window.addEventListener('resize', () => {
 // would on a fresh page load, matching what Claire expects.
 const ADMIN_TAB_FILTER_IDS = [
   'orders-filter-group', 'orders-filter-search', 'orders-filter-date', 'orders-filter-help',
-  'clients-filter-search', 'clients-filter-group',
+  'clients-filter-search', 'clients-filter-group', 'clients-filter-show-hidden',
   'map-filter-section', 'map-filter-search', 'map-filter-inactive',
   'ae-filter-group',
 ];
@@ -6473,7 +6484,9 @@ function renderAdminClients() {
   const el = document.getElementById('admin-clients-table');
   const search = (document.getElementById('clients-filter-search')?.value || '').trim().toLowerCase();
   const groupFilter = document.getElementById('clients-filter-group')?.value || '';
+  const showHidden = document.getElementById('clients-filter-show-hidden')?.checked || false;
   const rows = ALL_CLIENTS.filter(c => {
+    if (c.hidden && !showHidden) return false;
     if (groupFilter && c.group_id !== groupFilter) return false;
     if (!search) return true;
     return (c.name || '').toLowerCase().includes(search) ||
@@ -6500,19 +6513,48 @@ function renderAdminClients() {
     const linkedBadge = c.trello_list_id
       ? '<span style="font-size:9px;font-weight:700;background:#DCFCE7;color:#166534;padding:1px 6px;border-radius:8px">LINKED</span>'
       : '<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">NOT LINKED</span>';
+    const hiddenBadge = c.hidden
+      ? ' <span style="font-size:9px;font-weight:700;background:#F3F4F6;color:#6B7280;padding:1px 6px;border-radius:8px">HIDDEN</span>'
+      : '';
+    const hideBtn = `<button onclick="adminToggleClientHidden('${esc(c.id)}', ${!c.hidden})" style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid ${c.hidden ? '#BBF7D0' : '#E5E7EB'};background:${c.hidden ? '#F0FDF4' : '#F9FAFB'};color:${c.hidden ? '#166534' : '#374151'}">${c.hidden ? 'Unhide' : 'Hide'}</button>`;
     html += `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:8px 10px;font-weight:600">${esc(c.name)}</td>
+      <td style="padding:8px 10px;font-weight:600">${esc(c.name)}${hiddenBadge}</td>
       <td style="padding:8px 10px">${groupName}</td>
       <td style="padding:8px 10px">${contact}</td>
       <td style="padding:8px 10px">${esc(c.city || '—')}</td>
       <td style="padding:8px 10px">${linkedBadge}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">
         <button onclick="adminEditClient('${esc(c.id)}')" class="btn-quiet-green">Edit</button>
+        ${hideBtn}
       </td>
     </tr>`;
   });
   html += `</tbody></table>`;
   el.innerHTML = html;
+}
+
+async function adminToggleClientHidden(id, makeHidden) {
+  const c = ALL_CLIENTS.find(x => x.id === id);
+  if (!c) return;
+  const warnText = makeHidden
+    ? ' It will no longer show up in Strategist or Accounting client lists, or here unless "Show hidden clients" is checked. It stays fully usable from the public IO form and nothing about it is deleted.'
+    : '';
+  if (!confirm(`${makeHidden ? 'Hide' : 'Unhide'} "${c.name}"?${warnText}`)) return;
+  try {
+    await sb('rpc/admin_save_client', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '',
+        p_pw: currentAdminUser?.pw || '',
+        p_client_id: id,
+        p_data: { hidden: makeHidden }
+      })
+    });
+    showToast(`Client ${makeHidden ? 'hidden' : 'unhidden'}!`);
+    loadAdminClients();
+  } catch(e) {
+    showToast('Error updating client: ' + e.message, 'error');
+  }
 }
 
 async function adminNewClient() {
