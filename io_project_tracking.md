@@ -25995,3 +25995,157 @@ pending Claire sending real ones. File lives at
 `scratchpad/AE-Guide-to-the-New-IO-Form.pdf` (session scratchpad, not
 committed to the repo — this is a reference document, not part of the
 form itself).
+
+## Strategist/Accounting portals didn't span the full page (2026-09-09)
+
+Claire noticed Admin covers the full browser width but Strategist and
+Accounting left whitespace on either side. Root cause: Admin's `.card`
+wrapper (`shared.css`) has no width limit at all, while Strategist's
+`#strategist-card` and Accounting's `.acct-wrap` each hardcoded their own
+`max-width` + `margin: auto`, centering a fixed-width column instead of
+filling the page like Admin does.
+
+**Fix**: dropped the `max-width`/`margin: auto` from both — Strategist's
+card now just keeps its `padding-bottom`, Accounting's wrap keeps its
+padding but drops the centering. Matches Admin's actual CSS exactly.
+
+**Verified**: syntax-checked; the rendered result (does it visually look
+right in a real browser) wasn't confirmed in this session — same sandbox
+network restriction that blocked live screenshots elsewhere blocks
+loading these Supabase-backed pages here too. Claire should give both
+portals a look before considering this fully done.
+
+## Hid test clients/orders from Strategist, Accounting, and Admin's Orders list (2026-09-09)
+
+Claire wanted a clean slate now that client groups will start using the
+real form — asked to remove (or hide) all test orders. Landed on hiding
+rather than deleting, specifically: Claude Test Group's clients, plus
+ABC Floors/ABC Pools under the internal 44i group — while keeping the
+44i group itself fully active for real future orders, and keeping hidden
+clients fully usable from the public form for later testing (e.g. the AE
+companion-guide walkthrough).
+
+**What was added**: a `hidden` boolean column on `clients` (default
+`false`, so nothing existing changed on its own). A Hide/Unhide toggle
+button was added to Admin's Clients tab (matching the existing
+Deactivate-button pattern used elsewhere), plus a "Show hidden clients"
+checkbox (off by default) so Claire can still find and manage them from
+Admin. `admin_get_clients`/`admin_save_client` were updated to
+read/write the flag.
+
+**First pass missed the orders themselves**: `strategist_get_clients`
+and `accounting_get_clients` (the client-picker/lookup RPCs) were
+filtered to exclude hidden clients, but Claire reported back "I still
+see them everywhere" — the actual orders/campaign-line list RPCs
+(`admin_get_orders`, `strategist_get_campaign_lines`,
+`accounting_get_campaign_lines`) are separate queries that join
+`clients` independently and hadn't been touched at all. Added the same
+`coalesce(c.hidden, false) = false` filter to all three.
+
+**Verified**: read `pg_get_functiondef()` for every RPC before writing
+each replacement, so only the intended `where` clause changed — the rest
+of each function body (joins, column lists, existing filters like
+`accounting_only`) is untouched. `node -e (new Function(...))` syntax
+check on the admin/index.html UI changes — no errors. Claire confirmed
+after running the second batch of SQL that this "helps clean things
+up" — live-tested and working.
+
+## Ad Creation intake questions don't actually charge anything — design in progress, parked on AM/business review (2026-09-09)
+
+Claire's original question, from earlier in the day: "for some of our
+intake forms there is an option for us to create ads for the clients at
+an additional charge... wasn't sure what the best way to do this,"
+clarified as a controlled select (not free-typed). Investigated properly
+rather than designing against one guessed example.
+
+**Audit findings** (queried live via Claire running SQL — no direct DB
+access from here):
+- The intake-form field data model has zero pricing capacity anywhere —
+  confirmed via a frontend-only audit of `showFullIntakeForm()`/
+  `saveIntakeForm()` in `index.html` and the field-authoring code in
+  `admin/index.html`: every field type (`textarea`, `radio`, `checkbox`,
+  `select_fill_in`, `list`, plain text) only ever carries
+  `label`/`options`/`showIf`/`optional`/`description`/etc. — no
+  price/amount property exists in the schema or the admin editor. This
+  is a structural gap, not a one-off oversight.
+- This is NOT isolated to one form. Querying every `intake_forms.definition`
+  for priced-looking text (`$`, "additional charge", "extra fee", etc.)
+  found the same "Ad Creation" (or similarly-named) radio/select field,
+  with a paid option that charges nothing today, in **13 different
+  intake forms**: Reputation Management (QR codes/review cards add-on),
+  Geofence Targeting, Streaming TV, Event Targeting, Programmatic Audio,
+  Programmatic/Native Video, Targeted Display, Facebook/Instagram Ads,
+  Social Display Ads, Mobile Audience Targeting, Social OTT/CTV, YouTube
+  Ads, YouTube TV Ads, and Dynamic Display.
+- Real, already-priced À La Carte catalog services already cover most of
+  the likely targets: Social Media Ad Set ($175), Banner Ad Set ($175),
+  Radio to Video Ad Creation ($250), YouTube Pre-Roll Ad Creation
+  ($250), plus Stock Photography/Graphic Design/etc. for adjacent needs.
+  Two forms (Programmatic Audio's audio-creation charge, and Reputation
+  Management's QR-code/review-card add-on) have **no existing catalog
+  item to point to at all** — those would need brand-new À La Carte
+  services created first, not just a mapping.
+- Also found `alc-testdelete` ("TEST — Delete Me", $10) live in the
+  production À La Carte catalog during this audit — unrelated stray test
+  data. Claire will deactivate it herself via Admin's existing
+  Deactivate button (no SQL needed, fully reversible) rather than a
+  destructive delete.
+
+**Proposed mechanism** (not yet built): reuse the existing
+`AUTO_SELECT_MAP` pattern (a service can already name a "companion"
+service that auto-checks itself as an overridable courtesy when the
+parent is checked — e.g. Visitor IDs Setup Fee) but extend it into the
+intake-form field definition itself, since the trigger here is
+conditional on which specific answer the AE picks inside the intake
+modal, not simply on which service was checked. Concretely: an intake
+field's paid option would carry a reference to a target service id;
+saving the intake form with that option selected would auto-check that
+service's Step 2 checkbox, fully overridable, matching the exact UX
+`AUTO_SELECT_MAP` already uses elsewhere. No new pricing model needed —
+this only wires the existing per-form paid option to an existing (or
+new) catalog price.
+
+**Parked**: which specific À La Carte service each of the 13 forms'
+"Ad Creation" option should map to is a real business-logic call, not
+something to guess at — several are ambiguous (e.g. does every
+display/banner-style form mean "Banner Ad Set," or does it vary?), and
+two forms need net-new catalog items created first. Claire is checking
+with her boss on the exact mapping/new-item decisions before any of this
+gets built. Once she has answers, the actual implementation (intake
+field editor UI + `saveIntakeForm()` runtime change) should be a single
+pass across all forms, not done piecemeal.
+
+## Step 3's hosting proration note showed twice (2026-09-09)
+
+Claire, from a live demo: for a Website One-Time service where the
+client uses 44i's hosting, Step 3's Selected Services Summary showed the
+same proration explanation twice for one service, while the printed IO
+correctly showed it once.
+
+**Root cause**: `buildReview()` (Step 3, on-screen — `index.html:4954`)
+folds the full proration sentence ("Hosting starts Oct 9, 2026 (30 days
+from IO). Prorated: $103.56 (84 days remaining in year)") into the
+service's own main-row Notes column via `notesDisplay`/`hostingNote`
+(`index.html:5074-5075`), then pushes a SEPARATE "↳ Prorated Hosting"
+sub-row right after it whose own Notes column (`index.html:5101`) used
+`h.note` directly — the exact same full sentence, verbatim, a second
+time. `buildIoDocumentHtml()` (the printed IO, `index.html:7296`+) has
+the identical two-row structure but never had this bug, because its
+sub-row (`index.html:7510`) was already written to show a short,
+distinct label ("30-day build period from IO date") instead of
+repeating the full note — that's why print only ever showed it once.
+
+**Fix**: changed Step 3's sub-row to use the same short, distinct label
+the print version already uses, instead of the full `h.note`. One-line
+change, no behavior change to what information is shown overall — the
+full explanation still appears exactly once (main row), the sub-row now
+adds a short, non-duplicate label instead of repeating it.
+
+**Verified**: read both rendering functions side by side to confirm the
+print version's shape was the correct target, not guessed at. Simulated
+the exact template-literal logic in a Node one-liner with realistic
+proration data (30 days, $103.56, 84 days remaining) — confirmed the
+main row and sub-row now render different text where they previously
+rendered identical text. `node -e (new Function(...))` syntax check on
+the full file — no errors. Not yet retested live in the actual form by
+Claire.

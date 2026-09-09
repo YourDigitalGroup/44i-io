@@ -5098,7 +5098,12 @@ function buildReview() {
     if (hostingChoices[id]?.choice === 'us' && hostingChoices[id]?.proratedAmt) {
       const h = hostingChoices[id];
       oneTime += h.proratedAmt;
-      rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td class="rs-fee" style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">${h.note}</td></tr>`);
+      // Short, distinct label here (2026-09-09, per Claire — "the same note is on
+      // there twice") instead of the full h.note, which is already shown once in
+      // this same service's main row (see notesDisplay/hostingNote above) --
+      // repeating h.note verbatim in both rows was a genuine duplicate. Matches
+      // buildIoDocumentHtml()'s equivalent sub-row, which never had this bug.
+      rows.push(`<tr style="background:#F0FDF4"><td class="rs-service" style="padding-left:24px;font-size:11px;color:#166534">↳ Prorated Hosting (${h.days} days to start)</td><td class="rs-fee" style="font-size:11px;color:#166534">$${h.proratedAmt.toFixed(2)}</td><td class="rs-recurring">—</td><td class="rs-flight">—</td><td class="rs-notes" style="font-size:11px;color:#166534">${h.days}-day build period from IO date</td></tr>`);
     }
     // Add auto setup-fee line if this service's spend is under its configured threshold
     const setupFeeInfo = getSetupFeeInfo(id, data.spend || 0);
