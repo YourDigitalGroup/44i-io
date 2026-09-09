@@ -25995,3 +25995,57 @@ pending Claire sending real ones. File lives at
 `scratchpad/AE-Guide-to-the-New-IO-Form.pdf` (session scratchpad, not
 committed to the repo — this is a reference document, not part of the
 form itself).
+
+## Strategist/Accounting portals didn't span the full page (2026-09-09)
+
+Claire noticed Admin covers the full browser width but Strategist and
+Accounting left whitespace on either side. Root cause: Admin's `.card`
+wrapper (`shared.css`) has no width limit at all, while Strategist's
+`#strategist-card` and Accounting's `.acct-wrap` each hardcoded their own
+`max-width` + `margin: auto`, centering a fixed-width column instead of
+filling the page like Admin does.
+
+**Fix**: dropped the `max-width`/`margin: auto` from both — Strategist's
+card now just keeps its `padding-bottom`, Accounting's wrap keeps its
+padding but drops the centering. Matches Admin's actual CSS exactly.
+
+**Verified**: syntax-checked; the rendered result (does it visually look
+right in a real browser) wasn't confirmed in this session — same sandbox
+network restriction that blocked live screenshots elsewhere blocks
+loading these Supabase-backed pages here too. Claire should give both
+portals a look before considering this fully done.
+
+## Hid test clients/orders from Strategist, Accounting, and Admin's Orders list (2026-09-09)
+
+Claire wanted a clean slate now that client groups will start using the
+real form — asked to remove (or hide) all test orders. Landed on hiding
+rather than deleting, specifically: Claude Test Group's clients, plus
+ABC Floors/ABC Pools under the internal 44i group — while keeping the
+44i group itself fully active for real future orders, and keeping hidden
+clients fully usable from the public form for later testing (e.g. the AE
+companion-guide walkthrough).
+
+**What was added**: a `hidden` boolean column on `clients` (default
+`false`, so nothing existing changed on its own). A Hide/Unhide toggle
+button was added to Admin's Clients tab (matching the existing
+Deactivate-button pattern used elsewhere), plus a "Show hidden clients"
+checkbox (off by default) so Claire can still find and manage them from
+Admin. `admin_get_clients`/`admin_save_client` were updated to
+read/write the flag.
+
+**First pass missed the orders themselves**: `strategist_get_clients`
+and `accounting_get_clients` (the client-picker/lookup RPCs) were
+filtered to exclude hidden clients, but Claire reported back "I still
+see them everywhere" — the actual orders/campaign-line list RPCs
+(`admin_get_orders`, `strategist_get_campaign_lines`,
+`accounting_get_campaign_lines`) are separate queries that join
+`clients` independently and hadn't been touched at all. Added the same
+`coalesce(c.hidden, false) = false` filter to all three.
+
+**Verified**: read `pg_get_functiondef()` for every RPC before writing
+each replacement, so only the intended `where` clause changed — the rest
+of each function body (joins, column lists, existing filters like
+`accounting_only`) is untouched. `node -e (new Function(...))` syntax
+check on the admin/index.html UI changes — no errors. Claire confirmed
+after running the second batch of SQL that this "helps clean things
+up" — live-tested and working.
