@@ -26114,3 +26114,38 @@ with her boss on the exact mapping/new-item decisions before any of this
 gets built. Once she has answers, the actual implementation (intake
 field editor UI + `saveIntakeForm()` runtime change) should be a single
 pass across all forms, not done piecemeal.
+
+## Step 3's hosting proration note showed twice (2026-09-09)
+
+Claire, from a live demo: for a Website One-Time service where the
+client uses 44i's hosting, Step 3's Selected Services Summary showed the
+same proration explanation twice for one service, while the printed IO
+correctly showed it once.
+
+**Root cause**: `buildReview()` (Step 3, on-screen — `index.html:4954`)
+folds the full proration sentence ("Hosting starts Oct 9, 2026 (30 days
+from IO). Prorated: $103.56 (84 days remaining in year)") into the
+service's own main-row Notes column via `notesDisplay`/`hostingNote`
+(`index.html:5074-5075`), then pushes a SEPARATE "↳ Prorated Hosting"
+sub-row right after it whose own Notes column (`index.html:5101`) used
+`h.note` directly — the exact same full sentence, verbatim, a second
+time. `buildIoDocumentHtml()` (the printed IO, `index.html:7296`+) has
+the identical two-row structure but never had this bug, because its
+sub-row (`index.html:7510`) was already written to show a short,
+distinct label ("30-day build period from IO date") instead of
+repeating the full note — that's why print only ever showed it once.
+
+**Fix**: changed Step 3's sub-row to use the same short, distinct label
+the print version already uses, instead of the full `h.note`. One-line
+change, no behavior change to what information is shown overall — the
+full explanation still appears exactly once (main row), the sub-row now
+adds a short, non-duplicate label instead of repeating it.
+
+**Verified**: read both rendering functions side by side to confirm the
+print version's shape was the correct target, not guessed at. Simulated
+the exact template-literal logic in a Node one-liner with realistic
+proration data (30 days, $103.56, 84 days remaining) — confirmed the
+main row and sub-row now render different text where they previously
+rendered identical text. `node -e (new Function(...))` syntax check on
+the full file — no errors. Not yet retested live in the actual form by
+Claire.
