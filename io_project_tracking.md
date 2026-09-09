@@ -26149,3 +26149,79 @@ main row and sub-row now render different text where they previously
 rendered identical text. `node -e (new Function(...))` syntax check on
 the full file — no errors. Not yet retested live in the actual form by
 Claire.
+
+## Added a way to correct a delayed website's hosting proration (2026-09-09)
+
+Claire asked whether there was a way to fix an order's hosting proration
+charge after signing, for when a website build gets delayed and the
+"starts N days from IO" assumption baked in at signing no longer holds.
+Checked first rather than assuming: Admin's per-order line-item editor
+deliberately skips any row with a compound amount ("fee + prorated
+hosting has no single unambiguous field to edit, so no edit link shows
+for that row" — `admin/index.html:9386-9399`, from the 2026-08-20 AM-
+edit feature) — so no, there was no way to do this at all before today.
+The only hosting control that existed was the global ⚙ Hosting Proration
+Settings panel, which only affects future orders' day-count/fee
+assumptions, not a signed order's already-locked-in charge.
+
+Scoped with Claire before building: edit the **start date only** (the
+dollar amount recalculates automatically from it, same formula used at
+signing), and the correction only needs to be visible in **Admin and
+Accounting** — not Trello.
+
+**Investigated before designing anything**: traced exactly how the
+prorated hosting amount reaches Accounting today, since
+`accounting_get_campaign_lines` has no `prorated_hosting_amt` field at
+all. Found it via `create_campaign_lines_from_order()` (the order-insert
+trigger): a prorated hosting charge becomes its own separate
+`campaign_lines` row (`billing_type = 'hosting_proration'`,
+`accounting_only = true` — invisible to Strategist by design, since
+`strategist_get_campaign_lines` filters `accounting_only = false`) with
+its dollar figure living in `campaign_months.gross_budget` for whichever
+month the original start date fell in. This meant a fix touching only
+`orders.line_items` (what the existing generic editor does) would never
+actually reach Accounting's view — confirmed by reading
+`admin_edit_order_line_item`'s real definition, which only ever
+`jsonb_set`s `orders.line_items` and never touches `campaign_lines` at
+all.
+
+**Also found a real limitation before building**: the order's stored
+line item only ever kept the *derived* `prorated_hosting_amt` — never
+the raw inputs (`calcProration()`'s underlying annual hosting fee) that
+would be needed to redo that math later from a new date. Fixed going
+forward only: `calcProration()` (`index.html`) now also returns
+`startDateISO`, and the order's line-item payload now also stores
+`hosting_fee` and `hosting_start_date` alongside the existing
+`prorated_hosting_amt`. **This means an order signed before this ships
+can't be corrected through the new UI** — its raw fee was never
+captured — Claire would need to ask for a one-off manual SQL fix for
+any pre-existing order like that.
+
+**Built**:
+- New RPC `admin_edit_hosting_proration(p_order_id, p_service_id,
+  p_new_start_date)` — recomputes the prorated amount from the order's
+  stored `hosting_fee` using the exact same days-remaining-in-year/365
+  formula `calcProration()` uses at signing, updates
+  `orders.line_items` (amount + start date, `is_revised = true`, two
+  `edit_history` entries — one per changed field, matching the existing
+  convention), then finds and updates the matching
+  `campaign_lines`/`campaign_months` hosting-proration row so Accounting
+  sees the corrected number too. Raises a clear error instead of
+  guessing if `hosting_fee` is missing (a pre-this-fix order).
+- New Admin UI: a dedicated "✎ Edit Hosting Date" button appears
+  specifically on any line item carrying a `prorated_hosting_amt` —
+  previously excluded entirely from every edit-button branch. Opens the
+  same kind of inline date-input panel the existing date-only editor
+  uses, but deliberately skips the Trello-comment/PDF-reattach step that
+  path does, per the "Admin + Accounting only" scope Claire confirmed.
+
+**Verified**: read the real `admin_edit_order_line_item` and
+`create_campaign_lines_from_order` definitions before writing anything,
+so the new function's update targets (which table, which columns) are
+based on the actual schema, not assumption. Simulated the exact
+recompute formula in Python against the real screenshot Claire sent
+(84 days remaining, $103.56 prorated → implied ~$450 annual fee) and
+confirmed a later start date correctly produces a smaller prorated
+figure. `node -e (new Function(...))` syntax check on both
+`index.html` and `admin/index.html` — no errors. Not yet live-tested —
+needs Claire to run the SQL, then try correcting a real delayed order.
