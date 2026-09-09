@@ -25860,3 +25860,57 @@ update — the insert path for a genuinely new AE is untouched.
 errors. Not yet live-tested (needs Claire to run the SQL, then submit a
 real test IO for a roster AE with a blank field and confirm it sticks
 this time).
+
+## PDF logo still broken after the 2026-09-08 timing fix — real root cause found (2026-09-09)
+
+Claire tested the emailed IO PDF again and it was still showing a broken
+logo icon, despite the fix committed the day before that waits for
+images to actually finish loading before capturing. Asked her a
+diagnostic question first rather than guessing again: does the **Print**
+button (a plain browser render, no `html2canvas` involved) show the same
+group's logo correctly? Yes — only the emailed PDF and the Trello PDF
+(both built by the same `html2canvas`-based path) stay broken.
+
+That single fact rules out the 2026-09-08 diagnosis: if it were really a
+loading-speed race, waiting longer would have fixed it, and it plainly
+didn't. The real, more specific cause: `html2canvas` has to read an
+image's actual pixels back off a `<canvas>` (to build the screenshot),
+which browsers block for a cross-origin image unless the image's host
+sends real CORS response headers — `useCORS: true` only tells
+`html2canvas` to *request* CORS access, it can't manufacture headers a
+server never actually sends. A plain `<img>` tag (what Print uses) has no
+such restriction at all — browsers happily display a cross-origin image
+with zero CORS headers, they only block *reading it back* via canvas.
+Group logos are uploaded via Admin and can be PNG/JPG/**SVG**/GIF (see
+`GROUP_LOGO_ALLOWED_TYPES`) — `html2canvas` also has its own
+long-documented, separate quirks specifically rendering SVGs onto canvas,
+a second plausible contributor on top of any CORS gap.
+
+**Fix**: added `inlineImagesAsDataUris(doc)` — before `html2canvas` ever
+runs, fetches every `<img>` in the hidden iframe via `fetch()`, converts
+it to a `data:` base64 URI via `FileReader`, and swaps it into the
+image's `src`. A `data:` URI has no origin at all, so canvas access is
+never restricted regardless of the original host's CORS headers, and the
+bytes are already fully decoded by the time `html2canvas` sees them —
+this addresses the CORS gap and any SVG-specific quirk at once, and also
+makes the 2026-09-08 timing race moot (no image can still be "loading"
+once its bytes are already sitting in memory as a data URI). Applied to
+all 4 PDF generators (`generateIoPdfBlob()`/`generateIntakePdfBlob()` in
+`index.html`, and both PDF generators in `admin/index.html` — added a
+second copy of the same helper there, matching this codebase's existing
+index.html/admin.html duplication convention rather than routing through
+`shared.js`). Fails soft: an image that can't be fetched this way (e.g.
+a genuinely dead URL) keeps its original `src`, no worse off than
+before — kept the 2026-09-08 timing-wait code running immediately after
+this as a real safety net for exactly that case, and for webfonts, which
+this doesn't touch at all.
+
+**Verified**: `node -e (new Function(...))` syntax check on both files —
+no errors. Extracted `inlineImagesAsDataUris()` into a standalone Node
+harness with stubbed `fetch`/`FileReader`, testing 3 cases: a real image
+URL (correctly converted to a data URI), an image already using a
+`data:` URI (correctly left untouched, no redundant re-fetch), and a
+URL whose fetch fails (correctly fails soft, keeps the original src,
+doesn't throw or block the other images). Not yet live-tested against
+a real PDF generation — needs Claire to try the emailed/Trello PDF again
+once this is deployed.

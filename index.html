@@ -7913,6 +7913,44 @@ function paginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, unsafeZones) {
 }
 
 // ── INTAKE PDF GENERATION (2026-07-15) ─────────────────────────
+// Converts every <img> in a given document to an embedded base64 data: URI before
+// html2canvas ever sees it (2026-09-09, per Claire — the earlier fix that waits for
+// images to load didn't actually solve it: Print, a plain browser render with no
+// html2canvas involved, showed the group logo fine; only the html2canvas-based PDF
+// path stayed broken, meaning it was never a loading-speed race). html2canvas has to
+// read the image's own pixels back off a canvas, which a browser blocks for a
+// cross-origin image unless the host sends real CORS headers — `useCORS:true` only
+// tells html2canvas to ASK for CORS access, it can't create response headers a
+// server never actually sends. html2canvas also has its own long-documented quirks
+// rendering SVG logos specifically (a real possibility here too, since the logo
+// uploader accepts SVG). Pre-fetching the image ourselves and swapping in a data:
+// URI sidesteps both at once: a data URI has no origin at all, so canvas access is
+// never restricted regardless of the original host's CORS headers, and it's already
+// fully-decoded bytes by the time html2canvas gets to it — no load race possible
+// either. Fails soft: an image that can't be fetched this way (e.g. a genuinely dead
+// URL) is left with its original src, exactly as before this existed.
+async function inlineImagesAsDataUris(doc) {
+  const imgs = Array.from(doc.images);
+  await Promise.all(imgs.map(async img => {
+    const src = img.getAttribute('src');
+    if (!src || src.startsWith('data:')) return;
+    try {
+      const res = await fetch(src);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const dataUri = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      img.src = dataUri;
+    } catch (e) {
+      console.warn('Could not inline image as data URI, leaving original src:', src, e.message);
+    }
+  }));
+}
+
 // REWRITTEN 2026-07-15 (found live, per Claire — "format that PDF like the IO"): the
 // first version drew intake text directly via jsPDF's plain-text API, which has no
 // markdown support and can't render most emoji at all — the literal "**bold**" markers
@@ -7942,6 +7980,13 @@ async function generateIntakePdfBlob(workflowName, html) {
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
       </head><body style="margin:0">${html}</body></html>`);
     iframe.contentDocument.close();
+
+    // Inline any image as a data: URI before html2canvas ever sees it (2026-09-09) —
+    // see inlineImagesAsDataUris()'s own comment above for why the timing wait alone
+    // isn't sufficient (a CORS/canvas-tainting and SVG-rendering issue specific to
+    // html2canvas, not a loading-speed race). This PDF doesn't normally carry a group
+    // logo, but costs nothing to apply consistently.
+    await inlineImagesAsDataUris(iframe.contentDocument);
 
     // Wait for any images (and webfonts) to actually finish loading before capturing,
     // instead of a blind fixed delay — same "wait for load/error, capped" pattern
@@ -8003,6 +8048,15 @@ async function generateIoPdfBlob() {
     iframe.contentDocument.open();
     iframe.contentDocument.write(html);
     iframe.contentDocument.close();
+
+    // Inline the group logo (and any other image) as a data: URI before html2canvas
+    // ever sees it (2026-09-09, per Claire — the timing fix below alone didn't
+    // actually solve the broken-logo bug; see inlineImagesAsDataUris()'s own comment
+    // for why: this isn't a loading-speed race, it's a CORS/canvas-tainting and
+    // SVG-rendering issue specific to html2canvas). Kept the wait below too, as a
+    // real safety net for anything that still can't be inlined (a genuinely dead
+    // image URL) and for webfonts, which this doesn't touch at all.
+    await inlineImagesAsDataUris(iframe.contentDocument);
 
     // Wait for the group logo image (and webfonts) to actually finish loading before
     // capturing, instead of a blind fixed delay — the exact bug found live 2026-09-08
