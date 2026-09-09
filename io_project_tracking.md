@@ -26049,3 +26049,68 @@ of each function body (joins, column lists, existing filters like
 check on the admin/index.html UI changes — no errors. Claire confirmed
 after running the second batch of SQL that this "helps clean things
 up" — live-tested and working.
+
+## Ad Creation intake questions don't actually charge anything — design in progress, parked on AM/business review (2026-09-09)
+
+Claire's original question, from earlier in the day: "for some of our
+intake forms there is an option for us to create ads for the clients at
+an additional charge... wasn't sure what the best way to do this,"
+clarified as a controlled select (not free-typed). Investigated properly
+rather than designing against one guessed example.
+
+**Audit findings** (queried live via Claire running SQL — no direct DB
+access from here):
+- The intake-form field data model has zero pricing capacity anywhere —
+  confirmed via a frontend-only audit of `showFullIntakeForm()`/
+  `saveIntakeForm()` in `index.html` and the field-authoring code in
+  `admin/index.html`: every field type (`textarea`, `radio`, `checkbox`,
+  `select_fill_in`, `list`, plain text) only ever carries
+  `label`/`options`/`showIf`/`optional`/`description`/etc. — no
+  price/amount property exists in the schema or the admin editor. This
+  is a structural gap, not a one-off oversight.
+- This is NOT isolated to one form. Querying every `intake_forms.definition`
+  for priced-looking text (`$`, "additional charge", "extra fee", etc.)
+  found the same "Ad Creation" (or similarly-named) radio/select field,
+  with a paid option that charges nothing today, in **13 different
+  intake forms**: Reputation Management (QR codes/review cards add-on),
+  Geofence Targeting, Streaming TV, Event Targeting, Programmatic Audio,
+  Programmatic/Native Video, Targeted Display, Facebook/Instagram Ads,
+  Social Display Ads, Mobile Audience Targeting, Social OTT/CTV, YouTube
+  Ads, YouTube TV Ads, and Dynamic Display.
+- Real, already-priced À La Carte catalog services already cover most of
+  the likely targets: Social Media Ad Set ($175), Banner Ad Set ($175),
+  Radio to Video Ad Creation ($250), YouTube Pre-Roll Ad Creation
+  ($250), plus Stock Photography/Graphic Design/etc. for adjacent needs.
+  Two forms (Programmatic Audio's audio-creation charge, and Reputation
+  Management's QR-code/review-card add-on) have **no existing catalog
+  item to point to at all** — those would need brand-new À La Carte
+  services created first, not just a mapping.
+- Also found `alc-testdelete` ("TEST — Delete Me", $10) live in the
+  production À La Carte catalog during this audit — unrelated stray test
+  data. Claire will deactivate it herself via Admin's existing
+  Deactivate button (no SQL needed, fully reversible) rather than a
+  destructive delete.
+
+**Proposed mechanism** (not yet built): reuse the existing
+`AUTO_SELECT_MAP` pattern (a service can already name a "companion"
+service that auto-checks itself as an overridable courtesy when the
+parent is checked — e.g. Visitor IDs Setup Fee) but extend it into the
+intake-form field definition itself, since the trigger here is
+conditional on which specific answer the AE picks inside the intake
+modal, not simply on which service was checked. Concretely: an intake
+field's paid option would carry a reference to a target service id;
+saving the intake form with that option selected would auto-check that
+service's Step 2 checkbox, fully overridable, matching the exact UX
+`AUTO_SELECT_MAP` already uses elsewhere. No new pricing model needed —
+this only wires the existing per-form paid option to an existing (or
+new) catalog price.
+
+**Parked**: which specific À La Carte service each of the 13 forms'
+"Ad Creation" option should map to is a real business-logic call, not
+something to guess at — several are ambiguous (e.g. does every
+display/banner-style form mean "Banner Ad Set," or does it vary?), and
+two forms need net-new catalog items created first. Claire is checking
+with her boss on the exact mapping/new-item decisions before any of this
+gets built. Once she has answers, the actual implementation (intake
+field editor UI + `saveIntakeForm()` runtime change) should be a single
+pass across all forms, not done piecemeal.
