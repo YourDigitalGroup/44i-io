@@ -25818,3 +25818,45 @@ nothing to fix.
 Extracted `formatSiblingLineItems()` into a standalone Node harness with
 a flat-rate example and a varying month-by-month example — both render
 correctly in the new format.
+
+## A roster AE's missing info didn't stick to their profile (2026-09-09)
+
+Claire, via her boss: submitted a test IO for an existing AE with no
+Market on file, typed one in on the form, submitted — the next day,
+selecting that same AE again showed no Market. "Like with client
+information once it is added it needs to stick with their profile."
+
+**Root cause, two separate bugs stacked on each other**:
+1. `find_or_create_ae()` (the RPC that's supposed to keep the AE roster
+   in sync with what gets typed on a submission) is only ever called from
+   the frontend `if (!selectedAeId)` — i.e. only when the AE was
+   free-typed rather than picked from the roster dropdown. Since Claire's
+   test used an existing roster AE (picked from the dropdown,
+   `selectedAeId` set), this call never fired at all — the typed Market
+   value was used only for that one order's own PDF/review display, never
+   sent anywhere to update the roster.
+2. Even if it HAD been called, the RPC itself only ever `INSERT`s a brand
+   new AE row — when it finds an existing AE by name, the function does
+   nothing else and just returns that id. There was no code path in it
+   that would have updated Market (or Trello handle, or email — same
+   shape bug for all three) on an existing roster AE, ever.
+
+**Fix, two parts**:
+- Frontend: removed the `if (!selectedAeId)` gate — `find_or_create_ae`
+  now gets called for every submission with a named AE, roster-picked or
+  not.
+- `find_or_create_ae()`: when it finds an existing AE by name, it now
+  backfills `trello_handle`/`email`/`market` — but **only fields that are
+  currently blank on file**, never overwriting a value that's already
+  there. Deliberately conservative: something mistyped on one order
+  should never silently clobber a correct value already saved to that
+  AE's real profile — this only ever fills in what was genuinely missing,
+  matching exactly what Claire described.
+
+**Verified**: read `pg_get_functiondef()` before writing the replacement,
+confirmed the only change is the new `else` branch's backfill-only-blanks
+update — the insert path for a genuinely new AE is untouched.
+`node -e (new Function(...))` syntax check on the frontend change — no
+errors. Not yet live-tested (needs Claire to run the SQL, then submit a
+real test IO for a roster AE with a blank field and confirm it sticks
+this time).
