@@ -10570,6 +10570,41 @@ function adminPaginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, unsafeZone
 // (since this only runs right after the AM clicks "Save & Mark Complete").
 // If TLP editing from Admin turns out to matter in practice, port that
 // special case over from index.html's own buildIntakeDesc at that point.
+
+// Same helper as index.html's own copy — converts every <img> in a document to an
+// embedded base64 data: URI before html2canvas ever sees it (2026-09-09, per
+// Claire — the timing-wait fix alone didn't solve a real broken-logo bug in an
+// emailed IO PDF: Print, a plain browser render with no html2canvas involved,
+// showed the logo fine, only the html2canvas-based PDF path stayed broken, meaning
+// it was never a loading-speed race). html2canvas has to read the image's pixels
+// back off a canvas, which the browser blocks for a cross-origin image unless the
+// host sends real CORS headers — useCORS:true only asks for CORS access, it can't
+// create response headers a server never sends — and html2canvas also has its own
+// documented quirks rendering SVG logos specifically (a real possibility here,
+// since the logo uploader accepts SVG). A data: URI has no origin at all, so canvas
+// access is never restricted and the bytes are already fully decoded, sidestepping
+// both. Fails soft: an image that can't be fetched this way keeps its original src.
+async function inlineImagesAsDataUris(doc) {
+  const imgs = Array.from(doc.images);
+  await Promise.all(imgs.map(async img => {
+    const src = img.getAttribute('src');
+    if (!src || src.startsWith('data:')) return;
+    try {
+      const res = await fetch(src);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const dataUri = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      img.src = dataUri;
+    } catch (e) {
+      console.warn('Could not inline image as data URI, leaving original src:', src, e.message);
+    }
+  }));
+}
 async function generateAdminIntakePdfBlob(title, formDef, fields) {
   const color = '#1C9BD7';
   let sectionsHtml = '';
@@ -10606,6 +10641,11 @@ async function generateAdminIntakePdfBlob(title, formDef, fields) {
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
       </head><body style="margin:0">${html}</body></html>`);
     iframe.contentDocument.close();
+    // Inline any image as a data: URI before html2canvas ever sees it (2026-09-09) —
+    // see inlineImagesAsDataUris()'s own comment above for why the timing wait alone
+    // wasn't actually the fix (a CORS/canvas-tainting and SVG-rendering issue
+    // specific to html2canvas, not a loading-speed race).
+    await inlineImagesAsDataUris(iframe.contentDocument);
     // Wait for any images (and webfonts) to actually finish loading before capturing,
     // instead of a blind fixed delay — see index.html's generateIoPdfBlob() for the
     // real bug this fixes (2026-09-08, per Claire: a broken-image icon frozen into a
@@ -10778,6 +10818,11 @@ async function generateAdminRevisedIoPdfBlob(o) {
       <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
       </head><body style="margin:0">${html}</body></html>`);
     iframe.contentDocument.close();
+    // Inline any image as a data: URI before html2canvas ever sees it (2026-09-09) —
+    // see inlineImagesAsDataUris()'s own comment above for why the timing wait alone
+    // wasn't actually the fix (a CORS/canvas-tainting and SVG-rendering issue
+    // specific to html2canvas, not a loading-speed race).
+    await inlineImagesAsDataUris(iframe.contentDocument);
     // Wait for any images (and webfonts) to actually finish loading before capturing,
     // instead of a blind fixed delay — see index.html's generateIoPdfBlob() for the
     // real bug this fixes (2026-09-08, per Claire: a broken-image icon frozen into a
