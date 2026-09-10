@@ -2015,10 +2015,21 @@ async function loadStrategistDashboard() {
 // log or notes"). A URL of the form strategist/?line=<campaign_line_id>
 // jumps straight to that line's detail panel instead of leaving the admin
 // to hunt for it manually. Clears every filter that could otherwise hide
-// the line (scope/group/pacing/client search), and moves the viewed month
-// to the line's own flight_start so strategistLineActiveInMonth() doesn't
-// filter it out just because "today" happens to fall outside its flight —
-// same reasoning as picking the right status tab below.
+// the line (scope/group/pacing/client search). Only moves the viewed month
+// away from the current one when the line isn't active in the current
+// month, so strategistLineActiveInMonth() doesn't filter it out just
+// because "today" happens to fall outside its flight -- same reasoning as
+// picking the right status tab below.
+//
+// Bug fixed 2026-09-10 (Claire: "when I click the view in strategist portal
+// from the accounting portal it brings me to June 2026, it should bring me
+// to the current month") -- this used to unconditionally jump to
+// line.flight_start, so any line whose flight happened to start months ago
+// (nearly every ongoing campaign) landed on a stale month even though the
+// line was perfectly active today. Now it only falls back to flight_start
+// for the genuine edge case this was written for: a line whose flight
+// doesn't cover the current month at all (not yet started, or already
+// ended).
 function strategistOpenDeepLinkedLine() {
   const params = new URLSearchParams(window.location.search);
   const lineId = params.get('line');
@@ -2032,7 +2043,7 @@ function strategistOpenDeepLinkedLine() {
   strategistGroupFilter = '';
   strategistPacingFilter = '';
   strategistClientSearch = '';
-  if (line.flight_start) {
+  if (!strategistLineActiveInMonth(line, strategistCurrentMonth) && line.flight_start) {
     const [y, m] = line.flight_start.split('-').map(Number);
     strategistCurrentMonth = new Date(y, m - 1, 1);
   }

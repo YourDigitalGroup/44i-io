@@ -27768,3 +27768,34 @@ future date (status untouched), a paused line with a future date
 (status untouched — only Complete→Active is this sweep's inverse), and
 a completed line with the date set to exactly today (revives, `>=`
 comparison). All 6 produced the expected result. Not yet seen live.
+
+**Accounting→Strategist handoff always landed on a stale month
+(2026-09-10)**: Claire: "when I click the view in strategist portal
+from the accounting portal it brings me to June 2026, it should bring
+me to the current month." Root cause in
+`strategistOpenDeepLinkedLine()` (`strategist/index.html`, the
+`?line=<id>` deep link built by Accounting's "Open in Strategist
+Portal →" button): it unconditionally jumped the viewed month to the
+line's `flight_start`, regardless of whether the line was already
+active in the current month. That was written to handle one real edge
+case (a line whose flight doesn't cover today at all, so
+`strategistLineActiveInMonth()` would otherwise filter it out of view)
+but applied to every line — so any ordinary ongoing campaign whose
+flight simply started a while ago (nearly all of them) got yanked to
+its start month instead of staying on the current one. June 2026
+appears to be whichever line Claire happened to click's flight_start.
+
+Fixed by only falling back to `flight_start` when the line genuinely
+isn't active in the current month (not yet started, or already ended);
+otherwise the current month (already set earlier in the load sequence)
+is left alone.
+
+**Verified**: extracted inline `<script>` content, `node --check` — no
+syntax errors. Simulated the month-selection decision in Node against
+4 cases: an ongoing campaign whose flight started months ago and is
+still active today (now correctly stays on the current month — the
+actual reported bug), a campaign that hasn't started yet (falls back
+to its flight_start, the original intended behavior), a campaign whose
+flight already ended (falls back to its flight_start, same as before),
+and an open-ended campaign with no flight_end (stays on the current
+month). All 4 produced the expected month. Not yet seen live.
