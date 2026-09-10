@@ -8157,6 +8157,14 @@ function buildDraft() {
   const draft = {
     savedAt: Date.now(),                    // timestamp for 7-day expiry check
     serverDraftId: serverDraftId,           // links this local draft to its group_drafts row, once one exists
+    // selectedAeId/selectedClientId (2026-09-10, per Claire — resuming a draft
+    // left the "I am…"/"Returning Client?" pickers showing "New AE"/"New
+    // Client" even for a roster AE/returning client, which also meant
+    // selectedClientId stayed null and per-client pricing overrides never got
+    // re-applied). Restored by restorePickerSelections(), called from
+    // applyDraftFields() below.
+    selectedAeId: selectedAeId,
+    selectedClientId: selectedClientId,
     ae: document.getElementById('ae-name').value,
     aeTrello: document.getElementById('ae-trello')?.value || '',
     aeEmail: document.getElementById('ae-email')?.value || '',
@@ -8482,8 +8490,64 @@ function applyDraftFields(d) {
     }
     if (RADIO_GROUPS['vid-pkg'].some(x => selected[x])) setVidGroupDisabled('wm-vid-pkg', true);
     if (RADIO_GROUPS['wm-vid-pkg'].some(x => selected[x])) setVidGroupDisabled('vid-pkg', true);
+    // Not awaited (2026-09-10) — the AE/Client picker rosters may still be
+    // loading at this point (loadGroup() kicks them off async and isn't
+    // awaited at the DOMContentLoaded call site), so this polls briefly on
+    // its own and updates the pickers a moment later rather than blocking
+    // the rest of this already-synchronous restore.
+    restorePickerSelections(d);
     return true;
   } catch(e) { console.warn('Could not load draft:', e); return false; }
+}
+
+// restorePickerSelections (2026-09-10, per Claire — resuming a draft left the
+// "I am…"/"Returning Client?" pickers showing "New AE"/"New Client" even for
+// a roster AE/returning client, which people found confusing, and also meant
+// selectedClientId stayed null so a returning client's own custom pricing
+// never got re-applied). Deliberately does NOT call applyAePick()/
+// applyClientPick() directly -- those reset the name/business/contact fields
+// to the roster's OWN stored values, which would clobber whatever
+// applyDraftFields() just restored a moment ago (e.g. a market the AE typed
+// in after picking, but before the roster record itself was updated). Instead
+// this only sets the picker's visible selection + the underlying id + the
+// same side effects a real pick would trigger (pricing overrides, service-
+// history overlap checks, the multi-agent split panel), leaving every field
+// value exactly as the draft itself already set it.
+async function restorePickerSelections(d, attemptsLeft) {
+  if (attemptsLeft === undefined) attemptsLeft = 10;
+  const needAeRoster = d.selectedAeId && !AE_ROSTER.length;
+  const needClientRoster = d.selectedClientId && !CLIENT_ROSTER.length;
+  if ((needAeRoster || needClientRoster) && attemptsLeft > 0) {
+    setTimeout(() => restorePickerSelections(d, attemptsLeft - 1), 300);
+    return;
+  }
+  try {
+    if (d.selectedAeId && AE_ROSTER.some(a => a.id === d.selectedAeId)) {
+      selectedAeId = d.selectedAeId;
+      const picker = document.getElementById('ae-picker');
+      if (picker) picker.value = d.selectedAeId;
+      setAeNameLocked(true);
+    }
+    if (d.selectedClientId && CLIENT_ROSTER.some(c => c.id === d.selectedClientId)) {
+      selectedClientId = d.selectedClientId;
+      const picker = document.getElementById('client-picker');
+      if (picker) picker.value = d.selectedClientId;
+      setBizNameLocked(true);
+      reapplyPricingOverrides();
+      const c = CLIENT_ROSTER.find(x => x.id === d.selectedClientId);
+      if (c?.is_multi_agent) {
+        await loadAgentSplitRosters(d.selectedClientId);
+        setAgentSplitCardVisible(true);
+      }
+      try {
+        CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify({ p_client_id: d.selectedClientId }) }) || [];
+      } catch(e) {
+        console.warn('Could not load this client\'s service history — overlap warnings skipped:', e.message);
+        CLIENT_SERVICE_HISTORY = [];
+      }
+      recheckAllServiceOverlaps();
+    }
+  } catch(e) { console.warn('Could not restore picker selections:', e.message); }
 }
 
 // ── RESUMABLE GROUP DRAFTS (2026-09-10) ─────────────────────────────────
