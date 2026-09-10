@@ -7616,7 +7616,7 @@ function buildIoDocumentHtml() {
   const sigData = getSignatureData();
   const sigHtml = sigData.startsWith('typed:')
     ? `<div class="sig-typed">${esc(sigData.replace('typed:',''))}</div>`
-    : `<img src="${sigData}" class="sig-drawn"/>`;
+    : `<div class="sig-box"><img src="${sigData}" class="sig-drawn"/></div>`;
   const signerName = esc(document.getElementById('auth-name').value || '');
   const signerTitle = esc(document.getElementById('auth-title').value || '');
   const signedDate = document.getElementById('auth-date').value || ioDate;
@@ -7669,7 +7669,18 @@ function buildIoDocumentHtml() {
   /* Letterhead */
   .letterhead{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:3px solid ${color};margin-bottom:18px}
   .letterhead-left{display:flex;flex-direction:column;gap:6px}
-  .letterhead-left img{height:44px;max-width:240px;object-fit:contain;object-position:left center}
+  /* 2026-09-10, found live by Claire (a group logo looked "distorted" in the
+     downloaded/emailed PDF) -- confirmed via a local html2canvas render test
+     that html2canvas 1.4.1 does NOT honor object-fit:contain once max-width
+     clips an image's auto-computed width (any logo wider than roughly 5.5:1):
+     it stretches the image to fill the whole box instead of letterboxing it,
+     even though a plain browser (Print IO's window.print(), no html2canvas)
+     renders the exact same CSS correctly. Swapped to the pre-object-fit
+     wrapper technique instead -- a fixed-size box plus max-width/max-height:
+     100% on the img itself -- which the same test confirmed renders identically
+     (and correctly) in both the plain browser and html2canvas. */
+  .logo-box{height:44px;max-width:240px;display:flex;align-items:center;justify-content:flex-start}
+  .logo-box img{max-height:100%;max-width:100%;width:auto;height:auto;display:block}
   .group-name-text{font-size:18pt;font-weight:800;color:${color};letter-spacing:-0.01em}
   .group-contact{font-size:8.5pt;color:#6B7280;margin-top:4px;line-height:1.5}
   .letterhead-right{text-align:right}
@@ -7744,7 +7755,10 @@ function buildIoDocumentHtml() {
   .sig-grid{display:grid;grid-template-columns:70%;gap:24px;align-items:flex-end}
   .sig-label{font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6B7280;margin-bottom:8px}
   .sig-typed{font-family:'Dancing Script',cursive;font-size:26pt;color:#111;line-height:1;padding:4px 0}
-  .sig-drawn{height:54px;max-width:280px;object-fit:contain;object-position:left center;display:block}
+  /* see .logo-box's own comment above -- a wide/long drawn signature hits the
+     exact same html2canvas object-fit bug, so it gets the same wrapper fix. */
+  .sig-box{height:54px;max-width:280px;display:flex;align-items:center;justify-content:flex-start}
+  .sig-drawn{max-height:100%;max-width:100%;width:auto;height:auto;display:block}
   .sig-line-box{border-bottom:1.5px solid #374151;padding-bottom:4px;min-height:54px;display:flex;align-items:flex-end}
   .sig-info{margin-top:6px;font-size:9pt;color:#111827;font-weight:600}
   .sig-info-title{color:#6B7280;font-weight:400;font-size:8.5pt}
@@ -7754,7 +7768,7 @@ function buildIoDocumentHtml() {
 <!-- Letterhead -->
 <div class="letterhead">
   <div class="letterhead-left">
-    ${logo ? `<img src="${logo}" alt="${groupName}"/>` : `<div class="group-name-text">${groupName}</div>`}
+    ${logo ? `<div class="logo-box"><img src="${logo}" alt="${groupName}"/></div>` : `<div class="group-name-text">${groupName}</div>`}
     <div class="group-contact">
       ${logo ? `<strong>${groupName}</strong>` : ''}${amName ? `${logo ? '<br>' : ''}Account Manager: ${amName}` : ''}
     </div>

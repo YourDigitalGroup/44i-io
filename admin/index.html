@@ -11450,10 +11450,16 @@ async function generateAdminRevisedIoPdfBlob(o) {
   // the revised document still visibly ties back to the original signed
   // authorization instead of reading as a disconnected new summary.
   const sigData = o.signature_data || '';
+  // object-fit:contain instead of a fixed-size wrapper box would silently
+  // stretch a wide/long signature here (2026-09-10, found live via a
+  // distorted group logo in index.html's own PDF -- confirmed html2canvas
+  // 1.4.1 doesn't honor object-fit once max-width clips the image's
+  // auto-computed width; this template goes through the same html2canvas
+  // PDF pipeline). See index.html's .logo-box comment for the full story.
   const sigHtml = sigData.startsWith('typed:')
     ? `<div style="font-family:'Dancing Script',cursive;font-size:22pt;color:#111827">${esc(sigData.replace('typed:',''))}</div>`
     : sigData.startsWith('data:image')
-      ? `<img src="${esc(sigData)}" style="height:44px;max-width:220px;object-fit:contain"/>`
+      ? `<div style="height:44px;max-width:220px;display:flex;align-items:center"><img src="${esc(sigData)}" style="max-height:100%;max-width:100%;width:auto;height:auto;display:block"/></div>`
       : `<div style="font-size:9pt;color:#9CA3AF;font-style:italic">No signature on file</div>`;
 
   const html = `<div style="font-family:Montserrat,sans-serif;padding:26px 30px;width:690px">
