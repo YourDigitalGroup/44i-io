@@ -8404,6 +8404,29 @@ function applyDraftFields(d) {
         // Stored as ISO in selected{} — native <input type=date> takes that value directly.
         if (startInput && data.start_date) startInput.value = data.start_date;
         if (endInput && data.end_date) endInput.value = data.end_date;
+        // "Which one is it?" tactic variant (2026-09-10, per Claire — resuming a
+        // draft correctly restored selected[id].tacticVariant in memory, since
+        // buildDraft() saves the whole selected object, but the row's own
+        // .tactic-variant-field <select> was rendered once at page load, before
+        // any draft existed, and nothing here ever re-synced its visible value —
+        // so it looked blank/unpicked even though the real value was intact
+        // underneath. Submission itself was never affected (it reads
+        // selected[id].tacticVariant directly, not the DOM), but a blank-looking
+        // dropdown after "resuming" a draft reads as lost work.
+        const variantSelect = row.querySelector('.tactic-variant-field');
+        if (variantSelect && data.tacticVariant) variantSelect.value = data.tacticVariant;
+        // Whole Campaign Total / Custom by Month (2026-09-10, per Claire — same
+        // root cause as the variant dropdown above: selected[id].budgetMode/
+        // .monthPlan/.customizingMonths were all correctly restored in memory,
+        // but the budget-detail panel showing the Monthly-rate/Whole-campaign-
+        // total toggle and the per-month table is a SEPARATE row, only ever
+        // inserted into the DOM by ensureBudgetDetailOpen() -- never called
+        // during a draft restore, so it just never appeared, even though the
+        // data to populate it was already sitting in `selected[id]`.
+        // ensureBudgetDetailOpen() renders straight from selected[id]'s current
+        // state (already set above), so calling it now shows the exact toggle/
+        // table position the AE had before, with zero extra work.
+        if (CATALOG_ROWS[id]?.pricing_mode === 'spend') ensureBudgetDetailOpen(id);
       });
       if (d.spendValues) {
         Object.entries(d.spendValues).forEach(([id, val]) => {

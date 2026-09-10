@@ -26437,3 +26437,53 @@ with no `selectedAeId`/`selectedClientId` at all (a free-typed AE or a
 brand-new client) skips the picker-restore step entirely rather than
 doing anything unexpected. Not yet live-tested — needs Claire to
 re-test the exact resume scenario from her screenshot.
+
+## Draft resume also lost the tactic-variant pick and the budget-mode toggle (2026-09-10)
+
+Same session, same underlying class of bug as the AE/Client picker fix
+just above — found immediately after by testing resume more
+thoroughly. Claire: (1) a service's "Which one is it?" variant dropdown
+came back showing "— Which one? —" even though the service itself was
+still checked (screenshot showed Targeted Display's "Site Retargeting,
+Keyword, Contextual, or Category" row, checked, variant blank); and (2)
+a spend-priced service lost the Monthly-rate/Whole-campaign-total
+toggle and the Customize-by-month table entirely, showing only the
+plain flat spend box.
+
+**Root cause, confirmed by reading the actual render functions rather
+than guessing**: both of these UI pieces are dynamically built FROM
+`selected[id]`'s state — `.tactic-variant-field`'s selected `<option>`
+is picked at render time in the row-building code
+(`selected[r.id]?.tacticVariant === v`), and the Monthly-rate/Whole-
+campaign-total toggle + Customize-by-month table live in a wholly
+separate `<tr id="budget-detail-{id}">` row that only ever gets
+inserted by `ensureBudgetDetailOpen(id)` — already used elsewhere
+(`toggle()`/`updateSpend()`) to auto-reveal it the moment a spend-priced
+service is checked or gets an amount typed in. Neither of these ever
+gets called during a draft restore — the restore loop only sets
+`selected[id] = data` and patches a few known input elements by id,
+so `selected[id].tacticVariant`/`.budgetMode`/`.monthPlan`/
+`.customizingMonths` were all correctly sitting in memory (confirmed:
+submission itself was never affected, since it reads `selected[id]`
+directly, not the DOM) — the DOM pieces that VISUALLY expose them
+just never got (re)built for a row that already existed in the DOM
+before the draft loaded.
+
+**Fix**: in `applyDraftFields()`'s per-row restore loop, added two
+lines per restored row: set `.tactic-variant-field`'s `.value` directly
+from `data.tacticVariant` if present, and call the existing
+`ensureBudgetDetailOpen(id)` whenever `CATALOG_ROWS[id]?.pricing_mode
+=== 'spend'` — the exact same trigger condition `toggle()` already
+uses live, so restore behaves identically to a live pick. Since
+`ensureBudgetDetailOpen()` renders straight from `selected[id]`'s
+current state, no separate logic was needed to figure out which mode/
+table to show — it reconstructs the exact toggle position and month
+breakdown that was there before, for free.
+
+**Verified**: read `renderBudgetDetailRow()`/`ensureBudgetDetailOpen()`
+and the tactic-variant `<select>`'s render code directly to confirm the
+actual mechanism before writing the fix, rather than assuming. `node -e
+(new Function(...))` syntax check on the full file — no errors. Not yet
+live-tested — needs Claire to resume a draft with a variant picked and
+a spend-priced service in Whole-Campaign-Total or Custom-by-Month mode
+and confirm both come back correctly this time.
