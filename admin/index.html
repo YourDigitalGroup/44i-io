@@ -6397,10 +6397,16 @@ async function loadAdminReconcile() {
       const group = allGroups.find(g => g.id === gid);
       if (!group?.trello_board_id) { listsByGroup[gid] = []; return; }
       try {
+        // filter:'all' (2026-09-10, per the same gap that let a client's archived
+        // list go completely unfound on a real order -- see index.html's own fix)
+        // -- without this, Reconcile could never suggest an archived list as a
+        // match for a client missing its stored trello_list_id, the exact
+        // scenario it exists to catch. Same fix already applied in the "Import
+        // Clients from Trello" tool just below, for the same underlying reason.
         const res = await fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target: 'trello_get_lists', board_id: group.trello_board_id })
+          body: JSON.stringify({ target: 'trello_get_lists', board_id: group.trello_board_id, filter: 'all' })
         });
         const lists = await res.json();
         listsByGroup[gid] = Array.isArray(lists) ? lists : [];

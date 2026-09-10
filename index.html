@@ -6425,10 +6425,18 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         }
 
         if (!clientList) {
+          // filter:'all' (2026-09-10, found live -- Claire: "an order came in for a
+          // client that had an archived list and it didn't pull that list out or
+          // create a new list at all") -- without this, trello_get_lists only
+          // returns OPEN lists (Trello's own API default), so a client with no
+          // stored trello_list_id yet and an archived list could never be found
+          // here by name at all. Same fix, same reasoning as the "Import Clients
+          // from Trello" tool in admin/index.html, which needed it for the exact
+          // same underlying API behavior.
           const listsRes = await fetch(PROXY, {
             method: 'POST',
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_get_lists', board_id: selectedGroup.trello_board_id })
+            body: JSON.stringify({ target: 'trello_get_lists', board_id: selectedGroup.trello_board_id, filter: 'all' })
           });
           const allLists = await listsRes.json();
           if (!Array.isArray(allLists)) throw new Error('Could not fetch board lists');
@@ -6443,13 +6451,32 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             return n === bizNameLower || n.startsWith(bizNameLower + ' - ');
           });
           if (existingList) {
+            // Reopen-if-closed (2026-09-10, found live -- a client with an archived
+            // list and no stored trello_list_id yet got neither a reopened list nor
+            // a new one, just a card silently landing in a still-archived list, or
+            // possibly not even that if trello_get_lists only returns open lists in
+            // the first place). This branch never had the same closed-list check the
+            // stored-id path above already does -- same fix, same reasoning.
+            if (existingList.closed) {
+              const reopenPos = await computeFifthListPosition(selectedGroup.trello_board_id);
+              await fetch(PROXY, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+                body: JSON.stringify({ target: 'trello_update_list', list_id: existingList.id, closed: false, pos: reopenPos })
+              });
+              console.log('Reopened archived list found by name (no stored id yet):', existingList.name);
+            } else {
+              console.log('Found existing list by name (no stored id yet):', existingList.name);
+            }
             clientList = existingList;
-            console.log('Found existing list by name (no stored id yet):', clientList.name);
           } else {
             // New client list also goes to board slot 5 (2026-07-14, per Claire) — reuses
             // `allLists`, already fetched just above for the name search, instead of a
-            // second fetch.
-            const sortedForNew = [...allLists].sort((a, b) => a.pos - b.pos);
+            // second fetch. Filtered back down to just the OPEN lists (2026-09-10,
+            // alongside the filter:'all' fix above) -- allLists now includes archived
+            // ones too, which would otherwise skew "slot 5" to mean something
+            // different than what's actually visible on the board.
+            const sortedForNew = allLists.filter(l => !l.closed).sort((a, b) => a.pos - b.pos);
             const newListPos = sortedForNew.length >= 5
               ? (sortedForNew[3].pos + sortedForNew[4].pos) / 2
               : 'bottom';

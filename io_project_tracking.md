@@ -27252,3 +27252,79 @@ today, and I don't have live DB access to test it myself. Needs Claire
 to run it and confirm the Union county agents' cards now show up before
 this is considered actually fixed, not just reasoned-through. SQL in
 `scratchpad/fix-strategist-agent-split-trello-link.sql` — not yet run.
+
+## Archived client list never got reopened OR replaced (2026-09-10, same day)
+
+Claire: an order came in for a client with an archived Trello list, and
+it looked like the system neither reopened it nor created a new one.
+Traced `submitIO()`'s list-resolution logic (`index.html`) and found a
+real, KNOWN, previously-accepted gap, not a new regression: there are
+two ways it finds a client's list — by the client's **stored**
+`trello_list_id` (which already correctly checks `.closed` and reopens
+it), or by **searching board lists by name** (the fallback for a client
+with no stored id yet). The name-search fallback had two problems:
+1. It never checked `.closed` at all — an archived list found by name
+   would just get cards silently added to it while still archived.
+2. `trello_get_lists` was called with no filter, which (per Trello's
+   own API default, and per an existing comment on Admin's "Import
+   Clients from Trello" tool that already worked around this same
+   limitation for its own purpose) only returns OPEN lists — so an
+   archived list could never even be found by name in the first place,
+   sending it straight to "create a new list" instead.
+
+This exact limitation was already known and documented — the "Import
+Clients from Trello" tool's own 2026-07-17 comment says outright: "the
+live form's own name-search fallback only ever searches OPEN lists."
+It was accepted at the time with a manual Admin workaround, but that
+workaround (**Reconcile Lists**, the tool actually meant for "a client
+already has a row but is missing the trello_list_id link" — the exact
+scenario here) turned out to have the **same unfiltered `trello_get_lists`
+gap itself**, so it couldn't have surfaced this archived list as a
+suggested match either. There was effectively no working path to link
+an existing client's archived list back up at all except manually
+unarchiving it directly in Trello.
+
+**Fixed both**:
+- `index.html`'s name-search fallback now passes `filter: 'all'` and
+  reopens (`trello_update_list`, same "slot 5" repositioning as the
+  stored-id path) whenever the matched list is closed. The "new list
+  goes to slot 5" position math right after it was adjusted to filter
+  back down to open-only lists first, since `allLists` now includes
+  archived ones and would otherwise skew that calculation.
+- `admin/index.html`'s Reconcile Lists tool now also passes
+  `filter: 'all'`, so it can actually suggest an archived list as a
+  match going forward.
+
+**Not yet resolved**: Claire followed up that she found the actual
+card, but the list it's sitting in has no name at all — a different,
+stranger symptom than what the fixes above address (neither the
+reopen-in-place path nor a freshly created list should ever produce a
+list with a blank name, since `bizName` is a required Step 1 field).
+Asked her for specifics (which client, whether it's a multi-agent/
+Agent-County-Split client — that path resolves its list completely
+differently, via the submitting AE's own list rather than by client
+name — and whether the nameless list looks like the same archived one
+reopened, or a new one) before guessing further. **Not yet run**: no
+SQL involved in either of the two confirmed fixes above (pure frontend
+changes), just a redeploy.
+
+**Resolved (2026-09-10, later same day)**: Claire sent a screenshot of
+the actual card ("Mac's Spray Foam") — its own activity feed shows it
+correctly landed in a list named "Mac's Spray Foam - Ben Winpigler,"
+and a SQL check confirmed `clients.name` for this client is a normal,
+clean string (ruling out the whitespace-name-produces-a-blank-list-name
+theory). Also confirmed via grep that the only two `trello_update_list`
+calls anywhere in the codebase are today's own reopen-fix additions,
+neither of which ever touches a list's `name` — nothing in this app
+renames a list after creation.
+
+**Conclusion**: this order created a second, CORRECTLY-named list for
+Mac's Spray Foam, exactly matching the archived-list bug already found
+and fixed above (pre-fix code couldn't find the archived list via the
+unfiltered `trello_get_lists` call, so it fell through to creating a
+new one instead of reopening the original). The nameless list Claire
+separately found on the board is a different, likely pre-existing
+list unrelated to today's fixes — asked her to check whether it's the
+client's old archived one and decide whether to rename/consolidate it
+or just leave it archived now that "Mac's Spray Foam - Ben Winpigler"
+is the client's working list going forward.
