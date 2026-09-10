@@ -33,9 +33,14 @@
      to apply to each tag, which differs between the two. This gives both an
      identical, explicit hover state regardless of tag. background:#fff is
      set here (not inline anymore) so this rule doesn't need !important to
-     override it on hover.  */
-  .pill-outline-link{background:#fff;cursor:pointer;text-decoration:none;display:inline-block;transition:background-color .12s ease}
-  .pill-outline-link:hover{background:var(--light)}
+     override it on hover. appearance/box-shadow/outline reset (2026-09-10,
+     found live via a screenshot -- the background fix above wasn't enough:
+     <button> still picked up its browser/OS's own native hover shadow,
+     which <a> never had to begin with) -- explicitly zeroed on both states
+     so neither element can pick up any native chrome, only this rule's own
+     background tint. */
+  .pill-outline-link{background:#fff;cursor:pointer;text-decoration:none;display:inline-block;transition:background-color .12s ease;-webkit-appearance:none;appearance:none;outline:none;box-shadow:none}
+  .pill-outline-link:hover{background:var(--light);box-shadow:none}
 </style>
 </head>
 <body>

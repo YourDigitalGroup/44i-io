@@ -27592,3 +27592,53 @@ each site's own padding/font-size differences intact (only the
 **Verified**: `node -e (new Function(...))` syntax check — no errors;
 confirmed via grep that all 4 occurrences got the class consistently.
 Purely visual/CSS, no SQL, not yet seen live.
+
+**Follow-up (2026-09-10, same day)**: the background fix alone wasn't
+enough — Claire's screenshot showed "View Order" still picking up a
+native browser/OS hover shadow `<a>` never had to begin with (the
+`<button>`'s own default chrome, untouched by the earlier fix). Added
+an explicit `appearance:none`/`box-shadow:none`/`outline:none` reset to
+`.pill-outline-link` in both its base and `:hover` states, so neither
+element can show any native chrome beyond this class's own background
+tint. Same file, no new call sites.
+
+## STMM's Additional Card Member never actually got saved (2026-09-10, same day)
+
+Claire: added someone to STMM's Additional Card Member field, but
+they never showed up on any Trello cards. Checked STMM's stored group
+row directly rather than guessing at the Trello-side mechanics again —
+`additional_card_trello_handle` is `null`. So the value was never
+persisted at all, regardless of anything on the card-tagging side.
+
+Most likely explanation: this field became a dropdown (picked from the
+group's own AE roster, per Claire's later request) after it was first
+built as free text. If STMM's Digital Campaign Manager was never added
+to STMM's own AE roster with a Trello handle on file, the dropdown
+would show only "— None —" — nothing to actually select, even if
+Claire tried. Asked her to check the AE tab for STMM and confirm
+whether that person is listed there with a handle; if not, add them
+there first, then pick them from the Additional Card Member dropdown.
+
+**Actual root cause, confirmed**: not the AE roster at all — a real bug
+of my own from when this feature was first built. `adminSaveGroup()`
+doesn't write to `groups` directly; it goes through
+`admin_save_group(p_name, p_pw, p_group_id, p_data)`, a `SECURITY
+DEFINER` RPC with its own explicit column list for both the `INSERT`
+and the `UPDATE` — the exact same shape as `strategist_save_campaign_line`'s
+`trello_card_url` gap found earlier today. When
+`additional_card_trello_handle`/`additional_card_member_role` were
+added to the frontend form and its payload, they were never added to
+this RPC's own column list, so the picker/save UI worked perfectly end
+to end and the value was silently dropped on the way into the
+database. Claire picked the DCM correctly the whole time — it just
+never had anywhere to land.
+
+**Fix**: both fields added to `admin_save_group`'s `INSERT` and
+`UPDATE`, mirroring `am_trello_handle`'s exact treatment right next to
+them. SQL in
+`scratchpad/fix-admin-save-group-additional-card-member.sql` — not yet
+run. Once run, Claire should be able to just re-pick the DCM from
+STMM's Additional Card Member dropdown and save — no AE-roster
+prerequisite needed after all, assuming they were already selectable in
+the dropdown (which the earlier root-cause theory would still require
+separately, if it turns out they weren't in the roster to begin with).
