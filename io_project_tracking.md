@@ -26289,3 +26289,76 @@ with mock rows (including a null `ae_name`) to confirm correct
 24h/7d/30d counts and safe fallback display. Not yet live-tested — no
 draft saves exist in the table yet since this hasn't been run against
 Supabase.
+
+## Group-level server-side drafts, so a closed tab doesn't lose an order (2026-09-10)
+
+Claire's AMs got nervous about the existing draft behavior — the local
+per-tab draft mechanism (unchanged since the earlier session that built
+it) means closing a tab, not just the browser, loses access to that
+draft permanently (confirmed exactly this in the 2026-09-09 AE
+walkthrough work). Ask: make drafts recoverable without requiring
+AEs/groups to log in (the public form has no auth at all, by design —
+groups reach it via an iframe on their own resource page).
+
+Scoped carefully before building, since a naive "one shared draft per
+group" would trade one problem for a worse one: today, two people
+working on two different orders for the same group at once (rare, but
+Claire confirmed possible) don't conflict, since each tab has its own
+local draft. A single shared per-group draft would make the SECOND
+person's save silently overwrite the FIRST person's in-progress work —
+strictly worse than what exists today. Confirmed with Claire: support a
+**list** of in-progress drafts per group (not just one), and prompt to
+resume on page load rather than requiring a manual lookup.
+
+**Built as an ADDITIONAL layer, not a replacement** — the existing local
+per-tab draft (`localStorage`/`sessionStorage`, unique per device+tab)
+is completely unchanged and still does instant same-tab refresh
+restores exactly as before. On top of it:
+
+- New table `group_drafts` (group_id, label, ae_name, draft_data jsonb,
+  created_at/updated_at) — RLS enabled and forced, zero policies, same
+  as everywhere else. `save_group_draft`/`get_group_drafts`/
+  `delete_group_draft` have no credential check at all, matching the
+  existing precedent set by `get_group_clients` for public-form-facing
+  RPCs (this form has no login to check against). `get_group_drafts`
+  also opportunistically purges anything older than 7 days on every
+  read — same TTL the local draft already used, no separate cleanup job
+  needed.
+- `index.html`: a new `serverDraftId` links one tab's local draft to its
+  row in `group_drafts` once one exists, so repeat saves update the
+  same row instead of creating duplicates. The explicit "💾 Save Draft"
+  button now syncs to the server immediately after its existing local
+  save; the silent per-keystroke `autoSaveDraft()` scheduces the same
+  sync but **debounced 4 seconds** — syncing on every keystroke would
+  be pointless network chatter, and only the deliberate button click
+  needs to feel instant. Label shown on the resume list is the business
+  name if filled in, else "Untitled draft." `clearDraft()` (called on
+  successful submission) now also deletes the server row, so a
+  completed order stops showing up as "in progress."
+- `loadDraft()` refactored: the actual field-by-field restore logic
+  (previously loadDraft's whole body) was factored into a new
+  `applyDraftFields(d)`, so a same-tab local refresh and a resumed
+  SERVER draft go through the exact identical, already-battle-tested
+  restore path — no second, divergent implementation to maintain.
+- New "📋 In-Progress Orders for This Group" banner at the top of Step
+  1, hidden by default. `checkResumableGroupDrafts()` runs only when
+  this tab's own local draft restore found nothing (so a normal
+  same-tab refresh doesn't ALSO show this prompt on top of its own
+  instant restore) — retries briefly if `selectedGroup` hasn't resolved
+  yet, since `loadGroup()` is async and not awaited at the call site.
+  Lists each draft (label, who started it, relative "last saved"
+  time) with a Resume button, or "Start a New Order Instead" to
+  dismiss.
+
+**Verified**: syntax-checked the full file after each change. Simulated
+the resume-list rendering and the draft-merge logic
+(`{...draft_data, serverDraftId: realId}`, ensuring the real database id
+always wins over whatever was baked into the saved JSON) in a Node
+one-liner with mock data — correct output for both a named and an
+unnamed/anonymous draft. Checked the new HTML markup's own div-tag
+balance in isolation (4 opens/4 closes) after noticing the whole file
+has a long-standing, pre-existing 6-tag imbalance unrelated to this
+change (confirmed via `git show HEAD` on the prior commit — same gap
+existed before today's edits, not introduced by them). Not yet
+live-tested — needs Claire to run the SQL, then have two different
+tabs/devices actually save and resume a draft for the same group.

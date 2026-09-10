@@ -831,6 +831,19 @@ select.qty-field{background-image:none;padding-right:3px}
 
   <!-- STEP 1: Client Info -->
   <div id="page-1">
+    <!-- Resumable drafts (2026-09-10, per Claire — AMs worried a closed tab loses
+         work, since drafts were purely local to one browser tab). Shown only when
+         get_group_drafts() finds at least one in-progress order saved for this
+         GROUP (not tied to any one AE/tab/device) -- see checkResumableGroupDrafts(). -->
+    <div id="resume-drafts-card" class="card" style="display:none;border:1.5px solid var(--accent)">
+      <div class="card-head"><h3>📋 In-Progress Orders for This Group</h3></div>
+      <div style="padding:16px">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Someone already started one or more orders for this group. Pick one to keep working on it, or start a brand new one below.</p>
+        <div id="resume-drafts-list"></div>
+        <button type="button" class="btn btn-secondary" style="margin-top:10px" onclick="dismissResumableDrafts()">Start a New Order Instead</button>
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-head"><h3>Group & Account Info</h3></div>
       <!-- Stacked, not cols2 (2026-08-07, per Claire — reported cramped specifically
@@ -1412,6 +1425,20 @@ function makeIoNumber(ioDateStr, bizNameRaw, suffix) {
 //   - On submit, this tab's draft is deleted.
 const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DRAFT_KEY_PREFIX = 'io_draft_v2:';
+
+// ── SERVER-SIDE GROUP DRAFTS (2026-09-10, per Claire — AMs worried a closed tab
+// loses work, since drafts above are purely local to one browser tab) ─────────
+// This is a SEPARATE, additional layer on top of the local per-tab draft above,
+// not a replacement — the local draft still exists for instant same-tab refresh
+// restores. Once a draft is saved (button click, or the debounced autosave
+// below), it also gets pushed to the `group_drafts` table, keyed by GROUP (not
+// AE/tab/device), with no login required — matches how the rest of this public
+// form already works. Anyone opening that group's link sees any in-progress
+// drafts and can resume one, so closing a tab (even switching devices) no
+// longer loses the work. serverDraftId links this tab's local draft to its
+// server row so repeat saves update in place instead of creating duplicates.
+let serverDraftId = null;
+let draftServerSyncTimer = null;
 
 function getOrCreateDeviceId() {
   try {
@@ -8127,6 +8154,7 @@ async function generateIoPdfBlob() {
 function buildDraft() {
   const draft = {
     savedAt: Date.now(),                    // timestamp for 7-day expiry check
+    serverDraftId: serverDraftId,           // links this local draft to its group_drafts row, once one exists
     ae: document.getElementById('ae-name').value,
     aeTrello: document.getElementById('ae-trello')?.value || '',
     aeEmail: document.getElementById('ae-email')?.value || '',
@@ -8186,7 +8214,8 @@ function writeDraft(draft) {
 
 function saveDraft() {
   syncRowInputs(); // pull per-row dates/Notes/Spend into selected{} + derived campaign summary before saving
-  writeDraft(buildDraft());
+  const d = buildDraft();
+  writeDraft(d);
   showToast('Draft saved!');
   // Fire-and-forget usage signal (2026-09-10, per Claire — wondering whether AEs
   // are actually using the new form) -- logs only that a save happened, plus
@@ -8203,6 +8232,11 @@ function saveDraft() {
       }),
     }).catch(() => {});
   } catch(e) { /* silent — see comment above */ }
+  // An explicit Save Draft click pushes to the server IMMEDIATELY, not
+  // debounced (2026-09-10) — someone hitting this button is deliberately
+  // asking for their work to be safe right now, unlike the silent per-
+  // keystroke autosave below, which batches instead.
+  syncDraftToServer(d);
 }
 
 // Auto-save silently (no toast) on every service or field change
@@ -8211,13 +8245,74 @@ function autoSaveDraft() {
     const d = buildDraft();
     // If the form is effectively empty, remove the draft instead of storing a blank one
     const hasContent = d.ae || d.biz || d.contact || d.email || Object.keys(d.selected).length > 0;
-    if (hasContent) writeDraft(d);
-    else localStorage.removeItem(getDraftKey());
+    if (hasContent) {
+      writeDraft(d);
+      scheduleDraftServerSync(d);
+    } else {
+      localStorage.removeItem(getDraftKey());
+    }
   } catch(e) { /* silent */ }
 }
 
-function loadDraft() {
+// ── SERVER DRAFT SYNC (2026-09-10) ──────────────────────────────────────
+// Debounced (autosave fires on every keystroke/checkbox change — pushing to
+// the server that often would be excessive and pointless network chatter);
+// saveDraft() above bypasses this and syncs right away since a deliberate
+// button click deserves an immediate save, not a several-second wait.
+function scheduleDraftServerSync(draft) {
+  if (draftServerSyncTimer) clearTimeout(draftServerSyncTimer);
+  draftServerSyncTimer = setTimeout(() => syncDraftToServer(draft), 4000);
+}
+
+async function syncDraftToServer(draft) {
+  // No group context yet (still on the dev picker, or the group failed to
+  // resolve) — nothing sensible to key a server draft by, so skip entirely
+  // rather than writing an orphaned row nobody could ever find again.
+  if (isDevPreviewMode || !selectedGroup?.id) return;
   try {
+    const label = (draft.biz || '').trim() || 'Untitled draft';
+    const result = await sb('rpc/save_group_draft', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_group_id: selectedGroup.id,
+        p_draft_id: serverDraftId,
+        p_label: label,
+        p_ae_name: draft.ae || null,
+        p_draft_data: draft,
+      }),
+    });
+    // First successful sync for this tab's draft — result is the new row's id.
+    // Stamped into BOTH the in-memory id and the local draft copy so every
+    // save after this one (including the next autosave) updates the same
+    // server row instead of creating a new one each time.
+    if (result && !serverDraftId) {
+      serverDraftId = result;
+      draft.serverDraftId = serverDraftId;
+      writeDraft(draft);
+    }
+  } catch(e) {
+    // Fails soft, deliberately — the local draft above already saved
+    // successfully regardless of whether the server sync works. console.warn
+    // only, no user-facing error: an AE mid-form shouldn't see a scary
+    // message over a background convenience feature failing once.
+    console.warn('Could not sync draft to server:', e.message);
+  }
+}
+
+// externalDraft (2026-09-10): when resuming a draft picked from the server-side
+// group-drafts list (a different tab or device's work), the caller passes the
+// draft object straight from get_group_drafts instead of reading localStorage.
+// Every restore step below is identical either way — this only changes where
+// `d` comes from, so a resumed server draft goes through the exact same
+// battle-tested field-by-field restore as a same-tab refresh.
+function loadDraft(externalDraft) {
+  try {
+    if (externalDraft) {
+      const d = externalDraft;
+      serverDraftId = d.serverDraftId || serverDraftId;
+      writeDraft(d); // mirror it into THIS tab's own local key going forward
+      return applyDraftFields(d);
+    }
     // FIXED (2026-08-07, per Claire — a refresh on the dev/testing link kept
     // bringing back old test data on Step 1): the dev picker link has no real
     // io_slug, so getDraftKey() falls back to the same 'nogroup' slug every time,
@@ -8243,6 +8338,16 @@ function loadDraft() {
       localStorage.removeItem(getDraftKey());
       return false;
     }
+    serverDraftId = d.serverDraftId || serverDraftId;
+    return applyDraftFields(d);
+  } catch(e) { console.warn('Could not load draft:', e); return false; }
+}
+
+// Factored out of loadDraft() (2026-09-10) so a same-tab refresh and a resumed
+// server draft share this exact same field-restore logic verbatim, rather than
+// risking the two paths drifting apart over time.
+function applyDraftFields(d) {
+  try {
 
     const set = (id, val) => { const el = document.getElementById(id); if(el && val) el.value = val; };
     set('ae-name', d.ae);
@@ -8379,6 +8484,67 @@ function loadDraft() {
   } catch(e) { console.warn('Could not load draft:', e); return false; }
 }
 
+// ── RESUMABLE GROUP DRAFTS (2026-09-10) ─────────────────────────────────
+// Only runs when THIS tab found no local draft of its own to restore (see the
+// DOMContentLoaded init below) -- a normal same-tab refresh already works via
+// loadDraft()'s local path and shouldn't also show this prompt on top of it.
+let resumableGroupDrafts = [];
+async function checkResumableGroupDrafts(attemptsLeft) {
+  if (attemptsLeft === undefined) attemptsLeft = 8;
+  if (isDevPreviewMode) return;
+  if (!selectedGroup?.id) {
+    // loadGroup() is async and not awaited at the call site — selectedGroup
+    // may not be resolved yet the first time this runs. Retries briefly
+    // (up to ~2.4s total) rather than silently giving up on a slow load.
+    if (attemptsLeft > 0) setTimeout(() => checkResumableGroupDrafts(attemptsLeft - 1), 300);
+    return;
+  }
+  try {
+    const drafts = await sb('rpc/get_group_drafts', {
+      method: 'POST',
+      body: JSON.stringify({ p_group_id: selectedGroup.id }),
+    }) || [];
+    if (!drafts.length) return;
+    resumableGroupDrafts = drafts;
+    renderResumableDraftsList(drafts);
+    document.getElementById('resume-drafts-card').style.display = 'block';
+  } catch(e) {
+    console.warn('Could not check for resumable drafts:', e.message);
+  }
+}
+
+function renderResumableDraftsList(drafts) {
+  const fmtWhen = s => {
+    const diffMs = Date.now() - new Date(s).getTime();
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 60) return `${mins} minute${mins===1?'':'s'} ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs} hour${hrs===1?'':'s'} ago`;
+    const days = Math.round(hrs / 24);
+    return `${days} day${days===1?'':'s'} ago`;
+  };
+  document.getElementById('resume-drafts-list').innerHTML = drafts.map(d => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:#fff">
+      <div>
+        <div style="font-weight:600;font-size:13px">${esc(d.label || 'Untitled draft')}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${d.ae_name ? 'Started by ' + esc(d.ae_name) + ' — ' : ''}last saved ${fmtWhen(d.updated_at)}</div>
+      </div>
+      <button type="button" class="btn btn-primary" onclick="resumeGroupDraft('${esc(d.id)}')">Resume</button>
+    </div>`).join('');
+}
+
+function resumeGroupDraft(draftId) {
+  const d = resumableGroupDrafts.find(x => x.id === draftId);
+  if (!d) return;
+  loadDraft(d.draft_data ? { ...d.draft_data, serverDraftId: d.id } : { serverDraftId: d.id });
+  document.getElementById('resume-drafts-card').style.display = 'none';
+  showToast('Draft resumed!');
+}
+
+function dismissResumableDrafts() {
+  document.getElementById('resume-drafts-card').style.display = 'none';
+}
+
 function clearDraft() {
   try {
     // Remove the draft for THIS device + slug.
@@ -8387,6 +8553,19 @@ function clearDraft() {
     localStorage.removeItem('io_draft');
     localStorage.removeItem('io_submitted_at');
   } catch(e) { /* silent */ }
+  // Clean up this draft's server row too (2026-09-10) — an order that's just
+  // been submitted shouldn't keep showing up as a resumable "in-progress
+  // order" for the group. Fire-and-forget, same reasoning as syncDraftToServer:
+  // the real submission already succeeded by the time this runs, so a failure
+  // here is just a stale row left behind, not a data-loss risk.
+  if (serverDraftId) {
+    const idToDelete = serverDraftId;
+    serverDraftId = null;
+    sb('rpc/delete_group_draft', {
+      method: 'POST',
+      body: JSON.stringify({ p_draft_id: idToDelete, p_group_id: selectedGroup?.id || null }),
+    }).catch(e => console.warn('Could not delete server draft:', e.message));
+  }
 }
 
 function resetForm() {
@@ -9445,7 +9624,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadGroup();
   loadLegalContent();
   purgeExpiredDrafts();
-  setTimeout(loadDraft, 600);
+  // Only offer to resume a SERVER-side group draft if this tab's own local
+  // draft restore found nothing (2026-09-10) — a normal same-tab refresh
+  // already works via the local path and shouldn't also show the resume
+  // prompt on top of it.
+  setTimeout(() => {
+    const restoredLocally = loadDraft();
+    if (!restoredLocally) checkResumableGroupDrafts();
+  }, 600);
 });
 </script>
 </body>
