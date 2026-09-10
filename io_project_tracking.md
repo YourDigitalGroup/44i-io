@@ -26246,3 +26246,46 @@ This closes out the "clean slate for real orders" request — every place
 a hidden client could surface (Strategist, Accounting, Admin's Orders/
 Clients/Pending Requests, and the public form's own client picker) now
 respects the same `hidden` flag.
+
+## Added draft-save activity visibility for Admin (2026-09-10)
+
+Claire noticed zero real orders came in the day after groups got access
+and wondered aloud whether people might be scared to use the new
+system. Rather than guess, flagged a real limitation first: drafts are
+100% client-side (`localStorage`/`sessionStorage`) — nothing about them
+ever reached Supabase, so there was no data at all to check. Scoped
+with Claire what to add: just a count/log of Save Draft clicks (group,
+AE name, timestamp) — explicitly NOT the draft's actual content, and
+NOT tracking plain form opens (just deliberate saves).
+
+**Built**:
+- New table `draft_save_log` (group_id, group_name, ae_name,
+  created_at) — RLS enabled and forced, zero policies, matching this
+  project's universal pattern; all access goes through two new
+  functions.
+- `log_draft_save(p_group_id, p_group_name, p_ae_name)` — no
+  credential check, since the public IO form itself has none to send
+  (matches `get_group_clients`'s existing "no password check by
+  design" precedent for public-form-facing RPCs).
+- `admin_get_draft_save_log(p_name, p_pw, p_days)` — normal
+  `admin_resolve_role()`-gated read, defaults to the last 30 days.
+- `saveDraft()` (`index.html`, the actual "💾 Save Draft" button
+  handler — NOT the silent `autoSaveDraft()` that fires on every
+  keystroke, which would have been far too noisy) now fires the log
+  call after the real draft write completes, wrapped so any failure
+  there can never block or delay the actual save.
+- Admin: a collapsed-by-default "📝 Draft Activity" panel above the
+  Orders tab's Submitted Orders list — 24h/7-day/30-day counts plus a
+  table of the 50 most recent saves (when, group, AE). Loads only on
+  first expand, not every Orders-tab visit.
+
+**Verified**: syntax-checked both files. Caught and fixed a real bug
+before shipping — the render code initially called `fmtDate()`,
+assuming it was a shared helper, but it's actually scoped locally
+inside `renderAdminOrders()`/`renderAdminClients()` and unreachable
+from a new top-level function; added a local `fmtWhen()` formatter
+instead. Simulated the stats/table-building logic in a Node one-liner
+with mock rows (including a null `ae_name`) to confirm correct
+24h/7d/30d counts and safe fallback display. Not yet live-tested — no
+draft saves exist in the table yet since this hasn't been run against
+Supabase.

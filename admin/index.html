@@ -315,6 +315,17 @@
 
       <!-- ── SECTION: Orders ── -->
       <div id="section-orders" role="tabpanel" aria-labelledby="section-tab-orders" tabindex="0" style="display:none;flex-direction:column">
+        <!-- Draft Activity (2026-09-10, per Claire -- wondering whether AEs are
+             actually using the new form). Drafts themselves stay entirely
+             client-side; this only shows that a Save Draft click happened,
+             plus group/AE, never the draft's own content. -->
+        <div style="margin-bottom:16px;order:0;background:var(--card);border-radius:18px;box-shadow:var(--shadow);padding:16px 20px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <p style="font-size:13px;font-weight:700;color:var(--text)">📝 Draft Activity</p>
+            <button onclick="toggleDraftActivityPanel()" class="btn-quiet-green" id="draft-activity-toggle-btn">Show</button>
+          </div>
+          <div id="draft-activity-body" style="display:none;margin-top:12px"></div>
+        </div>
         <div style="margin-bottom:16px;order:2">
           <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Submitted Orders</p>
 
@@ -9232,6 +9243,60 @@ async function loadAdminOrders() {
     renderAdminOrders();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading orders: ${e.message}</p>`;
+  }
+}
+
+// ── DRAFT ACTIVITY (2026-09-10, per Claire) ──────────────────────────────
+// Collapsed by default -- loaded on first expand rather than every Orders-tab
+// visit, since this is a "check in on it occasionally" panel, not something
+// that needs to be current every time the tab opens.
+let draftActivityLoaded = false;
+function toggleDraftActivityPanel() {
+  const body = document.getElementById('draft-activity-body');
+  const btn = document.getElementById('draft-activity-toggle-btn');
+  const showing = body.style.display !== 'none';
+  body.style.display = showing ? 'none' : 'block';
+  btn.textContent = showing ? 'Show' : 'Hide';
+  if (!showing && !draftActivityLoaded) loadDraftActivity();
+}
+
+async function loadDraftActivity() {
+  const body = document.getElementById('draft-activity-body');
+  body.innerHTML = '<p style="color:var(--muted);font-size:12px">Loading…</p>';
+  try {
+    const rows = await sb('rpc/admin_get_draft_save_log', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_days: 30 })
+    }) || [];
+    draftActivityLoaded = true;
+    const now = Date.now();
+    const within = days => rows.filter(r => (now - new Date(r.created_at).getTime()) <= days * 86400000).length;
+    // Local formatter -- fmtDate elsewhere in this file is scoped inside
+    // renderAdminOrders()/renderAdminClients(), not reachable from here.
+    const fmtWhen = s => s ? new Date(s).toLocaleString('en-US', {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}) : '—';
+    const stats = `<div style="display:flex;gap:24px;margin-bottom:14px">
+      <div><div style="font-size:20px;font-weight:700;color:var(--text)">${within(1)}</div><div style="font-size:11px;color:var(--muted)">Last 24 hours</div></div>
+      <div><div style="font-size:20px;font-weight:700;color:var(--text)">${within(7)}</div><div style="font-size:11px;color:var(--muted)">Last 7 days</div></div>
+      <div><div style="font-size:20px;font-weight:700;color:var(--text)">${rows.length}</div><div style="font-size:11px;color:var(--muted)">Last 30 days</div></div>
+    </div>`;
+    if (!rows.length) {
+      body.innerHTML = stats + '<p style="color:var(--muted);font-size:12px">No draft saves recorded yet.</p>';
+      return;
+    }
+    const listRows = rows.slice(0, 50).map(r => `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:6px 10px;font-size:12px;color:var(--muted)">${fmtWhen(r.created_at)}</td>
+      <td style="padding:6px 10px;font-size:12px">${esc(r.group_name || '—')}</td>
+      <td style="padding:6px 10px;font-size:12px">${esc(r.ae_name || '—')}</td>
+    </tr>`).join('');
+    body.innerHTML = stats + `<table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:var(--light)">
+        <th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">When</th>
+        <th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">Group</th>
+        <th style="padding:6px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase">AE</th>
+      </tr></thead><tbody>${listRows}</tbody></table>
+      ${rows.length > 50 ? `<p style="font-size:11px;color:var(--muted);margin-top:8px">Showing the most recent 50 of ${rows.length}.</p>` : ''}`;
+  } catch(e) {
+    body.innerHTML = `<p style="color:#EF4444;font-size:12px">Error loading draft activity: ${esc(e.message)}</p>`;
   }
 }
 
