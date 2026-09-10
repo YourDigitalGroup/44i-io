@@ -2750,6 +2750,7 @@ function renderSetupPanel(l) {
         <h3 style="display:inline;margin:0;font-size:13.5px;font-weight:700"><span aria-hidden="true" style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</h3>
         <div style="display:flex;align-items:center;gap:8px">
           ${l.flight_start ? `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--muted);white-space:nowrap">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</span>` : ''}
+          ${l.last_renewed_at ? `<span title="Renewed ${esc(new Date(l.last_renewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}${l.last_renewed_previous_end_date ? ` — previously ended ${esc(new Date(l.last_renewed_previous_end_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}` : ''}" style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#DBEAFE;color:#1E40AF;white-space:nowrap">↻ Renewed</span>` : ''}
           ${strategistBudgetModePillHtml(l)}
           ${strategistSetupBlockerPill(l)}
           ${l.order_id ? `<button onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">View Order</button>` : ''}
@@ -3425,7 +3426,7 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px"><strong>${esc(strategistDisplayClientName(l))}</strong></td>
         <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}${cpmOverrideBadgeHtml(l)}</td>
         ${platformCellHtml}
-        <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</td>
+        <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}${l.last_renewed_at ? ` <span title="Renewed ${esc(new Date(l.last_renewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}${l.last_renewed_previous_end_date ? ` — previously ended ${esc(new Date(l.last_renewed_previous_end_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}` : ''}" style="font-size:9px;font-weight:700;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;white-space:nowrap;margin-left:4px">↻</span>` : ''}</td>
         ${metricsCellsHtml}
         <td style="padding:9px 10px">${logCount} ${logCount === 1 ? 'entry' : 'entries'}</td>
         <td style="padding:9px 10px;text-align:center" title="${esc(l.setup_notes || '')}">${l.setup_notes ? '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--accent-dark)"></span>' : '<span style="color:var(--muted)">—</span>'}</td>
