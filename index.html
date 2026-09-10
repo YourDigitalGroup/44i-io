@@ -8181,6 +8181,21 @@ function buildDraft() {
     campaignEnd: document.getElementById('campaign-end').value,
     campaignNotes: document.getElementById('campaign-notes').value,
     specialInstructions: document.getElementById('special-instructions')?.value || '',
+    // ae-market (2026-09-10, found during a full pass over draft restore, per
+    // Claire — was never captured here at all, a genuine data-loss gap, not
+    // just a visual one: this field is specifically meant for "the roster's
+    // market is missing or wrong, type the real one," so losing it on any
+    // restore defeats its own purpose).
+    aeMarket: document.getElementById('ae-market')?.value || '',
+    // Agent/County Split (2026-09-10, same full pass — multi-agent clients
+    // like MS Farm Bureau have a whole separate table of per-agent/county
+    // service rows that lived ONLY in these three globals, never saved here
+    // at all. Restored in restorePickerSelections(), which has to run this
+    // AFTER loadAgentSplitRosters() -- that function unconditionally resets
+    // all three back to a single blank row as part of its own normal job.
+    agentSplitRows: agentSplitRows,
+    agentSplitCountyId: agentSplitCountyId,
+    agentSplitCountyNewName: agentSplitCountyNewName,
     // KOC booking state (Step 3) — so a refresh doesn't lose the scheduled call
     kocDate: document.getElementById('koc-date')?.value || '',
     kocTime: document.getElementById('koc-time')?.value || '',
@@ -8363,6 +8378,7 @@ function applyDraftFields(d) {
     set('ae-name', d.ae);
     set('ae-trello', d.aeTrello);
     set('ae-email', d.aeEmail);
+    set('ae-market', d.aeMarket);
     set('biz-name', d.biz);
     set('contact-name', d.contact);
     set('contact-phone', d.phone);
@@ -8561,6 +8577,19 @@ async function restorePickerSelections(d, attemptsLeft) {
       if (c?.is_multi_agent) {
         await loadAgentSplitRosters(d.selectedClientId);
         setAgentSplitCardVisible(true);
+        // Restore the actual saved split table AFTER loadAgentSplitRosters()
+        // above, since that function unconditionally resets agentSplitRows/
+        // agentSplitCountyId/agentSplitCountyNewName back to a single blank
+        // row as part of its own normal job (loading a fresh client's rosters
+        // always starts that client's split table over) -- restoring before
+        // it ran would just get immediately wiped.
+        if (d.agentSplitRows?.length) {
+          agentSplitRows = d.agentSplitRows;
+          agentSplitCountyId = d.agentSplitCountyId || null;
+          agentSplitCountyNewName = d.agentSplitCountyNewName || '';
+          renderAgentSplitCountyPicker();
+          renderAgentSplitRows();
+        }
       }
       try {
         CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify({ p_client_id: d.selectedClientId }) }) || [];
