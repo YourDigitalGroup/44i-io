@@ -26853,3 +26853,25 @@ frontend code was already live on `main` from the prior PR, so the
 badge should now be fully working end to end — still needs an actual
 renewal through one of the three flows to visually confirm the badge
 appears correctly in both portals, not yet observed live.
+
+## Sort campaign lines by tactic, then county (2026-09-10, same day)
+
+Claire asked to sort MS Farm Bureau's campaign lines by county after
+tactic. No frontend change needed — neither Strategist's main table nor
+Admin's Campaign Lines tab re-sorts rows in JS, both just render
+whatever order their RPC returns. This is a SQL-only change:
+
+- `strategist_get_campaign_lines`: added `cl.county nulls last` to the
+  `ORDER BY`, right after `cl.tactic_label` and before the existing
+  `split_order`/`created_at` tiebreakers (previously had no county in
+  the sort at all).
+- `admin_get_client_campaign_lines_detailed`: was sorting county first
+  (`county, agent_name, tactic_label`) since it was built that way by
+  default when the Campaign Lines tab was new — reordered to
+  `tactic_label, county, agent_name` to match.
+
+Since `county` is null for every non-split client, this only visibly
+changes ordering for multi-agent/county-split clients like MS Farm
+Bureau — everyone else keeps sorting by tactic exactly as before. SQL
+in `scratchpad/sort-tactic-then-county.sql`, sent to Claire to run —
+not yet confirmed run.
