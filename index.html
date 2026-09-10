@@ -8188,6 +8188,21 @@ function saveDraft() {
   syncRowInputs(); // pull per-row dates/Notes/Spend into selected{} + derived campaign summary before saving
   writeDraft(buildDraft());
   showToast('Draft saved!');
+  // Fire-and-forget usage signal (2026-09-10, per Claire — wondering whether AEs
+  // are actually using the new form) -- logs only that a save happened, plus
+  // group/AE, never the draft's actual content. Deliberately NOT awaited and
+  // wrapped so any failure here (network, RLS, anything) can never block or
+  // delay the real draft save above, which has already completed by this point.
+  try {
+    sb('rpc/log_draft_save', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_group_id: selectedGroup?.id || null,
+        p_group_name: selectedGroup?.name || null,
+        p_ae_name: document.getElementById('ae-name')?.value || null,
+      }),
+    }).catch(() => {});
+  } catch(e) { /* silent — see comment above */ }
 }
 
 // Auto-save silently (no toast) on every service or field change
