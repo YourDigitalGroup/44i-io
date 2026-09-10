@@ -27510,3 +27510,35 @@ scoped to `order_id is null`), using `accounting_only` to infer
 run. Asked Claire to confirm exactly where she wasn't seeing these 5
 lines, to verify this null `billing_type` is actually the cause rather
 than something else — not yet confirmed.
+
+**Confirmed fixed** — Claire ran the trigger + backfill and the 5 lines
+came back. Two more gaps surfaced immediately: missing the "↻ Renewed"
+badge, and missing their Trello card link.
+
+**Trello link**: already had this fix written from earlier today
+(`scratchpad/fix-strategist-agent-split-trello-link.sql`,
+`agent_split_trello_card_id` resolution in
+`strategist_get_campaign_lines` + the matching frontend fallback in
+`strategistTrelloCardUrl()`, already committed) — just never confirmed
+run. Re-sent it.
+
+**Renewal badge**: a genuinely new gap. The badge (`last_renewed_at`/
+`last_renewed_previous_end_date`) was only ever stamped by the three
+Renew *buttons* (`admin_renew_service`/`admin_renew_agent_split_service`/
+`admin_renew_campaign_line`) — a renewal that happens by resubmitting a
+brand-new IO (exactly what happened to these 5 today, since the AM
+wasn't shown the Renew button yet) went through the trigger's
+Agent/County Split UPDATE branch instead, which never touched those two
+columns at all. Fixed in the same trigger, in the same branch as the
+`billing_type` fix just above: captures the line's real old
+`flight_end` (via a new `v_old_flight_end` variable) *before*
+overwriting it, then stamps `last_renewed_at = now()` and
+`last_renewed_previous_end_date` with that captured value — this
+branch always represents a genuine renewal (an existing line matched
+and its flight extended) regardless of which route triggered it, so
+it's safe to stamp unconditionally. New backfill for the current 5
+lines specifically
+(`scratchpad/backfill-union-county-renewal-badge.sql`), using the real
+previous end date (2026-09-30, confirmed earlier this session from last
+year's actual Trello card title) and the real order's own `created_at`
+timestamp. Not yet run.
