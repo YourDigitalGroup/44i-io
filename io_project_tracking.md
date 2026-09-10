@@ -26362,3 +26362,26 @@ change (confirmed via `git show HEAD` on the prior commit — same gap
 existed before today's edits, not introduced by them). Not yet
 live-tested — needs Claire to run the SQL, then have two different
 tabs/devices actually save and resume a draft for the same group.
+
+## Save Draft button was only on Step 1 (2026-09-10)
+
+Claire noticed the 💾 Save Draft button only existed on Step 1's own
+button row — Step 2 and Step 3 only had navigation buttons
+(← Back/Next, Print, Submit), no way to save without going back to
+Step 1 first. More noticeable now that a save actually matters (the new
+group-level resume feature from earlier today).
+
+**Fix**: added the same `onclick="saveDraft()"` button to both other
+steps' button rows — Step 2 between "← Back" and "Next: Review &
+Submit →", Step 3 between "← Back to Services" and "🖨️ Print IO"
+(ahead of Print/Submit's own `margin-left:auto` right-alignment, so it
+groups visually with the left-side navigation rather than getting
+shoved to the far right). No changes needed to `saveDraft()` itself —
+it already reads from the DOM/global state regardless of which step is
+currently visible, the same way `printIO()`/`submitIO()` already do
+from Step 3.
+
+**Verified**: `node -e (new Function(...))` syntax check on the full
+file — no errors. Not yet visually confirmed in a real browser (same
+sandbox limitation as other UI changes this session) — worth a quick
+look on all three steps to confirm the button lands where expected.
