@@ -3270,6 +3270,28 @@ async function strategistConfirmStatusChange(lineId, newStatus, oldStatus) {
   await strategistSaveLine(lineId, { status: newStatus, status_reason: reason || null });
 }
 
+// Flight End has no side effect on status by default -- but
+// strategistSweepFlightEndedCampaigns() auto-completes a line once its
+// flight_end passes, and until now nothing reversed that: Claire corrected
+// Alkeme Aesthetics & Dermatology's SEM flight_end from a past date back to
+// 2027-02-28 through this same field, and the line stayed stuck on
+// "Complete" (2026-09-10). If the line is currently 'complete' and the new
+// end date is today or later, revive it to 'active' in the same save --
+// strategist_save_campaign_line logs the status_history row atomically
+// itself (see the 2026-09-04 fix above), so no separate log call is needed.
+async function strategistSaveFlightEnd(lineId, value) {
+  const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
+  const newEnd = value || null;
+  const data = { flight_end: newEnd };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const revives = line?.status === 'complete' && newEnd && new Date(newEnd + 'T00:00:00') >= today;
+  if (revives) {
+    data.status = 'active';
+    data.status_reason = 'Automatically reactivated — flight end date moved back into the future';
+  }
+  await strategistSaveLine(lineId, data, revives ? true : false);
+}
+
 // setup_blocker is a checkbox group now, not a single <select> -- a campaign
 // can genuinely be waiting on more than one thing at once (Claire: "Need
 // creative AND access to FB page"). Returns [] (not null) when nothing's
@@ -3600,7 +3622,7 @@ function renderStrategistDetailPanel() {
       <label class="lbl" style="margin:0" for="detail-flight-start-${l.id}">Flight Start</label>
       <input type="date" id="detail-flight-start-${l.id}" value="${esc(l.flight_start || '')}" onchange="strategistSaveLine('${l.id}', {flight_start: this.value || null}, false)" style="padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:12px"/>
       <label class="lbl" style="margin:0" for="detail-flight-end-${l.id}">Flight End</label>
-      <input type="date" id="detail-flight-end-${l.id}" value="${esc(l.flight_end || '')}" placeholder="Ongoing" onchange="strategistSaveLine('${l.id}', {flight_end: this.value || null}, false)" style="padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:12px"/>
+      <input type="date" id="detail-flight-end-${l.id}" value="${esc(l.flight_end || '')}" placeholder="Ongoing" onchange="strategistSaveFlightEnd('${l.id}', this.value)" style="padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:12px"/>
       <span style="font-size:11px;color:var(--muted);margin-right:8px">Blank End = ongoing/no end date</span>
       <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;margin-right:8px">
         <input type="checkbox" ${l.has_offline_visits ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_offline_visits: this.checked})"/> + Offline Visits Tracking

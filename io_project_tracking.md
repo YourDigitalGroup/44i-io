@@ -27727,3 +27727,44 @@ its own inline pill ternary checks `line.status === 'complete'` before
 Function(...))` syntax check — no errors; simulated both the
 month-box-checked and month-box-unchecked cases in Node, both correctly
 show "Complete" now. Not yet seen live.
+
+**Stuck "Complete" status never revives when Flight End is corrected
+(2026-09-10)**: Claire, on Alkeme Aesthetics & Dermatology's SEM line:
+"What happened here? I don't remember marking this as complete" —
+screenshot showed Status: Complete but Flight End 2027-02-28, well in
+the future. Root cause: `strategistSweepFlightEndedCampaigns()` (runs on
+every `fetchStrategistData()`) correctly auto-completed this line back
+on Sep 1, based on whatever `flight_end` it had at that moment. The
+flight_end was evidently corrected/extended afterward directly through
+the Detail panel's plain date field — which has zero side effect on
+status. Exact inverse of the auto-complete sweep: nothing ever revives a
+completed line. One-time data fix delivered as
+`scratchpad/fix-alkeme-stuck-complete.sql` (not yet run — no DB access;
+sets this one line's `status` back to `'active'` and logs a
+`campaign_status_history` correction row for the audit trail).
+
+Systemic fix: new `strategistSaveFlightEnd(lineId, value)` wrapper
+(`strategist/index.html`), wired to the Detail panel's Flight End
+input's `onchange` in place of the old direct `strategistSaveLine(...)`
+call. If the line's current status is `'complete'` and the new end date
+is today or later, it includes `status: 'active'` and a `status_reason`
+in the same save call — no separate log-RPC call needed, since
+`strategist_save_campaign_line` already logs `campaign_status_history`
+atomically whenever `p_data.status` differs from the stored value (per
+the 2026-09-04 Blue Dolphin Pools fix, same file). Non-reviving saves
+keep the original `reload:false` (lightweight inline save); a revive
+passes `reload:true` so the full refetch+rerender picks up the new
+history entry and refreshed status everywhere (main table, detail
+panel) in one pass — `renderStrategistDashboard()` already calls
+`renderStrategistDetailPanel()` internally.
+
+**Verified**: extracted all inline `<script>` content and ran `node
+--check` — no syntax errors. Simulated the revive-decision logic in
+Node against 6 cases: a completed line with the date extended into the
+future (revives — the actual Alkeme scenario), a completed line with a
+date still in the past (does not revive), a completed line with the
+date cleared entirely (does not revive), an already-active line with a
+future date (status untouched), a paused line with a future date
+(status untouched — only Complete→Active is this sweep's inverse), and
+a completed line with the date set to exactly today (revives, `>=`
+comparison). All 6 produced the expected result. Not yet seen live.
