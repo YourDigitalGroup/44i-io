@@ -27442,3 +27442,39 @@ that's just Supabase's standard prompt for any direct write, not an
 actual gap, matching this project's established RLS-forced/zero-
 policies/RPC-only security model. Not yet run — SQL updated in place in
 `scratchpad/fix-flat-rate-prefill-whole-flight.sql`.
+
+**Real root cause found (2026-09-10, later same day)**: Claire reported
+ABC Seamless still showed no Gross Budget for future months even after
+both fixes above. Checked real data via SQL rather than guessing again
+— found every ABC Seamless line has `billing_type = null` AND
+`order_id = null`. Both of today's earlier fixes (the trigger's
+whole-flight pre-fill, and the standalone backfill query) only ever
+matched `billing_type = 'spend'` — since these lines were created
+directly through Strategist (single entry or bulk CSV import), not
+through a real order, and `strategist_save_campaign_line`'s `INSERT`
+never set `billing_type` at all, NO Strategist-created line has ever
+qualified for either fix, regardless of what tactic it actually is.
+
+**Fix**: `strategist_save_campaign_line` now sets `billing_type` on
+insert, using the exact same "flat-fee, no budget" classification the
+Strategist portal's own UI already relies on
+(`isFlatFeeNoMetricsLine()`: `service_id` in `('llo-bp','rep-bp')`, or
+`tactic_label` in `('LLO (SEO)','Rep Monitoring (SEO)')`) — everything
+else gets `'spend'`, matching every real example found today (Facebook/
+IG Ads, SEM, Targeted Display, YouTube TV, Hulu/Disney+). Plus a
+one-time backfill setting `billing_type = 'spend'` on every existing
+null-billing_type, non-flat-fee, non-cancelled line with no `order_id`
+(the only way it could have gotten this way). **Must run in this
+order**: this billing_type fix/backfill first, THEN re-run the earlier
+`backfill-flat-rate-missing-months.sql` — that script only fills gaps
+for `billing_type = 'spend'` lines, so it needs this fix in place first
+to actually find ABC Seamless and anything else affected by this same
+gap. SQL in `scratchpad/fix-strategist-billing-type.sql` — not yet run.
+
+**Note on communication**: Claire pushed back mid-explanation — "why
+are we still looking at spend, I need gross budget" — a real ambiguity
+in how I was describing `billing_type = 'spend'` (an internal category
+label) vs. Actual Spend (the reported dollar figure) vs. Gross Budget
+(the thing actually being fixed the whole time). Clarified explicitly
+rather than pressing on; worth being more careful with this distinction
+going forward given how much today's whole thread revolved around it.
