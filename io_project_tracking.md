@@ -27641,3 +27641,16 @@ them. SQL in
 Additional Card Member dropdown, and it saved correctly this time. No
 AE-roster prerequisite needed after all — they were selectable in the
 dropdown the whole time, the value just had nowhere to land.
+
+**Second follow-up (2026-09-10, same day)**: still inconsistent —
+"when you hover over view order the pill moves, the trello card one
+doesn't." Root cause was a GLOBAL rule in `shared.css`,
+`button:hover{transform:translateY(-1px);box-shadow:...}`, applied to
+every plain `<button>` on every page in the app — it can only ever
+match `<button>` (View Order), never `<a>` (Trello Card ↗), so no
+amount of matching CSS on `.pill-outline-link` alone could equalize
+them; the class needed to explicitly cancel the global rule's
+`transform` too, the same way it already cancels `box-shadow`. Added
+`transform:none` to `.pill-outline-link:hover` — wins on specificity
+(a class + pseudo-class beats a bare type + pseudo-class) regardless of
+stylesheet load order. Not yet seen live.
