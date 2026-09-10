@@ -280,6 +280,25 @@
               </div>
               <div><label class="lbl" for="admin-trello">Trello Board ID</label><input type="text" id="admin-trello" placeholder="Board ID" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/></div>
             </div>
+            <!-- Additional card member (2026-09-10, per Claire -- "STMM would like
+                 to assign the cards to the AE and their Digital Campaign Manager,
+                 who is also a member of the board"). One extra person, tagged on
+                 EVERY card alongside the AE/AM, same as am_trello_handle just above
+                 -- a free-typed handle rather than a Users-table picker, since this
+                 person doesn't need to log into anything here, only to already be a
+                 member of the group's Trello board. Role label is free text (not a
+                 fixed enum) since it's only ever shown for context, never matched
+                 against anything in code -- a future group could name any role here. -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+              <div>
+                <label class="lbl" for="admin-additional-card-trello">Additional Card Member <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Trello handle, tagged on every card alongside the AE/AM</span></label>
+                <input type="text" id="admin-additional-card-trello" placeholder="@handle" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              </div>
+              <div>
+                <label class="lbl" for="admin-additional-card-role">Their Role <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown for context only, e.g. "Digital Campaign Manager"</span></label>
+                <input type="text" id="admin-additional-card-role" placeholder="Digital Campaign Manager" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+              </div>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
                 <label class="lbl" for="admin-io-recipient">IO Recipients <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— comma-separated, notified on every submission</span></label>
@@ -8634,7 +8653,13 @@ function describeRequestedChanges(r) {
     } else if (c.new_monthly_budget != null) {
       budgetNote = `, new monthly budget $${Number(c.new_monthly_budget).toLocaleString()}/mo`;
     }
-    return `End date ${currentEnd}${pendingFmtDate(c.new_end_date)}${budgetNote}`;
+    // Intake update (2026-09-10) -- explicit note either way (updated or
+    // deliberately kept the same) so it never reads as something missed,
+    // per Claire. Nothing shown at all for a service with no intake form.
+    let intakeNote = '';
+    if (c.intake_update?.mode === 'updated') intakeNote = ', intake form updated';
+    else if (c.intake_update?.mode === 'keep_same') intakeNote = ', intake form: no changes requested';
+    return `End date ${currentEnd}${pendingFmtDate(c.new_end_date)}${budgetNote}${intakeNote}`;
   }
   if (r.action === 'edit') {
     // requested_changes.fields is a map of one or more field:new_value pairs
@@ -8653,6 +8678,25 @@ function describeRequestedChanges(r) {
 // month_budgets change instead of just its total, so an AM can see exactly
 // which months are changing without opening the order.
 function describeRequestedChangesDetailed(r) {
+  // Renewal intake update (2026-09-10) -- shows the actual updated answers
+  // (field label: new value, one per line) so an AM can review them before
+  // approving, not just the "intake form updated" one-liner from the plain
+  // summary above. Uses allServicesMap + INTAKE_FORMS (both already loaded
+  // for the main Admin page) to resolve field labels the same way the
+  // Order Detail intake editor does.
+  if (r.action === 'renew' && r.requested_changes?.intake_update?.mode === 'updated') {
+    const base = esc(describeRequestedChanges(r));
+    const upd = r.requested_changes.intake_update;
+    const formDef = INTAKE_FORMS[upd.form_key];
+    const fieldDefs = formDef ? formDef.sections.flatMap(s => s.fields) : [];
+    const rows = Object.entries(upd.fields || {})
+      .filter(([k, v]) => v && !k.endsWith('_fill_in'))
+      .map(([k, v]) => {
+        const label = fieldDefs.find(f => f.key === k)?.label || k;
+        return `<div style="font-size:11.5px;margin-top:3px"><strong>${esc(label)}:</strong> ${esc(v)}</div>`;
+      }).join('');
+    return `${base}${rows ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border)">${rows}</div>` : ''}`;
+  }
   if (r.action !== 'edit') return esc(describeRequestedChanges(r));
   const c = r.requested_changes || {};
   const item = adminLookupCurrentItem(r);
@@ -8871,6 +8915,23 @@ async function adminApprovePendingRequestClick(id) {
   } catch (e) {
     showToast('Could not approve: ' + e.message, 'error');
     return;
+  }
+
+  // Intake update (2026-09-10) -- a separate, additive RPC call rather than
+  // teaching admin_approve_pending_request a new field: harmless no-op for
+  // any request without an intake_update, or one where the client chose
+  // "keep it the same." Failure here doesn't undo the approval above, same
+  // as every other post-approval step (Trello, etc.) below.
+  if (req.action === 'renew' && req.requested_changes?.intake_update?.mode === 'updated') {
+    try {
+      await sb('rpc/admin_apply_intake_update_from_request', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_request_id: id })
+      });
+    } catch (e) {
+      console.warn('Could not apply intake update from request', id, ':', e.message);
+      showToast('Approved, but could not save the updated intake answers — please update them by hand', 'error');
+    }
   }
 
   // A legacy request (submitted before batch grouping shipped) has no
@@ -11800,6 +11861,7 @@ async function adminNewGroup() {
   document.getElementById('admin-form-title').textContent = 'New Group';
   document.getElementById('admin-group-id').value = '';
   ['admin-name','admin-slug','admin-am-name','admin-am-email','admin-am-calendar','admin-am-trello',
+   'admin-additional-card-trello','admin-additional-card-role',
    'admin-logo','admin-trello','admin-color-hex',
    'admin-color2-hex','admin-io-recipient'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
@@ -11861,6 +11923,8 @@ async function adminEditGroup(id, initialTab) {
   document.getElementById('admin-am-email').value = g.am_email || '';
   document.getElementById('admin-am-calendar').value = g.am_calendar_url || '';
   document.getElementById('admin-am-trello').value = g.am_trello_handle || '';
+  document.getElementById('admin-additional-card-trello').value = g.additional_card_trello_handle || '';
+  document.getElementById('admin-additional-card-role').value = g.additional_card_member_role || '';
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(g.am_name || null);
   populateDigitalStrategistDropdown('admin-group-digital-strategist', g.digital_strategist_name || null);
@@ -11920,6 +11984,8 @@ async function adminSaveGroup() {
     am_email: document.getElementById('admin-am-email').value.trim(),
     am_calendar_url: document.getElementById('admin-am-calendar').value.trim() || null,
     am_trello_handle: document.getElementById('admin-am-trello').value.trim() || null,
+    additional_card_trello_handle: document.getElementById('admin-additional-card-trello').value.trim() || null,
+    additional_card_member_role: document.getElementById('admin-additional-card-role').value.trim() || null,
     // Strategist defaults for every client in this group (2026-08-07) — Digital by
     // name (matches am_name's own convention — admin_users has no id exposed to the
     // client), Social/Web by id (the strategists roster's real primary key).

@@ -5864,6 +5864,11 @@ async function submitIO() {
         const aeName   = document.getElementById('ae-name').value.trim();
         const aeTrello = document.getElementById('ae-trello').value.trim();
         const amTrello = selectedGroup.am_trello_handle || '';
+        // Additional card member (2026-09-10, per Claire -- STMM wants their Digital
+        // Campaign Manager tagged on every card alongside the AE, not just the AM).
+        // Same per-group Trello handle pattern as amTrello, tagged on every card the
+        // same way -- just a second name in the same amAeMemberIds set below.
+        const additionalCardTrello = selectedGroup.additional_card_trello_handle || '';
 
         // Assigned strategists (2026-08-06) — this client's own digital/social/web
         // handles, resolved through the SAME board-member lookup as AM/AE below (one
@@ -5890,12 +5895,12 @@ async function submitIO() {
         // reused on every card created below (2026-07-17, per Claire). Extended
         // (2026-08-06) to resolve the strategist handles in the SAME lookup, without
         // folding them into amAeMemberIds itself.
-        const allHandlesToResolve = [aeTrello, amTrello, ...Object.values(disciplineHandles), ...kocNotifyHandles].filter(Boolean);
+        const allHandlesToResolve = [aeTrello, amTrello, additionalCardTrello, ...Object.values(disciplineHandles), ...kocNotifyHandles].filter(Boolean);
         const memberMap = await findBoardMemberIds(selectedGroup.trello_board_id, allHandlesToResolve);
         const resolveHandleMemberId = (handle) => handle ? (memberMap.get(handle.replace(/^@/, '').trim().toLowerCase()) || null) : null;
-        const amAeMemberIds = [...new Set([aeTrello, amTrello].map(resolveHandleMemberId).filter(Boolean))];
-        if ((aeTrello || amTrello) && !amAeMemberIds.length) {
-          console.warn('AM/AE Trello handle(s) set, but neither matched a member of this board — cards created without assignment. They likely need to be added as members of this Trello board first.');
+        const amAeMemberIds = [...new Set([aeTrello, amTrello, additionalCardTrello].map(resolveHandleMemberId).filter(Boolean))];
+        if ((aeTrello || amTrello || additionalCardTrello) && !amAeMemberIds.length) {
+          console.warn('AM/AE/additional-member Trello handle(s) set, but none matched a member of this board — cards created without assignment. They likely need to be added as members of this Trello board first.');
         }
 
         // Given a set of line items (either the whole order, for the overview IO card,

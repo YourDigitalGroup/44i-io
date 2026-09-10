@@ -173,6 +173,16 @@ let AE_ROSTER = [];
 let CLIENT_ROSTER = [];
 let ACTIVE_SERVICES = [];
 let ORDER_TRELLO_CARDS = {};
+// Renewal intake update (2026-09-10, per Claire — "add a way for them to do
+// an updated intake form for services that need them, or leave it the same
+// for renewals"). ORDER_INTAKE_RESPONSES mirrors ORDER_TRELLO_CARDS exactly —
+// keyed by order_id, sourced from a dedicated RPC rather than a direct
+// `orders` read, for the same reason ORDER_TRELLO_CARDS is (orders' own anon
+// SELECT policy only allows rows created in the last 2 hours). INTAKE_FORM_DEFS
+// is formKey -> form definition, fetched straight from the anon-readable
+// `intake_forms` table the same way `services` already is just below.
+let ORDER_INTAKE_RESPONSES = {};
+let INTAKE_FORM_DEFS = {};
 let selectedClientId = null;
 
 function hexToRgba(hex, alpha) {
@@ -343,7 +353,7 @@ async function applyClientPick(id) {
   // checkbox split for these two mechanisms.
   try {
     const ids = [...new Set(ACTIVE_SERVICES.map(s => s.service_id))];
-    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price,workflow,trello_template_ref,accounting_label`) || [];
+    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price,workflow,trello_template_ref,accounting_label,intake_form_id`) || [];
     const byId = Object.fromEntries(rows.map(r => [r.id, r]));
     ACTIVE_SERVICES.forEach(svc => {
       const r = byId[svc.service_id] || {};
@@ -362,10 +372,49 @@ async function applyClientPick(id) {
       // field alone silently found no card at all for these).
       svc._workflow = r.workflow || (r.trello_template_ref ? '__standalone__' + r.id : null);
       svc._accountingLabel = r.accounting_label || null;
+      svc._intakeFormId = r.intake_form_id || null;
     });
   } catch(e) {
     console.warn('Could not load catalog pricing/option data:', e.message);
-    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; svc._moduleOptions = null; svc._qtyPresetOptions = null; svc._pricingMode = null; svc._defaultPrice = null; svc._workflow = null; svc._accountingLabel = null; });
+    ACTIVE_SERVICES.forEach(svc => { svc._variantOptions = null; svc._moduleOptions = null; svc._qtyPresetOptions = null; svc._pricingMode = null; svc._defaultPrice = null; svc._workflow = null; svc._accountingLabel = null; svc._intakeFormId = null; });
+  }
+
+  // Intake form definitions (2026-09-10) for whichever services here actually
+  // carry one -- most don't, so this is usually a no-op empty query. Same
+  // anon-readable `intake_forms` table shared.js's own loadCatalog() reads
+  // from (no RPC needed).
+  INTAKE_FORM_DEFS = {};
+  const formIds = [...new Set(ACTIVE_SERVICES.map(s => s._intakeFormId).filter(Boolean))];
+  if (formIds.length) {
+    try {
+      const formRows = await sb(`intake_forms?id=in.(${formIds.map(encodeURIComponent).join(',')})&select=*`) || [];
+      formRows.forEach(f => {
+        const def = typeof f.definition === 'string' ? JSON.parse(f.definition) : f.definition;
+        INTAKE_FORM_DEFS[f.id] = Object.assign({ title: f.title }, def);
+      });
+    } catch(e) {
+      console.warn('Could not load intake form definitions:', e.message);
+    }
+  }
+
+  // Each service's order's CURRENT intake answers (2026-09-10) -- lets a
+  // renewal's "keep it the same" option mean something concrete, and lets
+  // "update it" start pre-filled instead of blank. Own dedicated RPC, same
+  // reason/pattern as companion_get_order_trello_cards just below (a direct
+  // `orders` read is blocked by orders' own anon SELECT policy outside the
+  // 2-hour post-submit window).
+  ORDER_INTAKE_RESPONSES = {};
+  if (formIds.length) {
+    try {
+      const orderIdsForIntake = [...new Set(ACTIVE_SERVICES.filter(s => s._intakeFormId).map(s => s.order_id))];
+      const intakeRows = await sb('rpc/companion_get_intake_responses', {
+        method: 'POST',
+        body: JSON.stringify({ p_group_id: selectedGroup.id, p_client_id: selectedClientId, p_order_ids: orderIdsForIntake })
+      }) || [];
+      ORDER_INTAKE_RESPONSES = Object.fromEntries(intakeRows.map(o => [o.id, o.intake_responses || {}]));
+    } catch(e) {
+      console.warn('Could not load existing intake responses:', e.message);
+    }
   }
 
   // Each service's order's trello_card_ids (2026-08-31, per Claire — a
@@ -545,6 +594,166 @@ function isAmountEditable(svc) {
   return isSpendTactic(svc) || svc._defaultPrice == null;
 }
 
+// ── RENEWAL INTAKE UPDATE (2026-09-10) ──────────────────────────
+// Simplified port of index.html's own showFullIntakeForm()/saveIntakeForm() --
+// same 5 field types (text/textarea/radio/checkbox/select_fill_in/list) and
+// the same showIf conditional-visibility mechanism, kept byte-compatible with
+// how index.html stores/reads a field's value so an updated answer here
+// lands in orders.intake_responses in the exact shape everything else
+// already expects. Deliberately does NOT port the TLP structured grid (a
+// tier-limited page/service picker used by exactly one intake form) -- a
+// known, flagged gap: a renewal on a TLP-driven service can still choose
+// "keep it the same," just not "update it" through this form yet.
+function companionIntakeConditionMet(showIf, rawValue) {
+  if (!showIf || !showIf.key) return true;
+  const val = rawValue || '';
+  const items = val.split(',').map(s => s.trim()).filter(Boolean);
+  return items.includes(showIf.includes) || val.trim() === showIf.includes;
+}
+
+function companionIntakeParseListValue(raw, max) {
+  const n = max || 0;
+  const lines = (raw || '').split('\n').map(l => l.replace(/^\d+\.\s*/, '').trim());
+  const out = [];
+  for (let j = 0; j < n; j++) out.push(lines[j] || '');
+  return out;
+}
+
+// scope is a unique prefix (e.g. `${i}`) so two service rows using the SAME
+// intake form (or a re-render of the same row) never collide on element ids
+// or data-key/data-form selectors.
+function renderCompanionIntakeFields(scope, formDef, existingFields) {
+  let html = '';
+  formDef.sections.forEach(section => {
+    html += `<div style="grid-column:1/-1;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:14px 0 6px">${esc(section.title)}</div>`;
+    section.fields.forEach(field => {
+      const val = existingFields?.[field.key] || '';
+      const visible = companionIntakeConditionMet(field.showIf, field.showIf ? (existingFields?.[field.showIf.key] || '') : '');
+      const showIfAttrs = field.showIf
+        ? ` data-show-if-key="${esc(field.showIf.key)}" data-show-if-value="${esc(field.showIf.includes || '')}" data-show-if-scope="${esc(scope)}"`
+        : '';
+      const wrapStyle = `display:${visible ? '' : 'none'}`;
+      const descHtml = field.description ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(field.description)}</div>` : '';
+      const labelHtml = `<label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:4px">${esc(field.label)}${field.optional ? '' : ' <span style="color:var(--danger)">*</span>'}</label>`;
+      html += `<div class="field" data-intake-field="${esc(field.key)}" style="${wrapStyle}"${showIfAttrs}>`;
+      if (field.type === 'textarea') {
+        html += `${labelHtml}${descHtml}<textarea data-key="${esc(field.key)}" data-form="${esc(scope)}" rows="3">${esc(val)}</textarea>`;
+      } else if (field.type === 'radio') {
+        const opts = field.options.map(o => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:400"><input type="radio" name="cintake-${esc(scope)}-${esc(field.key)}" value="${esc(o)}" ${val===o?'checked':''}/> ${esc(o)}</label>`).join('');
+        html += `${labelHtml}${descHtml}<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">${opts}</div>`;
+      } else if (field.type === 'checkbox') {
+        const checkedList = val.split(',').map(s => s.trim()).filter(Boolean);
+        const opts = field.options.map(o => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:400"><input type="checkbox" data-checkbox-key="${esc(field.key)}" data-form="${esc(scope)}" value="${esc(o)}" ${checkedList.includes(o)?'checked':''}/> ${esc(o)}</label>`).join('');
+        html += `${labelHtml}${descHtml}<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">${opts}</div>`;
+      } else if (field.type === 'select_fill_in') {
+        const opts = field.options.map(o => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:400"><input type="radio" name="cintake-${esc(scope)}-${esc(field.key)}" value="${esc(o)}" ${val===o?'checked':''} onchange="companionRefreshIntakeConditionals('${esc(scope)}')"/> ${esc(o)}</label>`).join('');
+        const fillInVal = existingFields?.[field.key + '_fill_in'] || '';
+        const fillInVisible = (field.fillInOptions || []).includes(val);
+        html += `${labelHtml}${descHtml}<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">${opts}</div>
+          <div data-fill-in-for="${esc(field.key)}" data-fill-in-form="${esc(scope)}" data-fill-in-triggers='${esc(JSON.stringify(field.fillInOptions || []))}' style="margin-top:6px;display:${fillInVisible ? '' : 'none'}">
+            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:3px">${esc(field.fillInLabel || 'Details')}</label>
+            <input type="text" data-key="${esc(field.key)}_fill_in" data-form="${esc(scope)}" value="${esc(fillInVal)}"/>
+          </div>`;
+      } else if (field.type === 'list') {
+        const listVals = companionIntakeParseListValue(val, field.max);
+        const inputs = listVals.map((v, idx) => `<div><label style="display:block;font-size:10px;color:var(--muted);margin-bottom:2px">${idx+1}</label><input type="text" data-list-key="${esc(field.key)}" data-list-index="${idx}" data-form="${esc(scope)}" value="${esc(v)}"/></div>`).join('');
+        html += `${labelHtml}${descHtml}<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px">${inputs}</div>`;
+      } else {
+        html += `${labelHtml}${descHtml}<input type="${esc(field.type)}" data-key="${esc(field.key)}" data-form="${esc(scope)}" value="${esc(val)}"/>`;
+      }
+      html += `</div>`;
+    });
+  });
+  return html;
+}
+
+// Live showIf/fill-in recompute as the intake fields are filled in, scoped to
+// one service row's container so two rows never step on each other.
+function companionRefreshIntakeConditionals(scope) {
+  const container = document.getElementById(`intake-fields-${scope}`);
+  if (!container) return;
+  container.querySelectorAll(`[data-show-if-scope="${scope}"]`).forEach(el => {
+    const key = el.dataset.showIfKey, want = el.dataset.showIfValue;
+    let liveVal = '';
+    const radio = container.querySelector(`input[name="cintake-${scope}-${key}"]:checked`);
+    const checkboxes = container.querySelectorAll(`[data-checkbox-key="${key}"][data-form="${scope}"]:checked`);
+    const plain = container.querySelector(`[data-key="${key}"][data-form="${scope}"]`);
+    if (radio) liveVal = radio.value;
+    else if (checkboxes.length) liveVal = Array.from(checkboxes).map(c => c.value).join(', ');
+    else if (plain) liveVal = plain.value;
+    el.style.display = companionIntakeConditionMet({ key, includes: want }, liveVal) ? '' : 'none';
+  });
+  container.querySelectorAll(`[data-fill-in-form="${scope}"]`).forEach(el => {
+    const key = el.dataset.fillInFor;
+    const triggers = JSON.parse(el.dataset.fillInTriggers || '[]');
+    const checked = container.querySelector(`input[name="cintake-${scope}-${key}"]:checked`);
+    el.style.display = checked && triggers.includes(checked.value) ? '' : 'none';
+  });
+}
+
+function companionCollectIntakeFields(scope, formDef) {
+  const container = document.getElementById(`intake-fields-${scope}`);
+  const fields = {};
+  formDef.sections.forEach(section => {
+    section.fields.forEach(field => {
+      let val = '';
+      if (field.type === 'radio' || field.type === 'select_fill_in') {
+        const checked = container.querySelector(`input[name="cintake-${scope}-${field.key}"]:checked`);
+        val = checked ? checked.value : '';
+      } else if (field.type === 'checkbox') {
+        const checked = container.querySelectorAll(`[data-checkbox-key="${field.key}"][data-form="${scope}"]:checked`);
+        val = Array.from(checked).map(c => c.value).join(', ');
+      } else if (field.type === 'list') {
+        const inputs = container.querySelectorAll(`[data-list-key="${field.key}"][data-form="${scope}"]`);
+        const vals = Array.from(inputs).map(inp => inp.value.trim()).filter(Boolean);
+        val = vals.map((v, idx) => `${idx+1}. ${v}`).join('\n');
+      } else {
+        const el = container.querySelector(`[data-key="${field.key}"][data-form="${scope}"]`);
+        val = el ? el.value.trim() : '';
+      }
+      fields[field.key] = val;
+      if (field.type === 'select_fill_in') {
+        const fillInEl = container.querySelector(`[data-key="${field.key}_fill_in"][data-form="${scope}"]`);
+        fields[field.key + '_fill_in'] = fillInEl ? fillInEl.value.trim() : '';
+      }
+    });
+  });
+  return fields;
+}
+
+// Toggles between "Keep It the Same" and "Update It" for a renewing
+// service's intake form. Recommended default is "keep it the same" (the
+// lower-friction, do-nothing choice) rather than forcing a re-fill every
+// renewal.
+function setIntakeUpdateMode(i, mode) {
+  ACTIVE_SERVICES[i]._intakeMode = mode;
+  const svc = ACTIVE_SERVICES[i];
+  ['keep','update'].forEach(m => document.getElementById(`intake-mode-${i}-${m}`)?.classList.toggle('active', m === mode));
+  const body = document.getElementById(`intake-update-body-${i}`);
+  if (mode !== 'update') { body.innerHTML = ''; return; }
+  const formDef = INTAKE_FORM_DEFS[svc._intakeFormId];
+  const existing = ORDER_INTAKE_RESPONSES[svc.order_id]?.[svc._intakeFormId]?.fields || {};
+  body.innerHTML = `<div id="intake-fields-${i}" style="display:grid;grid-template-columns:1fr 1fr;gap:12px" oninput="companionRefreshIntakeConditionals('${i}')" onchange="companionRefreshIntakeConditionals('${i}')">${renderCompanionIntakeFields(i, formDef, existing)}</div>`;
+}
+
+// Renders the "Intake Form" card inside a renewing service's action body, if
+// (and only if) it has one configured. Called from setServiceAction()'s
+// 'renew' branch, appended after whatever budget/date fields already apply.
+function renderIntakeUpdateSection(i) {
+  const svc = ACTIVE_SERVICES[i];
+  if (!svc._intakeFormId || !INTAKE_FORM_DEFS[svc._intakeFormId]) return '';
+  svc._intakeMode = svc._intakeMode || 'keep';
+  return `<div class="field" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+    <label>Intake Form</label>
+    <p style="font-size:11.5px;color:var(--muted);margin-bottom:8px">This service has an intake form on file. For this renewal, should fulfillment keep using the current answers, or would you like to update them?</p>
+    <div class="action-tabs">
+      <div class="action-tab active" id="intake-mode-${i}-keep" onclick="setIntakeUpdateMode(${i},'keep')">Keep It the Same</div>
+      <div class="action-tab" id="intake-mode-${i}-update" onclick="setIntakeUpdateMode(${i},'update')">Update It</div>
+    </div>
+    <div id="intake-update-body-${i}"></div>
+  </div>`;
+}
+
 function setServiceAction(i, action) {
   ['cancel','edit','renew'].forEach(a => document.getElementById(`tab-${i}-${a}`)?.classList.toggle('active', a === action));
   document.getElementById(`svc-chk-${i}`).checked = true;
@@ -564,17 +773,17 @@ function setServiceAction(i, action) {
           <div class="action-tab" id="renew-mode-${i}-total" onclick="setRenewBudgetMode(${i},'total')">Whole Campaign Total</div>
           <div class="action-tab" id="renew-mode-${i}-custom" onclick="setRenewBudgetMode(${i},'custom')">Custom by Month</div>
         </div>
-        <div id="renew-budget-body-${i}"></div>`;
+        <div id="renew-budget-body-${i}"></div>` + renderIntakeUpdateSection(i);
       setRenewBudgetMode(i, 'monthly');
     } else if (isAmountEditable(svc)) {
       body.innerHTML = `
         <div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}"/></div>
-        <div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-budget-${i}" placeholder="${svc.recurring || ''}"/></div>`;
+        <div class="field"><label>New Monthly Budget (optional — leave blank to keep current)</label><input type="number" step="0.01" id="renew-budget-${i}" placeholder="${svc.recurring || ''}"/></div>` + renderIntakeUpdateSection(i);
     } else {
       // A fixed catalog price isn't renegotiable through a renewal any more
       // than through an edit (2026-08-31, per Claire's rule of thumb) — only
       // the term itself extends, at the same rate.
-      body.innerHTML = `<div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}"/></div>`;
+      body.innerHTML = `<div class="field"><label>New End Date</label><input type="date" id="renew-end-${i}"/></div>` + renderIntakeUpdateSection(i);
     }
   } else if (action === 'edit') {
     // Dates and (if this service has any configured) the tactic variant are
@@ -715,30 +924,46 @@ function collectServicePayload(i) {
   if (action === 'renew') {
     const endDate = document.getElementById(`renew-end-${i}`)?.value;
     if (!endDate) return { error: `Please enter a new end date for ${svc.label}` };
+
+    // Intake update (2026-09-10) -- computed once, spread into whichever of
+    // the 4 renewal shapes below applies. "Keep it the same" (the default)
+    // records that as an explicit choice rather than omitting it, so Admin's
+    // Pending Requests review shows it was deliberate, not overlooked
+    // (2026-09-10, per Claire). Only present at all for a service that
+    // actually has an intake form configured.
+    let intakeUpdate = null;
+    if (svc._intakeFormId && INTAKE_FORM_DEFS[svc._intakeFormId]) {
+      if (svc._intakeMode === 'update') {
+        intakeUpdate = { mode: 'updated', form_key: svc._intakeFormId, fields: companionCollectIntakeFields(i, INTAKE_FORM_DEFS[svc._intakeFormId]) };
+      } else {
+        intakeUpdate = { mode: 'keep_same', form_key: svc._intakeFormId };
+      }
+    }
+
     if (!isSpendTactic(svc)) {
       const budgetVal = document.getElementById(`renew-budget-${i}`)?.value;
       return { service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
-        requested_changes: { new_end_date: endDate, new_monthly_budget: budgetVal ? parseFloat(budgetVal) : null } };
+        requested_changes: { new_end_date: endDate, new_monthly_budget: budgetVal ? parseFloat(budgetVal) : null, intake_update: intakeUpdate } };
     }
     const mode = svc._renewMode || 'monthly';
     if (mode === 'monthly') {
       const budgetVal = document.getElementById(`renew-monthly-${i}`)?.value;
       return { service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
-        requested_changes: { new_end_date: endDate, new_monthly_budget: budgetVal ? parseFloat(budgetVal) : null } };
+        requested_changes: { new_end_date: endDate, new_monthly_budget: budgetVal ? parseFloat(budgetVal) : null, intake_update: intakeUpdate } };
     }
     if (mode === 'total') {
       const totalVal = document.getElementById(`renew-total-${i}`)?.value;
       if (!totalVal) return { error: `Please enter a whole campaign total for ${svc.label}'s renewal` };
       const months = splitAmountAcrossMonths(parseFloat(totalVal), renewalPeriodStart(svc.flight_end), endDate);
       return { service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
-        requested_changes: { new_end_date: endDate, new_monthly_budget: null, new_month_budgets: months } };
+        requested_changes: { new_end_date: endDate, new_monthly_budget: null, new_month_budgets: months, intake_update: intakeUpdate } };
     }
     // custom by month
     const inputs = document.querySelectorAll(`.renew-month-${i}`);
     if (!inputs.length) return { error: `Please set each renewed month's amount for ${svc.label}` };
     const months = [...inputs].map(inp => ({ month: inp.dataset.month, amount: parseFloat(inp.value) || 0, paused: false }));
     return { service_id: svc.service_id, order_id: svc.order_id, action: 'renew',
-      requested_changes: { new_end_date: endDate, new_monthly_budget: null, new_month_budgets: months } };
+      requested_changes: { new_end_date: endDate, new_monthly_budget: null, new_month_budgets: months, intake_update: intakeUpdate } };
   }
   if (action === 'edit') {
     // Dates + variant are collected alongside whatever amount field applies

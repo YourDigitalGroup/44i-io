@@ -26968,3 +26968,147 @@ oval; the "after" (wrapper) version kept it a perfect circle in both
 renders. This is a real, verified fix, not a guess — but still not
 tested against Titan's *actual* logo file, since it wasn't available
 locally; worth Claire re-checking Titan's real PDF once this deploys.
+
+## Three unrelated requests in one batch (2026-09-10, same day)
+
+Claire asked for three things "in no particular order," left the
+sequencing up to me. Handled smallest-and-clearest to largest-and-most-
+ambiguous, asking scoping questions up front for the one genuinely
+ambiguous piece (companion intake) rather than guessing mid-build.
+
+### 1. Accounting: sort by tactic, then county
+
+Same ask as the earlier Strategist/Admin sort, but `accounting_get_campaign_lines`
+had **no** `ORDER BY` at all before this (not even by client name) — rows
+arrived in whatever order Postgres felt like, and Accounting's own JS
+grouping (`accountingBuildRows()`, which rolls multiple agents/counties
+under ONE row per client+service+tactic for revenue reconciliation)
+just preserved that arrival order both for which tactic appears first
+per client AND for which order counties show up in when a rollup row is
+expanded. Fixed with `order by g.name, c.name, cl.tactic_label,
+cl.county nulls last, cl.agent_name nulls last` — no JS change needed,
+same reasoning as before (the JS's own `.sort()` by client name is
+stable, so it preserves whatever tactic order the RPC already handed
+it). SQL in `scratchpad/accounting-sort-tactic-then-county.sql`, sent
+to Claire — not yet confirmed run.
+
+### 2. Additional card member (STMM's Digital Campaign Manager)
+
+Claire wants STMM's cards assigned to the AE **and** their Digital
+Campaign Manager (also a Trello board member), not just the AE/AM.
+Found the exact existing mechanism this slots into: `am_trello_handle`
+is a per-group field, resolved against the group's Trello board members
+(`findBoardMemberIds()`) and tagged on every card
+(`assignCardMembers()`) alongside the AE — a second per-group handle is
+a one-line addition to that same set, not a new mechanism. Built as a
+generic "additional card member" rather than hardcoding "Digital
+Campaign Manager" as a role, since a future group might want a
+different role tagged — the role name itself is a free-text field shown
+for context only, never matched against anything in code.
+
+**Built**: two new `groups` columns (`additional_card_trello_handle`,
+`additional_card_member_role`), a new field pair in Admin's Groups tab
+(right after Trello Board ID), and `index.html`'s submission flow now
+resolves and tags this handle on every card the same way `amTrello`
+already is. No RPC changes needed — both `index.html` and
+`admin/index.html` read `groups` directly via `select=*`, so the new
+columns just show up once they exist. SQL in
+`scratchpad/additional-card-member.sql` — not yet run.
+
+### 3. Companion form: update-or-keep intake form on renewal (the big one)
+
+The companion "Request a Change" form had **zero** intake-form
+awareness at all before this — not just for renewals, every trace of
+it. Before building, asked Claire three scoping questions rather than
+guess: (1) should "update it" start pre-filled with the previous
+answers or blank — **pre-filled**; (2) should "keep it the same" show
+up explicitly in the AM's Pending Requests review or stay silent — **explicit
+note**; (3) should this apply to Edit requests too, or Renew only — **Renew
+only**. All three went with the recommended option.
+
+**Design decision that shaped the whole build**: rather than editing
+any of the three existing RPCs this touches the edges of
+(`companion_get_active_services`, `companion_submit_request`,
+`admin_approve_pending_request`) — none of which I have the current
+source for, all originally pasted into chat and not saved anywhere —
+built entirely additively, following the exact pattern
+`companion_get_order_trello_cards` already established (its own comment
+explains why: a direct `orders` read is blocked outside the anon
+2-hour-post-submit SELECT policy window, so it's its own small
+SECURITY DEFINER RPC instead of a raw REST read). Confirmed
+`requested_changes` is already a free-form JSONB blob every action type
+stuffs arbitrary keys into and `companion_submit_request` stores
+opaquely (traced through `collectServicePayload()`), so a new
+`intake_update` key rides along for free with zero RPC changes needed
+on the submit side.
+
+**Built** (`companion/index.html`):
+- Fetches each relevant service's `intake_form_id` (added to the
+  existing `services?...&select=...` catalog query, same table
+  `_variantOptions` etc. already read from) and the matching
+  `intake_forms` definitions (`intake_forms?id=in.(...)`, same
+  anon-readable table shared.js's own `loadCatalog()` reads, no RPC).
+- New RPC `companion_get_intake_responses(p_group_id, p_client_id,
+  p_order_ids)` — the order's current intake answers, mirroring
+  `companion_get_order_trello_cards`'s exact shape/reasoning.
+- A simplified port of `index.html`'s own `showFullIntakeForm()`/
+  `saveIntakeForm()` — same 5 field types (text/textarea/radio/
+  checkbox/select_fill_in/list) and the same `showIf` conditional-
+  visibility mechanism, kept byte-compatible with how a field's value
+  is read/written so an updated answer lands in `intake_responses` in
+  the exact shape everything else expects.
+  **Known, flagged gap**: does NOT port the TLP structured grid (the
+  tier-limited page/service picker one specific intake form uses) — a
+  renewal on a TLP-driven service can still choose "keep it the same,"
+  just not "update it" through this form yet.
+- Renew action now shows an "Intake Form" section (only for a service
+  that actually has one configured) with a Keep It the Same / Update It
+  toggle, defaulting to Keep It the Same (the lower-friction, do-
+  nothing choice) — "Update It" opens the same field set pre-filled
+  from `companion_get_intake_responses`.
+- `collectServicePayload()`'s renew branch now always includes
+  `requested_changes.intake_update` for a service with an intake form —
+  `{mode:'keep_same', form_key}` or `{mode:'updated', form_key, fields}`
+  — explicit either way, per Claire's answer to question 2.
+
+**Built** (`admin/index.html`):
+- New RPC `admin_apply_intake_update_from_request(p_name, p_pw,
+  p_request_id)` — a SEPARATE call the frontend makes right after
+  `admin_approve_pending_request` succeeds for a renew action with
+  `intake_update.mode === 'updated'`, rather than teaching that existing
+  RPC a new field. Merges the new answers into
+  `orders.intake_responses[form_key].fields` specifically, preserving
+  whatever else already lives at that key (`trello_card_id`, stamped
+  there once a card exists). A `keep_same` or missing `intake_update` is
+  a harmless no-op, so this is safe to call unconditionally.
+  Failure here doesn't undo the approval, same as every other post-
+  approval step.
+- `describeRequestedChanges()` (the plain-text summary, also reused
+  verbatim in Trello comments) now appends ", intake form updated" or
+  ", intake form: no changes requested" for a renew request — nothing
+  shown for a service with no intake form at all.
+- `describeRequestedChangesDetailed()` (the richer Admin-list-only
+  view) additionally shows the actual updated answers, one line per
+  non-empty field, label resolved from the already-loaded `INTAKE_FORMS`
+  global (shared.js) — so an AM can review the real content before
+  approving, not just "updated" as a bare fact.
+
+**Verified**: `node -e (new Function(...))` syntax check on all three
+files — no errors. Built a real Playwright + Chromium test harness
+(same approach as the earlier html2canvas logo repro) that loads the
+actual `companion/index.html` file, injects a mock intake form
+definition covering all 5 field types plus a `showIf` and a
+select_fill_in, and exercises the real functions in a real DOM:
+confirmed prefill from existing answers works, `showIf` visibility is
+correct both on initial render and after a live change,
+`select_fill_in`'s conditional reveal works, and the final collected
+`fields` object matches exactly what was entered. Separately confirmed
+`collectServicePayload()`'s actual renew-branch output for both the
+"keep it the same" default and an "update it" submission — both
+produced the exact JSON shape `admin_apply_intake_update_from_request`
+expects. Verified `describeRequestedChangesDetailed()`'s field-label
+resolution and empty/`_fill_in`-suffix filtering with a Node one-liner
+against mock `INTAKE_FORMS` data. Not yet tested against a real intake
+form/order end-to-end in the actual app — needs the new SQL run first
+(`scratchpad/companion-intake-update.sql`), then a real renewal
+submitted through companion and approved through Admin.
