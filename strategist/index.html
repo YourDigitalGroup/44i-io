@@ -25,6 +25,17 @@
   /* scroll-margin-top for the detail panel's scrollIntoView() target (2026-08-17) --
      see fitStrategistScrollBoxes()'s comment for why this is needed. */
   #strategist-detail-panel{scroll-margin-top:calc(var(--strategist-sticky-offset, 0px) + 12px)}
+  /* Shared hover behavior for the outline-pill "View Order"/"Trello Card ↗"
+     pair (2026-09-10, per Claire -- "the trello card button doesn't react the
+     same way as the view order button when you hover"). One's a <button>,
+     the other's an <a> styled to look identical -- with no explicit hover
+     rule at all, they only ever got whatever bare default a browser happens
+     to apply to each tag, which differs between the two. This gives both an
+     identical, explicit hover state regardless of tag. background:#fff is
+     set here (not inline anymore) so this rule doesn't need !important to
+     override it on hover.  */
+  .pill-outline-link{background:#fff;cursor:pointer;text-decoration:none;display:inline-block;transition:background-color .12s ease}
+  .pill-outline-link:hover{background:var(--light)}
 </style>
 </head>
 <body>
@@ -2753,8 +2764,8 @@ function renderSetupPanel(l) {
           ${l.last_renewed_at ? `<span title="Renewed ${esc(new Date(l.last_renewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}${l.last_renewed_previous_end_date ? ` — previously ended ${esc(new Date(l.last_renewed_previous_end_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}` : ''}" style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#DBEAFE;color:#1E40AF;white-space:nowrap">↻ Renewed</span>` : ''}
           ${strategistBudgetModePillHtml(l)}
           ${strategistSetupBlockerPill(l)}
-          ${l.order_id ? `<button onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">View Order</button>` : ''}
-          ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" onclick="event.stopPropagation()" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;text-decoration:none">Trello Card ↗</a>` : ''}
+          ${l.order_id ? `<button class="pill-outline-link" onclick="event.stopPropagation();strategistViewOrder('${esc(l.order_id)}')" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:10.5px;font-weight:600">View Order</button>` : ''}
+          ${strategistTrelloCardUrl(l) ? `<a class="pill-outline-link" href="${strategistTrelloCardUrl(l)}" target="_blank" onclick="event.stopPropagation()" style="padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:10.5px;font-weight:600">Trello Card ↗</a>` : ''}
           <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:20px;background:var(--light);color:var(--muted)">Pending</span>
         </div>
       </div>
@@ -3566,8 +3577,8 @@ function renderStrategistDetailPanel() {
              visible, not how the value gets set. -->
         ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent-dark)">View in ${esc(l.platform || 'platform')} ↗</a>`
           : `<input id="detail-platform-url-${l.id}" value="" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>`}
-        ${l.order_id ? `<button onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
-        ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;text-decoration:none">Trello Card ↗</a>`
+        ${l.order_id ? `<button class="pill-outline-link" onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11px;font-weight:600">View Order</button>` : ''}
+        ${strategistTrelloCardUrl(l) ? `<a class="pill-outline-link" href="${strategistTrelloCardUrl(l)}" target="_blank" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11px;font-weight:600">Trello Card ↗</a>`
           : `<input id="detail-trello-card-url-${l.id}" value="" placeholder="Paste a Trello card link (only needed if not auto-filled)" onchange="strategistSaveLine('${l.id}', {trello_card_url: this.value}, false)" style="width:230px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>`}
         ${strategistBudgetModePillHtml(l)}
         <button onclick="strategistCloseDetailPanel()" class="btn-quiet-green">✕ Close</button>
