@@ -27424,6 +27424,148 @@ since `campaign_months` isn't known to have a unique constraint on
 **Verified**: structurally checked (balanced parens) — not run against
 real data, no live DB access. SQL in
 `scratchpad/fix-flat-rate-prefill-whole-flight.sql` and
-`scratchpad/backfill-flat-rate-missing-months.sql` — not yet run.
-**Open question for Claire**: whether the same whole-flight pre-fill
-should also apply to the Agent/County Split branch.
+`scratchpad/backfill-flat-rate-missing-months.sql`.
+
+**2026-09-10, later same day**: Claire confirmed — "let's update the
+agent county as well so everything is the same." Extended the
+Agent/County Split loop with the identical treatment: loops from the
+split's own start month to its own end month (two new variables,
+`v_split_month`/`v_split_end_month`), inserting or updating each
+month's `gross_budget` at the split's flat amount — same exists-check
+logic as before, so a renewal still only ever touches the CURRENT
+term's own range, never an earlier term's already-recorded months
+(that range is always just the current split's start/end). Also
+verified `campaign_months` has RLS enabled AND forced
+(`relrowsecurity`/`relforcerowsecurity` both true) when Claire hit a
+generic Supabase Studio RLS warning running the backfill — confirmed
+that's just Supabase's standard prompt for any direct write, not an
+actual gap, matching this project's established RLS-forced/zero-
+policies/RPC-only security model. Not yet run — SQL updated in place in
+`scratchpad/fix-flat-rate-prefill-whole-flight.sql`.
+
+**Real root cause found (2026-09-10, later same day)**: Claire reported
+ABC Seamless still showed no Gross Budget for future months even after
+both fixes above. Checked real data via SQL rather than guessing again
+— found every ABC Seamless line has `billing_type = null` AND
+`order_id = null`. Both of today's earlier fixes (the trigger's
+whole-flight pre-fill, and the standalone backfill query) only ever
+matched `billing_type = 'spend'` — since these lines were created
+directly through Strategist (single entry or bulk CSV import), not
+through a real order, and `strategist_save_campaign_line`'s `INSERT`
+never set `billing_type` at all, NO Strategist-created line has ever
+qualified for either fix, regardless of what tactic it actually is.
+
+**Fix**: `strategist_save_campaign_line` now sets `billing_type` on
+insert, using the exact same "flat-fee, no budget" classification the
+Strategist portal's own UI already relies on
+(`isFlatFeeNoMetricsLine()`: `service_id` in `('llo-bp','rep-bp')`, or
+`tactic_label` in `('LLO (SEO)','Rep Monitoring (SEO)')`) — everything
+else gets `'spend'`, matching every real example found today (Facebook/
+IG Ads, SEM, Targeted Display, YouTube TV, Hulu/Disney+). Plus a
+one-time backfill setting `billing_type = 'spend'` on every existing
+null-billing_type, non-flat-fee, non-cancelled line with no `order_id`
+(the only way it could have gotten this way). **Must run in this
+order**: this billing_type fix/backfill first, THEN re-run the earlier
+`backfill-flat-rate-missing-months.sql` — that script only fills gaps
+for `billing_type = 'spend'` lines, so it needs this fix in place first
+to actually find ABC Seamless and anything else affected by this same
+gap. SQL in `scratchpad/fix-strategist-billing-type.sql` — not yet run.
+
+**Note on communication**: Claire pushed back mid-explanation — "why
+are we still looking at spend, I need gross budget" — a real ambiguity
+in how I was describing `billing_type = 'spend'` (an internal category
+label) vs. Actual Spend (the reported dollar figure) vs. Gross Budget
+(the thing actually being fixed the whole time). Clarified explicitly
+rather than pressing on; worth being more careful with this distinction
+going forward given how much today's whole thread revolved around it.
+
+## Agent/County Split renewal never backfilled billing_type either (2026-09-10, same day)
+
+Claire: the Union county agents (renewed earlier today) stopped showing
+up wherever she was looking, after the ABC Seamless billing_type fix.
+Checked the 5 actual lines via SQL rather than guessing — all 5 have
+`billing_type = null` despite having a real `order_id` (today's
+renewal). Different mechanism from ABC Seamless (which had no order at
+all): the trigger's Agent/County Split branch sets `billing_type`
+correctly on the INSERT path (a brand-new split), but its UPDATE path
+(an existing line being renewed — exactly what happened to these 5
+today) only ever touches `flight_end` and `order_id`, never
+`billing_type` — so a line that predates this tracking, or was ever
+missing it, stays null forever no matter how many times it's renewed.
+
+**Fix**: the renewal branch now also sets
+`billing_type = coalesce(billing_type, v_line_billing_type)` — only
+fills it in if currently null, never overwrites an intentional existing
+value. Same `v_line_billing_type` the INSERT branch already computes
+for this exact service (`'spend'` if `pricing_mode = 'spend'`,
+otherwise `'recurring'`/`'one_time'` from the service's own
+`billing_type`). Updated in place in
+`scratchpad/fix-flat-rate-prefill-whole-flight.sql`.
+
+**Backfill**: new `scratchpad/backfill-agent-split-billing-type.sql` —
+scoped to `agent_name is not null` (Agent/County Split lines
+specifically, separate from the ABC-Seamless-style backfill which was
+scoped to `order_id is null`), using `accounting_only` to infer
+`'spend'` vs. falling back to the service's own `billing_type`. Not yet
+run. Asked Claire to confirm exactly where she wasn't seeing these 5
+lines, to verify this null `billing_type` is actually the cause rather
+than something else — not yet confirmed.
+
+**Confirmed fixed** — Claire ran the trigger + backfill and the 5 lines
+came back. Two more gaps surfaced immediately: missing the "↻ Renewed"
+badge, and missing their Trello card link.
+
+**Trello link**: already had this fix written from earlier today
+(`scratchpad/fix-strategist-agent-split-trello-link.sql`,
+`agent_split_trello_card_id` resolution in
+`strategist_get_campaign_lines` + the matching frontend fallback in
+`strategistTrelloCardUrl()`, already committed) — just never confirmed
+run. Re-sent it.
+
+**Renewal badge**: a genuinely new gap. The badge (`last_renewed_at`/
+`last_renewed_previous_end_date`) was only ever stamped by the three
+Renew *buttons* (`admin_renew_service`/`admin_renew_agent_split_service`/
+`admin_renew_campaign_line`) — a renewal that happens by resubmitting a
+brand-new IO (exactly what happened to these 5 today, since the AM
+wasn't shown the Renew button yet) went through the trigger's
+Agent/County Split UPDATE branch instead, which never touched those two
+columns at all. Fixed in the same trigger, in the same branch as the
+`billing_type` fix just above: captures the line's real old
+`flight_end` (via a new `v_old_flight_end` variable) *before*
+overwriting it, then stamps `last_renewed_at = now()` and
+`last_renewed_previous_end_date` with that captured value — this
+branch always represents a genuine renewal (an existing line matched
+and its flight extended) regardless of which route triggered it, so
+it's safe to stamp unconditionally. New backfill for the current 5
+lines specifically
+(`scratchpad/backfill-union-county-renewal-badge.sql`), using the real
+previous end date (2026-09-30, confirmed earlier this session from last
+year's actual Trello card title) and the real order's own `created_at`
+timestamp. Not yet run.
+
+Confirmed the "View Order" link needs no new code — it's already purely
+conditional on `l.order_id`, which is now correctly set on these 5
+lines, so it shows up automatically once the fixes above are run.
+
+## Strategist Detail panel header decluttered (2026-09-10, same day)
+
+Claire, screenshot: the Detail panel's header row (client/tactic name,
+split label, platform campaign name, live-campaign link, Trello link,
+View Order, budget mode pill, Close) always rendered BOTH a raw text
+input (for `platform_url`/`trello_card_url`) AND its resolved
+link/button side by side, even once a real value already existed —
+looked cluttered once the Trello link actually resolved (screenshot
+showed an empty "Reference link to the live campaign" input and an
+empty "Paste a Trello card link" input sitting right next to an
+already-working "Trello Card ↗" button).
+
+**Fix**: both inputs now only render when there's genuinely nothing
+resolved yet — `platform_url`'s input hides once `l.platform_url` is
+set (replaced by the "View in <platform> ↗" link); the manual
+`trello_card_url` input hides once `strategistTrelloCardUrl(l)`
+resolves anything at all (manual OR the agent-split auto-resolution
+fixed earlier today) — replaced by the "Trello Card ↗" button. Same
+`onchange`/save wiring either way; this only changes which element is
+visible, not how a value gets set. `node -e (new Function(...))` syntax
+check — no errors. Purely a display change, no SQL, no live-app
+verification yet.
