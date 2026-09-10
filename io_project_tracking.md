@@ -27424,6 +27424,21 @@ since `campaign_months` isn't known to have a unique constraint on
 **Verified**: structurally checked (balanced parens) — not run against
 real data, no live DB access. SQL in
 `scratchpad/fix-flat-rate-prefill-whole-flight.sql` and
-`scratchpad/backfill-flat-rate-missing-months.sql` — not yet run.
-**Open question for Claire**: whether the same whole-flight pre-fill
-should also apply to the Agent/County Split branch.
+`scratchpad/backfill-flat-rate-missing-months.sql`.
+
+**2026-09-10, later same day**: Claire confirmed — "let's update the
+agent county as well so everything is the same." Extended the
+Agent/County Split loop with the identical treatment: loops from the
+split's own start month to its own end month (two new variables,
+`v_split_month`/`v_split_end_month`), inserting or updating each
+month's `gross_budget` at the split's flat amount — same exists-check
+logic as before, so a renewal still only ever touches the CURRENT
+term's own range, never an earlier term's already-recorded months
+(that range is always just the current split's start/end). Also
+verified `campaign_months` has RLS enabled AND forced
+(`relrowsecurity`/`relforcerowsecurity` both true) when Claire hit a
+generic Supabase Studio RLS warning running the backfill — confirmed
+that's just Supabase's standard prompt for any direct write, not an
+actual gap, matching this project's established RLS-forced/zero-
+policies/RPC-only security model. Not yet run — SQL updated in place in
+`scratchpad/fix-flat-rate-prefill-whole-flight.sql`.
