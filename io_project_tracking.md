@@ -27569,3 +27569,26 @@ fixed earlier today) — replaced by the "Trello Card ↗" button. Same
 visible, not how a value gets set. `node -e (new Function(...))` syntax
 check — no errors. Purely a display change, no SQL, no live-app
 verification yet.
+
+## "View Order"/"Trello Card" hover inconsistency (2026-09-10, same day)
+
+Claire: "the trello card button doesn't react the same way as the view
+order button when you hover." Root cause: "View Order" is a real
+`<button>`, "Trello Card ↗" is an `<a>` styled to look identical — with
+zero explicit hover CSS on either one anywhere in the file, each just
+got whatever bare default a browser happens to apply to that tag,
+which differs between the two.
+
+**Fix**: new shared class `.pill-outline-link` (in this page's own
+`<style>` block) giving both an identical, explicit `:hover` state
+(background tint) regardless of tag — `background:#fff` moved out of
+each element's inline style and into the class, so the hover rule
+doesn't need `!important` to win against it. Applied to both "View
+Order" and "Trello Card ↗" at both locations they appear (the Setup
+panel header and the Detail panel header) — 4 call sites total, kept
+each site's own padding/font-size differences intact (only the
+`background`/hover behavior was shared, not full appearance).
+
+**Verified**: `node -e (new Function(...))` syntax check — no errors;
+confirmed via grep that all 4 occurrences got the class consistently.
+Purely visual/CSS, no SQL, not yet seen live.
