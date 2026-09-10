@@ -27636,9 +27636,8 @@ never had anywhere to land.
 **Fix**: both fields added to `admin_save_group`'s `INSERT` and
 `UPDATE`, mirroring `am_trello_handle`'s exact treatment right next to
 them. SQL in
-`scratchpad/fix-admin-save-group-additional-card-member.sql` — not yet
-run. Once run, Claire should be able to just re-pick the DCM from
-STMM's Additional Card Member dropdown and save — no AE-roster
-prerequisite needed after all, assuming they were already selectable in
-the dropdown (which the earlier root-cause theory would still require
-separately, if it turns out they weren't in the roster to begin with).
+`scratchpad/fix-admin-save-group-additional-card-member.sql`.
+**Confirmed fixed** — Claire ran it, re-picked the DCM from STMM's
+Additional Card Member dropdown, and it saved correctly this time. No
+AE-roster prerequisite needed after all — they were selectable in the
+dropdown the whole time, the value just had nowhere to land.
