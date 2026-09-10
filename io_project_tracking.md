@@ -27122,3 +27122,55 @@ companion intake update (submit a renewal with an intake change through
 companion, approve it in Admin, confirm the new answers land on the
 order) — neither has happened yet, just the code-level Playwright/Node
 verification described above.
+
+## Additional Card Member: free-typed handle → real AE-roster picker (2026-09-10, same day)
+
+Claire asked to change the Additional Card Member field (built earlier
+today) from a free-typed Trello handle to a dropdown of that group's
+AEs — same reasoning as every other roster picker in Admin (AM picker,
+AE picker on the main IO form): fewer typos, and it's self-documenting
+who's actually available to tag. Followed the exact existing
+`populateAmPickerDropdown()`/`applyAmPick()` pattern: a real `<select>`
+scoped to `ALL_AES.filter(a => a.group_id === groupId)` (the same
+roster the AE tab manages, `admin_get_aes`, lazy-loaded via a new
+`ensureAeRosterLoaded()` mirroring `ensureStaffRosterLoaded()`) driving
+a hidden backing field, so `adminSaveGroup()` needed zero changes — it
+already just reads whatever's in `#admin-additional-card-trello`.
+
+An AE with no Trello handle on file is excluded from the list entirely
+(nothing to tag with), and an inactive AE is excluded UNLESS their
+handle is the one already saved for this group — same exception
+`populateAmPickerDropdown()` already makes for an AM. Added a small
+note under the picker ("Not listed? Add them under the AE tab first...
+doesn't need to be an actual AE") since STMM's actual use case (a
+Digital Campaign Manager) isn't literally an Account Executive — the AE
+roster is really just "people on this group's roster with a Trello
+handle," already used that flexibly elsewhere.
+
+**Real bug caught and fixed before shipping this**: the first version of
+`populateAdditionalCardMemberDropdown()` unconditionally overwrote the
+hidden backing field with whatever the picker resolved to — including
+blank, when the previously-saved handle didn't match anyone in this
+group's current AE roster (e.g. a handle saved before this picker
+existed, or a genuine non-AE like STMM's DCM if they're not also listed
+as an AE). That meant simply **opening a group to edit it** would
+silently blank out an already-working saved handle the instant the
+page rendered, before the AM ever touched the picker. Caught this by
+deliberately testing that exact scenario (an unmatched saved handle),
+not just the happy path — fixed by having the populate function only
+ever adjust the visible `<select>`, never the hidden field; only
+`applyAdditionalCardMemberPick()` (fired by an actual user pick) writes
+to it.
+
+**Verified**: `node -e (new Function(...))` syntax check — no errors.
+Extracted the two real functions into a Playwright-driven test page with
+a small mock `ALL_AES` fixture (4 AEs across 2 groups, one with no
+handle, one inactive) and confirmed all 4 cases: correct group-scoped
+filtering with handle-less AEs excluded; the inactive-but-already-
+selected exception both appearing in the list and being pre-selected;
+an unmatched saved handle leaving the picker blank while leaving the
+hidden field's value untouched (the bug above, confirmed fixed); and a
+real user pick correctly updating the hidden field. Not yet tested live
+in the actual Admin UI — no SQL change needed for this piece (same
+`additional_card_trello_handle` column from earlier today), just a
+straight redeploy.
