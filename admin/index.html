@@ -9393,6 +9393,13 @@ function viewOrderDetail(orderId) {
   const li = Array.isArray(o.line_items) ? o.line_items : [];
   const intake = o.intake_responses || {};
   const hosting = o.hosting_choices || {};
+  // Agent/County Split (2026-09-10, found live on MS Farm Bureau's first real
+  // order through this feature) -- agent_splits was never rendered here at
+  // all before today; a multi-agent order's real content (which agent, which
+  // county, individual dates/amounts) lives entirely in this field, not
+  // line_items, so Admin had literally nothing to show for it beyond one
+  // misleading aggregate row. See agentSplitHtml below.
+  const agentSplits = Array.isArray(o.agent_splits) ? o.agent_splits : [];
 
   // Line items
   // Grouped by section, with dated per-service Start/End columns (2026-08-18, per
@@ -9611,6 +9618,44 @@ function viewOrderDetail(orderId) {
     }
   });
 
+  // Agent/County Split table + per-agent Renew action (2026-09-10). Renew
+  // mirrors adminConfirmRenewal()'s exact behavior for a normal service --
+  // same campaign_lines row, same Trello card, due date pushed, comment
+  // posted, title left unrenamed -- just matched by service+agent+county
+  // instead of just service, since one order can carry several agents' rows
+  // for the same service.
+  let agentSplitHtml = '';
+  if (agentSplits.length) {
+    const rows = agentSplits.map((s, i) => {
+      const svcLabel = CATALOG_ROWS[s.service_id]?.accounting_label || CATALOG_ROWS[s.service_id]?.label || s.service_id;
+      const renewBtn = `<button type="button" onclick="adminToggleAgentRenewPanel('${esc(o.id)}',${i},'${esc(s.end_date || '')}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button>`;
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px 10px">${esc(s.county || '—')}</td>
+        <td style="padding:8px 10px">${esc(s.agent_name || '—')}</td>
+        <td style="padding:8px 10px">${esc(svcLabel)}</td>
+        <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(s.start_date)}</td>
+        <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(s.end_date)}</td>
+        <td style="padding:8px 10px;font-weight:600;text-align:right">${fmtMoney(s.amount)}/mo</td>
+        <td style="padding:8px 10px">${renewBtn}</td>
+      </tr>
+      <tr id="agent-renew-panel-${esc(o.id)}-${i}" style="display:none"><td colspan="7" style="padding:0"></td></tr>`;
+    }).join('');
+    agentSplitHtml = `
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Agent / County Split</div>
+      <table style="font-size:12.5px;border-collapse:collapse;width:100%;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border);margin-bottom:18px">
+        <thead><tr style="background:var(--light)">
+          <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">County</th>
+          <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Agent</th>
+          <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+          <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Start</th>
+          <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">End</th>
+          <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Amount</th>
+          <th style="padding:9px 10px"></th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
+
   // Signature
   const sigData = o.signature_data || '';
   const sigDisplay = sigData.startsWith('typed:')
@@ -9667,6 +9712,8 @@ function viewOrderDetail(orderId) {
       </tr></thead>
       <tbody>${liRows}</tbody>
     </table>
+
+    ${agentSplitHtml}
 
     ${hostingHtml ? `<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Hosting</div>${hostingHtml}<div style="height:14px"></div>` : ''}
 
@@ -10503,6 +10550,124 @@ async function adminConfirmRenewal(orderId, serviceId) {
   }
 
   showToast('✅ Service renewed');
+  viewOrderDetail(orderId);
+}
+
+// ── AM-TRIGGERED RENEW — AGENT/COUNTY SPLIT VARIANT (2026-09-10) ───────
+// Same shape as adminToggleRenewPanel()/adminConfirmRenewal() above, but
+// matched by service+agent+county (agent_splits) instead of just service
+// (line_items) -- one order can carry several agents' own rows for the same
+// service, each needing its own independent renewal. Deliberately mirrors
+// the plain version's actual behavior exactly: same campaign_lines row, same
+// Trello card, due date pushed + a comment posted, title left unrenamed --
+// per Claire, a routine renewal should never spin up a fresh card.
+function adminToggleAgentRenewPanel(orderId, splitIndex, currentEndDate) {
+  const row = document.getElementById(`agent-renew-panel-${orderId}-${splitIndex}`);
+  if (!row) return;
+  if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  const currentEndDisplay = currentEndDate
+    ? new Date(currentEndDate + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
+    : '';
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);border-radius:8px;padding:14px 16px;margin:4px 0">
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:8px">Renew this agent's service${currentEndDisplay ? ` <span style="color:var(--muted);font-weight:400">(currently ends ${esc(currentEndDisplay)})</span>` : ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;max-width:420px">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New End Date</label>
+          <input type="date" id="agent-renew-end-${orderId}-${splitIndex}" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New Monthly Budget (optional)</label>
+          <input type="number" step="0.01" id="agent-renew-budget-${orderId}-${splitIndex}" placeholder="Leave blank to keep current" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button type="button" id="agent-renew-confirm-btn-${orderId}-${splitIndex}" onclick="adminConfirmAgentRenewal('${esc(orderId)}',${splitIndex})" style="padding:7px 16px;border-radius:7px;background:#1F7A42;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Renewal</button>
+        <button type="button" onclick="adminToggleAgentRenewPanel('${esc(orderId)}',${splitIndex},'${esc(currentEndDate)}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+}
+
+async function adminConfirmAgentRenewal(orderId, splitIndex) {
+  const confirmBtn = document.getElementById(`agent-renew-confirm-btn-${orderId}-${splitIndex}`);
+  if (confirmBtn?.disabled) return;
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; }
+
+  const newEndDate = document.getElementById(`agent-renew-end-${orderId}-${splitIndex}`)?.value;
+  const budgetRaw = document.getElementById(`agent-renew-budget-${orderId}-${splitIndex}`)?.value;
+  const newBudget = budgetRaw ? parseFloat(budgetRaw) : null;
+  if (!newEndDate) {
+    showToast('Enter a new end date', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
+
+  const o = allOrders.find(x => x.id === orderId);
+  const split = o?.agent_splits?.[splitIndex];
+  if (!split) {
+    showToast('Could not find this agent split entry', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
+
+  try {
+    await sb('rpc/admin_renew_agent_split_service', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: split.service_id,
+        p_agent_name: split.agent_name, p_county: split.county,
+        p_new_end_date: newEndDate, p_new_monthly_budget: newBudget,
+      }),
+    });
+  } catch (e) {
+    showToast("Could not renew this agent's service: " + e.message, 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
+
+  split.end_date = newEndDate;
+
+  // Resolve THIS agent's own Trello card via intake_responses -- the same
+  // formKey::agent::agentKey storage format index.html's own submission flow
+  // (createAgentSplitCards()) stamps a trello_card_id under, and the same
+  // pattern admin/index.html's own intake-editing code already reads
+  // elsewhere (see adminOpenIntakeEdit-style lookups a few hundred lines up).
+  const svc = CATALOG_ROWS[split.service_id] || {};
+  const formKey = svc.intake_form_id;
+  const agentKey = split.agent_id || ('new:' + split.agent_name);
+  const cardId = formKey ? o.intake_responses?.[`${formKey}::agent::${agentKey}`]?.trello_card_id : null;
+
+  if (cardId) {
+    const label = svc.accounting_label || svc.label || split.service_id;
+    const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
+    const commentText = `🔁 Renewed ${label} (${split.agent_name}, ${split.county}) — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
+    const dueFields = adminCampaignDueFields(newEndDate);
+    try {
+      await fetch(PROXY, {
+        method: 'POST',
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, ...dueFields }),
+      });
+    } catch (e) {
+      console.warn('Could not push due date to card', cardId, ':', e.message);
+    }
+    try {
+      const res = await fetch(PROXY, {
+        method: 'POST',
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
+      });
+      if (!res.ok) console.warn('Could not post renewal comment to card', cardId, ':', res.status);
+    } catch (e) {
+      console.warn('Could not post renewal comment to card', cardId, ':', e.message);
+    }
+  } else {
+    showToast('Renewed, but no Trello card was found for this agent — please note it in Trello by hand', 'error');
+  }
+
+  showToast('✅ Agent service renewed');
   viewOrderDetail(orderId);
 }
 

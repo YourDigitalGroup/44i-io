@@ -26620,3 +26620,52 @@ order's real dates (2026-10-01 – 2027-09-30) — correctly produced
 "Oct 1 - Sep 30". `node -e (new Function(...))` syntax check on
 `index.html` — no errors. The `order_id` trigger fix and backfill are
 written but not yet run by Claire.
+
+## Admin Order Detail: Agent/County Split display + Renew action (2026-09-10)
+
+Completes the MS Farm Bureau follow-up above. Claire clarified the
+intended workflow: for a routine annual renewal, staff should push the
+same campaign line's dates and update the existing Trello card's due
+date — not resubmit a whole new IO, which is what happened this time
+only because Admin had nothing to show or act on for agent-split rows
+at all (this order predates any way to renew one from Admin).
+
+**Built**:
+- Order Detail now renders a real "Agent / County Split" table (county,
+  agent, service, start/end, monthly amount) sourced from
+  `o.agent_splits`, right below the Services table — previously
+  invisible entirely.
+- Each row gets its own "↻ Renew" action, mirroring the existing
+  per-service `admin_renew_service`/"↻ Renew" pattern exactly: same
+  campaign_lines row, dates pushed, Trello due date updated + a comment
+  posted — no new card, no title change. New RPC
+  `admin_renew_agent_split_service` matches `campaign_lines` by
+  `order_id + service_id + agent_name + county` instead of just
+  `order_id + service_id`, since one order can carry several agents'
+  own rows for the same service. This depends on `order_id` actually
+  being set on the row, which is exactly what the trigger fix earlier
+  today provides going forward.
+- Resolving which Trello card to update reuses an existing, already-
+  proven pattern rather than inventing a new one: `index.html`'s
+  `createAgentSplitCards()` already stamps each agent's card id onto
+  `orders.intake_responses[formKey::agent::agentKey].trello_card_id` at
+  submission time (confirmed via `admin/index.html:10688`'s identical
+  lookup, already used for per-agent intake editing) — the new Renew
+  action reads the exact same key.
+
+**Known limitation, not fixed**: this only works for an agent-split
+service that has an intake form configured (so a `formKey` exists to
+build the lookup key from) — a split service with no intake form has no
+recorded path back to its Trello card id anywhere. Not a problem for
+Facebook/IG Ads specifically (it has one), but worth knowing if a
+future split-eligible service is added without an intake form.
+
+**Verified**: traced `createAgentSplitCards()`'s actual card-id storage
+and `admin/index.html`'s existing intake-card-id lookup to confirm the
+key format precisely, rather than inventing a new storage location.
+Simulated the row-rendering and card-id-resolution logic in a Node
+one-liner against this exact order's real data — correct output for
+both. `node -e (new Function(...))` syntax check on `admin/index.html`
+— no errors. Not yet live-tested — needs Claire to run all three SQL
+pieces (trigger fix, backfill, new RPC — all in one script) and try
+renewing one of these 5 agents from Admin.
