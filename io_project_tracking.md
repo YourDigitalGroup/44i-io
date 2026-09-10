@@ -27840,3 +27840,6 @@ byte-identical. Ran both files through `tsc --noEmit` (Deno source, so
 module-resolution/global-`Deno` errors are expected noise present in the
 original too) and confirmed the exact same error set on both files —
 no new type errors introduced by the change. Not yet deployed/live.
+
+**Confirmed live (2026-09-10, same day)**: Claire redeployed the updated
+`claude-proxy` Edge Function and confirmed the logo upload now succeeds.
