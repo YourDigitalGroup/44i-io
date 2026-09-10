@@ -10548,10 +10548,23 @@ async function adminConfirmRenewal(orderId, serviceId) {
   if (o) {
     const item = (o.line_items || []).find(li => li.service_id === serviceId);
     if (item) {
+      const previousEndDate = item.end_date;
       item.end_date = newEndDate;
       // A renewal always moves end_date, so it always needs the card's
       // Trello due date pushed too (2026-09-01, per Claire).
       await adminUpdateTacticCard(orderId, serviceId, item, { renameTitle: false });
+      // Stamp the "last renewed" marker (2026-09-10, per Claire) so Strategist
+      // and the Campaign Lines tab can show a badge -- non-fatal if it fails,
+      // the renewal itself already succeeded above.
+      try {
+        await sb('rpc/admin_mark_campaign_line_renewed', {
+          method: 'POST',
+          body: JSON.stringify({
+            p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+            p_order_id: orderId, p_service_id: serviceId, p_previous_end_date: previousEndDate || null,
+          }),
+        });
+      } catch (e) { console.warn('Could not mark line as renewed:', e.message); }
     }
 
     const label = svc.accounting_label || svc.label || serviceId;
@@ -10653,7 +10666,22 @@ async function adminConfirmAgentRenewal(orderId, splitIndex) {
     return;
   }
 
+  const previousEndDate = split.end_date;
   split.end_date = newEndDate;
+
+  // Stamp the "last renewed" marker (2026-09-10, per Claire) so Strategist
+  // and the Campaign Lines tab can show a badge -- non-fatal if it fails.
+  try {
+    await sb('rpc/admin_mark_campaign_line_renewed', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_order_id: orderId, p_service_id: split.service_id,
+        p_agent_name: split.agent_name, p_county: split.county,
+        p_previous_end_date: previousEndDate || null,
+      }),
+    });
+  } catch (e) { console.warn('Could not mark line as renewed:', e.message); }
 
   // Resolve THIS agent's own Trello card via intake_responses -- the same
   // formKey::agent::agentKey storage format index.html's own submission flow
@@ -10773,7 +10801,7 @@ function renderCampaignLinesTable(clientId) {
       <td style="padding:8px 10px">${esc(r.agent_name || '—')}</td>
       <td style="padding:8px 10px">${esc(svcLabel)}${' '}${linkBadge}</td>
       <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(r.flight_start)}</td>
-      <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(r.flight_end)}</td>
+      <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(r.flight_end)}${r.last_renewed_at ? ` <span title="Renewed ${esc(fmtDate(r.last_renewed_at.slice(0,10)))}${r.last_renewed_previous_end_date ? ` — previously ended ${esc(fmtDate(r.last_renewed_previous_end_date))}` : ''}" style="font-size:9px;font-weight:700;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;white-space:nowrap">↻ Renewed</span>` : ''}</td>
       <td style="padding:8px 10px;font-weight:600;text-align:right">${fmtMoney(r.current_budget)}${r.billing_type === 'spend' || r.billing_type === 'recurring' ? '/mo' : ''}</td>
       <td style="padding:8px 10px"><button type="button" onclick="adminToggleCampaignLineRenewPanel('${esc(clientId)}','${esc(r.id)}','${esc(r.flight_end || '')}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button></td>
     </tr>
@@ -10886,7 +10914,22 @@ async function adminConfirmCampaignLineRenewal(clientId, lineId) {
     if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
     return;
   }
+  const previousEndDate = line.flight_end;
   line.flight_end = newEndDate;
+  line.last_renewed_at = new Date().toISOString();
+  line.last_renewed_previous_end_date = previousEndDate;
+
+  // Stamp the "last renewed" marker (2026-09-10, per Claire) so Strategist
+  // and this tab can show a badge -- non-fatal if it fails.
+  try {
+    await sb('rpc/admin_mark_campaign_line_renewed', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_campaign_line_id: lineId, p_previous_end_date: previousEndDate || null,
+      }),
+    });
+  } catch (e) { console.warn('Could not mark line as renewed:', e.message); }
 
   // Trello: find the existing card by name, ignoring whatever dates are
   // currently in its title, then update its title (new dates) + due date +

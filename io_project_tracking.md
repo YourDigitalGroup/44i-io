@@ -26788,3 +26788,68 @@ instead of duplicating it. **Claire checked with her AM and decided not
 to build this for now** — the AM doesn't mind new cards being created,
 since it lets them start clean going forward. So: intentionally left
 as-is, not a bug, don't revisit unless asked.
+
+## Missing-month audit + "Renewed" badge (2026-09-10, same day)
+
+Claire noticed September was showing no gross spend in Strategist for
+the renewed MS Farm Bureau lines and asked for a way to check all
+current campaigns for gaps. Gave her a SQL audit query (months between
+a spend-billed line's `flight_start` and today with no `campaign_months`
+row) — it came back with zero results, which turned out to be a red
+herring pointing at the query's own blind spot, not a clean bill of
+health: it only checked for a **missing row**, not a **null-valued**
+one. Claire then pasted the real `campaign_months` data for the 5 lines,
+which showed the September row exists for all 5 with `gross_budget =
+null`, sandwiched between real values in August ($300) and October
+($300, from the renewal). Conclusion: not caused by the renewal or the
+trigger fix — September (the last month of the just-ended old term)
+simply never got its monthly budget entered before the renewal order
+came in and pre-filled October's. An ordinary operational gap, not a
+bug. Query needs a follow-up fix (also flag `gross_budget is null`, not
+just a missing row) before it's fully trustworthy — noted, not yet
+rewritten since Claire hasn't asked for it as a recurring check.
+
+Separately, Claire asked for a way to denote that a campaign line was
+renewed — today, the only trace of a renewal is a Trello comment;
+nothing in the app itself remembers it happened. Presented two options;
+she chose a simple badge over a full renewal history log. Built:
+
+- Two new columns on `campaign_lines`: `last_renewed_at`,
+  `last_renewed_previous_end_date`.
+- New RPC `admin_mark_campaign_line_renewed` — stamps both fields,
+  matched either by `campaign_line_id` directly or by
+  `order_id + service_id` (+ `agent_name`/`county` for a split line),
+  the same identifiers each of the three existing renewal flows already
+  has on hand. Kept deliberately separate from `admin_renew_service`/
+  `admin_renew_agent_split_service`/`admin_renew_campaign_line` rather
+  than editing them — `admin_renew_service`'s current full definition
+  isn't in this repo to safely rewrite blind, and this is lower-risk as
+  an additive call after each renewal succeeds (non-fatal if it fails —
+  the renewal itself still went through either way).
+- All three renewal flows (`adminConfirmRenewal`, `adminConfirmAgentRenewal`,
+  `adminConfirmCampaignLineRenewal` in `admin/index.html`) now call the
+  new RPC right after their existing renew call, capturing the line's
+  previous end date before it gets overwritten in memory.
+- `strategist_get_campaign_lines` and `admin_get_client_campaign_lines_detailed`
+  now both return the two new fields.
+- A small "↻ Renewed" badge (hover tooltip: renewal date + previous end
+  date) now shows next to the flight-date range in Strategist's main
+  campaign table, its Campaign Setup panel, and Admin's Campaign Lines
+  tab.
+
+**SQL not yet sent to Claire**: `scratchpad/renewal-badge.sql` (column
+additions, new RPC, both redefined get-lines RPCs) — needs to be run
+before any of this works; the frontend will just silently show no badge
+until then, not error.
+
+**Verified**: `node -e (new Function(...))` syntax check on both
+`admin/index.html` and `strategist/index.html` — no errors. Simulated
+the badge's date-tooltip formatting in Node against mock renewal data —
+correct output.
+
+**2026-09-10, later same day**: Claire ran `scratchpad/renewal-badge.sql`
+and the September gross_budget patch (the 5 rows set to $300). The
+frontend code was already live on `main` from the prior PR, so the
+badge should now be fully working end to end — still needs an actual
+renewal through one of the three flows to visually confirm the badge
+appears correctly in both portals, not yet observed live.
