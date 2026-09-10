@@ -283,16 +283,25 @@
             <!-- Additional card member (2026-09-10, per Claire -- "STMM would like
                  to assign the cards to the AE and their Digital Campaign Manager,
                  who is also a member of the board"). One extra person, tagged on
-                 EVERY card alongside the AE/AM, same as am_trello_handle just above
-                 -- a free-typed handle rather than a Users-table picker, since this
-                 person doesn't need to log into anything here, only to already be a
-                 member of the group's Trello board. Role label is free text (not a
-                 fixed enum) since it's only ever shown for context, never matched
-                 against anything in code -- a future group could name any role here. -->
+                 EVERY card alongside the AE/AM, same as am_trello_handle just above.
+                 Originally a free-typed handle; changed same day to a real picker
+                 (per Claire -- "can we have the Additional Card Member be a dropdown
+                 of the AEs for that group?"), same picker+hidden-backing-field
+                 pattern as the AM picker above (populateAmPickerDropdown/
+                 applyAmPick) -- scoped to THIS group's own AE roster (ALL_AES,
+                 admin_get_aes), matched by Trello handle since that's still what's
+                 actually stored in additional_card_trello_handle. Role label is
+                 free text (not a fixed enum) since it's only ever shown for
+                 context, never matched against anything in code -- a future group
+                 could name any role here. -->
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div>
-                <label class="lbl" for="admin-additional-card-trello">Additional Card Member <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— Trello handle, tagged on every card alongside the AE/AM</span></label>
-                <input type="text" id="admin-additional-card-trello" placeholder="@handle" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
+                <label class="lbl" for="admin-additional-card-ae-picker">Additional Card Member <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— tagged on every card alongside the AE/AM</span></label>
+                <select id="admin-additional-card-ae-picker" onchange="applyAdditionalCardMemberPick(this.value)" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
+                  <option value="">— None —</option>
+                </select>
+                <p style="font-size:10px;color:var(--muted);margin-top:4px">Not listed? Add them under the AE tab first (they just need a Trello handle on file — doesn't need to be an actual AE), then come back here.</p>
+                <input type="hidden" id="admin-additional-card-trello"/>
               </div>
               <div>
                 <label class="lbl" for="admin-additional-card-role">Their Role <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— shown for context only, e.g. "Digital Campaign Manager"</span></label>
@@ -11715,6 +11724,25 @@ async function ensureStaffRosterLoaded() {
   }
 }
 
+// Same lazy-load-once convention as ensureStaffRosterLoaded() above, for the
+// Additional Card Member picker (2026-09-10, per Claire — "can we have the
+// Additional Card Member be a dropdown of the AEs for that group?" instead
+// of a free-typed handle). ALL_AES is already the exact roster this needs —
+// the same one the AE tab itself manages (admin_get_aes) — just not
+// necessarily loaded yet if the Groups tab is opened first.
+async function ensureAeRosterLoaded() {
+  if (ALL_AES.length) return;
+  try {
+    ALL_AES = await sb('rpc/admin_get_aes', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+  } catch(e) {
+    console.warn('Could not load AE roster:', e.message);
+    ALL_AES = [];
+  }
+}
+
 // selectedAmName: pre-selects the picker when editing a group whose existing
 // am_name (free-typed, pre-picker) happens to match a real staff name — case-
 // insensitive, since that's how admin_login itself already matches names. No match
@@ -11732,6 +11760,44 @@ function populateAmPickerDropdown(selectedAmName) {
   sel.innerHTML = '<option value="">— Select AM —</option>' +
     ams.map(a => `<option value="${esc(a.name)}">${esc(a.name)}${a.active === false ? ' (inactive)' : ''}</option>`).join('');
   sel.value = matched ? matched.name : '';
+}
+
+// Additional Card Member picker (2026-09-10) — same pattern as
+// populateAmPickerDropdown/applyAmPick just above: a real roster picker with
+// a hidden backing field (#admin-additional-card-trello) adminSaveGroup()
+// already reads, rather than teaching that function a new shape. Scoped to
+// THIS group's own AEs (a.group_id === groupId), not the whole roster — an
+// "additional card member" for STMM should be someone on STMM's own board,
+// same reasoning as the AE picker on the main IO form itself. Matches by
+// trello_handle rather than id, since that's what's actually stored (the
+// column predates this picker and is still just a plain Trello handle) --
+// an inactive AE whose handle is already saved here stays selectable, same
+// exception populateAmPickerDropdown makes for an AM.
+function populateAdditionalCardMemberDropdown(groupId, selectedHandle) {
+  const sel = document.getElementById('admin-additional-card-ae-picker');
+  if (!sel) return;
+  const normalizedSelected = (selectedHandle || '').toLowerCase().replace(/^@/, '');
+  // No Trello handle on file means nothing to actually tag on a card --
+  // excluded rather than shown disabled, same as how a handle-less AE would
+  // just silently fail to resolve on the main IO form anyway.
+  const aes = ALL_AES.filter(a => a.group_id === groupId && a.trello_handle &&
+    (a.active !== false || (normalizedSelected && a.trello_handle.toLowerCase().replace(/^@/, '') === normalizedSelected)));
+  const matched = normalizedSelected ? aes.find(a => a.trello_handle.toLowerCase().replace(/^@/, '') === normalizedSelected) : null;
+  sel.innerHTML = '<option value="">— None —</option>' +
+    aes.map(a => `<option value="${esc(a.trello_handle)}">${esc(a.name)}${a.active === false ? ' (inactive)' : ''}</option>`).join('');
+  // Deliberately does NOT touch the hidden backing field here, even when
+  // nothing matches -- an existing saved handle that belongs to someone not
+  // (or no longer) on this group's AE roster (e.g. entered before this
+  // picker existed, or a genuine non-AE like a Digital Campaign Manager)
+  // stays intact rather than silently getting blanked out just from opening
+  // this group to edit it. The picker itself simply shows blank in that
+  // case; applyAdditionalCardMemberPick() is the only thing that overwrites
+  // the hidden field, and only in response to an actual user pick.
+  sel.value = matched ? matched.trello_handle : '';
+}
+
+function applyAdditionalCardMemberPick(handle) {
+  document.getElementById('admin-additional-card-trello').value = handle || '';
 }
 
 function applyAmPick(name) {
@@ -11866,6 +11932,8 @@ async function adminNewGroup() {
    'admin-color2-hex','admin-io-recipient'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  const additionalCardPicker = document.getElementById('admin-additional-card-ae-picker');
+  if (additionalCardPicker) additionalCardPicker.innerHTML = '<option value="">— None —</option>';
   document.getElementById('admin-color').value = '#1C9BD7';
   document.getElementById('admin-color-hex').value = '#1C9BD7';
   document.getElementById('admin-color2').value = '#1C9BD7';
@@ -11925,6 +11993,8 @@ async function adminEditGroup(id, initialTab) {
   document.getElementById('admin-am-trello').value = g.am_trello_handle || '';
   document.getElementById('admin-additional-card-trello').value = g.additional_card_trello_handle || '';
   document.getElementById('admin-additional-card-role').value = g.additional_card_member_role || '';
+  await ensureAeRosterLoaded();
+  populateAdditionalCardMemberDropdown(g.id, g.additional_card_trello_handle || '');
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(g.am_name || null);
   populateDigitalStrategistDropdown('admin-group-digital-strategist', g.digital_strategist_name || null);
