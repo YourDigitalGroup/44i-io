@@ -26845,6 +26845,11 @@ until then, not error.
 **Verified**: `node -e (new Function(...))` syntax check on both
 `admin/index.html` and `strategist/index.html` — no errors. Simulated
 the badge's date-tooltip formatting in Node against mock renewal data —
-correct output. Not yet live-tested (needs the SQL run first, then a
-real renewal through each of the three flows to confirm the badge shows
-in both portals).
+correct output.
+
+**2026-09-10, later same day**: Claire ran `scratchpad/renewal-badge.sql`
+and the September gross_budget patch (the 5 rows set to $300). The
+frontend code was already live on `main` from the prior PR, so the
+badge should now be fully working end to end — still needs an actual
+renewal through one of the three flows to visually confirm the badge
+appears correctly in both portals, not yet observed live.
