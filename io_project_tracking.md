@@ -27188,3 +27188,31 @@ there are currently no active spend-billed campaign lines missing a
 gross spend for any month through today. Clean bill of health, for now
 — this only checks `billing_type = 'spend'` lines through the current
 month, same scope as before.
+
+## Strategist: Trello card link field never actually saved (2026-09-10, same day)
+
+Bronson French reported "the place to put the trello link in on the
+portal doesn't seem to save." Traced the frontend first (both Trello
+link fields — initial Setup and the row's own Detail card — have
+distinct element ids, no collision, and both funnel through the same
+`strategistSaveLine()` → `strategist_save_campaign_line` RPC call,
+which locally patches the in-memory row immediately after saving) and
+found nothing wrong there, which pointed at the RPC itself. Asked
+Claire to pull its current definition via
+`select pg_get_functiondef(oid) from pg_proc where proname =
+'strategist_save_campaign_line'` rather than guess-editing an unknown
+function.
+
+**Root cause confirmed**: every other field this RPC can save has a
+matching `case when p_data ? 'x' then ... else x end` line in its
+`UPDATE`, and a column in its `INSERT` — `trello_card_url` has
+**neither**. The call succeeds with no error either way; the value is
+just silently dropped. This affected BOTH save paths (initial Setup and
+the Detail card), and also meant a brand-new campaign line created
+through Setup with a Trello link already filled in would lose it too.
+
+**Fix**: `trello_card_url` added to both the `INSERT` column list and
+the `UPDATE`'s `case when p_data ? ...` list — the only change from the
+current live definition, everything else copied verbatim. SQL in
+`scratchpad/fix-strategist-trello-card-url.sql`, sent to Claire — not
+yet run.
