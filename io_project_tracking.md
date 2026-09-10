@@ -26385,3 +26385,55 @@ from Step 3.
 file — no errors. Not yet visually confirmed in a real browser (same
 sandbox limitation as other UI changes this session) — worth a quick
 look on all three steps to confirm the button lands where expected.
+
+## Resumed drafts left the AE/Client pickers showing "New AE"/"New Client" (2026-09-10)
+
+Claire sent a screenshot from resuming a draft: "Digital Account
+Executive" showed the correct restored name (Carol Oren) and Trello
+handle, but the "I am…" dropdown above it still read "— New AE —" —
+same problem for "Returning Client?" showing "— New Client —" despite
+Business Name being correctly filled in. Flagged as confusing, and
+rightly so.
+
+**Root cause, and it's older than today's group-drafts work**:
+`applyDraftFields()` (the shared restore logic used by both a same-tab
+refresh and the new server-resume feature) only ever set plain text
+field values — it never touched the `<select>` picker elements, and
+never restored the `selectedAeId`/`selectedClientId` globals those
+pickers set via `applyAePick()`/`applyClientPick()`. This bug already
+existed in the original local-draft mechanism; it just wasn't very
+visible before, since an AE resuming their own draft after a same-tab
+refresh already knew who they were. Once ANY draft became resumable by
+ANY tab/device/person (today's earlier change), the same gap became a
+real, visible point of confusion exactly as Claire described.
+
+**This was more than cosmetic**: `selectedClientId` staying null after
+a resume meant a returning client's own custom pricing overrides
+(`reapplyPricingOverrides()`), service-history overlap warnings, and
+the multi-agent Agent/County Split panel would all silently fail to
+re-initialize — real correctness gaps sitting behind the visual one.
+
+**Fix**: `buildDraft()` now also saves `selectedAeId`/`selectedClientId`.
+A new `restorePickerSelections(d)` runs after every draft restore
+(local or server) and: waits (polls, up to 10 × 300ms) for the AE/
+Client roster to finish loading if it hasn't yet — `loadGroup()` is
+async and not awaited at the page-load call site, so the roster can
+still be in flight; sets the picker's own visible selection and the
+underlying `selectedAeId`/`selectedClientId`; and re-triggers the same
+side effects a real live pick would (`reapplyPricingOverrides()`,
+service-history overlap refetch, multi-agent split panel). Deliberately
+does NOT call `applyAePick()`/`applyClientPick()` directly, since those
+overwrite the name/business/contact fields with the roster's own stored
+values — which would undo whatever `applyDraftFields()` just restored a
+moment earlier (e.g. a market the AE typed in after picking, not yet
+saved to the roster record itself).
+
+**Verified**: `node -e (new Function(...))` syntax check on the full
+file — no errors. Simulated the roster-wait/retry decision and the
+roster-membership matching in a Node one-liner with mock AE/client
+rosters — confirmed it correctly waits when rosters are still empty,
+proceeds once they're populated, and (separately) confirmed a draft
+with no `selectedAeId`/`selectedClientId` at all (a free-typed AE or a
+brand-new client) skips the picker-restore step entirely rather than
+doing anything unexpected. Not yet live-tested — needs Claire to
+re-test the exact resume scenario from her screenshot.
