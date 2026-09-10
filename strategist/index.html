@@ -40,7 +40,13 @@
      so neither element can pick up any native chrome, only this rule's own
      background tint. */
   .pill-outline-link{background:#fff;cursor:pointer;text-decoration:none;display:inline-block;transition:background-color .12s ease;-webkit-appearance:none;appearance:none;outline:none;box-shadow:none}
-  .pill-outline-link:hover{background:var(--light);box-shadow:none}
+  /* shared.css has a GLOBAL button:hover{transform:translateY(-1px);box-shadow:...}
+     rule applied to every plain <button> on every page (2026-09-10, found live --
+     Claire: "when you hover over view order the pill moves, the trello card one
+     doesn't"). That rule can only ever match <button> (View Order), never <a>
+     (Trello Card ↗), so no amount of matching CSS on this class alone could make
+     them behave the same -- has to explicitly cancel the lift here too. */
+  .pill-outline-link:hover{background:var(--light);box-shadow:none;transform:none}
 </style>
 </head>
 <body>
