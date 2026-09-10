@@ -27618,4 +27618,27 @@ would show only "— None —" — nothing to actually select, even if
 Claire tried. Asked her to check the AE tab for STMM and confirm
 whether that person is listed there with a handle; if not, add them
 there first, then pick them from the Additional Card Member dropdown.
-Not yet confirmed which it was.
+
+**Actual root cause, confirmed**: not the AE roster at all — a real bug
+of my own from when this feature was first built. `adminSaveGroup()`
+doesn't write to `groups` directly; it goes through
+`admin_save_group(p_name, p_pw, p_group_id, p_data)`, a `SECURITY
+DEFINER` RPC with its own explicit column list for both the `INSERT`
+and the `UPDATE` — the exact same shape as `strategist_save_campaign_line`'s
+`trello_card_url` gap found earlier today. When
+`additional_card_trello_handle`/`additional_card_member_role` were
+added to the frontend form and its payload, they were never added to
+this RPC's own column list, so the picker/save UI worked perfectly end
+to end and the value was silently dropped on the way into the
+database. Claire picked the DCM correctly the whole time — it just
+never had anywhere to land.
+
+**Fix**: both fields added to `admin_save_group`'s `INSERT` and
+`UPDATE`, mirroring `am_trello_handle`'s exact treatment right next to
+them. SQL in
+`scratchpad/fix-admin-save-group-additional-card-member.sql` — not yet
+run. Once run, Claire should be able to just re-pick the DCM from
+STMM's Additional Card Member dropdown and save — no AE-roster
+prerequisite needed after all, assuming they were already selectable in
+the dropdown (which the earlier root-cause theory would still require
+separately, if it turns out they weren't in the roster to begin with).
