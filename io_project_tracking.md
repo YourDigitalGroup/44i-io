@@ -27709,4 +27709,21 @@ checked (same correct result — the actual bug this fixes), a top-level
 Paused line whose month flag was never set by hand (now correctly
 shows/excludes as Paused instead of Confirmed — the reverse-direction
 bug), and a normal active/confirmed line (unaffected). No SQL involved,
-pure frontend logic — not yet seen live.
+pure frontend logic.
+
+**Confirmed live, follow-up found (2026-09-10, same day)**: Claire
+confirmed the main table row now correctly shows "Complete" for
+Comfort Zone's SiteRT line — but the Detail card's OWN month-by-month
+table (opened via clicking the row) still showed "Paused" for
+September. Real gap: `accountingRenderDetailCard()` builds and renders
+its 3-month view with its own SEPARATE, duplicated status-pill logic —
+completely independent of `accountingLineStatusPill()` and never
+touched by the fix above. Grepped for every remaining
+`accountingStatusPill('paused'` call site to confirm this was the only
+one left. Fixed the same way: the detail card's per-month `paused`
+field now also folds in `line.status === 'paused'`/`'complete'`, and
+its own inline pill ternary checks `line.status === 'complete'` before
+`m.paused`, same priority as the main table. `node -e (new
+Function(...))` syntax check — no errors; simulated both the
+month-box-checked and month-box-unchecked cases in Node, both correctly
+show "Complete" now. Not yet seen live.
