@@ -27328,3 +27328,52 @@ list unrelated to today's fixes — asked her to check whether it's the
 client's old archived one and decide whether to rename/consolidate it
 or just leave it archived now that "Mac's Spray Foam - Ben Winpigler"
 is the client's working list going forward.
+
+**Follow-up, resolved same day**: it was actually a Trello cache issue
+— reloading found the card in its new list correctly. Confirmed with
+Claire that the archived-list fix does exactly what's wanted going
+forward: a returning client with an archived list gets it reopened and
+reused (not duplicated), and the resolved list id gets persisted onto
+`clients.trello_list_id` so every later order for that client skips
+straight to the fast, already-working "stored id" path. Claire opened
+and merged the PR herself.
+
+## Admin Orders: a varying-by-month campaign showed no Monthly amount at all (2026-09-10, same day)
+
+Claire, screenshot of a Heartland Harley Davidson order: a $3,000
+Facebook/IG Ads campaign (Whole Campaign Total, varying by month) plus
+a $175 one-time Social Media Ad Set — but both the Admin Orders list
+and the order detail's own Campaign summary showed "Monthly: —",
+making it look like the client only bought the $175 one-time add-on.
+The $3,000 campaign itself was correctly visible in the Services table
+further down, just invisible from the summary figures.
+
+Root cause: `orders.total_monthly` is computed once at submission time
+and deliberately EXCLUDES a varying-by-month campaign's amount — a
+real, intentional fix from 2026-08-31 ("blending a varying campaign's
+plain spend, an average, into monthly" was misleading). That fix
+correctly stopped showing a wrong flat number, but nothing ever filled
+the gap back in anywhere `total_monthly` gets displayed — so an order
+made ENTIRELY of a varying campaign (like this one, no flat recurring
+line at all) shows no monthly figure of any kind, anywhere in Admin's
+summary views.
+
+**Fix**: new `adminOrderVaryingSpendTotal(o)` (`admin/index.html`) sums
+every varying-by-month line item's real total straight from the
+order's own already-loaded `line_items` — mirrors `index.html`'s own
+`monthPlanVariesAndTotal()` exactly, no new stored column or SQL
+needed. Applied in two places:
+- Admin Orders list: the Monthly column now shows "$X total (varies)"
+  alongside (or instead of) the flat `/mo` figure.
+- Order Detail's Campaign summary: a new "Varying Campaign Total" line
+  appears whenever one exists, and "Monthly" now shows `—` instead of
+  the slightly odd "—/mo" when there's truly no recurring line either.
+
+**Verified**: `node -e (new Function(...))` syntax check — no errors.
+Simulated `adminOrderVaryingSpendTotal()` and both display strings in
+Node against a mock order shaped exactly like the real Heartland Harley
+Davidson one from the screenshot ($3,000 across 4 months, amounts
+varying, plus a flat $175 one-time fee item) — correct output for both
+the list cell and the detail summary. Not yet seen live in the actual
+app — needs a redeploy (pure frontend change, no SQL) and Claire
+re-checking this same order.
