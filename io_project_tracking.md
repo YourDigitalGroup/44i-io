@@ -27307,3 +27307,24 @@ name — and whether the nameless list looks like the same archived one
 reopened, or a new one) before guessing further. **Not yet run**: no
 SQL involved in either of the two confirmed fixes above (pure frontend
 changes), just a redeploy.
+
+**Resolved (2026-09-10, later same day)**: Claire sent a screenshot of
+the actual card ("Mac's Spray Foam") — its own activity feed shows it
+correctly landed in a list named "Mac's Spray Foam - Ben Winpigler,"
+and a SQL check confirmed `clients.name` for this client is a normal,
+clean string (ruling out the whitespace-name-produces-a-blank-list-name
+theory). Also confirmed via grep that the only two `trello_update_list`
+calls anywhere in the codebase are today's own reopen-fix additions,
+neither of which ever touches a list's `name` — nothing in this app
+renames a list after creation.
+
+**Conclusion**: this order created a second, CORRECTLY-named list for
+Mac's Spray Foam, exactly matching the archived-list bug already found
+and fixed above (pre-fix code couldn't find the archived list via the
+unfiltered `trello_get_lists` call, so it fell through to creating a
+new one instead of reopening the original). The nameless list Claire
+separately found on the board is a different, likely pre-existing
+list unrelated to today's fixes — asked her to check whether it's the
+client's old archived one and decide whether to rename/consolidate it
+or just leave it archived now that "Mac's Spray Foam - Ben Winpigler"
+is the client's working list going forward.
