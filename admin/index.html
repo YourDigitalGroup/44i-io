@@ -9402,6 +9402,26 @@ async function loadDraftActivity() {
   }
 }
 
+// Sums every varying-by-month ("Whole Campaign Total") line item's real
+// total straight from the order's own line_items (2026-09-10, found live --
+// Claire: "if the monthly amount varies... it doesn't show any amount for
+// monthly so it looks like they just ordered a one time service"). Mirrors
+// index.html's own monthPlanVariesAndTotal() logic exactly. Root cause:
+// orders.total_monthly (set once at submission) deliberately EXCLUDES a
+// varying campaign's amount, per an earlier 2026-08-31 fix -- averaging it
+// into a flat "/mo" figure would have been misleading -- but nothing ever
+// filled that gap back in anywhere it's displayed, so an order made ENTIRELY
+// of a varying campaign shows Monthly: — with no other clue the campaign
+// exists at all. Computed live here rather than adding a new stored column,
+// since every order's real line_items are already loaded client-side.
+function adminOrderVaryingSpendTotal(o) {
+  return (o.line_items || []).reduce((sum, li) => {
+    if (!(li.spend > 0) || !Array.isArray(li.month_budgets) || li.month_budgets.length < 2) return sum;
+    const varies = new Set(li.month_budgets.map(m => m.amount)).size > 1;
+    return varies ? sum + li.month_budgets.reduce((s, m) => s + (m.amount || 0), 0) : sum;
+  }, 0);
+}
+
 function renderAdminOrders() {
   const el = document.getElementById('admin-orders-table');
   const groupFilter = document.getElementById('orders-filter-group').value;
@@ -9455,6 +9475,7 @@ function renderAdminOrders() {
     <tbody>${filtered.map(o => {
       const oneTime = o.total_onetime || 0;
       const monthly = o.total_monthly || 0;
+      const varyingSpendTotal = adminOrderVaryingSpendTotal(o);
       const synced = o.trello_synced
         ? '<span title="Synced to Trello" style="color:#10B981;font-size:14px">✓</span>'
         : '<span title="Not synced — Trello setup may have failed" style="color:#F59E0B;font-size:14px">⚠</span>';
@@ -9467,7 +9488,7 @@ function renderAdminOrders() {
         <td style="padding:9px 10px">${esc(o._client_name || '—')}${helpBadge}</td>
         <td style="padding:9px 10px;color:var(--muted)">${esc(o.ae_name || '—')}</td>
         <td style="padding:9px 10px;text-align:right;font-weight:600">${fmtMoney(oneTime)}</td>
-        <td style="padding:9px 10px;text-align:right;font-weight:600">${monthly ? fmtMoney(monthly) + '/mo' : '—'}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:600">${monthly ? fmtMoney(monthly) + '/mo' : ''}${monthly && varyingSpendTotal ? '<br>' : ''}${varyingSpendTotal ? `<span style="font-weight:400;color:var(--muted);font-size:11px">${fmtMoney(varyingSpendTotal)} total (varies)</span>` : (!monthly ? '—' : '')}</td>
         <td style="padding:9px 10px;color:var(--muted);font-size:11px">${fmtDate(o.koc_date)}${o.koc_time ? '<br>'+esc(o.koc_time) : ''}</td>
         <td style="padding:9px 10px;text-align:center">${synced}</td>
         <td style="padding:9px 10px;text-align:right">
@@ -9792,7 +9813,8 @@ function viewOrderDetail(orderId) {
           <div><strong>Start:</strong> ${fmtDate(o.campaign_start)}</div>
           <div><strong>End:</strong> ${fmtDate(o.campaign_end)}</div>
           <div><strong>One-Time:</strong> ${fmtMoney(o.total_onetime)}</div>
-          <div><strong>Monthly:</strong> ${fmtMoney(o.total_monthly)}/mo</div>
+          <div><strong>Monthly:</strong> ${o.total_monthly ? fmtMoney(o.total_monthly) + '/mo' : '—'}</div>
+          ${adminOrderVaryingSpendTotal(o) ? `<div><strong>Varying Campaign Total:</strong> ${fmtMoney(adminOrderVaryingSpendTotal(o))} <span style="color:var(--muted);font-weight:400">(see per-month breakdown below)</span></div>` : ''}
           ${o.campaign_notes ? '<div style="margin-top:6px;font-size:11px;color:var(--muted)"><strong>Notes:</strong> ' + esc(o.campaign_notes) + '</div>' : ''}
         </div>
       </div>
