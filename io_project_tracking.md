@@ -26917,3 +26917,54 @@ mid-flight, sometime around August 2026, and nothing before that was
 ever backfilled — plausible but not confirmed. Not investigated further
 since it doesn't affect the fix above; worth asking Claire about if it
 comes up again elsewhere.
+
+## Distorted group logos in the PDF (html2canvas doesn't honor object-fit) (2026-09-10)
+
+Claire noticed Titan Digital's logo looked distorted in the printed IO
+— flagged that testing so far had only covered a group with no logo, or
+44i's own, so other groups' logos were never actually checked. Root-
+caused this for real rather than guessing: since Chromium/Playwright are
+available in this environment, built a local test (a synthetic wide
+logo — the shape most likely to trigger it, aspect ratio > ~5.5:1 —
+rendered via the exact `.letterhead-left img` CSS through html2canvas
+1.4.1, the same version this app loads from cdnjs) and confirmed
+html2canvas does **not** honor `object-fit:contain` once a fixed
+height + `max-width` forces the box to clip the image's own
+auto-computed width: it stretches the image to fill the box instead of
+letterboxing it. A plain browser (Print IO's `window.print()`, no
+html2canvas involved) renders the identical CSS correctly — confirmed
+this is real by rendering both ways side by side. This is presumably
+exactly what happened to Titan's logo, though its real logo file wasn't
+available to test directly.
+
+**Fix**: replaced `object-fit:contain` with the older, pre-object-fit
+wrapper technique everywhere an image goes through html2canvas — a
+fixed-size box (`height` + `max-width`) plus `max-width/max-height:100%`
+on the `<img>` itself. Confirmed via the same test harness that this
+renders identically and correctly in both a plain browser and
+html2canvas. Applied to:
+- `index.html`'s `.letterhead-left` group logo (the one Claire actually
+  saw distorted) — new `.logo-box` wrapper class.
+- `index.html`'s drawn client signature (`.sig-drawn`) — same bug shape
+  (a long/wide signature would hit the identical max-width clip),
+  found by checking every other `object-fit` in the file rather than
+  stopping at the one reported instance. New `.sig-box` wrapper.
+- `admin/index.html`'s drawn-signature image inside the "Revised" order
+  PDF template (line ~11456) — same html2canvas pipeline, same bug.
+- **Deliberately left alone**: `admin/index.html`'s signature display in
+  the live Order Detail panel (~line 9690) and `index.html`'s live
+  interactive-form header logo (`.header-logo`) — both render straight
+  to the DOM, never through html2canvas, so `object-fit:contain` is
+  correct and unaffected there; verified by tracing each usage's actual
+  call site before touching it, not just grepping for the property name.
+
+**Verified**: `node -e (new Function(...))` syntax check on both files —
+no errors. Built a real local repro: installed `html2canvas@1.4.1` via
+npm (matching the CDN version exactly) and rendered a synthetic
+wide/circular test logo through Playwright's Chromium, comparing a
+plain-browser screenshot against an html2canvas capture of the same
+markup — the "before" version visibly stretched the circle into an
+oval; the "after" (wrapper) version kept it a perfect circle in both
+renders. This is a real, verified fix, not a guess — but still not
+tested against Titan's *actual* logo file, since it wasn't available
+locally; worth Claire re-checking Titan's real PDF once this deploys.
