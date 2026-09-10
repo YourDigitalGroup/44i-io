@@ -3487,6 +3487,16 @@ let STRATEGIST_SECTIONS = [];
 // an auto-resolved one.
 function strategistTrelloCardUrl(line) {
   if (line.trello_card_url) return line.trello_card_url;
+  // Agent/County Split lines (2026-09-10, found live -- "the new trello card
+  // wasn't linked to the campaign lines" for a Union county renewal) never
+  // had a card resolvable through trello_card_ids at all -- createAgentSplitCards()
+  // (index.html) only ever stamps a split card's id into
+  // orders.intake_responses[formKey::agent::agentKey], never into
+  // trello_card_ids like a plain service's card does. strategist_get_campaign_lines
+  // now resolves that server-side (same order-scoped agent_id lookup Admin's
+  // own agent-split Renew button already relies on) and hands it back as
+  // agent_split_trello_card_id.
+  if (line.agent_split_trello_card_id) return `https://trello.com/c/${line.agent_split_trello_card_id}`;
   const workflow = CATALOG_ROWS[line.service_id]?.workflow;
   const cardId = workflow ? line.trello_card_ids?.[workflow] : null;
   return cardId ? `https://trello.com/c/${cardId}` : null;

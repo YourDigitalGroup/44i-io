@@ -27214,5 +27214,41 @@ through Setup with a Trello link already filled in would lose it too.
 **Fix**: `trello_card_url` added to both the `INSERT` column list and
 the `UPDATE`'s `case when p_data ? ...` list — the only change from the
 current live definition, everything else copied verbatim. SQL in
-`scratchpad/fix-strategist-trello-card-url.sql`, sent to Claire — not
-yet run.
+`scratchpad/fix-strategist-trello-card-url.sql`. **Claire ran this.**
+
+## Agent/County Split lines never showed a Trello link in Strategist (2026-09-10, same day)
+
+Claire noticed the new Union county renewal's Trello card "wasn't
+linked to the campaign lines" — separate, real bug from the one just
+above (this one predates today entirely, not a side effect of anything
+fixed this session). Root cause: `strategistTrelloCardUrl()`
+(`strategist/index.html`) auto-resolves a line's card via
+`line.trello_card_ids?.[workflow]` — but `createAgentSplitCards()`
+(`index.html`, the submission-time Trello sync) never writes an
+agent-split card's id into `trello_card_ids` at all, only into
+`orders.intake_responses[formKey::agent::agentKey]` — a real,
+pre-existing asymmetry from `finalizeTacticCard()`, which writes to
+both. So every Agent/County Split line has always shown no Trello link
+in Strategist unless a human manually pasted one into
+`trello_card_url` — not something today's other fixes introduced or
+changed.
+
+**Fix**: `strategist_get_campaign_lines` now resolves each agent-split
+line's card id server-side and returns it as a new
+`agent_split_trello_card_id` field, using the exact same lookup
+`adminConfirmAgentRenewal()` already relies on in Admin — the `agent_id`
+recorded in THAT SPECIFIC order's own `agent_splits` entry (matched by
+service_id+agent_name+county), not re-derived from the current `agents`
+table (which could disagree if the agent's real row was created after
+this particular order, or two agents share a name). `strategistTrelloCardUrl()`
+gets one new fallback line to check this field, after the manual
+override and before the plain-service `trello_card_ids` lookup.
+
+**Verified**: `node -e (new Function(...))` syntax check on
+`strategist/index.html` — no errors. SQL structurally checked (balanced
+parens, correct dollar-quoting) but **not run against real data** —
+this is a more involved nested-LATERAL query than anything else fixed
+today, and I don't have live DB access to test it myself. Needs Claire
+to run it and confirm the Union county agents' cards now show up before
+this is considered actually fixed, not just reasoned-through. SQL in
+`scratchpad/fix-strategist-agent-split-trello-link.sql` — not yet run.
