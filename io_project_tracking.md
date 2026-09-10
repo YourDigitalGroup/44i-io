@@ -27799,3 +27799,44 @@ to its flight_start, the original intended behavior), a campaign whose
 flight already ended (falls back to its flight_start, same as before),
 and an open-ended campaign with no flight_end (stays on the current
 month). All 4 produced the expected month. Not yet seen live.
+
+**Logo upload failed with "Invalid admin credentials" for session-based
+logins (2026-09-10)**: Claire, uploading a new group's logo: "I got this
+error. Error uploading: Invalid admin credentials." Root cause: the
+`upload_group_logo` Edge Function target (`claude-proxy`, not tracked in
+this repo) validates the caller by calling `admin_login(p_name, p_pw)`
+directly — it predates, and was never touched by, the Stage 2
+`admin_resolve_role()` dual-auth migration (2026-09-04) because it isn't
+a SQL RPC at all. Every real admin action RPC now accepts either the
+legacy name/password pair or a real Supabase Auth session, but this one
+Edge Function target never learned the second path. Anyone logged into
+`/admin` via the newer "sign in with email/password" option
+(`attemptNewLogin()`/`tryRestoreAdminSession()` in `admin/index.html`)
+has `currentAdminUser.pw === ''` in memory by design — so
+`admin_login(name, '')` always failed for them, even though they were
+legitimately logged in.
+
+**Fix delivered** (Claire pasted the current `claude-proxy` source per
+this project's standing convention for anything server-side that lives
+outside this repo): `scratchpad/claude-proxy-index-2026-09-10.ts`, full
+updated file to paste into Supabase dashboard → Edge Functions →
+claude-proxy and redeploy. Only change: the `upload_group_logo` block's
+admin check now tries the session path first — forwards the SAME
+incoming `Authorization` bearer the client already sends via
+`sbAuthHeaders()` to `admin_get_profile_by_auth_uid`, the exact RPC the
+frontend's own `tryRestoreAdminSession()` uses to resolve a session into
+a profile — and only falls back to the original `admin_login(p_name,
+p_pw)` check if that doesn't resolve. Skips the session check entirely
+when the incoming Authorization is just the fallback anon key (the
+ordinary shape of a legitimate legacy name/password login), so that
+common path takes no extra round-trip and keeps its exact existing
+behavior. Rejects an `'accounting'` role via the session path, matching
+`/admin`'s existing rejection of that role everywhere else.
+
+**Verified**: diffed the updated file against the exact source Claire
+pasted — confirmed the change is scoped entirely to the new
+session-check block plus the header comment, everything else
+byte-identical. Ran both files through `tsc --noEmit` (Deno source, so
+module-resolution/global-`Deno` errors are expected noise present in the
+original too) and confirmed the exact same error set on both files —
+no new type errors introduced by the change. Not yet deployed/live.
