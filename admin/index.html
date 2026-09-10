@@ -137,6 +137,14 @@
            an AM is already looking at Admin. -->
       <button id="section-tab-pending" role="tab" aria-selected="false" aria-controls="section-pending" onclick="adminSection('pending')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Pending Requests<span id="pending-requests-badge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:10px"></span></button>
       <button id="section-tab-clients" role="tab" aria-selected="false" aria-controls="section-clients" onclick="adminSection('clients')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Clients</button>
+      <!-- Campaign Lines (2026-09-10) -- browses a client's active campaign_lines
+           DIRECTLY, independent of any order. Order Detail's own Renew buttons only
+           ever work for a line an order actually created (order_id set) -- a real
+           gap for every campaign line entered before order-linkage existed at all
+           (found live: MS Farm Bureau alone has ~20 such agent/county rows with no
+           order behind them, invisible in every Order Detail screen). This tab is
+           the only place in Admin that can find and renew those. -->
+      <button id="section-tab-campaignlines" role="tab" aria-selected="false" aria-controls="section-campaignlines" onclick="adminSection('campaignlines')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Campaign Lines</button>
       <button id="section-tab-map" role="tab" aria-selected="false" aria-controls="section-map" onclick="adminSection('map')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Services</button>
       <button id="section-tab-sections" role="tab" aria-selected="false" aria-controls="section-sections" onclick="adminSection('sections')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Sections</button>
       <button id="section-tab-intake" role="tab" aria-selected="false" aria-controls="section-intake" onclick="adminSection('intake')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Intake Forms</button>
@@ -715,6 +723,22 @@
 
         <div id="admin-clients-table" style="order:5;overflow:auto;max-height:70vh"></div>
       </div><!-- /section-clients -->
+
+      <!-- ── SECTION: Campaign Lines (2026-09-10) ──
+           Browses a client's active campaign_lines directly -- independent of any
+           order, unlike Order Detail's own Renew buttons. See the tab button's own
+           comment above for why this exists at all. -->
+      <div id="section-campaignlines" role="tabpanel" aria-labelledby="section-tab-campaignlines" tabindex="0" style="display:none">
+        <p style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:14px">Campaign Lines</p>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Find and renew a client's existing campaign lines directly — including ones entered before this system tracked which order created them, which Order Detail's own Renew button can't reach.</p>
+        <div style="max-width:420px;margin-bottom:16px">
+          <label class="lbl" for="campaignlines-client-picker">Client</label>
+          <select id="campaignlines-client-picker" onchange="loadCampaignLinesForClient(this.value)" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;font-family:inherit;background:#fff">
+            <option value="">— Select a client —</option>
+          </select>
+        </div>
+        <div id="admin-campaignlines-table"></div>
+      </div><!-- /section-campaignlines -->
 
       <!-- ── SECTION: Suggested Map (standard catalog — now editable) ── -->
       <div id="section-map" role="tabpanel" aria-labelledby="section-tab-map" tabindex="0" style="display:none">
@@ -2928,6 +2952,7 @@ window.addEventListener('resize', () => {
 const ADMIN_TAB_FILTER_IDS = [
   'orders-filter-group', 'orders-filter-search', 'orders-filter-date', 'orders-filter-help',
   'clients-filter-search', 'clients-filter-group', 'clients-filter-show-hidden',
+  'campaignlines-client-picker',
   'map-filter-section', 'map-filter-search', 'map-filter-inactive',
   'ae-filter-group',
 ];
@@ -2951,8 +2976,8 @@ function resetAdminTabState() {
 
 function adminSection(section) {
   resetAdminTabState();
-  // Fourteen sections: groups | orders | pending | clients | map | sections | intake | ae | strategists | legal | notifications | reconcile | users | accounting
-  const sections = ['groups','orders','pending','clients','map','sections','intake','ae','strategists','legal','notifications','reconcile','users','accounting'];
+  // Fifteen sections: groups | orders | pending | clients | campaignlines | map | sections | intake | ae | strategists | legal | notifications | reconcile | users | accounting
+  const sections = ['groups','orders','pending','clients','campaignlines','map','sections','intake','ae','strategists','legal','notifications','reconcile','users','accounting'];
   sections.forEach(s => {
     const panel = document.getElementById('section-' + s);
     // 'groups', 'orders', 'clients', 'users', and 'accounting' need display:flex
@@ -2976,6 +3001,7 @@ function adminSection(section) {
   else if (section === 'orders') loadAdminOrders();
   else if (section === 'pending') loadAdminPendingRequests();
   else if (section === 'clients') loadAdminClients();
+  else if (section === 'campaignlines') loadCampaignLinesTab();
   else if (section === 'map') {
     // Service catalog management is super-admin only (same restriction level as Group
     // Custom Pricing) — hide the entry point for AM-tier logins. Also guarded inside
@@ -3087,7 +3113,7 @@ function adminSection(section) {
 // textareas, no list to bound) -- asked Claire whether it should get one like every
 // other tab or stay a normal full-page-scrolling form; she chose to match the
 // others, so `admin-legal-table` now wraps its 5 field groups the same way.
-const ADMIN_SCROLL_BOX_IDS = ['admin-groups-table', 'admin-orders-table', 'admin-clients-table', 'admin-map-table', 'admin-sections-table', 'admin-intake-table', 'admin-ae-table', 'admin-strategist-table', 'admin-reconcile-table', 'admin-users-table', 'admin-accounting-table', 'admin-legal-table'];
+const ADMIN_SCROLL_BOX_IDS = ['admin-groups-table', 'admin-orders-table', 'admin-clients-table', 'admin-campaignlines-table', 'admin-map-table', 'admin-sections-table', 'admin-intake-table', 'admin-ae-table', 'admin-strategist-table', 'admin-reconcile-table', 'admin-users-table', 'admin-accounting-table', 'admin-legal-table'];
 function fitAdminTableHeight() {
   ADMIN_SCROLL_BOX_IDS.forEach(id => {
     const box = document.getElementById(id);
@@ -10669,6 +10695,266 @@ async function adminConfirmAgentRenewal(orderId, splitIndex) {
 
   showToast('✅ Agent service renewed');
   viewOrderDetail(orderId);
+}
+
+// ── CAMPAIGN LINES BROWSER (2026-09-10) ─────────────────────────────────
+// Finds and renews a client's campaign_lines DIRECTLY, independent of any
+// order -- Order Detail's own Renew buttons only ever work for a line an
+// order actually created. Real gap for anything entered before order-
+// linkage existed at all (MS Farm Bureau alone has ~20 such agent/county
+// rows). This is a deliberate, temporary stopgap for STAFF-driven renewals
+// only -- the actual long-term plan (per Claire) is the client/AE-facing
+// companion form's own Renew flow, once that's rolled out; that form has
+// this exact same order_id gap today (companion_get_active_services filters
+// `order_id is not null`) plus no Agent/County Split awareness at all, and
+// needs its own fix before it goes live broadly. Not touched here --
+// logged as its own follow-up in io_project_tracking.md.
+let ALL_CAMPAIGN_LINES_FOR_CLIENT = [];
+
+async function loadCampaignLinesTab() {
+  // Reuses ALL_CLIENTS (populated by loadAdminClients()) for the picker AND
+  // to resolve the picked client's trello_list_id/name later when renewing --
+  // loads it fresh here if the Clients tab hasn't been visited yet this
+  // session, so this tab never depends on visit order.
+  if (!ALL_CLIENTS.length) {
+    try {
+      ALL_CLIENTS = await sb('rpc/admin_get_clients', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+      }) || [];
+    } catch(e) {
+      console.warn('Could not load clients for Campaign Lines tab:', e.message);
+    }
+  }
+  const sel = document.getElementById('campaignlines-client-picker');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— Select a client —</option>' +
+    [...ALL_CLIENTS].sort((a,b) => (a.name||'').localeCompare(b.name||''))
+      .map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+  sel.value = current;
+  if (!current) document.getElementById('admin-campaignlines-table').innerHTML = '';
+}
+
+async function loadCampaignLinesForClient(clientId) {
+  const el = document.getElementById('admin-campaignlines-table');
+  if (!clientId) { el.innerHTML = ''; return; }
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
+  try {
+    ALL_CAMPAIGN_LINES_FOR_CLIENT = await sb('rpc/admin_get_client_campaign_lines_detailed', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: clientId })
+    }) || [];
+  } catch(e) {
+    el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading campaign lines: ${esc(e.message)}</p>`;
+    return;
+  }
+  renderCampaignLinesTable(clientId);
+}
+
+function renderCampaignLinesTable(clientId) {
+  const el = document.getElementById('admin-campaignlines-table');
+  const rows = ALL_CAMPAIGN_LINES_FOR_CLIENT;
+  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US',{maximumFractionDigits:0}) : '—';
+  const fmtDate = s => {
+    if (!s) return '—';
+    return new Date(s + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  };
+  if (!rows.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">No active campaign lines for this client.</p>';
+    return;
+  }
+  const trs = rows.map(r => {
+    const svcLabel = CATALOG_ROWS[r.service_id]?.accounting_label || CATALOG_ROWS[r.service_id]?.label || r.tactic_label || r.service_id;
+    const linkBadge = r.order_id
+      ? '<span style="font-size:9px;font-weight:700;background:#DCFCE7;color:#166534;padding:1px 6px;border-radius:8px">LINKED TO ORDER</span>'
+      : '<span style="font-size:9px;font-weight:700;background:#F3F4F6;color:#6B7280;padding:1px 6px;border-radius:8px">NO ORDER ON FILE</span>';
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:8px 10px">${esc(r.county || '—')}</td>
+      <td style="padding:8px 10px">${esc(r.agent_name || '—')}</td>
+      <td style="padding:8px 10px">${esc(svcLabel)}${' '}${linkBadge}</td>
+      <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(r.flight_start)}</td>
+      <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(r.flight_end)}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${fmtMoney(r.current_budget)}${r.billing_type === 'spend' || r.billing_type === 'recurring' ? '/mo' : ''}</td>
+      <td style="padding:8px 10px"><button type="button" onclick="adminToggleCampaignLineRenewPanel('${esc(clientId)}','${esc(r.id)}','${esc(r.flight_end || '')}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button></td>
+    </tr>
+    <tr id="campaignline-renew-panel-${esc(r.id)}" style="display:none"><td colspan="7" style="padding:0"></td></tr>`;
+  }).join('');
+  el.innerHTML = `<table style="font-size:12.5px;border-collapse:collapse;width:100%;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
+    <thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">County</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Agent</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Service</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Start</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">End</th>
+      <th style="padding:9px 10px;text-align:right;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Budget</th>
+      <th style="padding:9px 10px"></th>
+    </tr></thead>
+    <tbody>${trs}</tbody>
+  </table>`;
+}
+
+function adminToggleCampaignLineRenewPanel(clientId, lineId, currentEndDate) {
+  const row = document.getElementById(`campaignline-renew-panel-${lineId}`);
+  if (!row) return;
+  if (row.style.display !== 'none' && row.querySelector('td').innerHTML) { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  const currentEndDisplay = currentEndDate
+    ? new Date(currentEndDate + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
+    : '';
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);border-radius:8px;padding:14px 16px;margin:4px 0">
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:8px">Renew this line${currentEndDisplay ? ` <span style="color:var(--muted);font-weight:400">(currently ends ${esc(currentEndDisplay)})</span>` : ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px;max-width:420px">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New End Date</label>
+          <input type="date" id="campaignline-renew-end-${lineId}" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New Monthly Budget (optional)</label>
+          <input type="number" step="0.01" id="campaignline-renew-budget-${lineId}" placeholder="Leave blank to keep current" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:10px">Looks for this line's existing Trello card by name (ignoring whatever dates are currently in the title) and updates its dates and due date. If more than one — or no — matching card is found, you'll be told to update Trello by hand instead of risking the wrong one.</p>
+      <div style="display:flex;gap:10px">
+        <button type="button" id="campaignline-renew-confirm-btn-${lineId}" onclick="adminConfirmCampaignLineRenewal('${esc(clientId)}','${esc(lineId)}')" style="padding:7px 16px;border-radius:7px;background:#1F7A42;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Renewal</button>
+        <button type="button" onclick="adminToggleCampaignLineRenewPanel('${esc(clientId)}','${esc(lineId)}','${esc(currentEndDate)}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+}
+
+// Same dash/whitespace canonicalization index.html's own norm() uses for
+// Trello card name comparison (kept in sync by hand -- see that function's
+// own comment for the real-world cases that shaped it), plus a date-range
+// strip so a card found here matches regardless of which term's dates are
+// currently in its title.
+function adminNormCardName(n) {
+  return (n || '').toLowerCase().replace(/[-‐‑‒–—―−]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
+}
+function adminStripDateRangeFromCardName(name) {
+  const months = 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec';
+  const re = new RegExp(`\\s+(?:${months})\\s+\\d{1,2}(?:\\s*-\\s*(?:(?:${months})\\s+\\d{1,2}|\\d{1,2}))?`, 'gi');
+  return (name || '').replace(re, ' ').replace(/\s+/g, ' ').trim();
+}
+// Same display logic as index.html's formatAgentDateRange()/
+// formatCampaignDateRange() -- kept in sync by hand, same convention as
+// adminNormCardName() above.
+function adminFormatDateRangeForTitle(startIso, endIso) {
+  const parseLocal = s => s ? new Date(s + 'T12:00:00') : null;
+  const start = parseLocal(startIso);
+  const end = parseLocal(endIso);
+  const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (start && end) {
+    return (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear())
+      ? `${fmt(start)} - ${end.getDate()}`
+      : `${fmt(start)} - ${fmt(end)}`;
+  }
+  return start ? fmt(start) : (end ? fmt(end) : '');
+}
+
+async function adminConfirmCampaignLineRenewal(clientId, lineId) {
+  const confirmBtn = document.getElementById(`campaignline-renew-confirm-btn-${lineId}`);
+  if (confirmBtn?.disabled) return;
+  if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; }
+
+  const newEndDate = document.getElementById(`campaignline-renew-end-${lineId}`)?.value;
+  const budgetRaw = document.getElementById(`campaignline-renew-budget-${lineId}`)?.value;
+  const newBudget = budgetRaw ? parseFloat(budgetRaw) : null;
+  if (!newEndDate) {
+    showToast('Enter a new end date', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
+
+  const line = ALL_CAMPAIGN_LINES_FOR_CLIENT.find(r => r.id === lineId);
+  const client = ALL_CLIENTS.find(c => c.id === clientId);
+  if (!line || !client) {
+    showToast('Could not find this line or client', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
+
+  try {
+    await sb('rpc/admin_renew_campaign_line', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+        p_campaign_line_id: lineId, p_new_end_date: newEndDate, p_new_monthly_budget: newBudget,
+      }),
+    });
+  } catch (e) {
+    showToast('Could not renew this line: ' + e.message, 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
+  line.flight_end = newEndDate;
+
+  // Trello: find the existing card by name, ignoring whatever dates are
+  // currently in its title, then update its title (new dates) + due date +
+  // a comment -- per Claire, a renewal should push the SAME card forward,
+  // never spin up a new one. Only acts automatically on an UNAMBIGUOUS
+  // single match; anything else is reported, not guessed at.
+  if (client.trello_list_id) {
+    try {
+      const listRes = await fetch(PROXY, {
+        method: 'POST',
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'trello_get_list_cards', list_id: client.trello_list_id }),
+      });
+      const cards = await listRes.json();
+      const svcLabel = CATALOG_ROWS[line.service_id]?.accounting_label || CATALOG_ROWS[line.service_id]?.label || line.tactic_label || line.service_id;
+      // Identifying tokens a real card for this line must contain, regardless
+      // of whatever riding-along suffix or exact wording it also carries --
+      // an agent-split line is identified by county+agent, a plain line by
+      // its own tactic label; both always carry the client's business name.
+      const needParts = line.agent_name
+        ? [line.county, line.agent_name, client.name]
+        : [line.tactic_label || svcLabel, client.name];
+      const needed = needParts.filter(Boolean).map(adminNormCardName);
+      const matches = Array.isArray(cards) ? cards.filter(c => {
+        const stripped = adminNormCardName(adminStripDateRangeFromCardName(c.name || ''));
+        return needed.every(part => stripped.includes(part));
+      }) : [];
+
+      if (matches.length === 1) {
+        const card = matches[0];
+        const newRange = adminFormatDateRangeForTitle(line.flight_start, newEndDate);
+        const baseName = adminStripDateRangeFromCardName(card.name || '').replace(/\s+—\s+/, ' — ');
+        // Re-insert the new date range right before the trailing " — <business name>"
+        // segment, matching exactly where index.html's own datedCardSuffix()/
+        // datedAgentCardSuffix() place it when a card is first created.
+        const dashIdx = baseName.lastIndexOf(' — ');
+        const newName = dashIdx === -1
+          ? `${baseName} ${newRange}`
+          : `${baseName.slice(0, dashIdx)} ${newRange}${baseName.slice(dashIdx)}`;
+        const dueFields = adminCampaignDueFields(newEndDate);
+        await fetch(PROXY, {
+          method: 'POST',
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: 'trello_update_card', card_id: card.id, name: newName, ...dueFields }),
+        });
+        const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
+        const commentText = `🔁 Renewed ${svcLabel} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
+        const res = await fetch(PROXY, {
+          method: 'POST',
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: card.id, text: commentText }),
+        });
+        if (!res.ok) console.warn('Could not post renewal comment to card', card.id, ':', res.status);
+      } else if (matches.length === 0) {
+        showToast('Renewed in the system, but no matching Trello card was found — please update Trello by hand', 'error');
+      } else {
+        showToast(`Renewed in the system, but found ${matches.length} possible matching Trello cards — please update the right one by hand`, 'error');
+      }
+    } catch (e) {
+      console.warn('Could not search/update Trello card for renewal:', e.message);
+      showToast('Renewed in the system, but the Trello update failed — please update Trello by hand', 'error');
+    }
+  } else {
+    showToast('Renewed in the system, but this client has no Trello list on file — please update Trello by hand', 'error');
+  }
+
+  showToast('✅ Campaign line renewed');
+  renderCampaignLinesTable(clientId);
 }
 
 // ── AM-TRIGGERED SWAP TACTIC (2026-08-20) ───────────────────────

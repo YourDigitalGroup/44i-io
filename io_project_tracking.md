@@ -26669,3 +26669,102 @@ both. `node -e (new Function(...))` syntax check on `admin/index.html`
 — no errors. Not yet live-tested — needs Claire to run all three SQL
 pieces (trigger fix, backfill, new RPC — all in one script) and try
 renewing one of these 5 agents from Admin.
+
+## Admin "Campaign Lines" browser tab — renewing lines with no order on file (2026-09-10)
+
+Claire's follow-up question exposed a bigger gap than the Renew action
+above fixes: MS Farm Bureau alone has ~20 other pre-existing
+`campaign_lines` rows (Morgan Jarabica, Canaan Griffin, Tommy Scott,
+etc., dating back to 2024) with `order_id` null — never created through
+any order in this system. There's no Order Detail screen to find a
+Renew button on for these, and no stored Trello card id anywhere for
+them (that link only gets written via `orders.intake_responses`, which
+requires an order). Confirmed via SQL this isn't unique to today's 5
+agents — it's a real, broader problem for any legacy line.
+
+Presented Claire two scoping choices; she chose: (1) a new **"Campaign
+Lines" tab** in Admin listing a client's active campaign lines directly,
+independent of any order (not a narrower MS-Farm-Bureau-only view), and
+(2) for finding the right Trello card with no stored id, **search Trello
+by name, ignoring the date** rather than requiring manual linking. She
+also confirmed a renewal from here should update the visible date range
+in the card's title too, not just push the due date silently (leaving a
+stale title date while the due date moves would look inconsistent).
+
+**Built**:
+- New "Campaign Lines" tab in Admin (client picker → table of that
+  client's active lines: county, agent, service, start/end, budget,
+  each with a "↻ Renew" action). Sourced from new RPC
+  `admin_get_client_campaign_lines_detailed` — lists lines directly by
+  client, with no `order_id is not null` filter, so legacy lines show
+  up too.
+- New RPC `admin_renew_campaign_line(p_campaign_line_id, ...)` — updates
+  the line's own dates/budget directly by its id (not
+  `order_id + service_id`, since these lines often have no order id).
+- Trello resolution has to search rather than look up a stored id, since
+  these lines never had one recorded: fetches all cards in the client's
+  Trello list (`trello_get_list_cards`), strips any existing date range
+  from each card's title (`adminStripDateRangeFromCardName` — matches
+  the `Mon D` / `Mon D - D` / `Mon D - Mon D` shapes these titles use),
+  normalizes (`adminNormCardName`, same dash/whitespace canonicalization
+  as `index.html`'s `norm()`), and requires every identifying token
+  (county + agent name for a split line, or tactic label, always plus
+  the client's business name) to appear in the stripped/normalized name.
+  Only acts automatically on an **unambiguous single match** — 0 or 2+
+  matches shows an error telling the AM to update Trello by hand instead
+  of guessing wrong.
+- On a single match, rebuilds the title with the new date range spliced
+  in right before the trailing ` — <business name>` segment (via
+  `lastIndexOf(' — ')`), matching exactly where `index.html`'s own
+  `datedCardSuffix()`/`datedAgentCardSuffix()` place it when a card is
+  first created — pushes both the new title and the due date via one
+  `trello_update_card` call, then posts a `🔁 Renewed ...` comment,
+  mirroring the existing Renew pattern.
+
+**Bug found and fixed before presenting this as done**: the new
+comment-text line wrapped the service label in `esc()` before sending
+it to `trello_add_comment`. `esc()` (`shared.js`) is the HTML-escape
+helper used everywhere else in this app for safely injecting text into
+`innerHTML` — it turns `&` into `&amp;`, `"` into `&quot;`, etc. Trello
+comments go through the proxy as a plain-text JSON field, not HTML, so
+this would have sent literal `&amp;` for any service whose label
+contains `&` (e.g. "Social Media Ads: Facebook & Instagram" — exactly
+the MS Farm Bureau service this whole feature was built for). Confirmed
+by checking: every other `commentText` in `admin/index.html` (there are
+over a dozen, across cancel/edit/renew actions) uses the raw label with
+no `esc()` for this exact reason. Fixed by removing the wrapping.
+
+**Known, real, explicitly out-of-scope gap — flagged, not fixed**:
+`companion/index.html` (the client/AE-facing self-service Cancel/Edit/
+Renew form, whose requests land in Admin's Pending Requests for AM
+approval) has the identical `order_id is not null` gap in
+`companion_get_active_services()` — its SQL literally filters
+`and cl.order_id is not null` — plus **zero** Agent/County Split
+awareness at all (it joins `line_items` by `service_id` only, no
+`agent_name`/`county` anywhere in its matching or output). Per Claire:
+"the goal is to use the companion form moving forward but we haven't
+shown it to everyone yet so I am just trying to avoid this duplication
+issue across all clients until we show that to clients" — meaning the
+Admin browser above is an explicit stopgap for staff use now, and the
+companion form's gap is real but was intentionally left alone this
+session. **This must be fixed before the companion form is shown to
+clients/AEs** — otherwise the exact same "renewal can't find its line,
+creates a duplicate" problem this whole session was about will recur
+there, for every client, the first time someone tries to renew a
+legacy or agent-split line through it.
+
+**Verified**: syntax-checked (`node -e (new Function(...))`) after every
+edit including the `esc()` fix. Simulated the harder logic in Node
+against realistic mock data matching the *actual* Trello title format
+this app produces (confirmed by reading `createAgentSplitCards()`'s real
+construction — county/agent joined with an em dash, no extra dash before
+the date range, e.g. `Union — Ashley Kidd (Social Media Ads: Facebook &
+Instagram) Oct 1 - Sep 30 — MS Farm Bureau`): the token-matching
+correctly identified the right card, and the strip-then-reinsert title
+rebuild reproduced the exact original format with new dates spliced in.
+Not yet live-tested against a real Trello board — needs Claire to run
+`admin_get_client_campaign_lines_detailed` and `admin_renew_campaign_line`
+(in `scratchpad/fix-agent-split-order-id.sql`) and try the new tab.
+Also still outstanding: confirming whether Claire has run the *earlier*
+pieces in that same SQL file (trigger fix, backfill,
+`admin_renew_agent_split_service`) — no confirmation received yet.
