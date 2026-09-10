@@ -26225,3 +26225,24 @@ confirmed a later start date correctly produces a smaller prorated
 figure. `node -e (new Function(...))` syntax check on both
 `index.html` and `admin/index.html` — no errors. Not yet live-tested —
 needs Claire to run the SQL, then try correcting a real delayed order.
+
+## Hidden-client cleanup missed Admin's Pending Requests tab (2026-09-10)
+
+Follow-up to the 2026-09-09 hidden-clients work: Claire caught that
+Admin's Pending Requests list still showed requests tied to the hidden
+test clients (Claude Test Group, ABC Floors, ABC Pools under 44i) —
+missed because `admin_get_pending_requests()` reads straight from the
+`pending_requests` table (`returns setof pending_requests`) with no join
+to `clients` at all, so it was never touched by the original sweep of
+client-list/order RPCs.
+
+**Fix**: `pending_requests` has its own `client_id` column (confirmed
+via how `admin/index.html` already resolves display names from it) —
+added a `left join clients` + the same
+`coalesce(c.hidden, false) = false` filter used everywhere else this
+flag was wired in.
+
+This closes out the "clean slate for real orders" request — every place
+a hidden client could surface (Strategist, Accounting, Admin's Orders/
+Clients/Pending Requests, and the public form's own client picker) now
+respects the same `hidden` flag.
