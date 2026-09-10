@@ -27377,3 +27377,53 @@ varying, plus a flat $175 one-time fee item) — correct output for both
 the list cell and the detail summary. Not yet seen live in the actual
 app — needs a redeploy (pure frontend change, no SQL) and Claire
 re-checking this same order.
+
+## Flat-rate spend lines only ever got ONE month's Gross Budget pre-filled (2026-09-10, same day)
+
+Claire flagged a lot of imported campaign lines showing no Gross
+Budget across most of their flight. Ran the whole-flight version of the
+missing-gross-spend audit (built earlier this session, extended per her
+request to check the entire flight instead of just past/current
+months) and got back real data to reason from. My first read was wrong
+— I treated the gaps as expected ("hasn't happened yet"), which is true
+for Actual Spend but NOT for Gross Budget: Claire correctly pointed out
+Gross Budget is the *planned* amount, known upfront, not something that
+should wait for time to pass.
+
+**Root cause, confirmed against the audit data**: every affected line
+except one had exactly the same shape — only the flight's FIRST month
+had a real `campaign_months` row; every month after that was
+completely missing. That's not a data-entry gap, it's the
+`create_campaign_lines_from_order()` trigger's own flat-rate branch:
+for a non-varying spend service, it only ever inserted ONE
+`campaign_months` row (the flight's start month), even though a flat
+rate is fully known for the WHOLE flight at submission time. This
+affects every flat-rate order going forward, not just CSV imports.
+(Blue Dolphin Pools was the one exception — 12 real months, then a
+total gap for its remaining 2 years — genuinely incomplete import data,
+a separate, real issue from the systemic trigger gap.)
+
+**Fix**: the trigger's flat-rate `else` branch now loops across every
+month from flight start to flight end, inserting the same flat
+`gross_budget` for each — a new `v_flat_month` loop variable, kept
+deliberately separate from the existing `v_month` so it doesn't clobber
+the value that variable is still needed for later in the same item
+loop (the hosting-proration/setup-fee inserts). **Deliberately left the
+Agent/County Split branch untouched** — none of the audit's affected
+lines were split lines, so extending the same fix there wasn't
+confirmed in scope; flagged to Claire, not yet decided.
+
+**Backfill**: separate SQL for the lines already affected, filling each
+one's gaps with that SAME line's own latest known rate (mirrors the
+Strategist portal's existing "Fill remaining months to flight end"
+button's own default), split into an UPDATE (existing null rows) and an
+INSERT (missing rows entirely) rather than an `ON CONFLICT` upsert,
+since `campaign_months` isn't known to have a unique constraint on
+`(campaign_line_id, month)` to rely on.
+
+**Verified**: structurally checked (balanced parens) — not run against
+real data, no live DB access. SQL in
+`scratchpad/fix-flat-rate-prefill-whole-flight.sql` and
+`scratchpad/backfill-flat-rate-missing-months.sql` — not yet run.
+**Open question for Claire**: whether the same whole-flight pre-fill
+should also apply to the Agent/County Split branch.
