@@ -26534,3 +26534,89 @@ the full file — no errors. Not yet live-tested — needs Claire to try
 resuming a draft for a multi-agent client (MS Farm Bureau or similar)
 with a filled-in split table, and confirm a typed AE Market value
 survives a resume too.
+
+## MS Farm Bureau's first real order: three issues, one root cause (2026-09-10)
+
+The first real order submitted through the new system was, fittingly,
+for MS Farm Bureau — the one client actually using the Agent/County
+Split feature — and it surfaced problems the feature had genuinely
+never hit before, since nothing had gone through it for real until now.
+Diagnosed by reading real order/campaign_lines data Claire pulled via
+SQL, not by guessing.
+
+**1. Admin's Order Detail can't display agent-split data at all.**
+Confirmed via a direct grep: `agent_splits` is referenced zero times
+anywhere in `admin/index.html`. For an ordinary order everything lives
+in `line_items`, which Admin already renders — but for a multi-agent
+client, the real content (which agent, which county, individual
+dates/amounts) lives entirely in `agent_splits`, a field nobody ever
+built a view for. That's why the order "looked odd": one aggregate
+$1,500/mo row instead of the 5 individual agents actually entered.
+**Not yet fixed** — next piece of work, see below.
+
+**2. A renewal through `agent_splits` never recorded which order caused
+it.** Traced the real data: all 5 renewed agents' `campaign_lines` rows
+had exactly the right updated flight dates and budget ($300/mo each,
+Oct 2026–Sep 2027) — the renewal itself worked completely correctly.
+But every one of those rows showed `order_id: null`, because
+`create_campaign_lines_from_order()`'s agent_splits loop only ever
+stamps `order_id` on a fresh INSERT — the UPDATE branch (used when an
+agent/county/service combo already has a row, i.e. any renewal) updates
+flight dates and budget but never touches `order_id`. Fixed: added
+`order_id = new.id` to that update statement, plus a one-time backfill
+of this order's own 5 rows so it isn't itself missing the traceability
+the fix adds going forward.
+
+**3. The Trello cards came out with no dates in the title, and as brand
+new cards instead of updating the existing ones.** Two related things,
+confirmed against a screenshot of last year's original cards (which DO
+show dates, e.g. "10/1/25 - 9/30/26") versus this year's new ones
+(missing dates entirely):
+   - Root cause of the missing date: `createAgentSplitCards()`'s title
+     line called the shared `datedCardSuffix()`, which formats a date
+     range from `selected[id].start_date`/`.end_date` — the same shared
+     per-service Step 2 date fields an ordinary tactic uses. An
+     Agent/County Split service's real dates live per-agent in
+     `agent_splits`/`rowsForAgent` instead; those shared fields are
+     simply never filled in for a split-driven service, so the date
+     range was always empty here. The per-agent due-date *badge* was
+     already correct (it reads `rowsForAgent` directly) — only the
+     title-building line was still calling the shared, non-agent-aware
+     version. Fixed: added `formatAgentDateRange()`/
+     `datedAgentCardSuffix()`, mirroring the shared functions' exact
+     display logic but reading from `rowsForAgent`, and swapped them
+     into `createAgentSplitCards()`'s title line.
+   - Root cause of new cards instead of updates: card matching here
+     works by exact title match (`findExistingCardByName(cn)`), and
+     `cn` includes the date suffix — so once real dates are in the
+     title (the fix above), a year-over-year renewal's title will
+     naturally differ from the prior term's card and can never match by
+     name. Claire confirmed this is NOT what she wants for a routine
+     annual renewal: the same card should get its due date pushed,
+     matching exactly how the existing single-tactic
+     `admin_renew_service`/"↻ Renew" flow already behaves (same
+     campaign_lines row, same Trello card, due date extended, comment
+     posted — title deliberately left unrenamed). This order didn't go
+     through that path because Admin has no Renew action for
+     agent-split rows at all yet (item 1 above) — the AE resubmitted a
+     full new IO instead, which is why fresh cards were created. Going
+     forward, per Claire, staff will use a proper Renew action once
+     Admin can actually show and act on agent-split rows.
+
+**Still to build**: Admin's Order Detail view needs to actually display
+each agent-split row, and each one needs its own "↻ Renew" action
+mirroring `admin_renew_service`'s existing behavior (push the
+campaign_lines row's dates, update the SAME Trello card's due date +
+comment, no new card, no title change) — investigating
+`admin_renew_service`'s real definition now to model the new one
+precisely rather than guessing at the pattern.
+
+**Verified so far**: read the real order's `line_items`/`agent_splits`
+JSON and the resulting `campaign_lines`/`campaign_months` rows via SQL
+Claire ran, rather than assuming; confirmed the date-suffix root cause
+by comparing last year's real card titles (screenshot) against this
+year's. Simulated `formatAgentDateRange()` in Node against the actual
+order's real dates (2026-10-01 – 2027-09-30) — correctly produced
+"Oct 1 - Sep 30". `node -e (new Function(...))` syntax check on
+`index.html` — no errors. The `order_id` trigger fix and backfill are
+written but not yet run by Claire.

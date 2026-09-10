@@ -6724,6 +6724,36 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           const range = formatCampaignDateRange(originalWorkflow);
           return range ? ' ' + range : '';
         }
+        // Agent/County Split variant of the two functions above (2026-09-10, found
+        // live on MS Farm Bureau's first real order through this feature — its cards
+        // came out with no dates in the title at all). formatCampaignDateRange()/
+        // datedCardSuffix() read selected[id].start_date/.end_date, the SAME shared
+        // per-service date fields an ordinary Step 2 row uses -- but an Agent/County
+        // Split service's real flight dates live per-agent in agent_splits/
+        // rowsForAgent instead, so those shared fields are simply never filled in for
+        // a split-driven service. The per-agent due-date BADGE already correctly read
+        // rowsForAgent (that part was always right); the title-building line just
+        // never got its own agent-aware version of this pair — it kept calling the
+        // shared one, which had nothing to read.
+        function formatAgentDateRange(rowsForAgent) {
+          const parseLocal = s => s ? new Date(s + 'T12:00:00') : null;
+          const starts = rowsForAgent.map(s => s.start_date).filter(Boolean).sort();
+          const ends = rowsForAgent.map(s => s.end_date).filter(Boolean).sort();
+          const start = parseLocal(starts[0]);
+          const end = parseLocal(ends[ends.length - 1]);
+          const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          if (start && end) {
+            return (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear())
+              ? `${fmt(start)} - ${end.getDate()}`
+              : `${fmt(start)} - ${fmt(end)}`;
+          }
+          return start ? fmt(start) : (end ? fmt(end) : '');
+        }
+        function datedAgentCardSuffix(originalWorkflow, rowsForAgent) {
+          if (!workflowWantsDatedCard(originalWorkflow)) return '';
+          const range = formatAgentDateRange(rowsForAgent);
+          return range ? ' ' + range : '';
+        }
 
         // Trello card due date + reminder (2026-08-28, per Claire + AM — "add the
         // campaign dates to the trello cards and send a reminder 10 days before
@@ -6874,7 +6904,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           for (const [agentKey, rowsForAgent] of Object.entries(byAgent)) {
             const agentName = rowsForAgent[0].agent_name;
             const county = rowsForAgent[0].county;
-            const cn = `${county} — ${agentName} (${wf})` + ridingAlongSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+            const cn = `${county} — ${agentName} (${wf})` + ridingAlongSuffix(originalWorkflows[wfIdx]) + datedAgentCardSuffix(originalWorkflows[wfIdx], rowsForAgent) + ' — ' + bizName;
             const descLines = rowsForAgent.map(s => {
               const label = CATALOG_ROWS[s.service_id]?.label || s.service_id;
               return `• ${label} — $${Number(s.amount).toLocaleString()}/mo (${s.start_date || '—'} – ${s.end_date || 'Ongoing'})`;
