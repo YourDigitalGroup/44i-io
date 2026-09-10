@@ -2320,8 +2320,14 @@ function calcProration(pageType, ioDateStr, serviceId) {
   const daysRemaining = Math.ceil((yearEnd - startDate) / 86400000) + 1;
   const proratedAmt = Math.round((fee * daysRemaining / 365) * 100) / 100;
   const fmtDate = startDate.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+  // startDateISO (2026-09-09, per Claire — needed a way to correct a delayed
+  // website's hosting proration after the fact): the raw ISO date, alongside the
+  // display-formatted one above, so admin_edit_hosting_proration can recompute
+  // this same math later from a corrected date without re-deriving it from the
+  // human-readable string.
+  const startDateISO = startDate.toISOString().slice(0, 10);
   return {
-    fee, days, proratedAmt, daysRemaining, startDate: fmtDate,
+    fee, days, proratedAmt, daysRemaining, startDate: fmtDate, startDateISO,
     note: `Hosting starts ${fmtDate} (${days} days from IO). Prorated: $${proratedAmt.toFixed(2)} (${daysRemaining} days remaining in year)`
   };
 }
@@ -5595,6 +5601,14 @@ async function submitIO() {
         hosting_choice: hosting?.choice || null,
         hosting_package: hosting?.package || null,
         prorated_hosting_amt: hosting?.proratedAmt || null,
+        // hosting_fee/hosting_start_date (2026-09-09, per Claire — a delayed website
+        // build needs its hosting proration corrected after signing) -- the raw
+        // inputs calcProration() used, not just its result, so admin_edit_hosting_
+        // proration can redo that same math from a corrected date later. Only
+        // present going forward; an order signed before this can't be corrected
+        // this way since its raw hosting fee was never captured.
+        hosting_fee: hosting?.fee || null,
+        hosting_start_date: hosting?.startDateISO || null,
         // Per-tactic flight dates (2026-08-06) — the strategist-portal trigger
         // (create_campaign_lines_from_order) reads these per line item to seed each
         // campaign_lines row's own flight_start/flight_end, instead of the old shared
