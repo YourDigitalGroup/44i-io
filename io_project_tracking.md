@@ -27542,3 +27542,30 @@ lines specifically
 previous end date (2026-09-30, confirmed earlier this session from last
 year's actual Trello card title) and the real order's own `created_at`
 timestamp. Not yet run.
+
+Confirmed the "View Order" link needs no new code — it's already purely
+conditional on `l.order_id`, which is now correctly set on these 5
+lines, so it shows up automatically once the fixes above are run.
+
+## Strategist Detail panel header decluttered (2026-09-10, same day)
+
+Claire, screenshot: the Detail panel's header row (client/tactic name,
+split label, platform campaign name, live-campaign link, Trello link,
+View Order, budget mode pill, Close) always rendered BOTH a raw text
+input (for `platform_url`/`trello_card_url`) AND its resolved
+link/button side by side, even once a real value already existed —
+looked cluttered once the Trello link actually resolved (screenshot
+showed an empty "Reference link to the live campaign" input and an
+empty "Paste a Trello card link" input sitting right next to an
+already-working "Trello Card ↗" button).
+
+**Fix**: both inputs now only render when there's genuinely nothing
+resolved yet — `platform_url`'s input hides once `l.platform_url` is
+set (replaced by the "View in <platform> ↗" link); the manual
+`trello_card_url` input hides once `strategistTrelloCardUrl(l)`
+resolves anything at all (manual OR the agent-split auto-resolution
+fixed earlier today) — replaced by the "Trello Card ↗" button. Same
+`onchange`/save wiring either way; this only changes which element is
+visible, not how a value gets set. `node -e (new Function(...))` syntax
+check — no errors. Purely a display change, no SQL, no live-app
+verification yet.

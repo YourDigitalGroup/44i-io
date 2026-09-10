@@ -3557,11 +3557,18 @@ function renderStrategistDetailPanel() {
       <div style="display:flex;align-items:center;gap:8px">
         <input id="detail-split-label-${l.id}" value="${esc(l.split_label || '')}" placeholder="Split label (e.g. Region 1) — blank if not split" onchange="strategistSaveSplitLabel('${l.id}', this.value)" style="width:170px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
         <input id="detail-platform-campaign-name-${l.id}" value="${esc(l.platform_campaign_name || '')}" placeholder="Exact title in the ad platform (for report matching)" onchange="strategistSavePlatformCampaignName('${l.id}', this.value)" style="width:240px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
-        <input id="detail-platform-url-${l.id}" value="${esc(l.platform_url || '')}" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
-        ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent-dark)">View in ${esc(l.platform || 'platform')} ↗</a>` : ''}
+        <!-- Both link inputs below now hide once there's already something to show
+             as a clean resolved link/button (2026-09-10, per Claire -- "can we hide
+             those so you just see the buttons" -- the input box and its resolved
+             button/link used to both always render, which read as cluttered once
+             a Trello link was actually resolved). Same underlying data either way,
+             onchange still saves the same way -- this only affects which one is
+             visible, not how the value gets set. -->
+        ${l.platform_url ? `<a href="${esc(l.platform_url)}" target="_blank" style="font-size:11px;font-weight:600;color:var(--accent-dark)">View in ${esc(l.platform || 'platform')} ↗</a>`
+          : `<input id="detail-platform-url-${l.id}" value="" placeholder="Reference link to the live campaign" onchange="strategistSaveLine('${l.id}', {platform_url: this.value}, false)" style="width:220px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>`}
         ${l.order_id ? `<button onclick="strategistViewOrder('${esc(l.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
-        <input id="detail-trello-card-url-${l.id}" value="${esc(l.trello_card_url || '')}" placeholder="Paste a Trello card link (only needed if not auto-filled)" onchange="strategistSaveLine('${l.id}', {trello_card_url: this.value}, false)" style="width:230px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>
-        ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;text-decoration:none">Trello Card ↗</a>` : ''}
+        ${strategistTrelloCardUrl(l) ? `<a href="${strategistTrelloCardUrl(l)}" target="_blank" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;text-decoration:none">Trello Card ↗</a>`
+          : `<input id="detail-trello-card-url-${l.id}" value="" placeholder="Paste a Trello card link (only needed if not auto-filled)" onchange="strategistSaveLine('${l.id}', {trello_card_url: this.value}, false)" style="width:230px;padding:5px 8px;border-radius:6px;border:1px dashed var(--border);font-size:11px"/>`}
         ${strategistBudgetModePillHtml(l)}
         <button onclick="strategistCloseDetailPanel()" class="btn-quiet-green">✕ Close</button>
       </div>
