@@ -27112,3 +27112,13 @@ against mock `INTAKE_FORMS` data. Not yet tested against a real intake
 form/order end-to-end in the actual app — needs the new SQL run first
 (`scratchpad/companion-intake-update.sql`), then a real renewal
 submitted through companion and approved through Admin.
+
+**2026-09-10, later same day**: Claire ran all 3 SQL pieces (Accounting
+sort, additional-card-member columns, companion intake-update RPCs).
+All three are now live. Still needs: setting STMM's actual Digital
+Campaign Manager Trello handle in Admin's Groups tab (the column exists
+but nothing's been entered yet), and a real end-to-end test of the
+companion intake update (submit a renewal with an intake change through
+companion, approve it in Admin, confirm the new answers land on the
+order) — neither has happened yet, just the code-level Playwright/Node
+verification described above.
