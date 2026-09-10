@@ -26768,3 +26768,23 @@ Not yet live-tested against a real Trello board — needs Claire to run
 Also still outstanding: confirming whether Claire has run the *earlier*
 pieces in that same SQL file (trigger fix, backfill,
 `admin_renew_agent_split_service`) — no confirmation received yet.
+
+**Follow-up question and decision (2026-09-10, same day)**: Claire asked
+whether any of this also helps when an AE just submits a brand-new IO
+for an already-existing campaign — flagged as likely the *common* path
+until the companion form replaces staff-driven renewals. Answer: no —
+the Campaign Lines tab and its fuzzy Trello matching only run when
+someone uses the new Renew actions. A fresh IO submission still goes
+through `index.html`'s own Trello sync (`createAgentSplitCards()` /
+the plain card-creation path), which matches an existing card by
+**exact** name only — since a renewal's dates differ from the prior
+term's, the title never matches, so it will always create a new card
+rather than reuse the old one. This is the same mechanism that caused
+the original MS Farm Bureau problem.
+
+Proposed extending the same "search by name, ignoring dates" logic into
+the submission path so a resubmitted IO updates the existing card
+instead of duplicating it. **Claire checked with her AM and decided not
+to build this for now** — the AM doesn't mind new cards being created,
+since it lets them start clean going forward. So: intentionally left
+as-is, not a bug, don't revisit unless asked.
