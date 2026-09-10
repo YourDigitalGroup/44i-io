@@ -27478,3 +27478,35 @@ label) vs. Actual Spend (the reported dollar figure) vs. Gross Budget
 (the thing actually being fixed the whole time). Clarified explicitly
 rather than pressing on; worth being more careful with this distinction
 going forward given how much today's whole thread revolved around it.
+
+## Agent/County Split renewal never backfilled billing_type either (2026-09-10, same day)
+
+Claire: the Union county agents (renewed earlier today) stopped showing
+up wherever she was looking, after the ABC Seamless billing_type fix.
+Checked the 5 actual lines via SQL rather than guessing — all 5 have
+`billing_type = null` despite having a real `order_id` (today's
+renewal). Different mechanism from ABC Seamless (which had no order at
+all): the trigger's Agent/County Split branch sets `billing_type`
+correctly on the INSERT path (a brand-new split), but its UPDATE path
+(an existing line being renewed — exactly what happened to these 5
+today) only ever touches `flight_end` and `order_id`, never
+`billing_type` — so a line that predates this tracking, or was ever
+missing it, stays null forever no matter how many times it's renewed.
+
+**Fix**: the renewal branch now also sets
+`billing_type = coalesce(billing_type, v_line_billing_type)` — only
+fills it in if currently null, never overwrites an intentional existing
+value. Same `v_line_billing_type` the INSERT branch already computes
+for this exact service (`'spend'` if `pricing_mode = 'spend'`,
+otherwise `'recurring'`/`'one_time'` from the service's own
+`billing_type`). Updated in place in
+`scratchpad/fix-flat-rate-prefill-whole-flight.sql`.
+
+**Backfill**: new `scratchpad/backfill-agent-split-billing-type.sql` —
+scoped to `agent_name is not null` (Agent/County Split lines
+specifically, separate from the ABC-Seamless-style backfill which was
+scoped to `order_id is null`), using `accounting_only` to infer
+`'spend'` vs. falling back to the service's own `billing_type`. Not yet
+run. Asked Claire to confirm exactly where she wasn't seeing these 5
+lines, to verify this null `billing_type` is actually the cause rather
+than something else — not yet confirmed.
