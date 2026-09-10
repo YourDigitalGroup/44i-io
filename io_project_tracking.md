@@ -27174,3 +27174,17 @@ real user pick correctly updating the hidden field. Not yet tested live
 in the actual Admin UI — no SQL change needed for this piece (same
 `additional_card_trello_handle` column from earlier today), just a
 straight redeploy.
+
+## Missing-gross-spend audit, re-run with the fixed query (2026-09-10, same day)
+
+Claire asked to re-check for missing gross spends across all campaigns
+"for my own sanity," following up on the MS Farm Bureau September gap
+from earlier today. Gave her the corrected version of the audit query
+(the original only checked for a missing `campaign_months` row, not an
+existing-but-`null` one — exactly the blind spot that let September's
+real gap slip through the first time). **Result: no rows returned** —
+combined with the earlier fix (the 5 September rows patched to $300),
+there are currently no active spend-billed campaign lines missing a
+gross spend for any month through today. Clean bill of health, for now
+— this only checks `billing_type = 'spend'` lines through the current
+month, same scope as before.
