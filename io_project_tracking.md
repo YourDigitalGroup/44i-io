@@ -27654,3 +27654,59 @@ them; the class needed to explicitly cancel the global rule's
 `transform:none` to `.pill-outline-link:hover` — wins on specificity
 (a class + pseudo-class beats a bare type + pseudo-class) regardless of
 stylesheet load order. Not yet seen live.
+
+## Accounting status pill never checked a line's own top-level status (2026-09-10, same day)
+
+Claire, two screenshots: Comfort Zone Heating and Cooling's "Targeted
+Display: SiteRT" line showed "Paused" in Accounting for Sep/Oct/Nov,
+but its real Strategist status was "Complete" (client cancelled
+9/2/26, with its own status-history log entry) — "we may need some
+additional guards."
+
+**Root cause, confirmed by reading the actual functions**:
+`accountingLineStatusPill()`/`accountingRowStatusCategory()` derived
+"Paused" purely from the CURRENT MONTH's own `paused` checkbox
+(`campaign_months.paused`) — never from the campaign line's own
+top-level `status` field (`active`/`paused`/`complete`/`pending`) at
+all. Checked the reverse direction too before proposing a fix, per
+Claire's own question: `strategistConfirmStatusChange()` (Strategist)
+only ever writes `campaign_lines.status` — it never touches any
+month's `paused` flag. So the bug ran both ways: a genuinely
+**Complete** (cancelled) line showed as "Paused" if its months happened
+to have that box checked (as here), AND a genuinely top-level
+**Paused** line could show as Confirmed/Needs Confirmation instead of
+Paused if nobody separately checked each month's box by hand.
+
+Asked Claire two scoping questions before fixing: (1) Complete should
+get its own distinct pill, not share Paused's label/color — confirmed;
+(2) whether top-level Paused needed the same treatment — she asked me
+to check rather than guess, which is what surfaced the reverse-
+direction bug above.
+
+**Fix** (`accounting/index.html`): the row-building step now folds
+BOTH top-level statuses in once, rather than duplicating the check in
+every consumer — `paused = !!monthRow?.paused || status === 'paused' ||
+status === 'complete'`, plus a new `isComplete` field tracked
+separately for pill purposes. `accountingRowIsPaused()`'s own stated
+invariant ("what's excluded from the stat tiles as paused is exactly
+what's labeled paused") stays intact automatically, since it just reads
+`r.paused` — a Complete or top-level-Paused line is now correctly
+excluded from the revenue stat tiles too, not just mislabeled.
+`accountingLineStatusPill()`/`accountingRollupStatusPill()`/
+`accountingRowStatusCategory()` all check `isComplete` FIRST (before
+`paused`) so a genuinely completed line always shows its own distinct
+red "Complete" pill instead of gray "Paused" — new CSS class
+`.acct-status-pill.complete`, new `complete` option added to the Status
+filter dropdown (the filter already worked generically off
+`accountingRowStatusCategory()`, no separate filter-logic change
+needed).
+
+**Verified**: `node -e (new Function(...))` syntax check — no errors.
+Simulated all 4 relevant cases in Node against the real Comfort Zone
+scenario shape: a Complete line with the month box checked (shows
+Complete, excluded from stats), a Complete line WITHOUT the month box
+checked (same correct result — the actual bug this fixes), a top-level
+Paused line whose month flag was never set by hand (now correctly
+shows/excludes as Paused instead of Confirmed — the reverse-direction
+bug), and a normal active/confirmed line (unaffected). No SQL involved,
+pure frontend logic — not yet seen live.

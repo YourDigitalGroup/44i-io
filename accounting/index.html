@@ -94,6 +94,11 @@
   #page-accounting .acct-status-pill.external{background:#DBEAFE;color:#1E40AF}
   #page-accounting .acct-status-pill.paused{background:#E5E7EB;color:#4B5563}
   #page-accounting .acct-status-pill.pending{background:#EDE9FE;color:#6D28D9}
+  /* Distinct from .paused on purpose (2026-09-10) -- a permanently completed/
+     cancelled line reads very differently from a temporary pause for anyone
+     doing revenue reconciliation, so it gets its own color rather than
+     sharing gray with Paused. */
+  #page-accounting .acct-status-pill.complete{background:#FEE2E2;color:#991B1B}
 </style>
 </head>
 <body>
@@ -154,6 +159,7 @@
           <option value="pending">Pending</option>
           <option value="confirmed">Confirmed</option>
           <option value="paused">Paused</option>
+          <option value="complete">Complete</option>
           <option value="external">SSH Billing</option>
         </select>
         <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
@@ -1556,7 +1562,7 @@ async function accountingConfirmBulkImport() {
 }
 
 function accountingStatusPill(kind, text) {
-  const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external', paused: 'paused', pending: 'pending' }[kind];
+  const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external', paused: 'paused', pending: 'pending', complete: 'complete' }[kind];
   return `<span class="acct-status-pill ${cls}">${esc(text)}</span>`;
 }
 // Confirmed = a real actual-spend figure entered for the month, OR a manual
@@ -1596,6 +1602,13 @@ function accountingPendingStatusPill(line) {
 function accountingLineStatusPill(r) {
   if (r.line.billed_externally) return accountingStatusPill('external', 'SSH Billing');
   if (r.line.status === 'pending') return accountingPendingStatusPill(r.line);
+  // Checked before the generic `paused` flag (2026-09-10) -- r.paused is now
+  // also true for a Complete line (see accountingBuildRows()'s own comment),
+  // so this line, and its rollup/category counterparts below, would
+  // otherwise show the same "Paused" label a genuinely-temporary pause gets.
+  // A permanently cancelled campaign is a meaningfully different thing for
+  // anyone doing revenue reconciliation.
+  if (r.isComplete) return accountingStatusPill('complete', 'Complete');
   if (r.paused) return accountingStatusPill('paused', 'Paused');
   if (r.confirmed) return accountingStatusPill('confirmed', 'Confirmed');
   return accountingStatusPill('needs', 'Needs confirmation');
@@ -1610,6 +1623,9 @@ function accountingLineStatusPill(r) {
 function accountingRollupStatusPill(r) {
   if (r.children.every(c => c.line.billed_externally)) return accountingStatusPill('external', 'SSH Billing');
   if (r.children.every(c => c.line.status === 'pending')) return accountingPendingStatusPill(r.children[0].line);
+  // Same "Complete" distinction as accountingLineStatusPill() above, checked
+  // before Paused for the same reason.
+  if (r.children.every(c => c.isComplete)) return accountingStatusPill('complete', 'Complete');
   if (r.children.every(c => c.paused)) return accountingStatusPill('paused', 'Paused');
   if (r.confirmedCount === r.totalCount) return accountingStatusPill('confirmed', 'Confirmed');
   if (r.confirmedCount === 0) return accountingStatusPill('needs', 'Needs confirmation');
@@ -1657,12 +1673,14 @@ function accountingRowStatusCategory(r) {
   if (r.isRollup) {
     if (r.children.every(c => c.line.billed_externally)) return 'external';
     if (r.children.every(c => c.line.status === 'pending')) return 'pending';
+    if (r.children.every(c => c.isComplete)) return 'complete';
     if (r.children.every(c => c.paused)) return 'paused';
     if (r.confirmedCount === r.totalCount) return 'confirmed';
     return 'needs';
   }
   if (r.line.billed_externally) return 'external';
   if (r.line.status === 'pending') return 'pending';
+  if (r.isComplete) return 'complete';
   if (r.paused) return 'paused';
   if (r.confirmed) return 'confirmed';
   return 'needs';
@@ -2172,8 +2190,24 @@ function accountingBuildRows() {
     // never tracks actuals for at all -- 2026-08-11, Claire). No checkbox in
     // the main table either way -- this is just the resolved boolean.
     const confirmed = actualSpend != null || !!monthRow?.confirmed_by;
-    const paused = !!monthRow?.paused;
-    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed, paused };
+    // Real gap found live (2026-09-10, per Claire -- a line whose overall
+    // Strategist status was "Complete" (client cancelled) still showed as
+    // "Paused" here, since this only ever checked the CURRENT month's own
+    // paused checkbox, never the line's own top-level status at all. Also
+    // true in reverse: a line switched to the top-level "Paused" status
+    // never actually flips any month's paused flag (strategistConfirmStatusChange()
+    // only ever writes campaign_lines.status), so it could show as
+    // Confirmed/Needs Confirmation instead of Paused unless someone also
+    // manually checked each month's box. Folding both top-level statuses in
+    // here (rather than only in the pill functions) keeps
+    // accountingRowIsPaused()'s own stated invariant intact -- whatever's
+    // excluded from the stat tiles as "paused" is exactly what's LABELED
+    // paused, and a permanently completed line should be excluded there too.
+    // isComplete is tracked separately so the PILL can still say "Complete"
+    // specifically instead of being folded into the same "Paused" label.
+    const paused = !!monthRow?.paused || l.status === 'paused' || l.status === 'complete';
+    const isComplete = l.status === 'complete';
+    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed, paused, isComplete };
   }).filter(r => r.gross != null || r.line.status === 'pending');
   // A pending campaign still shows as a line item for every month in its
   // own flight (2026-08-12, per Claire: "I would like there to be line
