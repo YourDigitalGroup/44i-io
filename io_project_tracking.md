@@ -27709,4 +27709,93 @@ checked (same correct result — the actual bug this fixes), a top-level
 Paused line whose month flag was never set by hand (now correctly
 shows/excludes as Paused instead of Confirmed — the reverse-direction
 bug), and a normal active/confirmed line (unaffected). No SQL involved,
-pure frontend logic — not yet seen live.
+pure frontend logic.
+
+**Confirmed live, follow-up found (2026-09-10, same day)**: Claire
+confirmed the main table row now correctly shows "Complete" for
+Comfort Zone's SiteRT line — but the Detail card's OWN month-by-month
+table (opened via clicking the row) still showed "Paused" for
+September. Real gap: `accountingRenderDetailCard()` builds and renders
+its 3-month view with its own SEPARATE, duplicated status-pill logic —
+completely independent of `accountingLineStatusPill()` and never
+touched by the fix above. Grepped for every remaining
+`accountingStatusPill('paused'` call site to confirm this was the only
+one left. Fixed the same way: the detail card's per-month `paused`
+field now also folds in `line.status === 'paused'`/`'complete'`, and
+its own inline pill ternary checks `line.status === 'complete'` before
+`m.paused`, same priority as the main table. `node -e (new
+Function(...))` syntax check — no errors; simulated both the
+month-box-checked and month-box-unchecked cases in Node, both correctly
+show "Complete" now. Not yet seen live.
+
+**Stuck "Complete" status never revives when Flight End is corrected
+(2026-09-10)**: Claire, on Alkeme Aesthetics & Dermatology's SEM line:
+"What happened here? I don't remember marking this as complete" —
+screenshot showed Status: Complete but Flight End 2027-02-28, well in
+the future. Root cause: `strategistSweepFlightEndedCampaigns()` (runs on
+every `fetchStrategistData()`) correctly auto-completed this line back
+on Sep 1, based on whatever `flight_end` it had at that moment. The
+flight_end was evidently corrected/extended afterward directly through
+the Detail panel's plain date field — which has zero side effect on
+status. Exact inverse of the auto-complete sweep: nothing ever revives a
+completed line. One-time data fix delivered as
+`scratchpad/fix-alkeme-stuck-complete.sql` (not yet run — no DB access;
+sets this one line's `status` back to `'active'` and logs a
+`campaign_status_history` correction row for the audit trail).
+
+Systemic fix: new `strategistSaveFlightEnd(lineId, value)` wrapper
+(`strategist/index.html`), wired to the Detail panel's Flight End
+input's `onchange` in place of the old direct `strategistSaveLine(...)`
+call. If the line's current status is `'complete'` and the new end date
+is today or later, it includes `status: 'active'` and a `status_reason`
+in the same save call — no separate log-RPC call needed, since
+`strategist_save_campaign_line` already logs `campaign_status_history`
+atomically whenever `p_data.status` differs from the stored value (per
+the 2026-09-04 Blue Dolphin Pools fix, same file). Non-reviving saves
+keep the original `reload:false` (lightweight inline save); a revive
+passes `reload:true` so the full refetch+rerender picks up the new
+history entry and refreshed status everywhere (main table, detail
+panel) in one pass — `renderStrategistDashboard()` already calls
+`renderStrategistDetailPanel()` internally.
+
+**Verified**: extracted all inline `<script>` content and ran `node
+--check` — no syntax errors. Simulated the revive-decision logic in
+Node against 6 cases: a completed line with the date extended into the
+future (revives — the actual Alkeme scenario), a completed line with a
+date still in the past (does not revive), a completed line with the
+date cleared entirely (does not revive), an already-active line with a
+future date (status untouched), a paused line with a future date
+(status untouched — only Complete→Active is this sweep's inverse), and
+a completed line with the date set to exactly today (revives, `>=`
+comparison). All 6 produced the expected result. Not yet seen live.
+
+**Accounting→Strategist handoff always landed on a stale month
+(2026-09-10)**: Claire: "when I click the view in strategist portal
+from the accounting portal it brings me to June 2026, it should bring
+me to the current month." Root cause in
+`strategistOpenDeepLinkedLine()` (`strategist/index.html`, the
+`?line=<id>` deep link built by Accounting's "Open in Strategist
+Portal →" button): it unconditionally jumped the viewed month to the
+line's `flight_start`, regardless of whether the line was already
+active in the current month. That was written to handle one real edge
+case (a line whose flight doesn't cover today at all, so
+`strategistLineActiveInMonth()` would otherwise filter it out of view)
+but applied to every line — so any ordinary ongoing campaign whose
+flight simply started a while ago (nearly all of them) got yanked to
+its start month instead of staying on the current one. June 2026
+appears to be whichever line Claire happened to click's flight_start.
+
+Fixed by only falling back to `flight_start` when the line genuinely
+isn't active in the current month (not yet started, or already ended);
+otherwise the current month (already set earlier in the load sequence)
+is left alone.
+
+**Verified**: extracted inline `<script>` content, `node --check` — no
+syntax errors. Simulated the month-selection decision in Node against
+4 cases: an ongoing campaign whose flight started months ago and is
+still active today (now correctly stays on the current month — the
+actual reported bug), a campaign that hasn't started yet (falls back
+to its flight_start, the original intended behavior), a campaign whose
+flight already ended (falls back to its flight_start, same as before),
+and an open-ended campaign with no flight_end (stays on the current
+month). All 4 produced the expected month. Not yet seen live.

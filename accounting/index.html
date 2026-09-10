@@ -765,7 +765,13 @@ function accountingRenderDetailCard() {
       label: d.toLocaleString('en-US', { month: 'short' }) + ' \'' + String(d.getFullYear()).slice(-2),
       monthStr, gross, actualSpend, expectedSpend, split, active,
       confirmed: actualSpend != null || manuallyConfirmed, manuallyConfirmed,
-      paused: !!monthRow?.paused,
+      // Folds in the line's own top-level status too (2026-09-10, same fix
+      // as accountingBuildRows() -- this detail card has its own SEPARATE
+      // month-row construction, so the main table's fix didn't reach here
+      // at all: found live via Claire's screenshot, the top summary still
+      // showed "Paused" for a Complete/cancelled line's month even after
+      // the main table row below it correctly switched to "Complete").
+      paused: !!monthRow?.paused || line.status === 'paused' || line.status === 'complete',
     };
   });
 
@@ -845,6 +851,7 @@ function accountingRenderDetailCard() {
           <td>
             <div style="display:flex;align-items:center;gap:8px">
               ${line.billed_externally ? accountingStatusPill('external', 'SSH Billing')
+                : line.status === 'complete' ? accountingStatusPill('complete', 'Complete')
                 : m.paused ? accountingStatusPill('paused', 'Paused')
                 : (m.confirmed ? accountingStatusPill('confirmed', 'Confirmed') : accountingStatusPill('needs', 'Needs confirmation'))}
               ${!line.billed_externally && !m.paused ? `<label style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);cursor:${m.actualSpend != null ? 'default' : 'pointer'};white-space:nowrap">
