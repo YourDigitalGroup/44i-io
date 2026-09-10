@@ -26853,3 +26853,67 @@ frontend code was already live on `main` from the prior PR, so the
 badge should now be fully working end to end — still needs an actual
 renewal through one of the three flows to visually confirm the badge
 appears correctly in both portals, not yet observed live.
+
+## Sort campaign lines by tactic, then county (2026-09-10, same day)
+
+Claire asked to sort MS Farm Bureau's campaign lines by county after
+tactic. No frontend change needed — neither Strategist's main table nor
+Admin's Campaign Lines tab re-sorts rows in JS, both just render
+whatever order their RPC returns. This is a SQL-only change:
+
+- `strategist_get_campaign_lines`: added `cl.county nulls last` to the
+  `ORDER BY`, right after `cl.tactic_label` and before the existing
+  `split_order`/`created_at` tiebreakers (previously had no county in
+  the sort at all).
+- `admin_get_client_campaign_lines_detailed`: was sorting county first
+  (`county, agent_name, tactic_label`) since it was built that way by
+  default when the Campaign Lines tab was new — reordered to
+  `tactic_label, county, agent_name` to match.
+
+Since `county` is null for every non-split client, this only visibly
+changes ordering for multi-agent/county-split clients like MS Farm
+Bureau — everyone else keeps sorting by tactic exactly as before. SQL
+in `scratchpad/sort-tactic-then-county.sql`, sent to Claire to run —
+not yet confirmed run.
+
+## Renewal via resubmitted IO also overwrote flight_start (2026-09-10, same day)
+
+Claire reported the Union county agents "disappeared from earlier
+months" in Strategist after the same renewal order discussed all day.
+Root cause: `create_campaign_lines_from_order()`'s agent_splits UPDATE
+branch (an existing line being renewed) was setting
+`flight_start = coalesce((split->>'start_date')::date, flight_start)` —
+overwriting it with the new order's own start date (2026-10-01).
+Strategist hides any month before a line's `flight_start`, so this
+pushed the visible window forward a full year and hid every earlier
+month's already-recorded spend, even though that data was never
+touched or deleted. This is the SAME renewal branch already touched
+twice today (order_id fix, then confirmed clean on the null-budget
+investigation) — a genuinely different bug in the same code, not a
+regression from either earlier fix.
+
+Every Renew button in the app (`admin_renew_service`,
+`admin_renew_agent_split_service`, `admin_renew_campaign_line`) only
+ever pushes `flight_end` forward and never touches `flight_start` —
+the trigger's own renewal path should behave the same way, and now
+does. `flight_start` dropped entirely from that branch's `SET` clause.
+
+For the 5 already-affected Union county lines: asked Claire to run
+`min(month)` against their `campaign_months` history before proposing a
+restore value, rather than assuming the original campaign's calendar
+start (last year's Trello card showed Oct 2025) carries over to when
+this app started tracking these specific rows. Result: **August 2026**
+for all 5 — no recorded history exists before that for any of them, so
+that's the evidence-backed value to restore `flight_start` to, not a
+guess. SQL for both the restore and the trigger fix in
+`scratchpad/fix-flight-start-overwrite.sql`, sent to Claire — not yet
+confirmed run.
+
+**Open question, not yet resolved**: why does campaign_months history
+for these 5 lines only go back to August 2026 when the underlying
+campaign (per last year's Trello card) actually started October 2025?
+Working theory is that MS Farm Bureau's tracking in this app started
+mid-flight, sometime around August 2026, and nothing before that was
+ever backfilled — plausible but not confirmed. Not investigated further
+since it doesn't affect the fix above; worth asking Claire about if it
+comes up again elsewhere.
