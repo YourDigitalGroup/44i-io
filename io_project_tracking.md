@@ -26487,3 +26487,50 @@ actual mechanism before writing the fix, rather than assuming. `node -e
 live-tested — needs Claire to resume a draft with a variant picked and
 a spend-priced service in Whole-Campaign-Total or Custom-by-Month mode
 and confirm both come back correctly this time.
+
+## Full pass over draft restore — two more gaps found (2026-09-10)
+
+Claire asked for a complete audit after three separate restore bugs
+turned up in one afternoon (AE/Client picker, tactic variant, budget-
+mode toggle), rather than fixing things one report at a time.
+Systematically checked every other piece of dynamic per-row/per-page UI
+that reads from saved state, cross-referencing each against what
+`buildDraft()`/`applyDraftFields()` actually capture and restore.
+
+**Already correctly handled (verified, not just assumed)**:
+`updateIntakeStatusCard()`/`updateIntakeRowLinks()` (intake status
+badges, "⚠ Finish Intake" etc.), `updateKocCard()`,
+`updateStandaloneHostingLocks()`, `ensureModuleDetailOpen()` (Website
+Modules qty picker), and `updateBadges()` (section "N selected"
+counts) are all already called in the restore path — someone fixed
+these in an earlier session, before today's group-drafts work existed.
+
+**Two real gaps found, both now fixed**:
+1. **`ae-market` was never captured in `buildDraft()` at all** — not a
+   visual-sync gap like the others, genuine data loss. This field
+   exists specifically for "the roster's market is missing or wrong,
+   type the correct one" — losing it on every restore defeated its own
+   purpose. Added to both `buildDraft()` and `applyDraftFields()`.
+2. **The whole Agent/County Split table (`agentSplitRows`,
+   `agentSplitCountyId`, `agentSplitCountyNewName`) was never captured
+   at all** — affects only multi-agent clients (e.g. MS Farm Bureau),
+   but for those it's the entire per-agent/county service breakdown,
+   not a cosmetic detail. Trickier than the others to fix correctly:
+   `loadAgentSplitRosters()` (already called during picker-restore for
+   a multi-agent client) unconditionally resets all three globals back
+   to a single blank row as part of its own normal job — restoring the
+   real saved values had to happen strictly AFTER that call, or it
+   would be immediately wiped again. Added the three fields to
+   `buildDraft()`, and restoration (plus a call to the existing
+   `renderAgentSplitCountyPicker()`/`renderAgentSplitRows()`) to
+   `restorePickerSelections()`, positioned after `loadAgentSplitRosters()`
+   resolves.
+
+**Verified**: read `updateIntakeStatusCard()`/`updateIntakeRowLinks()`/
+`updateBadges()`/`loadAgentSplitRosters()` directly to confirm actual
+behavior (including the reset-then-restore ordering requirement) rather
+than assuming from names. `node -e (new Function(...))` syntax check on
+the full file — no errors. Not yet live-tested — needs Claire to try
+resuming a draft for a multi-agent client (MS Farm Bureau or similar)
+with a filled-in split table, and confirm a typed AE Market value
+survives a resume too.
