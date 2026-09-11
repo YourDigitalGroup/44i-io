@@ -27843,3 +27843,10 @@ no new type errors introduced by the change. Not yet deployed/live.
 
 **Confirmed live (2026-09-10, same day)**: Claire redeployed the updated
 `claude-proxy` Edge Function and confirmed the logo upload now succeeds.
+
+**Confirmed live (2026-09-11)**: Claire confirmed all three outstanding
+items from this session are good — the Alkeme Aesthetics stuck-Complete
+SQL fix, the Strategist Portal deep-link month fix (no longer lands on
+June 2026), and the Agent/County Split Trello card linkage
+(`fix-strategist-agent-split-trello-link.sql`, run alongside the earlier
+Union County renewal fix).
