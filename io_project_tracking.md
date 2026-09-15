@@ -27881,3 +27881,51 @@ every month is the same amount (renders nothing extra, matching the
 existing "/mo spend" display), and a single-month campaign (also
 renders nothing extra, `spendVaries` correctly false since it requires
 `length > 1`). Not yet seen live.
+
+### 2026-09-15 — Public IO form: courtesy notice when opened outside its iframe embed
+
+Claire's boss asked: "What happens if someone somehow finds a link to
+the public insertion order form? Is there a way to block them from
+using it unless it's in the iframe?" Investigated and explained the
+real constraint before building anything: a client-side "am I framed"
+check (`window.top === window.self`) can only ever be a courtesy UX
+nudge, not a security control — it's trivially defeated by anyone who
+wants to (a throwaway page with its own iframe, or just disabling that
+one script), and JS can't even verify WHICH site is doing the framing
+(cross-origin browsers block reading the parent's URL). The form itself
+also exposes nothing confidential beyond what the legitimate embed
+already shows (pricing/services) — the real risk of a stray direct link
+is someone submitting a bogus order (creates a real client record +
+Trello card + emails), which is a business-process risk an AM/
+strategist would likely catch quickly, not a data-exposure one.
+Claire's call: build the lightweight courtesy version anyway ("I don't
+think we'll run into it but thought it was worth checking on").
+
+**Built**: `index.html`'s `DOMContentLoaded` handler now checks
+`window.top === window.self` FIRST, before any catalog load or form
+render — if true (page opened directly, not embedded), shows a new
+`showNotEmbeddedNotice()` full-page message (same visual pattern as the
+existing `showCatalogError()`) instead of the form, and returns early
+so nothing else runs. Since every client group is a differently-
+branded white-labeled site, there's no single "go here instead" URL to
+send a stray visitor to — the message just explains what happened and
+points them back to their account manager.
+
+**Real gap caught before shipping**: this would have also blocked
+Claire's own normal workflow of testing the live form by opening the
+raw URL directly (not through a WordPress embed) — flagged this to her
+before finalizing rather than shipping a change that breaks her daily
+use. Added a `?preview=1` query-param bypass per her choice (a plain
+query param, not a security token — anyone could technically discover
+it, but that's an acceptable tradeoff for a courtesy notice, not a
+real gate).
+
+**Verified**: extracted inline `<script>` content, `node --check` — no
+syntax errors. Simulated the branch logic in Node against 5 cases: a
+direct visit with no params (blocked), a direct visit with `?preview=1`
+(allowed — Claire's own testing path), embedded in an iframe with no
+params (allowed — normal client use, unaffected), embedded with
+`?preview=1` present (allowed either way, harmless), and a direct visit
+with an unrelated query param like `?group=xyz` (still blocked — only
+the exact `preview=1` value skips the check). All 5 produced the
+expected result. Not yet seen live.
