@@ -9777,6 +9777,34 @@ function renderAllSectionRows() {
   });
 }
 
+// Courtesy notice when this page is opened directly rather than through a
+// client group's own site (2026-09-15, per Claire's boss's question: "what
+// happens if someone somehow finds a link to the public insertion order
+// form"). Deliberately NOT a security control -- window.top === window.self
+// only detects "not currently framed," which anyone who actually wants to
+// get around this can defeat in seconds (a throwaway page with its own
+// iframe, or just disabling this one check). It exists purely so someone
+// who stumbles on the raw io.yourdigitalgroupresources.com/[slug] link
+// (e.g. copied from a WordPress embed's page source) sees an explanation
+// instead of a bare, context-less pricing form. Every real group is a
+// different white-labeled site, so there's no single "go here instead" URL
+// to send them to -- this just names what happened, not where to go.
+function showNotEmbeddedNotice() {
+  const wrap = document.querySelector('.wrap');
+  if (wrap) {
+    wrap.innerHTML = `
+      <div style="max-width:520px;margin:80px auto;text-align:center;padding:40px 32px;background:#fff;border-radius:14px;border:1px solid var(--border);box-shadow:0 4px 24px rgba(0,0,0,.08)">
+        <div style="font-size:44px;margin-bottom:16px">🔒</div>
+        <h2 style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:10px">This page isn't meant to be opened directly</h2>
+        <p style="font-size:14px;color:var(--muted);line-height:1.6">
+          This Insertion Order form is designed to be filled out through your account
+          manager's website, not as a standalone link. If you were sent this link
+          directly, please check with your account manager for the correct page to use.
+        </p>
+      </div>`;
+  }
+}
+
 function showCatalogError(msg) {
   const wrap = document.querySelector('.wrap');
   if (wrap) {
@@ -9795,6 +9823,17 @@ function showCatalogError(msg) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // 2026-09-15: see showNotEmbeddedNotice()'s own comment -- a courtesy
+  // notice, not a security gate. Checked first, before any catalog load or
+  // form render, so a direct visit never even flashes the real form.
+  // ?preview=1 skips it -- Claire tests the live form directly by URL, not
+  // through a WordPress embed, and this check would otherwise block her own
+  // normal workflow the same as any other direct visitor.
+  const skipEmbedCheck = new URLSearchParams(window.location.search).get('preview') === '1';
+  if (window.top === window.self && !skipEmbedCheck) {
+    showNotEmbeddedNotice();
+    return;
+  }
   document.getElementById('io-date').value = new Date().toISOString().slice(0,10);
   document.getElementById('auth-date').value = new Date().toISOString().slice(0,10);
   initCanvas();
