@@ -28021,3 +28021,13 @@ logic in Node against a normal single-row response, an empty array
 (client not found), and a defensive non-array case — all three produced
 the correct result. SQL not yet run by Claire; frontend not yet
 confirmed against the live database.
+
+**Hit a known snag, same as before**: `CREATE OR REPLACE` on
+`get_group_clients` failed with `cannot change return type of existing
+function` — same issue as the 2026-08-19 `is_multi_agent` addition to
+this same function (Postgres won't let `CREATE OR REPLACE` change a
+function's return row shape). Added the `DROP FUNCTION
+public.get_group_clients(uuid);` this needs first, and flagged the
+same "run the DROP and CREATE as two separate statements" gotcha
+already logged from that earlier incident (a combined paste threw "no
+function body specified" that time).
