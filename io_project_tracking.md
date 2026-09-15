@@ -27929,3 +27929,67 @@ params (allowed — normal client use, unaffected), embedded with
 with an unrelated query param like `?group=xyz` (still blocked — only
 the exact `preview=1` value skips the check). All 5 produced the
 expected result. Not yet seen live.
+
+### 2026-09-15 (cont'd) — Real fix: stop bulk-exposing every client's contact info on page load
+
+Following the "not embedded" courtesy-notice discussion, Claire connected
+the dots herself: "I guess the only real security is that the name and
+email of the client can be surfaced if it is selected." Investigated and
+it's actually WORSE than that framing suggests — `loadClientRoster()`
+(`index.html`) calls `get_group_clients(group_id)` on every page load,
+which returns EVERY field for EVERY client in the group in one response:
+name, contact_name, contact_phone, contact_email, website_url, city,
+business_type, is_multi_agent, and io_pricing (client-level custom
+pricing). The dropdown only reveals it progressively in the UI (pick a
+name to see the fields fill in), but the full data for every client is
+already sitting in the page's memory (`CLIENT_ROSTER`) the instant the
+page loads — visible to anyone via browser dev tools, no interaction
+required. Worse, since `get_group_clients` only needs a `group_id` to
+work, and the browser has to know that id to load the page at all,
+anyone who's seen this page's network requests could call the same
+Supabase RPC directly, bypassing the form entirely.
+
+**Fix (frontend half only so far — backend RPC changes pending, no DB
+access):** `CLIENT_ROSTER` now only needs to carry `id`+`name` — that's
+everything the dropdown itself and the fuzzy-duplicate-name warning
+(`checkClientNameMatch()`, unaffected, already only read `.name`) ever
+needed. Everything sensitive (contact fields, `is_multi_agent`,
+`io_pricing`) now loads through a NEW on-demand call,
+`get_client_details(p_group_id, p_client_id)`, fired only once a
+specific client is actually picked — stored in a new
+`selectedClientDetails` variable with the same lifecycle as
+`selectedClientId` (reset to null everywhere `selectedClientId` resets:
+`loadClientRoster()`, `onBizNameEdited()`'s un-pin path, `resetForm()`).
+
+Updated every call site that used to read those fields off the bulk
+`CLIENT_ROSTER` object: `applyClientPick()` (now async-fetches details
+before filling the contact fields, gating the multi-agent split card,
+and calling `reapplyPricingOverrides()` — reordered so pricing overrides
+apply AFTER the fetch resolves, not before), `reapplyPricingOverrides()`
+itself (`c.io_pricing` → `selectedClientDetails?.io_pricing`), and
+`restorePickerSelections()` (the resumable-draft path, which also needs
+`is_multi_agent`/`io_pricing` for a restored client — added the same
+on-demand fetch there). `onBizNameEdited()`/`checkClientNameMatch()`
+needed no field changes, just confirmed via grep that neither reads
+anything beyond `.name`/`.id`.
+
+Honest about the remaining exposure: this doesn't make client data
+un-scrapeable — the trimmed roster call still returns every client's
+`id` (needed for the dropdown's `<option value>`), so someone with
+every id could still loop through `get_client_details` one at a time to
+reconstruct the full list. What it fixes is the ONE-SHOT bulk dump on
+plain page load with zero interaction — turning it into N individual,
+per-record fetches is a meaningfully different (and much more
+throttleable/detectable) shape of exposure, which is exactly what was
+proposed to and approved by Claire before building this.
+
+**Verified so far**: extracted inline `<script>` content, `node --check`
+— no syntax errors. Grepped every remaining `CLIENT_ROSTER` reference in
+the file to confirm none read anything beyond `.id`/`.name` after this
+change. NOT yet verified against live data or in a browser — blocked on
+Claire pasting `get_group_clients`'s current `pg_get_functiondef()`
+output so the trimmed version and the new `get_client_details` function
+can be written to match its exact real column list rather than a
+guessed one. Frontend committed as-is; will not function correctly
+against the live database until the matching SQL is delivered, run, and
+this entry is updated.

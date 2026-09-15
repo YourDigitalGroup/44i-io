@@ -1632,9 +1632,23 @@ function applyAePick(id) {
 // straight through to submission (see selectedClientId below), so identity is never
 // re-derived from typed text for a returning client.
 // `clients` has no public read policy — this goes through get_group_clients(), a
-// narrow function that only returns THIS group's clients (id/contact-only fields).
+// narrow function that only returns THIS group's clients.
+// SECURITY FIX (2026-09-15, per Claire's boss's question about the public link):
+// get_group_clients() used to return every field on every client in the group —
+// name, email, phone, website, city, business type, custom pricing — all at once,
+// the moment the page loaded, whether or not anyone ever picked a client from the
+// dropdown. Anyone with the group's link could see the whole group's contact list
+// just by opening the browser's dev tools, no clicking required. Trimmed to just
+// id+name (the minimum the dropdown and the fuzzy-duplicate-name warning below
+// actually need) — everything else now loads ONE client at a time, only once
+// that specific client is actually picked, via getSelectedClientDetails() below.
 let CLIENT_ROSTER = [];
 let selectedClientId = null;
+// Populated by getSelectedClientDetails() only after a specific client is picked —
+// holds exactly the fields CLIENT_ROSTER no longer carries in bulk (contact info,
+// website/city/business type, is_multi_agent, io_pricing). Null whenever no real
+// client is selected, same lifecycle as selectedClientId itself.
+let selectedClientDetails = null;
 
 // Real scenario Claire's boss raised: an AE submitted a duplicate IO for a
 // service the client already had an active/overlapping order for. Fetched via
@@ -1648,6 +1662,7 @@ async function loadClientRoster(groupId) {
   const wrap = document.getElementById('client-picker-wrap');
   const sel = document.getElementById('client-picker');
   selectedClientId = null;
+  selectedClientDetails = null;
   setBizNameLocked(false);
   if (!groupId) { wrap.style.display = 'none'; CLIENT_ROSTER = []; return; }
   try {
@@ -1681,13 +1696,7 @@ function setBizNameLocked(locked) {
 
 async function applyClientPick(id) {
   selectedClientId = id || null;
-  // Client-level Custom Pricing (2026-08-20) has to be re-layered on every pick —
-  // picking a client WITH its own override needs it applied, and switching away
-  // from one (to a different client, or back to "New Client") needs it removed
-  // again rather than left stuck on screen. reapplyPricingOverrides() itself
-  // reads the now-updated selectedClientId, so this must run after the assignment
-  // above, on both the "New Client" early-return path and the real-client path.
-  reapplyPricingOverrides();
+  selectedClientDetails = null;
   if (!id) {
     // Switched back to "New Client" — clear the fields so a previously-picked
     // client's info doesn't linger on what's now meant to be a fresh record.
@@ -1695,6 +1704,7 @@ async function applyClientPick(id) {
       const el = document.getElementById(fid); if (el) el.value = '';
     });
     setBizNameLocked(false);
+    reapplyPricingOverrides();
     CLIENT_SERVICE_HISTORY = [];
     recheckAllServiceOverlaps();
     setAgentSplitCardVisible(false);
@@ -1703,13 +1713,38 @@ async function applyClientPick(id) {
   const c = CLIENT_ROSTER.find(x => x.id === id);
   if (!c) return;
   document.getElementById('biz-name').value = c.name || '';
-  document.getElementById('contact-name').value = c.contact_name || '';
-  document.getElementById('contact-phone').value = c.contact_phone || '';
-  document.getElementById('contact-email').value = c.contact_email || '';
-  document.getElementById('website-url').value = c.website_url || '';
-  document.getElementById('city').value = c.city || '';
-  document.getElementById('biz-type').value = c.business_type || '';
+  // Clear the contact fields while the real values load (2026-09-15) — CLIENT_ROSTER
+  // only ever carries id+name now (see its own comment above), so there's nothing to
+  // fill these from synchronously; briefly blank beats showing the PREVIOUS client's
+  // stale contact info for a moment.
+  ['contact-name','contact-phone','contact-email','website-url','city','biz-type'].forEach(fid => {
+    const el = document.getElementById(fid); if (el) el.value = '';
+  });
   setBizNameLocked(true);
+  // SECURITY FIX (2026-09-15) — this used to read contact_name/phone/email/website_url/
+  // city/business_type/is_multi_agent/io_pricing straight off the bulk CLIENT_ROSTER
+  // object (`c`), which is exactly the data that no longer belongs in that bulk list
+  // (see CLIENT_ROSTER's own comment). Fetches this ONE client's full details now,
+  // on demand, only because it was actually picked.
+  try {
+    selectedClientDetails = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ p_group_id: selectedGroup?.id, p_client_id: id }) });
+  } catch(e) {
+    console.warn('Could not load this client\'s details:', e.message);
+    selectedClientDetails = null;
+  }
+  const d = selectedClientDetails || {};
+  document.getElementById('contact-name').value = d.contact_name || '';
+  document.getElementById('contact-phone').value = d.contact_phone || '';
+  document.getElementById('contact-email').value = d.contact_email || '';
+  document.getElementById('website-url').value = d.website_url || '';
+  document.getElementById('city').value = d.city || '';
+  document.getElementById('biz-type').value = d.business_type || '';
+  // Client-level Custom Pricing (2026-08-20) has to be re-layered on every pick —
+  // picking a client WITH its own override needs it applied, and switching away
+  // from one (to a different client, or back to "New Client") needs it removed
+  // again rather than left stuck on screen. Now runs AFTER selectedClientDetails
+  // is populated (2026-09-15) — it reads io_pricing from there, not CLIENT_ROSTER.
+  reapplyPricingOverrides();
   try {
     CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify({ p_client_id: id }) }) || [];
   } catch(e) {
@@ -1719,8 +1754,9 @@ async function applyClientPick(id) {
   recheckAllServiceOverlaps();
   // Agent/County split (2026-08-19, MS Farm Bureau) -- gated on the CLIENT's own
   // is_multi_agent flag, not the group's (a group can hold both multi-agent and
-  // ordinary clients side by side, per Claire 2026-08-19).
-  if (c.is_multi_agent) {
+  // ordinary clients side by side, per Claire 2026-08-19). Reads selectedClientDetails
+  // now (2026-09-15), not the bulk roster object.
+  if (d.is_multi_agent) {
     await loadAgentSplitRosters(id);
     setAgentSplitCardVisible(true);
   } else {
@@ -2180,6 +2216,7 @@ function onBizNameEdited() {
     const current = document.getElementById('biz-name').value;
     if (!c || current !== c.name) {
       selectedClientId = null;
+      selectedClientDetails = null;
       document.getElementById('client-picker').value = '';
     }
   }
@@ -3735,9 +3772,13 @@ function reapplyPricingOverrides() {
   Object.values(CATALOG_ROWS).forEach(r => { SERVICE_DATA[r.id] = rowToServiceData(r); });
   renderPriceCells();
   if (selectedGroup?.io_pricing) applyCustomPricing(selectedGroup.io_pricing);
-  if (selectedClientId) {
-    const c = CLIENT_ROSTER.find(x => x.id === selectedClientId);
-    if (c?.io_pricing) applyCustomPricing(c.io_pricing);
+  // Reads selectedClientDetails now (2026-09-15), not CLIENT_ROSTER — a client's
+  // custom pricing is exactly the kind of per-client data that no longer belongs
+  // in the bulk roster (see CLIENT_ROSTER's own comment). Whichever client is
+  // actually selected has already had its details fetched by the time this runs
+  // (applyClientPick awaits that fetch before calling this).
+  if (selectedClientId && selectedClientDetails?.io_pricing) {
+    applyCustomPricing(selectedClientDetails.io_pricing);
   }
 }
 
@@ -8648,8 +8689,18 @@ async function restorePickerSelections(d, attemptsLeft) {
       const picker = document.getElementById('client-picker');
       if (picker) picker.value = d.selectedClientId;
       setBizNameLocked(true);
+      // is_multi_agent/io_pricing no longer live on the bulk CLIENT_ROSTER object
+      // (2026-09-15, see its own comment) — fetch this one client's details before
+      // reapplyPricingOverrides()/the is_multi_agent check below, same as a real
+      // pick does in applyClientPick().
+      try {
+        selectedClientDetails = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ p_group_id: selectedGroup?.id, p_client_id: d.selectedClientId }) });
+      } catch(e) {
+        console.warn('Could not load this client\'s details:', e.message);
+        selectedClientDetails = null;
+      }
       reapplyPricingOverrides();
-      const c = CLIENT_ROSTER.find(x => x.id === d.selectedClientId);
+      const c = selectedClientDetails;
       if (c?.is_multi_agent) {
         await loadAgentSplitRosters(d.selectedClientId);
         setAgentSplitCardVisible(true);
@@ -8776,6 +8827,7 @@ function resetForm() {
   // submission even though the form looked blank, which would have made that next
   // submission overwrite the old client's record instead of creating a new one.
   selectedClientId = null;
+  selectedClientDetails = null;
   setBizNameLocked(false);
   const clientPicker = document.getElementById('client-picker');
   if (clientPicker) clientPicker.value = '';
