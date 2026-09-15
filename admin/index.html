@@ -9603,6 +9603,24 @@ function viewOrderDetail(orderId) {
       const amountEditable = svcCatalogRow.pricing_mode === 'spend' || svcCatalogRow.default_price == null;
       const isModuleSvc = !!(adminModuleOptions(item.service_id) || []).length;
       let amtCellHtml = esc(amtParts.join(' + ') || '—');
+      // Month-by-month breakdown, read-only (2026-09-15, per Claire: "if the
+      // spend varies per month could we add what those months look like in
+      // the order details, similar to ... the strategist or accounting
+      // portal") -- until now the only way to see the real per-month figures
+      // behind "$X total campaign spend" was to click Edit, which opens the
+      // month-by-month EDITOR (adminToggleMonthBudgetsEditPanel below) --
+      // fine for changing them, but a lot of clicks just to look. This is a
+      // plain <details> disclosure, not a new toggle function/hidden row --
+      // no save action, nothing to keep in sync, so no reason for the extra
+      // state. Same "Month: $Amount (Paused)" shape already used for the
+      // Trello card description (see index.html's formatSiblingLineItems()).
+      if (spendVaries) {
+        const monthRowsHtml = monthBudgetsForDisplay.map(m => {
+          const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+          return `<div style="display:flex;justify-content:space-between;gap:16px;padding:2px 0"><span>${esc(label)}${m.paused ? ' <em>(Paused)</em>' : ''}</span><span>${fmtMoney(m.amount)}</span></div>`;
+        }).join('');
+        amtCellHtml += `<details style="margin-top:4px"><summary style="cursor:pointer;font-size:10.5px;color:var(--accent-dark);font-weight:600">View by month</summary><div style="margin-top:4px;font-size:11px;color:var(--muted);font-weight:400;text-align:left">${monthRowsHtml}</div></details>`;
+      }
       // A real BUTTON, not a tiny inline text link (2026-08-20, per Claire: "I see the
       // cancel, and swap options but I don't see the edit option") -- same size/style as
       // the Cancel button next to it so it's just as easy to spot, not a subtle ✎
