@@ -28142,3 +28142,46 @@ SQL delivered as `scratchpad/little-and-holland-corrections.sql`, run by
 Claire, confirmed correct in the Strategist portal's Campaign Setup
 queue — LinkedIn Ads gone, Facebook/IG Ads showing $2,500 across its
 months.
+
+### 2026-09-15 (cont'd) — ESPN Arkansas Trello card missing the AM, widened to a 20-group data audit
+
+Claire: "I had a submission that didn't tag the AM, just the AE in
+Trello" — ESPN Arkansas. Checked the group record: `am_trello_handle`
+was `null` despite `am_name` correctly showing "Peggy". Traced the
+actual mechanism (Claire corrected my first assumption that this was a
+free-typed field): Admin's AM picker (`applyAmPick()`,
+`admin/index.html`) copies the picked AM's Trello handle from their
+`admin_users` record into the group's own `am_trello_handle` COLUMN at
+save time — it's a one-time copy, not a live reference. Confirmed
+Peggy's `admin_users` row already has the correct handle
+(`@peggyolson3`) — so the gap was purely that ESPN Arkansas's group
+record was never re-saved since her handle was added/corrected on her
+user record.
+
+Fixed ESPN Arkansas directly, then audited for the same gap everywhere
+else via a join comparing every group's `am_trello_handle` against its
+named AM's current `admin_users.am_trello_handle`. Found **19 more
+groups** with the identical gap — all null, split across Shania
+(`@shaniabiers`, 12 groups) and Peggy (`@peggyolson3`, 7 more groups
+beyond ESPN Arkansas). Given the shape (only these two AMs, all
+`null`, none partially-stale), this reads as: both AMs' Trello handles
+were added to their `admin_users` records at some point, and none of
+the groups they already managed were ever re-saved through the Groups
+form afterward to pick up the copy — not a new bug, just never audited
+at scale before now.
+
+**Fixed with one bulk statement**
+(`scratchpad/bulk-fix-stale-am-trello-handles.sql`): `update groups g
+set am_trello_handle = au.am_trello_handle from admin_users au where
+au.name = g.am_name and au.role = 'am' and
+coalesce(g.am_trello_handle,'') <> coalesce(au.am_trello_handle,'') and
+au.am_trello_handle is not null` — re-runnable safely, only touches
+still-mismatched rows. Claire ran it, re-ran the audit query, confirmed
+zero rows returned (all clear).
+
+**Not yet decided**: whether to change this from a one-time copy to a
+live lookup at Trello-tagging time (resolving straight from
+`admin_users` instead of the group's own stored column), which would
+close this class of gap permanently instead of needing the audit query
+re-run periodically. Raised to Claire, no decision yet — parked, not
+built.
