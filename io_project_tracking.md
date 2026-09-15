@@ -28031,3 +28031,89 @@ public.get_group_clients(uuid);` this needs first, and flagged the
 same "run the DROP and CREATE as two separate statements" gotcha
 already logged from that earlier incident (a combined paste threw "no
 function body specified" that time).
+
+### 2026-09-15 (cont'd) — Parked idea: real per-group tenancy credential (not built)
+
+Following the client-roster PII fix above, Claire had a separate chat put
+together a write-up of a more thorough fix for the underlying class of
+problem (a group's identity coming from something the browser sends,
+rather than from something it can't forge): 
+https://claude.ai/artifact/1wH1mktkcXeTEQbhs5Gvbo?sk=MW0MkLG2ycoK4GjD7IDFNw
+— asked whether it's something easy to adopt here without risking the
+live form.
+
+**Assessment: legitimate pattern, correctly diagnoses the real problem,
+but NOT small for this codebase — recommended NOT building it now.**
+The core idea: today, `index.html`'s public URL is
+`io.yourdigitalgroupresources.com/[group-slug]`, and every RPC call
+trusts whatever `group_id`/`client_id` the page's own JS sends it —
+the slug is effectively both the label AND (indirectly, since the
+frontend resolves it to a real `group_id` and then just sends that)
+the credential. The artifact's proposal: split those two roles.
+The slug stays in the URL purely for display (page title, branding),
+but every RPC call also carries a signed/random per-group token
+(`?t=...`), and a single shared resolver function (mirroring how
+`admin_resolve_role()` already centralizes auth for the admin/
+strategist/accounting portals) turns THAT token into the real
+`group_id` server-side — never trusting a client-supplied one directly.
+Every group-scoped query then filters by the RESOLVED id, not a
+passed-in one. A request with no valid token gets refused before any
+query runs at all.
+
+**Why parked rather than built**: this isn't a fix to the two RPCs we
+touched today — it's a rewrite of the trust model for basically every
+public RPC `index.html` calls (catalog load, draft save/resume, order
+submission, AE roster, client roster, service history, custom pricing
+— everything currently scoped by a plain `group_id`/`client_id`
+parameter). It also needs real coordination outside this repo: every
+one of the ~40 white-labeled partners' WordPress embeds would need its
+iframe `src` updated to include a new per-group token, which is
+manual/partner-facing work, not engineering work. Claire's own stated
+priority today was explicitly the opposite of this scope ("I don't
+want to overcomplicate anything... that could break anything") — this
+is a real project for if/when the risk becomes concrete, not a
+same-day addition.
+
+**If this is ever picked up, the build would look roughly like this**
+(staged so nothing breaks mid-way, same principle as every other
+additive DB migration this project has done):
+
+1. **Add the machinery, wire nothing to it yet.** New table, e.g.
+   `group_embed_tokens (group_id uuid, token_hash text, label text,
+   created_at, revoked_at)` — stores only a SHA-256 hash of each
+   token, never the raw value, same principle as a password hash. New
+   `resolve_group_from_token(p_token text) returns uuid` SECURITY
+   DEFINER function, hashes the input and looks up an active,
+   unrevoked match. Nothing calls it yet — zero live behavior change,
+   same "safe by construction" property every RPC migration in this
+   project already follows.
+2. **Teach the group-scoped RPCs to accept an optional token, falling
+   through to today's behavior when absent.** Each RPC (starting with
+   the highest-value ones — `get_group_clients`/`get_client_details`,
+   given today's fix, then working outward) gains an optional
+   `p_token` param: if present and valid, resolve `group_id` from it
+   and IGNORE any client-supplied `group_id`; if absent, behave
+   exactly as today. Every existing embed keeps working unchanged
+   through this whole stage.
+3. **Mint one token per group, update embeds one at a time.** For each
+   of the ~40 groups: generate a token, give the raw value to whoever
+   manages that partner's WordPress embed (never store the raw value
+   ourselves — matches the artifact's own "database dump has no usable
+   keys" property), update that one iframe's `src` to include `?t=...`,
+   confirm the right client/pricing data loads, move to the next
+   group. A mistake here is scoped to one partner's page, visible
+   immediately, and doesn't touch anyone else.
+4. **Once every group has a working token, flip the fallback off.**
+   The "no token → today's behavior" branch in each RPC becomes "no
+   token → refuse." This is the one change that actually closes the
+   gap, and by the time it happens it's the last step, not a risky
+   leap — every real embed already has a working token by then.
+5. **Keep the existing courtesy notice (`showNotEmbeddedNotice()`,
+   already shipped) as-is** — it's still a reasonable first line for
+   someone who stumbles on a bare link, now sitting in front of a
+   server that genuinely refuses regardless of what the notice does.
+
+**Not started. No code, no SQL, no tables exist for this yet** — this
+entry exists purely so the idea and the shape of the eventual build are
+on record, per this project's usual practice for anything parked rather
+than guessed at.
