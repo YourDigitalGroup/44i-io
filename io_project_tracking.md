@@ -27993,3 +27993,41 @@ can be written to match its exact real column list rather than a
 guessed one. Frontend committed as-is; will not function correctly
 against the live database until the matching SQL is delivered, run, and
 this entry is updated.
+
+### 2026-09-15 (cont'd) — get_client_details SQL delivered + array-unwrap bug caught before shipping
+
+Claire pasted `get_group_clients`'s current definition. Wrote
+`scratchpad/fix-client-roster-pii-exposure.sql`: trims `get_group_clients`
+to `id`+`name` only, and adds `get_client_details(p_group_id, p_client_id)`
+returning everything else (contact fields, `is_multi_agent`, `io_pricing`),
+scoped by BOTH ids and `limit 1`. Diffed against Claire's pasted
+definition to confirm the trim touches only the column list — same
+table, same `group_id`/`not hidden` filter, same ordering.
+
+**Caught before shipping**: both new RPCs use `RETURNS TABLE`, same as
+`get_group_clients` always has — meaning PostgREST always sends the
+response back as a JSON ARRAY, even for `get_client_details`'s
+single-row (`limit 1`) result. The frontend code from earlier today
+read the response as a bare object (`selectedClientDetails = await
+sb(...)`, then `d.contact_name` etc.) — this would have silently
+returned `undefined` for every field, since a plain object doesn't have
+those properties when the real payload is `[{...}]`. Fixed both call
+sites (`applyClientPick()`, `restorePickerSelections()`) to unwrap
+`rows[0]`, the same pattern the `claude-proxy` Edge Function's
+`admin_login` check already uses for exactly this reason.
+
+**Verified**: `node --check` — no syntax errors. Simulated the unwrap
+logic in Node against a normal single-row response, an empty array
+(client not found), and a defensive non-array case — all three produced
+the correct result. SQL not yet run by Claire; frontend not yet
+confirmed against the live database.
+
+**Hit a known snag, same as before**: `CREATE OR REPLACE` on
+`get_group_clients` failed with `cannot change return type of existing
+function` — same issue as the 2026-08-19 `is_multi_agent` addition to
+this same function (Postgres won't let `CREATE OR REPLACE` change a
+function's return row shape). Added the `DROP FUNCTION
+public.get_group_clients(uuid);` this needs first, and flagged the
+same "run the DROP and CREATE as two separate statements" gotcha
+already logged from that earlier incident (a combined paste threw "no
+function body specified" that time).
