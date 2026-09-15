@@ -28117,3 +28117,28 @@ additive DB migration this project has done):
 entry exists purely so the idea and the shape of the eventual build are
 on record, per this project's usual practice for anything parked rather
 than guessed at.
+
+### 2026-09-15 (cont'd) — Little and Holland ESQ (STMM Digital): two Campaign Setup corrections
+
+Claire, relaying a strategist's request: delete a bulk-imported LinkedIn
+Ads line that's no longer wanted, and correct a bulk-imported Facebook/IG
+Ads line's Gross Budget to $2,500/month (current month forward — past
+months stay as originally recorded, though neither line had any actuals
+yet since both were still `pending` in Campaign Setup). Initial lookup
+by `client_name ilike '%little holland%'` returned nothing — turned out
+the real name is "Little and Holland ESQ" (the "and" broke the adjacent-
+word match); re-ran with `ilike '%little%' and ilike '%holland%'` and
+found both lines immediately.
+
+- Deleted campaign_line `6035be59-282f-443d-b152-8de0a0b01779` (LinkedIn
+  Ads) along with its 13 `campaign_months` rows and any
+  `campaign_status_history` rows (none expected — a line that's stayed
+  `pending` since import has never had a real status change logged).
+- Updated `campaign_months.gross_budget` to 2500 for campaign_line
+  `f8104289-05a5-4bb9-8707-50a303a7d476` (Facebook/IG Ads) where
+  `month >= date_trunc('month', current_date)`.
+
+SQL delivered as `scratchpad/little-and-holland-corrections.sql`, run by
+Claire, confirmed correct in the Strategist portal's Campaign Setup
+queue — LinkedIn Ads gone, Facebook/IG Ads showing $2,500 across its
+months.
