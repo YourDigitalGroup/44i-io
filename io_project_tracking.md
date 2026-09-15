@@ -27850,3 +27850,34 @@ SQL fix, the Strategist Portal deep-link month fix (no longer lands on
 June 2026), and the Agent/County Split Trello card linkage
 (`fix-strategist-agent-split-trello-link.sql`, run alongside the earlier
 Union County renewal fix).
+
+### 2026-09-15 — Admin Order Detail: read-only month-by-month breakdown for varying spend
+
+Claire: "if the spend varies per month could we add what those months
+look like in the order details, similar to the order that you can see
+in the strategist or accounting portal?" Order Detail (`admin/index.html`,
+`viewOrderDetail()`) already computed and showed the campaign TOTAL for
+a varying-spend line ("$X total campaign spend", fixed 2026-08-28), but
+the actual month-by-month figures behind that total were only visible
+by clicking "✎ Edit" — which opens the month-by-month EDITOR
+(`adminToggleMonthBudgetsEditPanel`), a lot of friction just to look,
+and not obviously a "view" action.
+
+Added a plain read-only `<details>`/`<summary>` disclosure ("View by
+month") right under the amount, shown only when `spendVaries` is true
+(same flag the total-vs-average logic already computes). Lists each
+`month_budgets` entry as Month: Amount, with "(Paused)" for a paused
+month — same shape already used for the Trello card description
+(`index.html`'s `formatSiblingLineItems()`). Deliberately NOT a new
+toggle function/hidden row like the other panels (Edit/Renew/Cancel) —
+there's no save action and nothing to keep in sync, so `<details>`
+needs no JS at all.
+
+**Verified**: extracted inline `<script>` content, `node --check` — no
+syntax errors. Simulated the render logic in Node against 3 cases: a
+varying campaign with one paused month (shows the full breakdown with
+"(Paused)" and "—" for that month's amount), a flat campaign where
+every month is the same amount (renders nothing extra, matching the
+existing "/mo spend" display), and a single-month campaign (also
+renders nothing extra, `spendVaries` correctly false since it requires
+`length > 1`). Not yet seen live.
