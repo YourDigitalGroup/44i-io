@@ -1727,7 +1727,12 @@ async function applyClientPick(id) {
   // (see CLIENT_ROSTER's own comment). Fetches this ONE client's full details now,
   // on demand, only because it was actually picked.
   try {
-    selectedClientDetails = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ p_group_id: selectedGroup?.id, p_client_id: id }) });
+    // get_client_details uses RETURNS TABLE, same as get_group_clients — PostgREST
+    // always sends that back as an array (one row here, thanks to the RPC's own
+    // `limit 1`), never a bare object, so this unwraps index 0 the same way e.g.
+    // the claude-proxy Edge Function's admin_login check already does.
+    const rows = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ p_group_id: selectedGroup?.id, p_client_id: id }) });
+    selectedClientDetails = Array.isArray(rows) ? (rows[0] || null) : rows;
   } catch(e) {
     console.warn('Could not load this client\'s details:', e.message);
     selectedClientDetails = null;
@@ -8694,7 +8699,10 @@ async function restorePickerSelections(d, attemptsLeft) {
       // reapplyPricingOverrides()/the is_multi_agent check below, same as a real
       // pick does in applyClientPick().
       try {
-        selectedClientDetails = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ p_group_id: selectedGroup?.id, p_client_id: d.selectedClientId }) });
+        // See applyClientPick()'s matching comment — RETURNS TABLE always comes
+        // back as an array via PostgREST, even for this RPC's single-row result.
+        const rows = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ p_group_id: selectedGroup?.id, p_client_id: d.selectedClientId }) });
+        selectedClientDetails = Array.isArray(rows) ? (rows[0] || null) : rows;
       } catch(e) {
         console.warn('Could not load this client\'s details:', e.message);
         selectedClientDetails = null;
