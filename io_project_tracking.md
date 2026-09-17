@@ -28340,3 +28340,40 @@ description string. Not yet re-confirmed live by Claire with an actual
 Quantity save (the original reason this was found), but the actual
 crash is now fixed and the qty/fee-recompute code from the earlier
 commit should reach execution for the first time.
+
+### 2026-09-17 (cont'd) — Order Detail now reflects live cancellation status
+
+Claire, after successfully cancelling Offline Visits Tracking: "there
+should be a way to see that so that the order looks accurate and their
+shouldn't be a cancel or renew option anymore." Confirmed this was a
+real, general gap (not specific to modifiers) — Order Detail has NEVER
+reflected a cancellation, for ANY service, since it only ever rendered
+the order's own frozen `line_items` snapshot with zero live
+`campaign_lines` lookup at all (an explicit, documented tradeoff from
+2026-08-20: "admin_cancel_service() is idempotent... rather than risk
+showing a wrong status").
+
+**Built**: new RPC `admin_get_order_campaign_status(p_name, p_pw,
+p_order_id)` returning, per relevant service_id on the order, whether
+it's CURRENTLY cancelled — for a normal service, `campaign_lines.status
+= 'cancelled'`; for a modifier (Offline Visits Tracking, Addl.
+Targeting), whether the flag on its PAIRED tactic's row (found via the
+exact same `accounting_map` lookup as today's `admin_cancel_service`
+fix, same `yttv-bp` special case) is currently false. `viewOrderDetail()`
+(`admin/index.html`) is now `async` and fetches this at the top of every
+call — it's already re-invoked after every Cancel/Edit/Renew success to
+refresh the modal, so this needed no new refresh-trigger wiring, just
+the fetch itself. A cancelled line now shows a red "CANCELLED" badge
+next to its name and no longer offers Cancel or Renew (Edit is
+untouched — not part of what was asked, and editing a cancelled line's
+historical amount may still be legitimate).
+
+**Verified**: extracted inline `<script>` content, `node --check` — no
+syntax errors. Simulated the button/badge decision logic in Node
+against 4 cases: an active normal service (both buttons show, no
+badge), a cancelled normal service (both buttons hidden, badge shows),
+a cancelled modifier (identical treatment, keyed by the order's own
+`pa-offline`-style service_id matching the RPC's resolved verdict), and
+an active pure-fee service (Renew still correctly suppressed for its
+existing, unrelated reason, Cancel still shows). Not yet seen live —
+needs the new RPC run before this can work end-to-end.
