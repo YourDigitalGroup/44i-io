@@ -8488,6 +8488,21 @@ function adminCollectExtraEditFields(serviceId, item) {
 // Returns the description strings to fold into the caller's own Trello
 // comment, rather than posting a second separate comment.
 async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
+  // Real bug found live (2026-09-17, Claire -- a client needed a second
+  // Radio to Video Ad Creation, a per_unit priced service): the Quantity
+  // field here (2026-08-31) saves the new qty to the database, but nothing
+  // ever recomputed the actual dollar amount from it -- unit_fee stays
+  // fixed on the catalog rate (see index.html's line-item construction:
+  // `fee: (data.fee || 0) * qty`, `unit_fee: data.fee || 0`), so a qty
+  // change alone left `fee` frozen at whatever it was before, silently
+  // wrong versus the real unit_fee * qty math the ORIGINAL IO form always
+  // enforces. Recomputes and folds a paired `fee` update into the same
+  // save/comment/history sequence as qty itself, using this line's own
+  // stored unit_fee -- no separate RPC change needed, `fee` was already a
+  // supported field.
+  if ('qty' in extraFields && item?.unit_fee != null) {
+    extraFields = { ...extraFields, fee: String(Number(item.unit_fee) * Number(extraFields.qty)) };
+  }
   const descriptions = [];
   const historyEntries = [];
   for (const [field, value] of Object.entries(extraFields)) {

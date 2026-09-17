@@ -28240,3 +28240,53 @@ Impact Mortgage Southeast's card description won't retroactively
 update (this only affects future card creates/updates, e.g. the next
 resell/renewal comment on that same card, or any brand-new card from
 here on).
+
+### 2026-09-17 — Admin's Quantity edit never actually recalculated the price
+
+Claire, on Tim Shepard for Washington County Judge (ESPN Arkansas):
+needed a second "Radio to Video Ad Creation" ($250, per-unit priced —
+`unit_fee: 250, qty: 1, fee: 250`), and wanted to know how to add it.
+Investigated with her (AskUserQuestion round on "add a new service"
+scope) before realizing the actual ask was narrower: this isn't a new
+service at all, it's an existing per-unit-priced line that needs its
+quantity bumped from 1 to 2.
+
+Traced this to an existing feature (`adminExtraEditFieldsHtml()`,
+`admin/index.html`, built 2026-08-31 per Claire: "should we add a way
+to edit the quantity?") — a Quantity input already renders for any
+`pricing_mode === 'per_unit'` service inside the AM-triggered Edit
+panel. But `adminSaveExtraEditFields()`/`applyFieldChangeLocally()`
+only ever saved the new `qty` value itself — nothing recomputed the
+actual dollar amount (`fee = unit_fee × qty`, the same math
+index.html's own line-item construction always enforces on a fresh
+order). So using this existing control would have silently changed
+`qty` to 2 while leaving `fee` frozen at $250 — Trello, Order Detail,
+and billing would all still show the OLD, now-wrong amount. This is
+very likely why the capability read as "missing" rather than "broken" —
+nobody had tried it far enough to notice the price never moved.
+
+**Fixed**: `adminSaveExtraEditFields()` now recomputes `fee` from this
+line's own stored `unit_fee × new_qty` whenever `qty` is among the
+fields being saved, and includes it in the SAME save/comment/history
+sequence — no RPC change needed at all, since `admin_edit_order_line_item`
+(pulled fresh from Claire — `pg_get_functiondef`) already accepts `fee`
+as a plain editable field; this just teaches the frontend to actually
+call it. Confirmed via the exact real line item's data.
+
+**Verified**: extracted inline `<script>` content, `node --check` — no
+syntax errors. Simulated the recompute logic in Node against 4 cases
+using the real Radio to Video Ad Creation line's own numbers: qty 1→2
+(fee correctly becomes $500), qty 1→3 (fee $750), an edit that doesn't
+touch qty at all (fee correctly left untouched), and a hypothetical
+non-per_unit item with no `unit_fee` on record (correctly adds no fee
+key rather than injecting `NaN` or similar). Not yet seen live — Claire
+can now use the existing Quantity field on this order's Radio to Video
+Ad Creation line (via ✎ Edit) once this is deployed, no new SQL needed.
+
+Minor pre-existing UX quirk noticed but NOT changed (out of scope,
+flagged for awareness only): the qty field lives inside the pure-fee
+Edit panel, which also always requires/resaves a Date value even when
+only quantity is actually changing — harmless (resaves the same date),
+but produces an extra "date changed from X to X" line in the Trello
+comment alongside the real quantity/price change. Not touched since
+it's unrelated to the bug reported and pre-dates this fix.
