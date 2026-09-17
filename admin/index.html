@@ -10325,7 +10325,20 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     o.is_revised = true;
     o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field: 'start_date', old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
 
-    const descriptions = [`${includeEndDate ? 'start ' : ''}date changed from ${fmtDate(oldValue)} to ${fmtDate(newValue)}`];
+    // Real bug found live (2026-09-17, Claire -- Quantity edit "didn't stick"):
+    // fmtDate() is a local const scoped inside viewOrderDetail() (same known
+    // issue already worked around in adminToggleRenewPanel's own comment just
+    // above this function) -- calling it here threw an uncaught ReferenceError
+    // that killed this whole function BEFORE it ever reached
+    // adminCollectExtraEditFields()/adminSaveExtraEditFields() below, so ANY
+    // Quantity/Variant/Modules change routed through this date-only panel
+    // silently never saved at all, with no error shown to the user (only a
+    // console exception). The start_date RPC call just above this line had
+    // already succeeded by this point, which is why the DATE change alone
+    // looked like it worked. Swapped for pendingFmtDate() -- the same shared,
+    // properly top-level-scoped helper applyFieldChangeLocally() already uses
+    // for this identical purpose.
+    const descriptions = [`${includeEndDate ? 'start ' : ''}date changed from ${pendingFmtDate(oldValue)} to ${pendingFmtDate(newValue)}`];
     // Any End Date/Variant/Modules changes get saved and folded into this
     // SAME comment (2026-08-31), not a second separate one.
     const extraFields = adminCollectExtraEditFields(serviceId, item);
