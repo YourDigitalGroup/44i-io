@@ -2810,7 +2810,21 @@ function renderSetupPanel(l) {
             <input type="date" id="setup-flight-end-${l.id}" value="${esc(l.flight_end || '')}" placeholder="Ongoing" aria-label="Flight end date" style="width:100%;padding:4px 5px;border-radius:6px;border:1px solid var(--border);font-size:11.5px"/>
           </div>
         </div>
-        <div><label class="lbl">Gross Budget</label><div>$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo</div></div>
+        <div><label class="lbl">${l.budget_entry_mode === 'total' ? 'Whole Campaign Total' : 'Gross Budget'}</label><div>${(() => {
+          // Distinguished beyond just the header pill (2026-09-17, per Claire:
+          // "seeing the first month gross budget at the top is a little
+          // confusing" for a Whole Campaign Total line) -- showing THIS
+          // month's figure with a plain "/mo" suffix read exactly like a flat
+          // monthly rate, directly contradicting the "Whole Campaign Total"
+          // pill sitting right next to it. Shows the real multi-month total
+          // instead, with the current month broken out separately underneath
+          // so neither number is lost.
+          if (l.budget_entry_mode === 'total') {
+            const total = monthRows.reduce((s, m) => s + (Number(m.gross_budget) || 0), 0);
+            return `$${total.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}<div style="font-size:10.5px;color:var(--muted);font-weight:400">This month: ${monthRow.gross_budget != null ? '$' + Number(monthRow.gross_budget).toLocaleString() : '—'}</div>`;
+          }
+          return `$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo`;
+        })()}</div></div>
         <div><label class="lbl">In-Platform Budget</label><div>${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</div></div>
         <!-- Read-only, same as the Detail panel (2026-08-13, per Claire -- also wanted
              here). SEM has no Platform CPM at all (no Retail CPM to derive it from), so
