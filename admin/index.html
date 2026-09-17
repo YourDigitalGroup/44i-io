@@ -9571,7 +9571,20 @@ function viewOrderDetail(orderId) {
       // back to the order's own frozen value, then the plain client-facing label,
       // if the catalog has no live row for this service_id at all (e.g. a
       // since-deactivated service).
-      const displayLabel = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label;
+      // Resolves this line's OWN tactic_variant, when set (2026-09-17, found live:
+      // Impact Mortgage Southeast's "Location Targeting: Event" campaign showed as
+      // the generic combined catalog label "Event or Lookback" here and in the
+      // Trello card description, even though the AE's actual pick was captured
+      // right on the line item at submission -- the card TITLE already resolved it
+      // correctly via index.html's resolveVariantDisplayName(), this page and that
+      // description just never got the matching fix). Reuses
+      // auditVariantIsAlreadyComplete()'s identical "already complete" rule since
+      // the logic doesn't differ, even though that function's OWN purpose is
+      // resolving the strategist's later campaign_lines.tactic_label pick, not this.
+      const baseLabel = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label;
+      const displayLabel = item.tactic_variant
+        ? (auditVariantIsAlreadyComplete(item.tactic_variant) ? item.tactic_variant : `${sectionLabel(CATALOG_ROWS[item.service_id]?.section)}: ${item.tactic_variant}`)
+        : baseLabel;
       // AM-triggered Cancel a Service (2026-08-20) -- one button per line item;
       // doesn't reflect an already-cancelled state inline since Order Detail
       // doesn't load live campaign_lines rows, only the order's own frozen

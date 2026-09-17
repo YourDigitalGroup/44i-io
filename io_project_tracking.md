@@ -28031,3 +28031,212 @@ public.get_group_clients(uuid);` this needs first, and flagged the
 same "run the DROP and CREATE as two separate statements" gotcha
 already logged from that earlier incident (a combined paste threw "no
 function body specified" that time).
+
+### 2026-09-15 (cont'd) — Parked idea: real per-group tenancy credential (not built)
+
+Following the client-roster PII fix above, Claire had a separate chat put
+together a write-up of a more thorough fix for the underlying class of
+problem (a group's identity coming from something the browser sends,
+rather than from something it can't forge): 
+https://claude.ai/artifact/1wH1mktkcXeTEQbhs5Gvbo?sk=MW0MkLG2ycoK4GjD7IDFNw
+— asked whether it's something easy to adopt here without risking the
+live form.
+
+**Assessment: legitimate pattern, correctly diagnoses the real problem,
+but NOT small for this codebase — recommended NOT building it now.**
+The core idea: today, `index.html`'s public URL is
+`io.yourdigitalgroupresources.com/[group-slug]`, and every RPC call
+trusts whatever `group_id`/`client_id` the page's own JS sends it —
+the slug is effectively both the label AND (indirectly, since the
+frontend resolves it to a real `group_id` and then just sends that)
+the credential. The artifact's proposal: split those two roles.
+The slug stays in the URL purely for display (page title, branding),
+but every RPC call also carries a signed/random per-group token
+(`?t=...`), and a single shared resolver function (mirroring how
+`admin_resolve_role()` already centralizes auth for the admin/
+strategist/accounting portals) turns THAT token into the real
+`group_id` server-side — never trusting a client-supplied one directly.
+Every group-scoped query then filters by the RESOLVED id, not a
+passed-in one. A request with no valid token gets refused before any
+query runs at all.
+
+**Why parked rather than built**: this isn't a fix to the two RPCs we
+touched today — it's a rewrite of the trust model for basically every
+public RPC `index.html` calls (catalog load, draft save/resume, order
+submission, AE roster, client roster, service history, custom pricing
+— everything currently scoped by a plain `group_id`/`client_id`
+parameter). It also needs real coordination outside this repo: every
+one of the ~40 white-labeled partners' WordPress embeds would need its
+iframe `src` updated to include a new per-group token, which is
+manual/partner-facing work, not engineering work. Claire's own stated
+priority today was explicitly the opposite of this scope ("I don't
+want to overcomplicate anything... that could break anything") — this
+is a real project for if/when the risk becomes concrete, not a
+same-day addition.
+
+**If this is ever picked up, the build would look roughly like this**
+(staged so nothing breaks mid-way, same principle as every other
+additive DB migration this project has done):
+
+1. **Add the machinery, wire nothing to it yet.** New table, e.g.
+   `group_embed_tokens (group_id uuid, token_hash text, label text,
+   created_at, revoked_at)` — stores only a SHA-256 hash of each
+   token, never the raw value, same principle as a password hash. New
+   `resolve_group_from_token(p_token text) returns uuid` SECURITY
+   DEFINER function, hashes the input and looks up an active,
+   unrevoked match. Nothing calls it yet — zero live behavior change,
+   same "safe by construction" property every RPC migration in this
+   project already follows.
+2. **Teach the group-scoped RPCs to accept an optional token, falling
+   through to today's behavior when absent.** Each RPC (starting with
+   the highest-value ones — `get_group_clients`/`get_client_details`,
+   given today's fix, then working outward) gains an optional
+   `p_token` param: if present and valid, resolve `group_id` from it
+   and IGNORE any client-supplied `group_id`; if absent, behave
+   exactly as today. Every existing embed keeps working unchanged
+   through this whole stage.
+3. **Mint one token per group, update embeds one at a time.** For each
+   of the ~40 groups: generate a token, give the raw value to whoever
+   manages that partner's WordPress embed (never store the raw value
+   ourselves — matches the artifact's own "database dump has no usable
+   keys" property), update that one iframe's `src` to include `?t=...`,
+   confirm the right client/pricing data loads, move to the next
+   group. A mistake here is scoped to one partner's page, visible
+   immediately, and doesn't touch anyone else.
+4. **Once every group has a working token, flip the fallback off.**
+   The "no token → today's behavior" branch in each RPC becomes "no
+   token → refuse." This is the one change that actually closes the
+   gap, and by the time it happens it's the last step, not a risky
+   leap — every real embed already has a working token by then.
+5. **Keep the existing courtesy notice (`showNotEmbeddedNotice()`,
+   already shipped) as-is** — it's still a reasonable first line for
+   someone who stumbles on a bare link, now sitting in front of a
+   server that genuinely refuses regardless of what the notice does.
+
+**Not started. No code, no SQL, no tables exist for this yet** — this
+entry exists purely so the idea and the shape of the eventual build are
+on record, per this project's usual practice for anything parked rather
+than guessed at.
+
+### 2026-09-15 (cont'd) — Little and Holland ESQ (STMM Digital): two Campaign Setup corrections
+
+Claire, relaying a strategist's request: delete a bulk-imported LinkedIn
+Ads line that's no longer wanted, and correct a bulk-imported Facebook/IG
+Ads line's Gross Budget to $2,500/month (current month forward — past
+months stay as originally recorded, though neither line had any actuals
+yet since both were still `pending` in Campaign Setup). Initial lookup
+by `client_name ilike '%little holland%'` returned nothing — turned out
+the real name is "Little and Holland ESQ" (the "and" broke the adjacent-
+word match); re-ran with `ilike '%little%' and ilike '%holland%'` and
+found both lines immediately.
+
+- Deleted campaign_line `6035be59-282f-443d-b152-8de0a0b01779` (LinkedIn
+  Ads) along with its 13 `campaign_months` rows and any
+  `campaign_status_history` rows (none expected — a line that's stayed
+  `pending` since import has never had a real status change logged).
+- Updated `campaign_months.gross_budget` to 2500 for campaign_line
+  `f8104289-05a5-4bb9-8707-50a303a7d476` (Facebook/IG Ads) where
+  `month >= date_trunc('month', current_date)`.
+
+SQL delivered as `scratchpad/little-and-holland-corrections.sql`, run by
+Claire, confirmed correct in the Strategist portal's Campaign Setup
+queue — LinkedIn Ads gone, Facebook/IG Ads showing $2,500 across its
+months.
+
+### 2026-09-15 (cont'd) — ESPN Arkansas Trello card missing the AM, widened to a 20-group data audit
+
+Claire: "I had a submission that didn't tag the AM, just the AE in
+Trello" — ESPN Arkansas. Checked the group record: `am_trello_handle`
+was `null` despite `am_name` correctly showing "Peggy". Traced the
+actual mechanism (Claire corrected my first assumption that this was a
+free-typed field): Admin's AM picker (`applyAmPick()`,
+`admin/index.html`) copies the picked AM's Trello handle from their
+`admin_users` record into the group's own `am_trello_handle` COLUMN at
+save time — it's a one-time copy, not a live reference. Confirmed
+Peggy's `admin_users` row already has the correct handle
+(`@peggyolson3`) — so the gap was purely that ESPN Arkansas's group
+record was never re-saved since her handle was added/corrected on her
+user record.
+
+Fixed ESPN Arkansas directly, then audited for the same gap everywhere
+else via a join comparing every group's `am_trello_handle` against its
+named AM's current `admin_users.am_trello_handle`. Found **19 more
+groups** with the identical gap — all null, split across Shania
+(`@shaniabiers`, 12 groups) and Peggy (`@peggyolson3`, 7 more groups
+beyond ESPN Arkansas). Given the shape (only these two AMs, all
+`null`, none partially-stale), this reads as: both AMs' Trello handles
+were added to their `admin_users` records at some point, and none of
+the groups they already managed were ever re-saved through the Groups
+form afterward to pick up the copy — not a new bug, just never audited
+at scale before now.
+
+**Fixed with one bulk statement**
+(`scratchpad/bulk-fix-stale-am-trello-handles.sql`): `update groups g
+set am_trello_handle = au.am_trello_handle from admin_users au where
+au.name = g.am_name and au.role = 'am' and
+coalesce(g.am_trello_handle,'') <> coalesce(au.am_trello_handle,'') and
+au.am_trello_handle is not null` — re-runnable safely, only touches
+still-mismatched rows. Claire ran it, re-ran the audit query, confirmed
+zero rows returned (all clear).
+
+**Not yet decided**: whether to change this from a one-time copy to a
+live lookup at Trello-tagging time (resolving straight from
+`admin_users` instead of the group's own stored column), which would
+close this class of gap permanently instead of needing the audit query
+re-run periodically. Raised to Claire, no decision yet — parked, not
+built.
+
+### 2026-09-17 — Trello card description + Admin Order Detail ignored a line's own tactic_variant pick
+
+Claire: an Impact Mortgage Southeast "Location Targeting: Event" order
+"looks like it came through the strategist portal correctly but the
+trello comment and order detail don't show that event was selected."
+Pulled the real order's `line_items` — the AE's actual pick WAS captured
+correctly at submission (`"tactic_variant":"Location Targeting: Event"`,
+plus `"notes":"Event Campaign"` as a backup), and the Trello card's own
+TITLE already showed it correctly ("Location Targeting: Event Sep 19 -
+Oct 19 — Impact Mortgage Southeast"). But the card's Description
+("Services sold under this workflow: • Event or Lookback") and Admin's
+Order Detail modal both still showed the generic, ambiguous COMBINED
+catalog label instead.
+
+Root cause: the title-building code already calls
+`resolveVariantDisplayName(li.service_id, li.tactic_variant,
+fallbackName)` to swap in the specific pick — but `formatSiblingLineItems()`
+(builds each tactic card's own Description, `index.html`) and
+`servicesDesc` (builds the separate overview IO card's Description,
+also `index.html`) both just read the bare `li.label`/`li.accounting_label
+|| li.label` directly, never routed through that same resolver. Same
+class of gap as several other "the fix landed in one place but not its
+sibling" bugs this project has hit — the variant-resolution fix
+(2026-08-31) was applied to the title but never propagated to either
+description.
+
+**Fixed**: both `index.html` call sites now resolve through
+`resolveVariantDisplayName()` the same way the title does — accounting_label
+still takes precedence over the plain label as the fallback in
+`servicesDesc`'s case, tactic_variant only overrides when it's actually
+set. Admin's Order Detail (`admin/index.html`, `viewOrderDetail()`)
+never had this resolver at all (separate file, no shared code with
+index.html here) — added the equivalent inline, reusing the EXISTING
+`auditVariantIsAlreadyComplete()`/`sectionLabel()` helpers already in
+that file (built for a different feature — auditing expected Trello
+card names against the strategist's later `campaign_lines.tactic_label`
+pick — but sharing the identical "is this variant string already
+section-qualified" rule, so no need for a second copy of that logic).
+
+**Verified**: extracted inline `<script>` content from both files,
+`node --check` — no syntax errors on either. Simulated the resolution
+logic in Node against the REAL Impact Mortgage Southeast line item data
+pulled from the order: both the tactic-card-description and IO-overview-
+card-description paths correctly resolve to "Location Targeting: Event"
+(previously "Event or Lookback"), and Admin's Order Detail resolves to
+the same value. Also simulated a line item with no `tactic_variant` set
+at all (the common case — most services aren't a combined-label variant
+type) to confirm it falls through unchanged, and a bare variant answer
+with no section prefix already in it (e.g. "Geofencing") to confirm the
+section name still gets prepended correctly. Not yet seen live —
+Impact Mortgage Southeast's card description won't retroactively
+update (this only affects future card creates/updates, e.g. the next
+resell/renewal comment on that same card, or any brand-new card from
+here on).
