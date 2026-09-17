@@ -28377,3 +28377,38 @@ a cancelled modifier (identical treatment, keyed by the order's own
 an active pure-fee service (Renew still correctly suppressed for its
 existing, unrelated reason, Cancel still shows). Not yet seen live —
 needs the new RPC run before this can work end-to-end.
+
+### 2026-09-17 (cont'd) — Cancelling a modifier wrongly moved the PARENT tactic's due date
+
+Claire caught this from the actual Trello card: cancelling Offline
+Visits Tracking correctly posted the right comment, but also moved the
+Audio card's Due Date to today (Sep 17) — even though Audio itself is
+still fully active through Nov 3, 2026. Only the add-on was cancelled,
+not the tactic carrying the card.
+
+Root cause: `adminSubmitCancellation()`'s existing due-date-move step
+(2026-09-02, built for genuine tactic cancellations — "a cancellation
+is effectively a new end for the tactic") assumes cancelling always
+means the CARD's own tactic is ending. That's true for a regular
+service, but a modifier (Offline Visits Tracking, Addl. Targeting)
+shares its PARENT tactic's card (same `workflow`, same
+`adminEffectiveWorkflow()` lookup) rather than having one of its own —
+so cancelling just the add-on incorrectly dragged the parent's due date
+down too.
+
+**Fixed**: the due-date-move now only runs when the cancelled service
+is NOT a modifier (`!CATALOG_ROWS[serviceId]?.is_cpm_adjustment`) — the
+Trello comment still posts either way, since that part was correct.
+
+**Not yet fixed — needs manual correction**: Tim Shepard for
+Washington County Judge's Audio card's due date is currently stuck at
+today from before this fix existed. Told Claire to fix it directly in
+Trello (fastest, no side effects) rather than trying to trigger a
+recompute through Admin.
+
+**Verified**: `node --check` — no syntax errors. Simulated the
+skip-condition in Node against a regular service (still moves the due
+date, unaffected), a modifier (now correctly skipped), and a service
+with the field entirely undefined (treated as regular, matching how
+every non-modifier catalog row actually looks). Not yet re-tested live
+against an actual modifier cancellation.

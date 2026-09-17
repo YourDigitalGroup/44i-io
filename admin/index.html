@@ -10118,7 +10118,17 @@ async function adminSubmitCancellation(orderId, serviceId) {
   // record of what was originally sold, cancellation is tracked separately)
   // -- so this passes p_effective_date directly as a synthetic { end_date }
   // rather than reading it off the real item, which is intentionally unchanged.
-  await adminUpdateTacticCard(orderId, serviceId, { end_date: effectiveDate }, { renameTitle: false });
+  // SKIPPED for a modifier (2026-09-17, found live: cancelling Offline Visits
+  // Tracking on Tim Shepard's Audio campaign moved the AUDIO card's due date
+  // to today, even though Audio itself is still active through Nov 3 -- a
+  // modifier shares its parent tactic's card (same workflow, see
+  // adminEffectiveWorkflow()) rather than having one of its own, so this
+  // generic "cancelling = tactic is ending" assumption doesn't hold: only the
+  // add-on stopped, not the tactic carrying the card. The comment below still
+  // posts either way -- that part is correct and wanted.
+  if (!svc.is_cpm_adjustment) {
+    await adminUpdateTacticCard(orderId, serviceId, { end_date: effectiveDate }, { renameTitle: false });
+  }
   const commentText = `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`;
   for (const cardId of cardIds) {
     try {
