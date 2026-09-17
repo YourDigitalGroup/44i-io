@@ -541,6 +541,14 @@ let ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} }; // service_id -
 let ACCOUNTING_CUT_TIERS = {}; // service_id -> [{ max, cut_pct }, ...] sorted ascending, e.g. SEM
 let ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} }; // for Expected Spend -- same shape as the Strategist Portal's own PLATFORM_CPM_RATES
 let ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} }; // Expected Spend fallback for a service with no Retail CPM (e.g. SEM)
+// Expected Spend fallback for a flat-fee service with no ad platform at all
+// (e.g. LLO, Reputation Mgmt.) -- 2026-09-17, per Claire: this rate already
+// existed in Admin's Accounting Map ("Budgeted Spend %"), it just never
+// reached the Accounting portal's own copy of the rates before now. Formula
+// verified against Claire's real spreadsheet: budgeted_spend_pct / (44i Cut
+// % as a decimal) -- e.g. LLO's 9.92 / 0.45 = $22.04/mo, matching her real
+// 9-month total ($198.32 / 9) exactly.
+let ACCOUNTING_BUDGETED_SPEND_RATES = { base: {}, group: {} };
 let ACCOUNTING_IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct }, ...] sorted ascending, e.g. SEM (2026-08-13, same shape/lookup as ACCOUNTING_CUT_TIERS, kept as its own column/cache)
 let ACCOUNTING_IN_PLATFORM_PCT_FORCE = { group: {} }; // group_id|service_id -> true when that group's in_platform_pct is flagged to beat the spend tier outright (2026-08-25, MS Farm Bureau)
 let ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} }; // service_id -> pct, group_id|service_id -> pct -- the split % for a service's own auto-add setup fee (accounting_map.setup_fee_cut_pct), can differ from that service's regular 44i Cut %
@@ -751,7 +759,6 @@ function accountingRenderDetailCard() {
     const monthRow = active ? accountingMonthRowFor(line.id, d) : null;
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
-    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting, line.retail_cpm_override);
     // Setup fee lines split at the Setup Fee Split % instead of the tactic's
     // regular 44i Cut % (2026-08-13) -- they're not spend-tiered or modifier-
     // paired, so the tier/pairing lookups inside accountingEffectiveCutPct
@@ -759,6 +766,7 @@ function accountingRenderDetailCard() {
     const cutPct = line.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(line.service_id, line.client_id, line.group_id)
       : accountingEffectiveCutPct(line.service_id, line.client_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross, line.cut_pct_override);
+    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting, line.retail_cpm_override, cutPct);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
@@ -1937,7 +1945,21 @@ function accountingEffectiveRetailCpm(serviceId, clientId, groupId, lineOverride
   const groupClient = ALL_ACCOUNTING_CLIENTS.find(c => c.group_id === groupId && c.group_io_pricing && c.group_io_pricing[serviceId] != null);
   return groupClient ? Number(groupClient.group_io_pricing[serviceId]) : null;
 }
-function accountingComputeExpectedSpend(grossBudget, serviceId, clientId, groupId, inPlatformOverride, hasModifier, retailCpmLineOverride) {
+// Fallback for flat-fee services with no ad platform at all (LLO, Reputation
+// Mgmt.) -- 2026-09-17, per Claire: uses accounting_map.budgeted_spend_pct
+// (Admin's "Budgeted Spend % (legacy)"), which already existed but was never
+// wired into this portal. Verified against Claire's real spreadsheet formula
+// and real numbers: LLO's 9.92 / its 45% cut = $22.04/mo, matching her real
+// 9-month total ($198.32 / 9). No tier/pairing/client-override complexity --
+// just base/group, same shape as the other rate lookups here.
+function accountingEffectiveBudgetedSpendPct(serviceId, groupId) {
+  const groupKey = groupId ? `${groupId}|${serviceId}` : '';
+  const groupRate = groupId ? ACCOUNTING_BUDGETED_SPEND_RATES.group[groupKey] : undefined;
+  if (groupRate != null) return Number(groupRate);
+  const baseRate = ACCOUNTING_BUDGETED_SPEND_RATES.base[serviceId];
+  return baseRate != null ? Number(baseRate) : null;
+}
+function accountingComputeExpectedSpend(grossBudget, serviceId, clientId, groupId, inPlatformOverride, hasModifier, retailCpmLineOverride, cutPct) {
   if (inPlatformOverride != null) return Number(inPlatformOverride);
   if (grossBudget == null) return null;
   const retailCpmOverride = accountingEffectiveRetailCpm(serviceId, clientId, groupId, retailCpmLineOverride);
@@ -1948,7 +1970,12 @@ function accountingComputeExpectedSpend(grossBudget, serviceId, clientId, groupI
     return impressions * platformCpm / 1000;
   }
   const pct = accountingEffectiveInPlatformPct(serviceId, clientId, groupId, grossBudget);
-  return pct != null ? Number(grossBudget) * pct / 100 : null;
+  if (pct != null) return Number(grossBudget) * pct / 100;
+  const budgetedPct = accountingEffectiveBudgetedSpendPct(serviceId, groupId);
+  if (budgetedPct != null && cutPct != null && Number(cutPct) !== 0) {
+    return budgetedPct / (Number(cutPct) / 100);
+  }
+  return null;
 }
 
 // Same relative-luminance contrast pick as the Strategist Portal's own
@@ -2020,6 +2047,7 @@ async function fetchAccountingData() {
   ACCOUNTING_IN_PLATFORM_TIERS = {};
   ACCOUNTING_PLATFORM_CPM_RATES = { base: {}, group: {}, pairing: {} };
   ACCOUNTING_IN_PLATFORM_PCT_RATES = { base: {}, group: {} };
+  ACCOUNTING_BUDGETED_SPEND_RATES = { base: {}, group: {} };
   ACCOUNTING_IN_PLATFORM_PCT_FORCE = { group: {} };
   ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} };
   ACCOUNTING_SPEND_TIER_TOP_OVERRIDE = { group: {} };
@@ -2028,6 +2056,7 @@ async function fetchAccountingData() {
       ACCOUNTING_CUT_RATES.base[r.service_id] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.base[r.service_id] = Number(r.platform_cpm);
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.base[r.service_id] = Number(r.in_platform_pct);
+      if (r.budgeted_spend_pct != null) ACCOUNTING_BUDGETED_SPEND_RATES.base[r.service_id] = Number(r.budgeted_spend_pct);
       if (r.setup_fee_cut_pct != null) ACCOUNTING_SETUP_FEE_CUT_RATES.base[r.service_id] = Number(r.setup_fee_cut_pct);
       if (Array.isArray(r.spend_tiers) && r.spend_tiers.length) ACCOUNTING_CUT_TIERS[r.service_id] = r.spend_tiers;
       if (Array.isArray(r.in_platform_tiers) && r.in_platform_tiers.length) ACCOUNTING_IN_PLATFORM_TIERS[r.service_id] = r.in_platform_tiers;
@@ -2036,6 +2065,7 @@ async function fetchAccountingData() {
       ACCOUNTING_CUT_RATES.group[key] = r.fortyfouri_cut_pct != null ? Number(r.fortyfouri_cut_pct) : null;
       if (r.platform_cpm != null) ACCOUNTING_PLATFORM_CPM_RATES.group[key] = Number(r.platform_cpm);
       if (r.in_platform_pct != null) ACCOUNTING_IN_PLATFORM_PCT_RATES.group[key] = Number(r.in_platform_pct);
+      if (r.budgeted_spend_pct != null) ACCOUNTING_BUDGETED_SPEND_RATES.group[key] = Number(r.budgeted_spend_pct);
       if (r.in_platform_pct_force) ACCOUNTING_IN_PLATFORM_PCT_FORCE.group[key] = true;
       if (r.setup_fee_cut_pct != null) ACCOUNTING_SETUP_FEE_CUT_RATES.group[key] = Number(r.setup_fee_cut_pct);
       if (r.spend_tier_top_cut_pct != null) ACCOUNTING_SPEND_TIER_TOP_OVERRIDE.group[key] = Number(r.spend_tier_top_cut_pct);
@@ -2187,10 +2217,10 @@ function accountingBuildRows() {
     const monthRow = accountingMonthRowFor(l.id, accountingCurrentMonth);
     const gross = monthRow?.gross_budget != null ? Number(monthRow.gross_budget) : null;
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
-    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
     const cutPct = l.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
       : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override);
+    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override, cutPct);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
     // manual confirm from the detail card (for tactics the Strategist Portal
