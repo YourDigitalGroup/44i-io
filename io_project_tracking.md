@@ -28467,3 +28467,42 @@ real Impact Mortgage numbers ($580.65 Sept / $919.35 Oct split into
 Geo/Aud): both months divide proportionally and the two splits' amounts
 sum back to the exact original total for each month ($580.65 and
 $919.35 respectively). Neither fix has been run or seen live yet.
+
+### 2026-09-17 (cont'd) — Split feature refined: whole-campaign input + mismatch warning
+
+Two follow-up questions from Claire on the just-designed Split fix: "will
+it give a warning if the amounts don't add up?" (no — nothing checked
+this) and "could we instead have them fill in the whole campaign split
+and then have it figure out the month splits?" (yes, and it's a better
+design than what was just built).
+
+**Revised the ratio base**: `strategist_split_campaign_line` now computes
+each split's ratio from its share of the line's WHOLE total (sum of every
+existing `campaign_months` row), not just the earliest month. Mathematically
+equivalent for a flat monthly-rate line (whose total is just rate × month
+count either way), but far more natural for a "Whole Campaign Total" line,
+whose one meaningful number IS the full total, not any single month.
+`strategistOpenSplitForm()` (`strategist/index.html`) now pre-fills the
+first split with that same whole-campaign figure (was: just the current
+month), states it explicitly in the panel's own description text ("...its
+own share of the whole campaign total ($X)..."), and the amount input's
+placeholder now reads "$ whole-campaign total" instead of a bare "$ amount".
+
+**Added the warning**: `strategistSaveSplit()` now sums the entered splits
+and compares against the line's real total before saving — if they don't
+match (beyond a cent of rounding), a `confirm()` dialog states both
+numbers and asks to proceed. Not a hard block, same "nudge, don't wall
+off" posture as the existing fuzzy-duplicate-name warning elsewhere on
+this form — a deliberate partial split (e.g. 2 of 3 known regions so far)
+is a real, legitimate use of this feature and shouldn't be prevented.
+
+**Verified**: `node --check` on `strategist/index.html` — no syntax
+errors. Simulated in Node against the real Impact Mortgage numbers
+($580.65 Sept + $919.35 Oct, $1,500 total): entering Geo=$600/Aud=$900
+(summing correctly to $1,500) produces no warning and the exact same
+correct per-month math confirmed in the earlier pass (Geo $232.26/$367.74,
+Aud $348.39/$551.61); entering Geo=$600/Aud=$600 (summing to $1,200,
+short of the real $1,500 total) correctly triggers the mismatch warning.
+Supersedes the earlier same-day version of this function — the base-month
+version was never run/deployed, so this is the only version being handed
+to Claire.
