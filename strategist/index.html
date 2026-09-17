@@ -2931,11 +2931,21 @@ function strategistOpenSplitForm(lineId) {
     return;
   }
   const line = ALL_CAMPAIGN_LINES.find(l => l.id === lineId);
-  const monthRow = setupBudgetRowFor(lineId) || {};
-  const fullAmount = monthRow.gross_budget != null ? Number(monthRow.gross_budget) : '';
+  // Whole-campaign total (2026-09-17, per Claire — this used to pre-fill just
+  // the CURRENT month's amount, which read as arbitrary for a "Whole Campaign
+  // Total" line whose real, meaningful number is its full multi-month total,
+  // not any one month in isolation). Each split's entered amount now means
+  // "this split's share of the WHOLE campaign," matching how the line's own
+  // total is already shown elsewhere (the "Whole Campaign Total" pill) —
+  // strategist_split_campaign_line applies the resulting ratio to every
+  // month, so this works identically for a flat monthly-rate line too (its
+  // total is just monthly rate × month count either way).
+  const lineTotal = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId)
+    .reduce((s, m) => s + (Number(m.gross_budget) || 0), 0);
+  const fullAmount = lineTotal || '';
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:8px;padding:12px 14px;background:#fff">
-    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Splits this ${esc(line ? strategistTacticDisplay(line) : 'campaign')} line into separate campaigns, each tracked independently from here on. Label each one (a region, an audience segment — whatever distinguishes it), its own dollar amount, and its own exact campaign title in the ad platform — each split runs as its own campaign there, so reports can only be matched by title if every split has its own.</p>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Splits this ${esc(line ? strategistTacticDisplay(line) : 'campaign')} line into separate campaigns, each tracked independently from here on. Label each one (a region, an audience segment — whatever distinguishes it), its own exact campaign title in the ad platform, and its own share of the <strong>whole campaign total ($${lineTotal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})})</strong> — that amount then divides across every month in the same proportion automatically. Each split runs as its own campaign there, so reports can only be matched by title if every split has its own.</p>
     <div id="split-rows-${lineId}">
       ${strategistSplitRowHtml(lineId, 0, '', fullAmount, line?.platform_campaign_name || '')}
       ${strategistSplitRowHtml(lineId, 1, '', '', '')}
@@ -2952,7 +2962,7 @@ function strategistOpenSplitForm(lineId) {
 function strategistSplitRowHtml(lineId, idx, label, amount, title) {
   return `<div class="split-row-${lineId}" style="display:flex;gap:8px;margin-bottom:8px">
     <input type="text" class="split-label-${lineId}" value="${esc(label)}" placeholder="e.g. Region 1" style="flex:1;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
-    <input type="number" class="split-amount-${lineId}" value="${esc(String(amount))}" placeholder="$ amount" style="width:120px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
+    <input type="number" class="split-amount-${lineId}" value="${esc(String(amount))}" placeholder="$ whole-campaign total" style="width:140px;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
     <input type="text" class="split-title-${lineId}" value="${esc(title || '')}" placeholder="Exact campaign title in the ad platform" style="flex:1;padding:7px 10px;border-radius:6px;border:1px solid var(--border);font-size:12.5px"/>
   </div>`;
 }
@@ -2969,6 +2979,21 @@ async function strategistSaveSplit(lineId) {
   const titles = [...document.querySelectorAll('.split-title-' + lineId)].map(el => el.value.trim());
   const splits = labels.map((label, i) => ({ label, amount: amounts[i], title: titles[i] })).filter(s => s.label && s.amount !== '');
   if (splits.length < 2) { showToast('Enter a label and amount for at least 2 splits.', 'error'); return; }
+  // Warn (2026-09-17, per Claire: "will it give a warning if the amounts
+  // don't add up?") if the entered splits don't sum back to the line's real
+  // whole-campaign total -- easy to typo or genuinely mean to leave some
+  // budget unaccounted for, either way worth a confirmation rather than
+  // silently saving mismatched numbers. Not a hard block, same "front-end
+  // nudge, not a wall" posture as the fuzzy-duplicate-name warning elsewhere
+  // on this form -- a deliberate partial split (e.g. two of three regions
+  // known so far) is a real, legitimate use of this feature.
+  const enteredTotal = splits.reduce((s, sp) => s + (parseFloat(sp.amount) || 0), 0);
+  const lineTotal = ALL_CAMPAIGN_MONTHS.filter(m => m.campaign_line_id === lineId)
+    .reduce((s, m) => s + (Number(m.gross_budget) || 0), 0);
+  if (Math.abs(enteredTotal - lineTotal) > 0.01) {
+    const proceed = confirm(`These splits add up to $${enteredTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}, but this campaign's actual total is $${lineTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}. Save anyway?`);
+    if (!proceed) return;
+  }
   try {
     const result = await sb('rpc/strategist_split_campaign_line', { method: 'POST', body: JSON.stringify({
       p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
