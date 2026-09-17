@@ -28506,3 +28506,28 @@ short of the real $1,500 total) correctly triggers the mismatch warning.
 Supersedes the earlier same-day version of this function — the base-month
 version was never run/deployed, so this is the only version being handed
 to Claire.
+
+### 2026-09-17 (cont'd) — Whole Campaign Total lines now show their real total, not the first month
+
+Claire, on Impact Mortgage Southeast/Farm Systems Inc.'s Event campaigns:
+"seeing the first month gross budget at the top is a little confusing" —
+the Campaign Setup panel's "Gross Budget" field showed just the current
+month's figure with a plain "/mo" suffix (e.g. "$580.65/mo"), reading
+exactly like a flat monthly rate even though the "Whole Campaign Total"
+pill right next to it says otherwise.
+
+**Fixed** (`renderSetupPanel()`, `strategist/index.html`): for a line
+with `budget_entry_mode === 'total'`, this field now shows the label
+"Whole Campaign Total" and the REAL multi-month total (sum of every
+`campaign_months` row, same total the Split form now uses), with the
+current month's own figure broken out underneath in smaller text ("This
+month: $580.65") so neither number is lost. Flat monthly-rate lines and
+"Custom by Month" lines are untouched — Claire's ask was scoped
+specifically to "whole campaign totals."
+
+**Verified**: `node --check` — no syntax errors. Simulated the render
+logic in Node against 3 cases: a whole-campaign-total line (now shows
+"$1,500.00" as the primary figure with "This month: $580.65"
+underneath), a flat monthly line (unchanged, "$1,500/mo"), and a
+Custom-by-Month line (unchanged, "$750/mo" — confirmed this fix doesn't
+touch that mode). Not yet seen live.
