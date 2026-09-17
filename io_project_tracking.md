@@ -28412,3 +28412,58 @@ date, unaffected), a modifier (now correctly skipped), and a service
 with the field entirely undefined (treated as regular, matching how
 every non-modifier catalog row actually looks). Not yet re-tested live
 against an actual modifier cancellation.
+
+### 2026-09-17 (cont'd) — Two fixes: Location Targeting: Event auto-split + multi-month Split bug
+
+Claire, working in Impact Mortgage Southeast's Campaign Setup: "They
+will always be split between an (Aud) and (Geo). Is there a way we can
+account for that when it goes to the strategist portal?" Also asked
+what the "Split into Multiple Campaigns" amount field actually
+represents, for a Whole Campaign Total line.
+
+**Investigated the Split RPC first** (`strategist_split_campaign_line`,
+pulled fresh) and found a real, separate limitation: it only ever read
+and wrote `campaign_months`' EARLIEST month row for the line being
+split — a multi-month varying line (Impact Mortgage's own example:
+$580.65 Sept + $919.35 Oct) would only correctly divide September; October
+stayed attached to only the original (now-relabeled) line, and the new
+split(s) got no October row at all — money silently orphaned rather
+than requiring manual cleanup. Flagged this to Claire before building
+anything; she asked for both fixed.
+
+**Fix 1 — `strategist_split_campaign_line` now splits every month, not
+just the first.** Snapshots every existing `campaign_months` row up
+front (before any writes), computes each split's ratio from its entered
+amount vs. the EARLIEST month's original total (same input a strategist
+already understands — "this split's dollar share of the base month"),
+then applies that same ratio to every other month the line has. A
+single-month line behaves identically to before.
+
+**Fix 2 — Location Targeting: Event auto-splits into Geo/Aud on real IO
+submissions.** Bulk imports already support this natively (the CSV
+import already has its own `split_label` column — a strategist doing a
+bulk import can just enter two rows directly, no code change needed).
+The gap was specifically the real-order path
+(`create_campaign_lines_from_order()`), which always created exactly
+one line per sold service. Added a new catalog column
+`services.auto_split_labels` (jsonb array of label strings) rather than
+hardcoding `lt-event` into the trigger, per this project's standing
+"new per-service behavior is a new column" rule — set to `["Geo","Aud"]`
+for `lt-event` only. When set, the trigger creates one campaign_line per
+label instead of one plain line — per Claire's explicit choice, NO
+`campaign_months` rows are created for the auto-split lines (no guessed
+ratio); the strategist fills in each month by hand, referencing the
+original order's real total via "View Order," same as any other pending
+line.
+
+**Verified**: diffed the updated trigger line-by-line against the exact
+original `pg_get_functiondef()` output — confirmed the only changes are
+the new declared variables and the new `auto_split_labels` check/loop;
+the entire pre-existing body (including every other insert branch: SEO,
+recurring/one_time, hosting proration, setup fee, modifier flags, agent
+splits) is byte-identical, just nested one level deeper inside the
+existing `else`. Simulated the Split ratio math in Node against the
+real Impact Mortgage numbers ($580.65 Sept / $919.35 Oct split into
+Geo/Aud): both months divide proportionally and the two splits' amounts
+sum back to the exact original total for each month ($580.65 and
+$919.35 respectively). Neither fix has been run or seen live yet.
