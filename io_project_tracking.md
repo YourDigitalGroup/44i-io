@@ -28531,3 +28531,49 @@ logic in Node against 3 cases: a whole-campaign-total line (now shows
 underneath), a flat monthly line (unchanged, "$1,500/mo"), and a
 Custom-by-Month line (unchanged, "$750/mo" — confirmed this fix doesn't
 touch that mode). Not yet seen live.
+
+### 2026-09-17 (cont'd) — Expected Spend blank for flat-fee services (LLO, Reputation Mgmt.)
+
+Claire, on the Accounting portal: "Why do these 2 not have expected spend?"
+(LLO and Reputation Mgmt. line items, despite having a real budgeted gross
+budget). Initial read was "expected, by design" — these services have no
+CPM and no `in_platform_pct`, so `accountingComputeExpectedSpend()`'s two
+existing fallbacks both fell through to `null`. Claire pushed back ("but
+it has a budgeted spend"), then walked through her real numbers for LLO
+(9 months, $198.32 total 44i Spend = $22.04/mo) and eventually pasted the
+literal spreadsheet formula computing that figure. Reverse-engineered it
+as `(rate) / (44i Cut % as decimal)`, backward-solved the rate as ~9.92,
+and confirmed against real `accounting_map` data that `budgeted_spend_pct`
+(already a real column, already editable in Admin's Accounting Map screen
+as "Budgeted Spend % (legacy)") is exactly that rate — it had just never
+been wired into either `accounting_get_rates` (the RPC) or the portal's
+own JS calc. Same "field exists in Admin, never reached the RPC serving a
+different portal" gap found more than once this session.
+
+**Fixed**:
+- `accounting_get_rates` (SQL, `scratchpad/fix-accounting-expected-spend-flat-fee.sql`,
+  handed to Claire to run) — added `budgeted_spend_pct` to both the
+  `'base'` and `'group'` branches' `jsonb_build_object` calls (group branch's
+  WHERE clause also extended to include rows where only that key is set).
+- `accounting/index.html`:
+  - New global `ACCOUNTING_BUDGETED_SPEND_RATES = { base: {}, group: {} }`,
+    populated in `fetchAccountingData()`'s rates loop exactly like the
+    existing `ACCOUNTING_IN_PLATFORM_PCT_RATES`.
+  - New helper `accountingEffectiveBudgetedSpendPct(serviceId, groupId)` —
+    base/group lookup only, no tier/pairing/client-override complexity
+    (confirmed unnecessary for this rate).
+  - `accountingComputeExpectedSpend()` gained a new `cutPct` parameter and
+    a third fallback: `if (budgetedPct != null && cutPct !== 0) return
+    budgetedPct / (cutPct / 100);`.
+  - Both call sites (the detail-card month builder and the main table's
+    per-line builder) now compute `cutPct` BEFORE calling
+    `accountingComputeExpectedSpend`, passing it in as the new argument.
+
+**Verified**: `node --check` on `accounting/index.html` — no syntax
+errors. Simulated the new fallback in Node against real `accounting_map`
+data Claire pasted (`llo-bp`: budgeted_spend_pct=9.92, cut_pct=45;
+`rep-bp`: budgeted_spend_pct=7.53, cut_pct=47.06) — produces exactly
+$22.04/mo for LLO (matching her real $198.32/9-month example) and exactly
+$16.00/mo for Reputation Mgmt. Not yet seen live — needs the
+`accounting_get_rates` SQL run in Supabase, then this branch merged to
+`main` to deploy.
