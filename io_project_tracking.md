@@ -28340,3 +28340,75 @@ description string. Not yet re-confirmed live by Claire with an actual
 Quantity save (the original reason this was found), but the actual
 crash is now fixed and the qty/fee-recompute code from the earlier
 commit should reach execution for the first time.
+
+### 2026-09-17 (cont'd) — Order Detail now reflects live cancellation status
+
+Claire, after successfully cancelling Offline Visits Tracking: "there
+should be a way to see that so that the order looks accurate and their
+shouldn't be a cancel or renew option anymore." Confirmed this was a
+real, general gap (not specific to modifiers) — Order Detail has NEVER
+reflected a cancellation, for ANY service, since it only ever rendered
+the order's own frozen `line_items` snapshot with zero live
+`campaign_lines` lookup at all (an explicit, documented tradeoff from
+2026-08-20: "admin_cancel_service() is idempotent... rather than risk
+showing a wrong status").
+
+**Built**: new RPC `admin_get_order_campaign_status(p_name, p_pw,
+p_order_id)` returning, per relevant service_id on the order, whether
+it's CURRENTLY cancelled — for a normal service, `campaign_lines.status
+= 'cancelled'`; for a modifier (Offline Visits Tracking, Addl.
+Targeting), whether the flag on its PAIRED tactic's row (found via the
+exact same `accounting_map` lookup as today's `admin_cancel_service`
+fix, same `yttv-bp` special case) is currently false. `viewOrderDetail()`
+(`admin/index.html`) is now `async` and fetches this at the top of every
+call — it's already re-invoked after every Cancel/Edit/Renew success to
+refresh the modal, so this needed no new refresh-trigger wiring, just
+the fetch itself. A cancelled line now shows a red "CANCELLED" badge
+next to its name and no longer offers Cancel or Renew (Edit is
+untouched — not part of what was asked, and editing a cancelled line's
+historical amount may still be legitimate).
+
+**Verified**: extracted inline `<script>` content, `node --check` — no
+syntax errors. Simulated the button/badge decision logic in Node
+against 4 cases: an active normal service (both buttons show, no
+badge), a cancelled normal service (both buttons hidden, badge shows),
+a cancelled modifier (identical treatment, keyed by the order's own
+`pa-offline`-style service_id matching the RPC's resolved verdict), and
+an active pure-fee service (Renew still correctly suppressed for its
+existing, unrelated reason, Cancel still shows). Not yet seen live —
+needs the new RPC run before this can work end-to-end.
+
+### 2026-09-17 (cont'd) — Cancelling a modifier wrongly moved the PARENT tactic's due date
+
+Claire caught this from the actual Trello card: cancelling Offline
+Visits Tracking correctly posted the right comment, but also moved the
+Audio card's Due Date to today (Sep 17) — even though Audio itself is
+still fully active through Nov 3, 2026. Only the add-on was cancelled,
+not the tactic carrying the card.
+
+Root cause: `adminSubmitCancellation()`'s existing due-date-move step
+(2026-09-02, built for genuine tactic cancellations — "a cancellation
+is effectively a new end for the tactic") assumes cancelling always
+means the CARD's own tactic is ending. That's true for a regular
+service, but a modifier (Offline Visits Tracking, Addl. Targeting)
+shares its PARENT tactic's card (same `workflow`, same
+`adminEffectiveWorkflow()` lookup) rather than having one of its own —
+so cancelling just the add-on incorrectly dragged the parent's due date
+down too.
+
+**Fixed**: the due-date-move now only runs when the cancelled service
+is NOT a modifier (`!CATALOG_ROWS[serviceId]?.is_cpm_adjustment`) — the
+Trello comment still posts either way, since that part was correct.
+
+**Not yet fixed — needs manual correction**: Tim Shepard for
+Washington County Judge's Audio card's due date is currently stuck at
+today from before this fix existed. Told Claire to fix it directly in
+Trello (fastest, no side effects) rather than trying to trigger a
+recompute through Admin.
+
+**Verified**: `node --check` — no syntax errors. Simulated the
+skip-condition in Node against a regular service (still moves the due
+date, unaffected), a modifier (now correctly skipped), and a service
+with the field entirely undefined (treated as regular, matching how
+every non-modifier catalog row actually looks). Not yet re-tested live
+against an actual modifier cancellation.

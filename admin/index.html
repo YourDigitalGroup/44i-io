@@ -9515,9 +9515,28 @@ function renderAdminOrders() {
   <p style="margin-top:12px;font-size:11px;color:var(--muted);text-align:right">${filtered.length} order${filtered.length!==1?'s':''} shown · ${allOrders.length} total in last 90 days</p>`;
 }
 
-function viewOrderDetail(orderId) {
+async function viewOrderDetail(orderId) {
   const o = allOrders.find(x => x.id === orderId);
   if (!o) return;
+  // Which of this order's services are CURRENTLY cancelled, live (2026-09-17,
+  // per Claire -- "after I cancel it there should be a way to see that so
+  // that the order looks accurate and their shouldn't be a cancel or renew
+  // option anymore"). Previously this whole view only ever rendered the
+  // order's own frozen line_items snapshot with no live campaign_lines
+  // check at all (see the old comment on cancelBtn below, now removed) --
+  // Cancel always "worked" underneath, it just never showed here. Re-fetched
+  // on every call, since every Cancel/Edit/Renew success already calls
+  // viewOrderDetail() again to refresh this same modal.
+  let cancelledServiceIds = new Set();
+  try {
+    const statusRows = await sb('rpc/admin_get_order_campaign_status', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: orderId }),
+    });
+    (Array.isArray(statusRows) ? statusRows : []).forEach(r => { if (r.is_cancelled) cancelledServiceIds.add(r.service_id); });
+  } catch (e) {
+    console.warn('Could not load live cancellation status:', e.message);
+  }
   const groupName = (allGroups.find(g => g.id === o.group_id) || {}).name || '—';
   const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US',{maximumFractionDigits:0}) : '—';
   // Parse YYYY-MM-DD as local noon to dodge UTC timezone drift (one day off in US)
@@ -9600,12 +9619,14 @@ function viewOrderDetail(orderId) {
       const displayLabel = item.tactic_variant
         ? (auditVariantIsAlreadyComplete(item.tactic_variant) ? item.tactic_variant : `${sectionLabel(CATALOG_ROWS[item.service_id]?.section)}: ${item.tactic_variant}`)
         : baseLabel;
-      // AM-triggered Cancel a Service (2026-08-20) -- one button per line item;
-      // doesn't reflect an already-cancelled state inline since Order Detail
-      // doesn't load live campaign_lines rows, only the order's own frozen
-      // line_items snapshot -- admin_cancel_service() is idempotent (a repeat
-      // click just updates 0 rows) rather than risk showing a wrong status.
-      const cancelBtn = `<button type="button" onclick="adminToggleCancelPanel('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #B3261E;background:#fff;color:#B3261E;font-size:10.5px;font-weight:700;cursor:pointer">Cancel</button>`;
+      // AM-triggered Cancel a Service (2026-08-20) -- one button per line item.
+      // isCancelled (2026-09-17, per Claire) now reflects the LIVE campaign_lines
+      // status fetched at the top of this function, so a service that's
+      // actually been cancelled stops offering Cancel/Renew and shows a plain
+      // badge instead, rather than looking untouched forever.
+      const isCancelled = cancelledServiceIds.has(item.service_id);
+      const cancelBtn = isCancelled ? '' : `<button type="button" onclick="adminToggleCancelPanel('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #B3261E;background:#fff;color:#B3261E;font-size:10.5px;font-weight:700;cursor:pointer">Cancel</button>`;
+      const cancelledBadge = isCancelled ? '<span style="font-size:9px;background:#FEE2E2;color:#991B1B;padding:1px 6px;border-radius:8px;margin-left:4px;font-weight:700;letter-spacing:.02em;text-transform:uppercase">Cancelled</span>' : '';
       // AM-triggered Edit (2026-08-20) -- only offered when exactly ONE of
       // fee/recurring/spend is the nonzero contributor, matching the
       // mockup's single "Monthly Budget" field; a compound amount (e.g. fee +
@@ -9711,8 +9732,9 @@ function viewOrderDetail(orderId) {
       const currentEndDate = item.end_date || o.campaign_end || '';
       // A pure one-time cost has no ongoing term to renew (2026-08-31, per
       // Claire) -- Renew doesn't apply, only Cancel/date-only Edit do.
-      const renewBtn = isPureFee ? '' : `<button type="button" onclick="adminToggleRenewPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(currentEndDate)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button>`;
-      return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px">${esc(displayLabel)}${kocBadge}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:8px 10px;font-weight:600;text-align:right">${amtCellHtml}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${cancelBtn}</div></td></tr>
+      // Cancelled (2026-09-17) also has nothing left to renew.
+      const renewBtn = (isPureFee || isCancelled) ? '' : `<button type="button" onclick="adminToggleRenewPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(currentEndDate)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button>`;
+      return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px">${esc(displayLabel)}${kocBadge}${cancelledBadge}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:8px 10px;font-weight:600;text-align:right">${amtCellHtml}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${cancelBtn}</div></td></tr>
         <tr id="edit-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="renew-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
@@ -10096,7 +10118,17 @@ async function adminSubmitCancellation(orderId, serviceId) {
   // record of what was originally sold, cancellation is tracked separately)
   // -- so this passes p_effective_date directly as a synthetic { end_date }
   // rather than reading it off the real item, which is intentionally unchanged.
-  await adminUpdateTacticCard(orderId, serviceId, { end_date: effectiveDate }, { renameTitle: false });
+  // SKIPPED for a modifier (2026-09-17, found live: cancelling Offline Visits
+  // Tracking on Tim Shepard's Audio campaign moved the AUDIO card's due date
+  // to today, even though Audio itself is still active through Nov 3 -- a
+  // modifier shares its parent tactic's card (same workflow, see
+  // adminEffectiveWorkflow()) rather than having one of its own, so this
+  // generic "cancelling = tactic is ending" assumption doesn't hold: only the
+  // add-on stopped, not the tactic carrying the card. The comment below still
+  // posts either way -- that part is correct and wanted.
+  if (!svc.is_cpm_adjustment) {
+    await adminUpdateTacticCard(orderId, serviceId, { end_date: effectiveDate }, { renameTitle: false });
+  }
   const commentText = `🛑 ${svc.accounting_label || svc.label || serviceId} cancelled, effective ${effectiveDate}${reason ? ' — ' + reason : ''} (by ${currentAdminUser?.name || 'AM'}).`;
   for (const cardId of cardIds) {
     try {
