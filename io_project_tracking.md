@@ -28185,3 +28185,58 @@ live lookup at Trello-tagging time (resolving straight from
 close this class of gap permanently instead of needing the audit query
 re-run periodically. Raised to Claire, no decision yet — parked, not
 built.
+
+### 2026-09-17 — Trello card description + Admin Order Detail ignored a line's own tactic_variant pick
+
+Claire: an Impact Mortgage Southeast "Location Targeting: Event" order
+"looks like it came through the strategist portal correctly but the
+trello comment and order detail don't show that event was selected."
+Pulled the real order's `line_items` — the AE's actual pick WAS captured
+correctly at submission (`"tactic_variant":"Location Targeting: Event"`,
+plus `"notes":"Event Campaign"` as a backup), and the Trello card's own
+TITLE already showed it correctly ("Location Targeting: Event Sep 19 -
+Oct 19 — Impact Mortgage Southeast"). But the card's Description
+("Services sold under this workflow: • Event or Lookback") and Admin's
+Order Detail modal both still showed the generic, ambiguous COMBINED
+catalog label instead.
+
+Root cause: the title-building code already calls
+`resolveVariantDisplayName(li.service_id, li.tactic_variant,
+fallbackName)` to swap in the specific pick — but `formatSiblingLineItems()`
+(builds each tactic card's own Description, `index.html`) and
+`servicesDesc` (builds the separate overview IO card's Description,
+also `index.html`) both just read the bare `li.label`/`li.accounting_label
+|| li.label` directly, never routed through that same resolver. Same
+class of gap as several other "the fix landed in one place but not its
+sibling" bugs this project has hit — the variant-resolution fix
+(2026-08-31) was applied to the title but never propagated to either
+description.
+
+**Fixed**: both `index.html` call sites now resolve through
+`resolveVariantDisplayName()` the same way the title does — accounting_label
+still takes precedence over the plain label as the fallback in
+`servicesDesc`'s case, tactic_variant only overrides when it's actually
+set. Admin's Order Detail (`admin/index.html`, `viewOrderDetail()`)
+never had this resolver at all (separate file, no shared code with
+index.html here) — added the equivalent inline, reusing the EXISTING
+`auditVariantIsAlreadyComplete()`/`sectionLabel()` helpers already in
+that file (built for a different feature — auditing expected Trello
+card names against the strategist's later `campaign_lines.tactic_label`
+pick — but sharing the identical "is this variant string already
+section-qualified" rule, so no need for a second copy of that logic).
+
+**Verified**: extracted inline `<script>` content from both files,
+`node --check` — no syntax errors on either. Simulated the resolution
+logic in Node against the REAL Impact Mortgage Southeast line item data
+pulled from the order: both the tactic-card-description and IO-overview-
+card-description paths correctly resolve to "Location Targeting: Event"
+(previously "Event or Lookback"), and Admin's Order Detail resolves to
+the same value. Also simulated a line item with no `tactic_variant` set
+at all (the common case — most services aren't a combined-label variant
+type) to confirm it falls through unchanged, and a bare variant answer
+with no section prefix already in it (e.g. "Geofencing") to confirm the
+section name still gets prepended correctly. Not yet seen live —
+Impact Mortgage Southeast's card description won't retroactively
+update (this only affects future card creates/updates, e.g. the next
+resell/renewal comment on that same card, or any brand-new card from
+here on).

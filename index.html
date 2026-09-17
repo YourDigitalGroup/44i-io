@@ -6102,7 +6102,16 @@ async function submitIO() {
           const siblings = lineItems.filter(li => li.workflow === originalWorkflow);
           if (!siblings.length) return '';
           const lines = siblings.map(li => {
-            const itemLines = [`• **${li.label}**`];
+            // Swaps the generic combined catalog label (e.g. "Event or Lookback")
+            // for the specific answer when one was actually picked (2026-09-17,
+            // found live: Impact Mortgage Southeast's card title correctly showed
+            // "Location Targeting: Event" via this same resolveVariantDisplayName()
+            // call already used for the TITLE below -- but this description, and
+            // servicesDesc() further down for the IO overview card, never got the
+            // matching fix, so both kept showing the bare unresolved label even
+            // though li.tactic_variant was right there on the line item).
+            const displayName = resolveVariantDisplayName(li.service_id, li.tactic_variant, li.label);
+            const itemLines = [`• **${displayName}**`];
             const priceParts = [];
             if (li.fee > 0) priceParts.push(`$${li.fee.toLocaleString()} one-time`);
             if (li.recurring > 0) priceParts.push(`$${li.recurring.toLocaleString()}/mo`);
@@ -6357,7 +6366,13 @@ async function submitIO() {
         // Notes. Same information as before, just arranged as a scannable list instead
         // of a run-on paragraph -- see the approved mockup in io_project_tracking.md.
         const servicesDesc = lineItems.map(li => {
-          const lines = [`• **${li.accounting_label || li.label}**`];
+          // Same variant-resolution fix as formatSiblingLineItems() above
+          // (2026-09-17) -- accounting_label still wins when set (a different,
+          // unrelated disambiguation for reused catalog rows like the Business
+          // Pro tiers), tactic_variant only fills in when THAT'S what's actually
+          // distinguishing this line (e.g. Event vs Lookback).
+          const displayName = resolveVariantDisplayName(li.service_id, li.tactic_variant, li.accounting_label || li.label);
+          const lines = [`• **${displayName}**`];
           const priceParts = [];
           if (li.fee > 0) priceParts.push(`$${li.fee.toLocaleString()} one-time`);
           if (li.recurring > 0) priceParts.push(`$${li.recurring.toLocaleString()}/mo`);
