@@ -28290,3 +28290,53 @@ only quantity is actually changing — harmless (resaves the same date),
 but produces an extra "date changed from X to X" line in the Trello
 comment alongside the real quantity/price change. Not touched since
 it's unrelated to the bug reported and pre-dates this fix.
+
+### 2026-09-17 (cont'd) — Real root cause of "Quantity didn't stick": ReferenceError killed the save mid-flight
+
+Claire tried the Quantity fix live and reported "it didn't stick" — the
+field reset to 1 and the price stayed $250 after Save. Had her open
+DevTools Console and retry; got the real answer immediately:
+`Uncaught (in promise) ReferenceError: fmtDate is not defined at
+adminSaveLineItemDateEdit (index.html:10328)`.
+
+Root cause: `fmtDate()` is defined as a `const` FOUR separate times in
+`admin/index.html`, each scoped locally inside its own enclosing
+function (`viewOrderDetail()` twice, plus two others) — never as a
+shared top-level function. `adminSaveLineItemDateEdit()` is a separate
+top-level function with no local `fmtDate` of its own, so this call
+always throws. This is the EXACT same known issue already called out
+and worked around in `adminToggleRenewPanel()`'s own comment
+immediately above this function ("fmtDate() itself is a local const
+scoped inside viewOrderDetail() -- not visible from this top-level
+function") — whoever wrote `adminSaveLineItemDateEdit()` (2026-08-20,
+predates the whole per_unit-qty feature) simply didn't get the same
+treatment.
+
+Because the crash happens SYNCHRONOUSLY, right after the `start_date`
+RPC call already succeeded but BEFORE `adminCollectExtraEditFields()`/
+`adminSaveExtraEditFields()` ever run, this meant: saving a plain date
+on this panel always "worked" (the date really did save, silently
+leaving the panel open/broken-looking with no success toast — nobody
+apparently ever noticed since the actual date change persisted anyway),
+but ANY Quantity/Variant/Modules change routed through this SAME panel
+has been completely dead code since 2026-08-31, since the crash always
+happens before reaching it — an uncaught promise rejection, so nothing
+ever surfaced to the user beyond a silently non-functional Save. This
+predates and is entirely independent of yesterday's fee-recompute fix —
+that fix was correct but could never have run in the browser, since
+this crash always happened first.
+
+**Fixed**: swapped `fmtDate()` for `pendingFmtDate()` — a proper
+top-level function (`admin/index.html` line 8303) already used by
+`applyFieldChangeLocally()` for this identical purpose, in the same
+save path. No other call site needed the same fix — checked every
+remaining `fmtDate(` call in the file and confirmed each one sits
+inside a function that defines its own local copy; this was the only
+orphaned call.
+
+**Verified**: `node --check` — no syntax errors. Simulated the fixed
+line in Node directly — no longer throws, produces the expected
+description string. Not yet re-confirmed live by Claire with an actual
+Quantity save (the original reason this was found), but the actual
+crash is now fixed and the qty/fee-recompute code from the earlier
+commit should reach execution for the first time.
