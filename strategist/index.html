@@ -2408,6 +2408,51 @@ function computeGoal(line, monthRow) {
   return { value: auto, unit, manual: false, display: auto != null ? Math.round(auto).toLocaleString() : null };
 }
 
+// Whole-campaign-total counterpart to computeGoal() (2026-09-18, per Bronson
+// French, forwarded by Claire: "Do you think we can do that for the
+// in-platform budget and impressions too? Just so we don't have to go to the
+// old calculator sheet" -- same ask as the Gross Budget total added
+// 2026-09-17, extended to the other two Campaign Setup fields that are ALSO
+// per-month figures on a "Whole Campaign Total" line). Sums each month's own
+// goal (manual override if set, else the same auto-calc computeGoal() uses)
+// rather than re-deriving from a single blended number, so a mid-campaign
+// budget change or per-month override is reflected correctly in the total.
+function computeGoalTotal(line, monthRows) {
+  const row = CATALOG_ROWS[line.service_id];
+  const isClicksBased = line.service_id === 'sem-bp' || !row || row.retail_cpm == null;
+  const unit = isClicksBased ? 'clicks' : 'impr.';
+  if (isClicksBased) {
+    const cpc = effectiveCpcRange(line.service_id, line.client_id, line.group_id);
+    let lowSum = 0, highSum = 0, any = false;
+    monthRows.forEach(m => {
+      const parsed = parseGoalOverride(m.goal_override, true);
+      if (parsed) {
+        if (parsed.isRange) {
+          const [low, high] = parsed.display.split('–').map(s => Number(s.replace(/,/g, '')));
+          lowSum += low; highSum += high;
+        } else {
+          lowSum += parsed.value; highSum += parsed.value;
+        }
+        any = true; return;
+      }
+      if (cpc && m.gross_budget != null) {
+        lowSum += Number(m.gross_budget) / cpc.high;
+        highSum += Number(m.gross_budget) / cpc.low;
+        any = true;
+      }
+    });
+    return any ? { unit, display: `${Math.round(lowSum).toLocaleString()}–${Math.round(highSum).toLocaleString()}` } : null;
+  }
+  let sum = 0, any = false;
+  monthRows.forEach(m => {
+    const parsed = parseGoalOverride(m.goal_override, false);
+    if (parsed) { sum += parsed.value; any = true; return; }
+    const auto = budgetedImpressions(m.gross_budget, line.service_id, line.client_id, line.group_id, line.retail_cpm_override);
+    if (auto != null) { sum += auto; any = true; }
+  });
+  return any ? { unit, display: Math.round(sum).toLocaleString() } : null;
+}
+
 function strategistDaysBetweenInclusive(a, b) {
   const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
   const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
@@ -2825,7 +2870,21 @@ function renderSetupPanel(l) {
           }
           return `$${monthRow.gross_budget != null ? Number(monthRow.gross_budget).toLocaleString() : '—'}/mo`;
         })()}</div></div>
-        <div><label class="lbl">In-Platform Budget</label><div>${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—'}</div></div>
+        <div><label class="lbl">In-Platform Budget</label><div>${(() => {
+          // Same whole-campaign-total treatment as Gross Budget above
+          // (2026-09-18, per Bronson via Claire) -- sums each month's own
+          // effectiveInPlatformBudget (override if set, else computed),
+          // not just Number(gross)*rate off the total, so a per-month
+          // override or a mid-campaign CPM/rate change still adds up right.
+          if (l.budget_entry_mode === 'total') {
+            const total = monthRows.reduce((s, m) => {
+              const v = effectiveInPlatformBudget(m, l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override);
+              return s + (v != null ? v : 0);
+            }, 0);
+            return `$${total.toLocaleString(undefined,{maximumFractionDigits:0})}<div style="font-size:10.5px;color:var(--muted);font-weight:400">This month: ${inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) : '—'}</div>`;
+          }
+          return inPlatform != null ? '$' + inPlatform.toLocaleString(undefined,{maximumFractionDigits:0}) + '/mo' : '—';
+        })()}</div></div>
         <!-- Read-only, same as the Detail panel (2026-08-13, per Claire -- also wanted
              here). SEM has no Platform CPM at all (no Retail CPM to derive it from), so
              its own CPC range is shown instead -- the number that actually drives its
@@ -2845,6 +2904,12 @@ function renderSetupPanel(l) {
              Platform CPM) -- same auto-calculation, just surfaced before activation too. -->
         <div><label class="lbl">Goal</label><div>${(() => {
           const goal = computeGoal(l, monthRow);
+          if (l.budget_entry_mode === 'total') {
+            const total = computeGoalTotal(l, monthRows);
+            if (total) {
+              return `${total.display} ${total.unit}<div style="font-size:10.5px;color:var(--muted);font-weight:400">This month: ${goal.value != null ? goal.display + ' ' + goal.unit : '—'}</div>`;
+            }
+          }
           return goal.value != null ? goal.display + ' ' + goal.unit : (goal.manual ? '— (enter manually)' : '—');
         })()}</div></div>
       </div>

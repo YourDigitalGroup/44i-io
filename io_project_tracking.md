@@ -28577,3 +28577,35 @@ $22.04/mo for LLO (matching her real $198.32/9-month example) and exactly
 $16.00/mo for Reputation Mgmt. Not yet seen live — needs the
 `accounting_get_rates` SQL run in Supabase, then this branch merged to
 `main` to deploy.
+
+### 2026-09-18 — Whole Campaign Total now shown for In-Platform Budget and Goal too
+
+Bronson French, via Claire (forwarded Slack message): liked the Gross Budget
+whole-campaign-total display added 2026-09-17, asked "Do you think we can do
+that for the in-platform budget and impressions too? Just so we don't have
+to go to the old calculator sheet to figure it out?" Same underlying gap —
+both fields are per-month figures (`campaign_months`-derived), so on a
+"Whole Campaign Total" line they were showing only the current month with
+no way to see the real multi-month total without going back to the old
+spreadsheet.
+
+**Fixed** (`strategist/index.html`, `renderSetupPanel()`):
+- In-Platform Budget: for a `budget_entry_mode === 'total'` line, now sums
+  `effectiveInPlatformBudget()` (override if set, else computed) across
+  every `campaign_months` row for that line, with the current month's own
+  figure broken out underneath as "This month: $X" — same layout pattern as
+  Gross Budget.
+- Goal: new `computeGoalTotal(line, monthRows)` sums each month's own goal
+  (manual override if set, else the same auto-calc `computeGoal()` already
+  uses — impressions off Retail/Platform CPM, or a low/high CPC range for
+  SEM) rather than re-deriving from one blended number, so a mid-campaign
+  budget change or a per-month override still adds up correctly. Same
+  "This month: X" breakout underneath.
+
+**Verified**: `node --check` — no syntax errors. Confirmed by simulation
+that all three underlying formulas (impressions, In-Platform Budget, SEM's
+CPC-based range) are linear in Gross Budget, so summing each month's own
+value equals deriving from the whole-campaign total directly — but the
+per-month sum correctly reflects any individual month's manual override,
+which a single blended calculation wouldn't. Not yet seen live — this is
+verified by logic/math, not by rendering the actual page.
