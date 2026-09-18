@@ -28609,3 +28609,40 @@ value equals deriving from the whole-campaign total directly — but the
 per-month sum correctly reflects any individual month's manual override,
 which a single blended calculation wouldn't. Not yet seen live — this is
 verified by logic/math, not by rendering the actual page.
+
+### 2026-09-18 — Password reset "not embedded" error: how it was sent, not a bug
+
+Samantha Escalante (Strategist) reported the "This page isn't meant to be
+opened directly" error (the public IO form's `index.html` not-embedded
+notice, built 2026-09-15) when clicking a password-reset link. Claire
+initially suspected that same guard had somehow started affecting the
+reset flow. Confirmed by grepping `reset-password.html` directly: it has
+zero reference to `index.html`, `showNotEmbeddedNotice`, or `window.top`
+— the guard is fully self-contained to the public form and cannot run on
+or affect the reset page.
+
+Real cause found by having Samantha copy (not click) the actual link
+address from the email: `redirect_to=https://io.yourdigitalgroupresources.com`
+— no `/reset-password.html` in it at all. Confirmed the deployed `main`
+code is correct (`strategist/index.html` still passes
+`redirectTo: window.location.origin + '/reset-password.html'`), and the
+Supabase Auth settings (Site URL + Redirect URLs allow-list) were also
+confirmed correct via screenshot. The mismatch: **Claire had sent this
+particular reset email directly from the Supabase Dashboard** (Authentication
+→ Users → a built-in "send password recovery" action), not through the
+portal's own "Forgot password?" link. The Dashboard's own action fires an
+independent recovery email with no `redirectTo` override — it has no way
+to know about `/reset-password.html`, since that value only gets attached
+when the request goes through this app's own `resetPasswordForEmail()`
+call. Sent from the Dashboard, it always falls back to the bare Site URL,
+landing on `index.html` and tripping the not-embedded notice — not a sign
+of any regression in either the 2026-09-04 auth work or the 2026-09-15
+guard.
+
+**No code change** — this is a "how it was sent" issue, not a bug.
+**Resolution**: Claire had Samantha use the Strategist Portal's own
+"Forgot password?" link instead, which worked correctly. **Going forward**:
+always send password resets through a portal's own "Forgot password?"
+link, never the Supabase Dashboard's own recovery action, for any of the
+three portals (same shared `reset-password.html`/`redirectTo` pattern
+applies to Admin and Accounting too).
