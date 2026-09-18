@@ -136,6 +136,7 @@
         <button onclick="accountingShiftMonth(-1)" aria-label="Previous month">‹</button>
         <span id="accounting-month-label" class="acct-month-label"></span>
         <button onclick="accountingShiftMonth(1)" aria-label="Next month">›</button>
+        <span id="accounting-month-close-control"></span>
       </div>
       <div class="acct-filters">
         <select id="accounting-group-filter" onchange="accountingSetGroupFilter(this.value)" aria-label="Filter by group" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);background:#fff;font-size:11.5px;font-weight:600;cursor:pointer">
@@ -553,6 +554,15 @@ let ACCOUNTING_IN_PLATFORM_TIERS = {}; // service_id -> [{ max, in_platform_pct 
 let ACCOUNTING_IN_PLATFORM_PCT_FORCE = { group: {} }; // group_id|service_id -> true when that group's in_platform_pct is flagged to beat the spend tier outright (2026-08-25, MS Farm Bureau)
 let ACCOUNTING_SETUP_FEE_CUT_RATES = { base: {}, group: {} }; // service_id -> pct, group_id|service_id -> pct -- the split % for a service's own auto-add setup fee (accounting_map.setup_fee_cut_pct), can differ from that service's regular 44i Cut %
 let ACCOUNTING_SPEND_TIER_TOP_OVERRIDE = { group: {} }; // group_id|service_id -> pct -- a group's override of a tiered service's TOP bucket only (e.g. SEM's "$5,000+" tier), 2026-08-27 per Claire
+// Month-close checkpoint (2026-09-18, per Claire's accountant: "something
+// gets added [after billing] and she has to then backdate"). A GLOBAL,
+// per-month marker (one flag for the whole book, not per client -- billing
+// happens in one batch pass) -- keyed by month string ('YYYY-MM-01') ->
+// {closed_by, closed_at}. Soft flag, not a hard lock: closing a month never
+// blocks anyone from still adding/editing a line in it, same "nudge, don't
+// wall off" posture as the Strategist Split mismatch warning -- it just
+// makes anything that happens afterward visible instead of silent.
+let ACCOUNTING_CLOSED_MONTHS = {};
 let accountingCurrentMonth = new Date();
 let accountingGroupFilter = '';
 // Pure display filters (2026-09-02) -- unlike accountingGroupFilter above,
@@ -614,6 +624,19 @@ function cpmOverrideBadgeHtml(line) {
 function cutPctOverrideBadgeHtml(line) {
   if (line.cut_pct_override == null) return '';
   return ` <span title="44i Cut % overridden to ${Number(line.cut_pct_override)}%" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">Cut ${Number(line.cut_pct_override)}%</span>`;
+}
+
+// See ACCOUNTING_CLOSED_MONTHS' own comment (2026-09-18) -- flags a row that
+// showed up (new line) or changed (edited gross/actual for an existing
+// month) after the currently-viewed month was already marked billed.
+function accountingAfterBillingBadgeHtml(r) {
+  if (r.addedAfterBilling) {
+    return ` <span title="This campaign was added after this month was marked billed" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">⚠ Added after billing</span>`;
+  }
+  if (r.changedAfterBilling) {
+    return ` <span title="This month's numbers changed after this month was marked billed" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">⚠ Changed after billing</span>`;
+  }
+  return '';
 }
 
 // Budget entry mode pill (2026-08-28, per Claire: "I want it to be clear
@@ -1650,6 +1673,30 @@ function accountingRollupStatusPill(r) {
 function accountingMonthKey(d) { return d.toISOString().slice(0, 7); }
 function accountingMonthLabel(d) { return d.toLocaleString('en-US', { month: 'long', year: 'numeric' }); }
 
+// Month-close lookup/actions (2026-09-18) -- see ACCOUNTING_CLOSED_MONTHS'
+// own comment above for the full "why."
+function accountingClosedMonthInfo(d) {
+  return ACCOUNTING_CLOSED_MONTHS[accountingMonthKey(d) + '-01'] || null;
+}
+async function accountingCloseCurrentMonth() {
+  const label = accountingMonthLabel(accountingCurrentMonth);
+  if (!confirm(`Mark ${label} billing as complete? You can reopen it later if something needs correcting.`)) return;
+  const monthStr = accountingMonthKey(accountingCurrentMonth) + '-01';
+  await sb('rpc/accounting_close_month', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw, p_month: monthStr }) });
+  ACCOUNTING_CLOSED_MONTHS[monthStr] = { closed_by: currentAccountingUser.name, closed_at: new Date().toISOString() };
+  renderAccountingDashboard();
+  showToast(`${label} marked billed.`);
+}
+async function accountingReopenCurrentMonth() {
+  const label = accountingMonthLabel(accountingCurrentMonth);
+  if (!confirm(`Reopen ${label}? Anything added or changed afterward will stop being flagged as "after billing."`)) return;
+  const monthStr = accountingMonthKey(accountingCurrentMonth) + '-01';
+  await sb('rpc/accounting_reopen_month', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw, p_month: monthStr }) });
+  delete ACCOUNTING_CLOSED_MONTHS[monthStr];
+  renderAccountingDashboard();
+  showToast(`${label} reopened.`);
+}
+
 // Switching month/group/status closes any open detail card (2026-08-11, per
 // Claire) -- the card is tied to one specific line, and changing what the table
 // is even showing makes a stale-open card confusing/easy to miss closing manually.
@@ -2030,7 +2077,7 @@ function accountingSectionLabel(id) {
 async function fetchAccountingData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
   if (!ACCOUNTING_SECTIONS.length) ACCOUNTING_SECTIONS = await sb('sections?order=sort_order&select=*') || [];
-  const [lines, months, rates, clients] = await Promise.all([
+  const [lines, months, rates, clients, closedMonths] = await Promise.all([
     sb('rpc/accounting_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     // sbAll -- accounting_get_campaign_months now accepts real p_limit/p_offset
     // (paginated-rpc-functions-2026-08-12.sql, run 2026-08-12), so sbAll's own
@@ -2038,8 +2085,11 @@ async function fetchAccountingData() {
     sbAll('rpc/accounting_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     sb('rpc/accounting_get_rates', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     sb('rpc/accounting_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
+    sb('rpc/accounting_get_closed_months', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
   ]);
   ALL_ACCOUNTING_LINES = lines || [];
+  ACCOUNTING_CLOSED_MONTHS = {};
+  (closedMonths || []).forEach(c => { ACCOUNTING_CLOSED_MONTHS[c.month] = { closed_by: c.closed_by, closed_at: c.closed_at }; });
   ALL_ACCOUNTING_MONTHS = months || [];
   ALL_ACCOUNTING_CLIENTS = clients || [];
   ACCOUNTING_CUT_RATES = { base: {}, group: {}, pairing: {} };
@@ -2244,7 +2294,25 @@ function accountingBuildRows() {
     // specifically instead of being folded into the same "Paused" label.
     const paused = !!monthRow?.paused || l.status === 'paused' || l.status === 'complete';
     const isComplete = l.status === 'complete';
-    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed, paused, isComplete };
+    // Flags anything that showed up in a month AFTER it was already marked
+    // billed (2026-09-18, per Claire's accountant -- see ACCOUNTING_CLOSED_MONTHS'
+    // own comment). addedAfterBilling covers a whole new campaign line
+    // (campaign_lines.created_at, already tracked/used elsewhere in this
+    // app); changedAfterBilling covers an edit to an EXISTING month's own
+    // numbers (campaign_months.updated_at, a new column + trigger added
+    // alongside this feature). Both need those two source RPCs
+    // (accounting_get_campaign_lines/_campaign_months) to actually select
+    // the timestamp columns -- until that's done, l.created_at/monthRow
+    // .updated_at simply come back undefined and this never fires, rather
+    // than throwing.
+    const closedInfo = accountingClosedMonthInfo(accountingCurrentMonth);
+    let addedAfterBilling = false, changedAfterBilling = false;
+    if (closedInfo) {
+      const closedAt = new Date(closedInfo.closed_at);
+      if (l.created_at && new Date(l.created_at) > closedAt) addedAfterBilling = true;
+      else if (monthRow?.updated_at && new Date(monthRow.updated_at) > closedAt) changedAfterBilling = true;
+    }
+    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed, paused, isComplete, addedAfterBilling, changedAfterBilling };
   }).filter(r => r.gross != null || r.line.status === 'pending');
   // A pending campaign still shows as a line item for every month in its
   // own flight (2026-08-12, per Claire: "I would like there to be line
@@ -2303,7 +2371,7 @@ function accountingRenderRow(r) {
     const dollarStyle = accountingRowIsPaused(r) ? ' style="color:var(--muted)"' : '';
     let html = `<tr class="acct-row" onclick="accountingToggleSplit('${r.key}')" role="button" tabindex="0" aria-expanded="${expanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingToggleSplit('${r.key}')}">
       <td><strong>${esc(r.line.client_name || '(unknown)')}</strong></td>
-      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:10px">(${r.totalCount} regions)</span>${r.children.some(c => c.line.retail_cpm_override != null) ? ' <span title="At least one region below has its own Retail CPM override" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM override(s) below</span>' : ''}</td>
+      <td><span style="display:inline-block;width:14px;color:var(--muted)">${expanded ? '▾' : '▸'}</span>${esc(r.line.tactic_label || r.line.service_id || '—')} <span style="color:var(--muted);font-size:10px">(${r.totalCount} regions)</span>${r.children.some(c => c.line.retail_cpm_override != null) ? ' <span title="At least one region below has its own Retail CPM override" style="display:inline-block;padding:1px 6px;margin-left:2px;border-radius:999px;background:var(--light);border:1px solid var(--accent);color:var(--accent-dark);font-size:9.5px;font-weight:700;vertical-align:middle;white-space:nowrap">CPM override(s) below</span>' : ''}${accountingAfterBillingBadgeHtml({ addedAfterBilling: r.children.some(c => c.addedAfterBilling), changedAfterBilling: r.children.some(c => c.changedAfterBilling) })}</td>
       <td>${accountingFormatFlightRange(r.flightStart, r.flightEnd)}</td>
       <td class="num"${dollarStyle}>$${r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}</td>
       <td class="num"${dollarStyle}>${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
@@ -2351,7 +2419,7 @@ function accountingRenderRow(r) {
   const dollarStyle = accountingRowIsPaused(r) ? ' style="color:var(--muted)"' : '';
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingSelectLine('${r.line.id}')}">
     <td><strong>${esc(accountingDisplayClientName(r.line))}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}${accountingAfterBillingBadgeHtml(r)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end, ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(r.line.billing_type))}</td>
     <td class="num"${dollarStyle}>${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td class="num"${dollarStyle}>${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
@@ -2363,6 +2431,13 @@ function accountingRenderRow(r) {
 
 function renderAccountingDashboard() {
   document.getElementById('accounting-month-label').textContent = accountingMonthLabel(accountingCurrentMonth);
+
+  const closedInfo = accountingClosedMonthInfo(accountingCurrentMonth);
+  const closeControlEl = document.getElementById('accounting-month-close-control');
+  closeControlEl.innerHTML = closedInfo
+    ? `<span style="font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:999px;background:#DCFCE7;color:#166534;white-space:nowrap;margin-left:6px">✓ Billed by ${esc(closedInfo.closed_by)}, ${esc(new Date(closedInfo.closed_at).toLocaleDateString('en-US',{month:'short',day:'numeric'}))}</span>
+       <button onclick="accountingReopenCurrentMonth()" style="margin-left:6px;padding:4px 10px;border-radius:999px;border:1.5px solid var(--border);background:#fff;color:var(--muted);font-size:10.5px;cursor:pointer">Reopen</button>`
+    : `<button onclick="accountingCloseCurrentMonth()" style="margin-left:6px;padding:4px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:10.5px;font-weight:600;cursor:pointer">Mark Billing Complete</button>`;
 
   const groupFilterEl = document.getElementById('accounting-group-filter');
   const groupNames = [...new Set(ALL_ACCOUNTING_LINES.map(l => l.group_name).filter(Boolean))].sort((a, b) => a.localeCompare(b));

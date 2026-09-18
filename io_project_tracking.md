@@ -28646,3 +28646,78 @@ always send password resets through a portal's own "Forgot password?"
 link, never the Supabase Dashboard's own recovery action, for any of the
 three portals (same shared `reset-password.html`/`redirectTo` pattern
 applies to Admin and Accounting too).
+
+### 2026-09-18 — "Mark Billing Complete" month checkpoint for Accounting
+
+Claire, from her accountant demo: "there have been times with our current
+system when after she completes billing for the month something gets
+added and she has to then backdate... is there a way we can add something
+that she can mark that billing is done for that month?" Confirmed the
+design with her before building (recommended defaults, all approved):
+- **Global per month** (one flag for the whole book, not per client —
+  billing happens in one batch pass), not per client/group.
+- **Covers both** a brand-new campaign line landing in an already-billed
+  month, AND an edit to an existing month's own numbers after that month
+  was marked done — not just new lines.
+- **Reversible** — any Accounting-role user can toggle it back off, no
+  extra confirmation gate beyond the existing role check.
+- **Soft flag, not a hard lock** — same "nudge, don't wall off" posture as
+  the Strategist Split mismatch warning. Marking a month billed never
+  blocks anyone from still adding/editing something in it; it just makes
+  that after-the-fact change visible instead of silent.
+- **Accounting-portal-only for v1** — Strategist/Admin don't get their own
+  awareness of a closed month; scoped down per Claire's own call to keep
+  this from becoming a second concept those portals' users would need to
+  learn.
+
+**Built** (`scratchpad/add-accounting-month-close.sql`, handed to Claire to
+run):
+- New `accounting_month_close` table (`month date primary key, closed_by
+  text, closed_at timestamptz`) — closing/reopening is a plain
+  upsert/delete, no history-of-toggles tracking.
+- New `campaign_months.updated_at` column + a generic `BEFORE UPDATE`
+  trigger (`campaign_months_touch_updated_at()`) that stamps it
+  automatically on ANY update to that table, regardless of which RPC made
+  the change (Admin's edits, Accounting's own actual-spend entry,
+  Strategist's Split, etc.) — one small migration instead of touching
+  every existing write path individually, so nothing gets missed.
+  `campaign_lines.created_at` already existed (already used by
+  Strategist's own Order Changes banner), so "a whole new line got added"
+  needed no new column, just a new consumer.
+- Three new RPCs, same `admin_resolve_role`/accounting-or-super gate as
+  every other `accounting_*` RPC: `accounting_get_closed_months`,
+  `accounting_close_month(p_month)`, `accounting_reopen_month(p_month)`.
+
+**Built** (`accounting/index.html`):
+- New "Mark Billing Complete" button next to the month nav; once clicked,
+  shows "✓ Billed by [name], [date]" with a "Reopen" link instead.
+- `accountingBuildRows()` now computes `addedAfterBilling` (line's
+  `created_at` is after the month's `closed_at`) and `changedAfterBilling`
+  (that month's own `campaign_months.updated_at` is after `closed_at`) per
+  row, only when the currently-viewed month is actually closed.
+- A new "⚠ Added after billing" / "⚠ Changed after billing" badge next to
+  the tactic name, in both the plain-line table row and the rollup
+  (multi-region) row (checked across all its children).
+
+**Still needed before this is fully live** — `accounting_get_campaign_lines`
+and `accounting_get_campaign_months` (the two RPCs that actually feed
+`ALL_ACCOUNTING_LINES`/months to the frontend) need `created_at`/
+`updated_at` added to what they select and return; I don't have their
+current definitions on hand to safely edit them without guessing at their
+existing shape, so I need Claire to paste `pg_get_functiondef` for both
+before that last wiring step can be finished. Until then the new
+close/reopen button and badge UI are live and functional, but
+`l.created_at`/`monthRow.updated_at` simply come back `undefined` from
+those two RPCs, so the after-billing badges won't actually be able to
+fire yet — coded to degrade to "never flags" rather than error in that
+gap, not silently show wrong data.
+
+Detail card's own 3-month table intentionally NOT given the same badge in
+this pass (separate month-row construction, per its own existing "detail
+card has its own SEPARATE month-row construction" comment) — the main
+table is the primary view, and this can be added if Claire wants it there
+too.
+
+**Verified**: `node --check` on `accounting/index.html` — no syntax
+errors. Not yet live-tested (needs the SQL run plus the two RPC updates
+above before the badges can actually fire on real data).
