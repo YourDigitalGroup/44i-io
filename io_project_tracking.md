@@ -29054,3 +29054,23 @@ and behaves exactly as before. Then check in before anything about Phase 2.
 passed (a group's form loaded normally). Claire is walking every group's
 form to confirm each looks and behaves exactly as before. Phase 1 complete
 pending that walk-through; Phase 2 does not start until she says so.
+
+### 2026-09-22 — Draft retention extended from 7 to 30 days
+
+Claire: "There are some drafts that have been sitting for 5 days and I don't
+want someone to lose something." Drafts auto-deleted after 7 days of no
+edits, in two places: (1) server-side, the `delete from group_drafts where
+updated_at < now() - interval '7 days'` cleanup inside `get_group_drafts`
+(runs whenever a group's resume-a-draft list loads); (2) browser-side, the
+per-device autosave's `DRAFT_TTL_MS` in `index.html`. Recommended 30 days;
+Claire to confirm or adjust before running.
+
+**SQL** (`scratchpad/extend-draft-retention-30-days.sql`, handed to Claire —
+takes effect immediately, no deploy): both copies of `get_group_drafts` (the
+live `p_group_id` one and Phase 1's `p_t` one) with the ONLY change being
+`'7 days'` → `'30 days'`, so the timer stays consistent through the Phase 2
+cutover. **Frontend**: `DRAFT_TTL_MS` 7 → 30 days plus the three comments
+that quoted the old number; the Companion form has no draft timer of its own;
+no user-visible text mentions the number. Verified: `node --check` on
+`index.html` — no syntax errors. Needs a merge to go live for the browser
+half; the server half is live the moment the SQL runs.

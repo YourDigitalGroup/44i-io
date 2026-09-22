@@ -1420,9 +1420,9 @@ function makeIoNumber(ioDateStr, bizNameRaw, suffix) {
 //       REFRESH  → same tab_id → draft found → work restored
 //     ...and two simultaneous tabs each write to their OWN key, so they can
 //     never overwrite each other's work.
-//   - Drafts older than 7 days are purged on page load.
+//   - Drafts older than 30 days are purged on page load (DRAFT_TTL_MS; was 7 until 2026-09-22).
 //   - On submit, this tab's draft is deleted.
-const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days (was 7 -- 2026-09-22, per Claire; matches get_group_drafts' server-side cleanup)
 const DRAFT_KEY_PREFIX = 'io_draft_v2:';
 
 // ── SERVER-SIDE GROUP DRAFTS (2026-09-10, per Claire — AMs worried a closed tab
@@ -8254,7 +8254,7 @@ async function generateIoPdfBlob() {
 // One source of truth for the draft shape — used by both manual save and auto-save.
 function buildDraft() {
   const draft = {
-    savedAt: Date.now(),                    // timestamp for 7-day expiry check
+    savedAt: Date.now(),                    // timestamp for the DRAFT_TTL_MS (30-day) expiry check
     serverDraftId: serverDraftId,           // links this local draft to its group_drafts row, once one exists
     // selectedAeId/selectedClientId (2026-09-10, per Claire — resuming a draft
     // left the "I am…"/"Returning Client?" pickers showing "New AE"/"New
@@ -8457,7 +8457,7 @@ function loadDraft(externalDraft) {
     if (!raw) return false;
     const d = JSON.parse(raw);
 
-    // 7-day expiry — older drafts are ignored and removed
+    // DRAFT_TTL_MS (30-day) expiry — older drafts are ignored and removed
     if (d.savedAt && (Date.now() - d.savedAt) > DRAFT_TTL_MS) {
       localStorage.removeItem(getDraftKey());
       return false;
