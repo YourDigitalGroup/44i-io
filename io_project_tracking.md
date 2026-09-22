@@ -28845,3 +28845,113 @@ yet live-tested (needs Claire to open a Group/Client editor and confirm the
 super admin now appears in the Digital Strategist dropdown, then confirm
 his Strategist Portal login actually shows those clients under "My
 Campaigns" once assigned).
+
+### 2026-09-22 — Embed-key rollout: plan approved (Phase 1 only), and a focused security review
+
+Claire is moving every platform to per-group embed keys for the WordPress
+iframes (same contract as Website Requests and the audit tool — brief and
+its three reference files are in this session's uploads). Because the IO
+form is live, the constraint is: build the framework now, mint keys during
+a downtime later. Verified every claim in the brief against the real files
+before planning; the brief is accurate about `index.html`, and misses five
+things that reshape the plan:
+
+1. **Companion form has the identical hole** (`companion/index.html` reads
+   `groups?io_slug=eq.` anonymously, passes `p_group_id` to the shared
+   roster RPCs + four `companion_*` RPCs, sends email using `am_email`/
+   `io_recipient`). Must ship in the same rollout; one key per group covers
+   both iframes (Claire's call).
+2. **Dev picker** (`?dev=1` on prod / any non-prod host) lists every group.
+   Claire: remove it entirely.
+3. **Admin depends on the public `groups` read policy** (6 direct
+   `groups?order=name&select=*` reads) — needs a credential-gated
+   `admin_get_groups` RPC before that policy can be dropped.
+4. **Trello + email run in the browser via the `claude-proxy` Edge
+   Function**, using `trello_board_id`/AM handles/`io_recipient` from the
+   group. Claire's call: Phase 1 returns those columns from the KEY-GATED
+   group RPC (only a valid key can see them) rather than moving the
+   pipeline server-side now.
+5. **Orders-through-RPC (brief §4d) has two dependents** on the anon
+   `orders` policies (the post-Trello PATCH; Admin's Swap Tactic PATCH,
+   which likely already fails past the 2-hour window). Claire's call: its
+   own later phase.
+
+**Approved plan** (Claire approved starting Phase 1 only; check-in before
+anything switches): Phase 1 = additive framework (`embed_keys` table,
+resolver, `get_group_for_embed_key`, key-based twins of all 18 RPCs added
+ALONGSIDE the existing ones, `admin_get_groups`, both forms use the key
+path only when `?t=` is present and fall back to today's slug path when
+absent, slug-mismatch notice, dev picker removed) — zero behavior change
+for live users. Phase 2 = cutover at downtime, Claire's own group first,
+then lockdown SQL (drop `groups_public_read` + the 18 old signatures) only
+once every page carries a key; rollback SQL prepared first. Phase 3 =
+orders through RPCs + drop the three anon `orders` policies. Phase 4 =
+Admin minting UI (super admins only) and Edge Function hardening. Phase 0
+(RPC definitions + policies) dumped by Claire and on file in this session.
+
+**Focused security review (read-only, code side)** — Claire asked whether
+to audit before starting. Scoped to the public surface only, not code
+quality. Findings, worst first, each mapped to the phase that fixes it:
+
+- Serious, fixed by Phases 1–2: any group's full config readable (Trello
+  board id, AM handles, notification emails, pricing); any group's AE
+  roster, client list, client contact details, and saved DRAFTS (AE-typed
+  business/contact info) readable — drafts also deletable — with just a
+  group id; Companion change requests forgeable for any client under any
+  AE's name.
+- Serious, NOT fixed by keys: every new order publicly readable/editable
+  for 2 hours (`orders_recent_read`/`_update`: contact info, signature
+  image, line items) → orders phase. **The `claude-proxy` Edge Function is
+  an open relay** — with the public anon key alone, `send_email` sends
+  from the Mailgun domain to any address (phishing under 44i's name) and
+  every `trello_*` target reads/creates/edits cards, attaches files, and
+  adds members on any board the bot can see; only `upload_group_logo`
+  checks credentials. Recommended to Claire: harden this right after
+  Phase 2, ahead of the orders change.
+- Moderate, fixed by Phases 1–2: `set_client_trello_list_id` repoints any
+  client's Trello list; `get_client_service_flights` exposes order history
+  by client id; junk-insert vectors (`orders_public_insert`,
+  `log_draft_save`, `pending_requests`). New small item not in the brief:
+  `notification_settings` (the internal always-BCC list) is publicly
+  readable — add to Phase 1.
+- Checked and fine: the embedded key decodes to `role: anon`; no
+  service-role/Trello/Mailgun secrets in the repo; every sampled render of
+  publicly-submitted text (client names, notes, special instructions,
+  emails, PDF) goes through `esc()` — no stored-XSS found (sampled, not
+  exhaustive); portal-handoff password in `sessionStorage` is removed on
+  read; `?preview=1` is cosmetic only, as designed.
+
+**Still open to complete the review**: two read-only DB queries
+(`scratchpad/security-review-db-followup.sql`) — every table's policies +
+RLS state, and every function the anon role can execute with whether its
+body is credential-gated — to catch anything not visible from code.
+Nothing has been built yet.
+
+**Security review — DB side completed (2026-09-22, Claire ran both follow-up
+queries).** Every public table has RLS enabled; the ones with zero policies
+(clients, admin_users, ae, campaign_*, agents, counties, group_drafts,
+draft_save_log, pending_requests' reads, etc.) are correctly closed to the
+anon key and reachable only through SECURITY DEFINER RPCs. Publicly
+readable tables: `groups` (known — Phase 1/2), `notification_settings`
+(known — Phase 1), `group_service_overrides` (a dead/unused table with a
+`{public}` SELECT policy — harmless today, tidy-up: drop the policy or the
+table), and the catalog tables (`services`, `sections`, `intake_forms`,
+`hosting_proration_settings`, `legal_content`) which are the public price
+list by design. Public writes: `orders` insert + 2-hour read/update
+(known), `pending_requests` insert (known). Anon-callable functions with no
+credential check beyond the 18 already in the plan: `get_login_roster()` —
+returns every staff login name + role to anyone (it feeds the three
+portals' name pickers; the password is still required to get in, but it
+hands an attacker the exact username list and roles); `get_client_names
+(p_ids)` — resolves client ids to names, no caller in current code
+(leftover after `admin_get_client_names` replaced it — safe to drop);
+`admin_get_profile_by_auth_uid` (session-gated, fine); `resolve_rate`
+(not SECURITY DEFINER; `rate_history` has no anon policy, so anon gets no
+rows — internal helper, fine); two trigger functions (not callable as
+RPCs). Every other function checks credentials internally. One systemic
+note: the legacy name/password path (`admin_login`/`admin_resolve_role`)
+has no lockout or rate limit on guesses at the function level — finishing
+the already-planned Supabase Auth migration (Stage 5, remove the legacy
+password path) is the real fix; noted, not in this rollout's scope.
+Review complete: no finding outside the "public form trusts the browser"
+theme, plus the Edge Function relay already recorded above.
