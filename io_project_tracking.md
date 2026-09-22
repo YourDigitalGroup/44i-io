@@ -28955,3 +28955,83 @@ the already-planned Supabase Auth migration (Stage 5, remove the legacy
 password path) is the real fix; noted, not in this rollout's scope.
 Review complete: no finding outside the "public form trusts the browser"
 theme, plus the Edge Function relay already recorded above.
+
+### 2026-09-22 — Embed keys, Phase 1 BUILT (framework only; nothing switches yet)
+
+Claire approved Phase 1 only, with the explicit condition that the live form
+keeps working exactly as it does today until the Phase 2 cutover. Built to
+that condition: everything here is ADDITIVE.
+
+**SQL** (`scratchpad/embed-keys-phase1.sql`, handed to Claire to run — must be
+run BEFORE the frontend deploy, since Admin's new group read calls one of the
+new functions; it only creates things, drops/edits nothing):
+- `embed_keys` table (+ active-key index, RLS on, all browser access
+  revoked) — the attached `embed-keys.sql` with the FK pointed at `groups`.
+- `group_id_for_embed_key(p_t)` — the resolver from the brief §4b verbatim
+  (strip whitespace, lowercase, `^[0-9a-f]{48}$`, SHA-256 match, active key,
+  active group). EXECUTE revoked from public/anon/authenticated — only other
+  SECURITY DEFINER functions can call it.
+- `get_group_for_embed_key(p_t)` — returns exactly the 16 `groups` columns the
+  two public forms read (verified from every `selectedGroup.*` reference in
+  both files): id, name, io_slug, active, logo_url, logo_dark_bg, brand_color,
+  io_pricing, has_koc, am_name, am_calendar_url, am_email, trello_board_id,
+  am_trello_handle, additional_card_trello_handle, io_recipient. Per Claire's
+  Q3 call, the Trello/email fields ride along but are now reachable ONLY with
+  a valid key (vs. today's fully public read).
+- `get_notification_settings_for_embed_key(p_t)` — key-gated read of the
+  always-BCC list (security review item; Phase 2 drops the public policy).
+- Key-based SECOND COPIES of all 18 public RPCs, same names, `p_t` in place of
+  `p_group_id` (Supabase resolves by the parameter names sent). Bodies are the
+  live definitions Claire pasted with exactly two changes each: resolve the
+  key (raise the one uniform `invalid or revoked embed key` on any failure)
+  and use the resolved group. The five client-only RPCs also verify the client
+  belongs to the key's group. `find_or_create_client`/`_ae` derive the group
+  from the key and ignore any `group_id` in the payload.
+- `admin_get_groups(p_name, p_pw)` — same gate as the rest of /admin (any
+  real login except strategist/accounting), so Admin stops depending on the
+  public `groups` read before Phase 2 removes it.
+
+**Frontend** (`index.html`, `companion/index.html`, `admin/index.html`):
+- Both public forms read `?t=` once on load into module constants
+  (`EMBED_KEY_PRESENT`, `EMBED_KEY`, normalised like the server) plus two
+  tiny helpers, `groupScope(groupId)` and `withKey(body)`. With a key
+  present → every group-scoped RPC sends `p_t`; the group itself comes from
+  `get_group_for_embed_key`; a malformed key still takes the key path so the
+  SERVER refuses it uniformly (no client-side bypass back to the slug).
+  Without a key → today's slug path, byte-for-byte unchanged (the slug read,
+  every `p_group_id` body, the direct `notification_settings` read).
+- Slug-mismatch notice on both forms when the path slug ≠ the key's
+  `io_slug` — built with `textContent`, never `innerHTML` (the slug is
+  attacker-controlled URL text).
+- Dev picker removed entirely (`showDevModePicker`/`applyDevGroup`/
+  `devSkipToStep2`/`DEV_GROUPS` + the Skip-to-Step-2 button), per Claire's
+  Q2. `isDevPreviewMode` kept as a permanent `false` so the submit-time guard
+  is untouched.
+- Admin's six direct `groups?order=name&select=*` reads now go through
+  `adminLoadAllGroups()` → `admin_get_groups`, with a TRANSITION-ONLY
+  fallback to the direct read if the RPC isn't deployed yet/errors, so Admin
+  can't break between the frontend deploy and the SQL run. Fallback goes
+  away with the policy in Phase 2.
+- `?preview=1` unchanged (still only skips the not-embedded notice).
+
+**Verified**: `node --check` on the extracted inline script of all three files
+— no syntax errors. Structural check on the SQL: 22 functions, all dollar-
+quote delimiters balanced, zero `p_group_id` inside any new body, 20 uniform
+refusal sites. Resolver logic simulated in Node against a freshly minted
+48-hex key: exact / UPPERCASE+stray space / trailing newline all resolve;
+47 chars, non-hex, empty, null all refuse. The shipped helper logic
+simulated under three page addresses and the exact request bodies printed:
+with NO `?t=`, every body is identical to today's (`{p_group_id: …}`,
+`{p_client_id: …}`, `{p_payload: …}`); with a key, `p_t` is sent normalised
+and no `p_group_id` at all; with a malformed key the key path is still taken.
+Leftover checks: the only remaining literal `p_group_id:` in either public
+form is inside `groupScope()` itself; the only remaining direct `groups`
+read in Admin is the transition fallback; dev-picker names survive only in
+comments. Not yet live-tested (nothing CAN change live until a page carries
+a key). Claire's check after deploy: open any group's form the normal way —
+it must look and behave exactly as before.
+
+**Not built (deliberately, Phase 2+)**: minting anything, the WordPress
+shortcode, the lockdown SQL, the rollback SQL, orders-through-RPC, Edge
+Function hardening, Admin minting UI, the `get_login_roster`/`get_client_names`
+/`group_service_overrides` tidy-ups from the review.
