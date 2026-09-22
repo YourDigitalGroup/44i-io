@@ -28721,3 +28721,97 @@ too.
 **Verified**: `node --check` on `accounting/index.html` — no syntax
 errors. Not yet live-tested (needs the SQL run plus the two RPC updates
 above before the badges can actually fire on real data).
+
+### 2026-09-22 — Renewal via a plain IO submission duplicated the campaign instead of extending it
+
+Bronson: a client renewal submitted through a normal IO (not the Companion
+self-service Renew flow, which this client doesn't have access to yet)
+created a brand-new campaign line instead of extending the one already
+running — "the strategist would like to just extend the current campaign
+for historicals" (Bronson) but Claire wanted it "connected to the new IO
+that was submitted" (i.e. both: same campaign line, but pointed at whatever
+order actually came in).
+
+**Root cause**: `create_campaign_lines_from_order()` already has a "find
+the existing line and extend it" renewal path — but only inside the
+`agent_splits` loop (built for MS Farm Bureau's multi-agent/county
+renewals). The main per-line-item loop that handles a plain single-tactic
+order (Facebook/IG Ads, SEM, etc.) has no such check and always inserts a
+fresh row, so a genuinely-new order and a renewal of something already
+running look identical to it.
+
+**Fix** (`scratchpad/fix-order-trigger-renewal-matching.sql`, handed to
+Claire to run): added the same match-and-extend behavior to the plain
+spend-based branch and the flat-fee/recurring branch. Match rule
+(confirmed with Claire before writing this): same client + same
+service/tactic, and there's currently exactly ONE active line for it —
+zero or 2+ matches falls back to the original insert-new behavior rather
+than guessing. When a match is found: extends `flight_end`, re-points
+`order_id` at the new order, stamps `last_renewed_at`/
+`last_renewed_previous_end_date` (same fields the agent_splits path
+already sets), and switches `campaign_months` writes from blind INSERT to
+an update-if-exists check so extending a line can't hit a duplicate-key
+error. Deliberately NOT applied to: the `auto_split_labels` branch
+(2026-09-17's Location Targeting: Event feature — its own multi-line
+concept), the SEO placeholder branch, hosting-proration, or setup-fee
+branches (one-time-per-order charges, not the ongoing campaign identity).
+Pulled the CURRENT live trigger definition via `pg_get_functiondef` before
+writing this (not an older cached copy from earlier in the session) —
+correctly preserved the `auto_split_labels` branch that would otherwise
+have been silently wiped out.
+
+**Real historical bug found while investigating this**: pulling the actual
+Southwest Mississippi CC CTE / Facebook/IG Ads data (the case that started
+this) surfaced THREE lines, not two — this exact bug had already happened
+once before, undetected, back around April 2026. One line ran at
+$1,500/mo since 2025-08-01 (scheduled through 2027-06-30); a second,
+genuinely-current line started 2026-04-01 at $1,000/mo. BOTH had real,
+independently-entered actual-spend numbers for Jul/Aug/Sep 2026 — meaning
+this client's Facebook/IG Ads billing had been double-tracked for at least
+3 months without anyone noticing. Confirmed with Claire (via the Strategist
+Optimize Log, which only existed on the $1,000/mo line) which one was the
+real, actively-managed campaign before touching anything.
+
+**Fix** (`scratchpad/fix-southwest-ms-cc-cte-merge.sql`, handed to Claire,
+wrapped in a transaction): merged the new pending order's months into the
+real ($1,000/mo) line, re-pointed its `order_id` at the new order, deleted
+the now-redundant pending duplicate row, and marked the stale $1,500/mo
+line `complete` (superseded) — its own July-Sept actual-spend history was
+deliberately left untouched rather than rewritten, in case anything
+downstream (a report, an invoice) already used those numbers; cancelling
+it just removes it from anything live going forward.
+
+**Verified**: `node --check` on the trigger's inline logic isn't
+applicable (it's a DB function, not client JS) — verified instead by
+diffing the new version line-by-line against the freshly-pulled current
+definition to confirm only the two intended branches changed. Not yet
+live-tested (needs both SQL files run, then a real test order for an
+already-running client's tactic to confirm the extend path fires
+correctly instead of inserting a duplicate). The Southwest MS CC CTE merge
+itself is a one-time data fix, not something to "test" beyond confirming
+the 3 lines resolve to 1 correct one after running it.
+
+### 2026-09-22 (cont'd) — Optimize Log double-submit created a real duplicate row
+
+While investigating the above, Claire flagged the Strategist portal's
+Optimize Log showing "Expanded the targeted age. Extended campaign
+duration." twice for the same line/date. Confirmed via direct query
+(`campaign_optimize_log`) — two genuinely separate rows, same
+note/date/user (Bronson), timestamped 2.2 seconds apart. Not a rendering
+bug — `strategistSaveLogEntry()`'s "Add" button had no disabled-while-
+saving guard, so a real double-click (or a slow first request) fires the
+save RPC twice.
+
+**Fixed** (`strategist/index.html`): gave the Add/Save button an id and
+disabled it for the duration of the save; `renderStrategistDashboard()`
+already rebuilds the whole panel from fresh data on success, so no
+separate re-enable path was needed there — only the catch block re-enables
+it, for a failed save.
+
+**Data cleanup** (`scratchpad/fix-optimize-log-duplicate.sql`, handed to
+Claire): deletes the confirmed duplicate row, keeping the earlier of the
+two.
+
+**Verified**: `node --check` on `strategist/index.html` — no syntax
+errors. Not yet live-tested (needs Claire/Bronson to confirm a real
+double-click no longer creates two rows).
