@@ -28815,3 +28815,33 @@ two.
 **Verified**: `node --check` on `strategist/index.html` — no syntax
 errors. Not yet live-tested (needs Claire/Bronson to confirm a real
 double-click no longer creates two rows).
+
+### 2026-09-22 (cont'd) — Digital Strategist picker excluded Super Admins
+
+Claire: a strategist going on maternity leave, with a Super Admin covering
+some of her accounts in the meantime — "how could I have him be associated
+with the groups he needs to?" Walked through the actual assignment model:
+each Group has a default Digital/Social/Web strategist; each Client can
+individually override it; if unset, the client just inherits the group's
+default. "My Campaigns" in the Strategist Portal (`strategistLineScopeName()`)
+matches purely on the client's effective `digital_strategist_name` string
+against whoever's logged in — not on account role — so a Super Admin
+logging into the Strategist Portal (which supers can already do) would see
+the right campaigns the moment that field names him, no separate step
+needed.
+
+**Real gap found**: `populateDigitalStrategistDropdown()` (admin/index.html)
+only listed `ALL_STAFF` rows with `role === 'strategist'` — a Super Admin
+was never a selectable option in that dropdown at all, even though the
+underlying field is just a plain name string with no real constraint on
+who it can name.
+
+**Fixed**: widened that filter to `role === 'strategist' || role === 'super'`.
+Confirmed `ALL_STAFF` (from `admin_get_staff`) already includes Super Admins,
+so no RPC change was needed — purely a frontend filter fix.
+
+**Verified**: `node --check` on `admin/index.html` — no syntax errors. Not
+yet live-tested (needs Claire to open a Group/Client editor and confirm the
+super admin now appears in the Digital Strategist dropdown, then confirm
+his Strategist Portal login actually shows those clients under "My
+Campaigns" once assigned).
