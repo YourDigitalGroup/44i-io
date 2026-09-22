@@ -28926,3 +28926,32 @@ quality. Findings, worst first, each mapped to the phase that fixes it:
 RLS state, and every function the anon role can execute with whether its
 body is credential-gated — to catch anything not visible from code.
 Nothing has been built yet.
+
+**Security review — DB side completed (2026-09-22, Claire ran both follow-up
+queries).** Every public table has RLS enabled; the ones with zero policies
+(clients, admin_users, ae, campaign_*, agents, counties, group_drafts,
+draft_save_log, pending_requests' reads, etc.) are correctly closed to the
+anon key and reachable only through SECURITY DEFINER RPCs. Publicly
+readable tables: `groups` (known — Phase 1/2), `notification_settings`
+(known — Phase 1), `group_service_overrides` (a dead/unused table with a
+`{public}` SELECT policy — harmless today, tidy-up: drop the policy or the
+table), and the catalog tables (`services`, `sections`, `intake_forms`,
+`hosting_proration_settings`, `legal_content`) which are the public price
+list by design. Public writes: `orders` insert + 2-hour read/update
+(known), `pending_requests` insert (known). Anon-callable functions with no
+credential check beyond the 18 already in the plan: `get_login_roster()` —
+returns every staff login name + role to anyone (it feeds the three
+portals' name pickers; the password is still required to get in, but it
+hands an attacker the exact username list and roles); `get_client_names
+(p_ids)` — resolves client ids to names, no caller in current code
+(leftover after `admin_get_client_names` replaced it — safe to drop);
+`admin_get_profile_by_auth_uid` (session-gated, fine); `resolve_rate`
+(not SECURITY DEFINER; `rate_history` has no anon policy, so anon gets no
+rows — internal helper, fine); two trigger functions (not callable as
+RPCs). Every other function checks credentials internally. One systemic
+note: the legacy name/password path (`admin_login`/`admin_resolve_role`)
+has no lockout or rate limit on guesses at the function level — finishing
+the already-planned Supabase Auth migration (Stage 5, remove the legacy
+password path) is the real fix; noted, not in this rollout's scope.
+Review complete: no finding outside the "public form trusts the browser"
+theme, plus the Edge Function relay already recorded above.
