@@ -29049,3 +29049,8 @@ delete inside get_group_drafts is the pre-existing 7-day draft cleanup,
 copied verbatim). Paused here at Claire's request. Next step when she's
 ready: merge the branch, open any group's form normally, confirm it looks
 and behaves exactly as before. Then check in before anything about Phase 2.
+
+**2026-09-22 — Phase 1 MERGED to main and live (Claire).** First live check
+passed (a group's form loaded normally). Claire is walking every group's
+form to confirm each looks and behaves exactly as before. Phase 1 complete
+pending that walk-through; Phase 2 does not start until she says so.
