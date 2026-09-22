@@ -3187,9 +3187,31 @@ window.addEventListener('resize', () => {
 // those many individual toggle call sites.
 new ResizeObserver(() => fitAdminTableHeight()).observe(document.getElementById('admin-content-area'));
 
+// Embed-key rollout, Phase 1 (2026-09-22): /admin used to read `groups` directly,
+// which only worked because that table had a PUBLIC read policy -- the same
+// policy that let anyone read every group's Trello board id, AM handles, and
+// email recipients. Phase 2 drops that policy, so every group read here goes
+// through the credential-gated admin_get_groups RPC instead (same gate as
+// admin_get_staff and the rest of this file). TRANSITION ONLY: if the RPC
+// isn't deployed yet (or errors), fall back to today's direct read so Admin
+// can't break between the frontend deploy and the SQL run; that fallback is
+// removed with the policy in Phase 2.
+async function adminLoadAllGroups() {
+  try {
+    const rows = await sb('rpc/admin_get_groups', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    });
+    if (Array.isArray(rows)) return rows;
+  } catch(e) {
+    console.warn('admin_get_groups unavailable, using direct read (transition only):', e.message);
+  }
+  return await sb('groups?order=name&select=*') || [];
+}
+
 async function loadAdminGroups() {
   try {
-    allGroups = await sb('groups?order=name&select=*') || [];
+    allGroups = await adminLoadAllGroups();
     renderAdminGroups();
   } catch(e) {
     showToast('Error loading groups: ' + e.message, 'error');
@@ -4654,7 +4676,7 @@ async function loadAdminAes() {
   const el = document.getElementById('admin-ae-table');
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
   try {
-    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
+    if (!allGroups.length) allGroups = await adminLoadAllGroups();
     // admin_get_aes() (2026-07-18) — `ae` no longer grants any direct public read (see
     // get_group_aes' own comment in index.html for what was found). This admin tab
     // manages every group's roster, so it's password-gated rather than group-scoped,
@@ -6376,7 +6398,7 @@ async function loadAdminReconcile() {
   const el = document.getElementById('admin-reconcile-table');
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Scanning…</p>';
   try {
-    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
+    if (!allGroups.length) allGroups = await adminLoadAllGroups();
 
     const clients = await sb('rpc/admin_get_clients_missing_trello_list', {
       method: 'POST',
@@ -6526,7 +6548,7 @@ async function loadAdminClients() {
   const el = document.getElementById('admin-clients-table');
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
   try {
-    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
+    if (!allGroups.length) allGroups = await adminLoadAllGroups();
     ALL_CLIENTS = await sb('rpc/admin_get_clients', {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
@@ -8593,7 +8615,7 @@ async function loadAdminPendingRequests() {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
-    if (!allGroups.length) allGroups = await sb('groups?order=name&select=*') || [];
+    if (!allGroups.length) allGroups = await adminLoadAllGroups();
     // Same lazy-load-if-empty guard as updateAccountingMissingBadge()'s caller --
     // allServicesMap is only otherwise populated once the Services tab has been
     // visited, which Pending Requests might be checked before.
@@ -9334,7 +9356,7 @@ async function loadAdminOrders() {
   try {
     // Always load groups too, for the filter dropdown + group name resolution
     if (!allGroups.length) {
-      allGroups = await sb('groups?order=name&select=*') || [];
+      allGroups = await adminLoadAllGroups();
     }
 
     // Server-side admin_get_orders RPC — validates the admin password and applies AM

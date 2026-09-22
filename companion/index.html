@@ -169,6 +169,14 @@ function getSlug() {
 }
 
 let selectedGroup = null;
+
+// ── Embed key (Phase 1, 2026-09-22) -- same mechanism as index.html's own ──
+// EMBED_KEY block (see that comment). One key per group covers both this
+// page's iframe and the IO form's. Read once, normalised like the server
+// (strip whitespace, lowercase), kept only here -- never stored or logged.
+const EMBED_KEY_PRESENT = new URLSearchParams(window.location.search).has('t');
+const EMBED_KEY = String(new URLSearchParams(window.location.search).get('t') || '').replace(/\s/g, '').toLowerCase();
+function groupScope(groupId) { return EMBED_KEY_PRESENT ? { p_t: EMBED_KEY } : { p_group_id: groupId }; }
 let AE_ROSTER = [];
 let CLIENT_ROSTER = [];
 let ACTIVE_SERVICES = [];
@@ -286,7 +294,7 @@ async function loadAeRoster(groupId) {
   const sel = document.getElementById('ae-picker');
   const noAeNote = document.getElementById('no-ae-note');
   try {
-    AE_ROSTER = await sb('rpc/get_group_aes', { method: 'POST', body: JSON.stringify({ p_group_id: groupId }) }) || [];
+    AE_ROSTER = await sb('rpc/get_group_aes', { method: 'POST', body: JSON.stringify(groupScope(groupId)) }) || [];
   } catch(e) { console.warn('Could not load AE roster:', e.message); AE_ROSTER = []; }
   if (!AE_ROSTER.length) { wrap.classList.add('hidden'); noAeNote.classList.remove('hidden'); return; }
   noAeNote.classList.add('hidden');
@@ -308,7 +316,7 @@ async function loadClientRoster(groupId) {
   const sel = document.getElementById('client-picker');
   const noNote = document.getElementById('no-client-note');
   try {
-    CLIENT_ROSTER = await sb('rpc/get_group_clients', { method: 'POST', body: JSON.stringify({ p_group_id: groupId }) }) || [];
+    CLIENT_ROSTER = await sb('rpc/get_group_clients', { method: 'POST', body: JSON.stringify(groupScope(groupId)) }) || [];
   } catch(e) { console.warn('Could not load client roster:', e.message); CLIENT_ROSTER = []; }
   if (!CLIENT_ROSTER.length) { wrap.style.display = 'none'; noNote.style.display = 'block'; return; }
   sel.innerHTML = '<option value="">— Select a client —</option>' + CLIENT_ROSTER.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
@@ -330,7 +338,7 @@ async function applyClientPick(id) {
   try {
     ACTIVE_SERVICES = await sb('rpc/companion_get_active_services', {
       method: 'POST',
-      body: JSON.stringify({ p_group_id: selectedGroup.id, p_client_id: id })
+      body: JSON.stringify({ ...groupScope(selectedGroup.id), p_client_id: id })
     }) || [];
   } catch(e) {
     console.warn('Could not load active services:', e.message);
@@ -409,7 +417,7 @@ async function applyClientPick(id) {
       const orderIdsForIntake = [...new Set(ACTIVE_SERVICES.filter(s => s._intakeFormId).map(s => s.order_id))];
       const intakeRows = await sb('rpc/companion_get_intake_responses', {
         method: 'POST',
-        body: JSON.stringify({ p_group_id: selectedGroup.id, p_client_id: selectedClientId, p_order_ids: orderIdsForIntake })
+        body: JSON.stringify({ ...groupScope(selectedGroup.id), p_client_id: selectedClientId, p_order_ids: orderIdsForIntake })
       }) || [];
       ORDER_INTAKE_RESPONSES = Object.fromEntries(intakeRows.map(o => [o.id, o.intake_responses || {}]));
     } catch(e) {
@@ -437,7 +445,7 @@ async function applyClientPick(id) {
     const orderIds = [...new Set(ACTIVE_SERVICES.map(s => s.order_id))];
     const orderRows = await sb('rpc/companion_get_order_trello_cards', {
       method: 'POST',
-      body: JSON.stringify({ p_group_id: selectedGroup.id, p_client_id: selectedClientId, p_order_ids: orderIds })
+      body: JSON.stringify({ ...groupScope(selectedGroup.id), p_client_id: selectedClientId, p_order_ids: orderIds })
     }) || [];
     ORDER_TRELLO_CARDS = Object.fromEntries(orderRows.map(o => [o.id, o.trello_card_ids || {}]));
   } catch(e) {
@@ -1062,7 +1070,7 @@ async function submitRequests() {
       await sb('rpc/companion_submit_request', {
         method: 'POST',
         body: JSON.stringify({
-          p_group_id: selectedGroup.id, p_client_id: selectedClientId, p_order_id: p.order_id,
+          ...groupScope(selectedGroup.id), p_client_id: selectedClientId, p_order_id: p.order_id,
           p_service_id: p.service_id, p_action: p.action, p_requested_changes: p.requested_changes,
           p_requested_by: aeName, p_requested_by_email: aeEmail,
           p_submission_batch_id: submissionBatchId
@@ -1156,7 +1164,11 @@ async function notifyAm(aeName, aeEmail, submitted) {
     if (aeEmail && !groupRecipients.some(r => r.toLowerCase() === aeEmail.toLowerCase())) groupRecipients.push(aeEmail);
     let alwaysBcc = [];
     try {
-      const notifRows = await sb('notification_settings?id=eq.1&select=always_bcc_recipients');
+      // Key path reads this through a key-gated RPC (2026-09-22 security review);
+      // the direct read stays for the slug path until Phase 2 drops that policy.
+      const notifRows = EMBED_KEY_PRESENT
+        ? await sb('rpc/get_notification_settings_for_embed_key', { method: 'POST', body: JSON.stringify({ p_t: EMBED_KEY }) })
+        : await sb('notification_settings?id=eq.1&select=always_bcc_recipients');
       const raw = Array.isArray(notifRows) ? notifRows[0]?.always_bcc_recipients : null;
       alwaysBcc = (raw || '').split(',').map(s => s.trim()).filter(Boolean);
     } catch (e) { console.warn('Could not load notification_settings:', e.message); }
@@ -1201,11 +1213,31 @@ async function notifyAm(aeName, aeEmail, submitted) {
 // ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
   const slug = getSlug();
-  if (!slug) { document.getElementById('dead-link').classList.remove('hidden'); return; }
-  try {
-    const results = await sb('groups?io_slug=eq.' + encodeURIComponent(slug) + '&select=*');
-    selectedGroup = results && results[0];
-  } catch (e) { console.warn('Could not load group:', e.message); }
+  if (EMBED_KEY_PRESENT) {
+    // Key path (Phase 1, 2026-09-22): the key decides the group; the slug is a
+    // label. Any refusal (unknown/revoked/malformed key, inactive group) shows
+    // the same dead-link screen a bad slug already does.
+    try {
+      const rows = await sb('rpc/get_group_for_embed_key', { method: 'POST', body: JSON.stringify({ p_t: EMBED_KEY }) });
+      selectedGroup = Array.isArray(rows) ? rows[0] : rows;
+    } catch (e) { console.warn('Could not load group (embed key):', e.message); selectedGroup = null; }
+    if (selectedGroup && slug && selectedGroup.io_slug && slug.toLowerCase() !== String(selectedGroup.io_slug).toLowerCase()) {
+      // Say so on screen rather than silently reconcile -- textContent, never
+      // innerHTML, since the slug is attacker-controlled URL text.
+      const n = document.createElement('div');
+      n.setAttribute('role', 'status');
+      n.style.cssText = 'margin:12px 0;padding:10px 14px;border-radius:8px;background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;font-size:13px;line-height:1.5';
+      n.textContent = `Heads up: this link is labelled "${slug}" but belongs to ${selectedGroup.name || 'a different group'}. If that's unexpected, check with your account manager.`;
+      document.getElementById('main-content')?.prepend(n);
+    }
+  } else {
+    // Slug path -- today's behavior, unchanged until Phase 2's cutover.
+    if (!slug) { document.getElementById('dead-link').classList.remove('hidden'); return; }
+    try {
+      const results = await sb('groups?io_slug=eq.' + encodeURIComponent(slug) + '&select=*');
+      selectedGroup = results && results[0];
+    } catch (e) { console.warn('Could not load group:', e.message); }
+  }
   if (!selectedGroup || selectedGroup.active === false) {
     document.getElementById('dead-link').classList.remove('hidden');
     return;

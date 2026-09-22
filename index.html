@@ -987,9 +987,6 @@ select.qty-field{background-image:none;padding-right:3px}
     </div>
 
     <div class="btn-row">
-      <div id="dev-skip-btn" style="display:none">
-        <button class="btn" style="background:#FFF7ED;color:#F97316;border:1px solid #FED7AA;font-size:12px" onclick="devSkipToStep2()">⚡ Skip to Step 2 (dev)</button>
-      </div>
       <div style="display:flex;gap:10px"><button class="btn btn-secondary" onclick="saveDraft()">💾 Save Draft</button><button class="btn btn-primary" onclick="goStep(2)">Next: Select Services →</button></div>
     </div>
   </div>
@@ -1510,6 +1507,20 @@ let INTAKE_FORMS = {};
 // State
 let groups = [];
 let selectedGroup = null;
+
+// ── Embed key (Phase 1, 2026-09-22) ─────────────────────────────────────
+// The WordPress page carries a per-group key as ?t= on the iframe address;
+// the server derives the group from it. Read ONCE here, normalised exactly
+// the way the server does (strip whitespace, lowercase) and kept only in
+// this variable -- never written into drafts, localStorage, or logs.
+// EMBED_KEY_PRESENT decides which path this page takes: with a key, every
+// group-scoped call sends p_t and the server refuses anything invalid with
+// one uniform message; without one (no page carries a key until Phase 2's
+// cutover), the page uses today's slug path, byte-for-byte unchanged.
+const EMBED_KEY_PRESENT = new URLSearchParams(window.location.search).has('t');
+const EMBED_KEY = String(new URLSearchParams(window.location.search).get('t') || '').replace(/\s/g, '').toLowerCase();
+function groupScope(groupId) { return EMBED_KEY_PRESENT ? { p_t: EMBED_KEY } : { p_group_id: groupId }; }
+function withKey(body) { return EMBED_KEY_PRESENT ? { p_t: EMBED_KEY, ...body } : body; }
 let AE_ROSTER = [];
 
 // Agreement/disclaimer text (2026-07-14) — admin-editable (Legal Text tab), global/
@@ -1563,7 +1574,7 @@ async function loadAeRoster(groupId) {
     // to one group.
     AE_ROSTER = await sb('rpc/get_group_aes', {
       method: 'POST',
-      body: JSON.stringify({ p_group_id: groupId })
+      body: JSON.stringify(groupScope(groupId))
     }) || [];
   } catch(e) {
     console.warn('Could not load AE roster:', e.message);
@@ -1666,7 +1677,7 @@ async function loadClientRoster(groupId) {
   setBizNameLocked(false);
   if (!groupId) { wrap.style.display = 'none'; CLIENT_ROSTER = []; return; }
   try {
-    CLIENT_ROSTER = await sb('rpc/get_group_clients', { method: 'POST', body: JSON.stringify({ p_group_id: groupId }) }) || [];
+    CLIENT_ROSTER = await sb('rpc/get_group_clients', { method: 'POST', body: JSON.stringify(groupScope(groupId)) }) || [];
   } catch(e) {
     console.warn('Could not load client roster:', e.message);
     CLIENT_ROSTER = [];
@@ -1731,7 +1742,7 @@ async function applyClientPick(id) {
     // always sends that back as an array (one row here, thanks to the RPC's own
     // `limit 1`), never a bare object, so this unwraps index 0 the same way e.g.
     // the claude-proxy Edge Function's admin_login check already does.
-    const rows = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ p_group_id: selectedGroup?.id, p_client_id: id }) });
+    const rows = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ ...groupScope(selectedGroup?.id), p_client_id: id }) });
     selectedClientDetails = Array.isArray(rows) ? (rows[0] || null) : rows;
   } catch(e) {
     console.warn('Could not load this client\'s details:', e.message);
@@ -1751,7 +1762,7 @@ async function applyClientPick(id) {
   // is populated (2026-09-15) — it reads io_pricing from there, not CLIENT_ROSTER.
   reapplyPricingOverrides();
   try {
-    CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify({ p_client_id: id }) }) || [];
+    CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify(withKey({ p_client_id: id })) }) || [];
   } catch(e) {
     console.warn('Could not load this client\'s service history — overlap warnings skipped:', e.message);
     CLIENT_SERVICE_HISTORY = [];
@@ -1791,9 +1802,9 @@ let agentSplitRows = []; // [{agentId, agentNewName, serviceId, startDate, endDa
 async function loadAgentSplitRosters(clientId) {
   try {
     const [agents, counties, clientAes] = await Promise.all([
-      sb('rpc/get_client_agents', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
-      sb('rpc/get_client_counties', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
-      sb('rpc/get_client_aes', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
+      sb('rpc/get_client_agents', { method: 'POST', body: JSON.stringify(withKey({ p_client_id: clientId })) }),
+      sb('rpc/get_client_counties', { method: 'POST', body: JSON.stringify(withKey({ p_client_id: clientId })) }),
+      sb('rpc/get_client_aes', { method: 'POST', body: JSON.stringify(withKey({ p_client_id: clientId })) }),
     ]);
     AGENT_ROSTER = agents || [];
     COUNTY_ROSTER = counties || [];
@@ -2308,14 +2319,10 @@ function useSuggestedClientMatch(id) {
   checkClientNameMatch();
 }
 
-// Set true by showDevModePicker() and never cleared for the rest of the session — the
-// submit guard below used to infer "dev mode" purely from selectedGroup.id NOT looking
-// like a UUID, which was safe only because the old hardcoded dev picker used fake
-// string ids. Now that the dev picker lists REAL groups (real UUIDs) so bosses can
-// browse every group's actual page, that inference breaks: previewing a real group and
-// clicking all the way through to Submit would otherwise write a real client record and
-// Trello card. This flag is the authoritative guard now, independent of what the
-// selected group's id happens to look like.
+// Was set true by the dev picker (showDevModePicker) so a boss previewing a real
+// group could never accidentally submit a real order. The dev picker was removed
+// 2026-09-22 (embed-key rollout, per Claire), so this is now permanently false --
+// kept so the submit-time guard that reads it stays exactly as written.
 let isDevPreviewMode = false;
 let selected = {}; // id -> {label, fee, recurring, notes, spend}
 let currentStep = 1;
@@ -3438,18 +3445,43 @@ function updateIntakeStatusCard() {
 
 async function loadGroup() {
   const slug = getSlug();
-  const isProd = window.location.hostname.includes('yourdigitalgroupresources.com');
-  // Deliberate dev-mode override (2026-07-08) — see the two checks just below for why
-  // this exists. A conscious action (typing this exact parameter), not an accident.
-  const forceDevMode = new URLSearchParams(window.location.search).get('dev') === '1';
 
-  // Not on production (local file, localhost, etc.) → dev picker always, unchanged
-  // from before — this is the builders' own testing path and doesn't touch anything a
-  // client or AE could stumble into on the real site.
-  if (!isProd || forceDevMode) {
-    showDevModePicker();
+  // Key path (Phase 1, 2026-09-22 -- see EMBED_KEY's own comment). The key,
+  // not the slug, decides the group. Any failure (missing/unknown/revoked/
+  // malformed key, inactive group) gets the same "Invalid Link" screen a bad
+  // slug already gets -- the RPC's own refusal is one uniform message, so
+  // nothing on this side can tell an attacker WHY it failed either.
+  if (EMBED_KEY_PRESENT) {
+    try {
+      const rows = await sb('rpc/get_group_for_embed_key', { method: 'POST', body: JSON.stringify({ p_t: EMBED_KEY }) });
+      const g = Array.isArray(rows) ? rows[0] : rows;
+      if (!g || g.active === false) { showGroupError(); return; }
+      selectedGroup = g;
+      ['am_name','name','am_email'].forEach(k => {
+        if (typeof selectedGroup[k] === 'string') selectedGroup[k] = selectedGroup[k].trim();
+      });
+      // The slug in the path is a label only. If it disagrees with the key's
+      // real group, say so on screen rather than silently reconcile.
+      if (slug && selectedGroup.io_slug && slug.toLowerCase() !== String(selectedGroup.io_slug).toLowerCase()) {
+        showSlugMismatchNotice(slug);
+      }
+      applyGroupBranding(selectedGroup);
+      reapplyPricingOverrides();
+      loadAeRoster(selectedGroup.id);
+      loadClientRoster(selectedGroup.id);
+      document.getElementById('group-display').style.display = 'block';
+      document.getElementById('group-name-display').textContent = selectedGroup.name;
+    } catch(e) {
+      console.error('loadGroup (embed key) error:', e.message);
+      showGroupError();
+    }
     return;
   }
+
+  // Slug path -- today's behavior, unchanged. Stays in place only until every
+  // group's WordPress page carries a key (Phase 2 cutover), then it's removed.
+  // (The dev picker that used to sit here -- ?dev=1 / non-production hosts --
+  // was removed 2026-09-22 per Claire: it listed every group with no scoping.)
 
   // FIXED (2026-07-08): production with NO slug used to ALSO fall into the dev picker
   // (the old check was `!slug || !isProd`, an either/or) — meaning simply visiting the
@@ -3489,100 +3521,11 @@ async function loadGroup() {
   }
 }
 
-// Populated from the real `groups` table (2026-07-10) — was a hardcoded 4-entry list
-// of fake/placeholder groups (CF Digital, STMM, Brazos, an internal test one), none of
-// which reflected the actual client groups or their real branding/pricing. Claire
-// wanted her bosses to be able to browse EVERY real group's own version of the form
-// without typing dummy client data into each one — listing the live table directly
-// does that automatically, with zero maintenance as groups are added/renamed/repriced.
-let DEV_GROUPS = [];
-
-async function showDevModePicker() {
-  isDevPreviewMode = true;
-  const display = document.getElementById('group-display');
-  const nameEl  = document.getElementById('group-name-display');
-  display.style.display = 'block';
-  document.getElementById('group-error').style.display = 'none';
-  nameEl.innerHTML = `<span style="font-size:12px;color:var(--muted)">Loading groups…</span>`;
-
-  try {
-    DEV_GROUPS = await sb('groups?order=name&select=*') || [];
-  } catch(e) {
-    nameEl.innerHTML = `<span style="font-size:12px;color:#EF4444">Could not load groups: ${esc(e.message)}</span>`;
-    return;
-  }
-  if (!DEV_GROUPS.length) {
-    nameEl.innerHTML = `<span style="font-size:12px;color:#EF4444">No groups found in Supabase.</span>`;
-    return;
-  }
-
-  // Apply the first group immediately — before any further DOM changes — same as the
-  // old hardcoded version's "apply CF Digital immediately" behavior.
-  applyDevGroup(DEV_GROUPS[0].id);
-
-  // Show dev skip button
-  const skipBtn = document.getElementById('dev-skip-btn');
-  if (skipBtn) skipBtn.style.display = 'block';
-
-  const opts = DEV_GROUPS.map(g =>
-    `<option value="${esc(g.id)}">${esc(g.name)}</option>`
-  ).join('');
-
-  nameEl.innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <span style="font-size:11px;font-weight:700;color:#F97316;background:#FFF7ED;padding:2px 8px;border-radius:12px;border:1px solid #FED7AA">DEV</span>
-      <select id="dev-group-select" style="padding:4px 8px;border-radius:6px;border:1px solid var(--border);font-size:13px;font-family:inherit" onchange="applyDevGroup(this.value)">
-        ${opts}
-      </select>
-    </div>`;
-  const sel = document.getElementById('dev-group-select');
-  if (sel) sel.value = DEV_GROUPS[0].id;
-}
-
-// Applies both branding AND custom pricing for the picked group — the old hardcoded
-// version only ever called applyGroupBranding(), which never mattered when every dev
-// entry was a fake group with no real io_pricing. Now that this lists real groups
-// (some of which DO have custom pricing, e.g. CI Digital/SnapMe), skipping
-// applyCustomPricing() here would show a group's page with the WRONG prices — the
-// exact opposite of what this picker exists to preview accurately.
-window.applyDevGroup = function(id) {
-  const g = DEV_GROUPS.find(x => x.id === id);
-  if (!g) return;
-  // FIXED (2026-07-14, found live): switching groups via the dev-picker dropdown only
-  // ever re-applied the NEW group's branding/pricing/rosters — it never cleared the form
-  // itself, so whatever business info/selected services were on screen from the
-  // PREVIOUS group carried straight over under the new group's branding. resetForm()
-  // does exactly the clearing "Submit Another IO" already relies on; safe to reuse here
-  // since it deliberately never nulls selectedGroup (see its own comment) and this
-  // function sets selectedGroup itself right after.
-  resetForm();
-  selectedGroup = g;
-  applyGroupBranding(g);
-  // reapplyPricingOverrides() does the same reset-then-reapply this used to do inline
-  // (see its own comment) — now also layers a client-level override on top when one's
-  // selected, but resetForm() above already cleared selectedClientId, so this dev-picker
-  // path is effectively just the group layer, same as before.
-  reapplyPricingOverrides();
-  loadAeRoster(g.id);
-  loadClientRoster(g.id);
-  const sel = document.getElementById('dev-group-select');
-  if (sel) sel.value = id;
-};
-
-function devSkipToStep2() {
-  // Pre-fill minimal required fields so Step 2 works without validation errors
-  const ae = document.getElementById('ae-name');
-  const biz = document.getElementById('biz-name');
-  const contact = document.getElementById('contact-name');
-  const email = document.getElementById('contact-email');
-  const ioDate = document.getElementById('io-date');
-  if (ae && !ae.value) ae.value = 'Test AE';
-  if (biz && !biz.value) biz.value = 'Test Business';
-  if (contact && !contact.value) contact.value = 'Test Contact';
-  if (email && !email.value) email.value = 'test@test.com';
-  if (ioDate && !ioDate.value) ioDate.value = new Date().toISOString().slice(0,10);
-  goStep(2);
-}
+// Dev picker (showDevModePicker/applyDevGroup/devSkipToStep2, 2026-07-10 -> 2026-09-22)
+// removed per Claire during the embed-key rollout: it read EVERY group's full config
+// with no scoping at all, and ?dev=1 on the live domain bypassed group resolution
+// entirely. isDevPreviewMode (declared above) is kept as a permanent `false` so the
+// submit-time dev guard below stays exactly as written.
 
 function showGroupError() {
   // REWRITTEN (2026-07-08): previously only toggled a small div inside the "Group &
@@ -3602,6 +3545,20 @@ function showGroupError() {
         <p style="font-size:14px;color:var(--muted);line-height:1.6">This form link is not valid. Please contact your account manager for the correct link.</p>
       </div>`;
   }
+}
+
+// Embed key rollout (2026-09-22): the slug in the path is a label only. When it
+// disagrees with the group the key actually belongs to, say so on screen
+// instead of silently proceeding -- textContent, never innerHTML, so the slug
+// (attacker-controlled URL text) can't inject anything.
+function showSlugMismatchNotice(pathSlug) {
+  const wrap = document.querySelector('.wrap');
+  if (!wrap) return;
+  const n = document.createElement('div');
+  n.setAttribute('role', 'status');
+  n.style.cssText = 'margin:12px auto 0;max-width:900px;padding:10px 14px;border-radius:8px;background:#FEF3C7;border:1px solid #F59E0B;color:#92400E;font-size:13px;line-height:1.5';
+  n.textContent = `Heads up: this link is labelled "${pathSlug}" but belongs to ${selectedGroup?.name || 'a different group'}. If that's unexpected, check with your account manager before submitting.`;
+  wrap.prepend(n);
 }
 
 function applyGroupBranding(group) {
@@ -5807,7 +5764,7 @@ async function submitIO() {
     // (see the client-list resolution below), replacing the old name-search-only
     // approach that couldn't tell an archived list from a genuinely new client.
     try {
-      const result = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify({ p_payload: clientPayload }) });
+      const result = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify(withKey({ p_payload: clientPayload })) });
       if (result && result.id) {
         client = {
           id: result.id,
@@ -5841,13 +5798,13 @@ async function submitIO() {
       const aeNameForRoster = document.getElementById('ae-name').value.trim();
       if (aeNameForRoster) {
         try {
-          await sb('rpc/find_or_create_ae', { method:'POST', body: JSON.stringify({ p_payload: {
+          await sb('rpc/find_or_create_ae', { method:'POST', body: JSON.stringify(withKey({ p_payload: {
             name: aeNameForRoster,
             trello_handle: document.getElementById('ae-trello').value.trim() || null,
             email: document.getElementById('ae-email')?.value.trim() || null,
             market: document.getElementById('ae-market').value.trim() || null,
             group_id: selectedGroup.id,
-          } }) });
+          } })) });
         } catch(e) { console.warn('find_or_create_ae failed — order will save without updating the AE roster:', e.message); }
       }
     }
@@ -6568,7 +6525,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           try {
             await sb('rpc/set_client_trello_list_id', {
               method: 'POST',
-              body: JSON.stringify({ p_client_id: client.id, p_trello_list_id: clientList.id })
+              body: JSON.stringify(withKey({ p_client_id: client.id, p_trello_list_id: clientList.id }))
             });
           } catch(e) {
             console.warn('Could not persist client trello_list_id:', e.message);
@@ -7356,7 +7313,12 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
       }
       let alwaysBcc = [];
       try {
-        const notifRows = await sb('notification_settings?id=eq.1&select=always_bcc_recipients');
+        // Key path reads this through a key-gated RPC (2026-09-22 security review:
+        // the table's public read exposed the internal always-BCC list). The
+        // direct read stays for the slug path until Phase 2 drops that policy.
+        const notifRows = EMBED_KEY_PRESENT
+          ? await sb('rpc/get_notification_settings_for_embed_key', { method: 'POST', body: JSON.stringify({ p_t: EMBED_KEY }) })
+          : await sb('notification_settings?id=eq.1&select=always_bcc_recipients');
         const raw = Array.isArray(notifRows) ? notifRows[0]?.always_bcc_recipients : null;
         alwaysBcc = (raw || '').split(',').map(s => s.trim()).filter(Boolean);
       } catch(e) {
@@ -8388,7 +8350,7 @@ function saveDraft() {
     sb('rpc/log_draft_save', {
       method: 'POST',
       body: JSON.stringify({
-        p_group_id: selectedGroup?.id || null,
+        ...groupScope(selectedGroup?.id || null),
         p_group_name: selectedGroup?.name || null,
         p_ae_name: document.getElementById('ae-name')?.value || null,
       }),
@@ -8436,7 +8398,7 @@ async function syncDraftToServer(draft) {
     const result = await sb('rpc/save_group_draft', {
       method: 'POST',
       body: JSON.stringify({
-        p_group_id: selectedGroup.id,
+        ...groupScope(selectedGroup.id),
         p_draft_id: serverDraftId,
         p_label: label,
         p_ae_name: draft.ae || null,
@@ -8716,7 +8678,7 @@ async function restorePickerSelections(d, attemptsLeft) {
       try {
         // See applyClientPick()'s matching comment — RETURNS TABLE always comes
         // back as an array via PostgREST, even for this RPC's single-row result.
-        const rows = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ p_group_id: selectedGroup?.id, p_client_id: d.selectedClientId }) });
+        const rows = await sb('rpc/get_client_details', { method: 'POST', body: JSON.stringify({ ...groupScope(selectedGroup?.id), p_client_id: d.selectedClientId }) });
         selectedClientDetails = Array.isArray(rows) ? (rows[0] || null) : rows;
       } catch(e) {
         console.warn('Could not load this client\'s details:', e.message);
@@ -8742,7 +8704,7 @@ async function restorePickerSelections(d, attemptsLeft) {
         }
       }
       try {
-        CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify({ p_client_id: d.selectedClientId }) }) || [];
+        CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify(withKey({ p_client_id: d.selectedClientId })) }) || [];
       } catch(e) {
         console.warn('Could not load this client\'s service history — overlap warnings skipped:', e.message);
         CLIENT_SERVICE_HISTORY = [];
@@ -8770,7 +8732,7 @@ async function checkResumableGroupDrafts(attemptsLeft) {
   try {
     const drafts = await sb('rpc/get_group_drafts', {
       method: 'POST',
-      body: JSON.stringify({ p_group_id: selectedGroup.id }),
+      body: JSON.stringify(groupScope(selectedGroup.id)),
     }) || [];
     if (!drafts.length) return;
     resumableGroupDrafts = drafts;
@@ -8831,7 +8793,7 @@ function clearDraft() {
     serverDraftId = null;
     sb('rpc/delete_group_draft', {
       method: 'POST',
-      body: JSON.stringify({ p_draft_id: idToDelete, p_group_id: selectedGroup?.id || null }),
+      body: JSON.stringify({ p_draft_id: idToDelete, ...groupScope(selectedGroup?.id || null) }),
     }).catch(e => console.warn('Could not delete server draft:', e.message));
   }
 }
