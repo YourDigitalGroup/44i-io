@@ -29035,3 +29035,17 @@ it must look and behave exactly as before.
 shortcode, the lockdown SQL, the rollback SQL, orders-through-RPC, Edge
 Function hardening, Admin minting UI, the `get_login_roster`/`get_client_names`
 /`group_service_overrides` tidy-ups from the review.
+
+**2026-09-22, end of day — Phase 1 SQL RUN by Claire (confirmed "that all
+seemed to work"). State at close:** the database has the new table, resolver,
+key-based RPC copies, and `admin_get_groups`; nothing existing was changed.
+The Phase 1 frontend (commit 0acc60b) is pushed to the branch but NOT yet
+merged to `main`, so the live pages are exactly as they were this morning.
+Nothing is minted; no page carries a key; no visitor's experience has
+changed. Supabase's "destructive operations" warning on the SQL file was
+explained line by line (revoke/alter on the NEW table only; create-or-replace
+with different parameter lists = new functions, originals untouched; the
+delete inside get_group_drafts is the pre-existing 7-day draft cleanup,
+copied verbatim). Paused here at Claire's request. Next step when she's
+ready: merge the branch, open any group's form normally, confirm it looks
+and behaves exactly as before. Then check in before anything about Phase 2.
