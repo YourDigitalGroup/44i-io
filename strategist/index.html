@@ -3857,7 +3857,7 @@ function renderStrategistDetailPanel() {
         <input type="text" id="log-note-${l.id}" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
       </div>
       <input type="hidden" id="log-edit-id-${l.id}"/>
-      <button onclick="strategistSaveLogEntry('${l.id}')" style="padding:7px 14px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Add</button>
+      <button id="log-save-btn-${l.id}" onclick="strategistSaveLogEntry('${l.id}')" style="padding:7px 14px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12px;font-weight:600;cursor:pointer">Add</button>
     </div>
   </div>`;
 }
@@ -3875,6 +3875,14 @@ async function strategistSaveLogEntry(lineId) {
   const note = document.getElementById('log-note-' + lineId).value.trim();
   const editId = document.getElementById('log-edit-id-' + lineId).value || null;
   if (!note) { showToast('Enter what was changed.', 'error'); return; }
+  // Disabled while the save is in flight (2026-09-22, per Claire/Bronson --
+  // a real double-click created two identical rows 2.2 seconds apart for
+  // Southwest Mississippi CC CTE's Facebook/IG Ads, confirmed via a direct
+  // DB check). renderStrategistDashboard() below rebuilds this whole panel
+  // from fresh data regardless of outcome, so there's no separate re-enable
+  // path needed for the success case.
+  const btn = document.getElementById('log-save-btn-' + lineId);
+  if (btn) { if (btn.disabled) return; btn.disabled = true; }
   try {
     await sb('rpc/strategist_save_optimize_log', { method: 'POST', body: JSON.stringify({
       p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
@@ -3884,7 +3892,10 @@ async function strategistSaveLogEntry(lineId) {
     strategistSelectedLineId = lineId;
     renderStrategistDashboard();
     showToast('Optimize log saved');
-  } catch(e) { showToast('Error saving log entry: ' + e.message, 'error'); }
+  } catch(e) {
+    showToast('Error saving log entry: ' + e.message, 'error');
+    if (btn) btn.disabled = false;
+  }
 }
 
 async function strategistDeleteLogEntry(logId) {

@@ -11941,7 +11941,15 @@ function applyAmPick(name) {
 function populateDigitalStrategistDropdown(selectId, selectedName, defaultLabel) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
-  const people = ALL_STAFF.filter(s => s.role === 'strategist' && (s.active !== false || (selectedName && s.name.toLowerCase() === selectedName.trim().toLowerCase())));
+  // Also lists Super Admins (2026-09-22, per Claire -- a strategist going on
+  // maternity leave, with a super admin covering some of her accounts in the
+  // meantime). Supers can already open the Strategist Portal and "My
+  // Campaigns" there matches purely on this field's stored name against
+  // whoever's logged in (strategistLineScopeName()), so there's no reason
+  // this picker should only offer people whose account role is literally
+  // "strategist" -- that's just this dropdown's own filter, not a real
+  // constraint on who the field can name.
+  const people = ALL_STAFF.filter(s => (s.role === 'strategist' || s.role === 'super') && (s.active !== false || (selectedName && s.name.toLowerCase() === selectedName.trim().toLowerCase())));
   const blankLabel = defaultLabel ? `— Use Group Default (${esc(defaultLabel)}) —` : '— None —';
   sel.innerHTML = `<option value="">${blankLabel}</option>` +
     people.map(s => `<option value="${esc(s.name)}">${esc(s.name)}${s.active === false ? ' (inactive)' : ''}</option>`).join('');
