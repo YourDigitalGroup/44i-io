@@ -29334,8 +29334,17 @@ period and Keep It the Same / Update It intake choice, no Renew on one-time
 services, the AM email + Trello heads-up on submit, Admin approve/reject,
 the requester's outcome email, and "nothing changes until approved".
 Written for AEs in plain language — no internal field names; "your AM"
-throughout since the form is white-labeled per group; brand-neutral
-colors. Gitignored (scratchpad), handed to Claire as a file.
+throughout since the form is white-labeled per group. **Restyled same day**
+per Claire ("make it look like this one so it is consistent") to match her
+existing "AE Guide to the New IO Form" PDF: that one was an HTML page
+printed through headless Chrome, so this is now built the same way
+(`scratchpad/companion-guide-source.html` → Playwright Chromium print to
+Letter), with its exact sampled palette — title #1580B5, light-blue field
+cards #EBF4FB with field-name chips #D6EAF6, green Tip boxes #E6F4F0 /
+#0F6E56 left border, amber Note boxes #FEF3E0 / #F59E0B, numbered blue
+circle section headers with a #1C9BD7 underline, teal #0F6E56 subheads,
+the same "What's in this guide" TOC box, and the "44i Digital — Internal AE
+Reference" footer. Gitignored (scratchpad), handed to Claire as a file.
 
 **Behavior quirk noticed while writing it, NOT changed (flagged to Claire):**
 Companion Edit in Whole Campaign Total mode splits the total across the
