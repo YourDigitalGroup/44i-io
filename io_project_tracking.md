@@ -28820,8 +28820,9 @@ what the rule actually keys on (exactly one active match), and the id is
 only used when that count is 1, so which single-row picker is used is
 irrelevant; the text cast just gives Postgres an aggregate it has. Nothing
 else changed. Handed to Claire to run immediately; **RUN 2026-09-23** (Claire).
-Whether Titan has resubmitted from the draft yet is unconfirmed — the
-next order row from their group is the live proof.
+Live proof: a real order from another group landed at 11:24am after
+the fix, so submissions work again. Titan hadn't resubmitted yet as of
+that check (draft still sitting on their IO page, intact).
 
 ### 2026-09-22 (cont'd) — Optimize Log double-submit created a real duplicate row
 
