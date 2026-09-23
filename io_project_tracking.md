@@ -28819,8 +28819,9 @@ place): both lookups now read `count(*), min(id::text)::uuid` — count is
 what the rule actually keys on (exactly one active match), and the id is
 only used when that count is 1, so which single-row picker is used is
 irrelevant; the text cast just gives Postgres an aggregate it has. Nothing
-else changed. Handed to Claire to run immediately; she'll then tell Scott
-to have Titan resubmit from the saved draft.
+else changed. Handed to Claire to run immediately; **RUN 2026-09-23** (Claire).
+Whether Titan has resubmitted from the draft yet is unconfirmed — the
+next order row from their group is the live proof.
 
 ### 2026-09-22 (cont'd) — Optimize Log double-submit created a real duplicate row
 
