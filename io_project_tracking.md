@@ -28791,6 +28791,37 @@ correctly instead of inserting a duplicate). The Southwest MS CC CTE merge
 itself is a one-time data fix, not something to "test" beyond confirming
 the 3 lines resolve to 1 correct one after running it.
 
+**2026-09-23 — Both SQL files RUN (Claire: "I think I have done all of the
+SQL's").** Trigger fix and the Southwest MS CC CTE merge are live. Bronson
+handled the renewal note on the Trello card by hand. Still not observed:
+a real renewal-via-new-IO for an already-running tactic exercising the new
+extend path — the next one that comes in is the live test.
+
+**2026-09-23 — BROKE LIVE SUBMISSIONS. My bug.** Titan (via Scott) tried to
+submit an IO and got `404 42883 function max(uuid) does not exist`. Both
+new match-lookups in the trigger fix used `select count(*), max(id)` on
+`campaign_lines`, whose `id` is a uuid — Postgres has no `max`/`min`
+aggregate for uuid, so the trigger threw on the first spend or flat-fee
+line of ANY order, for every group, from the moment the SQL was run until
+the corrected version below runs. Impact: the trigger is AFTER INSERT on
+`orders`, so the exception rolled the whole order insert back — no order
+row, no campaign lines, and index.html's Trello build runs only after the
+insert succeeds, so no Trello cards either. Titan's draft is intact; they
+resubmit from it once the fix is in. Why it wasn't caught: I verified the
+SQL by diffing against the live definition (structure) and reasoning
+through the branches — no Postgres to actually execute it against, and
+`max(uuid)` reads as perfectly ordinary SQL. Lesson: any aggregate over a
+uuid column is a red flag to check before handing over; the honest
+answer is that plpgsql I can't run is verified for shape only.
+
+**Fix** (`scratchpad/fix-order-trigger-renewal-matching.sql`, corrected in
+place): both lookups now read `count(*), min(id::text)::uuid` — count is
+what the rule actually keys on (exactly one active match), and the id is
+only used when that count is 1, so which single-row picker is used is
+irrelevant; the text cast just gives Postgres an aggregate it has. Nothing
+else changed. Handed to Claire to run immediately; she'll then tell Scott
+to have Titan resubmit from the saved draft.
+
 ### 2026-09-22 (cont'd) — Optimize Log double-submit created a real duplicate row
 
 While investigating the above, Claire flagged the Strategist portal's
@@ -28810,7 +28841,7 @@ it, for a failed save.
 
 **Data cleanup** (`scratchpad/fix-optimize-log-duplicate.sql`, handed to
 Claire): deletes the confirmed duplicate row, keeping the earlier of the
-two.
+two. **RUN 2026-09-23** (Claire).
 
 **Verified**: `node --check` on `strategist/index.html` — no syntax
 errors. Not yet live-tested (needs Claire/Bronson to confirm a real
@@ -29239,3 +29270,8 @@ preview looks right, Save. The line should then read "$3,000.00 whole
 campaign total", the Orders list should stop counting it in Monthly, and
 Strategist/Accounting should show the "Whole Campaign Total" pill with the
 day-split months.
+
+**2026-09-23 — LIVE (Claire: "Ok, that worked").** SQL run, branch merged,
+Audio on the Tim Shepard order re-saved as a $3,000 Whole Campaign Total
+through the new picker. First real end-to-end save of the new mode
+confirmed working.
