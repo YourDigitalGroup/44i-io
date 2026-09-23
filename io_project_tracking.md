@@ -28791,6 +28791,12 @@ correctly instead of inserting a duplicate). The Southwest MS CC CTE merge
 itself is a one-time data fix, not something to "test" beyond confirming
 the 3 lines resolve to 1 correct one after running it.
 
+**2026-09-23 — Both SQL files RUN (Claire: "I think I have done all of the
+SQL's").** Trigger fix and the Southwest MS CC CTE merge are live. Bronson
+handled the renewal note on the Trello card by hand. Still not observed:
+a real renewal-via-new-IO for an already-running tactic exercising the new
+extend path — the next one that comes in is the live test.
+
 ### 2026-09-22 (cont'd) — Optimize Log double-submit created a real duplicate row
 
 While investigating the above, Claire flagged the Strategist portal's
@@ -28810,7 +28816,7 @@ it, for a failed save.
 
 **Data cleanup** (`scratchpad/fix-optimize-log-duplicate.sql`, handed to
 Claire): deletes the confirmed duplicate row, keeping the earlier of the
-two.
+two. **RUN 2026-09-23** (Claire).
 
 **Verified**: `node --check` on `strategist/index.html` — no syntax
 errors. Not yet live-tested (needs Claire/Bronson to confirm a real
