@@ -9459,6 +9459,35 @@ function adminOrderVaryingSpendTotal(o) {
   }, 0);
 }
 
+// Live One-Time / Monthly totals from the order's CURRENT line_items (2026-09-23,
+// found live -- Claire edited a line's spend $1,500 -> $3,000 in Order Detail and
+// the Orders list still showed $1,500/mo). Root cause: orders.total_onetime /
+// total_monthly are written ONCE at submission (index.html's orderPayload) and
+// nothing that edits a line afterward -- admin_edit_order_line_item, renew,
+// cancel, swap -- ever recomputes them, so every stored total goes stale the
+// moment an order is touched. Computed live here instead of adding a recompute
+// to each of those RPCs, same "derive from line_items already loaded" approach
+// adminOrderVaryingSpendTotal() above already takes. Mirrors index.html's
+// submission math exactly: one-time = fee (already qty-multiplied) + prorated
+// hosting + auto setup fee; monthly = recurring + NON-varying spend (a varying
+// campaign's total is shown separately, never averaged into "/mo"). A service
+// cancelled later in Strategist/Admin is a campaign-lifecycle state, not a
+// change to what was ordered, so it still counts here -- the order is the
+// record of what was sold.
+function adminOrderLiveTotals(o) {
+  const items = o.line_items || [];
+  const oneTime = items.reduce((s, li) => s + (Number(li.fee) || 0) + (Number(li.prorated_hosting_amt) || 0) + (Number(li.setup_fee_amt) || 0), 0);
+  const monthly = items.reduce((s, li) => {
+    let m = Number(li.recurring) || 0;
+    if (li.spend > 0) {
+      const varies = Array.isArray(li.month_budgets) && li.month_budgets.length > 1 && new Set(li.month_budgets.map(b => b.amount)).size > 1;
+      if (!varies) m += Number(li.spend) || 0;
+    }
+    return s + m;
+  }, 0);
+  return { oneTime, monthly };
+}
+
 function renderAdminOrders() {
   const el = document.getElementById('admin-orders-table');
   const groupFilter = document.getElementById('orders-filter-group').value;
@@ -9510,8 +9539,7 @@ function renderAdminOrders() {
       <th style="padding:9px 10px"></th>
     </tr></thead>
     <tbody>${filtered.map(o => {
-      const oneTime = o.total_onetime || 0;
-      const monthly = o.total_monthly || 0;
+      const { oneTime, monthly } = adminOrderLiveTotals(o);
       const varyingSpendTotal = adminOrderVaryingSpendTotal(o);
       const synced = o.trello_synced
         ? '<span title="Synced to Trello" style="color:#10B981;font-size:14px">✓</span>'
@@ -9902,8 +9930,8 @@ async function viewOrderDetail(orderId) {
         <div style="font-size:12px;line-height:1.7">
           <div><strong>Start:</strong> ${fmtDate(o.campaign_start)}</div>
           <div><strong>End:</strong> ${fmtDate(o.campaign_end)}</div>
-          <div><strong>One-Time:</strong> ${fmtMoney(o.total_onetime)}</div>
-          <div><strong>Monthly:</strong> ${o.total_monthly ? fmtMoney(o.total_monthly) + '/mo' : '—'}</div>
+          <div><strong>One-Time:</strong> ${fmtMoney(adminOrderLiveTotals(o).oneTime)}</div>
+          <div><strong>Monthly:</strong> ${adminOrderLiveTotals(o).monthly ? fmtMoney(adminOrderLiveTotals(o).monthly) + '/mo' : '—'}</div>
           ${adminOrderVaryingSpendTotal(o) ? `<div><strong>Varying Campaign Total:</strong> ${fmtMoney(adminOrderVaryingSpendTotal(o))} <span style="color:var(--muted);font-weight:400">(see per-month breakdown below)</span></div>` : ''}
           ${o.campaign_notes ? '<div style="margin-top:6px;font-size:11px;color:var(--muted)"><strong>Notes:</strong> ' + esc(o.campaign_notes) + '</div>' : ''}
         </div>

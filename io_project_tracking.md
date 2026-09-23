@@ -29074,3 +29074,40 @@ that quoted the old number; the Companion form has no draft timer of its own;
 no user-visible text mentions the number. Verified: `node --check` on
 `index.html` — no syntax errors. Needs a merge to go live for the browser
 half; the server half is live the moment the SQL runs.
+
+### 2026-09-23 — Orders list "Monthly"/"One-Time" didn't reflect an edited line
+
+Claire edited Audio on the Tim Shepard (ESPN Arkansas) order from $1,500 to
+$3,000/mo in Order Detail (the line itself showed "$3,000/mo spend · Was
+$1,500 · edited by Claire"), but the Orders list still showed "$1,500/mo".
+
+**Root cause**: `orders.total_monthly` / `total_onetime` are written ONCE at
+submission (index.html's `orderPayload`) and nothing that changes a line
+afterward recomputes them — `admin_edit_order_line_item` (confirmed from its
+definition: updates `line_items` + `edit_history` only), renew, cancel, swap.
+The Orders list and the Campaign summary box at the top of Order Detail both
+read those stored columns, so every touched order's totals went stale while
+the per-line rows (computed live from `line_items`) were correct — exactly
+the mismatch Claire saw.
+
+**Fix** (`admin/index.html`, frontend only, no SQL): new
+`adminOrderLiveTotals(o)` derives both totals from the order's CURRENT
+`line_items`, mirroring index.html's submission math exactly — one-time =
+`fee` (already qty-multiplied) + `prorated_hosting_amt` + `setup_fee_amt`;
+monthly = `recurring` + NON-varying `spend` (a varying campaign's real total
+is shown separately via the existing `adminOrderVaryingSpendTotal`, never
+averaged into "/mo"). Both read sites switched to it. Same "compute live
+from the line_items already loaded" approach that helper took on
+2026-09-10, rather than adding a recompute to each of four RPCs. Rule
+stated to Claire: a service cancelled later in Strategist/Admin is a
+campaign-lifecycle state, not a change to what was ordered, so it still
+counts in these order totals. The stored columns are left in place
+(nothing else reads them — confirmed via grep across all portals).
+
+**Verified**: `node --check` on `admin/index.html` — no syntax errors. The
+two shipped functions were extracted from the real file and run in Node
+against Claire's actual order shape: stored monthly 1500 vs live 3000
+(after her edit); one-time 500 both ways; varying total 8500 (= the
+Streaming TV months' sum, unchanged); and with the pre-edit $1,500 the live
+math reproduces the old figure — i.e. the list now simply follows the line
+items. Not yet seen live (needs a merge).
