@@ -29111,3 +29111,131 @@ against Claire's actual order shape: stored monthly 1500 vs live 3000
 Streaming TV months' sum, unchanged); and with the pre-edit $1,500 the live
 math reproduces the old figure — i.e. the list now simply follows the line
 items. Not yet seen live (needs a merge).
+
+**Correction (same day, from Claire's screenshots):** while looking at this
+I told Claire that Admin edits stay on the order record and do NOT flow to
+the Strategist/Accounting portals. That was wrong. She proved with
+screenshots that her $3,000 Audio edit showed up in both portals, and the
+LIVE `admin_edit_order_line_item` definition she then pasted confirms why:
+the current function syncs each edit into the campaign tables — a flat
+`spend`/`fee`/`recurring` change rewrites every `campaign_months.gross_budget`
+for that order+service line; a `month_budgets` edit upserts one
+`campaign_months` row per month; `start_date`/`end_date` update the campaign
+line's flight dates; `tactic_variant` updates its `tactic_label`. The copy
+of that function I was reasoning from in this doc (the original 2026-08-20
+version, "updates `line_items` + `edit_history` only") was stale — the
+sync was added later and only the live database had the truth. Lesson
+re-learned, and the standing rule stands: pull `pg_get_functiondef` before
+describing what an RPC does. The root-cause paragraph above is still right
+about the one thing it needed to be right about (nothing recomputes
+`orders.total_monthly`/`total_onetime`), but its parenthetical about the
+function "only" touching line_items was not.
+
+### 2026-09-23 — Admin Edit: Monthly Rate / Whole Campaign Total / Custom by Month
+
+Claire: "for that same order the audio should be $3,000 whole campaign
+total not monthly total. Can we add that option to the admin editor to be
+able to make that change. I believe they can in the companion form
+correct?" Yes — the IO form and the Companion form's Edit both offer the
+3-mode picker; Admin's Edit did not. A FLAT spend line only ever got the
+"New amount" box (a new monthly rate), and only a line that ALREADY varied
+by month got the 2026-08-28 month-by-month editor — so there was no way to
+change a tactic's budget *shape* after submission from Admin at all.
+
+**Second, quieter gap found while checking how Companion does it:** neither
+Companion's editor nor Admin's old month editor ever recorded WHICH mode was
+picked — Companion converts a Whole Campaign Total to a per-month array
+(`splitAmountAcrossMonths`) and sends only `month_budgets`; the live RPC has
+no budget-mode field and never touched `campaign_lines.budget_entry_mode`
+(the column that drives the "Whole Campaign Total" pill in Strategist/
+Accounting and Strategist's whole-campaign figures, seeded only by the
+AFTER INSERT order trigger from the IO form's `budget_mode`). Everything
+downstream then has to guess the mode back from whether the month amounts
+happen to differ — which fails for an evenly-split total (two equal-length
+months of a $3,000 total are $1,500 + $1,500 and read as a $1,500/mo flat
+rate). The IO form has stored `budget_mode` on every line item since
+2026-08-28 for exactly this reason; the edit paths never caught up.
+
+**SQL** (`scratchpad/admin-edit-budget-mode.sql`, handed to Claire; diffed
+against the LIVE definition she pasted the same day, not this doc's stale
+copy): `admin_edit_order_line_item` gains `'budget_mode'` in its editable-
+field list and one new branch: validates `monthly|total|custom`, stores it
+on the line item (switching to `monthly` also removes the line's stale
+`month_budgets` array so it can't outlive the mode), appends the usual
+`edit_history` entry, and updates the order's spend campaign line(s):
+`budget_entry_mode = <mode>`, `budget_varies_by_month = (mode <> 'monthly')`
+— the same two columns the order trigger sets at insert, so Strategist/
+Accounting's existing pill and carry-forward logic follow the edit with no
+change on their side. Every existing branch and every existing sync is
+byte-identical. Not run yet (Claire runs SQL herself).
+
+**Frontend** (`admin/index.html`):
+- The Edit button on ANY spend-priced campaign tactic (flat or varying) now
+  opens `adminToggleBudgetEditPanel`: Start/End/Variant fields as before,
+  then a "Budget entry" radio row — Monthly Rate / Whole Campaign Total /
+  Custom by Month — pre-selected from the line's stored `budget_mode` (or
+  inferred from the amounts for older lines). Monthly shows one "Monthly
+  rate" box. Whole Campaign Total shows one "Whole campaign total" box
+  (seeded with the line's current real total, or rate × months) plus a live
+  read-only month-by-month preview of the day-proportional split; the split
+  re-runs when the Start/End dates in the same panel change. Custom by
+  Month shows the old editor's one-box-per-month grid, seeded from the
+  line's real months or, for a flat line, one row per flight month at the
+  current rate.
+- The split is `adminSplitAmountAcrossMonths`/`adminMonthsInFlight`, ported
+  verbatim from index.html's `splitAmountAcrossMonths`/`monthsInFlight`
+  (last month absorbs rounding), so Admin cannot produce a different
+  breakdown than the AE's own form would have. Kept as an independent copy
+  per this file's existing "no shared.js, kept in sync by hand" convention.
+- Save (`adminSaveBudgetEdit`) issues the same `admin_edit_order_line_item`
+  calls the other paths use — Monthly: `budget_mode='monthly'` (only if it
+  changed) then `spend`; Total: `month_budgets` (the split) then
+  `budget_mode='total'`; Custom: `month_budgets` then `budget_mode='custom'`
+  — mode last (or, for Monthly, first, since its RPC branch clears the old
+  months) so a failure partway never leaves amounts and mode flag
+  disagreeing. ONE Trello comment ("budget changed from $3,000.00/mo to
+  $3,000.00 whole campaign total (split by days across 2 months)") on the
+  IO + tactic cards, revised IO PDF on the IO card, Start/End/Variant edits
+  folded in — identical tail to the other Edit paths, same double-submit
+  guard.
+- The old `adminToggleMonthBudgetsEditPanel`/`adminSaveMonthBudgetsEdit`
+  are removed (their month grid lives on as Custom mode) rather than left
+  as a second, unreachable editor.
+- New shared `adminLineSpendVaries(li)` replaces three independent
+  "amounts differ" checks (line rows, Orders-list varying total, live
+  Monthly total): a stored `budget_mode` of `total`/`custom` is
+  authoritative; `monthly` is never varying; no mode falls back to the old
+  amounts-differ rule, so older lines behave exactly as before. A
+  total-mode line's row now reads "$X whole campaign total" (not "total
+  campaign spend"), the audit line reads the most recent `spend` OR
+  `month_budgets` edit (a mode switch moves the line between the two
+  history keys), `applyFieldChangeLocally` gets a `budget_mode` branch that
+  mirrors the RPC (clears months on switch to monthly), and the revised-PDF
+  edit-history table labels the new field "Budget Entry: Monthly Rate →
+  Whole Campaign Total".
+
+**Verified**: `node --check` on the whole admin script block. Node
+simulation of the shipped functions extracted from the real file: $3,000
+over Oct 1–Nov 3 2026 → Oct $2,735.29 / Nov $264.71 (31 of 34 days),
+sums to $3,000; Oct 1–Nov 30 → $1,524.59 / $1,475.41 (31 vs 30 days — my
+first test wrongly expected equal halves; the code was right); byte-for-
+byte parity with index.html's own split on three flights; hand-built equal
+months with `budget_mode:'total'` count as varying while the same months
+with no mode do not (legacy behavior unchanged); live Orders-list totals
+exclude a total-mode line from "/mo" and show it in the varying total;
+the `budget_mode` local branch clears months on total→monthly and keeps
+them on monthly→total. Headless-Chromium render of the real panel
+functions with stubbed data: panel opens on Monthly with $3,000; Whole
+Campaign Total seeds $6,000 (rate × 2 months), typing $3,000 shows the
+Oct/Nov split above, moving End to Dec 31 re-splits across three months;
+Custom seeds one row per month at $3,000; closes cleanly; zero page
+errors. NOT verified: the real end-to-end save (needs the SQL run + a
+merge); what Strategist/Accounting show afterward is reasoned from their
+existing `budget_entry_mode` code, not observed.
+
+**What Claire does:** run the SQL, merge the branch, open the Tim Shepard
+order → Audio → Edit → pick "Whole Campaign Total", enter 3000, confirm the
+preview looks right, Save. The line should then read "$3,000.00 whole
+campaign total", the Orders list should stop counting it in Monthly, and
+Strategist/Accounting should show the "Whole Campaign Total" pill with the
+day-split months.
