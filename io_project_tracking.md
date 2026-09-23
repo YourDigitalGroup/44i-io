@@ -29239,3 +29239,8 @@ preview looks right, Save. The line should then read "$3,000.00 whole
 campaign total", the Orders list should stop counting it in Monthly, and
 Strategist/Accounting should show the "Whole Campaign Total" pill with the
 day-split months.
+
+**2026-09-23 — LIVE (Claire: "Ok, that worked").** SQL run, branch merged,
+Audio on the Tim Shepard order re-saved as a $3,000 Whole Campaign Total
+through the new picker. First real end-to-end save of the new mode
+confirmed working.
