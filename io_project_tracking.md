@@ -28820,9 +28820,20 @@ what the rule actually keys on (exactly one active match), and the id is
 only used when that count is 1, so which single-row picker is used is
 irrelevant; the text cast just gives Postgres an aggregate it has. Nothing
 else changed. Handed to Claire to run immediately; **RUN 2026-09-23** (Claire).
-Live proof: a real order from another group landed at 11:24am after
-the fix, so submissions work again. Titan hadn't resubmitted yet as of
-that check (draft still sitting on their IO page, intact).
+Live proof: a real order (ESPN) landed at 11:24am after the fix, so
+submissions work again.
+
+**Full blast radius, confirmed from `group_drafts` (2026-09-23 afternoon):**
+two groups hit the error and fell back to the OLD (manual) IO route —
+SuperTalk/STMM Digital (Nic Webb – Davis Real Estate, Laura for Ben Sills,
+old-way submission 4:24pm 09-22, draft saved 4:23pm) and Titan Digital
+(Crowley, Prill, & Mahoney Attorneys, Amy Burkhart, old-way submission
+11:07am 09-23, one minute after reopening the draft). Both orders need
+keying in by hand; both leftover drafts deleted by Claire so nobody
+resumes them and double-enters. Two other drafts saved today (Dependable
+Pest / STMM, Weaver's Leather Store / Riverfront) show no sign of trouble
+and were left alone. The form records nothing on a failed submit, so
+"affected" can only be inferred from draft timestamps + old-way arrivals.
 
 ### 2026-09-22 (cont'd) — Optimize Log double-submit created a real duplicate row
 
