@@ -28819,8 +28819,10 @@ place): both lookups now read `count(*), min(id::text)::uuid` — count is
 what the rule actually keys on (exactly one active match), and the id is
 only used when that count is 1, so which single-row picker is used is
 irrelevant; the text cast just gives Postgres an aggregate it has. Nothing
-else changed. Handed to Claire to run immediately; she'll then tell Scott
-to have Titan resubmit from the saved draft.
+else changed. Handed to Claire to run immediately; **RUN 2026-09-23** (Claire).
+Live proof: a real order from another group landed at 11:24am after
+the fix, so submissions work again. Titan hadn't resubmitted yet as of
+that check (draft still sitting on their IO page, intact).
 
 ### 2026-09-22 (cont'd) — Optimize Log double-submit created a real duplicate row
 
@@ -29275,3 +29277,42 @@ day-split months.
 Audio on the Tim Shepard order re-saved as a $3,000 Whole Campaign Total
 through the new picker. First real end-to-end save of the new mode
 confirmed working.
+
+### 2026-09-23 — "Add a service to an existing order" — investigated, parked
+
+An AM (Peggy Olson) asked to ADD Visitor IDs (200/mo tier) to an order
+already submitted for PDA Peoples Data Analytics. Claire: "I don't think
+either the companion form or the admin editor allows for adding a service.
+Correct?" Correct, verified against the code: Companion's request actions
+are exactly cancel/edit/renew for a service already on the order; Admin's
+Order Detail offers Edit/Renew/Cancel per line plus Swap (replaces one
+tactic with another; not an add, and by design leaves the order's own
+line_items untouched). Accounting's "+ Add a Service" creates a campaign
+line for the client but ties it to no order, makes no Trello card, and
+produces no revised IO.
+
+**Why NOT built (facts Claire asked for, to relay):** an Admin "Add a
+Service" would have to re-implement the IO form's per-line logic in a
+second place — catalog/group-override pricing, tiers/qty, companion
+auto-select (a Visitor IDs tier auto-checks "Visitor IDs Setup Fee"),
+exclusivity groups (Visitor IDs spans web-ot/web-mo with an "already
+selected in another section" rule), the per-service intake form
+(`visitorid`), KOC flags, campaign_lines/campaign_months creation (the
+trigger only fires on a NEW orders row, so an RPC copy of that logic would
+be needed), Trello card template resolution (Swap deliberately creates a
+plain card to avoid duplicating it), totals, and the revised PDF. Two
+copies of all of that will drift. It also raises a business question the
+system never has to answer today: what a signature means if an order can
+grow after signing.
+
+**Route used instead:** a new (even one-line) IO for the existing client —
+the architecture's answer: an order is a signed snapshot; something new
+being sold is a new order; later changes to it go through Edit/Renew/
+Cancel/Swap. Different service from anything on the first order, so the
+renewal-matching rule can't mistake it for a renewal. Setup Fee auto-checks
+on the new IO; whether it's owed on an add-on is the AM's call (ordinary
+checkbox, can be cleared).
+
+**Lighter follow-up if ever wanted (not started):** flag a new IO as an
+add-on to a parent order (`parent_order_id`), so Admin shows them linked
+and the PDF reads as an addendum; nothing downstream would change.
