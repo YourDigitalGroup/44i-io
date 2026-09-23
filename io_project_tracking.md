@@ -29316,3 +29316,31 @@ checkbox, can be cleared).
 **Lighter follow-up if ever wanted (not started):** flag a new IO as an
 add-on to a parent order (`parent_order_id`), so Admin shows them linked
 and the PDF reads as an addendum; nothing downstream would change.
+
+### 2026-09-23 — Companion Form PDF guide for AEs
+
+Claire: "could you put together a pdf guide on the companion form for the
+AE's? I am not sure if we will do a training on it but I think a good PDF
+will work." Built `scratchpad/Companion-Form-Guide-for-AEs.pdf` (5 pages,
+reportlab; generator script kept in the session scratchpad, not the repo)
+from the LIVE `companion/index.html`, not memory: every label, tab, error
+message and rule in it was read from the form — roster-only name picker,
+client picker, per-service checkbox with Cancel/Edit/Renew tabs, what each
+service kind can edit (isSpendTactic / isModuleService / isPerUnitQtyService
+/ isAmountEditable / isOneTimeOnly), the 3 budget modes and the day-
+proportional split (example $3,000 Oct 1–Nov 3 → $2,735.29 / $264.71,
+same numbers verified in Node today), Renew's "month after current end"
+period and Keep It the Same / Update It intake choice, no Renew on one-time
+services, the AM email + Trello heads-up on submit, Admin approve/reject,
+the requester's outcome email, and "nothing changes until approved".
+Written for AEs in plain language — no internal field names; "your AM"
+throughout since the form is white-labeled per group; brand-neutral
+colors. Gitignored (scratchpad), handed to Claire as a file.
+
+**Behavior quirk noticed while writing it, NOT changed (flagged to Claire):**
+Companion Edit in Whole Campaign Total mode splits the total across the
+service's CURRENT flight dates (`svc.flight_start/flight_end`), not any
+new Start/End typed in the same Edit — so "change the end date AND set a
+new total" in one request produces a split over the old dates. The guide
+tells AEs to mention a date change in the same request so the AM can
+check the split. Admin's new budget editor does read the panel's dates.
