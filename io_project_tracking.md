@@ -29714,3 +29714,20 @@ path verified healthy end to end (client lookup + order insert + trigger),
 not assumed. Supabase's editor flagged the block's UPDATE-without-WHERE
 (intentional: one-row temp table) and RLS-on-new-table (temp table, gone
 at rollback) warnings — both explained, neither applies.
+
+### 2026-09-24 — Strategist "Confirm reviewed" failed on a month-by-month line
+
+Bronson, confirming Admin's Audio → $3,000 Whole Campaign Total change on
+Tim Shepard in the Order Changes panel: `invalid input syntax for type
+date: "2026-10"`. `strategist_confirm_order_change` (live definition pasted
+by Claire) cast each `month_budgets[].month` — stored as 'YYYY-MM'
+everywhere in this app — straight to `date` in three places. First time
+Confirm had ever met a month-by-month line (Audio only became one today),
+so the third instance of the same latent bug found today
+(`admin_renew_service` and `admin_renew_campaign_line` got the identical
+guard this morning). **Fix**
+(`scratchpad/fix-strategist-confirm-order-change-month.sql`, not on the
+submission path): one `v_month date` declare + the same 7-char guard on the
+three casts; otherwise byte-identical to live. Nothing was lost meanwhile —
+Admin's edit had already synced the months; Confirm is the strategist's
+acknowledgement + re-sync. Shape-checked only (no Postgres here).
