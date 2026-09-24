@@ -683,6 +683,19 @@ function renderOrderDetailModal(order, sections) {
     ${renderAmendmentHistoryHtml(order)}
     ${order.special_instructions ? `<div style="padding:10px 12px;background:#FFF7ED;border-left:3px solid #F59E0B;border-radius:5px"><div style="font-size:10px;font-weight:700;color:#92400E;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Special Instructions</div><div style="font-size:12px;color:#78350F">${esc(order.special_instructions)}</div></div>` : ''}
   `;
+  // "● Revised" pill in the window's title (2026-09-24, per Claire -- "Would it
+  // also be worth adding this revised note in the strategist and accounting
+  // side?") -- the same marker Admin's Order Detail heading and the revised
+  // IO PDF carry, so whoever opens an order in ANY portal sees at a glance
+  // that it has changed since it was signed. Driven by is_revised when the
+  // portal's order fetch returns it, else by whether any real (non no-op)
+  // change exists in edit_history -- the same rows the Amendment History
+  // below shows, so the pill and the table can't disagree.
+  const titleEl = document.getElementById('shared-order-modal-title');
+  if (titleEl) {
+    const revised = !!order.is_revised || groupEditHistory(order.edit_history).length > 0;
+    titleEl.innerHTML = 'Order Detail' + (revised ? ' <span style="font-size:10px;font-weight:700;letter-spacing:.02em;padding:3px 10px;border-radius:20px;background:#FDEDEC;color:#92300B;margin-left:8px;vertical-align:middle">● Revised</span>' : '');
+  }
   modal.style.display = 'flex';
   // Focus management (2026-08-18, accessibility audit) -- this modal had no
   // role="dialog"/focus handling at all, so a keyboard user tabbing from the page

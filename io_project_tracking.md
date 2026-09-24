@@ -29467,3 +29467,20 @@ live totals ("Monthly Total: $4,250.00/mo · Campaign Total: $3,000.00"),
 per-month breakdown, and the grouped Amendment History all render, zero
 page errors. NOT verified: the PDF itself through html2canvas (needs the
 live page); Claire will see it on the next edit after merging.
+
+### 2026-09-24 (cont'd) — "● Revised" pill in Strategist/Accounting's View Order window
+
+Claire: "Would it also be worth adding this revised note in the strategist
+and accounting side? or is that too much?" Recommended (and built) the
+smallest version: the same "● Revised" pill Admin's Order Detail heading
+and the revised-IO PDF carry, added to the title of the shared "View Order"
+window (`renderOrderDetailModal` in shared.js) that Strategist and
+Accounting both open -- one place, seen by whoever opens the order.
+Deliberately NOT added to every campaign line row in those portals (noise;
+Strategist already flags changed lines via its own "Order Changes" notice).
+Driven by `order.is_revised` when the portal's fetch returns it, else by
+whether `groupEditHistory(order.edit_history)` has any real change -- the
+same rows the Amendment History below it shows, so pill and table agree.
+Verified: `node --check`; headless-Chromium render of the real modal shows
+"Order Detail ● Revised" for the Tim Shepard reconstruction and plain
+"Order Detail" for an order with no history; zero page errors.
