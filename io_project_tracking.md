@@ -28820,9 +28820,20 @@ what the rule actually keys on (exactly one active match), and the id is
 only used when that count is 1, so which single-row picker is used is
 irrelevant; the text cast just gives Postgres an aggregate it has. Nothing
 else changed. Handed to Claire to run immediately; **RUN 2026-09-23** (Claire).
-Live proof: a real order from another group landed at 11:24am after
-the fix, so submissions work again. Titan hadn't resubmitted yet as of
-that check (draft still sitting on their IO page, intact).
+Live proof: a real order (ESPN) landed at 11:24am after the fix, so
+submissions work again.
+
+**Full blast radius, confirmed from `group_drafts` (2026-09-23 afternoon):**
+two groups hit the error and fell back to the OLD (manual) IO route —
+SuperTalk/STMM Digital (Nic Webb – Davis Real Estate, Laura for Ben Sills,
+old-way submission 4:24pm 09-22, draft saved 4:23pm) and Titan Digital
+(Crowley, Prill, & Mahoney Attorneys, Amy Burkhart, old-way submission
+11:07am 09-23, one minute after reopening the draft). Both orders need
+keying in by hand; both leftover drafts deleted by Claire so nobody
+resumes them and double-enters. Two other drafts saved today (Dependable
+Pest / STMM, Weaver's Leather Store / Riverfront) show no sign of trouble
+and were left alone. The form records nothing on a failed submit, so
+"affected" can only be inferred from draft timestamps + old-way arrivals.
 
 ### 2026-09-22 (cont'd) — Optimize Log double-submit created a real duplicate row
 
@@ -29316,3 +29327,67 @@ checkbox, can be cleared).
 **Lighter follow-up if ever wanted (not started):** flag a new IO as an
 add-on to a parent order (`parent_order_id`), so Admin shows them linked
 and the PDF reads as an addendum; nothing downstream would change.
+
+### 2026-09-23 — Companion Form PDF guide for AEs
+
+Claire: "could you put together a pdf guide on the companion form for the
+AE's? I am not sure if we will do a training on it but I think a good PDF
+will work." Built `scratchpad/Companion-Form-Guide-for-AEs.pdf` (5 pages,
+reportlab; generator script kept in the session scratchpad, not the repo)
+from the LIVE `companion/index.html`, not memory: every label, tab, error
+message and rule in it was read from the form — roster-only name picker,
+client picker, per-service checkbox with Cancel/Edit/Renew tabs, what each
+service kind can edit (isSpendTactic / isModuleService / isPerUnitQtyService
+/ isAmountEditable / isOneTimeOnly), the 3 budget modes and the day-
+proportional split (example $3,000 Oct 1–Nov 3 → $2,735.29 / $264.71,
+same numbers verified in Node today), Renew's "month after current end"
+period and Keep It the Same / Update It intake choice, no Renew on one-time
+services, the AM email + Trello heads-up on submit, Admin approve/reject,
+the requester's outcome email, and "nothing changes until approved".
+Written for AEs in plain language — no internal field names; "your AM"
+throughout since the form is white-labeled per group. **Restyled same day**
+per Claire ("make it look like this one so it is consistent") to match her
+existing "AE Guide to the New IO Form" PDF: that one was an HTML page
+printed through headless Chrome, so this is now built the same way
+(`scratchpad/companion-guide-source.html` → Playwright Chromium print to
+Letter), with its exact sampled palette — title #1580B5, light-blue field
+cards #EBF4FB with field-name chips #D6EAF6, green Tip boxes #E6F4F0 /
+#0F6E56 left border, amber Note boxes #FEF3E0 / #F59E0B, numbered blue
+circle section headers with a #1C9BD7 underline, teal #0F6E56 subheads,
+the same "What's in this guide" TOC box, and the "44i Digital — Internal AE
+Reference" footer. Gitignored (scratchpad), handed to Claire as a file.
+
+**Behavior quirk noticed while writing it, NOT changed (flagged to Claire):**
+Companion Edit in Whole Campaign Total mode splits the total across the
+service's CURRENT flight dates (`svc.flight_start/flight_end`), not any
+new Start/End typed in the same Edit — so "change the end date AND set a
+new total" in one request produces a split over the old dates. The guide
+tells AEs to mention a date change in the same request so the AM can
+check the split. Admin's new budget editor does read the panel's dates.
+
+### 2026-09-24 — Admin Order Detail now shows the quantity breakdown
+
+Claire (screenshots of the same Banner Ad Set line in Admin vs. the printed
+IO): "Can we have the order in the admin show the quantity that was
+selected. Similar to the printed IO?" Admin's Services table showed
+"$175 one-time"; the printed IO shows "$175 × 1 = $175".
+
+**Fix** (`admin/index.html`, the `amtParts` build in `viewOrderDetail`'s
+line-item rows; display only, no SQL): mirrors index.html's own print rules
+(`buildIoDocumentHtml`, 2026-08-31 fixes) — a one-time fee shows
+"$unit × qty = $total one-time" whenever the line has a qty recorded (even
+qty 1, same as print, so a per-unit item always reads as unit × count); a
+recurring amount shows "$unit × qty = $total/mo" only when qty > 1. Unit
+price is the stored `unit_fee`; falls back to total ÷ qty for a recurring
+per-unit item (no unit_recurring is stored) and for older orders. An order
+with no qty on the line at all (pre-qty orders) keeps the plain
+"$X one-time" it had. `fee`/`recurring` on a line item are already the
+multiplied totals (index.html's lineItems construction), so nothing else in
+Admin — live totals, edit history, PDF — changes.
+
+**Verified**: `node --check` on the admin script block; the exact new
+expression run in Node against 7 shapes — qty 1 ($175 × 1 = $175
+one-time), qty 3 ($175 × 3 = $525), Modules with no unit_fee ($250 × 3 =
+$750 via total ÷ qty), pre-qty order (plain $2,500 one-time), recurring
+per-unit qty 2 ($175 × 2 = $350/mo), qty-1 retainer (plain $1,500/mo),
+setup fee + retainer (both parts). Not yet seen live (needs a merge).

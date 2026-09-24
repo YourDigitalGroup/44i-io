@@ -9644,8 +9644,22 @@ async function viewOrderDetail(orderId) {
     const header = `<tr><td colspan="6" style="background:#EEF5FB;padding:6px 10px;font-size:10px;font-weight:700;color:var(--accent-dark);text-transform:uppercase;letter-spacing:.06em">${esc(sectionLabel(sec))}</td></tr>`;
     const rows = byLiSection[sec].map(item => {
       let amtParts = [];
-      if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
-      if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
+      // Quantity breakdown, same shape as the printed IO (2026-09-24, per
+      // Claire: "show the quantity that was selected, similar to the printed
+      // IO") -- "$175 × 3 = $525 one-time". Mirrors index.html's print rules:
+      // a one-time fee shows the "× qty" even at qty 1 (so a per-unit item
+      // always reads as a unit price × count), a recurring amount only when
+      // qty > 1. li.fee/li.recurring are already the multiplied totals; the
+      // unit price is the stored unit_fee (or, for a recurring per-unit item
+      // and for orders that predate unit_fee, the total ÷ qty).
+      const liQty = Number(item.qty) || 1;
+      if (item.fee > 0) {
+        const unitFee = item.unit_fee != null ? Number(item.unit_fee) : item.fee / liQty;
+        amtParts.push(item.qty != null ? `${fmtMoney(unitFee)} × ${liQty} = ${fmtMoney(item.fee)} one-time` : fmtMoney(item.fee) + ' one-time');
+      }
+      if (item.recurring > 0) {
+        amtParts.push(liQty > 1 ? `${fmtMoney(item.recurring / liQty)} × ${liQty} = ${fmtMoney(item.recurring)}/mo` : fmtMoney(item.recurring) + '/mo');
+      }
       // Real campaign total instead of the misleading average (2026-08-28,
       // per Claire) -- Admin's own Orders tab had the same bug already
       // fixed everywhere else (Trello, Order Detail modal, Print/Review):
