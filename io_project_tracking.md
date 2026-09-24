@@ -29364,3 +29364,30 @@ new Start/End typed in the same Edit — so "change the end date AND set a
 new total" in one request produces a split over the old dates. The guide
 tells AEs to mention a date change in the same request so the AM can
 check the split. Admin's new budget editor does read the panel's dates.
+
+### 2026-09-24 — Admin Order Detail now shows the quantity breakdown
+
+Claire (screenshots of the same Banner Ad Set line in Admin vs. the printed
+IO): "Can we have the order in the admin show the quantity that was
+selected. Similar to the printed IO?" Admin's Services table showed
+"$175 one-time"; the printed IO shows "$175 × 1 = $175".
+
+**Fix** (`admin/index.html`, the `amtParts` build in `viewOrderDetail`'s
+line-item rows; display only, no SQL): mirrors index.html's own print rules
+(`buildIoDocumentHtml`, 2026-08-31 fixes) — a one-time fee shows
+"$unit × qty = $total one-time" whenever the line has a qty recorded (even
+qty 1, same as print, so a per-unit item always reads as unit × count); a
+recurring amount shows "$unit × qty = $total/mo" only when qty > 1. Unit
+price is the stored `unit_fee`; falls back to total ÷ qty for a recurring
+per-unit item (no unit_recurring is stored) and for older orders. An order
+with no qty on the line at all (pre-qty orders) keeps the plain
+"$X one-time" it had. `fee`/`recurring` on a line item are already the
+multiplied totals (index.html's lineItems construction), so nothing else in
+Admin — live totals, edit history, PDF — changes.
+
+**Verified**: `node --check` on the admin script block; the exact new
+expression run in Node against 7 shapes — qty 1 ($175 × 1 = $175
+one-time), qty 3 ($175 × 3 = $525), Modules with no unit_fee ($250 × 3 =
+$750 via total ÷ qty), pre-qty order (plain $2,500 one-time), recurring
+per-unit qty 2 ($175 × 2 = $350/mo), qty-1 retainer (plain $1,500/mo),
+setup fee + retainer (both parts). Not yet seen live (needs a merge).
