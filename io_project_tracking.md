@@ -29626,3 +29626,22 @@ of the scoping: Bronson (covering) sees Samantha's client, not another
 strategist's, not an unassigned one; Samantha (owner) still sees hers;
 match tolerant of case/trailing space. Not live until the SQL runs and the
 branch merges.
+
+**Trello cards too (same day).** Claire: "So both strategists will get
+assigned to cards during that time?" Checked before answering: no --
+index.html resolves the digital-discipline card member from
+`find_or_create_client`'s `digital_strategist_trello` (the client's
+effective Digital Strategist only), so the covering field alone would have
+left the cover off every new card. Recommended and built the rest: both
+`find_or_create_client` versions (diffed against the live definitions
+Claire pasted) gain `covering_strategist_trello` (admin_users handle by
+`g.covering_strategist_name`, same lookup as the owner's); index.html
+stores it as `client.coveringStrategistTrello`, resolves it in the same
+board-member lookup, and `memberIdsForLineItems` adds it to any card whose
+services carry the `digital` discipline -- exactly the cards the owner
+lands on, never web/social-only cards. Empty for groups with no cover, so
+nothing changes for them. Verified: `node --check` on index.html; Node sim
+of the member logic: FB card = AE+AM+owner+cover, web-only card = AE+AM,
+SEO (digital+social+web) = AE+AM+owner+cover. `covering-strategist.sql`
+now has 4 sections (column, admin_save_group, strategist_get_clients,
+find_or_create_client x2).

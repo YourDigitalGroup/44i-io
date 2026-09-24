@@ -5777,6 +5777,10 @@ async function submitIO() {
           digitalStrategistTrello: result.digital_strategist_trello || '',
           socialStrategistTrello: result.social_strategist_trello || '',
           webStrategistTrello: result.web_strategist_trello || '',
+          // Covering Digital Strategist (2026-09-24, per Claire -- leave cover):
+          // the group's covering_strategist_name's handle, resolved by the same
+          // RPC. Empty for every group with no cover set, so nothing changes.
+          coveringStrategistTrello: result.covering_strategist_trello || '',
         };
       }
     } catch(e) { console.warn('find_or_create_client failed — order will save without a linked client record:', e.message); }
@@ -5883,6 +5887,11 @@ async function submitIO() {
           social: client?.socialStrategistTrello || '',
           web: client?.webStrategistTrello || '',
         };
+        // Covering Digital Strategist (2026-09-24, per Claire: "So both
+        // strategists will get assigned to cards during that time?") -- rides
+        // along with the digital discipline: any tactic card the Digital
+        // Strategist lands on, the cover lands on too, while the group has one.
+        const coveringDigitalHandle = client?.coveringStrategistTrello || '';
 
         // koc_notify_trello_handle (2026-08-28, per Claire + AM — a specific tactic
         // ["Traditional Buying" / alc-media] needs its KOC to always involve one
@@ -5898,7 +5907,7 @@ async function submitIO() {
         // reused on every card created below (2026-07-17, per Claire). Extended
         // (2026-08-06) to resolve the strategist handles in the SAME lookup, without
         // folding them into amAeMemberIds itself.
-        const allHandlesToResolve = [aeTrello, amTrello, additionalCardTrello, ...Object.values(disciplineHandles), ...kocNotifyHandles].filter(Boolean);
+        const allHandlesToResolve = [aeTrello, amTrello, additionalCardTrello, ...Object.values(disciplineHandles), coveringDigitalHandle, ...kocNotifyHandles].filter(Boolean);
         const memberMap = await findBoardMemberIds(selectedGroup.trello_board_id, allHandlesToResolve);
         const resolveHandleMemberId = (handle) => handle ? (memberMap.get(handle.replace(/^@/, '').trim().toLowerCase()) || null) : null;
         const amAeMemberIds = [...new Set([aeTrello, amTrello, additionalCardTrello].map(resolveHandleMemberId).filter(Boolean))];
@@ -5938,6 +5947,11 @@ async function submitIO() {
         function memberIdsForLineItems(items, includeKocNotify = true) {
           const disciplines = new Set(items.flatMap(li => serviceDisciplines(CATALOG_ROWS[li.service_id])));
           const strategistIds = [...disciplines].map(d => resolveHandleMemberId(disciplineHandles[d])).filter(Boolean);
+          // Cover for the digital discipline only (2026-09-24), same cards as the owner.
+          if (disciplines.has('digital') && coveringDigitalHandle) {
+            const coverId = resolveHandleMemberId(coveringDigitalHandle);
+            if (coverId) strategistIds.push(coverId);
+          }
           // koc_notify_trello_handle (2026-08-28) — scoped to just the tactic
           // card(s) that actually sell a service carrying this field, not every
           // card on the order. Merged into the same Set as everything else, so if
