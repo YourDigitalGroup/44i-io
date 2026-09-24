@@ -566,6 +566,16 @@
               <select id="admin-client-web-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
             </div>
           </div>
+          <!-- Covering Digital Strategist override (2026-09-24, per Claire: "Can we add
+               this to the client level too?") -- same inherit-from-group-unless-set
+               rule as the Digital Strategist Override above. -->
+          <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px;align-items:end">
+            <div>
+              <label class="lbl" for="admin-client-covering-strategist">Covering Digital Strategist Override</label>
+              <select id="admin-client-covering-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
+            </div>
+            <p style="font-size:10px;color:var(--muted);margin:0 0 8px">Who is temporarily covering this client, if different from the group's cover. Their "My Campaigns" shows this client too and they join the Digital Strategist on its new tactic cards.</p>
+          </div>
           <p style="font-size:10px;color:var(--muted);margin-top:-6px;margin-bottom:16px">Every client inherits their group's strategist assignments by default (set on the Group editor) — only pick something here if THIS client specifically needs a different person. Whichever strategist ends up assigned (group default or this override) gets tagged on this client's Trello tactic cards, alongside the AM/AE, for any service carrying a matching Strategist Discipline.</p>
           <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:16px">
             <div>
@@ -5492,6 +5502,8 @@ function refreshClientStrategistDefaults() {
   const socialSel = document.getElementById('admin-client-social-strategist');
   const webSel = document.getElementById('admin-client-web-strategist');
   populateDigitalStrategistDropdown('admin-client-digital-strategist', digitalSel?.value || null, group?.digital_strategist_name || null);
+  const coveringSel = document.getElementById('admin-client-covering-strategist');
+  populateDigitalStrategistDropdown('admin-client-covering-strategist', coveringSel?.value || null, group?.covering_strategist_name || null);
   populateStrategistDropdown('admin-client-social-strategist', 'social', socialSel?.value || null, socialDefaultName);
   populateStrategistDropdown('admin-client-web-strategist', 'web', webSel?.value || null, webDefaultName);
 }
@@ -6721,6 +6733,7 @@ async function adminEditClient(id) {
   const socialDefaultName = group?.social_strategist_id ? (ALL_STRATEGISTS.find(s => s.id === group.social_strategist_id)?.name || null) : null;
   const webDefaultName = group?.web_strategist_id ? (ALL_STRATEGISTS.find(s => s.id === group.web_strategist_id)?.name || null) : null;
   populateDigitalStrategistDropdown('admin-client-digital-strategist', c.digital_strategist_name || null, group?.digital_strategist_name || null);
+  populateDigitalStrategistDropdown('admin-client-covering-strategist', c.covering_strategist_name || null, group?.covering_strategist_name || null);
   populateStrategistDropdown('admin-client-social-strategist', 'social', c.social_strategist_id, socialDefaultName);
   populateStrategistDropdown('admin-client-web-strategist', 'web', c.web_strategist_id, webDefaultName);
   document.getElementById('admin-client-form').style.display = 'block';
@@ -6749,6 +6762,7 @@ async function adminSaveClient() {
     business_type: document.getElementById('admin-client-biztype').value.trim(),
     trello_list_id: document.getElementById('admin-client-trello-list-id').value.trim() || null,
     digital_strategist_name: document.getElementById('admin-client-digital-strategist').value || null,
+    covering_strategist_name: document.getElementById('admin-client-covering-strategist').value || null,
     social_strategist_id: document.getElementById('admin-client-social-strategist').value || null,
     web_strategist_id: document.getElementById('admin-client-web-strategist').value || null,
     is_multi_agent: document.getElementById('admin-client-is-multi-agent').value === 'true',
