@@ -29447,8 +29447,12 @@ changed"), and leaves the date out of the Trello comment when only
 Variant/Modules/Quantity moved.
 
 **Verified:** `node --check` on shared.js and the whole admin script block.
-Node simulation of the shared helpers against the real Tim Shepard shape:
-Streaming TV "$4,250.00/mo spend"; Audio "$3,000.00 whole campaign total";
+Node simulation of the shared helpers against a RECONSTRUCTION of the Tim
+Shepard order (Streaming TV stubbed as a flat $4,250 -- WRONG, the real line
+varies by month and totals $8,500; Claire caught the mismatch when I quoted
+the stub as if it were the real result. Real expected output: Streaming TV
+"$8,500.00 total campaign spend", Monthly Recurring $0.00/mo, Whole Campaign
+Totals $11,500.00): Audio "$3,000.00 whole campaign total";
 Radio to Video "$250.00 × 2 = $500.00 one-time", one-time-only; totals
 one-time $500 / monthly $4,250 / campaign total $3,000 (was $5,750/mo).
 History grouping on a reconstruction of that order's real entries plus four
@@ -29463,3 +29467,20 @@ live totals ("Monthly Total: $4,250.00/mo · Campaign Total: $3,000.00"),
 per-month breakdown, and the grouped Amendment History all render, zero
 page errors. NOT verified: the PDF itself through html2canvas (needs the
 live page); Claire will see it on the next edit after merging.
+
+### 2026-09-24 (cont'd) — "● Revised" pill in Strategist/Accounting's View Order window
+
+Claire: "Would it also be worth adding this revised note in the strategist
+and accounting side? or is that too much?" Recommended (and built) the
+smallest version: the same "● Revised" pill Admin's Order Detail heading
+and the revised-IO PDF carry, added to the title of the shared "View Order"
+window (`renderOrderDetailModal` in shared.js) that Strategist and
+Accounting both open -- one place, seen by whoever opens the order.
+Deliberately NOT added to every campaign line row in those portals (noise;
+Strategist already flags changed lines via its own "Order Changes" notice).
+Driven by `order.is_revised` when the portal's fetch returns it, else by
+whether `groupEditHistory(order.edit_history)` has any real change -- the
+same rows the Amendment History below it shows, so pill and table agree.
+Verified: `node --check`; headless-Chromium render of the real modal shows
+"Order Detail ● Revised" for the Tim Shepard reconstruction and plain
+"Order Detail" for an order with no history; zero page errors.
