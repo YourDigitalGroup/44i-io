@@ -29759,3 +29759,36 @@ submission path but IS in the form's Trello step after the
 order insert — a JS error there would leave an order without cards — so:
 after merging, confirm the next real order's tactic card shows the Flight
 line, or submit a test IO to a test client first.
+
+### 2026-09-24 — AM can correct a cancel request's effective date before approving
+
+Claire, from an AM: when an AE's Companion cancel request carries an
+effective date the contract doesn't allow, the AM wants to change the date
+and approve, instead of rejecting and waiting for a resubmit. Scoped by
+Claire to cancel requests and the date only. (Companion sign-off question
+raised at the same time — no attestation exists on the form today; policy
+decision left with Claire/AMs before building anything.)
+
+**SQL** (`scratchpad/adjust-cancel-effective-date.sql`, NOT on the
+submission path): `pending_requests.adjustments jsonb` + new
+`admin_adjust_pending_request_date(p_request_id, p_new_effective_date)` —
+pending cancel requests only; rewrites `requested_changes.effective_date`
+and appends {requested, applied, adjusted_by, adjusted_at}. The existing
+`admin_approve_pending_request` is untouched: it applies whatever
+requested_changes says, so adjust-then-approve is the whole flow.
+
+**Admin (`admin/index.html`):** each pending cancel request shows an
+"Effective date to apply" box pre-filled with the AE's date; Approve with a
+changed date asks a confirm that names both dates, calls the adjust RPC,
+then the normal approval. New `adminCancelAdjustmentNote(r)` ("effective
+date adjusted from Oct 15, 2026 by Claire") appears in the request
+summary, both Trello cancel comments (order-backed and order-less paths,
+which now also format the date readably), the batch resolution note, and
+the AE's outcome email (batched via resolution_note; legacy immediate
+path passes it as the note).
+
+**Verified:** `node --check` on the admin script block; Node sim of the
+real functions: unadjusted request unchanged; adjusted request reads
+"Effective Oct 31, 2026 (effective date adjusted from Oct 15, 2026 by
+Claire) (currently running through Dec 31, 2026) — Budget cut"; batch
+comment line carries it. Live check after Claire runs the SQL + merges.

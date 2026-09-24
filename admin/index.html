@@ -8353,6 +8353,15 @@ function pendingFmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso.slice(0,10) + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
 }
+// "effective date adjusted from Oct 15, 2026 by Claire" when an AM corrected
+// a cancel request's date before approving (2026-09-24); '' otherwise. Used in
+// the request summary, the Trello comment, and the AE's outcome email.
+function adminCancelAdjustmentNote(r) {
+  const a = Array.isArray(r?.adjustments) ? r.adjustments.filter(x => x.field === 'effective_date') : [];
+  if (!a.length) return '';
+  const first = a[0], last = a[a.length - 1];
+  return `effective date adjusted from ${pendingFmtDate(first.requested)} by ${last.adjusted_by || 'AM'}`;
+}
 
 // Shared per-field local-cache update + human-readable description
 // (2026-08-31) -- used by every Edit save path (the AM-triggered panels in
@@ -8805,7 +8814,8 @@ function describeRequestedChanges(r) {
   const item = adminLookupCurrentItem(r);
   if (r.action === 'cancel') {
     const currentEnd = item?.end_date ? ` (currently running through ${pendingFmtDate(item.end_date)})` : '';
-    return `Effective ${pendingFmtDate(c.effective_date)}${currentEnd}${c.reason ? ' — ' + esc(c.reason) : ''}`;
+    const adj = adminCancelAdjustmentNote(r);
+    return `Effective ${pendingFmtDate(c.effective_date)}${adj ? ' (' + adj + ')' : ''}${currentEnd}${c.reason ? ' — ' + esc(c.reason) : ''}`;
   }
   if (r.action === 'renew') {
     const currentEnd = item?.end_date ? `${pendingFmtDate(item.end_date)} → ` : '';
@@ -8958,7 +8968,18 @@ function renderAdminPendingRequests() {
         : r.status === 'approved'
         ? `<span style="font-size:10px;font-weight:700;background:#DCFCE7;color:#166534;padding:2px 8px;border-radius:10px">APPROVED</span>`
         : `<span style="font-size:10px;font-weight:700;background:#FEE2E2;color:#B3261E;padding:2px 8px;border-radius:10px">REJECTED</span>`;
-      const actions = r.status === 'pending' ? `
+      // Cancel requests: the AM can correct the effective date right here and
+      // approve in one step (2026-09-24, per Claire, from an AM: an AE may
+      // enter a date the contract doesn't allow). Cancel only, date only.
+      // The requested date stays on record (pending_requests.adjustments);
+      // the AE's outcome email says what was changed.
+      const cancelDateAdjust = (r.status === 'pending' && r.action === 'cancel') ? `
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+          <label style="font-size:11px;font-weight:700;color:var(--muted)">Effective date to apply:</label>
+          <input type="date" id="pending-cancel-date-${esc(r.id)}" value="${esc((r.requested_changes?.effective_date || '').slice(0, 10))}" style="padding:4px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>
+          <span style="font-size:10.5px;color:var(--muted)">change it here if the requested date doesn't fit the contract, then Approve</span>
+        </div>` : '';
+      const actions = r.status === 'pending' ? `${cancelDateAdjust}
         <div style="display:flex;gap:8px;margin-top:8px">
           <button type="button" onclick="adminApprovePendingRequestClick('${esc(r.id)}')" style="padding:5px 12px;border-radius:6px;background:#1F7A42;color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Approve</button>
           <button type="button" onclick="adminRejectPendingRequestClick('${esc(r.id)}')" style="padding:5px 12px;border-radius:6px;background:#fff;border:1.5px solid #B3261E;color:#B3261E;font-size:11px;font-weight:700;cursor:pointer">Reject</button>
@@ -9066,9 +9087,37 @@ async function adminFindOrderForRequest(orderId) {
 }
 
 async function adminApprovePendingRequestClick(id) {
-  if (!confirm('Approve this request? This will make the change immediately.')) return;
   const req = ALL_PENDING_REQUESTS.find(r => r.id === id);
   if (!req) { showToast('Could not find this request', 'error'); return; }
+
+  // Cancel effective-date adjustment (2026-09-24): if the AM changed the
+  // date in the box above the buttons, record + apply that first, then the
+  // normal approval applies whatever requested_changes now says.
+  let adjustedFrom = null;
+  if (req.action === 'cancel') {
+    const picked = document.getElementById(`pending-cancel-date-${id}`)?.value || '';
+    const requested = (req.requested_changes?.effective_date || '').slice(0, 10);
+    if (picked && picked !== requested) adjustedFrom = requested;
+  }
+  const confirmMsg = adjustedFrom
+    ? `Approve this cancellation with the effective date changed from ${pendingFmtDate(adjustedFrom)} to ${pendingFmtDate(document.getElementById(`pending-cancel-date-${id}`).value)}? The AE will be told the date was adjusted.`
+    : 'Approve this request? This will make the change immediately.';
+  if (!confirm(confirmMsg)) return;
+
+  if (adjustedFrom) {
+    const newDate = document.getElementById(`pending-cancel-date-${id}`).value;
+    try {
+      await sb('rpc/admin_adjust_pending_request_date', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_request_id: id, p_new_effective_date: newDate })
+      });
+    } catch (e) {
+      showToast('Could not adjust the effective date: ' + e.message, 'error');
+      return;
+    }
+    req.requested_changes = { ...(req.requested_changes || {}), effective_date: newDate };
+    req.adjustments = [...(req.adjustments || []), { field: 'effective_date', requested: adjustedFrom, applied: newDate, adjusted_by: currentAdminUser?.name, adjusted_at: new Date().toISOString() }];
+  }
 
   try {
     await sb('rpc/admin_approve_pending_request', {
@@ -9104,7 +9153,7 @@ async function adminApprovePendingRequestClick(id) {
   // Trello comment/PDF/email to finalizeBatchIfReady() below (2026-09-01,
   // per Claire: "could we have [notifications] based on the submission...
   // Hold until the whole submission is resolved").
-  if (!req.submission_batch_id) notifyRequesterOfResolution(req, 'approved', '');
+  if (!req.submission_batch_id) notifyRequesterOfResolution(req, 'approved', adminCancelAdjustmentNote(req));
 
   // The database change succeeded regardless of anything below — Trello/PDF
   // failures here are reported but never undo the approval, same as every
@@ -9171,7 +9220,8 @@ async function adminApprovePendingRequestClick(id) {
       // cancellation deliberately never rewrites the order's own
       // line_items.end_date.
       await adminUpdateTacticCard(req.order_id, req.service_id, { end_date: c.effective_date }, { renameTitle: false });
-      commentText = `🛑 ${label} cancelled, effective ${c.effective_date}${c.reason ? ' — ' + c.reason : ''} (by ${admin}).`;
+      commentText = `🛑 ${label} cancelled, effective ${pendingFmtDate(c.effective_date)}${adminCancelAdjustmentNote(req) ? ' (' + adminCancelAdjustmentNote(req) + ')' : ''}${c.reason ? ' — ' + c.reason : ''} (by ${admin}).`;
+      if (adminCancelAdjustmentNote(req)) resolutionNoteText = `Cancelled effective ${pendingFmtDate(c.effective_date)} — ${adminCancelAdjustmentNote(req)}`;
     } else if (req.action === 'edit') {
       // requested_changes.fields is a map of one or more field:new_value
       // pairs (2026-08-31, per Claire — dates/variant can now be changed
@@ -9311,7 +9361,8 @@ async function adminApplyOrderlessRequestFollowUp(req) {
 
   if (req.action === 'cancel') {
     newEndDate = c.effective_date || null;
-    commentText = `🛑 ${label} cancelled, effective ${c.effective_date}${c.reason ? ' — ' + c.reason : ''} (by ${admin}).`;
+    commentText = `🛑 ${label} cancelled, effective ${pendingFmtDate(c.effective_date)}${adminCancelAdjustmentNote(req) ? ' (' + adminCancelAdjustmentNote(req) + ')' : ''}${c.reason ? ' — ' + c.reason : ''} (by ${admin}).`;
+      if (adminCancelAdjustmentNote(req)) resolutionNoteText = `Cancelled effective ${pendingFmtDate(c.effective_date)} — ${adminCancelAdjustmentNote(req)}`;
   } else if (req.action === 'edit') {
     const item = adminLookupCurrentItem(req);
     const fields = c.fields || {};
