@@ -29484,3 +29484,104 @@ same rows the Amendment History below it shows, so pill and table agree.
 Verified: `node --check`; headless-Chromium render of the real modal shows
 "Order Detail ● Revised" for the Tim Shepard reconstruction and plain
 "Order Detail" for an order with no history; zero page errors.
+
+### 2026-09-24 — Companion form now covers campaigns with no IO behind them
+
+Claire, demoing the Companion form for an AM meeting on a client whose three
+campaigns were added through Strategist "+ New Campaign": the form said
+"This client has no self-serviceable active services right now." Her
+recollection — "I thought we already had this figured out where it will pull
+anything that is in either the strategist portal or accounting portal
+whether it has an IO order or not" — was half right and I checked the record
+before arguing: parked as out of scope on launch day (2026-08-31, her own
+"keep our original way open in the meantime... while we keep working through
+importing"), then flagged 2026-09-10 as **"must be fixed before the companion
+form is shown to clients/AEs."** Agreed as necessary; never built. Built now.
+
+**Root cause:** `companion_get_active_services` filtered `cl.order_id is not
+null` and joined `orders`; `pending_requests.order_id` was NOT NULL;
+`companion_submit_request` verified against `orders`;
+`admin_approve_pending_request` routed only to order+service-keyed functions.
+Imported/Strategist-created lines (order_id null) could never appear.
+
+**SQL** (`scratchpad/companion-orderless-lines.sql`, handed to Claire; every
+recreated function diffed against the live definitions she pasted the same
+day). Additive throughout; order-backed paths are byte-identical:
+1. `pending_requests.order_id` nullable; new `campaign_line_id` column;
+   check constraint: one of the two must be set. No rows change.
+2. `companion_get_active_services` (both p_t and p_group_id) dropped +
+   recreated (return type gains `campaign_line_id, agent_name, county`); body
+   moved into internal `companion_active_services_for(group, client)`
+   (EXECUTE revoked from anon): Part A = the old order-backed query
+   unchanged; Part B = order-less lines, one row per campaign line, amount
+   from campaign_months ("current" month = latest started month, else first
+   future), month_budgets from campaign_months when budget_varies_by_month,
+   label = tactic_label.
+3. `companion_submit_request` (both) dropped + recreated with
+   `p_campaign_line_id uuid default null`; shared internal
+   `companion_submit_request_for`: order-backed → old verification; order-
+   less → the line must belong to group+client, carry the service, be
+   active and have no order.
+4. New `admin_cancel_campaign_line(line_id, ...)` and
+   `admin_edit_campaign_line(line_id, field, value)` (spend/recurring/fee →
+   all campaign_months; month_budgets → per-month upsert + varies=true;
+   budget_mode → budget_entry_mode + varies; start/end_date → flight dates;
+   tactic_variant → tactic_label; notes → order_line_notes; qty/module_names
+   rejected — no line item to hold them).
+5. `admin_renew_campaign_line` dropped + recreated with
+   `p_new_month_budgets jsonb default null` (Campaign Lines tab keeps calling
+   it with 5 args). **5b, found while writing 5:** the ORDER-BACKED
+   `admin_renew_service` (7-arg) cast each month with
+   `(v_month_rec->>'month')::date`, but the Companion form sends 'YYYY-MM' —
+   Postgres can't cast that to a date, so approving an order-backed
+   Whole-Campaign-Total/Custom renewal would have thrown "invalid input
+   syntax for type date". Fixed in the same file (accepts 'YYYY-MM' or
+   'YYYY-MM-DD'); nothing else in that function changed. Pre-existing,
+   never exercised live (no such renewal had been approved yet).
+6. `admin_approve_pending_request`: `if v_req.order_id is null` → the line-
+   keyed functions; else the original branches, unchanged.
+
+**Companion (`companion/index.html`):** rows show "Tactic — County ·
+Agent" for split lines; order-less lines get dates + variant + the 3-mode
+budget editor (a campaign) or dates only (flat), never Modules/Quantity (no
+line item), and no Intake Form Keep/Update choice (answers live on the
+order); payload carries `campaign_line_id`; `p_campaign_line_id` sent on
+submit (null for order-backed); Trello-card and intake lookups skip null
+order ids; no IO-card heads-up comment for an order-less line (AM email
+still goes); "no services" note reworded (the legacy caveat is gone).
+
+**Admin (`admin/index.html`):** `PENDING_REQUEST_LINES` loaded per order-
+less request's client via `admin_get_client_campaign_lines_detailed`;
+`adminLookupCurrentItem` shapes a line like a line item so every existing
+before → after description works unchanged; list label "Tactic — County ·
+Agent (no IO on file)"; `adminApprovePendingRequestClick` → new
+`adminApplyOrderlessRequestFollowUp`: updates cached line, saves the batch
+resolution note, finds the card by name via new shared
+`adminFindTrelloCardForLine` (factored out of the Campaign Lines tab's
+Renew, which now calls it — behavior there unchanged), pushes title date
+range + due date when the end date moved, posts the comment immediately for
+an un-batched item; `finalizeBatchIfReady` includes order-less rows in the
+combined comment (their one card; no IO card, no PDF); rejection path
+untouched (already order-agnostic).
+
+**Verified:** `node --check` on companion + admin script blocks; SQL file
+structurally balanced (22 `$function$` markers, 11 creates, 6 drops each
+immediately followed by its create). Node sim of the Admin pieces with a
+synthetic order-less request (Union · Ashley Kidd, $1,000/mo spend):
+cancel/renew/renew-with-months/edit descriptions all read correctly with
+real before values; batch comment line correct; order-backed lookup still
+null-safe. Headless-Chromium render of the real Companion functions with an
+order-less split campaign, an order-less flat LLO line, and an order-backed
+Audio line: titles/metas right, campaign line gets the 3-mode Edit and
+Renew editors, flat line gets dates only, order-backed line keeps its
+Intake Keep/Update choice while the order-less one doesn't (first render
+still tagged a `keep_same` intake note onto an order-less renewal —
+fixed), renewal payload carries order_id null + campaign_line_id; zero
+page errors. NOT verified: the SQL executing (no Postgres here — shape-
+checked only, per the 2026-09-23 lesson), the live RPC round trip, the
+Trello name-match against a real board. Claire runs the SQL, merges, and
+tries the Marine Industries Association client.
+
+**Still open (flagged, not built):** order-BACKED agent/county split lines
+still collapse to one row per service in the Companion form (Part A
+unchanged) — the second half of the 2026-09-10 flag.
