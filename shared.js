@@ -364,6 +364,15 @@ function formatEditHistoryEntrySummary(h) {
   if (field === 'qty') {
     return `Quantity: ${esc(h.old_value ?? '—')} → ${esc(h.new_value)}`;
   }
+  if (field === 'client_authorization') {
+    // Companion form attestation (2026-09-24): the AE's on-record
+    // confirmation that the client authorized the change, written into the
+    // order's history on approval. Reads as a statement, not a before/after.
+    let a = {};
+    try { a = typeof h.new_value === 'string' ? JSON.parse(h.new_value) : (h.new_value || {}); } catch (e) {}
+    const when = a.at ? new Date(a.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+    return `Client authorization confirmed by ${esc(a.typed_name || h.edited_by || '—')}${when ? ' on ' + when : ''}${a.action ? ` (${esc(a.action)} request)` : ''}`;
+  }
   if (field === 'module_names') {
     let oldArr = [], newArr = [];
     try { oldArr = JSON.parse(h.old_value) || []; } catch (e) {}

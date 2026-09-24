@@ -29792,3 +29792,58 @@ real functions: unadjusted request unchanged; adjusted request reads
 "Effective Oct 31, 2026 (effective date adjusted from Oct 15, 2026 by
 Claire) (currently running through Dec 31, 2026) — Budget cut"; batch
 comment line carries it. Live check after Claire runs the SQL + merges.
+
+### 2026-09-24 — Companion form: client-authorization attestation on submit
+
+Claire: "I think this would be good to add either way, to make it more
+official." Built the small version discussed: no drawn signature (a change
+request doesn't warrant the IO's full signature pad), but an on-record
+confirmation with the AE's typed name and a timestamp.
+
+**Companion (`companion/index.html`):** new "Client authorization" card
+above Submit (shown/hidden with the Submit button): checkbox "I confirm the
+client has authorized these changes." + "Type your full name to confirm".
+`submitRequests()` refuses without both, and the typed name must match the
+AE picked in "I am" (case-insensitive) so a confirmation can't be
+attributed to someone else on the roster. Stored as
+`requested_changes.attestation = {statement, typed_name, at}` on EVERY
+request in the submission — inside requested_changes so the submit RPCs
+(just recreated today) don't change; the approval RPCs read only their own
+named keys and ignore it.
+
+**Admin (`admin/index.html`):** Pending Requests batch header shows
+"✔ Client authorization confirmed by <name> on <date>" (or an italic "No
+client-authorization confirmation on this submission (submitted before the
+confirmation step existed)" for older requests); the combined batch Trello
+comment carries the same line; on approval of an order-backed request,
+new RPC `admin_record_request_attestation` writes a `client_authorization`
+entry into `orders.edit_history` (edited_by = the AE's typed name,
+edited_at = the confirmation time) so it appears in Amendment History in
+all three portals and on the revised IO PDF; order-less requests have no
+order and the RPC no-ops. `shared.js`: `formatEditHistoryEntrySummary`
+renders that entry as "Client authorization confirmed by Jon Peterson on
+Sep 24, 2026 (cancel request)" — a statement, not a before → after
+(`?v=20260924b` cache-bust in all three portals).
+
+**SQL** (`scratchpad/request-attestation-history.sql`, NOT on the
+submission path, additive, one new function).
+
+**AE guide** (`scratchpad/companion-guide-source.html` → PDF regenerated):
+section 6 now starts with the Client authorization card and a Note that
+this is the Companion Form's equivalent of the IO signature; FAQ entry
+added for "the form won't submit".
+
+**Verified:** `node --check` on shared.js, admin and companion script
+blocks. Headless-Chromium run of the REAL `submitRequests()` with stubbed
+RPC: no checkbox → "Please confirm the client has authorized these
+changes"; no name → "Please type your full name to confirm"; wrong name →
+"The typed name must match the name you selected (Jon Peterson)"; correct
+name (any case) → request sent with `attestation` {statement, typed_name,
+at}. Node sim of `groupEditHistory` with a client_authorization entry next
+to an end-date change: two rows, the attestation reads as above under the
+AE's name, the change under the AM's. Live: after SQL + merge, the next
+Companion submission.
+
+**Open policy note for Claire/AMs (not built):** this is the AE's word on
+the client's authorization. If a change ever needs the CLIENT's own
+sign-off (as the original IO does), that is a different, heavier flow.

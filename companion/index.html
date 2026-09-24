@@ -115,6 +115,23 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
       <p class="muted-note" id="no-services-note" style="display:none">This client has no active services to change right now — check with your AM if you expected to see one.</p>
     </div>
 
+    <!-- Client authorization attestation (2026-09-24, per Claire: "make it more
+         official") -- the Companion form has no signature like the IO; this is
+         the AE's on-record confirmation that the client authorized the changes,
+         with their typed name and a timestamp, stored on every request in the
+         submission and carried into the approval record / revised IO. -->
+    <div id="attest-card" class="card hidden">
+      <h2>Client authorization</h2>
+      <label style="display:flex;align-items:flex-start;gap:10px;font-size:13.5px;text-transform:none;letter-spacing:0;font-weight:500;color:var(--text);cursor:pointer">
+        <input type="checkbox" id="attest-confirm" style="width:18px;height:18px;flex:none;margin-top:2px;accent-color:var(--accent)"/>
+        <span>I confirm the client has authorized these changes.</span>
+      </label>
+      <div class="field" style="margin-top:12px">
+        <label for="attest-name">Type your full name to confirm</label>
+        <input type="text" id="attest-name" autocomplete="off" placeholder="Your name, exactly as selected above"/>
+      </div>
+    </div>
+
     <div id="submit-wrap" class="hidden" style="text-align:right">
       <button class="btn btn-primary" id="submit-btn" onclick="submitRequests()">Submit Request(s)</button>
     </div>
@@ -332,6 +349,7 @@ async function applyClientPick(id) {
   list.innerHTML = '';
   noServicesNote.style.display = 'none';
   submitWrap.classList.add('hidden');
+  document.getElementById('attest-card')?.classList.add('hidden');
   if (!id) { servicesCard.classList.add('hidden'); return; }
 
   servicesCard.classList.remove('hidden');
@@ -458,6 +476,7 @@ async function applyClientPick(id) {
   }
 
   list.innerHTML = ACTIVE_SERVICES.map((svc, i) => renderServiceRow(svc, i)).join('');
+  document.getElementById('attest-card')?.classList.remove('hidden');
   submitWrap.classList.remove('hidden');
 }
 
@@ -1057,6 +1076,16 @@ async function submitRequests() {
   const checked = ACTIVE_SERVICES.map((svc, i) => ({ svc, i })).filter(({i}) => document.getElementById(`svc-chk-${i}`)?.checked);
   if (!checked.length) { showToast('Please select at least one service', 'error'); return; }
 
+  // Client authorization attestation (2026-09-24): required on every
+  // submission. The typed name must match the AE picked in "I am" so the
+  // confirmation can't be attributed to someone else on the roster.
+  const attestChecked = document.getElementById('attest-confirm')?.checked;
+  const attestName = (document.getElementById('attest-name')?.value || '').trim();
+  if (!attestChecked) { showToast('Please confirm the client has authorized these changes', 'error'); return; }
+  if (!attestName) { showToast('Please type your full name to confirm', 'error'); return; }
+  if (attestName.toLowerCase() !== aeName.toLowerCase()) { showToast(`The typed name must match the name you selected (${aeName})`, 'error'); return; }
+  const attestation = { statement: 'I confirm the client has authorized these changes.', typed_name: attestName, at: new Date().toISOString() };
+
   const payloads = [];
   for (const { i } of checked) {
     const p = collectServicePayload(i);
@@ -1067,6 +1096,9 @@ async function submitRequests() {
     // order_id + service_id identify it as before.
     p.campaign_line_id = ACTIVE_SERVICES[i].campaign_line_id || null;
     p.order_id = ACTIVE_SERVICES[i].order_id || null;
+    // Stored inside requested_changes so no database change is needed for
+    // the submit path; the approval RPCs read only their own named keys.
+    p.requested_changes = { ...(p.requested_changes || {}), attestation };
     payloads.push(p);
   }
 

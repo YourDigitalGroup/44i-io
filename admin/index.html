@@ -1823,7 +1823,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="../shared.js?v=20260924a"></script>
+<script src="../shared.js?v=20260924b"></script>
 <script>
 // ── STANDALONE-ADMIN ADAPTATION NOTES ──────────────────────────────
 // The code below is copied from index.html's admin block (lines
@@ -8356,6 +8356,14 @@ function pendingFmtDate(iso) {
 // "effective date adjusted from Oct 15, 2026 by Claire" when an AM corrected
 // a cancel request's date before approving (2026-09-24); '' otherwise. Used in
 // the request summary, the Trello comment, and the AE's outcome email.
+// "Client authorization confirmed by Jon Peterson on Sep 24, 2026" from a
+// request's requested_changes.attestation (Companion form, 2026-09-24); ''
+// for requests submitted before the confirmation step existed.
+function adminAttestationLine(r) {
+  const a = r?.requested_changes?.attestation;
+  if (!a || !a.typed_name) return '';
+  return `Client authorization confirmed by ${a.typed_name} on ${pendingFmtDate(a.at)}`;
+}
 function adminCancelAdjustmentNote(r) {
   const a = Array.isArray(r?.adjustments) ? r.adjustments.filter(x => x.field === 'effective_date') : [];
   if (!a.length) return '';
@@ -8998,6 +9006,7 @@ function renderAdminPendingRequests() {
         <div>
           <div style="font-weight:700;font-size:13.5px">${esc(first._client_name)} — ${items.length} item${items.length > 1 ? 's' : ''}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(first._group_name)} · requested by ${esc(first.requested_by)} · ${pendingFmtDate(first.created_at)}</div>
+          ${adminAttestationLine(first) ? `<div style="font-size:11px;color:#1F7A42;margin-top:3px">✔ ${esc(adminAttestationLine(first))}</div>` : `<div style="font-size:11px;color:var(--muted);margin-top:3px;font-style:italic">No client-authorization confirmation on this submission (submitted before the confirmation step existed).</div>`}
         </div>
         ${overallBadge}
       </div>
@@ -9127,6 +9136,27 @@ async function adminApprovePendingRequestClick(id) {
   } catch (e) {
     showToast('Could not approve: ' + e.message, 'error');
     return;
+  }
+
+  // Client authorization attestation (2026-09-24): write the AE's
+  // confirmation into the ORDER's edit_history as its own entry, so it shows
+  // in Amendment History everywhere and on the revised IO PDF beside the
+  // change it authorizes. Order-less requests have no order (the RPC
+  // no-ops). Additive; a failure here never undoes the approval.
+  if (req.order_id && req.requested_changes?.attestation?.typed_name) {
+    try {
+      await sb('rpc/admin_record_request_attestation', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_request_id: id })
+      });
+      const o0 = allOrders.find(x => x.id === req.order_id);
+      if (o0) {
+        const a = req.requested_changes.attestation;
+        o0.edit_history = [...(o0.edit_history || []), { service_id: req.service_id, field: 'client_authorization', old_value: null,
+          new_value: JSON.stringify({ statement: a.statement, typed_name: a.typed_name, at: a.at, action: req.action, request_id: req.id, approved_by: currentAdminUser?.name }),
+          edited_by: a.typed_name, edited_at: a.at }];
+      }
+    } catch (e) { console.warn('Could not record attestation on the order:', e.message); }
   }
 
   // Intake update (2026-09-10) -- a separate, additive RPC call rather than
@@ -9560,7 +9590,8 @@ async function finalizeBatchIfReady(batchId) {
   }
 
   const first = batchRows[0];
-  const header = `📋 Submission from ${first.requested_by} on ${pendingFmtDate(first.created_at)} — all ${batchRows.length} item(s) resolved:`;
+  const attest = adminAttestationLine(first);
+  const header = `📋 Submission from ${first.requested_by} on ${pendingFmtDate(first.created_at)} — all ${batchRows.length} item(s) resolved:${attest ? `\n✔ ${attest}` : ''}`;
   for (const [cardId, lines] of Object.entries(cardLines)) {
     const text = `${header}\n${lines.map(l => '• ' + l).join('\n')}`;
     try {
