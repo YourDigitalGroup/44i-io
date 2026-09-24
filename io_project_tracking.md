@@ -29660,3 +29660,33 @@ live definition Claire pasted (identical to the 2026-09-09 copy on file).
 Handed the whole `covering-strategist.sql` (5 sections, all idempotent) as
 one block.
 Verified: `node --check` on admin script block.
+
+### 2026-09-24 — Order saved with no client link ("(unknown)") — my sequencing mistake
+
+Claire, on Riverfront Digital's Huron Community Campus order (Earl
+Bartholow, IO 20260923-HURONC-HFP, submitted 3:11pm CT): "Ok, what happened
+here?" — the Admin Order Detail title read "Order — (unknown)". Query of the
+day's orders: every order through 12:55pm has a client_id; this one has
+client_id null and both of its campaign_lines have client_id null.
+
+**Cause:** I handed Claire the replaced `find_or_create_client` (reads the
+new `covering_strategist_name` column) in a separate message from the
+`alter table` that creates the column. plpgsql doesn't check column
+references at CREATE time, so the function installed cleanly and then
+threw at runtime on the first submission. index.html deliberately survives
+that call failing ("order will save without a linked client record") — so
+the order and Trello cards were created, just with no client, and the
+AFTER INSERT trigger copied the null client_id onto the campaign lines.
+
+**Repair** (handed as a single idempotent `do $$` block): find or create
+the Huron Community Campus client under the order's group (contact details
+from the IO's Bill To), then set `orders.client_id` and
+`campaign_lines.client_id` for that order. Flagged that
+`clients.trello_list_id` was never stored for this client (that write
+happens right after find_or_create_client succeeds) — Claire to fill it in
+Admin → Clients by hand so renewals/Companion approvals can find the cards.
+
+**Lesson (rule going forward):** a function that depends on a new column
+ships in the SAME block as the column, never separately — and any SQL that
+touches the live IO form's submission path gets called out as such so it
+is run outside business hours or right before a test submission.
