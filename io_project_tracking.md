@@ -29655,7 +29655,8 @@ changes; saved in the client payload. `strategist_get_clients` and both
 `find_or_create_client` versions now resolve
 `coalesce(c.covering_strategist_name, g.covering_strategist_name)`, so the
 portal scoping and the Trello card member follow the override automatically
-with no further frontend change. `admin_save_client` drafted from the
-2026-09-09 copy on file (hide-test-clients.sql) -- flagged in the SQL file
-to be confirmed against the live definition before Claire runs section 5.
+with no further frontend change. `admin_save_client` confirmed against the
+live definition Claire pasted (identical to the 2026-09-09 copy on file).
+Handed the whole `covering-strategist.sql` (5 sections, all idempotent) as
+one block.
 Verified: `node --check` on admin script block.
