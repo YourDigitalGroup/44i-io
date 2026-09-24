@@ -8642,11 +8642,31 @@ async function loadAdminPendingRequests() {
       }) || [];
       rows.forEach(c => { clientNames[c.id] = c.name; });
     }
+    // Order-less requests (2026-09-24: imported / Strategist-created
+    // campaigns the Companion form can now act on) carry a campaign_line_id
+    // instead of an order_id. Their current dates/budget come from the line
+    // itself, via the same per-client RPC the Campaign Lines tab uses.
+    const orderlessClientIds = [...new Set(ALL_PENDING_REQUESTS.filter(r => !r.order_id && r.campaign_line_id).map(r => r.client_id))];
+    await Promise.all(orderlessClientIds.map(async cid => {
+      try {
+        const lines = await sb('rpc/admin_get_client_campaign_lines_detailed', {
+          method: 'POST',
+          body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: cid })
+        }) || [];
+        lines.forEach(l => { PENDING_REQUEST_LINES[l.id] = l; });
+      } catch (e) { console.warn('Could not load campaign lines for client', cid, ':', e.message); }
+    }));
     ALL_PENDING_REQUESTS.forEach(r => {
       r._client_name = clientNames[r.client_id] || '(unknown client)';
       r._group_name = allGroups.find(g => g.id === r.group_id)?.name || '';
       const svc = allServicesMap.find(s => s.id === r.service_id);
       r._service_label = svc?.accounting_label || svc?.label || r.service_id;
+      const line = !r.order_id && r.campaign_line_id ? PENDING_REQUEST_LINES[r.campaign_line_id] : null;
+      if (line) {
+        const whoWhere = [line.county, line.agent_name].filter(Boolean).join(' · ');
+        r._line_label = (line.tactic_label || r._service_label) + (whoWhere ? ` — ${whoWhere}` : '');
+        r._service_label = r._line_label + ' (no IO on file)';
+      }
     });
     // Pulls in whichever orders these requests reference (an order can be
     // arbitrarily old, so this doesn't rely on admin_get_orders' own
@@ -8655,7 +8675,7 @@ async function loadAdminPendingRequests() {
     // not just the bare requested new value (2026-09-02, per Claire: "the
     // AM should be able to fully understand what is being requested at a
     // glance").
-    const orderIds = [...new Set(ALL_PENDING_REQUESTS.map(r => r.order_id))];
+    const orderIds = [...new Set(ALL_PENDING_REQUESTS.map(r => r.order_id).filter(Boolean))];
     await Promise.all(orderIds.map(id => adminFindOrderForRequest(id)));
     updatePendingRequestsBadge();
     renderAdminPendingRequests();
@@ -8688,9 +8708,67 @@ function updatePendingRequestsBadge() {
 // (buildBatchResolutionLine()) -- the fuller, multi-line month-by-month
 // breakdown a budget change needs lives separately in
 // describeRequestedChangesDetailed(), below, for the Admin UI list only.
+// campaign_lines rows (from admin_get_client_campaign_lines_detailed) for
+// every order-less pending request's client, keyed by line id (2026-09-24).
+let PENDING_REQUEST_LINES = {};
 function adminLookupCurrentItem(r) {
+  if (!r.order_id && r.campaign_line_id) {
+    // Order-less line: shape the campaign line like a line item so the
+    // before → after descriptions below read the same way.
+    const l = PENDING_REQUEST_LINES[r.campaign_line_id];
+    if (!l) return null;
+    const bt = l.billing_type || 'spend';
+    return {
+      service_id: l.service_id, start_date: l.flight_start, end_date: l.flight_end,
+      tactic_variant: l.tactic_label,
+      spend: bt === 'spend' ? l.current_budget : null,
+      recurring: bt === 'recurring' ? l.current_budget : null,
+      fee: bt === 'one_time' ? l.current_budget : null,
+      _campaign_line: l,
+    };
+  }
   const order = allOrders.find(o => o.id === r.order_id);
   return order?.line_items?.find(li => li.service_id === r.service_id) || null;
+}
+
+// Clients list (with each client's trello_list_id/name) is needed to find
+// an order-less line's Trello card by name; loads it if the Clients tab
+// hasn't been visited yet this session.
+async function adminEnsureClientsLoaded() {
+  if (ALL_CLIENTS.length) return;
+  try {
+    ALL_CLIENTS = await sb('rpc/admin_get_clients', {
+      method: 'POST',
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
+    }) || [];
+  } catch (e) { console.warn('Could not load clients:', e.message); }
+}
+
+// Finds the Trello card for a campaign line that has no stored card id
+// (order-less lines never get one) by name, ignoring whatever date range is
+// in the title -- the exact matching the Campaign Lines tab's Renew has used
+// since 2026-09-10, factored out so the Pending Requests approval can reuse
+// it (2026-09-24). Returns { card, matches }: card is set only on an
+// UNAMBIGUOUS single match; 0 or 2+ matches leaves it null so the caller
+// tells the AM to update Trello by hand rather than guessing.
+async function adminFindTrelloCardForLine(client, line) {
+  if (!client?.trello_list_id) return { card: null, matches: [], noList: true };
+  const listRes = await fetch(PROXY, {
+    method: 'POST',
+    headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target: 'trello_get_list_cards', list_id: client.trello_list_id }),
+  });
+  const cards = await listRes.json();
+  const svcLabel = CATALOG_ROWS[line.service_id]?.accounting_label || CATALOG_ROWS[line.service_id]?.label || line.tactic_label || line.service_id;
+  const needParts = line.agent_name
+    ? [line.county, line.agent_name, client.name]
+    : [line.tactic_label || svcLabel, client.name];
+  const needed = needParts.filter(Boolean).map(adminNormCardName);
+  const matches = Array.isArray(cards) ? cards.filter(c => {
+    const stripped = adminNormCardName(adminStripDateRangeFromCardName(c.name || ''));
+    return needed.every(part => stripped.includes(part));
+  }) : [];
+  return { card: matches.length === 1 ? matches[0] : null, matches };
 }
 function pendingFmtMonth(month) {
   return new Date(month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
@@ -9005,6 +9083,22 @@ async function adminApprovePendingRequestClick(id) {
   // failures here are reported but never undo the approval, same as every
   // existing Cancel/Edit/Renew handler's own try/catch-per-step behavior.
   try {
+    if (!req.order_id && req.campaign_line_id) {
+      // Order-less campaign line (2026-09-24): the database change already
+      // went through the line-keyed functions. No order record to update
+      // and no revised IO to attach -- just the campaign's own Trello card
+      // (found by name, since these lines never had a card id recorded),
+      // then the same batch/legacy notification handling as any other item.
+      await adminApplyOrderlessRequestFollowUp(req);
+      if (!req.submission_batch_id) {
+        await loadAdminPendingRequests();
+      } else {
+        await loadAdminPendingRequests();
+        await finalizeBatchIfReady(req.submission_batch_id);
+      }
+      showToast('✅ Approved and applied');
+      return;
+    }
     const o = await adminFindOrderForRequest(req.order_id);
     if (!o) {
       showToast('Approved, but could not find the order to update Trello — please note it in Trello by hand', 'error');
@@ -9172,6 +9266,101 @@ async function adminApprovePendingRequestClick(id) {
   loadAdminPendingRequests();
 }
 
+// Post-approval follow-up for an order-less request (2026-09-24): refresh
+// the cached line, push the card's title/due date for a renewal or cancel,
+// record the resolution note a batched comment needs, and -- for a legacy
+// un-batched item -- post the comment right away. Mirrors what the order-
+// backed branch of adminApprovePendingRequestClick() does, minus the order
+// record and the revised-IO PDF (there is neither for these lines).
+async function adminApplyOrderlessRequestFollowUp(req) {
+  const line = PENDING_REQUEST_LINES[req.campaign_line_id];
+  const svc = allServicesMap.find(s => s.id === req.service_id) || {};
+  const label = req._line_label || svc.accounting_label || svc.label || req.service_id;
+  const admin = currentAdminUser?.name || 'AM';
+  const c = req.requested_changes || {};
+  let commentText = '';
+  let resolutionNoteText = '';
+  let newEndDate = null;
+
+  if (req.action === 'cancel') {
+    newEndDate = c.effective_date || null;
+    commentText = `🛑 ${label} cancelled, effective ${c.effective_date}${c.reason ? ' — ' + c.reason : ''} (by ${admin}).`;
+  } else if (req.action === 'edit') {
+    const item = adminLookupCurrentItem(req);
+    const fields = c.fields || {};
+    const descriptions = Object.entries(fields).map(([field, value]) => describeFieldChange(field, value, item, false));
+    if ('end_date' in fields) newEndDate = fields.end_date;
+    commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${admin}).`;
+    resolutionNoteText = descriptions.join('; ');
+    if (line) {
+      if (fields.start_date) line.flight_start = fields.start_date;
+      if (fields.end_date) line.flight_end = fields.end_date;
+      if (fields.tactic_variant) line.tactic_label = fields.tactic_variant;
+    }
+  } else if (req.action === 'renew') {
+    const oldEndDate = line?.flight_end;
+    newEndDate = c.new_end_date;
+    let budgetNote = '';
+    if (c.new_month_budgets && c.new_month_budgets.length) {
+      const total = c.new_month_budgets.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+      budgetNote = `, new renewed-period total $${total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    } else if (c.new_monthly_budget != null) {
+      budgetNote = `, new monthly budget $${Number(c.new_monthly_budget).toLocaleString()} starting the renewed term`;
+    }
+    commentText = `🔁 Renewed ${label} — new end date ${c.new_end_date}${budgetNote} (by ${admin}).`;
+    resolutionNoteText = `End date${oldEndDate ? ' ' + pendingFmtDate(oldEndDate) + ' →' : ':'} ${pendingFmtDate(c.new_end_date)}${budgetNote}`;
+    if (line) { line.flight_end = c.new_end_date; line.last_renewed_at = new Date().toISOString(); line.last_renewed_previous_end_date = oldEndDate || null; }
+  }
+
+  if (req.submission_batch_id && resolutionNoteText) {
+    try {
+      await sb('rpc/admin_set_pending_request_note', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_request_id: req.id, p_note: resolutionNoteText })
+      });
+    } catch (e) { console.warn('Could not save resolution note for batch comment:', e.message); }
+  }
+
+  // Trello: find the line's card by name; push title date range + due date
+  // when the end date moved; post the comment now only for a legacy
+  // un-batched item (batched items get one combined comment later).
+  if (!line) { showToast('Approved, but could not find this campaign line to update Trello — please note it in Trello by hand', 'error'); return; }
+  await adminEnsureClientsLoaded();
+  const client = ALL_CLIENTS.find(cl => cl.id === req.client_id);
+  let found;
+  try { found = await adminFindTrelloCardForLine(client, line); }
+  catch (e) { console.warn('Could not search Trello for this line:', e.message); found = { card: null, matches: [] }; }
+  if (found.noList) { showToast('Approved, but this client has no Trello list on file — please update Trello by hand', 'error'); return; }
+  if (!found.card) {
+    showToast(found.matches.length ? `Approved, but found ${found.matches.length} possible matching Trello cards — please update the right one by hand` : 'Approved, but no matching Trello card was found — please update Trello by hand', 'error');
+    return;
+  }
+  req._trello_card_id = found.card.id;
+  if (newEndDate) {
+    try {
+      const baseName = adminStripDateRangeFromCardName(found.card.name || '').replace(/\s+—\s+/, ' — ');
+      const newRange = adminFormatDateRangeForTitle(line.flight_start, newEndDate);
+      const dashIdx = baseName.lastIndexOf(' — ');
+      const newName = dashIdx === -1 ? `${baseName} ${newRange}` : `${baseName.slice(0, dashIdx)} ${newRange}${baseName.slice(dashIdx)}`;
+      await fetch(PROXY, {
+        method: 'POST',
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'trello_update_card', card_id: found.card.id, name: newName, ...adminCampaignDueFields(newEndDate) }),
+      });
+    } catch (e) { console.warn('Could not update Trello card title/due date:', e.message); }
+  }
+  if (!req.submission_batch_id && commentText) {
+    try {
+      const res = await fetch(PROXY, {
+        method: 'POST',
+        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'trello_add_comment', card_id: found.card.id, text: commentText }),
+      });
+      if (!res.ok) console.warn('Could not post approval comment to card', found.card.id, ':', res.status);
+    } catch (e) { console.warn('Could not post approval comment to card:', e.message); }
+  }
+}
+
 async function adminRejectPendingRequestClick(id) {
   const req = ALL_PENDING_REQUESTS.find(r => r.id === id);
   const note = prompt('Optional note for why this is being rejected:') || '';
@@ -9256,6 +9445,21 @@ async function finalizeBatchIfReady(batchId) {
   const orderIoCardIds = {}; // orderId -> its IO card id (the revised PDF's ONLY destination)
 
   for (const r of batchRows) {
+    if (!r.order_id && r.campaign_line_id) {
+      // Order-less line (2026-09-24): its one card, found by name -- reuse
+      // the id the approval step just resolved when it's still in memory,
+      // else search again (a rejection never searched). No IO card, no PDF.
+      const line = PENDING_REQUEST_LINES[r.campaign_line_id];
+      let cardId = r._trello_card_id || null;
+      if (!cardId && line) {
+        await adminEnsureClientsLoaded();
+        const client = ALL_CLIENTS.find(cl => cl.id === r.client_id);
+        try { cardId = (await adminFindTrelloCardForLine(client, line)).card?.id || null; }
+        catch (e) { console.warn('Could not search Trello for batched line:', e.message); }
+      }
+      if (cardId) (cardLines[cardId] = cardLines[cardId] || []).push(buildBatchResolutionLine(r, r._line_label || r.service_id));
+      continue;
+    }
     const o = await adminFindOrderForRequest(r.order_id);
     if (!o) continue;
     const svc = allServicesMap.find(s => s.id === r.service_id) || {};
@@ -11400,25 +11604,11 @@ async function adminConfirmCampaignLineRenewal(clientId, lineId) {
   // single match; anything else is reported, not guessed at.
   if (client.trello_list_id) {
     try {
-      const listRes = await fetch(PROXY, {
-        method: 'POST',
-        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: 'trello_get_list_cards', list_id: client.trello_list_id }),
-      });
-      const cards = await listRes.json();
+      // Card lookup factored into adminFindTrelloCardForLine() (2026-09-24)
+      // so the Pending Requests approval can find an order-less line's card
+      // the same way; behavior here is unchanged.
       const svcLabel = CATALOG_ROWS[line.service_id]?.accounting_label || CATALOG_ROWS[line.service_id]?.label || line.tactic_label || line.service_id;
-      // Identifying tokens a real card for this line must contain, regardless
-      // of whatever riding-along suffix or exact wording it also carries --
-      // an agent-split line is identified by county+agent, a plain line by
-      // its own tactic label; both always carry the client's business name.
-      const needParts = line.agent_name
-        ? [line.county, line.agent_name, client.name]
-        : [line.tactic_label || svcLabel, client.name];
-      const needed = needParts.filter(Boolean).map(adminNormCardName);
-      const matches = Array.isArray(cards) ? cards.filter(c => {
-        const stripped = adminNormCardName(adminStripDateRangeFromCardName(c.name || ''));
-        return needed.every(part => stripped.includes(part));
-      }) : [];
+      const { matches } = await adminFindTrelloCardForLine(client, line);
 
       if (matches.length === 1) {
         const card = matches[0];

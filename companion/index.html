@@ -112,7 +112,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
     <div id="services-card" class="card hidden">
       <h2>Which service(s), and what do you need?</h2>
       <div id="services-list"></div>
-      <p class="muted-note" id="no-services-note" style="display:none">This client has no self-serviceable active services right now — some may need to go through your AM directly (e.g. imported legacy campaigns).</p>
+      <p class="muted-note" id="no-services-note" style="display:none">This client has no active services to change right now — check with your AM if you expected to see one.</p>
     </div>
 
     <div id="submit-wrap" class="hidden" style="text-align:right">
@@ -367,10 +367,13 @@ async function applyClientPick(id) {
       const r = byId[svc.service_id] || {};
       svc._variantOptions = Array.isArray(r.tactic_variants) ? r.tactic_variants : null;
       const moduleOptions = typeof r.qty_option_labels === 'string' ? JSON.parse(r.qty_option_labels || 'null') : r.qty_option_labels;
-      svc._moduleOptions = Array.isArray(moduleOptions) ? moduleOptions : null;
+      // An order-less line (imported / Strategist-created, 2026-09-24) has
+      // no line item to hold modules or a quantity, so those two editors
+      // don't apply to it -- dates, variant, and (for a campaign) budget do.
+      svc._moduleOptions = (Array.isArray(moduleOptions) && svc.order_id) ? moduleOptions : null;
       const presetOptions = typeof r.qty_preset_options === 'string' ? JSON.parse(r.qty_preset_options || 'null') : r.qty_preset_options;
       svc._qtyPresetOptions = Array.isArray(presetOptions) ? presetOptions : null;
-      svc._pricingMode = r.pricing_mode || null;
+      svc._pricingMode = svc.order_id ? (r.pricing_mode || null) : (r.pricing_mode === 'per_unit' ? null : (r.pricing_mode || null));
       svc._defaultPrice = r.default_price ?? null;
       // Mirrors index.html's own effectiveWorkflow() (2026-09-01, found live
       // by Claire -- Traditional Media/Website Modules have a real
@@ -414,7 +417,7 @@ async function applyClientPick(id) {
   ORDER_INTAKE_RESPONSES = {};
   if (formIds.length) {
     try {
-      const orderIdsForIntake = [...new Set(ACTIVE_SERVICES.filter(s => s._intakeFormId).map(s => s.order_id))];
+      const orderIdsForIntake = [...new Set(ACTIVE_SERVICES.filter(s => s._intakeFormId && s.order_id).map(s => s.order_id))];
       const intakeRows = await sb('rpc/companion_get_intake_responses', {
         method: 'POST',
         body: JSON.stringify({ ...groupScope(selectedGroup.id), p_client_id: selectedClientId, p_order_ids: orderIdsForIntake })
@@ -442,8 +445,9 @@ async function applyClientPick(id) {
   // SECURITY DEFINER RPC scoped to the group/client the requester already
   // legitimately has (from loadClientRoster()), rather than raw RLS.
   try {
-    const orderIds = [...new Set(ACTIVE_SERVICES.map(s => s.order_id))];
-    const orderRows = await sb('rpc/companion_get_order_trello_cards', {
+    // Order-less lines (2026-09-24) have no order to look up; skipped here.
+    const orderIds = [...new Set(ACTIVE_SERVICES.map(s => s.order_id).filter(Boolean))];
+    const orderRows = !orderIds.length ? [] : await sb('rpc/companion_get_order_trello_cards', {
       method: 'POST',
       body: JSON.stringify({ ...groupScope(selectedGroup.id), p_client_id: selectedClientId, p_order_ids: orderIds })
     }) || [];
@@ -525,11 +529,15 @@ function renderServiceRow(svc, i) {
     : varies ? fmtMoney(svc.month_budgets.reduce((s,m) => s + (Number(m.amount)||0), 0)) + ' total (varies by month)'
     : svc.recurring > 0 ? fmtMoney(svc.recurring) + '/mo'
     : svc.spend > 0 ? fmtMoney(svc.spend) + '/mo' : '—';
+  // An agent/county split line (MS Farm Bureau style) is identified by who
+  // and where, not just the tactic -- shown on the row so two lines for the
+  // same tactic can be told apart (2026-09-24).
+  const whoWhere = [svc.county, svc.agent_name].filter(Boolean).join(' · ');
   return `<div class="svc-row" data-idx="${i}">
     <div class="svc-head" onclick="toggleServiceDetail(${i})">
       <input type="checkbox" id="svc-chk-${i}" onclick="event.stopPropagation();toggleServiceDetail(${i}, this.checked)"/>
       <div>
-        <div class="svc-title">${esc(svc.label)}</div>
+        <div class="svc-title">${esc(svc.label)}${whoWhere ? ` <span style="font-weight:400;color:var(--muted)">— ${esc(whoWhere)}</span>` : ''}</div>
         <div class="svc-meta">${currentAmt} · ${fmtDate(svc.flight_start)} – ${fmtDate(svc.flight_end)}</div>
       </div>
     </div>
@@ -749,7 +757,9 @@ function setIntakeUpdateMode(i, mode) {
 // 'renew' branch, appended after whatever budget/date fields already apply.
 function renderIntakeUpdateSection(i) {
   const svc = ACTIVE_SERVICES[i];
-  if (!svc._intakeFormId || !INTAKE_FORM_DEFS[svc._intakeFormId]) return '';
+  // Intake answers live on the order; an order-less line has nowhere to
+  // keep an update (2026-09-24), so the choice isn't offered for it.
+  if (!svc.order_id || !svc._intakeFormId || !INTAKE_FORM_DEFS[svc._intakeFormId]) return '';
   svc._intakeMode = svc._intakeMode || 'keep';
   return `<div class="field" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
     <label>Intake Form</label>
@@ -940,7 +950,7 @@ function collectServicePayload(i) {
     // (2026-09-10, per Claire). Only present at all for a service that
     // actually has an intake form configured.
     let intakeUpdate = null;
-    if (svc._intakeFormId && INTAKE_FORM_DEFS[svc._intakeFormId]) {
+    if (svc.order_id && svc._intakeFormId && INTAKE_FORM_DEFS[svc._intakeFormId]) {
       if (svc._intakeMode === 'update') {
         intakeUpdate = { mode: 'updated', form_key: svc._intakeFormId, fields: companionCollectIntakeFields(i, INTAKE_FORM_DEFS[svc._intakeFormId]) };
       } else {
@@ -1052,6 +1062,11 @@ async function submitRequests() {
     const p = collectServicePayload(i);
     if (!p) { showToast(`Please choose Cancel, Edit, or Renew for ${ACTIVE_SERVICES[i].label}`, 'error'); return; }
     if (p.error) { showToast(p.error, 'error'); return; }
+    // Which campaign line this is about -- the only handle an order-less
+    // line has (2026-09-24). Null for an order-backed service, whose
+    // order_id + service_id identify it as before.
+    p.campaign_line_id = ACTIVE_SERVICES[i].campaign_line_id || null;
+    p.order_id = ACTIVE_SERVICES[i].order_id || null;
     payloads.push(p);
   }
 
@@ -1071,6 +1086,7 @@ async function submitRequests() {
         method: 'POST',
         body: JSON.stringify({
           ...groupScope(selectedGroup.id), p_client_id: selectedClientId, p_order_id: p.order_id,
+          p_campaign_line_id: p.campaign_line_id,
           p_service_id: p.service_id, p_action: p.action, p_requested_changes: p.requested_changes,
           p_requested_by: aeName, p_requested_by_email: aeEmail,
           p_submission_batch_id: submissionBatchId
@@ -1124,9 +1140,11 @@ async function postSubmitTrelloComments(aeName, submitted) {
   const actionVerb = { cancel: 'cancel', edit: 'edit', renew: 'renew' };
   const ioLines = {}; // ioCardId -> [line, ...]
   for (const p of submitted) {
-    const svc = ACTIVE_SERVICES.find(s => s.service_id === p.service_id && s.order_id === p.order_id);
+    const svc = ACTIVE_SERVICES.find(s => s.service_id === p.service_id && (s.order_id || null) === (p.order_id || null) && (s.campaign_line_id || null) === (p.campaign_line_id || null));
     if (!svc) continue;
     const label = svc._accountingLabel || svc.label;
+    // An order-less line has no IO card; its heads-up is the AM email only.
+    if (!p.order_id) continue;
     const ioCardId = (ORDER_TRELLO_CARDS[p.order_id] || {}).__io_card__;
     if (!ioCardId) continue;
     (ioLines[ioCardId] = ioLines[ioCardId] || []).push(`${actionVerb[p.action] || p.action} ${label}`);
