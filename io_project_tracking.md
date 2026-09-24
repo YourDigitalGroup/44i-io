@@ -29612,10 +29612,11 @@ strategist field at the group level."
   counts) use it. Owner scoping unchanged; a null covering name matches
   nobody, so nothing changes until a group has one set.
 
-**SQL** (`scratchpad/covering-strategist.sql`, DRAFT — placeholders built
-from the 2026-09-10 `admin_save_group` copy on file and the tracking-doc
-copy of `strategist_get_clients`; to be re-diffed against the LIVE
-definitions Claire was asked to paste before she runs it): (1)
+**SQL** (`scratchpad/covering-strategist.sql`, finalised against the LIVE
+definitions Claire pasted 2026-09-24 — `admin_save_group` matched the copy
+on file; `strategist_get_clients` had gained a hidden-clients filter
+(`where coalesce(c.hidden, false) = false`) the old copy lacked, which the
+draft would have silently dropped — caught by the re-diff and kept): (1)
 `groups.covering_strategist_name text`; (2) `admin_save_group` INSERT +
 UPDATE learn the field; (3) `strategist_get_clients` returns
 `'covering_strategist_name', g.covering_strategist_name`.
