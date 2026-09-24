@@ -255,6 +255,19 @@
                 <select id="admin-group-web-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff"></select>
               </div>
             </div>
+            <!-- Covering Digital Strategist (2026-09-24, per Claire, from Samantha's
+                 maternity-leave question) -- a SECOND name whose "My Campaigns" in the
+                 Strategist Portal also shows this group's campaigns, without moving
+                 ownership off the Digital Strategist above. Group level only. -->
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px;margin-bottom:12px;align-items:end">
+              <div>
+                <label class="lbl" for="admin-group-covering-strategist">Covering Digital Strategist <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— optional</span></label>
+                <select id="admin-group-covering-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
+                  <option value="">— None —</option>
+                </select>
+              </div>
+              <p style="font-size:11.5px;color:var(--muted);margin:0 0 6px">Someone temporarily covering this group (leave, vacation). Their "My Campaigns" shows these campaigns too; the Digital Strategist stays the owner. Clear it when coverage ends.</p>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
               <div><label class="lbl" for="admin-color">Brand Color (Primary)</label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="admin-color" value="#1C9BD7" style="width:48px;height:38px;padding:2px;border-radius:7px;border:1px solid var(--border);cursor:pointer"/><input type="text" id="admin-color-hex" placeholder="#1C9BD7" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="document.getElementById('admin-color').value=this.value"/></div></div>
               <div><label class="lbl" for="admin-color2">Brand Color 2 <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— secondary/background</span></label><div style="display:flex;gap:8px;align-items:center"><input type="color" id="admin-color2" value="#1C9BD7" style="width:48px;height:38px;padding:2px;border-radius:7px;border:1px solid var(--border);cursor:pointer"/><input type="text" id="admin-color2-hex" placeholder="#1C9BD7" style="flex:1;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px;font-family:monospace" oninput="document.getElementById('admin-color2').value=this.value"/></div></div>
@@ -12559,6 +12572,7 @@ async function adminNewGroup() {
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(null);
   populateDigitalStrategistDropdown('admin-group-digital-strategist', null);
+  populateDigitalStrategistDropdown('admin-group-covering-strategist', null);
   await ensureStrategistsLoaded();
   populateStrategistDropdown('admin-group-social-strategist', 'social', null);
   populateStrategistDropdown('admin-group-web-strategist', 'web', null);
@@ -12602,6 +12616,7 @@ async function adminEditGroup(id, initialTab) {
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(g.am_name || null);
   populateDigitalStrategistDropdown('admin-group-digital-strategist', g.digital_strategist_name || null);
+  populateDigitalStrategistDropdown('admin-group-covering-strategist', g.covering_strategist_name || null);
   await ensureStrategistsLoaded();
   populateStrategistDropdown('admin-group-social-strategist', 'social', g.social_strategist_id);
   populateStrategistDropdown('admin-group-web-strategist', 'web', g.web_strategist_id);
@@ -12664,6 +12679,9 @@ async function adminSaveGroup() {
     // name (matches am_name's own convention — admin_users has no id exposed to the
     // client), Social/Web by id (the strategists roster's real primary key).
     digital_strategist_name: document.getElementById('admin-group-digital-strategist').value || null,
+    // Covering Digital Strategist (2026-09-24) -- second name for "My Campaigns"
+    // scoping in the Strategist Portal; ownership stays with the one above.
+    covering_strategist_name: document.getElementById('admin-group-covering-strategist').value || null,
     social_strategist_id: document.getElementById('admin-group-social-strategist').value || null,
     web_strategist_id: document.getElementById('admin-group-web-strategist').value || null,
     brand_color: document.getElementById('admin-color').value,

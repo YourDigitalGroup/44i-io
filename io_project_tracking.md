@@ -29585,3 +29585,63 @@ tries the Marine Industries Association client.
 **Still open (flagged, not built):** order-BACKED agent/county split lines
 still collapse to one row per service in the Companion form (Part A
 unchanged) — the second half of the 2026-09-10 flag.
+
+### 2026-09-24 — Covering Digital Strategist (group level)
+
+Samantha Escalante, going on maternity leave, after Claire reassigned her
+groups to the covering strategist: "When I look in the Strategist Portal now
+I don't have anything assigned to me. Is there a way to have my groups still
+assigned to me and the strategist who will be covering for me?" Today "My
+Campaigns" matches one name — the client's effective Digital Strategist
+(`strategistLineScopeName`, client override else group default) — so
+coverage meant moving ownership. Offered Claire: keep as is (switch names
+back on return; meanwhile Samantha uses All Strategists + Group filter) or
+add a group-level covering name. Claire: "Let's build the covering
+strategist field at the group level."
+
+**Built (frontend, pushed):**
+- Admin → Groups form: new "Covering Digital Strategist — optional"
+  dropdown under the Digital/Social/Web row (same roster picker, strategists
+  + supers), with a one-line explanation; loads/saves
+  `covering_strategist_name` in the group payload. Harmless before the SQL
+  runs: the live `admin_save_group` only reads the keys it knows.
+- Strategist Portal: `strategistLineCoveringName(l)` (client's group
+  `covering_strategist_name`, from `strategist_get_clients`) and
+  `strategistLineIsMine(l)` = owner OR covering, case/whitespace-tolerant;
+  both "My Campaigns" checks (`visibleCampaignLines`, the group-filter
+  counts) use it. Owner scoping unchanged; a null covering name matches
+  nobody, so nothing changes until a group has one set.
+
+**SQL** (`scratchpad/covering-strategist.sql`, finalised against the LIVE
+definitions Claire pasted 2026-09-24 — `admin_save_group` matched the copy
+on file; `strategist_get_clients` had gained a hidden-clients filter
+(`where coalesce(c.hidden, false) = false`) the old copy lacked, which the
+draft would have silently dropped — caught by the re-diff and kept): (1)
+`groups.covering_strategist_name text`; (2) `admin_save_group` INSERT +
+UPDATE learn the field; (3) `strategist_get_clients` returns
+`'covering_strategist_name', g.covering_strategist_name`.
+
+**Verified:** `node --check` on admin + strategist script blocks; Node sim
+of the scoping: Bronson (covering) sees Samantha's client, not another
+strategist's, not an unassigned one; Samantha (owner) still sees hers;
+match tolerant of case/trailing space. Not live until the SQL runs and the
+branch merges.
+
+**Trello cards too (same day).** Claire: "So both strategists will get
+assigned to cards during that time?" Checked before answering: no --
+index.html resolves the digital-discipline card member from
+`find_or_create_client`'s `digital_strategist_trello` (the client's
+effective Digital Strategist only), so the covering field alone would have
+left the cover off every new card. Recommended and built the rest: both
+`find_or_create_client` versions (diffed against the live definitions
+Claire pasted) gain `covering_strategist_trello` (admin_users handle by
+`g.covering_strategist_name`, same lookup as the owner's); index.html
+stores it as `client.coveringStrategistTrello`, resolves it in the same
+board-member lookup, and `memberIdsForLineItems` adds it to any card whose
+services carry the `digital` discipline -- exactly the cards the owner
+lands on, never web/social-only cards. Empty for groups with no cover, so
+nothing changes for them. Verified: `node --check` on index.html; Node sim
+of the member logic: FB card = AE+AM+owner+cover, web-only card = AE+AM,
+SEO (digital+social+web) = AE+AM+owner+cover. `covering-strategist.sql`
+now has 4 sections (column, admin_save_group, strategist_get_clients,
+find_or_create_client x2).
