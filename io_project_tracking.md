@@ -29708,5 +29708,9 @@ is high-stakes") and saved `scratchpad/smoke-test-submission-path.sql`: a
 clone of a real order (firing `create_campaign_lines_from_order`), so a
 broken function or trigger errors visibly instead of failing silently
 under a real AE. Would have caught both the 2026-09-23 `max(uuid)` bug and
-today's missing-column bug. Handed to Claire to run now as the post-fix
-check; she confirms two zero-count queries afterward.
+today's missing-column bug. Claire ran it 2026-09-24 after the covering-
+strategist SQL: "submission path OK, lines_created 2" — the submission
+path verified healthy end to end (client lookup + order insert + trigger),
+not assumed. Supabase's editor flagged the block's UPDATE-without-WHERE
+(intentional: one-row temp table) and RLS-on-new-table (temp table, gone
+at rollback) warnings — both explained, neither applies.
