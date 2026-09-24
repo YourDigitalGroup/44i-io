@@ -29685,6 +29685,13 @@ from the IO's Bill To), then set `orders.client_id` and
 `clients.trello_list_id` was never stored for this client (that write
 happens right after find_or_create_client succeeds) — Claire to fill it in
 Admin → Clients by hand so renewals/Companion approvals can find the cards.
+Third effect, reported by the strategist team: the order's Trello tactic
+cards were created WITHOUT Carol L. (the Digital Strategist) as a member —
+her handle comes back from the same failed lookup. Claire added her by
+hand. Full blast radius of the one failed call: no client link, null
+client on both campaign lines, no Trello list id stored, no strategist on
+the cards. Columns confirmed present 2026-09-24 (both rows); every order
+after that links and tags normally.
 
 **Lesson (rule going forward):** a function that depends on a new column
 ships in the SAME block as the column, never separately — and any SQL that
