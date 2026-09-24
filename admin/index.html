@@ -1800,7 +1800,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="../shared.js?v=20260902a"></script>
+<script src="../shared.js?v=20260924a"></script>
 <script>
 // ── STANDALONE-ADMIN ADAPTATION NOTES ──────────────────────────────
 // The code below is copied from index.html's admin block (lines
@@ -10430,18 +10430,36 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     return;
   }
 
-  try {
-    await sb('rpc/admin_edit_order_line_item', {
-      method: 'POST',
-      body: JSON.stringify({
-        p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
-        p_order_id: orderId, p_service_id: serviceId, p_field: 'start_date', p_new_value: String(newValue),
-      }),
-    });
-  } catch (e) {
-    showToast('Could not save this change: ' + e.message, 'error');
+  // Only save the date if it actually changed (2026-09-24, per Claire -- the
+  // Tim Shepard revised IO showed four identical "Start Date: Oct 1 → Oct 1"
+  // history rows, one per Quantity edit, because this panel re-saved the
+  // unchanged date every time; the quirk was flagged 2026-09-17 and is now
+  // fixed at the source). A Save with nothing changed at all is refused
+  // with a plain message instead of writing an empty edit.
+  const oPre = allOrders.find(x => x.id === orderId);
+  const itemPre = oPre && (oPre.line_items || []).find(li => li.service_id === serviceId);
+  const dateChanged = !itemPre || newValue !== (itemPre.start_date || '');
+  const extraPre = itemPre ? adminCollectExtraEditFields(serviceId, itemPre) : {};
+  if (!dateChanged && !Object.keys(extraPre).length) {
+    showToast('Nothing changed', 'error');
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     return;
+  }
+
+  if (dateChanged) {
+    try {
+      await sb('rpc/admin_edit_order_line_item', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
+          p_order_id: orderId, p_service_id: serviceId, p_field: 'start_date', p_new_value: String(newValue),
+        }),
+      });
+    } catch (e) {
+      showToast('Could not save this change: ' + e.message, 'error');
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+      return;
+    }
   }
 
   const o = allOrders.find(x => x.id === orderId);
@@ -10449,9 +10467,11 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
   if (o) {
     const item = (o.line_items || []).find(li => li.service_id === serviceId);
     const oldValue = item ? item.start_date : null;
-    if (item) item.start_date = newValue;
+    if (dateChanged) {
+      if (item) item.start_date = newValue;
+      o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field: 'start_date', old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
+    }
     o.is_revised = true;
-    o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field: 'start_date', old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
 
     // Real bug found live (2026-09-17, Claire -- Quantity edit "didn't stick"):
     // fmtDate() is a local const scoped inside viewOrderDetail() (same known
@@ -10466,7 +10486,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     // looked like it worked. Swapped for pendingFmtDate() -- the same shared,
     // properly top-level-scoped helper applyFieldChangeLocally() already uses
     // for this identical purpose.
-    const descriptions = [`${includeEndDate ? 'start ' : ''}date changed from ${pendingFmtDate(oldValue)} to ${pendingFmtDate(newValue)}`];
+    const descriptions = dateChanged ? [`${includeEndDate ? 'start ' : ''}date changed from ${pendingFmtDate(oldValue)} to ${pendingFmtDate(newValue)}`] : [];
     // Any End Date/Variant/Modules changes get saved and folded into this
     // SAME comment (2026-08-31), not a second separate one.
     const extraFields = adminCollectExtraEditFields(serviceId, item);
@@ -11839,17 +11859,24 @@ async function generateAdminRevisedIoPdfBlob(o) {
     return isNaN(d) ? '—' : d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
   };
   const items = Array.isArray(o.line_items) ? o.line_items : [];
-  let oneTime = 0, monthly = 0;
+  // Amounts + totals via shared.js's describeLineItemAmount()/orderLiveTotals()
+  // (2026-09-24, per Claire -- this PDF printed a freshly-set $3,000 Whole
+  // Campaign Total as "$1,500.00/mo spend" (the stored average) and summed
+  // that average into Monthly Recurring). Same rules as Admin's Order Detail
+  // row: budget_mode-aware, quantity breakdown, whole-campaign lines totalled
+  // separately, and a one-time item shows just its date (nothing "Ongoing"
+  // about a one-off fee).
+  const { oneTime, monthly, campaignTotal } = orderLiveTotals(o);
   const rows = items.map(item => {
     const label = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label || item.service_id;
-    let amtParts = [];
-    if (item.fee > 0) { amtParts.push(fmt(item.fee) + ' one-time'); oneTime += item.fee; }
-    if (item.recurring > 0) { amtParts.push(fmt(item.recurring) + '/mo'); monthly += item.recurring; }
-    if (item.spend > 0) { amtParts.push(fmt(item.spend) + '/mo spend'); monthly += item.spend; }
+    const amt = describeLineItemAmount(item);
+    const dates = amt.isOneTimeOnly
+      ? fmtDate(item.start_date || o.campaign_start)
+      : `${fmtDate(item.start_date || o.campaign_start)} – ${(item.end_date || o.campaign_end) ? fmtDate(item.end_date || o.campaign_end) : 'Ongoing'}`;
     return `<tr>
       <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827">${esc(label)}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151">${esc(amtParts.join(' + ') || '—')}</td>
-      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#6B7280">${fmtDate(item.start_date)} – ${item.end_date ? fmtDate(item.end_date) : 'Ongoing'}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151">${esc(amt.text)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#6B7280">${dates}</td>
     </tr>`;
   }).join('');
 
@@ -11877,13 +11904,19 @@ async function generateAdminRevisedIoPdfBlob(o) {
     if (field === 'budget_mode') return ADMIN_BUDGET_MODE_LABELS[value] || (value == null ? 'Monthly Rate' : String(value));
     return fmt(value);
   };
-  const historyFieldLabels = { start_date: 'Start Date', end_date: 'End Date', tactic_variant: 'Variant', qty: 'Quantity', month_budgets: 'Budget', module_names: 'Modules', spend: 'Spend', fee: 'Fee', recurring: 'Monthly Rate', budget_mode: 'Budget Entry' };
-  const historyRows = (o.edit_history || []).slice().reverse().map(h => {
+  // Change History rows come from shared.js's groupEditHistory() (2026-09-24,
+  // per Claire -- one Save was printing as three rows, and the date-only
+  // panel's unchanged-date re-saves as four identical "Oct 1 → Oct 1" rows):
+  // no-op entries dropped, one row per Save, budget changes described in the
+  // client's terms. Same rows the shared "View Order" modal shows in every
+  // portal, so the PDF and the screens can't disagree. describeHistoryValue
+  // above stays for any caller that still formats a single entry.
+  void describeHistoryValue;
+  const historyRows = groupEditHistory(o.edit_history).slice().reverse().map(h => {
     const label = CATALOG_ROWS[h.service_id]?.accounting_label || CATALOG_ROWS[h.service_id]?.label || h.service_id;
-    const fieldLabel = historyFieldLabels[h.field] || h.field;
     return `<tr>
       <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#111827">${esc(label)}</td>
-      <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#374151">${esc(fieldLabel)}: ${esc(describeHistoryValue(h.field, h.old_value))} → ${esc(describeHistoryValue(h.field, h.new_value))}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#374151">${h.summary}</td>
       <td style="padding:6px 10px;border-bottom:1px solid #F1F3F5;font-size:9pt;color:#6B7280">${esc(h.edited_by)}, ${new Date(h.edited_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</td>
     </tr>`;
   }).join('');
@@ -11932,7 +11965,7 @@ async function generateAdminRevisedIoPdfBlob(o) {
 
     <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:14px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Current Services</div>
     <table style="width:100%;border-collapse:collapse">${rows}</table>
-    <div style="margin-top:10px;font-size:9.5pt;color:#111827"><strong>One-Time Total:</strong> ${fmt(oneTime)} &nbsp;&nbsp; <strong>Monthly Recurring:</strong> ${fmt(monthly)}/mo</div>
+    <div style="margin-top:10px;font-size:9.5pt;color:#111827"><strong>One-Time Total:</strong> ${fmt(oneTime)} &nbsp;&nbsp; <strong>Monthly Recurring:</strong> ${fmt(monthly)}/mo${campaignTotal > 0 ? ` &nbsp;&nbsp; <strong>Whole Campaign Total${(() => { const n = items.filter(li => describeLineItemAmount(li).varies).length; return n > 1 ? 's' : ''; })()}:</strong> ${fmt(campaignTotal)}` : ''}</div>
     ${historyRows ? `
     <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Change History</div>
     <table style="width:100%;border-collapse:collapse">${historyRows}</table>` : ''}

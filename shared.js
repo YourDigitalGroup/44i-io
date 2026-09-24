@@ -377,6 +377,176 @@ function formatEditHistoryEntrySummary(h) {
   }
   return `${esc(field)}: ${esc(h.old_value || '—')} → ${esc(h.new_value || '—')}`;
 }
+// ── Line-item amount + live totals, shared by every "the IO is the source of
+// truth" surface (2026-09-24, per Claire, from the Tim Shepard revised-IO PDF:
+// Audio had just been switched to a $3,000 WHOLE CAMPAIGN TOTAL, yet the PDF
+// still printed "$1,500.00/mo spend" -- the stored average -- and rolled that
+// average into "Monthly Recurring: $5,750/mo" as if it were a flat rate).
+// Same rules Admin's own Order Detail row already follows:
+//  - a stored budget_mode of 'total'/'custom' is authoritative (an evenly-split
+//    total has identical month amounts and would otherwise read as a flat
+//    rate); 'monthly' never varies; no mode falls back to "do the month
+//    amounts differ", so orders that predate budget_mode behave as before;
+//  - a varying/total line contributes to a separate CAMPAIGN TOTAL, never to
+//    the "/mo" figure (index.html's own submission math);
+//  - a per-unit item shows "$unit × qty = $total" like the printed IO
+//    (one-time even at qty 1; recurring only when qty > 1).
+function lineSpendVaries(li) {
+  if (!li) return false;
+  if (li.budget_mode === 'total' || li.budget_mode === 'custom') return Array.isArray(li.month_budgets) && li.month_budgets.length > 0;
+  if (li.budget_mode === 'monthly') return false;
+  return Array.isArray(li.month_budgets) && li.month_budgets.length > 1 && new Set(li.month_budgets.map(m => m.amount)).size > 1;
+}
+function describeLineItemAmount(item) {
+  const fmtMoney = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const parts = [];
+  let oneTime = 0, monthly = 0, campaignTotal = 0;
+  const qty = Number(item.qty) || 1;
+  if (item.fee > 0) {
+    const unitFee = item.unit_fee != null ? Number(item.unit_fee) : item.fee / qty;
+    parts.push(item.qty != null ? `${fmtMoney(unitFee)} × ${qty} = ${fmtMoney(item.fee)} one-time` : fmtMoney(item.fee) + ' one-time');
+    oneTime += Number(item.fee);
+  }
+  if (item.recurring > 0) {
+    parts.push(qty > 1 ? `${fmtMoney(item.recurring / qty)} × ${qty} = ${fmtMoney(item.recurring)}/mo` : fmtMoney(item.recurring) + '/mo');
+    monthly += Number(item.recurring);
+  }
+  const varies = lineSpendVaries(item);
+  if (item.spend > 0 || (varies && item.month_budgets.some(m => Number(m.amount) > 0))) {
+    if (varies) {
+      const total = item.month_budgets.reduce((s, m) => s + (Number(m.amount) || 0), 0);
+      parts.push(fmtMoney(total) + (item.budget_mode === 'total' ? ' whole campaign total' : ' total campaign spend'));
+      campaignTotal += total;
+    } else {
+      parts.push(fmtMoney(item.spend) + '/mo spend');
+      monthly += Number(item.spend);
+    }
+  }
+  if (item.prorated_hosting_amt > 0) { parts.push(fmtMoney(item.prorated_hosting_amt) + ' prorated hosting'); oneTime += Number(item.prorated_hosting_amt); }
+  if (item.setup_fee_amt > 0) { oneTime += Number(item.setup_fee_amt); }
+  // A pure one-time cost happens on a date; it has no "end" and never
+  // "continues" -- so no end date / "Ongoing" for it.
+  const isOneTimeOnly = item.fee > 0 && !(item.recurring > 0) && !(item.spend > 0) && !varies;
+  return { text: parts.join(' + ') || '—', oneTime, monthly, campaignTotal, varies, isOneTimeOnly };
+}
+function orderLiveTotals(order) {
+  const items = Array.isArray(order.line_items) ? order.line_items : [];
+  return items.reduce((acc, li) => {
+    const d = describeLineItemAmount(li);
+    acc.oneTime += d.oneTime; acc.monthly += d.monthly; acc.campaignTotal += d.campaignTotal;
+    return acc;
+  }, { oneTime: 0, monthly: 0, campaignTotal: 0 });
+}
+
+// ── Edit history, grouped into what a reader actually did (2026-09-24, per
+// Claire, same PDF: one "switch Audio to a $3,000 whole campaign total" Save
+// printed as THREE rows -- "Budget Entry: Monthly Rate → Whole Campaign
+// Total", "Budget: $0.00 total → $3,000.00 total" (it was never $0; the line
+// just had no per-month array before), and a separate "Spend" row -- and one
+// Quantity edit printed four identical "Start Date: Oct 1 → Oct 1" rows,
+// because the date-only panel re-saved an unchanged date every time).
+// The database keeps recording one edit_history entry per field (the RPC
+// appends them; nothing is rewritten) -- this only changes how they READ:
+//  1. entries where nothing actually changed are dropped;
+//  2. entries from the same Save (same service, same editor, within two
+//     minutes) are one row;
+//  3. a budget change is described once, in the terms the client thinks in
+//     ("$3,000.00/mo → $3,000.00 whole campaign total"); a quantity change
+//     carries its price ("1 → 2 ($250.00 → $500.00 one-time)"); module edits
+//     drop the derived qty entry.
+function groupEditHistory(history) {
+  const list = Array.isArray(history) ? history : [];
+  const fmtMoney = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const parseArr = v => { try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+  const sumArr = v => parseArr(v).reduce((s, m) => s + (Number(m?.amount) || 0), 0);
+  const norm = (field, v) => {
+    if (v == null || v === '') return '';
+    if (field === 'month_budgets') return JSON.stringify(parseArr(v).map(m => [m.month, Number(m.amount) || 0, !!m.paused]));
+    if (field === 'module_names') return JSON.stringify(parseArr(v).slice().sort());
+    if (['spend', 'recurring', 'fee', 'qty'].includes(field)) return String(Number(v));
+    if (field === 'start_date' || field === 'end_date') return String(v).slice(0, 10);
+    return String(v);
+  };
+  const real = list.filter(h => h && h.field && norm(h.field, h.old_value) !== norm(h.field, h.new_value));
+
+  // Group consecutive entries: same service + editor, within 2 minutes.
+  const groups = [];
+  real.forEach((h, idx) => {
+    const t = new Date(h.edited_at).getTime();
+    const g = groups[groups.length - 1];
+    if (g && g.service_id === h.service_id && (g.edited_by || '') === (h.edited_by || '') && Math.abs(t - g.t) <= 120000) { g.entries.push(h); g.t = t; }
+    else groups.push({ service_id: h.service_id, edited_by: h.edited_by, edited_at: h.edited_at, t, entries: [h], firstIdx: idx });
+  });
+
+  const modeLabel = { monthly: 'Monthly Rate', total: 'Whole Campaign Total', custom: 'Custom by Month' };
+  const describeBudget = (mode, months, rate) => {
+    if (mode === 'total' || mode === 'custom') {
+      const total = sumArr(months);
+      return `${fmtMoney(total)} ${mode === 'total' ? 'whole campaign total' : 'custom by month'}`;
+    }
+    if (rate != null && rate !== '') return `${fmtMoney(rate)}/mo`;
+    // Old array present but no mode recorded (pre-budget_mode edits): its total.
+    if (months && parseArr(months).length) return `${fmtMoney(sumArr(months))} total`;
+    return 'Monthly Rate';
+  };
+
+  return groups.map(g => {
+    const by = f => g.entries.find(e => e.field === f);
+    const used = new Set();
+    const sentences = [];
+
+    const modeE = by('budget_mode'), monthsE = by('month_budgets'), spendE = by('spend');
+    if (modeE || monthsE || spendE) {
+      [modeE, monthsE, spendE].forEach(e => e && used.add(e));
+      const oldMode = modeE ? (modeE.old_value || 'monthly') : (monthsE ? (parseArr(monthsE.old_value).length ? null : 'monthly') : 'monthly');
+      const newMode = modeE ? modeE.new_value : (monthsE ? null : 'monthly');
+      // Old flat rate: the spend entry in this Save if any, else the most
+      // recent earlier spend change for this service (its new value was the
+      // rate in force until now).
+      let oldRate = spendE ? spendE.old_value : null;
+      if (oldRate == null && (oldMode === 'monthly')) {
+        for (let i = g.firstIdx - 1; i >= 0; i--) {
+          const p = real[i];
+          if (p.service_id === g.service_id && p.field === 'spend') { oldRate = p.new_value; break; }
+        }
+      }
+      // Old per-month figures: this Save's own old array if it has one; else
+      // (switching total/custom BACK to monthly records no month_budgets
+      // entry -- the RPC just clears the array) the most recent earlier
+      // month_budgets change for this service, whose new value was in force.
+      let oldMonths = monthsE ? monthsE.old_value : null;
+      if (!parseArr(oldMonths).length && (oldMode === 'total' || oldMode === 'custom')) {
+        for (let i = g.firstIdx - 1; i >= 0; i--) {
+          const p = real[i];
+          if (p.service_id === g.service_id && p.field === 'month_budgets') { oldMonths = p.new_value; break; }
+        }
+      }
+      const before = describeBudget(oldMode, oldMonths, oldRate);
+      const after = newMode === 'monthly'
+        ? `${fmtMoney(spendE ? spendE.new_value : oldRate)}/mo`
+        : describeBudget(newMode, monthsE ? monthsE.new_value : null, spendE ? spendE.new_value : null);
+      sentences.push(`Budget: ${before} → ${after}`);
+    }
+
+    const qtyE = by('qty'), feeE = by('fee'), recE = by('recurring'), modE = by('module_names');
+    if (modE) {
+      used.add(modE); if (qtyE) used.add(qtyE); if (feeE) used.add(feeE);
+      let s = formatEditHistoryEntrySummary(modE);
+      if (feeE) s += ` (${fmtMoney(feeE.old_value)} → ${fmtMoney(feeE.new_value)} one-time)`;
+      sentences.push(s);
+    } else if (qtyE) {
+      used.add(qtyE);
+      let s = `Quantity: ${esc(qtyE.old_value ?? '—')} → ${esc(qtyE.new_value)}`;
+      if (feeE) { used.add(feeE); s += ` (${fmtMoney(feeE.old_value)} → ${fmtMoney(feeE.new_value)} one-time)`; }
+      else if (recE) { used.add(recE); s += ` (${fmtMoney(recE.old_value)} → ${fmtMoney(recE.new_value)}/mo)`; }
+      sentences.push(s);
+    }
+
+    g.entries.forEach(e => { if (!used.has(e)) sentences.push(formatEditHistoryEntrySummary(e)); });
+    return { service_id: g.service_id, edited_by: g.edited_by, edited_at: g.edited_at, summary: sentences.join('; ') };
+  }).filter(r => r.summary);
+}
+
 function renderAmendmentHistoryHtml(order) {
   const history = Array.isArray(order.edit_history) ? order.edit_history : [];
   if (!history.length) return '';
@@ -385,10 +555,13 @@ function renderAmendmentHistoryHtml(order) {
     const d = new Date(s);
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   };
-  const rows = [...history].reverse().map(h => {
+  const grouped = groupEditHistory(history);
+  if (!grouped.length) return '';
+  const labelFor = id => (typeof CATALOG_ROWS !== 'undefined' && CATALOG_ROWS[id] && (CATALOG_ROWS[id].accounting_label || CATALOG_ROWS[id].label)) || id || '—';
+  const rows = [...grouped].reverse().map(h => {
     return `<tr>
-      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${esc(h.service_id || '—')}</td>
-      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${formatEditHistoryEntrySummary(h)}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${esc(labelFor(h.service_id))}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11.5px">${h.summary}</td>
       <td style="padding:5px 10px;border-bottom:1px solid var(--border);font-size:11px;color:var(--muted)">${esc(h.edited_by || '—')}, ${fmtWhen(h.edited_at)}</td>
     </tr>`;
   }).join('');
@@ -418,6 +591,12 @@ function renderOrderDetailModal(order, sections) {
   };
   const fmtMoney = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   const items = Array.isArray(order.line_items) ? order.line_items : [];
+  // Live totals from the CURRENT line items (2026-09-24) -- orders.total_*
+  // are written once at submission and go stale the moment a line is
+  // edited (same root cause as Admin's Orders-list fix on 2026-09-23); a
+  // whole-campaign line is shown as its own Campaign Total, never averaged
+  // into "/mo".
+  const liveTotals = orderLiveTotals(order);
 
   const sectionOrderIndex = {};
   sections.forEach((s, i) => { sectionOrderIndex[s.id] = s.sort_order ?? i; });
@@ -441,17 +620,17 @@ function renderOrderDetailModal(order, sections) {
       // summary text for "Varies by month" plus a real per-month breakdown
       // table, instead of presenting an average as if it were a fact.
       const monthBudgets = Array.isArray(item.month_budgets) ? item.month_budgets : [];
-      const monthsVary = monthBudgets.length > 1 && new Set(monthBudgets.map(m => m.amount)).size > 1;
-      const amtParts = [];
-      if (item.fee > 0) amtParts.push(fmtMoney(item.fee) + ' one-time');
-      if (item.recurring > 0) amtParts.push(fmtMoney(item.recurring) + '/mo');
-      // Real campaign total instead of a bare "Varies by month" (2026-08-28,
-      // per Claire: "can we show the whole campaign total so that is a
-      // visual of what the split should equal") -- gives a concrete number
-      // the breakdown table below can be checked against, matching the same
-      // fix on the Trello comments/descriptions and the Print/Review IO.
-      const monthsTotal = monthBudgets.reduce((s, m) => s + (Number(m.amount) || 0), 0);
-      if (item.spend > 0) amtParts.push(monthsVary ? (fmtMoney(monthsTotal) + ' total') : (fmtMoney(item.spend) + '/mo spend'));
+      // Amount text + "does it vary" now come from describeLineItemAmount()
+      // (2026-09-24) so this modal, Admin's Order Detail and the revised-IO
+      // PDF all say the same thing: budget_mode-aware (an evenly-split Whole
+      // Campaign Total no longer reads as a flat "/mo" rate), real campaign
+      // total for a varying line (2026-08-28), and the "$unit × qty = $total"
+      // breakdown the printed IO shows.
+      const amtDesc = describeLineItemAmount(item);
+      const monthsVary = amtDesc.varies;
+      // The pill below already names the mode, so the amount just says "total"
+      // here (the PDF, which has no pill, keeps the full wording).
+      const amtParts = [(item.budget_mode === 'total' || item.budget_mode === 'custom') ? amtDesc.text.replace(/ (whole campaign total|total campaign spend)/, ' total') : amtDesc.text];
       const label = item.accounting_label || item.label || item.service_id || '—';
       // Budget entry mode pill (2026-08-28, per Claire: "I want it to be
       // clear what was ordered" -- and, once seen live, "we may need to make
@@ -492,8 +671,8 @@ function renderOrderDetailModal(order, sections) {
       <div><strong>IO Date:</strong> ${fmtDate(order.io_date)}</div>
       <div><strong>Campaign Start:</strong> ${fmtDate(order.campaign_start)}</div>
       <div><strong>Campaign End:</strong> ${fmtDate(order.campaign_end)}</div>
-      <div><strong>One-Time Total:</strong> ${fmtMoney(order.total_onetime)}</div>
-      <div><strong>Monthly Total:</strong> ${fmtMoney(order.total_monthly)}/mo</div>
+      <div><strong>One-Time Total:</strong> ${fmtMoney(liveTotals.oneTime)}</div>
+      <div><strong>Monthly Total:</strong> ${fmtMoney(liveTotals.monthly)}/mo${liveTotals.campaignTotal > 0 ? ` &nbsp;·&nbsp; <strong>Campaign Total:</strong> ${fmtMoney(liveTotals.campaignTotal)}` : ''}</div>
     </div>
     ${order.campaign_notes ? `<p style="font-size:11px;color:var(--muted);margin-bottom:12px"><strong>Campaign Notes:</strong> ${esc(order.campaign_notes)}</p>` : ''}
     <p style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Services Ordered</p>

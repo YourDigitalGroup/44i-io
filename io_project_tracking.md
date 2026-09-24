@@ -29391,3 +29391,75 @@ one-time), qty 3 ($175 × 3 = $525), Modules with no unit_fee ($250 × 3 =
 $750 via total ÷ qty), pre-qty order (plain $2,500 one-time), recurring
 per-unit qty 2 ($175 × 2 = $350/mo), qty-1 retainer (plain $1,500/mo),
 setup fee + retainer (both parts). Not yet seen live (needs a merge).
+
+### 2026-09-24 — Revised IO PDF (and shared View Order modal) were misrepresenting the order
+
+Claire, with the Tim Shepard revised-IO PDF after several edits: "This makes
+it look a little confusing don't you think?" → "this needs to be fixed so we
+again keep the IO at the center of everything and the source of truth."
+Five problems, two of them real correctness bugs from this week's work:
+
+1. **Audio printed "$1,500.00/mo spend"** although it had just been switched
+   to a $3,000 Whole Campaign Total. `generateAdminRevisedIoPdfBlob` read
+   the stored `spend` (the RPC recomputes it as the month AVERAGE) and never
+   looked at `budget_mode`/`month_budgets`.
+2. **"Monthly Recurring: $5,750/mo"** summed that average in as a flat rate.
+3. **One Save = three Change History rows** ("Budget Entry: Monthly Rate →
+   Whole Campaign Total", "Budget: $0.00 total → $3,000.00 total" — it was
+   never $0, the line just had no per-month array — and the earlier Spend
+   row), because the RPC appends one edit_history entry per field.
+4. **Four identical "Start Date: Oct 1 → Oct 1" rows** for Radio to Video —
+   the date-only Edit panel re-saved an unchanged date on every Quantity edit
+   (flagged as a quirk 2026-09-17, now fixed at the source).
+5. **"Oct 1, 2026 – Ongoing"** on a one-time fee.
+
+**Fix — shared.js (loaded by Admin/Strategist/Accounting; cache-bust
+`?v=20260924a` in all three):**
+- `lineSpendVaries(li)` / `describeLineItemAmount(item)` /
+  `orderLiveTotals(order)`: ONE rule for what a line item's amount is —
+  budget_mode-aware (same as Admin's `adminLineSpendVaries`), quantity
+  breakdown "$unit × qty = $total" like the printed IO, whole-campaign lines
+  totalled separately (`campaignTotal`) and never averaged into "/mo",
+  `isOneTimeOnly` for the date display. `renderOrderDetailModal` (the "View
+  Order" modal in every portal) now uses them for each row AND for the
+  header totals, which previously read the stale `orders.total_*` columns
+  (same root cause as the 2026-09-23 Orders-list fix) — now live, with a
+  "Campaign Total" figure when any line is whole-campaign/custom.
+- `groupEditHistory(history)`: reads the per-field DB entries into what a
+  reader actually did — drops no-op entries (normalised old == new), groups
+  entries from one Save (same service + editor within 2 minutes), and
+  summarises: a budget change as ONE line in the client's terms ("Budget:
+  $3,000.00/mo → $3,000.00 whole campaign total"; looks back through earlier
+  entries for the old flat rate / old month array the Save itself doesn't
+  carry), a quantity change with its price ("Quantity: 1 → 2 ($250.00 →
+  $500.00 one-time)"), a modules change with its price and without the
+  derived qty entry; anything else via the existing per-entry wording.
+  Nothing in the database is rewritten — the audit trail stays one entry
+  per field; only how it READS changed. `renderAmendmentHistoryHtml` uses it
+  (and now shows the service's catalog label instead of its id).
+
+**Fix — admin/index.html:** `generateAdminRevisedIoPdfBlob` rows/totals via
+the shared helpers (adds a "Whole Campaign Total(s): $X" figure to the totals
+line; a one-time item shows just its date), Change History via
+`groupEditHistory`; `adminSaveLineItemDateEdit` only saves/logs the date if
+it actually changed, refuses a Save where nothing changed ("Nothing
+changed"), and leaves the date out of the Trello comment when only
+Variant/Modules/Quantity moved.
+
+**Verified:** `node --check` on shared.js and the whole admin script block.
+Node simulation of the shared helpers against the real Tim Shepard shape:
+Streaming TV "$4,250.00/mo spend"; Audio "$3,000.00 whole campaign total";
+Radio to Video "$250.00 × 2 = $500.00 one-time", one-time-only; totals
+one-time $500 / monthly $4,250 / campaign total $3,000 (was $5,750/mo).
+History grouping on a reconstruction of that order's real entries plus four
+extra scenarios: the three no-op date rows vanish; qty+fee → one row; the
+Audio switch → "Budget: $3,000.00/mo → $3,000.00 whole campaign total" (old
+rate found from the earlier spend entry); total→monthly → "Budget: $3,000.00
+whole campaign total → $2,000.00/mo" (old total found from the earlier
+month_budgets entry — first attempt showed $0.00, fixed); end date + variant
+in one Save → one row; modules+qty+fee → one row. Headless-Chromium render
+of the real `renderOrderDetailModal` from shared.js with that order: rows,
+live totals ("Monthly Total: $4,250.00/mo · Campaign Total: $3,000.00"),
+per-month breakdown, and the grouped Amendment History all render, zero
+page errors. NOT verified: the PDF itself through html2canvas (needs the
+live page); Claire will see it on the next edit after merging.
