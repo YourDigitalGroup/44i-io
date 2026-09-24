@@ -29697,3 +29697,16 @@ after that links and tags normally.
 ships in the SAME block as the column, never separately — and any SQL that
 touches the live IO form's submission path gets called out as such so it
 is run outside business hours or right before a test submission.
+
+### 2026-09-24 — Standing rule: submission-path SQL (after two live incidents)
+
+Claire: "that is twice now that we have done something that messed with
+actual submissions. We need to be more careful moving forward." Agreed.
+Added to CLAUDE.md as a working convention (see "SQL on the submission path
+is high-stakes") and saved `scratchpad/smoke-test-submission-path.sql`: a
+`begin … rollback` block that calls `find_or_create_client` and inserts a
+clone of a real order (firing `create_campaign_lines_from_order`), so a
+broken function or trigger errors visibly instead of failing silently
+under a real AE. Would have caught both the 2026-09-23 `max(uuid)` bug and
+today's missing-column bug. Handed to Claire to run now as the post-fix
+check; she confirms two zero-count queries afterward.
