@@ -29745,8 +29745,17 @@ one-time service shows just its date; no end date → "to Ongoing"; no
 dates → nothing — used by both the tactic card and the IO card (whose
 line moves from raw "2026-10-01 to 2026-12-31" to the readable form).
 Agent-split cards unchanged (their dates are in the title).
-**Verified:** `node --check` on index.html; Node sim of the four cases.
-Not on the SQL submission path but IS in the form's Trello step after the
+**Verified:** `node --check` on index.html; Node sim of the four date
+cases; then, per Claire ("isn't there a way to simulate an order like we
+did earlier?"), the REAL `formatSiblingLineItems()` extracted from the
+file and run against today's Huron order shape plus a one-time and a
+whole-campaign line — output is the exact card text: "Price: $600/mo
+spend / Flight: Oct 1, 2026 to Dec 31, 2026"; "Price: $500 one-time /
+Flight: Oct 1, 2026"; Audio "$3,000.00 total campaign spend / Flight: Oct
+1, 2026 to Nov 3, 2026" + month breakdown. The Trello step itself can't be
+rolled back the way the SQL smoke test is (Trello has no undo), so the
+live run is verified only by the next real/test order. Not on the SQL
+submission path but IS in the form's Trello step after the
 order insert — a JS error there would leave an order without cards — so:
 after merging, confirm the next real order's tactic card shows the Flight
 line, or submit a test IO to a test client first.
