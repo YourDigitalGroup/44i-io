@@ -29585,3 +29585,43 @@ tries the Marine Industries Association client.
 **Still open (flagged, not built):** order-BACKED agent/county split lines
 still collapse to one row per service in the Companion form (Part A
 unchanged) — the second half of the 2026-09-10 flag.
+
+### 2026-09-24 — Covering Digital Strategist (group level)
+
+Samantha Escalante, going on maternity leave, after Claire reassigned her
+groups to the covering strategist: "When I look in the Strategist Portal now
+I don't have anything assigned to me. Is there a way to have my groups still
+assigned to me and the strategist who will be covering for me?" Today "My
+Campaigns" matches one name — the client's effective Digital Strategist
+(`strategistLineScopeName`, client override else group default) — so
+coverage meant moving ownership. Offered Claire: keep as is (switch names
+back on return; meanwhile Samantha uses All Strategists + Group filter) or
+add a group-level covering name. Claire: "Let's build the covering
+strategist field at the group level."
+
+**Built (frontend, pushed):**
+- Admin → Groups form: new "Covering Digital Strategist — optional"
+  dropdown under the Digital/Social/Web row (same roster picker, strategists
+  + supers), with a one-line explanation; loads/saves
+  `covering_strategist_name` in the group payload. Harmless before the SQL
+  runs: the live `admin_save_group` only reads the keys it knows.
+- Strategist Portal: `strategistLineCoveringName(l)` (client's group
+  `covering_strategist_name`, from `strategist_get_clients`) and
+  `strategistLineIsMine(l)` = owner OR covering, case/whitespace-tolerant;
+  both "My Campaigns" checks (`visibleCampaignLines`, the group-filter
+  counts) use it. Owner scoping unchanged; a null covering name matches
+  nobody, so nothing changes until a group has one set.
+
+**SQL** (`scratchpad/covering-strategist.sql`, DRAFT — placeholders built
+from the 2026-09-10 `admin_save_group` copy on file and the tracking-doc
+copy of `strategist_get_clients`; to be re-diffed against the LIVE
+definitions Claire was asked to paste before she runs it): (1)
+`groups.covering_strategist_name text`; (2) `admin_save_group` INSERT +
+UPDATE learn the field; (3) `strategist_get_clients` returns
+`'covering_strategist_name', g.covering_strategist_name`.
+
+**Verified:** `node --check` on admin + strategist script blocks; Node sim
+of the scoping: Bronson (covering) sees Samantha's client, not another
+strategist's, not an unassigned one; Samantha (owner) still sees hers;
+match tolerant of case/trailing space. Not live until the SQL runs and the
+branch merges.

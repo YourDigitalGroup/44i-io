@@ -2658,6 +2658,24 @@ function strategistLineScopeName(l) {
   const client = ALL_STRATEGIST_CLIENTS.find(c => c.id === l.client_id);
   return client?.digital_strategist_name || null;
 }
+// Covering Digital Strategist (2026-09-24, per Claire, from Samantha's
+// maternity-leave question: "Is there a way to have my groups still assigned
+// to me and the strategist who will be covering for me?"). A group-level
+// second name, set in Admin -> Groups; the client's effective owner above is
+// unchanged, this just also counts for "My Campaigns". Returned by
+// strategist_get_clients as covering_strategist_name (group's value).
+function strategistLineCoveringName(l) {
+  const client = ALL_STRATEGIST_CLIENTS.find(c => c.id === l.client_id);
+  return client?.covering_strategist_name || null;
+}
+// "Is this line mine?" for the My Campaigns scope -- owner OR covering.
+function strategistLineIsMine(l) {
+  const me = (currentStrategistUser?.name || '').trim().toLowerCase();
+  if (!me) return false;
+  const owner = (strategistLineScopeName(l) || '').trim().toLowerCase();
+  const covering = (strategistLineCoveringName(l) || '').trim().toLowerCase();
+  return owner === me || covering === me;
+}
 
 function visibleCampaignLines() {
   return ALL_CAMPAIGN_LINES.filter(l => {
@@ -2667,7 +2685,7 @@ function visibleCampaignLines() {
     // yet. Superseded 2026-08-11: now scoped via strategistLineScopeName() above,
     // same as every other tab -- the Setup queue was getting too long as one
     // shared list once every client had a real owner assigned in Admin.
-    if (strategistScope === 'mine' && strategistLineScopeName(l) !== currentStrategistUser.name) return false;
+    if (strategistScope === 'mine' && !strategistLineIsMine(l)) return false;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return false;
     if (strategistPacingFilter && strategistLinePacingSegment(l) !== strategistPacingFilter) return false;
     if (strategistClientSearch.trim() && !(l.client_name || '').toLowerCase().includes(strategistClientSearch.trim().toLowerCase())) return false;
@@ -2698,7 +2716,7 @@ function renderStrategistDashboard() {
   // always matches what actually renders when you click into it.
   const counts = { pending: 0, active: 0, paused: 0, complete: 0 };
   ALL_CAMPAIGN_LINES.forEach(l => {
-    if (strategistScope === 'mine' && strategistLineScopeName(l) !== currentStrategistUser.name) return;
+    if (strategistScope === 'mine' && !strategistLineIsMine(l)) return;
     if (strategistGroupFilter && l.group_name !== strategistGroupFilter) return;
     if (strategistPacingFilter && strategistLinePacingSegment(l) !== strategistPacingFilter) return;
     if (strategistClientSearch.trim() && !(l.client_name || '').toLowerCase().includes(strategistClientSearch.trim().toLowerCase())) return;
