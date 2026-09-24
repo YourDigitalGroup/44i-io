@@ -29731,3 +29731,22 @@ submission path): one `v_month date` declare + the same 7-char guard on the
 three casts; otherwise byte-identical to live. Nothing was lost meanwhile —
 Admin's edit had already synced the months; Confirm is the strategist's
 acknowledgement + re-sync. Shape-checked only (no Postgres here).
+
+### 2026-09-24 — Flight dates on the tactic Trello cards
+
+Claire, from Huron Community Campus's Targeted Display card: "I think we
+should put the flight dates on the service specific cards as well as the
+IO." The IO card's `servicesDesc` has carried a per-service "Flight:" line
+since per-tactic dates shipped; `formatSiblingLineItems()` (tactic card
+description + its "New order submitted" comment) never did, so the card
+only showed the due date. **Fix (`index.html`):** shared
+`formatLineItemFlight(li)` — "Flight: Oct 1, 2026 to Dec 31, 2026"; a
+one-time service shows just its date; no end date → "to Ongoing"; no
+dates → nothing — used by both the tactic card and the IO card (whose
+line moves from raw "2026-10-01 to 2026-12-31" to the readable form).
+Agent-split cards unchanged (their dates are in the title).
+**Verified:** `node --check` on index.html; Node sim of the four cases.
+Not on the SQL submission path but IS in the form's Trello step after the
+order insert — a JS error there would leave an order without cards — so:
+after merging, confirm the next real order's tactic card shows the Flight
+line, or submit a test IO to a test client first.
