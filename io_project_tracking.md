@@ -29447,8 +29447,12 @@ changed"), and leaves the date out of the Trello comment when only
 Variant/Modules/Quantity moved.
 
 **Verified:** `node --check` on shared.js and the whole admin script block.
-Node simulation of the shared helpers against the real Tim Shepard shape:
-Streaming TV "$4,250.00/mo spend"; Audio "$3,000.00 whole campaign total";
+Node simulation of the shared helpers against a RECONSTRUCTION of the Tim
+Shepard order (Streaming TV stubbed as a flat $4,250 -- WRONG, the real line
+varies by month and totals $8,500; Claire caught the mismatch when I quoted
+the stub as if it were the real result. Real expected output: Streaming TV
+"$8,500.00 total campaign spend", Monthly Recurring $0.00/mo, Whole Campaign
+Totals $11,500.00): Audio "$3,000.00 whole campaign total";
 Radio to Video "$250.00 × 2 = $500.00 one-time", one-time-only; totals
 one-time $500 / monthly $4,250 / campaign total $3,000 (was $5,750/mo).
 History grouping on a reconstruction of that order's real entries plus four
