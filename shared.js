@@ -364,6 +364,16 @@ function formatEditHistoryEntrySummary(h) {
   if (field === 'qty') {
     return `Quantity: ${esc(h.old_value ?? '—')} → ${esc(h.new_value)}`;
   }
+  if (field === 'swap') {
+    // Admin Swap Tactic (2026-09-25): written to the order by admin_swap_tactic
+    // so the swap is visible on Order Detail / View Order / the revised PDF.
+    let s = {};
+    try { s = typeof h.new_value === 'string' ? JSON.parse(h.new_value) : (h.new_value || {}); } catch (e) {}
+    const fmtD = d => d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    const money = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+    const ended = s.ending_status === 'cancelled' ? 'cancelled before it started' : `ended ${fmtD(s.effective_date ? new Date(new Date(s.effective_date + 'T12:00:00').getTime() - 86400000).toISOString().slice(0, 10) : null)}`;
+    return `Tactic swapped: ${esc(s.ending_label || '—')} → ${esc(s.starting_label || '—')}, effective ${fmtD(s.effective_date)}${s.new_flight_end ? ` through ${fmtD(s.new_flight_end)}` : ''} at ${money(s.monthly_budget)}/mo; ${esc(s.ending_label || 'old tactic')} ${ended}`;
+  }
   if (field === 'client_authorization') {
     // Companion form attestation (2026-09-24): the AE's on-record
     // confirmation that the client authorized the change, written into the

@@ -1823,7 +1823,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="../shared.js?v=20260924b"></script>
+<script src="../shared.js?v=20260925a"></script>
 <script>
 // ── STANDALONE-ADMIN ADAPTATION NOTES ──────────────────────────────
 // The code below is copied from index.html's admin block (lines
@@ -11806,6 +11806,21 @@ function adminToggleSwapPanel(orderId) {
           <input type="number" step="0.01" id="swap-budget-${orderId}" oninput="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
         </div>
       </div>
+      <!-- Swap improvements (2026-09-25, per Claire, after the Michael Carter
+           swap): the new tactic keeps running through an end date (defaults to
+           the ending tactic's), and picks its variant when the catalog has
+           them -- previously no end date at all and the generic combined label. -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:12px;margin-bottom:10px">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">New Tactic Runs Through</label>
+          <input type="date" id="swap-end-${orderId}" oninput="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
+        </div>
+        <div id="swap-variant-wrap-${orderId}">
+          <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Variant</label>
+          <select id="swap-variant-${orderId}" onchange="adminUpdateSwapPreview('${orderId}')" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"></select>
+        </div>
+        <p style="font-size:10.5px;color:var(--muted);margin:18px 0 0">The old tactic ends the day before the effective date (or is marked cancelled if it hadn't started). The new one is budgeted month by month through its end date.</p>
+      </div>
       <div id="swap-preview-${orderId}"></div>
       <div style="display:flex;gap:10px;margin-top:10px">
         <button type="button" id="swap-confirm-btn-${esc(orderId)}" onclick="adminConfirmSwap('${orderId}')" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Swap</button>
@@ -11813,7 +11828,41 @@ function adminToggleSwapPanel(orderId) {
       </div>
     </div>`;
   box.style.display = 'block';
+  adminSwapSyncDependentFields(orderId);
+  document.getElementById(`swap-ending-${orderId}`)?.addEventListener('change', () => adminSwapSyncDependentFields(orderId, 'ending'));
+  document.getElementById(`swap-starting-${orderId}`)?.addEventListener('change', () => adminSwapSyncDependentFields(orderId, 'starting'));
   adminUpdateSwapPreview(orderId);
+}
+
+// Keeps the two new Swap fields in step with the tactic pickers (2026-09-25):
+// the "runs through" date defaults to the ENDING tactic's own end date (from
+// its line item, else the order's campaign end) whenever the ending pick
+// changes; the Variant dropdown lists the STARTING tactic's catalog variants
+// (hidden when it has none) whenever the starting pick changes.
+function adminSwapSyncDependentFields(orderId, changed) {
+  const o = allOrders.find(x => x.id === orderId);
+  if (!o) return;
+  if (!changed || changed === 'ending') {
+    const endingId = document.getElementById(`swap-ending-${orderId}`)?.value;
+    const li = (o.line_items || []).find(x => x.service_id === endingId);
+    const endEl = document.getElementById(`swap-end-${orderId}`);
+    if (endEl) endEl.value = (li?.end_date || o.campaign_end || '').slice(0, 10);
+  }
+  if (!changed || changed === 'starting') {
+    const startingId = document.getElementById(`swap-starting-${orderId}`)?.value;
+    const raw = CATALOG_ROWS[startingId]?.tactic_variants;
+    const variants = Array.isArray(raw) ? raw : (typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null);
+    const wrap = document.getElementById(`swap-variant-wrap-${orderId}`);
+    const sel = document.getElementById(`swap-variant-${orderId}`);
+    if (!wrap || !sel) return;
+    if (Array.isArray(variants) && variants.length) {
+      sel.innerHTML = `<option value="">— Pick which one —</option>` + variants.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+      wrap.style.display = '';
+    } else {
+      sel.innerHTML = '';
+      wrap.style.display = 'none';
+    }
+  }
 }
 
 function adminUpdateSwapPreview(orderId) {
@@ -11867,6 +11916,24 @@ async function adminConfirmSwap(orderId) {
     if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Swap'; }
     return;
   }
+  // New fields (2026-09-25): end date for the new tactic and, when the
+  // catalog offers variants for it, which one -- required in that case so
+  // the line and card never carry the generic combined label again.
+  const newEnd = document.getElementById(`swap-end-${orderId}`)?.value || null;
+  const variantWrap = document.getElementById(`swap-variant-wrap-${orderId}`);
+  const variantSel = document.getElementById(`swap-variant-${orderId}`);
+  const variantRequired = variantWrap && variantWrap.style.display !== 'none' && variantSel && variantSel.options.length > 1;
+  const newLabel = variantRequired ? (variantSel.value || '') : '';
+  if (variantRequired && !newLabel) {
+    showToast('Pick which variant of the new tactic this is', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Swap'; }
+    return;
+  }
+  if (newEnd && newEnd < effectiveDate) {
+    showToast('The new tactic\'s end date must be on or after the effective date', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Swap'; }
+    return;
+  }
 
   let result;
   try {
@@ -11876,6 +11943,7 @@ async function adminConfirmSwap(orderId) {
         p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '',
         p_order_id: orderId, p_ending_service_id: endingId, p_starting_service_id: startingId,
         p_effective_date: effectiveDate, p_new_monthly_budget: parseFloat(budget),
+        p_new_flight_end: newEnd, p_new_tactic_label: newLabel || null,
       }),
     });
   } catch (e) {
@@ -11895,7 +11963,23 @@ async function adminConfirmSwap(orderId) {
   const endingCardId = endingSvc.workflow ? o?.trello_card_ids?.[endingSvc.workflow] : null;
   const ioCardId = o?.trello_card_ids?.__io_card__;
   const swapCardIds = [...new Set([endingCardId, ioCardId].filter(Boolean))];
-  const swapCommentText = `🔁 Replaced by ${startingSvc.accounting_label || startingSvc.label || startingId}, effective ${effectiveDate} (${result.ending_days} of ${result.total_days} days this month, $${Number(result.ending_amount).toLocaleString()}).`;
+  // The new line's real label (variant when picked) and end date, from the
+  // RPC's own result so the comment/card match what was written (2026-09-25).
+  const newTacticLabel = result.starting_label || startingSvc.accounting_label || startingSvc.label || startingId;
+  const runsThrough = result.new_flight_end ? `, running through ${pendingFmtDate(result.new_flight_end)}` : '';
+  const endedHow = result.ending_status === 'cancelled' ? 'was cancelled before it started' : 'ended the day before';
+  const swapCommentText = `🔁 Replaced by ${newTacticLabel}, effective ${pendingFmtDate(effectiveDate)}${runsThrough} — this tactic ${endedHow} (${result.ending_days} of ${result.total_days} days this month, $${Number(result.ending_amount).toLocaleString()}) (by ${currentAdminUser?.name || 'AM'}).`;
+  // Order record: the RPC appended a 'swap' entry to edit_history; mirror it
+  // locally so Order Detail re-renders with it right away.
+  if (o) {
+    o.is_revised = true;
+    o.edit_history = [...(o.edit_history || []), { service_id: endingId, field: 'swap', old_value: null,
+      new_value: JSON.stringify({ ending_service_id: endingId, ending_label: endingSvc.accounting_label || endingSvc.label || endingId, ending_status: result.ending_status,
+        starting_service_id: startingId, starting_label: newTacticLabel, effective_date: effectiveDate, new_flight_end: result.new_flight_end || null,
+        monthly_budget: parseFloat(budget), ending_days: result.ending_days, starting_days: result.starting_days, total_days: result.total_days,
+        ending_amount: result.ending_amount, starting_amount: result.starting_amount }),
+      edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
+  }
   for (const cardId of swapCardIds) {
     try {
       await fetch(PROXY, {
@@ -11913,12 +11997,15 @@ async function adminConfirmSwap(orderId) {
     const listId = clientRows?.[0]?.trello_list_id;
     const bizName = clientRows?.[0]?.name || o._client_name || '';
     if (listId) {
-      const cardName = `${startingSvc.accounting_label || startingSvc.label || startingId} — ${bizName}`;
-      const desc = `**Started via Swap Tactic**\nReplaces: ${endingSvc.accounting_label || endingSvc.label || endingId}\nEffective: ${effectiveDate}\nAmount: $${Number(result.starting_amount).toLocaleString()} (${result.starting_days} of ${result.total_days} days this month)`;
+      // Card title carries the variant + date range like a form-created card
+      // (2026-09-25), so Renew's name-based lookup can find it later.
+      const dateRange = adminFormatDateRangeForTitle(effectiveDate, result.new_flight_end || null);
+      const cardName = `${newTacticLabel}${dateRange ? ' ' + dateRange : ''} — ${bizName}`;
+      const desc = `**Started via Swap Tactic**\nReplaces: ${endingSvc.accounting_label || endingSvc.label || endingId}\nEffective: ${pendingFmtDate(effectiveDate)}${result.new_flight_end ? `\nRuns through: ${pendingFmtDate(result.new_flight_end)}` : ''}\nMonthly budget: $${Number(budget).toLocaleString()}/mo\nFirst month: $${Number(result.starting_amount).toLocaleString()} (${result.starting_days} of ${result.total_days} days)`;
       const createRes = await fetch(PROXY, {
         method: 'POST',
         headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: 'trello_create_card', list_id: listId, name: cardName, desc, pos: 'bottom' }),
+        body: JSON.stringify({ target: 'trello_create_card', list_id: listId, name: cardName, desc, pos: 'bottom', ...adminCampaignDueFields(result.new_flight_end || null) }),
       });
       const card = await createRes.json();
       if (card?.id && o) {
@@ -11937,6 +12024,9 @@ async function adminConfirmSwap(orderId) {
 
   document.getElementById(`swap-panel-${orderId}`).style.display = 'none';
   showToast(`✅ Swap complete — ${result.ending_days} days to the old tactic, ${result.starting_days} to the new one`);
+  // Re-render so the swap shows on this page (Amendment History + Revised
+  // pill) instead of looking like nothing happened (2026-09-25, per Claire).
+  viewOrderDetail(orderId);
 }
 
 async function adminNotifyTrelloOfIntakeCompletion(o, formKey) {
