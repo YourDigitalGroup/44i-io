@@ -4704,7 +4704,7 @@ async function loadAdminAes() {
     // get_group_aes' own comment in index.html for what was found). This admin tab
     // manages every group's roster, so it's password-gated rather than group-scoped,
     // same shape as admin_get_orders.
-    ALL_AES = await sb('rpc/admin_get_aes', {
+    ALL_AES = await sbAll('rpc/admin_get_aes', {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
@@ -4886,7 +4886,7 @@ async function loadClientAgentsCounties() {
     // Step 1's "AE Name" picker on the public form) is what this client's own AE
     // list picks FROM, so it must be loaded here too, not just on the Admin AE tab.
     if (!ALL_AES.length) {
-      ALL_AES = await sb('rpc/admin_get_aes', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || [];
+      ALL_AES = await sbAll('rpc/admin_get_aes', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || [];
     }
     const [counties, agents, clientAes] = await Promise.all([
       sb('rpc/admin_get_counties', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: clientId }) }),
@@ -6574,7 +6574,11 @@ async function loadAdminClients() {
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
   try {
     if (!allGroups.length) allGroups = await adminLoadAllGroups();
-    ALL_CLIENTS = await sb('rpc/admin_get_clients', {
+    // sbAll (2026-09-25): clients (759) and AEs (311) were the next single-
+    // request lists headed for Supabase's silent 1,000-row cap that hid Sweet
+    // Pizza's campaign lines today. admin_get_clients/admin_get_aes now take
+    // p_limit/p_offset (paginate-client-and-ae-lists.sql).
+    ALL_CLIENTS = await sbAll('rpc/admin_get_clients', {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
@@ -8781,7 +8785,7 @@ function adminLookupCurrentItem(r) {
 async function adminEnsureClientsLoaded() {
   if (ALL_CLIENTS.length) return;
   try {
-    ALL_CLIENTS = await sb('rpc/admin_get_clients', {
+    ALL_CLIENTS = await sbAll('rpc/admin_get_clients', {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
@@ -11521,7 +11525,7 @@ async function loadCampaignLinesTab() {
   // session, so this tab never depends on visit order.
   if (!ALL_CLIENTS.length) {
     try {
-      ALL_CLIENTS = await sb('rpc/admin_get_clients', {
+      ALL_CLIENTS = await sbAll('rpc/admin_get_clients', {
         method: 'POST',
         body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
       }) || [];
@@ -12528,7 +12532,7 @@ async function ensureStaffRosterLoaded() {
 async function ensureAeRosterLoaded() {
   if (ALL_AES.length) return;
   try {
-    ALL_AES = await sb('rpc/admin_get_aes', {
+    ALL_AES = await sbAll('rpc/admin_get_aes', {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];

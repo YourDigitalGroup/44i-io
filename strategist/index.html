@@ -1918,7 +1918,7 @@ async function fetchStrategistData() {
     sbAll('rpc/strategist_get_campaign_months', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sbAll('rpc/strategist_get_optimize_log', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_budgeted_spend_rates', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
-    sb('rpc/strategist_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    sbAll('rpc/strategist_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sb('rpc/strategist_get_platform_report_cache', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     sbAll('rpc/strategist_get_status_history', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
   ]);
