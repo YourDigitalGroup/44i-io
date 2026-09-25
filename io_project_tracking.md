@@ -30011,3 +30011,49 @@ handing it over. **SQL run + branch merged 2026-09-25 (Claire).** Live check = t
 its budget rows for months after its new end (B: Nov/Dec 700) — the old
 swap did the same; a guarded cleanup (budget-only months, no actuals/
 confirmations) is a small addition if wanted.
+
+### 2026-09-25 — Sweet Pizza (Dominos) "aren't in there anymore" = the 1,000-row API cap again (portal side built; SQL pending live defs)
+
+**Report (Bronson, via Claire):** Sweet Pizza (Dominos)'s campaigns had
+disappeared from the Strategist portal. Screenshot: All Strategists,
+September 2026, Group = West Texas Digital Marketing, Active 6 — only
+Members Financial and MTCU rows; Sweet Pizza absent from EVERY tab
+(Complete 0 despite six lines ending 9/12, Campaign Setup 0 despite two
+pending lines).
+
+**What I ruled out first (each with a read-only query Claire ran):** all 14
+lines intact (5 active through Sept, 2 pending Oct/Nov, 7 complete); one
+client record, not hidden; effective strategist "Kolton" and Kolton's login
+name exactly "Kolton" (so `strategistLineIsMine` matches); line group_id ==
+client group_id == West Texas Digital Marketing (so the Group filter isn't
+it). I wrongly leaned on the Group-filter theory for one round before the
+data disproved it — noted here honestly.
+
+**Root cause (confirmed):** `strategist_get_campaign_lines` was fetched with
+plain `sb()` (one request). Supabase's project-level API "Max Rows" cap
+silently truncates a single response at 1,000 rows — the exact failure
+already documented in shared.js's `sbAll` comment for campaign_months on
+2026-08-12. Confirmation query (row_number over the function's own ORDER BY
+g.name, c.name, tactic, county, split_order, created_at, id):
+`total_rows 1015, sweet_pizza_first_position 998, rows_cut_off 15`. West
+Texas Digital Marketing sorts near the end alphabetically and Sweet Pizza
+after Members Financial/MTCU, so only its first three rows (old completed
+Location Targeting lines, outside September) arrived and the client
+vanished from view. Marine Industries' three new campaigns + the Michael
+Carter/swap lines this week are what pushed the table over the cap.
+`accounting_get_campaign_lines` is fetched the same single-request way and
+has NO accounting_only filter, so Accounting is at/over the cap too.
+
+**Fix, portal side (this commit):** strategist/index.html and
+accounting/index.html now load campaign lines via `sbAll(...)` (pages of
+1,000 with p_limit/p_offset; hard 200-page backstop). Only those two
+callers exist (grepped).
+
+**Fix, SQL side (pending):** both RPCs need `p_limit int default null,
+p_offset int default 0` applied as a real `limit/offset` on their existing
+ORDER BY. Live `pg_get_functiondef` requested from Claire first (the
+scratchpad copies predate the 2026-09-10 `agent_split_trello_card_id`
+addition); will be executed in the pglite harness against >1,000 rows
+before hand-off. Ordering: SQL first (defaults keep the current live 2-arg
+call working), then merge. NOT on the submission path. Interim: the lines
+are visible in Admin → client → Campaign Lines.
