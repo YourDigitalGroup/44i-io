@@ -30078,3 +30078,63 @@ p_offset integer)`. Next: merge the branch; live check = Bronson/Kolton
 hard-refresh Strategist, September, and see Sweet Pizza's 5 active lines
 (+2 in Campaign Setup, 6 in Complete). Accounting was one row shy of the
 same cap and is covered by the same change.
+
+### 2026-09-25 — Visit Brookings YouTube line deleted (Claire, SQL)
+
+BR Digital reported the "Visit Brookings / YouTube: TrueView Skippable"
+campaign cancelled. Imported line (no IO), id `49a1eaf4-…`, status pending,
+never launched (flight_start null, flight_end 2026-09-07). Pre-checks Claire
+ran: 1 budget month (2026-08, $2,500, NOT confirmed by Accounting), 0 status
+changes, 0 optimize entries, 0 pending requests; no month ever closed. Per
+Claire ("we can just delete it like we have with other ones that were
+imported but no longer needed"): guarded `do $$` block (stops unless the id
+is the YouTube line) deleted optimize_log / status_history / campaign_months
+/ pending_requests children then the line — same pattern as the Little &
+Holland cleanup. Trello card (if any) to be archived by hand. A "Jon Wilson
+- Political?" question in the same AM message was dropped by Claire.
+
+### 2026-09-25 — Paging for the client + AE lists (built; SQL handed, awaiting run + merge)
+
+Follow-up to the Sweet Pizza cap incident, approved by Claire ("we can go
+ahead with those"). `pg_stat_user_tables` counts: campaign_months 11,821
+(already paged), campaign_lines 1,077 (fixed today), clients 759, rate_history
+555, ae 311, everything else < 500. `admin_get_rate_history` turned out to be
+scoped per service+field (never near the cap) — left alone. Four functions
+gain `p_limit/p_offset` (`scratchpad/paginate-client-and-ae-lists.sql`,
+diffed against live defs Claire pasted): `admin_get_clients`,
+`strategist_get_clients`, `accounting_get_clients`, `admin_get_aes`. The
+strategist/accounting client lists had NO order by; both get `order by
+c.name, c.id` (portals look clients up by id — no visible change).
+`admin_get_groups` returns `setof groups` (select *), so it already carries
+covering_strategist_name — no change needed.
+
+**Gap found + fixed in the same block (mine, from 2026-09-24):**
+`admin_get_clients` never returned `covering_strategist_name`, but the Admin
+client form (line ~6736) reads `c.covering_strategist_name` from that list on
+open — so a client-level override saved fine but showed as "inherit" on
+reopen, and the next save of that client would have wiped it to null. Four
+clients currently carry a client-level override (Grand Prairie Foods, Luxury
+Auto Mall, Hardy Concrete Coatings → Jon; Surgery Center Cedar Rapids →
+Kolton; all Sammy's). Strategist portal was unaffected (its own function
+coalesces correctly). One key added to admin_get_clients.
+
+**EXECUTED locally (pglite, `scratchpad/pg-test-paginate-clients.js`):**
+1,238 clients (2 same-name, 1 hidden, 1 with client-level covering
+override) + 1,101 AEs. 25/25 checks: 2-arg calls return everything (live
+portal safe between SQL and merge); paged loops = 3 requests each, all rows
+once, identical order to unpaged; hidden included in Admin (hidden:true) and
+excluded in Strategist/Accounting; admin_get_clients key set = old set +
+covering_strategist_name, raw client value (null when not overridden — the
+form falls back to the group); strategist coalesce intact; role rejections
+unchanged; exactly one signature each.
+
+**Portal side (this commit):** 8 call sites switched to `sbAll` — admin
+clients ×3, admin AEs ×3, strategist clients ×1, accounting clients ×1;
+inline-script syntax check passed on all three files. Order: SQL first,
+then merge.
+**SQL RUN 2026-09-25 (Claire).** Signature check: exactly one version of
+each of the four functions, all `(p_name, p_pw, p_limit, p_offset)`. Next:
+merge. Live checks after deploy: (a) Bronson/Kolton see Sweet Pizza's lines
+in Strategist (September); (b) Admin → Grand Prairie Foods shows Jon in the
+Covering Digital Strategist Override dropdown; (c) Admin Clients tab and AE
+list load normally (same counts as before).
