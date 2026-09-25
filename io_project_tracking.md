@@ -30176,3 +30176,8 @@ Portal: shared.js `formatEditHistoryEntrySummary` appends "; N leftover
 planned budget month(s) cleared from <old tactic>" when > 0 (silent for
 pre-change entries); Admin's local swap history entry carries
 cleared_months; shared.js version → `?v=20260925b`. Order: SQL, then merge.
+**SQL RUN 2026-09-25 (Claire).** One `admin_swap_tactic` signature (the
+9-arg one). Note for next time: the SQL Editor's destructive warning also
+fires on a function BODY containing `delete` — I told Claire she wouldn't
+see it and was wrong; the delete only runs during an actual swap. Next:
+merge; live check = the next real swap's history line.
