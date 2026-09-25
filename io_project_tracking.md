@@ -29994,6 +29994,20 @@ the history wording for both ending outcomes. Headless-Chromium render of
 the real panel functions: end date defaults to the ending line's
 2026-11-30 and re-defaults to 2026-10-31 when the ending pick changes;
 Variant hidden for a no-variant tactic, shown with the two Location
-Targeting options when that tactic is picked; zero page errors. NOT
-verified: the RPC executing (shape-checked only) and the live swap — needs
-SQL run + merge + a real swap.
+Targeting options when that tactic is picked; zero page errors. **Then EXECUTED for real** (Claire: "you are sure the SQL is correct, SQL's
+were what bit us the last 2 times"): installed `@electric-sql/pglite` (a
+real Postgres 18 running inside Node) in the scratchpad, built the minimal
+tables the function touches + an `admin_resolve_role` stub, loaded the
+exact `swap-improvements.sql`, and ran four scenarios (`pg-test-swap.js`):
+A) Michael Carter shape — old line cancelled with reason, new Geofencing
+line Oct 1–Dec 31 with 700/700/700, order history 'swap' by Claire;
+B) running line swapped Oct 20, nothing given — old ends Oct 19, new
+inherits Dec 31, Oct prorated 735.48/464.52 (19/12 days), Nov/Dec 1200;
+C) no end date anywhere — open-ended new line, swap month only (matches
+old behavior); D) bad service — clean error. All correct. NEW STANDING
+RULE added to CLAUDE.md: execute handed SQL locally this way before
+handing it over. Not yet live (needs SQL run + merge + a real swap).
+**Observed, not changed (Claire to decide):** the swapped-OUT line keeps
+its budget rows for months after its new end (B: Nov/Dec 700) — the old
+swap did the same; a guarded cleanup (budget-only months, no actuals/
+confirmations) is a small addition if wanted.

@@ -84,7 +84,13 @@ building before assuming a schema change is enough on its own.
   separately; (3) Claire runs `scratchpad/smoke-test-submission-path.sql` right after
   (it clones a real order inside a transaction, fires the trigger, and rolls back);
   (4) prefer outside AE hours. plpgsql does NOT validate column references at CREATE
-  time, so "the SQL ran without error" proves nothing about runtime.
+  time, so "the SQL ran without error" proves nothing about runtime. (5) **Execute
+  handed SQL locally first**: `@electric-sql/pglite` (real Postgres in Node, installs in
+  seconds into the session scratchpad) runs plpgsql for real — build the minimal tables
+  the function touches, load the exact .sql file, call it across realistic scenarios,
+  and read back the rows. Pattern: scratchpad `pg-test-swap.js` (2026-09-25). This is
+  the check that would have caught both incidents; "shape-checked only" is no longer
+  an acceptable verification level for a function Claire is about to run.
 - **Business-logic ambiguity gets parked, not guessed at.** Several real examples exist
   in the tracking doc of exactly this pattern — read a couple before assuming you should
   resolve an ambiguous rule yourself.
