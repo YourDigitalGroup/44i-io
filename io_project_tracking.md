@@ -29946,3 +29946,54 @@ line included) and the order record is intact. Closes the live check on
 the only submission-adjacent change in that merge. Live now: Flight dates
 on tactic cards, AM cancel-date adjustment, Companion client-authorization
 attestation (its own live check = the next Companion submission).
+
+### 2026-09-25 — Swap Tactic improvements (built; SQL handed, awaiting run + merge)
+
+Claire: "go ahead and build the swap improvements." Diffed against the live
+`admin_swap_tactic` she pasted (saved as
+`scratchpad/live-admin_swap_tactic-2026-09-25.sql`).
+
+**SQL** (`scratchpad/swap-improvements.sql`, NOT on the submission path):
+drops the 7-arg `admin_swap_tactic` and recreates it with two optional
+inputs, `p_new_flight_end date` and `p_new_tactic_label text` (Admin is the
+only caller). Body: (1) finds the ending line FIRST and remembers its
+original flight_end/label (old version updated before checking); (2) an
+ending line that hadn't started (flight_start >= effective) is marked
+`cancelled` with reason "Replaced via Swap Tactic before it started"
+instead of left `pending` with end < start; a running line still ends the
+day before; (3) new line gets flight_end = p_new_flight_end else the
+ending line's original end, tactic_label = the picked variant else the
+catalog label, budget_entry_mode 'monthly'; (4) months: swap-month
+proration unchanged PLUS every following month through flight_end at the
+full budget (old version seeded ONLY the swap month); (5) appends a
+`field: 'swap'` entry to `orders.edit_history` and sets is_revised, so the
+swap is visible on the order everywhere. Returns ending_status,
+new_flight_end, starting_label in addition to the old fields.
+
+**Admin (`admin/index.html`):** Swap panel gains "New Tactic Runs Through"
+(defaults to the ending tactic's line-item end date, else the order's
+campaign end; re-defaults when the ending pick changes) and a "Variant"
+dropdown that appears only when the starting tactic has catalog variants
+(required then, so the generic combined label can never be written again);
+validation: end date on/after effective date. Confirm passes both new
+inputs; the ending-card comment now names the variant, the run-through
+date and how the old tactic ended; the new card's title carries variant +
+date range (so Renew's name lookup finds it) and a due date; the swap
+entry is mirrored into the local order and `viewOrderDetail()` re-renders,
+so Order Detail shows the Revised pill + the swap in Amendment History
+right away (was: panel closes, nothing visible changes — the "saved but
+didn't change" from Michael Carter).
+**shared.js:** `formatEditHistoryEntrySummary` renders a 'swap' entry as
+"Tactic swapped: A → B, effective Oct 1, 2026 through Dec 31, 2026 at
+$700.00/mo; A ended Sep 30, 2026" (or "cancelled before it started") —
+Amendment History in all portals + revised PDF (`?v=20260925a`).
+
+**Verified:** `node --check` on shared.js + admin script block; SQL shape
+(2 `$function$` markers, drop immediately followed by create). Node sim of
+the history wording for both ending outcomes. Headless-Chromium render of
+the real panel functions: end date defaults to the ending line's
+2026-11-30 and re-defaults to 2026-10-31 when the ending pick changes;
+Variant hidden for a no-variant tactic, shown with the two Location
+Targeting options when that tactic is picked; zero page errors. NOT
+verified: the RPC executing (shape-checked only) and the live swap — needs
+SQL run + merge + a real swap.
