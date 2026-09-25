@@ -29924,7 +29924,16 @@ signed IO's service name on the line (logged in edit_history) or must the
 signed record stay untouched with a note? (b) OK that the stray card is
 commented, not archived? ~1 day. Not on the submission path.
 
-**2. Swap improvements (second).** (1) new line inherits ending line's
+**Item 1 PARKED 2026-09-25** (Claire): the Companion form (planned release
+in ~1 month) has AEs renew from campaigns already in the system, so a
+wrong service on a renewal IO mostly disappears. Until then a repeat gets
+the same SQL repair shape as Michael Carter's. Revisit only if wrong
+picks persist after Companion launch (a NEW-service IO can still carry
+one). Also found in the live def while planning: the swap seeds ONLY the
+swap month on the new line (no following months, no flight_end) — added
+to item 2's list.
+
+**2. Swap improvements (still wanted).** (1) new line inherits ending line's
 flight_end (editable in panel); (2) variant picker → tactic_label; (3)
 ending line not yet started → status complete, not pending with end <
 start; (4) "Campaign changes" section under Order Detail's Services table
