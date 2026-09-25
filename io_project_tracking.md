@@ -30132,3 +30132,9 @@ unchanged; exactly one signature each.
 clients ×3, admin AEs ×3, strategist clients ×1, accounting clients ×1;
 inline-script syntax check passed on all three files. Order: SQL first,
 then merge.
+**SQL RUN 2026-09-25 (Claire).** Signature check: exactly one version of
+each of the four functions, all `(p_name, p_pw, p_limit, p_offset)`. Next:
+merge. Live checks after deploy: (a) Bronson/Kolton see Sweet Pizza's lines
+in Strategist (September); (b) Admin → Grand Prairie Foods shows Jon in the
+Covering Digital Strategist Override dropdown; (c) Admin Clients tab and AE
+list load normally (same counts as before).
