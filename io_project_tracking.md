@@ -29877,6 +29877,12 @@ Claire — the TD line's amount — one number to change if wrong); delete the
 swap-created lt-geo duplicate and the never-launched TD line plus their
 campaign_months/status_history. Caught mid-message that my first draft
 used Huron's order id — corrected to look the order up by io_number.
+**Run 2026-09-25 (Claire; $700/mo confirmed).** Verified end state: four
+lines — Facebook/IG Ads (17 months), Geofencing 2025-10-01 → 2026-12-31 (15
+months, history intact), SEM (19), Social Media Management (1); both
+mistaken lines gone. Two "relation does not exist" errors along the way
+were the Supabase editor pointed at Claire's OTHER project, not a schema
+problem — worth remembering as the first thing to check on that error.
 
 **Cannot be fixed in SQL, left with Claire:** the signed IO still names
 Targeted Display (Admin Edit can't change a line's service) — note on the
