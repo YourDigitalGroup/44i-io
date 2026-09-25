@@ -30138,3 +30138,11 @@ merge. Live checks after deploy: (a) Bronson/Kolton see Sweet Pizza's lines
 in Strategist (September); (b) Admin → Grand Prairie Foods shows Jon in the
 Covering Digital Strategist Override dropdown; (c) Admin Clients tab and AE
 list load normally (same counts as before).
+**MERGED + LIVE-VERIFIED 2026-09-25 (Claire: "Everything looks good").**
+Sweet Pizza's lines back in Strategist; Admin client form shows the
+client-level covering strategist; client/AE lists load normally. Both
+paging incidents (campaign_months 2026-08-12, campaign_lines 2026-09-25)
+are now closed the same way. Remaining single-request lists are all far
+below the cap (largest: rate_history 555, but that RPC is scoped per
+service+field; ae 311 now paged). Re-check `pg_stat_user_tables` counts
+if any table approaches ~800.
