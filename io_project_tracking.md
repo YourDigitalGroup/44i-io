@@ -29847,3 +29847,50 @@ Companion submission.
 **Open policy note for Claire/AMs (not built):** this is the AE's word on
 the client's authorization. If a change ever needs the CLIENT's own
 sign-off (as the original IO does), that is a different, heavier flow.
+
+### 2026-09-25 — Michael Carter DMD (STMM): wrong service on a renewal IO, then a Swap
+
+First live test of the 2026-09-22 renewal-matching trigger fix: a renewal
+submitted as a new IO ("Renewing same campaign until 12/31/26"). **The rule
+worked** — Facebook/IG Ads and SEM (original lines from 2026-08-10) were
+extended to 2026-12-31 and re-pointed at the new order; no duplicates.
+
+But the AE picked **Targeted Display: Geotargeting & Audience** on the IO
+instead of the client's running **Location Targeting: Geofencing**
+(imported line, no order, 12 months of history, ending 2026-09-30). The
+rule only matches on the same service, so Geofencing was untouched and a
+new Targeted Display line was created. Claire (Companion form not live yet)
+used Admin's **Swap Tactic** to replace TD with Location Targeting — which
+did what Swap does: ended the TD line the day before (flight_end <
+flight_start, still `pending`) and created a NEW lt-geo line (generic
+"Geofencing or 1st Party Addressable" label — Swap has no variant picker;
+no flight_end; `active`, skipping Setup). Result: TWO Geofencing lines —
+the exact duplication the renewal fix exists to prevent — and Order Detail
+showed no change because Swap deliberately never touches the order's
+Services table (2026-08-20 decision), which read to Claire as "saved but
+didn't change".
+
+**Repair (SQL handed in one transaction):** extend the ORIGINAL Geofencing
+line to 2026-12-31, attach it to the new order, stamp last_renewed_*; seed
+Oct–Dec 2026 campaign_months at the IO's $700/mo (assumption stated to
+Claire — the TD line's amount — one number to change if wrong); delete the
+swap-created lt-geo duplicate and the never-launched TD line plus their
+campaign_months/status_history. Caught mid-message that my first draft
+used Huron's order id — corrected to look the order up by io_number.
+
+**Cannot be fixed in SQL, left with Claire:** the signed IO still names
+Targeted Display (Admin Edit can't change a line's service) — note on the
+order or a corrected IO from the AE; Trello: archive the swap-created
+Geofencing card + the TD card, renewal comment + Dec 31 due date on the
+existing Geofencing card.
+
+**Lessons / follow-ups:**
+- Swap is the wrong tool for "the AE picked the wrong service on a renewal"
+  — the right fix is to attach the existing line to the new order (what the
+  trigger would have done). Worth an Admin action for exactly that case
+  ("this IO line renews existing campaign X") rather than SQL by hand.
+- Swap itself needs work before it's an everyday tool: carry the ending
+  line's flight_end to the new line; offer the variant picker; resolve the
+  ending line's status (complete/cancelled, not pending with end < start);
+  and show the result on Order Detail (or at least a note) so a successful
+  swap doesn't look like a failed save. Not built; flagged.
