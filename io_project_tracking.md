@@ -29939,3 +29939,10 @@ ending line not yet started → status complete, not pending with end <
 start; (4) "Campaign changes" section under Order Detail's Services table
 listing swapped-in lines (Services table stays the signed record). Needs
 live `admin_swap_tactic` from Claire. ~1 day. Not on the submission path.
+
+**2026-09-25 — Yesterday's branch MERGED and live-verified (Claire).** A
+real order came in after the merge: Trello cards built correctly (Flight
+line included) and the order record is intact. Closes the live check on
+the only submission-adjacent change in that merge. Live now: Flight dates
+on tactic cards, AM cancel-date adjustment, Companion client-authorization
+attestation (its own live check = the next Companion submission).
