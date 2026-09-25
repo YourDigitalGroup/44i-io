@@ -1823,7 +1823,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="../shared.js?v=20260925a"></script>
+<script src="../shared.js?v=20260925b"></script>
 <script>
 // ── STANDALONE-ADMIN ADAPTATION NOTES ──────────────────────────────
 // The code below is copied from index.html's admin block (lines
@@ -11981,7 +11981,7 @@ async function adminConfirmSwap(orderId) {
       new_value: JSON.stringify({ ending_service_id: endingId, ending_label: endingSvc.accounting_label || endingSvc.label || endingId, ending_status: result.ending_status,
         starting_service_id: startingId, starting_label: newTacticLabel, effective_date: effectiveDate, new_flight_end: result.new_flight_end || null,
         monthly_budget: parseFloat(budget), ending_days: result.ending_days, starting_days: result.starting_days, total_days: result.total_days,
-        ending_amount: result.ending_amount, starting_amount: result.starting_amount }),
+        ending_amount: result.ending_amount, starting_amount: result.starting_amount, cleared_months: result.cleared_months }),
       edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
   }
   for (const cardId of swapCardIds) {
