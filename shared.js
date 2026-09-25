@@ -372,7 +372,11 @@ function formatEditHistoryEntrySummary(h) {
     const fmtD = d => d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
     const money = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
     const ended = s.ending_status === 'cancelled' ? 'cancelled before it started' : `ended ${fmtD(s.effective_date ? new Date(new Date(s.effective_date + 'T12:00:00').getTime() - 86400000).toISOString().slice(0, 10) : null)}`;
-    return `Tactic swapped: ${esc(s.ending_label || '—')} → ${esc(s.starting_label || '—')}, effective ${fmtD(s.effective_date)}${s.new_flight_end ? ` through ${fmtD(s.new_flight_end)}` : ''} at ${money(s.monthly_budget)}/mo; ${esc(s.ending_label || 'old tactic')} ${ended}`;
+    // cleared_months (2026-09-25 evening, per Claire's Option 1): the old
+    // line's untouched planned-budget rows past its new end that the swap
+    // removed. Absent on swaps recorded before that change -- say nothing then.
+    const cleared = Number(s.cleared_months) > 0 ? `; ${s.cleared_months} leftover planned budget month${s.cleared_months === 1 ? '' : 's'} cleared from ${esc(s.ending_label || 'the old tactic')}` : '';
+    return `Tactic swapped: ${esc(s.ending_label || '—')} → ${esc(s.starting_label || '—')}, effective ${fmtD(s.effective_date)}${s.new_flight_end ? ` through ${fmtD(s.new_flight_end)}` : ''} at ${money(s.monthly_budget)}/mo; ${esc(s.ending_label || 'old tactic')} ${ended}${cleared}`;
   }
   if (field === 'client_authorization') {
     // Companion form attestation (2026-09-24): the AE's on-record

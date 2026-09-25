@@ -30146,3 +30146,33 @@ are now closed the same way. Remaining single-request lists are all far
 below the cap (largest: rate_history 555, but that RPC is scoped per
 service+field; ae 311 now paged). Re-check `pg_stat_user_tables` counts
 if any table approaches ~800.
+
+### 2026-09-25 (evening) — Swap Tactic: clear the outgoing line's leftover planned months (Option 1; SQL handed, awaiting run + merge)
+
+Claire picked Option 1 for the question parked this afternoon. Confirmed
+first (accounting/index.html `accountingLineActiveInMonth`, strategist
+`strategistLineActiveInMonth`): both portals already hide a line for months
+outside its flight, so the leftovers were invisible — the risk was a later
+renew/extend of the old line resurrecting stale amounts, and raw sums.
+
+`scratchpad/swap-cleanup-leftover-months.sql` = this afternoon's
+`admin_swap_tactic` (same 9-arg signature, CREATE OR REPLACE, no drop) plus:
+`v_cleared`; one guarded DELETE of the ENDING line's campaign_months where
+`month > date_trunc('month', p_effective_date - 1)` AND every column beyond
+gross_budget is empty (actual_spend/clicks/impressions/conversions/
+total_visits, in_platform_override, ctr/avg_cpm/avg_cpc, yesterday_* and
+pacing pcts, goal_override, paused false/null, confirmed_by/at) — column
+list taken from information_schema Claire pasted; `cleared_months` added to
+the order's edit_history 'swap' entry and the returned json.
+
+**EXECUTED locally (pglite, `scratchpad/pg-test-swap-cleanup.js`, 7/7 +
+original A–D):** A never-started line → all 3 Oct–Dec rows cleared; B
+running, swap Oct 20 → Aug/Sep + prorated Oct kept, Nov/Dec cleared; E swap
+on Oct 1 → old ends Sep 30, Oct/Nov/Dec cleared (Oct had no proration row
+to keep); F Nov confirmed + Dec actual spend → 0 cleared; G Nov paused + Dec
+goal_override → 0 cleared; new line's months untouched; one signature.
+
+Portal: shared.js `formatEditHistoryEntrySummary` appends "; N leftover
+planned budget month(s) cleared from <old tactic>" when > 0 (silent for
+pre-change entries); Admin's local swap history entry carries
+cleared_months; shared.js version → `?v=20260925b`. Order: SQL, then merge.
