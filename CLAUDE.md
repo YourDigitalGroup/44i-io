@@ -73,6 +73,18 @@ building before assuming a schema change is enough on its own.
 - **Don't expand scope unprompted.** If you find a related issue while fixing something
   else, flag it and ask rather than fixing it silently — Claire manages usage/cost
   consciously and prefers to make that call herself.
+- **SQL on the submission path is high-stakes — label it, bundle it, smoke-test it.**
+  Two live incidents (2026-09-23 `max(uuid)` in the order trigger; 2026-09-24 a
+  function referencing a column shipped in a separate message) broke or degraded real
+  AE submissions. The submission path = `find_or_create_client`/`find_or_create_ae`
+  (both signatures), the `orders` AFTER INSERT trigger, `save_group_draft`/
+  `get_group_drafts`, and the group/notification reads the form makes on load. Rules:
+  (1) say "touches the submission path" in the first line of any such SQL; (2) a
+  function that depends on a new column ships in the SAME block as the column, never
+  separately; (3) Claire runs `scratchpad/smoke-test-submission-path.sql` right after
+  (it clones a real order inside a transaction, fires the trigger, and rolls back);
+  (4) prefer outside AE hours. plpgsql does NOT validate column references at CREATE
+  time, so "the SQL ran without error" proves nothing about runtime.
 - **Business-logic ambiguity gets parked, not guessed at.** Several real examples exist
   in the tracking doc of exactly this pattern — read a couple before assuming you should
   resolve an ambiguous rule yourself.

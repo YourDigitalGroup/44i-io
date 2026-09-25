@@ -6069,6 +6069,18 @@ async function submitIO() {
         // scan" treatment as servicesDesc() above, kept consistent since this
         // builds both a Trello comment AND that same card's persistent Description
         // (see finalizeTacticCard() below — one function feeds both).
+        // One "Flight: …" line per line item, shared by the IO card's servicesDesc
+        // and every tactic card's description/comment (2026-09-24). A one-time
+        // service happens on a date (no "to …"); anything else shows start to
+        // end, or "Ongoing" when no end date was set.
+        function formatLineItemFlight(li) {
+          if (!li.start_date && !li.end_date) return '';
+          const fmtD = s => s ? new Date(s + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+          const isOneTime = CATALOG_ROWS[li.service_id]?.billing_type === 'one_time';
+          return isOneTime
+            ? `Flight: ${fmtD(li.start_date)}`
+            : `Flight: ${fmtD(li.start_date)} to ${li.end_date ? fmtD(li.end_date) : 'Ongoing'}`;
+        }
         function formatSiblingLineItems(originalWorkflow) {
           const siblings = lineItems.filter(li => li.workflow === originalWorkflow);
           if (!siblings.length) return '';
@@ -6106,6 +6118,14 @@ async function submitIO() {
               }
             }
             if (priceParts.length) itemLines.push(`   Price: ${priceParts.join(', ')}`);
+            // Flight dates on the tactic card too (2026-09-24, per Claire: "put
+            // the flight dates on the service specific cards as well as the IO")
+            // -- the IO card's servicesDesc has had this line since the per-
+            // tactic dates shipped; this description never got it, so a
+            // strategist opening the tactic card had to go to the IO to see
+            // when the campaign runs. Same one-time vs. ongoing rule.
+            const flightLine = formatLineItemFlight(li);
+            if (flightLine) itemLines.push(`   ${flightLine}`);
             if (monthsVary) {
               li.month_budgets.forEach(m => {
                 const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
@@ -6372,12 +6392,10 @@ async function submitIO() {
               : ` (prorated to $${li.prorated_hosting_amt.toFixed(2)})`;
           }
           if (priceLine) lines.push(`   Price: ${priceLine}`);
-          if (li.start_date || li.end_date) {
-            const isOneTime = CATALOG_ROWS[li.service_id]?.billing_type === 'one_time';
-            lines.push(isOneTime
-              ? `   Flight: ${li.start_date || '—'}`
-              : `   Flight: ${li.start_date || '—'} to ${li.end_date || 'Ongoing'}`);
-          }
+          // Readable dates (2026-09-24) -- was raw "2026-10-01 to 2026-12-31";
+          // now the same "Oct 1, 2026 to Dec 31, 2026" the tactic cards show.
+          const flightLine = formatLineItemFlight(li);
+          if (flightLine) lines.push(`   ${flightLine}`);
           if (monthsVary) {
             li.month_budgets.forEach(m => {
               const label = new Date(m.month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });

@@ -29660,3 +29660,282 @@ live definition Claire pasted (identical to the 2026-09-09 copy on file).
 Handed the whole `covering-strategist.sql` (5 sections, all idempotent) as
 one block.
 Verified: `node --check` on admin script block.
+
+### 2026-09-24 — Order saved with no client link ("(unknown)") — my sequencing mistake
+
+Claire, on Riverfront Digital's Huron Community Campus order (Earl
+Bartholow, IO 20260923-HURONC-HFP, submitted 3:11pm CT): "Ok, what happened
+here?" — the Admin Order Detail title read "Order — (unknown)". Query of the
+day's orders: every order through 12:55pm has a client_id; this one has
+client_id null and both of its campaign_lines have client_id null.
+
+**Cause:** I handed Claire the replaced `find_or_create_client` (reads the
+new `covering_strategist_name` column) in a separate message from the
+`alter table` that creates the column. plpgsql doesn't check column
+references at CREATE time, so the function installed cleanly and then
+threw at runtime on the first submission. index.html deliberately survives
+that call failing ("order will save without a linked client record") — so
+the order and Trello cards were created, just with no client, and the
+AFTER INSERT trigger copied the null client_id onto the campaign lines.
+
+**Repair** (handed as a single idempotent `do $$` block): find or create
+the Huron Community Campus client under the order's group (contact details
+from the IO's Bill To), then set `orders.client_id` and
+`campaign_lines.client_id` for that order. Flagged that
+`clients.trello_list_id` was never stored for this client (that write
+happens right after find_or_create_client succeeds) — Claire to fill it in
+Admin → Clients by hand so renewals/Companion approvals can find the cards.
+Third effect, reported by the strategist team: the order's Trello tactic
+cards were created WITHOUT Carol L. (the Digital Strategist) as a member —
+her handle comes back from the same failed lookup. Claire added her by
+hand. Full blast radius of the one failed call: no client link, null
+client on both campaign lines, no Trello list id stored, no strategist on
+the cards. Columns confirmed present 2026-09-24 (both rows); every order
+after that links and tags normally.
+
+**Lesson (rule going forward):** a function that depends on a new column
+ships in the SAME block as the column, never separately — and any SQL that
+touches the live IO form's submission path gets called out as such so it
+is run outside business hours or right before a test submission.
+
+### 2026-09-24 — Standing rule: submission-path SQL (after two live incidents)
+
+Claire: "that is twice now that we have done something that messed with
+actual submissions. We need to be more careful moving forward." Agreed.
+Added to CLAUDE.md as a working convention (see "SQL on the submission path
+is high-stakes") and saved `scratchpad/smoke-test-submission-path.sql`: a
+`begin … rollback` block that calls `find_or_create_client` and inserts a
+clone of a real order (firing `create_campaign_lines_from_order`), so a
+broken function or trigger errors visibly instead of failing silently
+under a real AE. Would have caught both the 2026-09-23 `max(uuid)` bug and
+today's missing-column bug. Claire ran it 2026-09-24 after the covering-
+strategist SQL: "submission path OK, lines_created 2" — the submission
+path verified healthy end to end (client lookup + order insert + trigger),
+not assumed. Supabase's editor flagged the block's UPDATE-without-WHERE
+(intentional: one-row temp table) and RLS-on-new-table (temp table, gone
+at rollback) warnings — both explained, neither applies.
+
+### 2026-09-24 — Strategist "Confirm reviewed" failed on a month-by-month line
+
+Bronson, confirming Admin's Audio → $3,000 Whole Campaign Total change on
+Tim Shepard in the Order Changes panel: `invalid input syntax for type
+date: "2026-10"`. `strategist_confirm_order_change` (live definition pasted
+by Claire) cast each `month_budgets[].month` — stored as 'YYYY-MM'
+everywhere in this app — straight to `date` in three places. First time
+Confirm had ever met a month-by-month line (Audio only became one today),
+so the third instance of the same latent bug found today
+(`admin_renew_service` and `admin_renew_campaign_line` got the identical
+guard this morning). **Fix**
+(`scratchpad/fix-strategist-confirm-order-change-month.sql`, not on the
+submission path): one `v_month date` declare + the same 7-char guard on the
+three casts; otherwise byte-identical to live. Nothing was lost meanwhile —
+Admin's edit had already synced the months; Confirm is the strategist's
+acknowledgement + re-sync. Shape-checked only (no Postgres here).
+
+### 2026-09-24 — Flight dates on the tactic Trello cards
+
+Claire, from Huron Community Campus's Targeted Display card: "I think we
+should put the flight dates on the service specific cards as well as the
+IO." The IO card's `servicesDesc` has carried a per-service "Flight:" line
+since per-tactic dates shipped; `formatSiblingLineItems()` (tactic card
+description + its "New order submitted" comment) never did, so the card
+only showed the due date. **Fix (`index.html`):** shared
+`formatLineItemFlight(li)` — "Flight: Oct 1, 2026 to Dec 31, 2026"; a
+one-time service shows just its date; no end date → "to Ongoing"; no
+dates → nothing — used by both the tactic card and the IO card (whose
+line moves from raw "2026-10-01 to 2026-12-31" to the readable form).
+Agent-split cards unchanged (their dates are in the title).
+**Verified:** `node --check` on index.html; Node sim of the four date
+cases; then, per Claire ("isn't there a way to simulate an order like we
+did earlier?"), the REAL `formatSiblingLineItems()` extracted from the
+file and run against today's Huron order shape plus a one-time and a
+whole-campaign line — output is the exact card text: "Price: $600/mo
+spend / Flight: Oct 1, 2026 to Dec 31, 2026"; "Price: $500 one-time /
+Flight: Oct 1, 2026"; Audio "$3,000.00 total campaign spend / Flight: Oct
+1, 2026 to Nov 3, 2026" + month breakdown. The Trello step itself can't be
+rolled back the way the SQL smoke test is (Trello has no undo), so the
+live run is verified only by the next real/test order. Not on the SQL
+submission path but IS in the form's Trello step after the
+order insert — a JS error there would leave an order without cards — so:
+after merging, confirm the next real order's tactic card shows the Flight
+line, or submit a test IO to a test client first.
+
+### 2026-09-24 — AM can correct a cancel request's effective date before approving
+
+Claire, from an AM: when an AE's Companion cancel request carries an
+effective date the contract doesn't allow, the AM wants to change the date
+and approve, instead of rejecting and waiting for a resubmit. Scoped by
+Claire to cancel requests and the date only. (Companion sign-off question
+raised at the same time — no attestation exists on the form today; policy
+decision left with Claire/AMs before building anything.)
+
+**SQL** (`scratchpad/adjust-cancel-effective-date.sql`, NOT on the
+submission path): `pending_requests.adjustments jsonb` + new
+`admin_adjust_pending_request_date(p_request_id, p_new_effective_date)` —
+pending cancel requests only; rewrites `requested_changes.effective_date`
+and appends {requested, applied, adjusted_by, adjusted_at}. The existing
+`admin_approve_pending_request` is untouched: it applies whatever
+requested_changes says, so adjust-then-approve is the whole flow.
+
+**Admin (`admin/index.html`):** each pending cancel request shows an
+"Effective date to apply" box pre-filled with the AE's date; Approve with a
+changed date asks a confirm that names both dates, calls the adjust RPC,
+then the normal approval. New `adminCancelAdjustmentNote(r)` ("effective
+date adjusted from Oct 15, 2026 by Claire") appears in the request
+summary, both Trello cancel comments (order-backed and order-less paths,
+which now also format the date readably), the batch resolution note, and
+the AE's outcome email (batched via resolution_note; legacy immediate
+path passes it as the note).
+
+**Verified:** `node --check` on the admin script block; Node sim of the
+real functions: unadjusted request unchanged; adjusted request reads
+"Effective Oct 31, 2026 (effective date adjusted from Oct 15, 2026 by
+Claire) (currently running through Dec 31, 2026) — Budget cut"; batch
+comment line carries it. Live check after Claire runs the SQL + merges.
+
+### 2026-09-24 — Companion form: client-authorization attestation on submit
+
+Claire: "I think this would be good to add either way, to make it more
+official." Built the small version discussed: no drawn signature (a change
+request doesn't warrant the IO's full signature pad), but an on-record
+confirmation with the AE's typed name and a timestamp.
+
+**Companion (`companion/index.html`):** new "Client authorization" card
+above Submit (shown/hidden with the Submit button): checkbox "I confirm the
+client has authorized these changes." + "Type your full name to confirm".
+`submitRequests()` refuses without both, and the typed name must match the
+AE picked in "I am" (case-insensitive) so a confirmation can't be
+attributed to someone else on the roster. Stored as
+`requested_changes.attestation = {statement, typed_name, at}` on EVERY
+request in the submission — inside requested_changes so the submit RPCs
+(just recreated today) don't change; the approval RPCs read only their own
+named keys and ignore it.
+
+**Admin (`admin/index.html`):** Pending Requests batch header shows
+"✔ Client authorization confirmed by <name> on <date>" (or an italic "No
+client-authorization confirmation on this submission (submitted before the
+confirmation step existed)" for older requests); the combined batch Trello
+comment carries the same line; on approval of an order-backed request,
+new RPC `admin_record_request_attestation` writes a `client_authorization`
+entry into `orders.edit_history` (edited_by = the AE's typed name,
+edited_at = the confirmation time) so it appears in Amendment History in
+all three portals and on the revised IO PDF; order-less requests have no
+order and the RPC no-ops. `shared.js`: `formatEditHistoryEntrySummary`
+renders that entry as "Client authorization confirmed by Jon Peterson on
+Sep 24, 2026 (cancel request)" — a statement, not a before → after
+(`?v=20260924b` cache-bust in all three portals).
+
+**SQL** (`scratchpad/request-attestation-history.sql`, NOT on the
+submission path, additive, one new function).
+
+**AE guide** (`scratchpad/companion-guide-source.html` → PDF regenerated):
+section 6 now starts with the Client authorization card and a Note that
+this is the Companion Form's equivalent of the IO signature; FAQ entry
+added for "the form won't submit".
+
+**Verified:** `node --check` on shared.js, admin and companion script
+blocks. Headless-Chromium run of the REAL `submitRequests()` with stubbed
+RPC: no checkbox → "Please confirm the client has authorized these
+changes"; no name → "Please type your full name to confirm"; wrong name →
+"The typed name must match the name you selected (Jon Peterson)"; correct
+name (any case) → request sent with `attestation` {statement, typed_name,
+at}. Node sim of `groupEditHistory` with a client_authorization entry next
+to an end-date change: two rows, the attestation reads as above under the
+AE's name, the change under the AM's. Live: after SQL + merge, the next
+Companion submission.
+
+**Open policy note for Claire/AMs (not built):** this is the AE's word on
+the client's authorization. If a change ever needs the CLIENT's own
+sign-off (as the original IO does), that is a different, heavier flow.
+
+### 2026-09-25 — Michael Carter DMD (STMM): wrong service on a renewal IO, then a Swap
+
+First live test of the 2026-09-22 renewal-matching trigger fix: a renewal
+submitted as a new IO ("Renewing same campaign until 12/31/26"). **The rule
+worked** — Facebook/IG Ads and SEM (original lines from 2026-08-10) were
+extended to 2026-12-31 and re-pointed at the new order; no duplicates.
+
+But the AE picked **Targeted Display: Geotargeting & Audience** on the IO
+instead of the client's running **Location Targeting: Geofencing**
+(imported line, no order, 12 months of history, ending 2026-09-30). The
+rule only matches on the same service, so Geofencing was untouched and a
+new Targeted Display line was created. Claire (Companion form not live yet)
+used Admin's **Swap Tactic** to replace TD with Location Targeting — which
+did what Swap does: ended the TD line the day before (flight_end <
+flight_start, still `pending`) and created a NEW lt-geo line (generic
+"Geofencing or 1st Party Addressable" label — Swap has no variant picker;
+no flight_end; `active`, skipping Setup). Result: TWO Geofencing lines —
+the exact duplication the renewal fix exists to prevent — and Order Detail
+showed no change because Swap deliberately never touches the order's
+Services table (2026-08-20 decision), which read to Claire as "saved but
+didn't change".
+
+**Repair (SQL handed in one transaction):** extend the ORIGINAL Geofencing
+line to 2026-12-31, attach it to the new order, stamp last_renewed_*; seed
+Oct–Dec 2026 campaign_months at the IO's $700/mo (assumption stated to
+Claire — the TD line's amount — one number to change if wrong); delete the
+swap-created lt-geo duplicate and the never-launched TD line plus their
+campaign_months/status_history. Caught mid-message that my first draft
+used Huron's order id — corrected to look the order up by io_number.
+**Run 2026-09-25 (Claire; $700/mo confirmed).** Verified end state: four
+lines — Facebook/IG Ads (17 months), Geofencing 2025-10-01 → 2026-12-31 (15
+months, history intact), SEM (19), Social Media Management (1); both
+mistaken lines gone. Two "relation does not exist" errors along the way
+were the Supabase editor pointed at Claire's OTHER project, not a schema
+problem — worth remembering as the first thing to check on that error.
+
+**Cannot be fixed in SQL, left with Claire:** the signed IO still names
+Targeted Display (Admin Edit can't change a line's service) — note on the
+order or a corrected IO from the AE; Trello: archive the swap-created
+Geofencing card + the TD card, renewal comment + Dec 31 due date on the
+existing Geofencing card.
+
+**Lessons / follow-ups:**
+- Swap is the wrong tool for "the AE picked the wrong service on a renewal"
+  — the right fix is to attach the existing line to the new order (what the
+  trigger would have done). Worth an Admin action for exactly that case
+  ("this IO line renews existing campaign X") rather than SQL by hand.
+- Swap itself needs work before it's an everyday tool: carry the ending
+  line's flight_end to the new line; offer the variant picker; resolve the
+  ending line's status (complete/cancelled, not pending with end < start);
+  and show the result on Order Detail (or at least a note) so a successful
+  swap doesn't look like a failed save. Not built; flagged.
+
+### 2026-09-25 — PLAN (not built): "Link to Existing" + Swap improvements
+
+Claire: "do the research and create a plan for now." Researched: renewal
+trigger match rule; `adminConfirmSwap` + tracking-doc record of
+`admin_swap_tactic` (2026-08-20: ends line day-before, inserts new line,
+day-prorates the swap month; new card is PLAIN; Order Detail deliberately
+untouched); Campaign Lines tab Renew (card-by-name + title/due update);
+proxy targets — `trello_update_card` has no `closed`, so cards CANNOT be
+archived from the app today (Edge Function change = Phase 3).
+
+**1. Link to Existing (build first).** Order Detail per-line button →
+panel lists the client's other active campaign lines → preview → confirm.
+New RPC does what the trigger does on a match: extend chosen line to the
+IO line's end_date, set order_id, stamp last_renewed_*, seed renewed months
+from the IO line (spend or month_budgets), delete the trigger-created stray
+line for this order+service ONLY if it has no confirmed months / actuals
+(else refuse with reason). Trello: renewal comment + due date on the
+existing card (adminFindTrelloCardForLine), "replaced" comment on the
+stray card (no archive). Questions for Claire: (a) may Admin correct the
+signed IO's service name on the line (logged in edit_history) or must the
+signed record stay untouched with a note? (b) OK that the stray card is
+commented, not archived? ~1 day. Not on the submission path.
+
+**Item 1 PARKED 2026-09-25** (Claire): the Companion form (planned release
+in ~1 month) has AEs renew from campaigns already in the system, so a
+wrong service on a renewal IO mostly disappears. Until then a repeat gets
+the same SQL repair shape as Michael Carter's. Revisit only if wrong
+picks persist after Companion launch (a NEW-service IO can still carry
+one). Also found in the live def while planning: the swap seeds ONLY the
+swap month on the new line (no following months, no flight_end) — added
+to item 2's list.
+
+**2. Swap improvements (still wanted).** (1) new line inherits ending line's
+flight_end (editable in panel); (2) variant picker → tactic_label; (3)
+ending line not yet started → status complete, not pending with end <
+start; (4) "Campaign changes" section under Order Detail's Services table
+listing swapped-in lines (Services table stays the signed record). Needs
+live `admin_swap_tactic` from Claire. ~1 day. Not on the submission path.
