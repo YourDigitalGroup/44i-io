@@ -2078,7 +2078,12 @@ async function fetchAccountingData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
   if (!ACCOUNTING_SECTIONS.length) ACCOUNTING_SECTIONS = await sb('sections?order=sort_order&select=*') || [];
   const [lines, months, rates, clients, closedMonths] = await Promise.all([
-    sb('rpc/accounting_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
+    // sbAll (2026-09-25, found live -- Sweet Pizza's 14 lines vanished from the
+    // Strategist portal the day campaign_lines crossed 1,000 visible rows; the
+    // same Supabase "Max Rows" cap that truncated campaign_months on 2026-08-12).
+    // accounting_get_campaign_lines now accepts p_limit/p_offset
+    // (paginate-campaign-lines.sql) and applies them as a real SQL limit/offset.
+    sbAll('rpc/accounting_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
     // sbAll -- accounting_get_campaign_months now accepts real p_limit/p_offset
     // (paginated-rpc-functions-2026-08-12.sql, run 2026-08-12), so sbAll's own
     // limit/offset loop in shared.js can paginate past Supabase's API row cap.

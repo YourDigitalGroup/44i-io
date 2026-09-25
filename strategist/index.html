@@ -1902,7 +1902,15 @@ async function strategistConfirmBulkImport() {
 async function fetchStrategistData() {
   if (!Object.keys(CATALOG_ROWS).length) await loadCatalog();
   const [lines, months, log, rates, clients, reportCache, statusHistory] = await Promise.all([
-    sb('rpc/strategist_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
+    // sbAll (2026-09-25, found live by Bronson/Kolton -- Sweet Pizza (Dominos)'s
+    // 14 lines "aren't in there anymore"): campaign_lines had just crossed 1,000
+    // visible rows (1,015; Sweet Pizza sorted at positions 998-1011), and the
+    // plain sb() call was being silently truncated at Supabase's API "Max Rows"
+    // cap -- the exact failure sbAll's own comment in shared.js describes for
+    // campaign_months on 2026-08-12. strategist_get_campaign_lines now accepts
+    // p_limit/p_offset (paginate-campaign-lines.sql) and applies them as a real
+    // SQL limit/offset on its existing order by.
+    sbAll('rpc/strategist_get_campaign_lines', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw }) }),
     // sbAll -- campaign_months, optimize_log, and status_history all now accept
     // real p_limit/p_offset (paginated-rpc-functions-2026-08-12.sql, run 2026-08-12)
     // so sbAll's own limit/offset loop in shared.js can paginate past Supabase's
