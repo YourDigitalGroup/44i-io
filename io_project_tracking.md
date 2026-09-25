@@ -30072,3 +30072,9 @@ both; accounting_only excluded from Strategist and included in Accounting
 (1,003); `agent_split_trello_card_id` still resolves; role rejections
 unchanged; exactly one signature of each function remains. Handed inline
 2026-09-25; awaiting Claire's run, then merge.
+**SQL RUN 2026-09-25 (Claire).** Signature check confirmed exactly one
+version of each function, both `(p_name text, p_pw text, p_limit integer,
+p_offset integer)`. Next: merge the branch; live check = Bronson/Kolton
+hard-refresh Strategist, September, and see Sweet Pizza's 5 active lines
+(+2 in Campaign Setup, 6 in Complete). Accounting was one row shy of the
+same cap and is covered by the same change.
