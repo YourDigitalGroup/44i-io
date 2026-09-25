@@ -30057,3 +30057,18 @@ addition); will be executed in the pglite harness against >1,000 rows
 before hand-off. Ordering: SQL first (defaults keep the current live 2-arg
 call working), then merge. NOT on the submission path. Interim: the lines
 are visible in Admin → client → Campaign Lines.
+**SQL built + EXECUTED locally (pglite, `scratchpad/pg-test-paginate-lines.js`):**
+`scratchpad/paginate-campaign-lines.sql` drops the 2-arg versions and
+recreates both functions from the live `pg_get_functiondef` Claire pasted,
+adding `p_limit integer default null, p_offset integer default 0` and one
+trailing `limit p_limit offset coalesce(p_offset,0)` on the existing ORDER
+BY — nothing else touched. Harness: 1,002 strategist-visible rows across 25
+groups (+1 hidden client, +1 accounting_only line, +1 agent-split line with
+a resolvable card id). Results: 2-arg call still returns all rows (the
+currently deployed portal keeps working between SQL and merge); paged loop
+= 3 requests (1000 / 2 / empty), 1,002 rows, no duplicates, identical order
+to the unpaged call; all 14 Sweet Pizza rows present; hidden excluded in
+both; accounting_only excluded from Strategist and included in Accounting
+(1,003); `agent_split_trello_card_id` still resolves; role rejections
+unchanged; exactly one signature of each function remains. Handed inline
+2026-09-25; awaiting Claire's run, then merge.
