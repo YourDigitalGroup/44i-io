@@ -29900,3 +29900,33 @@ existing Geofencing card.
   ending line's status (complete/cancelled, not pending with end < start);
   and show the result on Order Detail (or at least a note) so a successful
   swap doesn't look like a failed save. Not built; flagged.
+
+### 2026-09-25 — PLAN (not built): "Link to Existing" + Swap improvements
+
+Claire: "do the research and create a plan for now." Researched: renewal
+trigger match rule; `adminConfirmSwap` + tracking-doc record of
+`admin_swap_tactic` (2026-08-20: ends line day-before, inserts new line,
+day-prorates the swap month; new card is PLAIN; Order Detail deliberately
+untouched); Campaign Lines tab Renew (card-by-name + title/due update);
+proxy targets — `trello_update_card` has no `closed`, so cards CANNOT be
+archived from the app today (Edge Function change = Phase 3).
+
+**1. Link to Existing (build first).** Order Detail per-line button →
+panel lists the client's other active campaign lines → preview → confirm.
+New RPC does what the trigger does on a match: extend chosen line to the
+IO line's end_date, set order_id, stamp last_renewed_*, seed renewed months
+from the IO line (spend or month_budgets), delete the trigger-created stray
+line for this order+service ONLY if it has no confirmed months / actuals
+(else refuse with reason). Trello: renewal comment + due date on the
+existing card (adminFindTrelloCardForLine), "replaced" comment on the
+stray card (no archive). Questions for Claire: (a) may Admin correct the
+signed IO's service name on the line (logged in edit_history) or must the
+signed record stay untouched with a note? (b) OK that the stray card is
+commented, not archived? ~1 day. Not on the submission path.
+
+**2. Swap improvements (second).** (1) new line inherits ending line's
+flight_end (editable in panel); (2) variant picker → tactic_label; (3)
+ending line not yet started → status complete, not pending with end <
+start; (4) "Campaign changes" section under Order Detail's Services table
+listing swapped-in lines (Services table stays the signed record). Needs
+live `admin_swap_tactic` from Claire. ~1 day. Not on the submission path.
