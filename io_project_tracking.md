@@ -30006,7 +30006,7 @@ inherits Dec 31, Oct prorated 735.48/464.52 (19/12 days), Nov/Dec 1200;
 C) no end date anywhere — open-ended new line, swap month only (matches
 old behavior); D) bad service — clean error. All correct. NEW STANDING
 RULE added to CLAUDE.md: execute handed SQL locally this way before
-handing it over. Not yet live (needs SQL run + merge + a real swap).
+handing it over. **SQL run + branch merged 2026-09-25 (Claire).** Live check = the next real (or test-client) swap: Revised pill + "Tactic swapped" history line on the order; old line ended/cancelled and new line budgeted through its end in Strategist/Accounting; Trello comment on the old card, variant + date range + due date on the new.
 **Observed, not changed (Claire to decide):** the swapped-OUT line keeps
 its budget rows for months after its new end (B: Nov/Dec 700) — the old
 swap did the same; a guarded cleanup (budget-only months, no actuals/
