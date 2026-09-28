@@ -30331,3 +30331,73 @@ key format — enough for Phase 1, not for the minting screen). Standing rule:
 when Claire uploads a reference file, record EVERYTHING the project may
 later need from it in this doc at the time (function bodies, UI behavior),
 not just the part needed for the current phase.
+
+### 2026-09-28 — Embed keys: Admin "IO Form Embed" tab built (mirrors WebPM); SQL handed, awaiting run + merge
+
+**Source of truth recorded in full (per today's lesson) — Claire's WebPM doc
+"Resource Center Embed: Keys and Iframes" (28 Sep 2026):**
+- Contract: iframe address `<portal>/embed/<slug>?t=<key>`; key = 48
+  lowercase hex, ONE active per group, only its hash stored; server strips
+  whitespace + lowercases before checking (nothing else forgiven); slug only
+  paints branding, tenancy ALWAYS from the key; slug≠key's group → yellow
+  notice, signs into the key's group; `&preview=1` shows the page outside
+  an iframe, bare link without it says "This page isn't meant to be opened
+  directly"; frame posts `{type:"webpm:height", height}` to parent, parent
+  checks origin then sets height; console tag `[webpm_ae]`, key never logged.
+- Keys screen: Groups → open group → "Resource Center Embed", ADMINS ONLY.
+  **Create Embed Key** shows the key ONCE with copy fields (bare key,
+  Shortcode Line `'<slug>' => '<key>', // Group Name`, full iframe tag for a
+  hidden test page). **Replace Key** mints the new key BEFORE retiring every
+  earlier key (a failed replace can't leave the page dead; old key dies the
+  moment Replace finishes; have the WordPress file open). **Revoke** kills one
+  key, no new one. Labels `embed — <slug> — <date> by <name>`. Keys can't be
+  created until Settings → Portal Base URL is set.
+- Frame messages: "This embed isn't set up yet. This link is missing its
+  embed key." (no ?t=) / "…isn't valid or has been replaced." (revoked/
+  replaced/mistyped/inactive group) vs "Couldn't load just now" (service
+  didn't answer → reload, don't re-key). Sign out inside the frame returns to
+  the name picker. No logo/coloured header inside the frame (WordPress shows
+  it). Setup checklist per group: execs active w/ email → Create key → paste
+  Shortcode Line → put shortcode on page → sign in as the group and check.
+- WebPM-specific, not applicable to IO: WordPress shortcode `[webpm_ae]` +
+  account→slug alias list; AE name picker / passwordless sign-in; staff-email
+  refusal; height messages (IO's WordPress pages use plain iframes with the
+  hidden Companion button swapping the iframe address).
+
+**IO mapping.** DB side already identical (Phase 1: same table, same
+resolver, same forgiveness). Built today, super admins only (Claire):
+- SQL `scratchpad/embed-keys-admin-minting.sql`: `admin_list_embed_keys(p_name,
+  p_pw, p_group_id)` (label/created/revoked — never the key),
+  `admin_create_embed_key(…, p_group_id)` (refuses if an active key exists;
+  refuses a group with no slug; `gen_random_bytes(24)`→48 hex; stores
+  sha256; label `embed — <slug> — <YYYY-MM-DD> by <name>`; returns key ONCE),
+  `admin_replace_embed_key` (insert new THEN revoke others, one transaction;
+  returns key + `retired` count), `admin_revoke_embed_key(…, p_key_id)`. No
+  schema change; no public-form function touched. **EXECUTED in pglite**
+  against the Phase 1 table + resolver verbatim (`pg-test-embed-keys-admin.js`,
+  22/22): minted key resolves via `group_id_for_embed_key`; UPPER+spaces
+  resolve, one-char change doesn't; only hash stored; 2nd Create refused;
+  list never carries key; Replace → new resolves, old doesn't, list newest-
+  first; Revoke → 1 then 0; Create allowed again; per-group isolation;
+  inactive group's key stops resolving; no-slug refused; am/strategist/
+  unknown refused (even list).
+- Admin: 4th tab "IO Form Embed" on the group editor (button hidden unless
+  `canSee('embedKeysManage')` = super; `adminTab('embed')` also refuses).
+  Copy fields (IO's equivalents of WebPM's): bare key, IO iframe address
+  `<origin>/<slug>?t=<key>`, Companion iframe address
+  `<origin>/companion/<slug>?t=<key>`, full iframe tag, Test-by-URL
+  (`&preview=1`). One-time panel held only in `ADMIN_EMBED_ONE_TIME`, cleared
+  on new/edit group. Create shown when no active key; Replace (confirm
+  dialog) when one is; Revoke per active row (confirm). "Save the group
+  first" for an unsaved group. **Driven in headless Chromium with sb()
+  stubbed:** empty state → Create → panel with all 5 fields + Replace button +
+  Active row → Replace → "1 earlier key stopped working", 2 rows (1 revoked)
+  → Revoke → Create offered again; AM login can't open the tab. Screenshot
+  `scratchpad/embed-tab.png`. (Addresses read `file:///…` in the test only.)
+- Not built (flag for Claire): IO's frame still shows one "Invalid Link"
+  screen for missing/invalid key AND for outages — WebPM distinguishes them
+  ("isn't set up yet" vs "Couldn't load just now"). Worth matching before
+  Phase 2 troubleshooting; scope question.
+Phase 2 order now: SQL run → merge → (audit tool confirms get_group_logo) →
+rollback SQL prepared → Claire's own group: Create key in Admin, paste both
+addresses in WordPress, test IO + Companion → every group → lockdown SQL.
