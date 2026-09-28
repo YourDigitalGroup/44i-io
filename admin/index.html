@@ -12601,7 +12601,10 @@ function applyAdditionalCardMemberPick(handle) {
 
 function applyAmPick(name) {
   if (!name) return;
-  const a = ALL_STAFF.find(s => s.name === name);
+  // Case/space-tolerant (2026-09-28): a group saved as "shania" must still
+  // find the "Shania" profile, otherwise its snapshot never refreshes.
+  const key = String(name).trim().toLowerCase();
+  const a = ALL_STAFF.find(s => String(s.name || '').trim().toLowerCase() === key);
   if (!a) return;
   document.getElementById('admin-am-name').value = a.name || '';
   document.getElementById('admin-am-email').value = a.email || '';
@@ -12805,6 +12808,13 @@ async function adminEditGroup(id, initialTab) {
   populateAdditionalCardMemberDropdown(g.id, g.additional_card_trello_handle || '');
   await ensureStaffRosterLoaded();
   populateAmPickerDropdown(g.am_name || null);
+  // Re-sync the hidden AM fields from the AM's CURRENT profile on open, not
+  // just when the picker changes (2026-09-28, found live: 11 of Shania's
+  // groups still carried the calendar link snapshotted when the AM was first
+  // picked -- 6 of them Peggy's -- so EAB's IO sent a KOC to Peggy's
+  // calendar). The group's stored copy is only what's shown when the AM has
+  // no profile in Users any more. adminSaveGroup() re-applies the same way.
+  applyAmPick(g.am_name || '');
   populateDigitalStrategistDropdown('admin-group-digital-strategist', g.digital_strategist_name || null);
   populateDigitalStrategistDropdown('admin-group-covering-strategist', g.covering_strategist_name || null);
   await ensureStrategistsLoaded();
@@ -12855,6 +12865,12 @@ async function adminSaveGroup() {
   const slug = document.getElementById('admin-slug').value.toLowerCase().replace(/[^a-z0-9-]/g,'');
   if (!document.getElementById('admin-name').value.trim()) { showToast('Group name is required','error'); return; }
   if (!slug) { showToast('IO Slug is required','error'); return; }
+
+  // Pull the AM's email/calendar/Trello handle from their current profile at
+  // save time too (2026-09-28, see the matching note in the edit-populate
+  // code above) -- so saving ANY group refreshes its AM snapshot.
+  await ensureStaffRosterLoaded();
+  applyAmPick(document.getElementById('admin-am-name').value.trim());
 
   const payload = {
     name: document.getElementById('admin-name').value.trim(),

@@ -30181,3 +30181,50 @@ cleared_months; shared.js version → `?v=20260925b`. Order: SQL, then merge.
 fires on a function BODY containing `delete` — I told Claire she wouldn't
 see it and was wrong; the delete only runs during an actual swap. Next:
 merge; live check = the next real swap's history line.
+
+### 2026-09-28 — EAB KOC link opened Peggy's calendar: stale AM snapshot on groups (fixed data by hand; sync built, SQL handed)
+
+**Report (Shania via Claire):** "EAB's IO is linking to Peggy's calendar for
+KOCs instead of mine" (IO 20260925-TULLOU-GSB). Claire checked Shania's USER
+PROFILE (Users tab) — her own link — and it matched the link Shania sent.
+
+**Wrong turns (mine, logged honestly):** I first assumed the link on all ten
+of Peggy's groups was Peggy's, then flipped to assuming it was Shania's
+because Shania's link "opened the same page", then flipped back. Both were
+inferences about link ownership from where a link was STORED or who PASTED
+it. Claire stopped it: "we need to do some more research." The real fact
+came from the code: the IO form reads `groups.am_calendar_url` (verified —
+`updateKocCard()` sets the button href from `selectedGroup.am_calendar_url`;
+drafts carry no copy; Trello IO card records "KOC Calendar: <url>"), while
+Claire had been checking `admin_users.am_calendar_url`. Two fields. The
+group form snapshots the profile into the group via `applyAmPick()` only
+when the picker CHANGES and never refreshes — and the group's calendar
+field is hidden, so nobody could see the copy drifting.
+
+**Data (mismatch query, groups vs. am's profile):** 11 of Shania's 15
+groups stale — 6 carried Peggy's link (EAB, Brazos, Elevated Results, P5,
+RiverMedia, Shake), 5 an old short link also on Jim's test group (Brewer,
+Gulf Coast, Iowa Digital, Ohana, The Lake). Peggy's ten groups matched her
+profile (correct). **Claire ran** the guarded update copying Shania's
+profile link onto her mismatched groups (11 rows). TULLOU's KOC on Peggy's
+calendar to be moved by hand; earlier KOCs from those 6 groups may be on
+Peggy's calendar too; the 5 short-link groups may have sent KOCs to a
+calendar nobody watches (Shania to confirm).
+
+**Fix, both directions (per Claire: "When you select the AM all of that
+should be updated"):**
+1. Admin group form: on open (`populate`) and on save (`adminSaveGroup`),
+   `applyAmPick(am_name)` re-syncs the hidden email/calendar/Trello fields
+   from the AM's current profile; `applyAmPick` now matches case/space-
+   insensitively (Brewer was stored as "shania"). Unknown AM → stored copy
+   kept. Node-simulated on the extracted function.
+2. `scratchpad/sync-am-profile-to-groups.sql`: `admin_save_user` (Users tab,
+   super only; NOT submission path) — after the UPDATE branch, pushes
+   name/email/calendar/Trello to every group where `lower(am_name)` matches
+   the original name, role 'am' only, only rows that differ; reads the row
+   back so password-only saves still sync. Diffed against live def Claire
+   pasted 2026-09-28. **EXECUTED in pglite** (`pg-test-sync-am-profile.js`,
+   digest stubbed; 12/12): stale + lower-case groups synced, in-sync group
+   gets the new link, Peggy's/Jim's untouched, password-only save harmless,
+   rename carries groups, strategist save touches nothing, insert path +
+   role guards unchanged.
