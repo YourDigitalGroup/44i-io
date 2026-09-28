@@ -30405,3 +30405,31 @@ addresses in WordPress, test IO + Companion → every group → lockdown SQL.
 live check = IO Form Embed tab appears on a group for Claire (super), lists
 no keys. Do not create a key until Phase 2 starts (creating is harmless;
 pasting into WordPress is what switches a group).
+
+### 2026-09-28 — Forms tell a bad key apart from an outage (WebPM parity; no SQL)
+
+Per Claire ("Yes, go ahead and build that"). Both public forms had ONE dead-
+link screen for every failure. Now three, matching WebPM's frame:
+- **bad_link** (no key; address doesn't point at an active group): "Invalid
+  Link" + new sentence "If this group has moved to an embed key, the link is
+  missing it" (post-lockdown this is what a page that never got its key sees).
+- **invalid_key** (a key arrived; server refused — revoked/replaced/mistyped/
+  inactive group): "This embed isn't set up yet … needs its key updated …
+  Reloading will not help."
+- **outage** (fetch failed / 5xx / anything but the refusal): "Couldn't load
+  just now … not a problem with the link" + Reload button.
+`classifyGroupLoadError(e)` = refusal message → invalid_key, else outage.
+index.html: `showGroupError(kind)` (default bad_link; key-path catch →
+classify; key-path empty/inactive → invalid_key; slug-path catch → outage;
+slug-path empty/inactive/no-slug → bad_link). companion/index.html:
+`showDeadLink(kind)` with title/body/reload set via textContent. Console tag
+`[io_embed]` on both (kind + whether a key was present; the key is never
+logged or shown — asserted). **Verified in headless Chromium:** Companion —
+all four scenarios end to end (refused 400, aborted request, empty slug
+read, slug-path abort) show the right title/Reload. IO form — the startup
+catalog load blocked an end-to-end stub (would need the full catalog shape),
+so the three screens were rendered by calling `showGroupError` directly and
+the classifier checked on refused/network/5xx errors; the three call-site
+edits were asserted at edit time. Not on the submission path (error-screen
+text only; the load logic is unchanged apart from which screen is shown).
+Merge pending (rides with the Admin IO Form Embed tab).
