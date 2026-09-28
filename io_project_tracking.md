@@ -30520,3 +30520,29 @@ inline: replaces only the "2026: New iFrame IO" block — adds `$io_keys`
 array, `$key` lookup, `?t=` on both addresses, key-less fallback for groups
 without a line. Slug must equal the group's io_slug exactly (already true
 today or the form wouldn't load). `php -l`: no syntax errors.
+**2026-09-28 (Claire):** Shortcode-line Admin change merged; updated
+`[new_ioform]` block sent to her WordPress developer (awaiting "installed").
+Claire's own email login confirmed working. Pending: Kim + Peggy sign-in
+this week; Gravity Form decision; developer confirmation; then Claire's own
+group = first key (Create in Admin → Shortcode Line → developer pastes →
+test IO + Companion on the resource-center page).
+
+### 2026-09-28 — Iframe auto-height (WebPM parity), per Claire ("you have to scroll whenever you open a section in step 2, so … we had to make the page really long")
+
+Two-sided, like WebPM's `webpm:height`. **Form side (this commit,
+index.html + companion/index.html):** an IIFE posts `{type:'io:height',
+height}` to the parent on load, on ResizeObserver (html + body), on
+MutationObserver (childList/subtree/style/class), and every 1.5 s as a
+backstop; skips when not embedded or when the change is < 2 px. Also the
+form has posted `io-tool-scroll-to-modal` since 2026-09-02 with NO listener
+on the WordPress side (the shortcode's script only toggled classes) — the
+new WP script listens for both. **Verified in headless Chromium:** a test
+parent page embedding companion/index.html grew its iframe 538 → 1938 px
+when the frame's content grew (5 messages); the IO form opened standalone
+posts nothing and throws nothing. **WordPress side handed:**
+`scratchpad/wordpress-new_ioform-height-script.php` replaces the shortcode's
+`<script defer>` block — origin check against
+`https://io.yourdigitalgroupresources.com`, matches `e.source` to the
+IO or Companion iframe, sets `style.height`, and scrolls the page to a
+modal's offset. Developer also removes the fixed tall height CSS on the two
+iframes. Not on the submission path (UI messaging only). `php -l` clean.
