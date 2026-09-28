@@ -30273,3 +30273,15 @@ own public read policy, or a key-gated lookup if the audit tool gets keys
 too), and repoint the audit tool to it. Need from the audit-tool side: the
 exact request it makes today (endpoint + columns). Without this, the
 lockdown SQL would silently break the audit tool's logos.
+**Built (2026-09-28): `groups_logo` view** (`scratchpad/groups-logo-view.sql`)
+— columns id, name, logo_url, logo_dark_bg, active only; `security_invoker =
+false` so it reads `groups` as owner regardless of RLS; select granted to
+anon/authenticated. The audit tool already has its own embed keys (its own
+system — IO's DB can't validate them), so a key-gated lookup on IO's side is
+not an option; the view is the permanent answer. NOT on the submission path
+(adds a view; no table/policy/function touched). **EXECUTED in pglite**
+(`pg-test-groups-logo-view.js`, 8/8): anon reads logo by id; only the five
+columns exist; pricing unreachable; still works after simulating the Phase 2
+lockdown (policy dropped + select revoked on groups) while the table itself
+is then denied; view is read-only for anon; groups unchanged. Handed inline;
+audit tool then changes `groups` → `groups_logo` in its one request.
