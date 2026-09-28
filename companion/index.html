@@ -74,7 +74,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
   </div>
 
   <div id="dead-link" class="card hidden">
-    <p class="muted-note">This link isn't active. Please check with your AM for the correct link.</p>
+    <p id="dead-link-title" style="font-weight:700;margin-bottom:6px"></p>
+    <p class="muted-note" id="dead-link-body">This link isn't active. Please check with your AM for the correct link.</p>
+    <button type="button" id="dead-link-reload" class="hidden" onclick="window.location.reload()" style="margin-top:12px;padding:9px 18px;border-radius:8px;border:none;background:var(--accent-dark, #1E3A5F);color:#fff;font-size:13px;font-weight:700;cursor:pointer">Reload</button>
   </div>
 
   <div id="main-content" class="hidden">
@@ -1260,9 +1262,32 @@ async function notifyAm(aeName, aeEmail, submitted) {
   }
 }
 
+// Dead-link screen, three kinds (2026-09-28, matching index.html and WebPM's
+// frame): bad_link (no key, address doesn't point at an active group),
+// invalid_key (a key arrived and the server refused it -- the WordPress page
+// needs its key updated), outage (the service didn't answer -- reload, don't
+// re-key). Never shows or logs the key.
+function showDeadLink(kind = 'bad_link') {
+  const screens = {
+    bad_link:    { title: 'Invalid Link', body: "This link isn't active. If this group has moved to an embed key, the link is missing it. Please check with your AM for the correct link.", reload: false },
+    invalid_key: { title: "This embed isn't set up yet", body: "This link's embed key isn't valid or has been replaced. The page that holds this form needs its key updated — please tell your AM. Reloading will not help.", reload: false },
+    outage:      { title: "Couldn't load just now", body: "The form's sign-in service didn't answer. This is not a problem with the link — please reload the page.", reload: true },
+  };
+  const sc = screens[kind] || screens.bad_link;
+  console.info('[io_embed] companion group load failed:', kind, EMBED_KEY_PRESENT ? '(a key was present)' : '(no key in the address)');
+  document.getElementById('dead-link-title').textContent = sc.title;
+  document.getElementById('dead-link-body').textContent = sc.body;
+  document.getElementById('dead-link-reload').classList.toggle('hidden', !sc.reload);
+  document.getElementById('dead-link').classList.remove('hidden');
+}
+function classifyGroupLoadError(e) {
+  return /invalid or revoked embed key/i.test(String(e?.message || '')) ? 'invalid_key' : 'outage';
+}
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', async () => {
   const slug = getSlug();
+  let failKind = null;
   if (EMBED_KEY_PRESENT) {
     // Key path (Phase 1, 2026-09-22): the key decides the group; the slug is a
     // label. Any refusal (unknown/revoked/malformed key, inactive group) shows
@@ -1270,7 +1295,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const rows = await sb('rpc/get_group_for_embed_key', { method: 'POST', body: JSON.stringify({ p_t: EMBED_KEY }) });
       selectedGroup = Array.isArray(rows) ? rows[0] : rows;
-    } catch (e) { console.warn('Could not load group (embed key):', e.message); selectedGroup = null; }
+    } catch (e) { console.warn('Could not load group (embed key):', e.message); selectedGroup = null; failKind = classifyGroupLoadError(e); }
+    if (!selectedGroup && !failKind) failKind = 'invalid_key'; // refused with an empty answer, or inactive group
+    if (selectedGroup && selectedGroup.active === false) { selectedGroup = null; failKind = 'invalid_key'; }
+    if (selectedGroup) console.info('[io_embed] key accepted; group resolved');
     if (selectedGroup && slug && selectedGroup.io_slug && slug.toLowerCase() !== String(selectedGroup.io_slug).toLowerCase()) {
       // Say so on screen rather than silently reconcile -- textContent, never
       // innerHTML, since the slug is attacker-controlled URL text.
@@ -1282,14 +1310,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   } else {
     // Slug path -- today's behavior, unchanged until Phase 2's cutover.
-    if (!slug) { document.getElementById('dead-link').classList.remove('hidden'); return; }
+    if (!slug) { showDeadLink('bad_link'); return; }
     try {
       const results = await sb('groups?io_slug=eq.' + encodeURIComponent(slug) + '&select=*');
       selectedGroup = results && results[0];
-    } catch (e) { console.warn('Could not load group:', e.message); }
+    } catch (e) { console.warn('Could not load group:', e.message); failKind = 'outage'; }
   }
   if (!selectedGroup || selectedGroup.active === false) {
-    document.getElementById('dead-link').classList.remove('hidden');
+    showDeadLink(failKind || 'bad_link');
     return;
   }
   applyGroupBranding(selectedGroup);

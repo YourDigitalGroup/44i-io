@@ -3455,7 +3455,8 @@ async function loadGroup() {
     try {
       const rows = await sb('rpc/get_group_for_embed_key', { method: 'POST', body: JSON.stringify({ p_t: EMBED_KEY }) });
       const g = Array.isArray(rows) ? rows[0] : rows;
-      if (!g || g.active === false) { showGroupError(); return; }
+      if (!g || g.active === false) { showGroupError('invalid_key'); return; }
+      console.info('[io_embed] key accepted; group resolved');
       selectedGroup = g;
       ['am_name','name','am_email'].forEach(k => {
         if (typeof selectedGroup[k] === 'string') selectedGroup[k] = selectedGroup[k].trim();
@@ -3473,7 +3474,7 @@ async function loadGroup() {
       document.getElementById('group-name-display').textContent = selectedGroup.name;
     } catch(e) {
       console.error('loadGroup (embed key) error:', e.message);
-      showGroupError();
+      showGroupError(classifyGroupLoadError(e));
     }
     return;
   }
@@ -3517,7 +3518,7 @@ async function loadGroup() {
     document.getElementById('group-name-display').textContent = selectedGroup.name;
   } catch(e) {
     console.error('loadGroup error:', e.message, e.stack);
-    showGroupError();
+    showGroupError('outage');
   }
 }
 
@@ -3527,22 +3528,46 @@ async function loadGroup() {
 // entirely. isDevPreviewMode (declared above) is kept as a permanent `false` so the
 // submit-time dev guard below stays exactly as written.
 
-function showGroupError() {
+// Classify why the group could not load (2026-09-28, per Claire -- matching
+// WebPM's frame, which tells a bad key apart from an outage so the
+// troubleshooting differs: a key problem means the WordPress page needs its
+// key updated and reloading never helps; an outage means reload and do NOT
+// re-key). Never logs or shows the key itself.
+function classifyGroupLoadError(e) {
+  const m = String(e?.message || '');
+  if (/invalid or revoked embed key/i.test(m)) return 'invalid_key';
+  return 'outage'; // fetch failed, timeout, 5xx, anything the service didn't answer properly
+}
+
+function showGroupError(kind = 'bad_link') {
   // REWRITTEN (2026-07-08): previously only toggled a small div inside the "Group &
-  // Account Info" card, leaving the rest of the page — the default CF Digital-branded
-  // header, every other card, the step nav — fully visible underneath. Someone hitting an
-  // invalid/missing link saw a confusing, seemingly-normal-but-broken page with a small
-  // error buried partway down, branded as a group that isn't even theirs. Now replaces
-  // the ENTIRE page content with just the message, same proven full-page-takeover pattern
-  // showCatalogError() already uses — nothing else renders, no stray branding, no
-  // partially-usable form underneath.
+  // Account Info" card, leaving the rest of the page fully visible underneath. Now
+  // replaces the ENTIRE page content with just the message (same full-page-takeover
+  // pattern showCatalogError() uses). Three screens since 2026-09-28 (WebPM parity):
+  //   bad_link    -- no key and the address doesn't point at an active group (today's
+  //                  "Invalid Link"; after Phase 2's lockdown this is also what a page
+  //                  that never got its key sees, hence the extra sentence)
+  //   invalid_key -- a key arrived but the server refused it (revoked, replaced,
+  //                  mistyped, or the group is inactive): the WordPress page needs editing
+  //   outage      -- the service didn't answer: reload, do not touch the key
+  const screens = {
+    bad_link: { icon: '🔒', title: 'Invalid Link',
+      body: 'This form link is not valid. If this group has moved to an embed key, the link is missing it. Please contact your account manager for the correct link.', reload: false },
+    invalid_key: { icon: '🔒', title: "This embed isn't set up yet",
+      body: "This link's embed key isn't valid or has been replaced. The page that holds this form needs its key updated — please tell your account manager. Reloading will not help.", reload: false },
+    outage: { icon: '⏳', title: "Couldn't load just now",
+      body: "The form's sign-in service didn't answer. This is not a problem with the link — please reload the page. If it keeps happening, tell your account manager it is an outage, not a key issue.", reload: true },
+  };
+  const sc = screens[kind] || screens.bad_link;
+  console.info('[io_embed] group load failed:', kind, EMBED_KEY_PRESENT ? '(a key was present)' : '(no key in the address)');
   const wrap = document.querySelector('.wrap');
   if (wrap) {
     wrap.innerHTML = `
       <div style="max-width:520px;margin:80px auto;text-align:center;padding:40px 32px;background:#fff;border-radius:14px;border:1px solid var(--border);box-shadow:0 4px 24px rgba(0,0,0,.08)">
-        <div style="font-size:44px;margin-bottom:16px">🔒</div>
-        <h2 style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:10px">Invalid Link</h2>
-        <p style="font-size:14px;color:var(--muted);line-height:1.6">This form link is not valid. Please contact your account manager for the correct link.</p>
+        <div style="font-size:44px;margin-bottom:16px">${sc.icon}</div>
+        <h2 id="group-error-title" style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:10px">${sc.title}</h2>
+        <p style="font-size:14px;color:var(--muted);line-height:1.6">${sc.body}</p>
+        ${sc.reload ? '<button type="button" onclick="window.location.reload()" style="margin-top:18px;padding:10px 22px;border-radius:8px;border:none;background:var(--accent-dark, #1E3A5F);color:#fff;font-size:14px;font-weight:700;cursor:pointer">Reload</button>' : ''}
       </div>`;
   }
 }
