@@ -106,8 +106,8 @@
     <div id="admin-header-bar" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="admin-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
-        <button id="admin-strategist-portal-link" onclick="strategistPortalHandoff();location.href='../strategist/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Strategist Portal →</button>
-        <button id="admin-accounting-portal-link" onclick="accountingPortalHandoff();location.href='../accounting/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Accounting Portal →</button>
+        <button id="admin-strategist-portal-link" onclick="location.href='../strategist/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Strategist Portal →</button>
+        <button id="admin-accounting-portal-link" onclick="location.href='../accounting/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Accounting Portal →</button>
         <button onclick="adminLogout()" class="btn-quiet-green">Logout</button>
       </div>
     </div>
@@ -1788,43 +1788,17 @@
     </div>
   </div>
 </div>
-<!-- ADMIN LOGIN MODAL -->
-<div id="admin-login-modal" role="dialog" aria-modal="true" aria-labelledby="admin-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
-    <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔒</div>
-    <h3 id="admin-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Admin Access</h3>
-    <p id="admin-login-instructions" style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
-    <select id="admin-name-select" aria-label="Your name" aria-describedby="admin-login-instructions" style="width:100%;padding:10px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
-      <option value="">— Select your name —</option>
-    </select>
-    <input type="password" id="admin-pw-input" placeholder="Password" aria-label="Password" aria-describedby="admin-login-instructions" onkeydown="if(event.key==='Enter')checkAdminPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
-    <div id="admin-pw-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
-    <div style="display:flex;gap:9px">
-      <button onclick="closeAdminLogin()" class="btn-quiet-green" style="flex:1">Cancel</button>
-      <button onclick="checkAdminPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
-    </div>
-    <a href="#" onclick="event.preventDefault();closeAdminLogin();openNewLogin();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Try the new secure login (beta)</a>
-  </div>
-</div>
-
-<!-- NEW SUPABASE-AUTH LOGIN MODAL — Stage 1 of the auth migration (see
-     AUTH_MIGRATION_PLAN.md). This is a proof-of-concept sitting alongside the
-     real login above: it proves a real email+password Supabase session can be
-     created and matched back to an admin_users row via admin_get_profile_by_auth_uid().
-     It does NOT yet grant access to the admin panel — none of the 33 protected
-     RPCs accept a Supabase session yet (that's Stage 2). Remove this whole
-     block once Stage 4 makes this the only login. -->
+<!-- Login (Supabase Auth). The only way in since 2026-09-28 (Stage 4/5 of AUTH_MIGRATION_PLAN.md). -->
 <div id="admin-new-login-modal" role="dialog" aria-modal="true" aria-labelledby="admin-new-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9001;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔐</div>
-    <h3 id="admin-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">New Secure Login <span style="font-weight:600;color:var(--muted);font-size:11px">(beta)</span></h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with the email + password you set up via your Supabase invite.</p>
+    <h3 id="admin-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Admin Access</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with your email and password.</p>
     <input type="email" id="admin-new-login-email" placeholder="Email" aria-label="Email" autocomplete="email" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px"/>
     <input type="password" id="admin-new-login-pw" placeholder="Password" aria-label="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptNewLogin()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:12px"/>
     <div id="admin-new-login-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px"></div>
     <div id="admin-new-login-success" role="status" style="display:none;color:#1E7E34;font-size:12px;margin-bottom:10px"></div>
     <div style="display:flex;gap:9px">
-      <button onclick="closeNewLogin()" class="btn-quiet-green" style="flex:1">Cancel</button>
       <button onclick="attemptNewLogin()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Sign In</button>
     </div>
     <a href="#" onclick="event.preventDefault();sendNewLoginResetEmail();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Forgot password?</a>
@@ -1834,50 +1808,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="../shared.js?v=20260925b"></script>
 <script>
-// ── STANDALONE-ADMIN ADAPTATION NOTES ──────────────────────────────
-// The code below is copied from index.html's admin block (lines
-// 3570-4924 as of the 2026-07-08 extraction), with one deliberate
-// change needed ONLY because this file no longer lives inside the same
-// page as the public IO form:
-//
-// - `adminLogout()` — index.html's "Logout" button calls showAdmin(false),
-//   which hides the admin panel and reveals the public form's own
-//   `.wrap` div. There is no public form here for it to reveal, so
-//   this would otherwise leave a blank page. adminLogout() hides the
-//   admin panel and re-opens the login modal instead — the standalone
-//   equivalent of "logged out". This is the only behavior change from
-//   the original.
-//
-// Also omitted: a one-line branch in adminSaveGroup() that, in
-// index.html, live-updates on-screen pricing if the group being saved
-// is also the one currently open in the public form — meaningless with
-// no public form present, so it's dropped rather than stubbed out.
-
-// ADMIN_USERS — REMOVED (2026-07-18). Was a hardcoded name→role map the login name-
-// picker was built from — meant only as the picker's option list (the actual password
-// check always went through the admin_login RPC below). But it silently gated login
-// entirely: checkAdminPw() required `ADMIN_USERS[name]` to be truthy even when the RPC
-// itself succeeded, so a user added through the new Users tab (Strategist/Accounting/
-// a new AM) could never log in until someone also hand-edited this object and the
-// `<select>` markup. Replaced by LOGIN_ROSTER, loaded from the new public
-// `get_login_roster` RPC (same "don't hardcode a roster, derive it from the table"
-// pattern as everything else in this project) — a brand-new user shows up in the
-// picker and can log in immediately, no code change needed.
-let LOGIN_ROSTER = [];
-
-async function loadLoginRoster() {
-  const sel = document.getElementById('admin-name-select');
-  try {
-    LOGIN_ROSTER = await sb('rpc/get_login_roster', { method: 'POST', body: JSON.stringify({}) }) || [];
-  } catch(e) {
-    console.warn('Could not load login roster:', e.message);
-    LOGIN_ROSTER = [];
-  }
-  if (sel) {
-    sel.innerHTML = '<option value="">— Select your name —</option>' +
-      LOGIN_ROSTER.map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
-  }
-}
 
 const ADMIN_ORG = '44i Digital';
 let currentAdminUser = null; // {name, email, role, pw} when logged in (pw kept in memory for server RPC calls)
@@ -1919,75 +1849,10 @@ function canSee(feature) {
 }
 
 
-function promptAdmin() {
-  const modal = document.getElementById('admin-login-modal');
-  modal.style.display = 'flex';
-  document.getElementById('admin-name-select').value = '';
-  document.getElementById('admin-pw-input').value = '';
-  document.getElementById('admin-pw-error').style.display = 'none';
-  setTimeout(() => document.getElementById('admin-name-select').focus(), 100);
-}
-
-function closeAdminLogin() {
-  document.getElementById('admin-login-modal').style.display = 'none';
-}
-
-// Pulled out of checkAdminPw() (2026-08-04) so the same real login check can also be
-// used by the silent strategist->admin handoff below, not just the modal's own submit
-// button — same refactor already applied to the strategist portal's own login.
-async function attemptAdminLogin(name, pw) {
-  if (!name) return { ok: false, error: 'Please select your name.' };
-  let row;
-  try {
-    row = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
-    row = Array.isArray(row) ? row[0] : row;
-  } catch(e) {
-    return { ok: false, error: 'Could not reach the login service. Check your connection and try again.' };
-  }
-  if (!row || !row.role) return { ok: false, error: 'Incorrect password. Please try again.' };
-  if (row.role === 'accounting') {
-    return { ok: false, error: 'This account isn\'t set up for the admin portal — check with a super admin for the right link.' };
-  }
-  return { ok: true, role: row.role, email: row.email || '' };
-}
-
-// Silent handoff from the strategist portal's "Go to Admin" link (2026-08-04, per
-// Claire, symmetric with the admin->strategist handoff built the same day) — reads
-// the one-time sessionStorage handoff ONCE and clears it immediately either way.
-async function tryAdminHandoffLogin() {
-  let name, pw;
-  try {
-    name = sessionStorage.getItem('admin_handoff_name');
-    pw = sessionStorage.getItem('admin_handoff_pw');
-    sessionStorage.removeItem('admin_handoff_name');
-    sessionStorage.removeItem('admin_handoff_pw');
-  } catch(e) { return false; }
-  if (!name || !pw) return false;
-  const result = await attemptAdminLogin(name, pw);
-  if (!result.ok) return false;
-  currentAdminUser = { name, email: result.email, role: result.role, pw };
-  closeAdminLogin();
-  showAdmin(true);
-  return true;
-}
-
-async function checkAdminPw() {
-  const name = document.getElementById('admin-name-select').value;
-  const pw = document.getElementById('admin-pw-input').value;
-  const errEl = document.getElementById('admin-pw-error');
-  const result = await attemptAdminLogin(name, pw);
-  if (result.ok) {
-    currentAdminUser = { name, email: result.email, role: result.role, pw };
-    closeAdminLogin();
-    showAdmin(true);
-  } else {
-    errEl.textContent = result.error;
-    errEl.style.display = 'block';
-    document.getElementById('admin-pw-input').value = '';
-    if (result.error.includes('select your name')) return;
-    document.getElementById('admin-pw-input').focus();
-  }
-}
+// The email login is the only login (2026-09-28, Stage 4/5 of
+// AUTH_MIGRATION_PLAN.md, per Claire: everyone is on Supabase Auth). Kept
+// under its old name because logout and page-load both call it.
+function promptAdmin() { openNewLogin(); }
 
 // ── NEW SUPABASE-AUTH LOGIN (Stage 3 of AUTH_MIGRATION_PLAN.md) ──────────
 // Parallel to attemptAdminLogin()/checkAdminPw() above — this is a second,
@@ -13125,32 +12990,7 @@ async function adminToggleGroupActive(id, makeActive) {
 
 // ── PRINT IO ───────────────────────────────────────────────────
 
-// Stashes the already-authenticated name/password into sessionStorage right before
-// following the "Go to Strategist Portal" link (2026-08-04, per Claire: having to
-// log in again there was real friction). strategist/index.html reads this ONCE on
-// load and clears it immediately either way — same plaintext-in-memory trust model
-// this whole app already uses (no tokens/cookies anywhere in this project), just
-// carried across the one page hop instead of lost to it. The link's normal href
-// navigation still happens after this — nothing here blocks or redirects the click.
-function strategistPortalHandoff() {
-  if (!currentAdminUser) return;
-  try {
-    sessionStorage.setItem('strategist_handoff_name', currentAdminUser.name);
-    sessionStorage.setItem('strategist_handoff_pw', currentAdminUser.pw);
-  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
-}
 
-// Same handoff pattern as strategistPortalHandoff() above, for the new "Go to
-// Accounting Portal" link (2026-08-07, scaffold). Only ever shown to a super admin
-// (see showAdmin()), so this is purely a super-admin convenience — a real
-// accounting-role login never reaches this page to click it.
-function accountingPortalHandoff() {
-  if (!currentAdminUser) return;
-  try {
-    sessionStorage.setItem('accounting_handoff_name', currentAdminUser.name);
-    sessionStorage.setItem('accounting_handoff_pw', currentAdminUser.pw);
-  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
-}
 
 // ── LOGOUT (standalone-admin addition — see note 2 above) ──────────
 function adminLogout() {
@@ -13186,8 +13026,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('[Catalog] Load failed:', e.message);
     showToast('Could not load the service catalog: ' + e.message, 'error');
   }
-  await loadLoginRoster();
-  if (await tryAdminHandoffLogin()) return;
   if (await tryRestoreAdminSession()) return;
   // No public form / no gear icon on this page — go straight to the login prompt.
   promptAdmin();
