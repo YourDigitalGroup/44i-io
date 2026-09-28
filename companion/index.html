@@ -1325,6 +1325,38 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadAeRoster(selectedGroup.id);
   await loadClientRoster(selectedGroup.id);
 });
+
+// ── Height reporter for the WordPress iframe (2026-09-28, per Claire: the
+// embed had to be made "really long" so Step 2's sections don't force a
+// scroll inside the frame). Posts this page's content height to the parent
+// whenever it changes -- same contract as WebPM's frame ({type, height}).
+// The parent (the [new_ioform] shortcode's script) checks the origin and sets
+// the iframe's height. No-op when not embedded or when nobody listens.
+(function () {
+  if (window.parent === window) return;
+  let last = 0;
+  const post = () => {
+    try {
+      const h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
+      if (!h || Math.abs(h - last) < 2) return;
+      last = h;
+      window.parent.postMessage({ type: 'io:height', height: h }, '*');
+    } catch (e) { /* non-fatal */ }
+  };
+  const start = () => {
+    post();
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(post).observe(document.documentElement);
+      if (document.body) new ResizeObserver(post).observe(document.body);
+    }
+    if (typeof MutationObserver !== 'undefined' && document.body) {
+      new MutationObserver(() => requestAnimationFrame(post)).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    }
+    window.addEventListener('load', post);
+    setInterval(post, 1500); // belt-and-braces for anything the observers miss (fonts, images)
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
 </script>
 </body>
 </html>
