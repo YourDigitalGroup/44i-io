@@ -125,7 +125,7 @@
     <div class="acct-header">
       <div id="accounting-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
-        <button id="accounting-admin-portal-link" onclick="adminPortalHandoff();location.href='../admin/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Admin →</button>
+        <button id="accounting-admin-portal-link" onclick="location.href='../admin/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Admin →</button>
         <button onclick="accountingLogout()" class="btn-quiet-green">Logout</button>
       </div>
     </div>
@@ -203,41 +203,17 @@
   </div>
 </div>
 
-<!-- ACCOUNTING LOGIN MODAL — same shape as /strategist's, scoped to
-     accounting/super roles only. -->
-<div id="accounting-login-modal" role="dialog" aria-modal="true" aria-labelledby="accounting-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
-    <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔒</div>
-    <h3 id="accounting-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Accounting Access</h3>
-    <p id="accounting-login-instructions" style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
-    <select id="accounting-name-select" aria-label="Your name" aria-describedby="accounting-login-instructions" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
-      <option value="">— Select your name —</option>
-    </select>
-    <input type="password" id="accounting-pw-input" placeholder="Password" aria-label="Password" aria-describedby="accounting-login-instructions" onkeydown="if(event.key==='Enter')checkAccountingPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
-    <div id="accounting-pw-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
-    <div style="display:flex;gap:9px">
-      <button onclick="checkAccountingPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
-    </div>
-    <a href="#" onclick="event.preventDefault();document.getElementById('accounting-login-modal').style.display='none';openAccountingNewLogin();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Try the new secure login (beta)</a>
-  </div>
-</div>
-
-<!-- NEW SUPABASE-AUTH LOGIN MODAL — same pattern as /admin's and /strategist's
-     (see io_project_tracking.md 2026-09-04). Uses the same admin_get_profile_by_auth_uid()
-     RPC since it isn't admin-specific -- just resolves whatever admin_users row matches
-     the current Supabase session. Every accounting_* RPC now accepts a real session
-     (Stage 2, done 2026-09-04), so this opens the real accounting panel on success. -->
+<!-- Login (Supabase Auth). The only way in since 2026-09-28 (Stage 4/5 of AUTH_MIGRATION_PLAN.md). -->
 <div id="accounting-new-login-modal" role="dialog" aria-modal="true" aria-labelledby="accounting-new-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9001;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔐</div>
-    <h3 id="accounting-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">New Secure Login <span style="font-weight:600;color:var(--muted);font-size:11px">(beta)</span></h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with the email + password you set up via your Supabase invite.</p>
+    <h3 id="accounting-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Accounting Access</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with your email and password.</p>
     <input type="email" id="accounting-new-login-email" placeholder="Email" autocomplete="email" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px"/>
     <input type="password" id="accounting-new-login-pw" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptAccountingNewLogin()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:12px"/>
     <div id="accounting-new-login-error" role="alert" style="display:none;color:#B3261E;font-size:12px;margin-bottom:10px"></div>
     <div id="accounting-new-login-success" role="status" style="display:none;color:#1E7E34;font-size:12px;margin-bottom:10px"></div>
     <div style="display:flex;gap:9px">
-      <button onclick="closeAccountingNewLogin()" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--text);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
       <button onclick="attemptAccountingNewLogin()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Sign In</button>
     </div>
     <a href="#" onclick="event.preventDefault();sendAccountingNewLoginResetEmail();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Forgot password?</a>
@@ -249,59 +225,10 @@
 <script>
 let currentAccountingUser = null; // {name, email, role, pw}
 
-async function loadAccountingRoster() {
-  const sel = document.getElementById('accounting-name-select');
-  let roster = [];
-  try {
-    roster = await sb('rpc/get_login_roster', { method: 'POST', body: JSON.stringify({}) }) || [];
-  } catch(e) {
-    console.warn('Could not load login roster:', e.message);
-  }
-  const eligible = roster.filter(u => u.role === 'accounting' || u.role === 'super');
-  sel.innerHTML = '<option value="">— Select your name —</option>' +
-    eligible.map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
-}
-
-function promptAccountingLogin() {
-  document.getElementById('accounting-login-modal').style.display = 'flex';
-  document.getElementById('accounting-name-select').value = '';
-  document.getElementById('accounting-pw-input').value = '';
-  document.getElementById('accounting-pw-error').style.display = 'none';
-}
-
-async function attemptAccountingLogin(name, pw) {
-  if (!name) return { ok: false, error: 'Please select your name.' };
-  let row;
-  try {
-    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
-    row = Array.isArray(res) ? res[0] : res;
-  } catch(e) {
-    return { ok: false, error: 'Could not reach the login service. Check your connection and try again.' };
-  }
-  if (!row || !row.role) return { ok: false, error: 'Incorrect password. Please try again.' };
-  if (row.role !== 'accounting' && row.role !== 'super') {
-    return { ok: false, error: 'This account isn\'t set up for the Accounting portal.' };
-  }
-  return { ok: true, role: row.role, email: row.email || '' };
-}
-
-async function checkAccountingPw() {
-  const name = document.getElementById('accounting-name-select').value;
-  const pw = document.getElementById('accounting-pw-input').value;
-  const errEl = document.getElementById('accounting-pw-error');
-  const result = await attemptAccountingLogin(name, pw);
-  if (result.ok) {
-    currentAccountingUser = { name, email: result.email, role: result.role, pw };
-    document.getElementById('accounting-login-modal').style.display = 'none';
-    showAccountingPanel(true);
-  } else {
-    errEl.textContent = result.error;
-    errEl.style.display = 'block';
-    document.getElementById('accounting-pw-input').value = '';
-    if (result.error.includes('select your name')) return;
-    document.getElementById('accounting-pw-input').focus();
-  }
-}
+// The email login is the only login (2026-09-28, Stage 4/5 of
+// AUTH_MIGRATION_PLAN.md, per Claire: everyone is on Supabase Auth). Kept
+// under its old name because logout and page-load both call it.
+function promptAccountingLogin() { openAccountingNewLogin(); }
 
 function showAccountingPanel(show) {
   document.getElementById('page-accounting').style.display = show ? 'block' : 'none';
@@ -319,51 +246,16 @@ function showAccountingPanel(show) {
   }
 }
 
-// Handoff to admin/index.html's tryAdminHandoffLogin() -- same one-time sessionStorage
-// pattern used between /admin and /strategist. Only relevant for a super admin here,
-// since a real accounting login has nowhere to hand off to.
-function adminPortalHandoff() {
-  if (!currentAccountingUser) return;
-  try {
-    sessionStorage.setItem('admin_handoff_name', currentAccountingUser.name);
-    sessionStorage.setItem('admin_handoff_pw', currentAccountingUser.pw);
-  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
-}
 
-// Same handoff pattern, straight to a specific campaign line's own detail
-// panel in the Strategist Portal (2026-09-04, per Claire -- "a way to go
-// from the accounting portal to the strategist portal in case an admin
-// wants to see if there are notes on it or add any optimize log or
-// notes"). Reuses strategist/index.html's EXISTING tryStrategistHandoffLogin()
-// as-is (it already reads these same two keys regardless of which portal
-// wrote them) -- the only new piece is the `?line=` query param, read by
-// strategist/index.html's own strategistOpenDeepLinkedLine().
+// Deep link to a specific campaign line's own detail panel in the Strategist
+// Portal (2026-09-04, per Claire). The login carries over on its own now: both
+// portals share the same Supabase session (2026-09-28, Stage 4/5 -- the old
+// name/password handoff is gone). The `?line=` param is read by
+// strategist/index.html's strategistOpenDeepLinkedLine().
 function strategistPortalHandoffToLine(lineId) {
-  if (!currentAccountingUser) return;
-  try {
-    sessionStorage.setItem('strategist_handoff_name', currentAccountingUser.name);
-    sessionStorage.setItem('strategist_handoff_pw', currentAccountingUser.pw);
-  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
   location.href = '../strategist/index.html?line=' + encodeURIComponent(lineId);
 }
 
-// Silent handoff FROM the admin portal's "Go to Accounting Portal" link -- same
-// one-time sessionStorage pattern as the existing admin<->strategist handoff.
-async function tryAccountingHandoffLogin() {
-  let name, pw;
-  try {
-    name = sessionStorage.getItem('accounting_handoff_name');
-    pw = sessionStorage.getItem('accounting_handoff_pw');
-    sessionStorage.removeItem('accounting_handoff_name');
-    sessionStorage.removeItem('accounting_handoff_pw');
-  } catch(e) { return false; }
-  if (!name || !pw) return false;
-  const result = await attemptAccountingLogin(name, pw);
-  if (!result.ok) return false;
-  currentAccountingUser = { name, email: result.email, role: result.role, pw };
-  showAccountingPanel(true);
-  return true;
-}
 
 function accountingLogout() {
   // If signed in via the new Supabase login, sign out of it too and clear the
@@ -2683,8 +2575,6 @@ function applyStickyGroupOffset(wrapId) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadAccountingRoster();
-  if (await tryAccountingHandoffLogin()) return;
   if (await tryRestoreAccountingSession()) return;
   promptAccountingLogin();
 });

@@ -65,7 +65,7 @@
     <div id="strategist-header-bar" style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);background:#FAFCFE">
       <div id="strategist-user-badge" style="font-size:12px;color:var(--muted)"></div>
       <div style="display:flex;align-items:center;gap:10px">
-        <button id="strategist-admin-portal-link" onclick="adminPortalHandoff();location.href='../admin/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Admin →</button>
+        <button id="strategist-admin-portal-link" onclick="location.href='../admin/index.html'" style="display:none;padding:6px 14px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-weight:600;font-size:12px;cursor:pointer">Go to Admin →</button>
         <button onclick="strategistLogout()" class="btn-quiet-green">Logout</button>
       </div>
     </div>
@@ -183,41 +183,17 @@
   </div>
 </div>
 
-<!-- STRATEGIST LOGIN MODAL — same shape as /admin's, scoped to strategist/super roles
-     only (super included so James/Jon can log in to test this as it's built, per the
-     existing "James stays a super admin for now" arrangement). -->
-<div id="strategist-login-modal" role="dialog" aria-modal="true" aria-labelledby="strategist-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:none;align-items:center;justify-content:center">
-  <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
-    <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔒</div>
-    <h3 id="strategist-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Access</h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:20px">Select your name and enter your password</p>
-    <select id="strategist-name-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:14px;text-align:center;margin-bottom:10px;font-family:inherit;background:#fff">
-      <option value="">— Select your name —</option>
-    </select>
-    <input type="password" id="strategist-pw-input" placeholder="Password" onkeydown="if(event.key==='Enter')checkStrategistPw()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;letter-spacing:.2em;margin-bottom:12px"/>
-    <div id="strategist-pw-error" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px">Incorrect password. Please try again.</div>
-    <div style="display:flex;gap:9px">
-      <button onclick="checkStrategistPw()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Enter</button>
-    </div>
-    <a href="#" onclick="event.preventDefault();document.getElementById('strategist-login-modal').style.display='none';openStrategistNewLogin();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Try the new secure login (beta)</a>
-  </div>
-</div>
-
-<!-- NEW SUPABASE-AUTH LOGIN MODAL — Stage 1 proof-of-concept, same as /admin's (see
-     AUTH_MIGRATION_PLAN.md and io_project_tracking.md 2026-09-04). Proves a real
-     Supabase session round-trips to an admin_users row. Does not open the strategist
-     panel yet — none of the strategist RPCs accept a Supabase session yet (Stage 2). -->
+<!-- Login (Supabase Auth). The only way in since 2026-09-28 (Stage 4/5 of AUTH_MIGRATION_PLAN.md). -->
 <div id="strategist-new-login-modal" role="dialog" aria-modal="true" aria-labelledby="strategist-new-login-title" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9001;display:none;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;padding:36px 32px;width:340px;box-shadow:0 24px 64px rgba(0,0,0,.2);text-align:center">
     <div aria-hidden="true" style="font-size:32px;margin-bottom:12px">🔐</div>
-    <h3 id="strategist-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">New Secure Login <span style="font-weight:600;color:var(--muted);font-size:11px">(beta)</span></h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with the email + password you set up via your Supabase invite.</p>
+    <h3 id="strategist-new-login-title" style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text)">Strategist Access</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Sign in with your email and password.</p>
     <input type="email" id="strategist-new-login-email" placeholder="Email" autocomplete="email" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:10px"/>
     <input type="password" id="strategist-new-login-pw" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')attemptStrategistNewLogin()" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);font-size:14px;text-align:center;margin-bottom:12px"/>
     <div id="strategist-new-login-error" role="alert" style="display:none;color:#EF4444;font-size:12px;margin-bottom:10px"></div>
     <div id="strategist-new-login-success" role="status" style="display:none;color:#1E7E34;font-size:12px;margin-bottom:10px"></div>
     <div style="display:flex;gap:9px">
-      <button onclick="closeStrategistNewLogin()" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#fff;color:var(--text);font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
       <button onclick="attemptStrategistNewLogin()" style="flex:1;padding:10px;border-radius:8px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Sign In</button>
     </div>
     <a href="#" onclick="event.preventDefault();sendStrategistNewLoginResetEmail();" style="display:block;margin-top:14px;font-size:11px;color:var(--muted)">Forgot password?</a>
@@ -227,68 +203,12 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="../shared.js?v=20260925b"></script>
 <script>
-// Same "don't hardcode a roster" pattern as /admin's login (see that file's 2026-07-18
-// note on LOGIN_ROSTER) — populated from the shared get_login_roster RPC, filtered
-// client-side to the roles that belong on this specific portal.
-let currentStrategistUser = null; // {name, email, role, pw}
+let currentStrategistUser = null; // {name, email, role, pw:'' , viaSession}
 
-async function loadStrategistRoster() {
-  const sel = document.getElementById('strategist-name-select');
-  let roster = [];
-  try {
-    roster = await sb('rpc/get_login_roster', { method: 'POST', body: JSON.stringify({}) }) || [];
-  } catch(e) {
-    console.warn('Could not load login roster:', e.message);
-  }
-  const eligible = roster.filter(u => u.role === 'strategist' || u.role === 'super');
-  sel.innerHTML = '<option value="">— Select your name —</option>' +
-    eligible.map(u => `<option value="${esc(u.name)}">${esc(u.name)}</option>`).join('');
-}
-
-function promptStrategistLogin() {
-  document.getElementById('strategist-login-modal').style.display = 'flex';
-  document.getElementById('strategist-name-select').value = '';
-  document.getElementById('strategist-pw-input').value = '';
-  document.getElementById('strategist-pw-error').style.display = 'none';
-}
-
-// Pulled out of checkStrategistPw() (2026-08-04) so the same real login check can
-// also be used by the silent admin->strategist handoff below, not just the modal's
-// own submit button. Returns {ok, role, email} on success or {ok:false, error} —
-// never throws, so both callers can just check `.ok`.
-async function attemptStrategistLogin(name, pw) {
-  if (!name) return { ok: false, error: 'Please select your name.' };
-  let row;
-  try {
-    const res = await sb('rpc/admin_login', { method:'POST', body: JSON.stringify({ p_name: name, p_pw: pw }) });
-    row = Array.isArray(res) ? res[0] : res;
-  } catch(e) {
-    return { ok: false, error: 'Could not reach the login service. Check your connection and try again.' };
-  }
-  if (!row || !row.role) return { ok: false, error: 'Incorrect password. Please try again.' };
-  if (row.role !== 'strategist' && row.role !== 'super') {
-    return { ok: false, error: 'This account isn\'t set up for the Strategist portal.' };
-  }
-  return { ok: true, role: row.role, email: row.email || '' };
-}
-
-async function checkStrategistPw() {
-  const name = document.getElementById('strategist-name-select').value;
-  const pw = document.getElementById('strategist-pw-input').value;
-  const errEl = document.getElementById('strategist-pw-error');
-  const result = await attemptStrategistLogin(name, pw);
-  if (result.ok) {
-    currentStrategistUser = { name, email: result.email, role: result.role, pw };
-    document.getElementById('strategist-login-modal').style.display = 'none';
-    showStrategistPanel(true);
-  } else {
-    errEl.textContent = result.error;
-    errEl.style.display = 'block';
-    document.getElementById('strategist-pw-input').value = '';
-    if (result.error.includes('select your name')) return;
-    document.getElementById('strategist-pw-input').focus();
-  }
-}
+// The email login is the only login (2026-09-28, Stage 4/5 of
+// AUTH_MIGRATION_PLAN.md, per Claire: everyone is on Supabase Auth). Kept
+// under its old name because logout and page-load both call it.
+function promptStrategistLogin() { openStrategistNewLogin(); }
 
 // ── NEW SUPABASE-AUTH LOGIN (Stage 3 of AUTH_MIGRATION_PLAN.md) ──────────
 // Same pattern as /admin's version (see io_project_tracking.md 2026-09-04) — reuses
@@ -457,17 +377,6 @@ function showStrategistPanel(show) {
   }
 }
 
-// Reciprocal handoff to admin/index.html's own tryAdminHandoffLogin() (2026-08-04,
-// per Claire, symmetric with the admin->strategist handoff built earlier the same
-// day) — same one-time sessionStorage pattern, cleared on the other side right after
-// being read, whether it works or not.
-function adminPortalHandoff() {
-  if (!currentStrategistUser) return;
-  try {
-    sessionStorage.setItem('admin_handoff_name', currentStrategistUser.name);
-    sessionStorage.setItem('admin_handoff_pw', currentStrategistUser.pw);
-  } catch(e) { /* sessionStorage blocked -- the link's normal navigation still works, just prompts for login again */ }
-}
 
 // ══════════════════════════════════════════════════════════════════════════
 // STRATEGIST DASHBOARD (2026-08-03) — v1 framework replacing the concept mockup.
@@ -3948,33 +3857,8 @@ function strategistLogout() {
   promptStrategistLogin();
 }
 
-// Silent handoff from the admin portal's "Go to Strategist Portal" link (2026-08-04,
-// per Claire: "When I click the strategist link from the admin portal I have to log
-// in again"). admin/index.html stashes the already-authenticated name/password into
-// sessionStorage right before navigating; picked up here ONCE (cleared immediately,
-// whether it works or not) so it can never be replayed by, say, opening this page
-// again later in the same tab. Same plaintext-in-memory trust model this whole app
-// already uses everywhere (no tokens/cookies anywhere in this project) — sessionStorage
-// just carries that same value across the one page hop, cleared right after reading.
-async function tryStrategistHandoffLogin() {
-  let name, pw;
-  try {
-    name = sessionStorage.getItem('strategist_handoff_name');
-    pw = sessionStorage.getItem('strategist_handoff_pw');
-    sessionStorage.removeItem('strategist_handoff_name');
-    sessionStorage.removeItem('strategist_handoff_pw');
-  } catch(e) { return false; } // e.g. sessionStorage blocked entirely (privacy mode, unusual origin)
-  if (!name || !pw) return false;
-  const result = await attemptStrategistLogin(name, pw);
-  if (!result.ok) return false;
-  currentStrategistUser = { name, email: result.email, role: result.role, pw };
-  showStrategistPanel(true);
-  return true;
-}
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadStrategistRoster();
-  if (await tryStrategistHandoffLogin()) return;
   if (await tryRestoreStrategistSession()) return;
   promptStrategistLogin();
 });

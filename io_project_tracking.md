@@ -30445,3 +30445,49 @@ up with the same protection model as WebPM. Also noted: `&preview=1`
 bypasses the not-embedded guard today with the slug just as with a key —
 unchanged, kept for testing. No shortcode needed for IO (per-group pages,
 plain iframes): WordPress teammate gets the two addresses per group.
+
+### 2026-09-28 — Auth migration Stage 4/5: dropdown login removed from all three portals (merge pending); Stage 4 SQL prepared
+
+Claire: "I think I have everyone in the supabase auth that I need so we
+could remove the dropdown staff login." Roster query (admin_users ⟕
+auth.users): 11 active logins; 10 linked; 8 have signed in with the new
+login. **Blockers before the DB step:** James (super) NOT linked and has no
+email on his staff record; Kim (accounting) and Peggy (am) linked but never
+signed in via email. Live defs pasted: `admin_resolve_role` (the ONE place
+the legacy branch lives — prefers auth.uid(), falls back to name+pw_hash;
+the fallback never checks `active`) and `admin_login` (same, no `active`
+check). Both gaps close with Stage 4.
+
+**Part 1 — portals (this commit, reversible by revert):** removed the
+name-dropdown/password modal, the `get_login_roster` load, `attempt*Login`/
+`check*Pw`, the sessionStorage name+password handoffs (in AND out; both
+portals share one persisted Supabase session, so "Go to Admin/Strategist/
+Accounting" and Accounting's "Open in Strategist Portal" deep link carry the
+login on their own), and the "(beta)" wording/Cancel button on the email
+modal, which is now titled Admin/Strategist/Accounting Access. `prompt*Login`
+kept as thin wrappers (logout + page load call them). Net −380 lines.
+**Verified in headless Chromium (all three):** legacy modal absent, email
+modal visible with the right title, one Sign In button + Forgot password,
+no name `<select>`, no login-related RPC on load. (CDN blocked in the
+sandbox, so the actual sign-in was not exercised; that code is byte-for-
+byte the Stage 3 code live-tested 2026-09-04 apart from title/Cancel.)
+
+**Part 2 — DB, prepared, NOT handed yet** (`scratchpad/auth-stage4-close-
+legacy-login.sql`): `admin_resolve_role` = session only (auth.uid() null →
+null; deactivated → null), same signature (RPCs still pass p_name for
+attribution; p_pw ignored); `drop admin_login(text,text)`; `drop
+get_login_roster()`. ROLLBACK on file: `scratchpad/live-admin_resolve_role-
+2026-09-28.sql` (legacy body verbatim + admin_login; get_login_roster's def
+was never pasted — recreate only if the dropdown page is restored from git).
+**EXECUTED in pglite** (`pg-test-auth-stage4.js`, auth.uid() stubbed via a
+session variable, 11/11): baseline legacy works incl. the deactivated-user
+gap; after Stage 4 name+pw refused, deactivated refused (session or not),
+unlinked session refused, real session resolves regardless of p_name; both
+functions dropped; rollback restores. Run order: merge part 1 → few days →
+James/Kim/Peggy settled → part 2 in a quiet window. Stage 5 remainder
+(drop `pw_hash`) a week after that.
+
+**Noted, not changed:** under the session path `p_name` is client-supplied
+and used for edited_by/cancelled_by attribution — a signed-in user could
+mislabel an action as someone else. Pre-existing since Stage 2. Proper fix
+= derive the name from the session inside the RPCs (Stage 5 candidate).
