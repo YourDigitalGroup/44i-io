@@ -30301,3 +30301,6 @@ lockdown while the table is denied; view gone; groups unchanged. Audit
 tool's change becomes: POST `/rest/v1/rpc/get_group_logo` with
 `{"p_group_id": "<id>"}` (public key) instead of the table read. Handed
 inline 2026-09-28.
+**SQL RUN 2026-09-28 (Claire):** `get_group_logo` present, `groups_logo` view
+gone. Awaiting: advisor re-scan clear; audit-tool team confirms switching
+to the function (then Phase 2 prerequisite = cleared).
