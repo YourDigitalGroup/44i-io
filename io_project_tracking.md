@@ -30491,3 +30491,32 @@ James/Kim/Peggy settled → part 2 in a quiet window. Stage 5 remainder
 and used for edited_by/cancelled_by attribution — a signed-in user could
 mislabel an action as someone else. Pre-existing since Stage 2. Proper fix
 = derive the name from the session inside the RPCs (Stage 5 candidate).
+**Merged 2026-09-28 (Claire).** Earlier the same day Claire had also merged
+the Admin IO Form Embed tab + the three-way error screens (confirmed from
+`git diff origin/main`: only the three portals + this doc differed at the
+login merge). James → deactivated (doesn't use the portal). Live checks:
+Claire email sign-in → Admin; Go to Strategist/Accounting without re-login;
+Kim + Peggy each sign in once. Then part 2 in a quiet window.
+
+### 2026-09-28 — IO's WordPress side IS a shortcode: [new_ioform]; Admin now hands out a Shortcode Line
+
+Claire's developer sent the live `[new_ioform]` shortcode (`rtheme_newioform_html`).
+Recorded in full here (per the lost-uploads lesson): resolves the logged-in
+WP user's `user_nicename` → `$slug`; builds
+`https://io.yourdigitalgroupresources.com/<slug>` for the IO iframe and
+`…/companion/?g=<slug>` for the Companion iframe (the Companion block —
+`#change_order` with a toggle button + iframe — is COMMENTED OUT, which is
+why no AE can see it); ALSO still outputs the OLD Gravity Form
+(`[gravityform id="3"]` inside `#insertion_form`) above the iframe — the
+likely route for last week's "submitted the old way" Titan/SuperTalk IOs
+(flagged to Claire; her call). A long ACF pricing-deviation block precedes
+all this (irrelevant to keys). Renders nothing unless logged in.
+Consequence: the key must be looked up INSIDE the shortcode per slug, like
+WebPM → Admin's one-time panel now includes a **Shortcode line**
+(`'<slug>' => '<key>', // Group Name`) and the Companion address uses the
+shortcode's `companion/?g=<slug>&t=<key>` shape (companion/index.html reads
+either path or ?g=). Handed `scratchpad/wordpress-new_ioform-shortcode-keys.php`
+inline: replaces only the "2026: New iFrame IO" block — adds `$io_keys`
+array, `$key` lookup, `?t=` on both addresses, key-less fallback for groups
+without a line. Slug must equal the group's io_slug exactly (already true
+today or the form wouldn't load). `php -l`: no syntax errors.

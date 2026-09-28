@@ -12491,11 +12491,16 @@ function applyAdditionalCardMemberPick(handle) {
 // clears it; nothing here (or in the DB) can show it again.
 let ADMIN_EMBED_ONE_TIME = null; // { key, slug, group_name, label, retired }
 
-function adminEmbedAddresses(slug, key) {
+function adminEmbedAddresses(slug, key, groupName) {
   const origin = window.location.origin;          // Admin lives on the same domain as the forms
   const io = `${origin}/${encodeURIComponent(slug)}?t=${key}`;
-  const companion = `${origin}/companion/${encodeURIComponent(slug)}?t=${key}`;
-  return { io, companion, preview: io + '&preview=1',
+  // Same shape the WordPress shortcode already builds for the Companion form
+  // (`companion/?g=<slug>`, per the [new_ioform] shortcode Claire's developer
+  // sent 2026-09-28) -- companion/index.html reads either the path or ?g=.
+  const companion = `${origin}/companion/?g=${encodeURIComponent(slug)}&t=${key}`;
+  // WebPM-style Shortcode Line: one entry in the shortcode's $io_keys list.
+  const shortcodeLine = `'${slug.replace(/'/g, "\\'")}' => '${key}', // ${groupName || slug}`;
+  return { io, companion, preview: io + '&preview=1', shortcodeLine,
     iframe: `<iframe src="${io}" style="width:100%;border:0;min-height:900px" scrolling="no" title="Insertion Order"></iframe>` };
 }
 
@@ -12517,7 +12522,7 @@ async function adminRenderEmbedTab() {
   // One-time reveal (only right after Create/Replace, only for THIS group)
   const ot = ADMIN_EMBED_ONE_TIME;
   if (ot && ot.group_id === groupId) {
-    const a = adminEmbedAddresses(ot.slug, ot.key);
+    const a = adminEmbedAddresses(ot.slug, ot.key, ot.group_name);
     const field = (label, id, val, note) => `
       <div style="margin-bottom:10px">
         <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">${label}${note ? ` <span style="font-weight:400;text-transform:none;letter-spacing:0">— ${note}</span>` : ''}</label>
@@ -12529,8 +12534,9 @@ async function adminRenderEmbedTab() {
     html += `
       <div style="background:#FFF3DA;border-left:3px solid #C68A1E;border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:18px">
         <p style="font-size:12.5px;font-weight:700;color:#92650B;margin-bottom:4px">New embed key for ${esc(ot.group_name)} — copy it now. It will not be shown again.</p>
-        <p style="font-size:11.5px;color:#92650B;margin-bottom:12px">${ot.retired ? `${ot.retired} earlier key${ot.retired === 1 ? '' : 's'} stopped working the moment this one was created. ` : ''}Paste the two addresses into the group's WordPress page (the IO iframe and the hidden Companion iframe). Anything already on that page keeps working until you do.</p>
+        <p style="font-size:11.5px;color:#92650B;margin-bottom:12px">${ot.retired ? `${ot.retired} earlier key${ot.retired === 1 ? '' : 's'} stopped working the moment this one was created. ` : ''}Give the Shortcode Line to whoever maintains the WordPress shortcode — it covers both the IO iframe and the Companion iframe for this group. Until it is added, this group keeps working exactly as today.</p>
         ${field('Embed key', 'embed-ot-key', ot.key)}
+        ${field('Shortcode line', 'embed-ot-shortcode', a.shortcodeLine, 'paste into the [new_ioform] shortcode\'s $io_keys list')}
         ${field('IO form iframe address', 'embed-ot-io', a.io)}
         ${field('Companion form iframe address', 'embed-ot-companion', a.companion)}
         ${field('Full iframe tag', 'embed-ot-iframe', a.iframe, 'for a hidden test page')}
