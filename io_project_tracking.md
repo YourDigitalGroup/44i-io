@@ -30285,3 +30285,19 @@ columns exist; pricing unreachable; still works after simulating the Phase 2
 lockdown (policy dropped + select revoked on groups) while the table itself
 is then denied; view is read-only for anon; groups unchanged. Handed inline;
 audit tool then changes `groups` → `groups_logo` in its one request.
+**Supabase advisor flagged the view CRITICAL ("Security Definer View",
+2026-09-28, Claire ran the view SQL and sent the screenshot).** The flag
+describes the intended design (owner-rights view bypassing groups' RLS) but
+a standing CRITICAL on the project isn't acceptable. Replaced with
+`get_group_logo(p_group_id uuid)` — SECURITY DEFINER, STABLE, language sql,
+returns table(id, name, logo_url, logo_dark_bg, active) for one group;
+execute granted to anon/authenticated; the view is dropped in the same
+block (`scratchpad/groups-logo-function.sql`). Same pattern as every other
+read RPC here; the advisor treats those as normal. **EXECUTED in pglite**
+(`pg-test-groups-logo-function.js`, 9/9): anon reads logo by id; only the
+five output columns; pricing unreachable; inactive group returns
+active=false; unknown id → 0 rows; still works after simulated Phase 2
+lockdown while the table is denied; view gone; groups unchanged. Audit
+tool's change becomes: POST `/rest/v1/rpc/get_group_logo` with
+`{"p_group_id": "<id>"}` (public key) instead of the table read. Handed
+inline 2026-09-28.
