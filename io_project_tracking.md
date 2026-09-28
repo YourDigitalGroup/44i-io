@@ -30520,3 +30520,9 @@ inline: replaces only the "2026: New iFrame IO" block — adds `$io_keys`
 array, `$key` lookup, `?t=` on both addresses, key-less fallback for groups
 without a line. Slug must equal the group's io_slug exactly (already true
 today or the form wouldn't load). `php -l`: no syntax errors.
+**2026-09-28 (Claire):** Shortcode-line Admin change merged; updated
+`[new_ioform]` block sent to her WordPress developer (awaiting "installed").
+Claire's own email login confirmed working. Pending: Kim + Peggy sign-in
+this week; Gravity Form decision; developer confirmation; then Claire's own
+group = first key (Create in Admin → Shortcode Line → developer pastes →
+test IO + Companion on the resource-center page).
