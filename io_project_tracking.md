@@ -30325,3 +30325,9 @@ Requested from Claire: the other project's embed functions
 (`pg_get_functiondef` of `%embed%`) and a screenshot of its Admin key
 screen, to mirror exactly. The 09-22 brief/reference uploads are no longer
 on disk in this session.
+**Lesson (2026-09-28):** the 09-22 brief + 3 reference files were session
+uploads and are gone; only what was written here survived (table, resolver,
+key format — enough for Phase 1, not for the minting screen). Standing rule:
+when Claire uploads a reference file, record EVERYTHING the project may
+later need from it in this doc at the time (function bodies, UI behavior),
+not just the part needed for the current phase.
