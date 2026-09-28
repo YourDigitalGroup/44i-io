@@ -30550,3 +30550,24 @@ iframes. Not on the submission path (UI messaging only). `php -l` clean.
 CSS note sent to the developer alongside the key block. Awaiting developer
 "installed" for both, then Claire checks a resource-center page: natural
 length, Step 2 sections grow the frame, popups open in view.
+
+### 2026-09-28 — Remaining security work, ranked by real risk of waiting (for Claire's planning)
+
+1. Key rollout Phase 2 (in progress) — closes cross-group reads/forgery.
+2. Login part 2 SQL (ready; after Kim/Peggy sign in) — closes public staff
+   list + inactive-user-with-old-password gap; Supabase Auth's own rate
+   limiting then covers "no lockout" (confirm after).
+3. **Relay hardening — the one real liability if left**: with the public
+   anon key anyone can send email from the Mailgun domain to any address
+   and read/create/edit/add-members on every Trello board the bot sees.
+   ON the submission path (form builds cards/sends email via the relay at
+   submit): order = every group on a key → form sends key → relay requires
+   it (switch-back ready). Depends on key rollout pace → Claire: "I will try
+   to get the keys done sooner than later."
+4. Orders through key-checked RPCs — moderate, time-boxed (2-hour public
+   read/update of each new order incl. signature). MOST on-path change;
+   full CLAUDE.md submission-path protocol; keep direct-write path until the
+   new one is proven on a real submission; move Admin Swap's PATCH too.
+5. Tidy-ups (get_client_names, group_service_overrides policy) — nil risk.
+6. Old Gravity Form still rendering above the iframe — process risk only
+   (bypasses pricing/Trello/tracking); Claire's decision.
