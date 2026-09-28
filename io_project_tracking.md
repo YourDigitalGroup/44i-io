@@ -30491,3 +30491,9 @@ James/Kim/Peggy settled → part 2 in a quiet window. Stage 5 remainder
 and used for edited_by/cancelled_by attribution — a signed-in user could
 mislabel an action as someone else. Pre-existing since Stage 2. Proper fix
 = derive the name from the session inside the RPCs (Stage 5 candidate).
+**Merged 2026-09-28 (Claire).** Earlier the same day Claire had also merged
+the Admin IO Form Embed tab + the three-way error screens (confirmed from
+`git diff origin/main`: only the three portals + this doc differed at the
+login merge). James → deactivated (doesn't use the portal). Live checks:
+Claire email sign-in → Admin; Go to Strategist/Accounting without re-login;
+Kim + Peggy each sign in once. Then part 2 in a quiet window.
