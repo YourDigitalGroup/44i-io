@@ -30245,3 +30245,6 @@ name differs. pglite 17/17 (rename carried to group digital + covering incl.
 a lower-case stored "kolton", and to client digital + covering; other
 strategists untouched; a save without rename changes nothing). Handed
 inline; awaiting run. No JS change needed.
+**SQL RUN 2026-09-28 (Claire).** One `admin_save_user` signature. Live check
+= the next real AM profile edit (groups follow) or strategist rename
+(groups/clients follow); nothing to merge.
