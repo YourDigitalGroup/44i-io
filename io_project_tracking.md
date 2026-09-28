@@ -30231,3 +30231,6 @@ should be updated"):**
 **SQL RUN + data clean 2026-09-28 (Claire).** Mismatch query now returns
 only Claude Test Group (Jim, no profile). Claire: first occurrence; TULLOU
 KOC to be moved by hand. Branch pending merge (group-form re-sync).
+**MERGED 2026-09-28 (Claire).** Shania handling the TULLOU KOC move. Live
+check = open EAB in Admin → Save → IO form's KOC button opens Shania's
+calendar (already true after the data fix; the form change only keeps it so).
