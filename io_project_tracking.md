@@ -30433,3 +30433,15 @@ the classifier checked on refused/network/5xx errors; the three call-site
 edits were asserted at edit time. Not on the submission path (error-screen
 text only; the load logic is unchanged apart from which screen is shown).
 Merge pending (rides with the Admin IO Form Embed tab).
+**Key visibility, settled 2026-09-28.** Claire: "having them be able to see
+their key seems counter intuitive." Answer recorded: an iframe key is
+necessarily readable by anyone who can load the page (WebPM has the same
+property; its doc relies on the WordPress login: "renders nothing for a
+visitor who isn't signed in"). The key is a secret from OUTSIDERS, not from
+the group's own AEs; it stops slug-guessing across groups, not an AE
+opening their own form. Ex-AE risk → Replace Key. Claire confirmed each
+group's resource-center page is behind its own WordPress login, so IO ends
+up with the same protection model as WebPM. Also noted: `&preview=1`
+bypasses the not-embedded guard today with the slug just as with a key —
+unchanged, kept for testing. No shortcode needed for IO (per-group pages,
+plain iframes): WordPress teammate gets the two addresses per group.
