@@ -30307,3 +30307,21 @@ to the function (then Phase 2 prerequisite = cleared).
 **Advisor cleared 2026-09-28 (Claire).** Remaining for this item: audit-tool
 team confirms the switch to `get_group_logo` → then Phase 2 prerequisite
 cleared.
+
+### 2026-09-28 — Embed keys: plan REORDERED — Admin minting screen BEFORE the cutover
+
+Claire: "For the other 2 projects I created the keys in the admin. I am
+comfortable doing that if we can do the same thing. I just don't want to do
+something different if I can avoid it." Also clarified for her: creating a
+key changes nothing; a key on a group's WordPress page switches only that
+group and is reversible by removing it; the OLD path closes only at the
+LOCKDOWN SQL (last step); the ROLLBACK SQL is the prepared undo of the
+lockdown. Admin has no key screen today (was Phase 4). New order: (a) Admin
+key screen + mint/list/revoke RPCs (super only, per the approved plan) →
+(b) rollback SQL prepared → (c) Claire's own group minted in Admin, key on
+both iframe addresses, live test → (d) every group → (e) lockdown SQL.
+Prerequisite still open: audit tool confirms switch to `get_group_logo`.
+Requested from Claire: the other project's embed functions
+(`pg_get_functiondef` of `%embed%`) and a screenshot of its Admin key
+screen, to mirror exactly. The 09-22 brief/reference uploads are no longer
+on disk in this session.
