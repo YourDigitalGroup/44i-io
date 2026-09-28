@@ -186,6 +186,10 @@
           <button id="tab-btn-info" role="tab" aria-selected="true" aria-controls="tab-info" onclick="adminTab('info')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:var(--accent-dark);color:#fff;cursor:pointer">Group Info</button>
           <button id="tab-btn-pricing" role="tab" aria-selected="false" aria-controls="tab-pricing" onclick="adminTab('pricing')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Custom Pricing</button>
           <button id="tab-btn-accounting-override" role="tab" aria-selected="false" aria-controls="tab-accounting-override" onclick="adminTab('accounting-override')" style="padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">Accounting Overrides</button>
+          <!-- IO Form Embed (2026-09-28) -- mirrors WebPM's "Resource Center Embed":
+               Create shows the key once, Replace mints-then-retires, Revoke kills one.
+               Super admins only (hidden for everyone else in adminEditGroup/adminNewGroup). -->
+          <button id="tab-btn-embed" role="tab" aria-selected="false" aria-controls="tab-embed" onclick="adminTab('embed')" style="display:none;padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">IO Form Embed</button>
         </div>
 
         <div style="padding:20px">
@@ -352,6 +356,11 @@
             <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. A CPM-adjustment modifier (like Offline Visits Tracking) shows one row per tactic it can combine with, so each pairing (e.g. Geo-Targeting w/ Offline Tracking vs. Site-Targeting w/ Offline Tracking) can be overridden separately for this group.</p>
             <div id="accounting-override-fields"></div>
             <p style="font-size:10px;color:var(--muted);margin-top:12px">Internal only — never shown to clients or on the printed IO. Affects only how this group's real margin is calculated, not anything on the public form.</p>
+          </div>
+
+          <div id="tab-embed" role="tabpanel" aria-labelledby="tab-btn-embed" style="display:none">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">The embed key is what this group's WordPress page puts on the end of both iframe addresses (the IO form and the Companion form) so the forms know which group they belong to without trusting the address. One active key per group. The key is shown <strong>once</strong>, when it is created — only its fingerprint is stored here. Until a key is on the group's WordPress page, that page keeps working exactly as it does today.</p>
+            <div id="admin-embed-body"></div>
           </div>
 
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
@@ -1899,6 +1908,7 @@ const ADMIN_ROLE_PERMISSIONS = {
   groupAccountingOverride:  ['super'],
   groupPricingAccounting:   ['super'], // combined guard for adminSaveGroup's single payload branch covering both fields at once
   groupDeactivate:          ['super'],
+  embedKeysManage:          ['super'],   // IO Form Embed tab on the group editor (2026-09-28)
   clientAccountingOverride: ['super'],
   strategistPortalLink:     ['strategist', 'super'],
   accountingPortalLink:     ['super'],
@@ -2266,9 +2276,16 @@ async function adminTab(tab) {
     showToast(tab === 'pricing' ? 'Custom pricing can only be changed by a super admin' : 'Accounting overrides can only be changed by a super admin', 'error');
     return;
   }
+  if (tab === 'embed' && !canSee('embedKeysManage')) { showToast('Embed keys can only be managed by a super admin', 'error'); return; }
   document.getElementById('tab-info').style.display     = tab==='info'    ? 'block' : 'none';
   document.getElementById('tab-pricing').style.display  = tab==='pricing' ? 'block' : 'none';
   document.getElementById('tab-accounting-override').style.display = tab==='accounting-override' ? 'block' : 'none';
+  document.getElementById('tab-embed').style.display = tab==='embed' ? 'block' : 'none';
+  const embedBtn = document.getElementById('tab-btn-embed');
+  embedBtn.style.background = tab==='embed' ? 'var(--accent-dark)' : '#fff';
+  embedBtn.style.color = tab==='embed' ? '#fff' : 'var(--accent-dark)';
+  embedBtn.setAttribute('aria-selected', tab==='embed' ? 'true' : 'false');
+  if (tab === 'embed') await adminRenderEmbedTab();
   // Filled pill when active, white/accent-outline when not (2026-08-27) --
   // same active/inactive pattern as adminSection()'s own tabs, converted
   // 2026-08-18; this tab bar was missed by that sweep.
@@ -12599,6 +12616,136 @@ function applyAdditionalCardMemberPick(handle) {
   document.getElementById('admin-additional-card-trello').value = handle || '';
 }
 
+// ── IO Form Embed tab (2026-09-28) ──────────────────────────────────────────
+// Mirrors WebPM's "Resource Center Embed" (Claire's WebPM doc, 2026-09-28) so
+// Claire manages IO's keys the same way she already does there. Server side:
+// admin_list/create/replace/revoke_embed_key (embed-keys-admin-minting.sql),
+// super admins only, against the Phase 1 embed_keys table. The key is
+// returned ONCE by Create/Replace and held only in ADMIN_EMBED_ONE_TIME for
+// the current form session -- closing the editor or opening another group
+// clears it; nothing here (or in the DB) can show it again.
+let ADMIN_EMBED_ONE_TIME = null; // { key, slug, group_name, label, retired }
+
+function adminEmbedAddresses(slug, key) {
+  const origin = window.location.origin;          // Admin lives on the same domain as the forms
+  const io = `${origin}/${encodeURIComponent(slug)}?t=${key}`;
+  const companion = `${origin}/companion/${encodeURIComponent(slug)}?t=${key}`;
+  return { io, companion, preview: io + '&preview=1',
+    iframe: `<iframe src="${io}" style="width:100%;border:0;min-height:900px" scrolling="no" title="Insertion Order"></iframe>` };
+}
+
+async function adminRenderEmbedTab() {
+  const body = document.getElementById('admin-embed-body');
+  if (!body) return;
+  const groupId = document.getElementById('admin-group-id').value;
+  const slug = document.getElementById('admin-slug').value.trim();
+  if (!groupId) { body.innerHTML = '<p style="font-size:12.5px;color:var(--muted)">Save the group first, then come back here to create its embed key.</p>'; return; }
+  body.innerHTML = '<p style="font-size:12px;color:var(--muted)">Loading…</p>';
+  let keys = [];
+  try {
+    keys = await sb('rpc/admin_list_embed_keys', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_group_id: groupId }) }) || [];
+  } catch (e) { body.innerHTML = `<p style="font-size:12.5px;color:#B3261E">Could not load this group's keys: ${esc(e.message)}</p>`; return; }
+  const active = keys.filter(k => !k.revoked_at);
+  const fmt = d => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+  let html = '';
+
+  // One-time reveal (only right after Create/Replace, only for THIS group)
+  const ot = ADMIN_EMBED_ONE_TIME;
+  if (ot && ot.group_id === groupId) {
+    const a = adminEmbedAddresses(ot.slug, ot.key);
+    const field = (label, id, val, note) => `
+      <div style="margin-bottom:10px">
+        <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">${label}${note ? ` <span style="font-weight:400;text-transform:none;letter-spacing:0">— ${note}</span>` : ''}</label>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="${id}" readonly value="${esc(val)}" onclick="this.select()" style="flex:1;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:11.5px;font-family:monospace;background:#fff"/>
+          <button type="button" onclick="adminCopyEmbedField('${id}')" style="padding:7px 12px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11.5px;font-weight:700;cursor:pointer">Copy</button>
+        </div>
+      </div>`;
+    html += `
+      <div style="background:#FFF3DA;border-left:3px solid #C68A1E;border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:18px">
+        <p style="font-size:12.5px;font-weight:700;color:#92650B;margin-bottom:4px">New embed key for ${esc(ot.group_name)} — copy it now. It will not be shown again.</p>
+        <p style="font-size:11.5px;color:#92650B;margin-bottom:12px">${ot.retired ? `${ot.retired} earlier key${ot.retired === 1 ? '' : 's'} stopped working the moment this one was created. ` : ''}Paste the two addresses into the group's WordPress page (the IO iframe and the hidden Companion iframe). Anything already on that page keeps working until you do.</p>
+        ${field('Embed key', 'embed-ot-key', ot.key)}
+        ${field('IO form iframe address', 'embed-ot-io', a.io)}
+        ${field('Companion form iframe address', 'embed-ot-companion', a.companion)}
+        ${field('Full iframe tag', 'embed-ot-iframe', a.iframe, 'for a hidden test page')}
+        ${field('Test by URL', 'embed-ot-preview', a.preview, 'opens the form outside an iframe')}
+      </div>`;
+  }
+
+  // Actions
+  html += `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">`;
+  if (!active.length) {
+    html += `<button type="button" onclick="adminCreateEmbedKey('${esc(groupId)}')" style="padding:8px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;font-size:12.5px;font-weight:700;border:none;cursor:pointer">Create Embed Key</button>
+             <span style="font-size:11.5px;color:var(--muted)">No active key — this group's page is on the old (slug-only) path.</span>`;
+  } else {
+    html += `<button type="button" onclick="adminReplaceEmbedKey('${esc(groupId)}')" style="padding:8px 16px;border-radius:7px;background:#fff;color:#B3261E;font-size:12.5px;font-weight:700;border:1.5px solid #B3261E;cursor:pointer">Replace Key</button>
+             <span style="font-size:11.5px;color:var(--muted)">Mints a new key first, then retires the current one — the WordPress page must be updated right after. Use it whenever someone with access to the page HTML leaves.</span>`;
+  }
+  html += `</div>`;
+
+  // Key list -- labels only, never the key
+  if (!keys.length) {
+    html += `<p style="font-size:12px;color:var(--muted)">No keys have been created for this group yet.</p>`;
+  } else {
+    html += `<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase">
+        <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Label</th>
+        <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Created</th>
+        <th style="padding:6px 8px;border-bottom:1px solid var(--border)">Status</th>
+        <th style="padding:6px 8px;border-bottom:1px solid var(--border)"></th></tr></thead><tbody>`;
+    keys.forEach(k => {
+      const isActive = !k.revoked_at;
+      html += `<tr>
+        <td style="padding:8px;border-bottom:1px solid var(--border)">${esc(k.label || '—')}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);white-space:nowrap">${fmt(k.created_at)}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border)">${isActive
+          ? '<span style="background:#DCFCE7;color:#166534;border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700">Active</span>'
+          : `<span style="background:#F1F5F9;color:var(--muted);border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700">Revoked ${fmt(k.revoked_at)}</span>`}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:right">${isActive
+          ? `<button type="button" onclick="adminRevokeEmbedKey('${esc(groupId)}','${esc(k.id)}')" style="padding:5px 11px;border-radius:6px;border:1.5px solid var(--border);background:#fff;color:#B3261E;font-size:11px;font-weight:700;cursor:pointer">Revoke</button>`
+          : ''}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  body.innerHTML = html;
+}
+
+async function adminCreateEmbedKey(groupId) {
+  try {
+    const r = await sb('rpc/admin_create_embed_key', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_group_id: groupId }) });
+    ADMIN_EMBED_ONE_TIME = { ...r, group_id: groupId, retired: 0 };
+    showToast('Embed key created — copy it now, it will not be shown again', 'success');
+  } catch (e) { showToast('Could not create the key: ' + e.message, 'error'); }
+  await adminRenderEmbedTab();
+}
+
+async function adminReplaceEmbedKey(groupId) {
+  if (!confirm('Replace this group\'s embed key?\n\nA new key is created first, then the current key stops working immediately. Have the group\'s WordPress page open so you can paste the new addresses straight away.')) return;
+  try {
+    const r = await sb('rpc/admin_replace_embed_key', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_group_id: groupId }) });
+    ADMIN_EMBED_ONE_TIME = { ...r, group_id: groupId };
+    showToast('New key created; the old key has been retired', 'success');
+  } catch (e) { showToast('Could not replace the key: ' + e.message, 'error'); }
+  await adminRenderEmbedTab();
+}
+
+async function adminRevokeEmbedKey(groupId, keyId) {
+  if (!confirm('Revoke this key?\n\nThe group\'s WordPress page will fall back to the old (slug-only) path until a new key is created and pasted in.')) return;
+  try {
+    const n = await sb('rpc/admin_revoke_embed_key', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_key_id: keyId }) });
+    showToast(n ? 'Key revoked' : 'That key was already revoked', n ? 'success' : 'error');
+  } catch (e) { showToast('Could not revoke the key: ' + e.message, 'error'); }
+  await adminRenderEmbedTab();
+}
+
+async function adminCopyEmbedField(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  try { await navigator.clipboard.writeText(el.value); showToast('Copied', 'success'); }
+  catch (e) { el.select(); showToast('Select the text and copy it manually', 'error'); }
+}
+
 function applyAmPick(name) {
   if (!name) return;
   // Case/space-tolerant (2026-09-28): a group saved as "shania" must still
@@ -12734,6 +12881,8 @@ function adminClearGroupLogo() {
 }
 
 async function adminNewGroup() {
+  document.getElementById('tab-btn-embed').style.display = canSee('embedKeysManage') ? '' : 'none';
+  ADMIN_EMBED_ONE_TIME = null;
   document.getElementById('admin-form-title').textContent = 'New Group';
   document.getElementById('admin-group-id').value = '';
   ['admin-name','admin-slug','admin-am-name','admin-am-email','admin-am-calendar','admin-am-trello',
@@ -12790,6 +12939,8 @@ async function adminNewGroup() {
 async function adminEditGroup(id, initialTab) {
   const g = allGroups.find(x => x.id === id);
   if (!g) return;
+  document.getElementById('tab-btn-embed').style.display = canSee('embedKeysManage') ? '' : 'none';
+  ADMIN_EMBED_ONE_TIME = null;
   document.getElementById('admin-form-title').textContent = 'Edit Group — ' + g.name;
   document.getElementById('admin-group-id').value = g.id;
   document.getElementById('admin-name').value = g.name || '';

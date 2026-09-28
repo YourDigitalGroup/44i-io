@@ -30228,3 +30228,180 @@ should be updated"):**
    gets the new link, Peggy's/Jim's untouched, password-only save harmless,
    rename carries groups, strategist save touches nothing, insert path +
    role guards unchanged.
+**SQL RUN + data clean 2026-09-28 (Claire).** Mismatch query now returns
+only Claude Test Group (Jim, no profile). Claire: first occurrence; TULLOU
+KOC to be moved by hand. Branch pending merge (group-form re-sync).
+**MERGED 2026-09-28 (Claire).** Shania handling the TULLOU KOC move. Live
+check = open EAB in Admin → Save → IO form's KOC button opens Shania's
+calendar (already true after the data fix; the form change only keeps it so).
+**Strategist rename carry-through (2026-09-28, per Claire: "match the AM
+logic"):** strategists are stored BY NAME (groups/clients
+digital_strategist_name + covering_strategist_name; Trello handle resolved
+live at submit, portal scoping by name at load) — no drifting copies, so
+the only exposure was a profile RENAME breaking the match. `admin_save_user`
+(same file, `sync-am-profile-to-groups.sql`, v2) now also updates those four
+name columns where `lower(name)` = the original name, only when the saved
+name differs. pglite 17/17 (rename carried to group digital + covering incl.
+a lower-case stored "kolton", and to client digital + covering; other
+strategists untouched; a save without rename changes nothing). Handed
+inline; awaiting run. No JS change needed.
+**SQL RUN 2026-09-28 (Claire).** One `admin_save_user` signature. Live check
+= the next real AM profile edit (groups follow) or strategist rename
+(groups/clients follow); nothing to merge.
+
+### 2026-09-28 — Embed keys, Phase 2 status check (nothing changed)
+
+Claire asked where the key rollout stands. Phase 1 live since 09-22; no keys
+minted; every group on the slug path. Phase 2 (cutover) parked until Claire
+picks a quiet morning; order stays: rollback SQL first → Claire's own group
+→ every group → lockdown SQL last. New WordPress detail from Claire: the
+Companion form is ALREADY iframed on each group's page behind a hidden
+button (no AE can see it yet); clicking it swaps the iframe's address in
+place (same page, no new tab). index.html has no link to /companion, so the
+swap is WordPress-side. Cutover implication: the `?t=` key goes on BOTH
+iframe addresses (IO + Companion) on the one WordPress page per group —
+one page edit per group, same key for both. A missed address falls back to
+today's slug path (unprotected, not broken) until the lockdown SQL.
+**External dependency found (2026-09-28):** Claire's boss's Claude session
+(working in the AUDIT TOOL) reported that IO's `groups` table is publicly
+readable incl. pricing/AM emails/Trello — accurate, already the #1 item of
+the 09-22 security review, fixed by Phase 2's lockdown — AND that the audit
+tool itself READS IO's `groups` table (logo column only). NEW Phase 2
+prerequisite: before `groups_public_read` is dropped, give the audit tool a
+narrow replacement (a view with id/name/logo_url(+logo_dark_bg?) and its
+own public read policy, or a key-gated lookup if the audit tool gets keys
+too), and repoint the audit tool to it. Need from the audit-tool side: the
+exact request it makes today (endpoint + columns). Without this, the
+lockdown SQL would silently break the audit tool's logos.
+**Built (2026-09-28): `groups_logo` view** (`scratchpad/groups-logo-view.sql`)
+— columns id, name, logo_url, logo_dark_bg, active only; `security_invoker =
+false` so it reads `groups` as owner regardless of RLS; select granted to
+anon/authenticated. The audit tool already has its own embed keys (its own
+system — IO's DB can't validate them), so a key-gated lookup on IO's side is
+not an option; the view is the permanent answer. NOT on the submission path
+(adds a view; no table/policy/function touched). **EXECUTED in pglite**
+(`pg-test-groups-logo-view.js`, 8/8): anon reads logo by id; only the five
+columns exist; pricing unreachable; still works after simulating the Phase 2
+lockdown (policy dropped + select revoked on groups) while the table itself
+is then denied; view is read-only for anon; groups unchanged. Handed inline;
+audit tool then changes `groups` → `groups_logo` in its one request.
+**Supabase advisor flagged the view CRITICAL ("Security Definer View",
+2026-09-28, Claire ran the view SQL and sent the screenshot).** The flag
+describes the intended design (owner-rights view bypassing groups' RLS) but
+a standing CRITICAL on the project isn't acceptable. Replaced with
+`get_group_logo(p_group_id uuid)` — SECURITY DEFINER, STABLE, language sql,
+returns table(id, name, logo_url, logo_dark_bg, active) for one group;
+execute granted to anon/authenticated; the view is dropped in the same
+block (`scratchpad/groups-logo-function.sql`). Same pattern as every other
+read RPC here; the advisor treats those as normal. **EXECUTED in pglite**
+(`pg-test-groups-logo-function.js`, 9/9): anon reads logo by id; only the
+five output columns; pricing unreachable; inactive group returns
+active=false; unknown id → 0 rows; still works after simulated Phase 2
+lockdown while the table is denied; view gone; groups unchanged. Audit
+tool's change becomes: POST `/rest/v1/rpc/get_group_logo` with
+`{"p_group_id": "<id>"}` (public key) instead of the table read. Handed
+inline 2026-09-28.
+**SQL RUN 2026-09-28 (Claire):** `get_group_logo` present, `groups_logo` view
+gone. Awaiting: advisor re-scan clear; audit-tool team confirms switching
+to the function (then Phase 2 prerequisite = cleared).
+**Advisor cleared 2026-09-28 (Claire).** Remaining for this item: audit-tool
+team confirms the switch to `get_group_logo` → then Phase 2 prerequisite
+cleared.
+
+### 2026-09-28 — Embed keys: plan REORDERED — Admin minting screen BEFORE the cutover
+
+Claire: "For the other 2 projects I created the keys in the admin. I am
+comfortable doing that if we can do the same thing. I just don't want to do
+something different if I can avoid it." Also clarified for her: creating a
+key changes nothing; a key on a group's WordPress page switches only that
+group and is reversible by removing it; the OLD path closes only at the
+LOCKDOWN SQL (last step); the ROLLBACK SQL is the prepared undo of the
+lockdown. Admin has no key screen today (was Phase 4). New order: (a) Admin
+key screen + mint/list/revoke RPCs (super only, per the approved plan) →
+(b) rollback SQL prepared → (c) Claire's own group minted in Admin, key on
+both iframe addresses, live test → (d) every group → (e) lockdown SQL.
+Prerequisite still open: audit tool confirms switch to `get_group_logo`.
+Requested from Claire: the other project's embed functions
+(`pg_get_functiondef` of `%embed%`) and a screenshot of its Admin key
+screen, to mirror exactly. The 09-22 brief/reference uploads are no longer
+on disk in this session.
+**Lesson (2026-09-28):** the 09-22 brief + 3 reference files were session
+uploads and are gone; only what was written here survived (table, resolver,
+key format — enough for Phase 1, not for the minting screen). Standing rule:
+when Claire uploads a reference file, record EVERYTHING the project may
+later need from it in this doc at the time (function bodies, UI behavior),
+not just the part needed for the current phase.
+
+### 2026-09-28 — Embed keys: Admin "IO Form Embed" tab built (mirrors WebPM); SQL handed, awaiting run + merge
+
+**Source of truth recorded in full (per today's lesson) — Claire's WebPM doc
+"Resource Center Embed: Keys and Iframes" (28 Sep 2026):**
+- Contract: iframe address `<portal>/embed/<slug>?t=<key>`; key = 48
+  lowercase hex, ONE active per group, only its hash stored; server strips
+  whitespace + lowercases before checking (nothing else forgiven); slug only
+  paints branding, tenancy ALWAYS from the key; slug≠key's group → yellow
+  notice, signs into the key's group; `&preview=1` shows the page outside
+  an iframe, bare link without it says "This page isn't meant to be opened
+  directly"; frame posts `{type:"webpm:height", height}` to parent, parent
+  checks origin then sets height; console tag `[webpm_ae]`, key never logged.
+- Keys screen: Groups → open group → "Resource Center Embed", ADMINS ONLY.
+  **Create Embed Key** shows the key ONCE with copy fields (bare key,
+  Shortcode Line `'<slug>' => '<key>', // Group Name`, full iframe tag for a
+  hidden test page). **Replace Key** mints the new key BEFORE retiring every
+  earlier key (a failed replace can't leave the page dead; old key dies the
+  moment Replace finishes; have the WordPress file open). **Revoke** kills one
+  key, no new one. Labels `embed — <slug> — <date> by <name>`. Keys can't be
+  created until Settings → Portal Base URL is set.
+- Frame messages: "This embed isn't set up yet. This link is missing its
+  embed key." (no ?t=) / "…isn't valid or has been replaced." (revoked/
+  replaced/mistyped/inactive group) vs "Couldn't load just now" (service
+  didn't answer → reload, don't re-key). Sign out inside the frame returns to
+  the name picker. No logo/coloured header inside the frame (WordPress shows
+  it). Setup checklist per group: execs active w/ email → Create key → paste
+  Shortcode Line → put shortcode on page → sign in as the group and check.
+- WebPM-specific, not applicable to IO: WordPress shortcode `[webpm_ae]` +
+  account→slug alias list; AE name picker / passwordless sign-in; staff-email
+  refusal; height messages (IO's WordPress pages use plain iframes with the
+  hidden Companion button swapping the iframe address).
+
+**IO mapping.** DB side already identical (Phase 1: same table, same
+resolver, same forgiveness). Built today, super admins only (Claire):
+- SQL `scratchpad/embed-keys-admin-minting.sql`: `admin_list_embed_keys(p_name,
+  p_pw, p_group_id)` (label/created/revoked — never the key),
+  `admin_create_embed_key(…, p_group_id)` (refuses if an active key exists;
+  refuses a group with no slug; `gen_random_bytes(24)`→48 hex; stores
+  sha256; label `embed — <slug> — <YYYY-MM-DD> by <name>`; returns key ONCE),
+  `admin_replace_embed_key` (insert new THEN revoke others, one transaction;
+  returns key + `retired` count), `admin_revoke_embed_key(…, p_key_id)`. No
+  schema change; no public-form function touched. **EXECUTED in pglite**
+  against the Phase 1 table + resolver verbatim (`pg-test-embed-keys-admin.js`,
+  22/22): minted key resolves via `group_id_for_embed_key`; UPPER+spaces
+  resolve, one-char change doesn't; only hash stored; 2nd Create refused;
+  list never carries key; Replace → new resolves, old doesn't, list newest-
+  first; Revoke → 1 then 0; Create allowed again; per-group isolation;
+  inactive group's key stops resolving; no-slug refused; am/strategist/
+  unknown refused (even list).
+- Admin: 4th tab "IO Form Embed" on the group editor (button hidden unless
+  `canSee('embedKeysManage')` = super; `adminTab('embed')` also refuses).
+  Copy fields (IO's equivalents of WebPM's): bare key, IO iframe address
+  `<origin>/<slug>?t=<key>`, Companion iframe address
+  `<origin>/companion/<slug>?t=<key>`, full iframe tag, Test-by-URL
+  (`&preview=1`). One-time panel held only in `ADMIN_EMBED_ONE_TIME`, cleared
+  on new/edit group. Create shown when no active key; Replace (confirm
+  dialog) when one is; Revoke per active row (confirm). "Save the group
+  first" for an unsaved group. **Driven in headless Chromium with sb()
+  stubbed:** empty state → Create → panel with all 5 fields + Replace button +
+  Active row → Replace → "1 earlier key stopped working", 2 rows (1 revoked)
+  → Revoke → Create offered again; AM login can't open the tab. Screenshot
+  `scratchpad/embed-tab.png`. (Addresses read `file:///…` in the test only.)
+- Not built (flag for Claire): IO's frame still shows one "Invalid Link"
+  screen for missing/invalid key AND for outages — WebPM distinguishes them
+  ("isn't set up yet" vs "Couldn't load just now"). Worth matching before
+  Phase 2 troubleshooting; scope question.
+Phase 2 order now: SQL run → merge → (audit tool confirms get_group_logo) →
+rollback SQL prepared → Claire's own group: Create key in Admin, paste both
+addresses in WordPress, test IO + Companion → every group → lockdown SQL.
+**SQL RUN 2026-09-28 (Claire):** all four key functions present. Next: merge;
+live check = IO Form Embed tab appears on a group for Claire (super), lists
+no keys. Do not create a key until Phase 2 starts (creating is harmless;
+pasting into WordPress is what switches a group).
