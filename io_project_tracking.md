@@ -30248,3 +30248,17 @@ inline; awaiting run. No JS change needed.
 **SQL RUN 2026-09-28 (Claire).** One `admin_save_user` signature. Live check
 = the next real AM profile edit (groups follow) or strategist rename
 (groups/clients follow); nothing to merge.
+
+### 2026-09-28 — Embed keys, Phase 2 status check (nothing changed)
+
+Claire asked where the key rollout stands. Phase 1 live since 09-22; no keys
+minted; every group on the slug path. Phase 2 (cutover) parked until Claire
+picks a quiet morning; order stays: rollback SQL first → Claire's own group
+→ every group → lockdown SQL last. New WordPress detail from Claire: the
+Companion form is ALREADY iframed on each group's page behind a hidden
+button (no AE can see it yet); clicking it swaps the iframe's address in
+place (same page, no new tab). index.html has no link to /companion, so the
+swap is WordPress-side. Cutover implication: the `?t=` key goes on BOTH
+iframe addresses (IO + Companion) on the one WordPress page per group —
+one page edit per group, same key for both. A missed address falls back to
+today's slug path (unprotected, not broken) until the lockdown SQL.
