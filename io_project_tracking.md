@@ -30519,5 +30519,4 @@ either path or ?g=). Handed `scratchpad/wordpress-new_ioform-shortcode-keys.php`
 inline: replaces only the "2026: New iFrame IO" block — adds `$io_keys`
 array, `$key` lookup, `?t=` on both addresses, key-less fallback for groups
 without a line. Slug must equal the group's io_slug exactly (already true
-today or the form wouldn't load). php not installed in the sandbox — the
-PHP was not machine-checked; asked the developer to lint it.
+today or the form wouldn't load). `php -l`: no syntax errors.
