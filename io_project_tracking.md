@@ -30262,3 +30262,14 @@ swap is WordPress-side. Cutover implication: the `?t=` key goes on BOTH
 iframe addresses (IO + Companion) on the one WordPress page per group —
 one page edit per group, same key for both. A missed address falls back to
 today's slug path (unprotected, not broken) until the lockdown SQL.
+**External dependency found (2026-09-28):** Claire's boss's Claude session
+(working in the AUDIT TOOL) reported that IO's `groups` table is publicly
+readable incl. pricing/AM emails/Trello — accurate, already the #1 item of
+the 09-22 security review, fixed by Phase 2's lockdown — AND that the audit
+tool itself READS IO's `groups` table (logo column only). NEW Phase 2
+prerequisite: before `groups_public_read` is dropped, give the audit tool a
+narrow replacement (a view with id/name/logo_url(+logo_dark_bg?) and its
+own public read policy, or a key-gated lookup if the audit tool gets keys
+too), and repoint the audit tool to it. Need from the audit-tool side: the
+exact request it makes today (endpoint + columns). Without this, the
+lockdown SQL would silently break the audit tool's logos.
