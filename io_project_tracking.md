@@ -30228,3 +30228,6 @@ should be updated"):**
    gets the new link, Peggy's/Jim's untouched, password-only save harmless,
    rename carries groups, strategist save touches nothing, insert path +
    role guards unchanged.
+**SQL RUN + data clean 2026-09-28 (Claire).** Mismatch query now returns
+only Claude Test Group (Jim, no profile). Claire: first occurrence; TULLOU
+KOC to be moved by hand. Branch pending merge (group-form re-sync).
