@@ -30546,3 +30546,7 @@ posts nothing and throws nothing. **WordPress side handed:**
 IO or Companion iframe, sets `style.height`, and scrolls the page to a
 modal's offset. Developer also removes the fixed tall height CSS on the two
 iframes. Not on the submission path (UI messaging only). `php -l` clean.
+**2026-09-28 (Claire):** auto-height form side merged; WP height script +
+CSS note sent to the developer alongside the key block. Awaiting developer
+"installed" for both, then Claire checks a resource-center page: natural
+length, Step 2 sections grow the frame, popups open in view.
