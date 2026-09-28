@@ -30401,3 +30401,7 @@ resolver, same forgiveness). Built today, super admins only (Claire):
 Phase 2 order now: SQL run → merge → (audit tool confirms get_group_logo) →
 rollback SQL prepared → Claire's own group: Create key in Admin, paste both
 addresses in WordPress, test IO + Companion → every group → lockdown SQL.
+**SQL RUN 2026-09-28 (Claire):** all four key functions present. Next: merge;
+live check = IO Form Embed tab appears on a group for Claire (super), lists
+no keys. Do not create a key until Phase 2 starts (creating is harmless;
+pasting into WordPress is what switches a group).
