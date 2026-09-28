@@ -30304,3 +30304,6 @@ inline 2026-09-28.
 **SQL RUN 2026-09-28 (Claire):** `get_group_logo` present, `groups_logo` view
 gone. Awaiting: advisor re-scan clear; audit-tool team confirms switching
 to the function (then Phase 2 prerequisite = cleared).
+**Advisor cleared 2026-09-28 (Claire).** Remaining for this item: audit-tool
+team confirms the switch to `get_group_logo` → then Phase 2 prerequisite
+cleared.
