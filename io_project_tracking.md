@@ -30234,3 +30234,14 @@ KOC to be moved by hand. Branch pending merge (group-form re-sync).
 **MERGED 2026-09-28 (Claire).** Shania handling the TULLOU KOC move. Live
 check = open EAB in Admin → Save → IO form's KOC button opens Shania's
 calendar (already true after the data fix; the form change only keeps it so).
+**Strategist rename carry-through (2026-09-28, per Claire: "match the AM
+logic"):** strategists are stored BY NAME (groups/clients
+digital_strategist_name + covering_strategist_name; Trello handle resolved
+live at submit, portal scoping by name at load) — no drifting copies, so
+the only exposure was a profile RENAME breaking the match. `admin_save_user`
+(same file, `sync-am-profile-to-groups.sql`, v2) now also updates those four
+name columns where `lower(name)` = the original name, only when the saved
+name differs. pglite 17/17 (rename carried to group digital + covering incl.
+a lower-case stored "kolton", and to client digital + covering; other
+strategists untouched; a save without rename changes nothing). Handed
+inline; awaiting run. No JS change needed.
