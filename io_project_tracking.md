@@ -30546,3 +30546,87 @@ posts nothing and throws nothing. **WordPress side handed:**
 IO or Companion iframe, sets `style.height`, and scrolls the page to a
 modal's offset. Developer also removes the fixed tall height CSS on the two
 iframes. Not on the submission path (UI messaging only). `php -l` clean.
+**2026-09-28 (Claire):** auto-height form side merged; WP height script +
+CSS note sent to the developer alongside the key block. Awaiting developer
+"installed" for both, then Claire checks a resource-center page: natural
+length, Step 2 sections grow the frame, popups open in view.
+
+### 2026-09-28 — Remaining security work, ranked by real risk of waiting (for Claire's planning)
+
+1. Key rollout Phase 2 (in progress) — closes cross-group reads/forgery.
+2. Login part 2 SQL (ready; after Kim/Peggy sign in) — closes public staff
+   list + inactive-user-with-old-password gap; Supabase Auth's own rate
+   limiting then covers "no lockout" (confirm after).
+3. **Relay hardening — the one real liability if left**: with the public
+   anon key anyone can send email from the Mailgun domain to any address
+   and read/create/edit/add-members on every Trello board the bot sees.
+   ON the submission path (form builds cards/sends email via the relay at
+   submit): order = every group on a key → form sends key → relay requires
+   it (switch-back ready). Depends on key rollout pace → Claire: "I will try
+   to get the keys done sooner than later."
+4. Orders through key-checked RPCs — moderate, time-boxed (2-hour public
+   read/update of each new order incl. signature). MOST on-path change;
+   full CLAUDE.md submission-path protocol; keep direct-write path until the
+   new one is proven on a real submission; move Admin Swap's PATCH too.
+5. Tidy-ups (get_client_names, group_service_overrides policy) — nil risk.
+6. Old Gravity Form still rendering above the iframe — process risk only
+   (bypasses pricing/Trello/tracking); Claire's decision.
+
+### 2026-09-29 — First real key test (Claire's 44i group): Companion "opened the IO" → old Admin address shape, not a routing/host problem
+
+Claire created 44i's key in Admin and reported the Companion address
+"opens the IO not the companion form". Diagnosed WITHOUT touching anything
+(the site is unreachable from the sandbox — CONNECT 403 — so every step was
+a browser test by Claire, each isolating one variable):
+- `/companion/?g=44i-digital&t=KEY` → Companion's own "Invalid Link" screen;
+  console `[io_embed] … bad_link (no key in the address)`.
+- `/companion/index.html?g=…&t=KEY` → same.
+- `/companion/?g=44i-digital` (no key) → "I am" screen (routing + slug fine).
+- `…&t=abc`, `…&t=zzz…(48)`, `…&t=abcdef…(48 hex)` → "This embed isn't set
+  up yet" (parameters survive; no host filter on length/hex).
+- IO form `/44i-digital?t=KEY&preview=1` → loads branded (real key valid).
+- Rebuilt by hand from the working no-key address + the bare 48-char key →
+  "I am" screen, key accepted. **Resolved.**
+Conclusion: the failing address had come from the FIRST version of the
+Admin panel (live 09-28 morning), whose Companion field produced
+`/companion/<slug>?t=KEY` — a nested path this host serves as the ROOT
+index.html (the 08-31 finding), hence "opens the IO"; a later retype lost
+the key. The panel was changed the same afternoon to the shortcode's
+`/companion/?g=<slug>&t=<key>` shape. Nothing to fix in code. Lesson noted
+for troubleshooting: ask for the exact address (key masked) FIRST — it
+would have shortened this by four rounds.
+**2026-09-29 — 44i is LIVE on its key.** Claire's resource-center page
+console: `[io_embed] key accepted; group resolved` (the shortcode block is
+installed with 44i's line). Clarified for Claire: until the lockdown the
+plain slug still works, so a loaded form does NOT prove the key path —
+the console line (or the iframe's `src` ending in `?t=…`) does. Claire's
+console paste included the full address with the real key → recommended
+Replace Key for 44i when the developer can swap the line promptly (chat-
+only exposure, low risk). Test client not in the picker = hidden on
+2026-09-09 by design (both slug and key client lists exclude hidden);
+unhide temporarily or type a new test client. Companion-in-iframe can be
+tested on a PRIVATE WordPress page with one iframe tag (WebPM's hidden-
+test-page approach) without exposing the Companion button.
+
+### 2026-09-29 — First live Companion test (ABC Floors, 44i, via the key): three findings
+
+Claire: "both the IO and the Companion form worked" under the key. Then:
+1. **Heading showed the generic service name** ("Geofencing or 1st Party
+   Addressable") while the Variant dropdown correctly showed "Location
+   Targeting: Geofencing" — I first suspected a missing/mismatched stored
+   variant; Claire's query proved IO line_item, campaign_line and dropdown
+   all agree, so the only thing off was the heading. **Fixed (this commit):**
+   `companionDisplayName(svc)` — stored variant shown as-is when it already
+   carries "Section: ", else "Service: variant"; picked modules "Service:
+   a, b"; plain services and order-less lines (label = tactic_label) fall
+   through. Node-exercised on five shapes. Merge pending.
+2. **Request email went to the group's IO Recipients too**, not just AM +
+   AE. That is by design from 2026-08-31 ("IO recipient is for additional
+   group members to get the email") and mirrors the IO submission email.
+   Whether a CHANGE REQUEST should go to fewer people is Claire's call
+   (AM+AE only / AM+AE+always-BCC / unchanged); one-line change in
+   `notifyAm()` once decided. Parked pending her answer.
+3. **Shortcode: hide the IO iframe while the Companion is open** — handed a
+   3-line jQuery addition (`$('#insertion_order').toggleClass('io-hidden')`)
+   + `#insertion_order.io-hidden{display:none}`; also avoids the auto-height
+   sizing for both frames at once.
