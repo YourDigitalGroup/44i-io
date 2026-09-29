@@ -30692,3 +30692,5 @@ for the viewed month. Guarded do-block deleted it; only the real line
 remains. Pre-flight stray check now returns 0 rows. Still open for the
 strategists: Creative Surfaces' flight dates (Jan–Feb 2027, but live with
 Aug/Sep spend).
+**2026-09-29:** Kim signed in with the email login (Claire). Remaining before
+login part 2 SQL: Peggy. James deactivated earlier.
