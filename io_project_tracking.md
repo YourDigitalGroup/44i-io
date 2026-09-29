@@ -30595,3 +30595,15 @@ the key. The panel was changed the same afternoon to the shortcode's
 `/companion/?g=<slug>&t=<key>` shape. Nothing to fix in code. Lesson noted
 for troubleshooting: ask for the exact address (key masked) FIRST — it
 would have shortened this by four rounds.
+**2026-09-29 — 44i is LIVE on its key.** Claire's resource-center page
+console: `[io_embed] key accepted; group resolved` (the shortcode block is
+installed with 44i's line). Clarified for Claire: until the lockdown the
+plain slug still works, so a loaded form does NOT prove the key path —
+the console line (or the iframe's `src` ending in `?t=…`) does. Claire's
+console paste included the full address with the real key → recommended
+Replace Key for 44i when the developer can swap the line promptly (chat-
+only exposure, low risk). Test client not in the picker = hidden on
+2026-09-09 by design (both slug and key client lists exclude hidden);
+unhide temporarily or type a new test client. Companion-in-iframe can be
+tested on a PRIVATE WordPress page with one iframe tag (WebPM's hidden-
+test-page approach) without exposing the Companion button.
