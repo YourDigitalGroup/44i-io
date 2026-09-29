@@ -30649,3 +30649,18 @@ admin page shows each logo's source ("io" vs "stored").
 recipients → she'll confirm with AMs later (parked); hide-IO-while-
 Companion-open shortcode snippet working; Kim + Peggy this week; Gravity
 Form stays for now; remaining groups' keys start tomorrow.
+
+### 2026-09-29 — Strategist "+ New Campaign" seeded the CURRENT month, not the flight start (Bronson, Nic Webb - Davis Real Estate / Facebook/IG Ads)
+
+Bronson added a campaign 10/1–12/31 in September and it "brought in
+September" (500 in Sep–Dec after Fill remaining months). Confirmed in
+`strategistSubmitImport()`: both seed calls (split and non-split) used
+`p_month: new Date()` — today's month — regardless of flight_start. **Fixed
+(this commit):** `strategistFirstBudgetMonth(flightStart)` = the LATER of
+the flight start's month and the current month (future campaign → its
+start; imported already-running campaign → now, nothing useful to seed into
+the past). Assumption stated to Claire; one-line change if the AM/strategists
+want past-start imports to seed from their real start. Node-exercised on six
+inputs. Merge pending. Cleanup: guarded delete of pre-flight, untouched
+budget rows (Nic Webb's Sep row + any others) handed as SQL — Claire to run
+tomorrow after previewing.

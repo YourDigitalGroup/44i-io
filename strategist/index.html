@@ -804,6 +804,26 @@ function strategistToggleImportSplit(checked) {
   }
 }
 
+// First budget month for a newly added campaign (2026-09-29, found live by
+// Bronson: a campaign added in September for Oct 1 - Dec 31 got a September
+// row, because this always seeded "today's" month). Now the LATER of the
+// flight start's month and the current month -- a future campaign starts at
+// its flight start; an imported campaign that began months ago still starts
+// now (nothing useful to seed into past months). Returns 'YYYY-MM-01'.
+function strategistFirstBudgetMonth(flightStart) {
+  const today = new Date();
+  const cur = new Date(today.getFullYear(), today.getMonth(), 1);
+  let m = cur;
+  if (flightStart) {
+    const fs = new Date(String(flightStart).slice(0, 10) + 'T00:00:00');
+    if (!isNaN(fs)) {
+      const fsMonth = new Date(fs.getFullYear(), fs.getMonth(), 1);
+      if (fsMonth > cur) m = fsMonth;
+    }
+  }
+  return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
 async function strategistSubmitImport() {
   // Same double-submit guard added to admin/index.html's slow save/confirm
   // buttons the same day (2026-09-04) — this one is a genuine duplicate-data
@@ -892,7 +912,7 @@ async function strategistSubmitImport() {
       // field avoids one pointless intermediate write.
       await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
         p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
-        p_campaign_line_id: newId, p_month: new Date().toISOString().slice(0,10),
+        p_campaign_line_id: newId, p_month: strategistFirstBudgetMonth(flightStart),
         p_data: { gross_budget: parseFloat(splits[0].amount) }
       }) });
       await sb('rpc/strategist_split_campaign_line', { method: 'POST', body: JSON.stringify({
@@ -902,7 +922,7 @@ async function strategistSubmitImport() {
     } else if (grossBudget) {
       await sb('rpc/strategist_save_campaign_month', { method: 'POST', body: JSON.stringify({
         p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw,
-        p_campaign_line_id: newId, p_month: new Date().toISOString().slice(0,10),
+        p_campaign_line_id: newId, p_month: strategistFirstBudgetMonth(flightStart),
         p_data: { gross_budget: grossBudget }
       }) });
     }
