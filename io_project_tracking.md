@@ -30630,3 +30630,37 @@ Claire: "both the IO and the Companion form worked" under the key. Then:
    3-line jQuery addition (`$('#insertion_order').toggleClass('io-hidden')`)
    + `#insertion_order.io-hidden{display:none}`; also avoids the auto-height
    sizing for both frames at once.
+
+### 2026-09-29 — Audit tool verified switched to get_group_logo (read-only look, per Claire)
+
+Attached `YourDigitalGroup/audit` read-only (clone at /home/user/audit, no
+changes). `supabase/functions/_shared/iologo.ts` (merged to main this
+morning, PR #37): calls `<io_url>/rest/v1/rpc/get_group_logo` with
+`{p_group_id}` using IO's publishable key; never touches IO's `groups`
+table; 1.5 s timeout → falls back to `partners.logo_url`; 10-min cache;
+admin list = 8 in flight / 3 s total. IO address + key come from the audit
+project's `integrations` table (service-role only, entered by hand — not
+verifiable from code; if absent the tool never contacts IO at all). Either
+way NO dependency on IO's public groups read remains → **Phase 2
+prerequisite cleared from IO's side.** Live proof, if wanted: the audit
+admin page shows each logo's source ("io" vs "stored").
+
+**Claire's other decisions 2026-09-29:** heading fix merged; request-email
+recipients → she'll confirm with AMs later (parked); hide-IO-while-
+Companion-open shortcode snippet working; Kim + Peggy this week; Gravity
+Form stays for now; remaining groups' keys start tomorrow.
+
+### 2026-09-29 — Strategist "+ New Campaign" seeded the CURRENT month, not the flight start (Bronson, Nic Webb - Davis Real Estate / Facebook/IG Ads)
+
+Bronson added a campaign 10/1–12/31 in September and it "brought in
+September" (500 in Sep–Dec after Fill remaining months). Confirmed in
+`strategistSubmitImport()`: both seed calls (split and non-split) used
+`p_month: new Date()` — today's month — regardless of flight_start. **Fixed
+(this commit):** `strategistFirstBudgetMonth(flightStart)` = the LATER of
+the flight start's month and the current month (future campaign → its
+start; imported already-running campaign → now, nothing useful to seed into
+the past). Assumption stated to Claire; one-line change if the AM/strategists
+want past-start imports to seed from their real start. Node-exercised on six
+inputs. Merge pending. Cleanup: guarded delete of pre-flight, untouched
+budget rows (Nic Webb's Sep row + any others) handed as SQL — Claire to run
+tomorrow after previewing.
