@@ -30664,3 +30664,22 @@ want past-start imports to seed from their real start. Node-exercised on six
 inputs. Merge pending. Cleanup: guarded delete of pre-flight, untouched
 budget rows (Nic Webb's Sep row + any others) handed as SQL — Claire to run
 tomorrow after previewing.
+**Cleanup RUN 2026-09-29 (Claire).** Full preview (no "untouched" filter)
+showed why Nic Webb's row was missing from the first list: strategists had
+been working around the bug by zeroing + PAUSING the stray month (9 such
+rows) and my first preview excluded paused rows. Final rule: pre-flight
+rows with no actuals/confirmation/overrides AND (not paused OR gross 0),
+excluding Northeast Exterminating. Kept on purpose: Creative Surfaces ×4
+(REAL Aug/Sep spend under a flight mistyped as Jan–Feb 2027 → strategist to
+fix dates), Sweet Pizza LT Event Sep (overrides), Visit Brookings Aug,
+Brookings United Way Aug (overrides), rows carrying platform-report zeros
+(Cajun Visa, Columbus Hyundai, Home Ideas, Metro Ford SEM, Sweet Pizza TD
+×3, MS FB Canaan SEM, Tanner Wilson ×2), Northeast Exterminating (a
+DUPLICATE FB/IG line, start 2027-09-01 > end 2027-08-31, one empty row —
+strategist to confirm removal; guarded `do $$` block on file in chat).
+Backup first: `campaign_months_stray_backup_20260929` (RLS enabled, 60
+rows) → delete (60) → re-preview shows only Northeast's row. Restore any
+row: `insert into campaign_months select * from
+campaign_months_stray_backup_20260929 where id = …`. St. Cecilia's Sep row
+(created 08-10, so not a creation-month placeholder) was deleted with the
+rest by Claire's choice; restorable. Nic Webb now Oct–Dec only.
