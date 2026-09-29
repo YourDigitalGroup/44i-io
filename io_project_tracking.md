@@ -30683,3 +30683,12 @@ row: `insert into campaign_months select * from
 campaign_months_stray_backup_20260929 where id = …`. St. Cecilia's Sep row
 (created 08-10, so not a creation-month placeholder) was deleted with the
 rest by Claire's choice; restorable. Nic Webb now Oct–Dec only.
+**Northeast Exterminating duplicate REMOVED 2026-09-29 (Claire).** The
+2027-09-01 line (`e71f8791…`, created 21:34 on 09-01, 1 empty month) was a
+first attempt with a mistyped year; the real line (`1fd9ac5a…`, created
+21:37, 12 months, $59.67 Sep spend) was re-added 3 minutes later. It never
+showed in Strategist because the portal hides lines outside their flight
+for the viewed month. Guarded do-block deleted it; only the real line
+remains. Pre-flight stray check now returns 0 rows. Still open for the
+strategists: Creative Surfaces' flight dates (Jan–Feb 2027, but live with
+Aug/Sep spend).
