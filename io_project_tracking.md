@@ -30571,3 +30571,27 @@ length, Step 2 sections grow the frame, popups open in view.
 5. Tidy-ups (get_client_names, group_service_overrides policy) — nil risk.
 6. Old Gravity Form still rendering above the iframe — process risk only
    (bypasses pricing/Trello/tracking); Claire's decision.
+
+### 2026-09-29 — First real key test (Claire's 44i group): Companion "opened the IO" → old Admin address shape, not a routing/host problem
+
+Claire created 44i's key in Admin and reported the Companion address
+"opens the IO not the companion form". Diagnosed WITHOUT touching anything
+(the site is unreachable from the sandbox — CONNECT 403 — so every step was
+a browser test by Claire, each isolating one variable):
+- `/companion/?g=44i-digital&t=KEY` → Companion's own "Invalid Link" screen;
+  console `[io_embed] … bad_link (no key in the address)`.
+- `/companion/index.html?g=…&t=KEY` → same.
+- `/companion/?g=44i-digital` (no key) → "I am" screen (routing + slug fine).
+- `…&t=abc`, `…&t=zzz…(48)`, `…&t=abcdef…(48 hex)` → "This embed isn't set
+  up yet" (parameters survive; no host filter on length/hex).
+- IO form `/44i-digital?t=KEY&preview=1` → loads branded (real key valid).
+- Rebuilt by hand from the working no-key address + the bare 48-char key →
+  "I am" screen, key accepted. **Resolved.**
+Conclusion: the failing address had come from the FIRST version of the
+Admin panel (live 09-28 morning), whose Companion field produced
+`/companion/<slug>?t=KEY` — a nested path this host serves as the ROOT
+index.html (the 08-31 finding), hence "opens the IO"; a later retype lost
+the key. The panel was changed the same afternoon to the shortcode's
+`/companion/?g=<slug>&t=<key>` shape. Nothing to fix in code. Lesson noted
+for troubleshooting: ask for the exact address (key masked) FIRST — it
+would have shortened this by four rounds.
