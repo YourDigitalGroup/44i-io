@@ -30607,3 +30607,26 @@ only exposure, low risk). Test client not in the picker = hidden on
 unhide temporarily or type a new test client. Companion-in-iframe can be
 tested on a PRIVATE WordPress page with one iframe tag (WebPM's hidden-
 test-page approach) without exposing the Companion button.
+
+### 2026-09-29 — First live Companion test (ABC Floors, 44i, via the key): three findings
+
+Claire: "both the IO and the Companion form worked" under the key. Then:
+1. **Heading showed the generic service name** ("Geofencing or 1st Party
+   Addressable") while the Variant dropdown correctly showed "Location
+   Targeting: Geofencing" — I first suspected a missing/mismatched stored
+   variant; Claire's query proved IO line_item, campaign_line and dropdown
+   all agree, so the only thing off was the heading. **Fixed (this commit):**
+   `companionDisplayName(svc)` — stored variant shown as-is when it already
+   carries "Section: ", else "Service: variant"; picked modules "Service:
+   a, b"; plain services and order-less lines (label = tactic_label) fall
+   through. Node-exercised on five shapes. Merge pending.
+2. **Request email went to the group's IO Recipients too**, not just AM +
+   AE. That is by design from 2026-08-31 ("IO recipient is for additional
+   group members to get the email") and mirrors the IO submission email.
+   Whether a CHANGE REQUEST should go to fewer people is Claire's call
+   (AM+AE only / AM+AE+always-BCC / unchanged); one-line change in
+   `notifyAm()` once decided. Parked pending her answer.
+3. **Shortcode: hide the IO iframe while the Companion is open** — handed a
+   3-line jQuery addition (`$('#insertion_order').toggleClass('io-hidden')`)
+   + `#insertion_order.io-hidden{display:none}`; also avoids the auto-height
+   sizing for both frames at once.

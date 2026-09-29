@@ -544,6 +544,23 @@ function renewalPeriodStart(currentEndDateStr) {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2,'0')}-01`;
 }
 
+// Row heading: the SPECIFIC variant the campaign is running, not the catalog's
+// generic "A or B" service name (2026-09-29, per Claire, found on the first
+// live Companion test: heading said "Geofencing or 1st Party Addressable"
+// while the Variant dropdown correctly said "Location Targeting: Geofencing").
+// Same idea as index.html's resolveVariantDisplayName(): a stored variant
+// that already carries its "Section: " prefix is shown as-is; a bare one is
+// prefixed with the service name. Picked modules get the same treatment.
+// Order-less (imported) lines already arrive with their tactic_label as the
+// label, so they fall straight through.
+function companionDisplayName(svc) {
+  const v = (svc.tactic_variant || '').trim();
+  if (v) return v.includes(':') ? v : `${svc.label}: ${v}`;
+  const mods = Array.isArray(svc.module_names) ? svc.module_names.filter(Boolean) : [];
+  if (mods.length) return `${svc.label}: ${mods.join(', ')}`;
+  return svc.label;
+}
+
 function renderServiceRow(svc, i) {
   const varies = monthsVary(svc.month_budgets);
   const currentAmt = svc.fee > 0 ? fmtMoney(svc.fee) + ' one-time'
@@ -558,7 +575,7 @@ function renderServiceRow(svc, i) {
     <div class="svc-head" onclick="toggleServiceDetail(${i})">
       <input type="checkbox" id="svc-chk-${i}" onclick="event.stopPropagation();toggleServiceDetail(${i}, this.checked)"/>
       <div>
-        <div class="svc-title">${esc(svc.label)}${whoWhere ? ` <span style="font-weight:400;color:var(--muted)">— ${esc(whoWhere)}</span>` : ''}</div>
+        <div class="svc-title">${esc(companionDisplayName(svc))}${whoWhere ? ` <span style="font-weight:400;color:var(--muted)">— ${esc(whoWhere)}</span>` : ''}</div>
         <div class="svc-meta">${currentAmt} · ${fmtDate(svc.flight_start)} – ${fmtDate(svc.flight_end)}</div>
       </div>
     </div>
