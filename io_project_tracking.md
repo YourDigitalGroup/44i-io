@@ -30803,3 +30803,63 @@ ids — presumably Website One-Time vs monthly-plan variants; AE should use
 the Website One-Time one (section query handed to confirm). Any future
 "Correct Service" action must support per_unit (hours × rate) as well as
 flat one-time and monthly services.
+
+### 2026-09-30 — SCOPE: "Correct Service" (Admin; Claire: "go ahead and scope") — NOT BUILT, awaiting decisions
+
+**What it is:** on Order Detail, a per-service "Correct service" action that
+replaces a mistakenly-picked service with the right one ON THE SAME ORDER
+(IO stays the source of truth). Not Swap (monthly budget + run-through
+model) and not Cancel + new IO (two IOs, two signatures).
+**Read from the code (verified, not assumed):**
+- Order side: `orders.line_items` (jsonb per service_id: fee/recurring/spend/
+  qty/unit_fee/start_date/end_date/notes/tactic_variant/module_names/
+  prorated_hosting_amt/setup_fee_amt…); `admin_edit_order_line_item` edits
+  fields but cannot change `service_id`; edit_history + is_revised drive
+  Revised pill/PDF; `orderLiveTotals()` recomputes from line_items at read
+  time (no stored totals to fix).
+- Campaign lines are built ONLY by the orders AFTER INSERT trigger
+  (`create_campaign_lines_from_order`, submission path) with ~7 branches:
+  spend; auto_split_labels; SEO placeholders; flat fee/recurring
+  (accounting-only, one_time/recurring); hosting-proration line; setup-fee
+  line; CPM modifiers; agent splits; + renewal-matching (re-points an
+  earlier line's order_id and sets last_renewed_*).
+- Trello: per-workflow card ids in `orders.trello_card_ids` (+ `__io_card__`);
+  Swap posts comments on the old + IO cards and creates a PLAIN card (no
+  template, by Claire's earlier scope decision); there is no card-archive
+  call (archive by hand). Form-built cards use templates + intake.
+- Intake: `orders.intake_responses` keyed by form; Admin already has an
+  inline intake editor driven by the service's form definition.
+**Proposed behavior:** pick replacement (catalog picker like Swap), fill that
+service's own fields (hours × rate for per_unit, variant, dates, notes),
+give a reason → (1) line replaced in place, total recalculated; (2) edit_
+history `service_correction` + Revised (renders on Order Detail, other
+portals, revised PDF; shared.js summary case); (3) wrong service's campaign
+lines + month rows for THIS order removed only if untouched (no actuals/
+confirmation/closed month), else refuse → use Cancel; (4) right service's
+campaign line(s) created; (5) Trello: correction comment on the wrong card +
+IO card, new card for the right service (plain, like Swap), wrong card to
+be archived by hand; (6) new service's intake appears in the order's
+intake editor; wrong service's answers left in place, not applicable.
+**Two build options:** v1 NARROW (recommended): supports services whose
+lines are simple — flat one-time/recurring accounting-only lines and plain
+spend lines — and REFUSES SEO, agent splits, modifiers, renewal-matched
+lines, anything with hosting/setup-fee sublines, with a clear message; Admin-
+only, no trigger change → not the submission path, but still executed in
+pglite first. Covers the Content Support class of mistake. v2 FULL: move the
+trigger's per-item body into a shared function the trigger AND the
+correction both call (so they can never drift) — TOUCHES THE SUBMISSION
+PATH → full CLAUDE.md protocol (pglite against each branch, bundled SQL,
+smoke test, quiet hours).
+**Decisions needed (business, not mine):** (1) signed IO: Revised IO back to
+the client for re-signature, or fresh IO/signature? (2) Trello card for the
+right service: plain (like Swap) or template-built? (3) who may use it: AM +
+super like Swap, or super only? (4) Kim: how a removed one-time line in a
+not-yet-closed month should appear in Accounting; action refuses if the
+month is closed/confirmed.
+**Risks to test:** correcting the same line twice; service with sibling
+lines (SEO = 3 rows); line re-pointed by a renewal; order with agent splits;
+per_unit hours × rate rounding; Revised PDF with a corrected service;
+Strategist/Accounting counts before vs after.
+**Frequency (read-only queries handed to Claire):** lines cancelled within 7
+days of creation, by month + detail with cancel_reason; swaps in
+edit_history.
