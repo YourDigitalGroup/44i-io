@@ -12016,11 +12016,35 @@ async function adminCorrectionTrelloFollowUp(o, oldServiceId, newSvc, item, oldL
       if (res && res.ok === false) warnings.push('A Trello comment about the change could not be posted.');
     } catch (e) { warnings.push('A Trello comment about the change could not be posted.'); }
   }
+  // If the order or the client's Trello list already has a card for the right service (for
+  // example an ongoing service like Content Support), reuse it with a note instead of building
+  // a duplicate (2026-09-30, per Claire -- same rule as Swap). Several matches: build a new
+  // card and warn. The wrong service's own card is never the one reused.
   let built = { cards: [], warnings: [] };
-  try { built = await adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason); } catch (e) { warnings.push('The new Trello card could not be built: ' + e.message); }
+  const newKey = adminEffectiveWorkflow(newSvc) || newSvc.id;
+  let reuseId = o.trello_card_ids?.[newKey] || null;
+  if (!reuseId) {
+    try {
+      const ci = await adminClientTrelloInfo(o.client_id);
+      if (ci.listId) {
+        const hit = await adminFindTrelloCardForLine({ trello_list_id: ci.listId, name: ci.name }, { service_id: newSvc.id, tactic_label: newLabel });
+        if (hit.card && hit.card.id !== oldCardId) reuseId = hit.card.id;
+        else if (hit.matches.length > 1) warnings.push(`The client has more than one ${newLabel} card, so a new one was built. Check whether an existing card should be used instead.`);
+      }
+    } catch (e) { /* falls through to building */ }
+  }
+  if (reuseId) {
+    try {
+      const res = await tpost({ target: 'trello_add_comment', card_id: reuseId, text: `📋 Service added by correction (replacing ${oldLabel}). Reason: ${reason}. Corrected by ${currentAdminUser?.name || 'an AM'}.` });
+      if (res && res.ok === false) warnings.push('The existing card was found but the note could not be posted to it.');
+    } catch (e) { warnings.push('The existing card was found but the note could not be posted to it.'); }
+    built = { cards: [{ id: reuseId, reused: true }], warnings: [] };
+  } else {
+    try { built = await adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason); } catch (e) { warnings.push('The new Trello card could not be built: ' + e.message); }
+  }
   warnings.push(...built.warnings);
   if (built.cards[0]) {
-    const wfKey = adminEffectiveWorkflow(newSvc) || newSvc.id;
+    const wfKey = newKey;
     o.trello_card_ids = { ...(o.trello_card_ids || {}), [wfKey]: built.cards[0].id };
     try {
       await sb('rpc/admin_set_order_card_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: o.id, p_workflow: wfKey, p_card_id: built.cards[0].id }) });
