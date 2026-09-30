@@ -30744,3 +30744,9 @@ multi-agent (agent card hidden otherwise; `collectAgentSplits()` returns []
 when hidden), so ordinary submissions never touch it. Suggested (not yet
 done): one test IO with a hand-typed new agent on a multi-agent test client
 (e.g. ABC Floors flipped temporarily) to exercise Trello/order end to end.
+**2026-09-30 — agent-name fix CONFIRMED LIVE (Claire):** ABC Floors switched
+to multi-agent (+ an AE linked with the client's Trello list — Step 1 blocks
+a multi-agent client whose AE has no client_aes link), Step 2's Agent/County
+Split shows a long hand-typed new-agent name intact in the live form
+(screenshot). No order submitted. To undo after testing: ABC Floors back to
+single-agent; AE link can stay; discard any autosaved draft.
