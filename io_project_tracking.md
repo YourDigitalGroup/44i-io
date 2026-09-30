@@ -30929,3 +30929,11 @@ Trello (sandbox can't reach it) — first real use is the live check.
 shared.js: `service_correction` history wording ("Service corrected: A → B (3 ×
 $175.00), $875.00 → $525.00 one-time. Reason: … (confirmed by …)"); version
 → `?v=20260930a`.
+**SQL RUN 2026-09-30 (Claire):** pre-flight passed (no missing columns) and both
+functions exist (`admin_correct_order_service`, `admin_set_order_card_id`).
+Verified for Claire from `git diff origin/main`: the branch changes only
+admin/index.html, shared.js (history wording), a `?v=` tag on strategist/
+accounting, and this doc; 0 lines of difference in index.html/companion; the
+public forms don't load shared.js; the SQL has no trigger/policy/ALTER/DROP
+and neither function is named anywhere in the public forms. Next: merge, then
+the ABC Floors end-to-end test (the Trello side is the part not testable here).
