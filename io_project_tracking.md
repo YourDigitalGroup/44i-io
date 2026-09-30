@@ -30937,3 +30937,11 @@ accounting, and this doc; 0 lines of difference in index.html/companion; the
 public forms don't load shared.js; the SQL has no trigger/policy/ALTER/DROP
 and neither function is named anywhere in the public forms. Next: merge, then
 the ABC Floors end-to-end test (the Trello side is the part not testable here).
+**First real Correct Service (2026-09-30): Greenline Landscape, IO
+20260929-GREENL-P3H.** Pre-correction snapshot (Claire's read-only query), kept
+as the restore record: one campaign line `alc-media` "Traditional Media Buying &
+Consultation", status active, billing_type one_time, flight_start 2026-09-30,
+single month row 2026-09 $875, nothing recorded on it (exactly the shape the
+tool accepts). Replacing it with Optional Content Support (`w-content`, per
+hour, AM-confirmed hours). Kim to rule on how the removed $875 should appear;
+Carol Oren to be told; old Trello card to be archived by hand.
