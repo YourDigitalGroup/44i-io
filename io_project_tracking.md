@@ -30863,3 +30863,69 @@ Strategist/Accounting counts before vs after.
 **Frequency (read-only queries handed to Claire):** lines cancelled within 7
 days of creation, by month + detail with cancel_reason; swaps in
 edit_history.
+
+### 2026-09-30 — Correct Service (narrow v1) BUILT; SQL handed, awaiting run + merge
+
+Claire's decisions: start narrow; no new signature (reason + AM confirmation,
+like Swap); use the service's OWN Trello template; AMs + super admins; the
+closed-month point = simply refuse to change a month Accounting closed (only ~40
+orders / 5 groups in the new system, so the counting queries were skipped).
+**SQL** (`scratchpad/admin-correct-order-service.sql`; scratchpad is gitignored —
+the SQL handed inline in chat is the record): a pre-flight `do $$` block that
+RAISES if any column the function touches is missing (plpgsql doesn't check at
+CREATE time — two earlier incidents), then `admin_correct_order_service(p_name,
+p_pw, p_order_id, p_old_service_id, p_new_service_id, p_qty, p_unit_amount,
+p_start_date, p_end_date, p_tactic_variant, p_notes, p_reason, p_confirmed)` and
+`admin_set_order_card_id(p_name, p_pw, p_order_id, p_workflow, p_card_id)`. Both
+am/super only, enforced in the database. Not on the submission path: new
+functions only; no trigger/table/policy/existing function touched.
+**Executed in pglite against the REAL order trigger**
+(`pg-test-correct-service.js`): GOLDEN comparison — an order corrected from
+service A to B ends with exactly the campaign lines + month rows a direct
+submission of B produces (one-time per-hour 3×$175=525; spend; spend+variant;
+fee→spend; spend→recurring); the order's other service untouched; line replaced
+IN PLACE; line item carries every key the form writes; Revised + history entry
+with reason + confirmer; stored signed totals left as signed (like Edit).
+37 refusals each verified to leave the order BYTE-FOR-BYTE unchanged: wrong role
+(strategist/accounting/bad creds), no confirmation, blank reason, zero amount,
+end<start, same service, not on order, already on order, unknown/inactive/SEO/
+modifier/auto-split/setup-fee/hosting replacement, missing/invalid/unneeded
+variant, correcting FROM a setup-fee service, agent splits, any touched old
+line (actuals, confirmation, goal override, pause, status history, optimize
+log, open Companion request, renewal-extended, cancelled, completed),
+Accounting-closed month (old line or new start), and a replacement the client
+already runs (looks like a renewal). Plus a bystander order never touched; a
+second correction on the same order; card-id setter (adds key, keeps others,
+overwrites, refuses strategist/bad creds/unknown order/blank).
+**Screen** (admin/index.html): "Correct" button beside Edit/Renew/Cancel
+(`canSee('correctService')` = am+super, hidden for cancelled lines and obviously
+unsupported services); panel = picker of eligible services (grouped by section,
+excludes ones already on the order), hours picker for per_unit from
+`qty_preset_options`, price prefilled from client → group → catalog (group
+custom pricing wins), variant (required when offered), dates, notes, live total,
+REQUIRED reason, REQUIRED "I confirmed the correct service with the AE"
+checkbox. After the database succeeds: comments on the wrong service's card
+(says it can be archived) and the IO card; new card built from the service's
+template via `adminBuildCorrectionCards` — single-card template (copy, named
+"<variant or template name>[ + suffix][ date range] — Client"), list template
+(copies every non-🧪/non-IO/non-"AE Questions" card), or a plain card when there
+is no template; due date/reminder when there is an end date; "Needs KOC" label on
+the first card when the service requires KOC; AM/AE/additional + the service's
+strategist disciplines (+ covering digital) + koc-notify handle tagged, resolved
+against board members; services summary + correction note as the description;
+new card id saved through `admin_set_order_card_id` (NOT a direct write — Swap's
+direct PATCH to `orders` stops working 2 h after an order is created; Swap
+unchanged, flagged); revised IO PDF attached to the IO card (same as Edit). Trello
+steps are best-effort: the database correction is already done, any Trello
+failure comes back as a plain to-do in the toast, never an error.
+**Verified in headless Chromium with a recorded fake database + Trello:** the
+real Order Detail shows the button per simple service and none for a strategist;
+panel choices exclude SEO/modifier/auto-split/setup-fee/hosting/on-order;
+group rate prefill ($150 not $175); client-side validation blocks with nothing
+sent; the exact RPC payload; the exact Trello call sequence (resolved template
+id, client list, name, label, members, description, PDF → IO card only, card-id
+RPC); order mirrored locally; detail refreshed once. NOT verifiable here: real
+Trello (sandbox can't reach it) — first real use is the live check.
+shared.js: `service_correction` history wording ("Service corrected: A → B (3 ×
+$175.00), $875.00 → $525.00 one-time. Reason: … (confirmed by …)"); version
+→ `?v=20260930a`.
