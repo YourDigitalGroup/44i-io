@@ -31010,3 +31010,11 @@ expires after 2 hours. Asked Claire whether to fix Swap the same way.
 ### 2026-09-30 (later) — Correct Service: reuse the right service's existing card (same rule as Swap)
 
 Asked "just in case". Correct already built from the template and reused an identical-title card; it now also reuses an existing card for the RIGHT service the way Swap does: the order's own card for it, else the single matching card in the client's Trello list (dates in title ignored; never the replaced service's own card), with a note and link saved via `admin_set_order_card_id`. Several matches → new template card plus a "check whether an existing card should be used" warning. Applies to the Finish Trello card recovery button too. **Verified:** headless test cases D/E/F (reuse by list match, two matches, order already holds card) pass and fail on the previous file; earlier cases A–C unchanged and passing. Real Trello not testable here. Not on the submission path.
+
+---
+
+## 2026-09-30 — Status after merge (Claire)
+
+- Swap Tactic and Correct Service Trello changes merged to `main`. Greenline: "Finish Trello card" worked; **Greenline is done** (still by hand: tell Carol Oren the kickoff call isn't needed, archive the old Trello card).
+- First real order after the keys (Champion Lanes, Shake Broadcasting + Digital) checked with a read-only query: client/group/AE right, Trello ids saved, SEO lines as designed, Facebook line extended by the trigger's renewal handling (kept Apr 1 start, 12 months × $600). Nothing wrong. Note: nothing records whether a submission used a key, so this can't prove key use.
+- **Keys:** all groups' keys are created and placed in their iframes. Claire is waiting a few days before the lockdown. **Lockdown SQL + rollback not yet built/handed** — build only when Claire says go. Still open: Peggy's first email sign-in → login part 2 SQL; AMs' decision on Companion change-request email recipients; strategists fixing Creative Surfaces flight dates.
