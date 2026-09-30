@@ -30736,3 +30736,11 @@ client, screenshot), so the first step was to rule out today's own changes:
   (then treat the Gravity entry as the duplicate), vs. process manually.
   The Gravity Form still renders above the iframe by Claire's decision
   (09-29), so this can recur whenever the new form misbehaves.
+**2026-09-30 (Claire):** agent-name fix merged. The 09-29 7:58pm old-way IO:
+"it was submitted that way, nothing we need to do" — the AM's team is
+handling it from the Gravity Form entry; no action on the new system.
+Clarified for Claire: the changed code only runs for clients flagged
+multi-agent (agent card hidden otherwise; `collectAgentSplits()` returns []
+when hidden), so ordinary submissions never touch it. Suggested (not yet
+done): one test IO with a hand-typed new agent on a multi-agent test client
+(e.g. ABC Floors flipped temporarily) to exercise Trello/order end to end.
