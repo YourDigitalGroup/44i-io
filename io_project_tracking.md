@@ -30794,3 +30794,12 @@ forms differ per service so the wrong service's intake must be handled;
 OPEN BUSINESS RULE: correcting a SIGNED IO means a Revised IO goes back to
 the client — or a fresh IO/signature instead? AMs to decide. Scope first
 with a read-only count of how often this has happened (order history).
+**Catalog row (Claire, 09-30):** `w-content` and `wm-content`, both label
+"Optional Content Support", billing_type one_time, pricing_mode per_unit,
+default_price 175, unit_label hr, qty_preset_options
+[0.25,0.5,0.75,1,2,3,4,5,6,7,8] → total = hours × $175, no monthly budget.
+A fresh IO handles it natively (hours picker); Swap would be wrong. Two
+ids — presumably Website One-Time vs monthly-plan variants; AE should use
+the Website One-Time one (section query handed to confirm). Any future
+"Correct Service" action must support per_unit (hours × rate) as well as
+flat one-time and monthly services.
