@@ -30945,3 +30945,48 @@ single month row 2026-09 $875, nothing recorded on it (exactly the shape the
 tool accepts). Replacing it with Optional Content Support (`w-content`, per
 hour, AM-confirmed hours). Kim to rule on how the removed $875 should appear;
 Carol Oren to be told; old Trello card to be archived by hand.
+
+### 2026-09-30 — Correct Service, FIRST REAL USE (Greenline Landscape): two bugs in MY Trello follow-up, fixed; recovery button added
+
+The database correction saved (Traditional Media → Optional Content Support) but
+the toast said "no Trello list", no card was built, and Claire then noted the
+original service card should get a comment ("We should also post a comment to the
+original service card noting the change"). Root causes, both mine, both missed by
+my own browser test because the test data was too kind:
+1. **Client lookup.** `adminBuildCorrectionCards` read `clients?id=eq…` DIRECTLY
+   (copied from Swap). The `clients` table is closed to direct reads (RLS, no
+   policies — 09-22 review); a closed table answers EMPTY, not an error, so it
+   reported "no Trello list" whether or not the client has one. My test stubbed
+   that path to return a list, hiding it. **Fix:** `adminClientTrelloInfo()` uses
+   the RPC-backed client list (`admin_get_clients`, which carries trello_list_id),
+   refreshing it once when the cached copy has no list id (a list id is saved AFTER
+   the order is submitted, so a cached list can be stale); warning now says
+   "could not look up" vs "has no Trello list yet".
+2. **Original card never found.** It was looked up by `oldSvc.workflow`. Traditional
+   Media has a Trello template but NO workflow, so its card is keyed by the EFFECTIVE
+   workflow `__standalone__alc-media` (Admin already has `adminEffectiveWorkflow()`
+   for exactly this — Cancel/Edit/Renew use it; 2026-09-01 note). Result: no note on
+   the original card, silently. My test gave alc-media a workflow, masking it.
+   **Fix:** effective-workflow lookup, then a by-name search of the client's list
+   (`adminFindTrelloCardForLine`), then a VISIBLE warning instead of silence. Also
+   the new card's key saved to the order now uses the effective workflow.
+3. **Wording.** The "can be archived" sentence went on the IO card's comment too
+   (one shared text) — someone could archive the wrong card. Now only on the
+   replaced service's card.
+**Recovery:** a correction whose new card was never built now shows an amber
+"Finish Trello card" button on its row (`adminFinishCorrectionTrello`): builds the
+card from the template, notes the original card, saves the card id via the RPC; it
+does NOT repeat the IO-card comment or the revised PDF (those already went out).
+Logic lives in one shared function (`adminCorrectionTrelloFollowUp`) used by both
+the Correct button and the recovery button.
+**Tests (headless Chromium, realistic fakes: closed `clients` table returns [],
+stale cached client list, template-only old service):** the updated test FAILS on
+the previous commit (original-card note missing; direct clients read made) and
+PASSES now, incl. name-based fallback, the not-found warning, recovery button
+(shows only where the card is missing; copies the template; notes only the
+original card; saves the id; no IO comment/PDF).
+**Same latent bugs exist in Swap Tactic (NOT changed — flagged for Claire):** it
+reads `clients?id=eq…` directly (same closed-table read) and looks up the ending
+card by `endingSvc.workflow` / saves the new card under `startingSvc.workflow ||
+id` (same standalone-service gap), and saves the card id with a direct write that
+expires after 2 hours. Asked Claire whether to fix Swap the same way.
