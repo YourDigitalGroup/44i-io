@@ -1952,6 +1952,23 @@ function agentSplitServiceReconciliation() {
   });
 }
 
+// The Intake column's cell for one split row. Pulled out of renderAgentSplitRows()
+// (2026-09-30) so typing a NEW agent's name can refresh just this one cell
+// instead of rebuilding the whole table on every keystroke.
+function agentSplitIntakeCellHtml(i) {
+  const intake = agentSplitRowIntakeInfo(i);
+  if (!intake) return '<span style="color:var(--muted);font-size:11px">—</span>';
+  return intake.needsAgent
+    ? '<span style="color:var(--muted);font-size:11px">Pick an agent first</span>'
+    : `<button type="button" class="btn-open-intake" onclick="openAgentSplitIntake(${i})" style="margin-left:0">${intake.status === 'Not started' ? 'Fill in' : 'Edit'}</button>
+       <span style="font-size:10.5px;font-weight:700;color:${intake.color};margin-left:4px">${esc(intake.status)}</span>`;
+}
+function refreshAgentSplitIntakeCell(i) {
+  const tr = document.querySelectorAll('#agent-split-rows tbody tr')[i];
+  const td = tr && tr.querySelector('.agent-intake-cell');
+  if (td) td.innerHTML = agentSplitIntakeCellHtml(i);
+}
+
 function renderAgentSplitRows() {
   const wrap = document.getElementById('agent-split-rows');
   if (!wrap) return;
@@ -1989,14 +2006,7 @@ function renderAgentSplitRows() {
     </tr></thead>
     <tbody>` +
     agentSplitRows.map((row, i) => {
-      const intake = agentSplitRowIntakeInfo(i);
-      let intakeCell = '<span style="color:var(--muted);font-size:11px">—</span>';
-      if (intake) {
-        intakeCell = intake.needsAgent
-          ? '<span style="color:var(--muted);font-size:11px">Pick an agent first</span>'
-          : `<button type="button" class="btn-open-intake" onclick="openAgentSplitIntake(${i})" style="margin-left:0">${intake.status === 'Not started' ? 'Fill in' : 'Edit'}</button>
-             <span style="font-size:10.5px;font-weight:700;color:${intake.color};margin-left:4px">${esc(intake.status)}</span>`;
-      }
+      const intakeCell = agentSplitIntakeCellHtml(i);
       return `
       <tr>
         <td style="padding:4px 6px">
@@ -2010,7 +2020,7 @@ function renderAgentSplitRows() {
         <td style="padding:4px 6px"><input type="date" value="${esc(row.startDate || '')}" oninput="updateAgentSplitRow(${i},'startDate',this.value)" style="width:100%"/></td>
         <td style="padding:4px 6px"><input type="date" value="${esc(row.endDate || '')}" oninput="updateAgentSplitRow(${i},'endDate',this.value)" style="width:100%"/></td>
         <td style="padding:4px 6px"><input type="number" step="0.01" placeholder="$" value="${esc(row.amount || '')}" oninput="updateAgentSplitRow(${i},'amount',this.value)" style="width:100%"/></td>
-        <td style="padding:4px 6px;white-space:nowrap">${intakeCell}</td>
+        <td class="agent-intake-cell" style="padding:4px 6px;white-space:nowrap">${intakeCell}</td>
         <td style="padding:4px 6px">${agentSplitRows.length > 1 ? `<button type="button" onclick="removeAgentSplitRow(${i})" title="Remove this row" style="background:none;border:none;font-size:16px;cursor:pointer;color:#B91C1C;line-height:1">✕</button>` : ''}</td>
       </tr>`;
     }).join('') +
@@ -2070,7 +2080,13 @@ function updateAgentSplitRow(i, field, value) {
   // agent name (agentNewName) needs to be reflected in that column immediately
   // too (a new agent has no saved intake response yet either way, but the "Pick
   // an agent first" placeholder needs to clear once a name is typed).
-  if (field === 'serviceId' || field === 'agentNewName') renderAgentSplitRows();
+  if (field === 'serviceId') renderAgentSplitRows();
+  // Typing a new agent's name (2026-09-30, found live: an AE typing a name one
+  // letter at a time got only the first letter and lost the cursor after every
+  // key, because this used to rebuild the WHOLE table per keystroke and the
+  // rebuild replaced the very box being typed in). Only the Intake cell depends
+  // on the name ("Pick an agent first" -> "Fill in"), so refresh just that.
+  else if (field === 'agentNewName') { refreshAgentSplitIntakeCell(i); renderAgentSplitReconciliation(); }
   // 'amount' only needs the reconciliation summary refreshed, not a full
   // table re-render (which would blur the input mid-keystroke).
   else if (field === 'amount') renderAgentSplitReconciliation();

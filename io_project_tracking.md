@@ -30664,3 +30664,75 @@ want past-start imports to seed from their real start. Node-exercised on six
 inputs. Merge pending. Cleanup: guarded delete of pre-flight, untouched
 budget rows (Nic Webb's Sep row + any others) handed as SQL — Claire to run
 tomorrow after previewing.
+**Cleanup RUN 2026-09-29 (Claire).** Full preview (no "untouched" filter)
+showed why Nic Webb's row was missing from the first list: strategists had
+been working around the bug by zeroing + PAUSING the stray month (9 such
+rows) and my first preview excluded paused rows. Final rule: pre-flight
+rows with no actuals/confirmation/overrides AND (not paused OR gross 0),
+excluding Northeast Exterminating. Kept on purpose: Creative Surfaces ×4
+(REAL Aug/Sep spend under a flight mistyped as Jan–Feb 2027 → strategist to
+fix dates), Sweet Pizza LT Event Sep (overrides), Visit Brookings Aug,
+Brookings United Way Aug (overrides), rows carrying platform-report zeros
+(Cajun Visa, Columbus Hyundai, Home Ideas, Metro Ford SEM, Sweet Pizza TD
+×3, MS FB Canaan SEM, Tanner Wilson ×2), Northeast Exterminating (a
+DUPLICATE FB/IG line, start 2027-09-01 > end 2027-08-31, one empty row —
+strategist to confirm removal; guarded `do $$` block on file in chat).
+Backup first: `campaign_months_stray_backup_20260929` (RLS enabled, 60
+rows) → delete (60) → re-preview shows only Northeast's row. Restore any
+row: `insert into campaign_months select * from
+campaign_months_stray_backup_20260929 where id = …`. St. Cecilia's Sep row
+(created 08-10, so not a creation-month placeholder) was deleted with the
+rest by Claire's choice; restorable. Nic Webb now Oct–Dec only.
+**Northeast Exterminating duplicate REMOVED 2026-09-29 (Claire).** The
+2027-09-01 line (`e71f8791…`, created 21:34 on 09-01, 1 empty month) was a
+first attempt with a mistyped year; the real line (`1fd9ac5a…`, created
+21:37, 12 months, $59.67 Sep spend) was re-added 3 minutes later. It never
+showed in Strategist because the portal hides lines outside their flight
+for the viewed month. Guarded do-block deleted it; only the real line
+remains. Pre-flight stray check now returns 0 rows. Still open for the
+strategists: Creative Surfaces' flight dates (Jan–Feb 2027, but live with
+Aug/Sep spend).
+**2026-09-29:** Kim signed in with the email login (Claire). Remaining before
+login part 2 SQL: Peggy. James deactivated earlier.
+
+### 2026-09-30 — "Glitching" when an AE enters agents one at a time (MS Farm Bureau–style Agent/County Split) → old-way IO submitted 7:58pm 09-29
+
+An AE tried the new IO form, it "was glitching out when I went to enter the
+agents individually", and an IO then arrived the OLD way (Gravity Form) at
+7:58 pm — the AE's fallback. Nothing came with the report (no group,
+client, screenshot), so the first step was to rule out today's own changes:
+- **Not the auto-height reporter** (shipped 09-28/29): tested the real form
+  embedded in a parent that applies the height messages; with two tall
+  Step 2 cards it settled after 3 messages (no runaway). A synthetic test
+  page DID run away, but only because of margins on the test page itself —
+  the real page has body margin 0 and stays stable. Logged because I first
+  suspected it.
+- **Not the key path / error screens** (no code path touched).
+- **Real cause, reproduced on the real form** (pglite-style approach not
+  needed; driven in headless Chromium with a stubbed catalog): the new-agent
+  name box called `updateAgentSplitRow(i,'agentNewName',…)` on EVERY
+  keystroke, and that function called `renderAgentSplitRows()`, which
+  rebuilds the whole table via `innerHTML` — replacing the very input being
+  typed in. Result: typing "Nathan Bullock" one key at a time stored only
+  "N" and dropped the cursor after every letter (the code already avoided
+  this for the Amount field, with a comment saying why, but not for this
+  one). Pre-existing since the 08-19 agent-split build; it only bites when
+  an agent is typed in as NEW rather than picked from the dropdown. Pasting
+  a name in one go worked.
+- **Fix:** the Intake cell is the only cell that reads the name, so it is
+  now `agentSplitIntakeCellHtml(i)` and typing calls
+  `refreshAgentSplitIntakeCell(i)` (+ the reconciliation summary) instead of
+  a full rebuild. Service changes still rebuild (a select, no typing).
+  Verified on the real form: full name captured with focus kept; a second
+  row + Amount typed cleanly with row 1 untouched; the refresh flips "Pick
+  an agent first" → "Fill in" while the input element stays the same node.
+  (My first assertion that the cell changes while typing was wrong — with
+  "+ New Agent" chosen the row already counts as having an agent, so the
+  per-keystroke rebuild was doing nothing useful there.) Not on the
+  submission path (input handling on Step 2 only).
+- **Old-way IO:** exists only in Gravity Forms/email — no order, client,
+  campaign lines, or Trello cards in the new system. Needs group/client from
+  Claire to decide: resubmit through the new form after this fix is merged
+  (then treat the Gravity entry as the duplicate), vs. process manually.
+  The Gravity Form still renders above the iframe by Claire's decision
+  (09-29), so this can recur whenever the new form misbehaves.
