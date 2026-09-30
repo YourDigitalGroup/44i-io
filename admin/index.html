@@ -10030,8 +10030,12 @@ async function viewOrderDetail(orderId) {
       // Claire) -- Renew doesn't apply, only Cancel/date-only Edit do.
       // Cancelled (2026-09-17) also has nothing left to renew.
       const renewBtn = (isPureFee || isCancelled) ? '' : `<button type="button" onclick="adminToggleRenewPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(currentEndDate)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button>`;
+      const hasCorrection = (o.edit_history || []).some(h => h.field === 'service_correction' && h.service_id === item.service_id);
+      const svcForCard = CATALOG_ROWS[item.service_id];
+      const cardMissing = hasCorrection && svcForCard && !(o.trello_card_ids || {})[adminEffectiveWorkflow(svcForCard)];
+      const finishBtn = (cardMissing && !isCancelled && canSee('correctService')) ? `<button type="button" id="correct-finish-btn-${esc(item.service_id)}" onclick="adminFinishCorrectionTrello('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #C68A1E;background:#FFF3DA;color:#92650B;font-size:11px;font-weight:700;cursor:pointer" title="The correction saved, but this service's Trello card was not built">Finish Trello card</button>` : '';
       const correctBtn = (isCancelled || !canSee('correctService') || !adminCorrectOldEligible(o, item)) ? '' : `<button type="button" onclick="adminToggleCorrectPanel('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:700;cursor:pointer" title="The AE picked the wrong service">Correct</button>`;
-      return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px">${esc(displayLabel)}${kocBadge}${cancelledBadge}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:8px 10px;font-weight:600;text-align:right">${amtCellHtml}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${correctBtn}${cancelBtn}</div></td></tr>
+      return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px">${esc(displayLabel)}${kocBadge}${cancelledBadge}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:8px 10px;font-weight:600;text-align:right">${amtCellHtml}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${finishBtn}${correctBtn}${cancelBtn}</div></td></tr>
         <tr id="edit-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="renew-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
@@ -11838,6 +11842,27 @@ async function adminCorrectionCardHandles(o, newSvc) {
   return [...new Set(handles.filter(Boolean).map(h => String(h).replace(/^@/, '').trim().toLowerCase()))];
 }
 
+// The client's Trello list id + name. Admin reads clients through admin_get_clients: the
+// `clients` table itself is closed to direct reads, and a closed table answers with an
+// EMPTY result rather than an error -- so the first version of this (a direct read, copied
+// from Swap) reported "no Trello list" for a client that has one (found on the first real
+// correction, Greenline Landscape, 2026-09-30). The list id is also only saved AFTER an
+// order is submitted, so a client list loaded earlier can be stale: if the cached copy has
+// no list id, refresh it once before giving up.
+async function adminClientTrelloInfo(clientId) {
+  const find = () => (typeof ALL_CLIENTS !== 'undefined' ? ALL_CLIENTS : []).find(c => c.id === clientId);
+  try { await adminEnsureClientsLoaded(); } catch (e) { /* refreshed below */ }
+  let c = find();
+  if (!c || !c.trello_list_id) {
+    try {
+      const fresh = await sbAll('rpc/admin_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) });
+      if (Array.isArray(fresh) && fresh.length) ALL_CLIENTS = fresh;
+    } catch (e) { console.warn('Could not refresh clients:', e.message); }
+    c = find();
+  }
+  return c ? { found: true, listId: c.trello_list_id || null, name: c.name || '' } : { found: false, listId: null, name: '' };
+}
+
 // Builds the new service's card(s) the way the IO form does: its own template (single card
 // or whole list), dated title when the service asks for one, due date, services summary,
 // "Needs KOC" label on the first card, and the same people tagged. Everything here is
@@ -11850,12 +11875,15 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason) {
     return await res.json();
   };
   const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
-  let listId = null, bizName = o._client_name || '';
-  try {
-    const rows = await sb(`clients?id=eq.${o.client_id}&select=trello_list_id,name`);
-    listId = rows?.[0]?.trello_list_id || null; bizName = rows?.[0]?.name || bizName;
-  } catch (e) { /* handled below */ }
-  if (!listId) { warnings.push('This client has no Trello list yet, so the new card was not created. Add it by hand.'); return { cards: [], warnings }; }
+  const ci = await adminClientTrelloInfo(o.client_id);
+  const listId = ci.listId;
+  const bizName = ci.name || o._client_name || '';
+  if (!listId) {
+    warnings.push(ci.found
+      ? 'This client has no Trello list yet, so the new card was not created. Add it by hand.'
+      : 'Could not look up this client\'s Trello list, so the new card was not created. Add it by hand.');
+    return { cards: [], warnings };
+  }
   const group = allGroups.find(g => g.id === o.group_id) || {};
 
   let existing = [];
@@ -11951,6 +11979,83 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason) {
   return { cards: made, warnings };
 }
 
+// Everything Trello does AFTER the database correction has saved (best-effort; returns plain
+// warnings for the AM to finish by hand). Shared by the Correct button and the "Finish
+// Trello card" recovery button. Fixed 2026-09-30 after the first real correction
+// (Greenline Landscape): (1) the original service's card is keyed by its EFFECTIVE workflow
+// -- for a template-only service like Traditional Media that is `__standalone__<id>`, not
+// the empty `.workflow` field this first read -- so no note reached the original card;
+// (2) if the order still doesn't know the card, it is found by name in the client's list;
+// (3) the "can be archived" sentence belongs ONLY on the replaced service's card, never the
+// IO card; (4) not finding the original card is now a visible warning, never silent.
+async function adminCorrectionTrelloFollowUp(o, oldServiceId, newSvc, item, oldLabel, reason, opts = {}) {
+  const warnings = [];
+  const newLabel = opts.newLabel || item.tactic_variant || newSvc.accounting_label || newSvc.label;
+  const tpost = async body => fetch(PROXY, { method: 'POST', headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const oldSvc = CATALOG_ROWS[oldServiceId] || {};
+  const oldKey = adminEffectiveWorkflow(oldSvc);
+  let oldCardId = oldKey ? o.trello_card_ids?.[oldKey] : null;
+  const ioCardId = o.trello_card_ids?.__io_card__;
+  if (!oldCardId) {
+    try {
+      const ci = await adminClientTrelloInfo(o.client_id);
+      if (ci.listId) {
+        const hit = await adminFindTrelloCardForLine({ trello_list_id: ci.listId, name: ci.name }, { service_id: oldServiceId, tactic_label: oldLabel });
+        oldCardId = hit.card?.id || null;
+      }
+    } catch (e) { /* warned below */ }
+  }
+  const base = `🔁 Service corrected: ${oldLabel} → ${newLabel}. Reason: ${reason}. Corrected by ${currentAdminUser?.name || 'an AM'}, who confirmed the correct service with the AE.`;
+  if (!oldCardId) warnings.push('Could not find the original service\'s Trello card, so it has no note about the change. Add one by hand.');
+  const targets = [];
+  if (oldCardId) targets.push([oldCardId, base + ' This card is for the service that was replaced and can be archived.']);
+  if (ioCardId && !opts.finishOnly) targets.push([ioCardId, base]);
+  for (const [cardId, text] of targets) {
+    try {
+      const res = await tpost({ target: 'trello_add_comment', card_id: cardId, text });
+      if (res && res.ok === false) warnings.push('A Trello comment about the change could not be posted.');
+    } catch (e) { warnings.push('A Trello comment about the change could not be posted.'); }
+  }
+  let built = { cards: [], warnings: [] };
+  try { built = await adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason); } catch (e) { warnings.push('The new Trello card could not be built: ' + e.message); }
+  warnings.push(...built.warnings);
+  if (built.cards[0]) {
+    const wfKey = adminEffectiveWorkflow(newSvc) || newSvc.id;
+    o.trello_card_ids = { ...(o.trello_card_ids || {}), [wfKey]: built.cards[0].id };
+    try {
+      await sb('rpc/admin_set_order_card_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: o.id, p_workflow: wfKey, p_card_id: built.cards[0].id }) });
+    } catch (e) { warnings.push('The new card was created but the order could not remember it. Link it by hand.'); }
+  }
+  if (!opts.finishOnly) {
+    if (ioCardId) {
+      try {
+        const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
+        await tpost({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' });
+      } catch (e) { warnings.push('The revised IO PDF could not be attached to the IO card.'); }
+    } else warnings.push('No IO card was found on Trello, so nothing was commented there.');
+  }
+  return warnings;
+}
+
+// Recovery: a correction saved but its Trello card was never built (for example the client's
+// list could not be found at the time). Builds the card and the note on the original card now.
+async function adminFinishCorrectionTrello(orderId, serviceId) {
+  const btn = document.getElementById(`correct-finish-btn-${serviceId}`);
+  if (btn?.disabled) return;
+  const restore = () => { if (btn) { btn.disabled = false; btn.textContent = 'Finish Trello card'; } };
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+  const o = allOrders.find(x => x.id === orderId);
+  const item = (o?.line_items || []).find(li => li.service_id === serviceId);
+  const entry = [...(o?.edit_history || [])].reverse().find(h => h.field === 'service_correction' && h.service_id === serviceId);
+  let info = null; try { info = entry ? JSON.parse(entry.new_value) : null; } catch (e) { /* handled below */ }
+  const newSvc = CATALOG_ROWS[serviceId];
+  if (!o || !item || !info || !newSvc) { showToast('Could not find the correction details for this service', 'error'); restore(); return; }
+  const warnings = await adminCorrectionTrelloFollowUp(o, info.old_service_id, newSvc, item, info.old_label, info.reason || 'service corrected', { finishOnly: true, newLabel: info.new_label });
+  showToast(warnings.length ? `Finished most of it. ${warnings.length} thing${warnings.length === 1 ? '' : 's'} left by hand: ${warnings[0]}` : '✅ Trello card built and the original card noted', warnings.length ? 'error' : 'success');
+  if (warnings.length) console.warn('Finish Trello follow-ups:', warnings);
+  viewOrderDetail(orderId);
+}
+
 async function adminConfirmCorrection(orderId, oldServiceId) {
   const btn = document.getElementById(`correct-confirm-btn-${oldServiceId}`);
   if (btn?.disabled) return;
@@ -12000,33 +12105,8 @@ async function adminConfirmCorrection(orderId, oldServiceId) {
       old_total: oldTotal, new_total: Number(result.new_item.fee || 0) + Number(result.new_item.recurring || 0) + Number(result.new_item.spend || 0), reason, confirmed_by: currentAdminUser?.name }),
     edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
 
-  // Trello: say so on the wrong service's card and the IO card, then build the right card
-  const warnings = [];
-  const tpost = async body => { const res = await fetch(PROXY, { method: 'POST', headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return res; };
-  const oldCardId = oldSvc.workflow ? o.trello_card_ids?.[oldSvc.workflow] : null;
-  const ioCardId = o.trello_card_ids?.__io_card__;
-  const text = `🔁 Service corrected: ${oldLabel} → ${result.new_label}. Reason: ${reason}. Corrected by ${currentAdminUser?.name || 'an AM'}, who confirmed the correct service with the AE.${oldCardId ? ' This card is for the service that was replaced and can be archived.' : ''}`;
-  for (const cardId of [...new Set([oldCardId, ioCardId].filter(Boolean))]) {
-    try { await tpost({ target: 'trello_add_comment', card_id: cardId, text }); } catch (e) { warnings.push('Could not comment on an existing Trello card.'); }
-  }
-  let built = { cards: [], warnings: [] };
-  try { built = await adminBuildCorrectionCards(o, newSvc, result.new_item, oldLabel, reason); } catch (e) { warnings.push('The new Trello card could not be built: ' + e.message); }
-  warnings.push(...built.warnings);
-  if (built.cards[0]) {
-    const wfKey = newSvc.workflow || newId;
-    o.trello_card_ids = { ...(o.trello_card_ids || {}), [wfKey]: built.cards[0].id };
-    try {
-      await sb('rpc/admin_set_order_card_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: orderId, p_workflow: wfKey, p_card_id: built.cards[0].id }) });
-    } catch (e) { warnings.push('The new card was created but the order could not remember it. Link it by hand.'); }
-  }
-  // the Revised IO goes on the IO card only (same as Edit)
-  if (ioCardId) {
-    try {
-      const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
-      await tpost({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' });
-    } catch (e) { warnings.push('The revised IO PDF could not be attached to the IO card.'); }
-  } else warnings.push('No IO card was found on Trello, so nothing was commented there.');
-
+  // Trello: note on the original service's card + the IO card, build the right card, save its id, attach the revised IO
+  const warnings = await adminCorrectionTrelloFollowUp(o, oldServiceId, newSvc, result.new_item, oldLabel, reason, { newLabel: result.new_label });
   showToast(warnings.length ? `Service corrected. ${warnings.length} thing${warnings.length === 1 ? '' : 's'} to finish by hand: ${warnings[0]}` : '✅ Service corrected', warnings.length ? 'error' : 'success');
   if (warnings.length) console.warn('Correct Service follow-ups:', warnings);
   viewOrderDetail(orderId);
