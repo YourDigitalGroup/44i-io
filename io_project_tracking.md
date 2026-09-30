@@ -30990,3 +30990,13 @@ reads `clients?id=eq…` directly (same closed-table read) and looks up the endi
 card by `endingSvc.workflow` / saves the new card under `startingSvc.workflow ||
 id` (same standalone-service gap), and saves the card id with a direct write that
 expires after 2 hours. Asked Claire whether to fix Swap the same way.
+
+---
+
+## 2026-09-30 — Swap Tactic: same three Trello fixes as Correct Service
+
+**Found:** Swap Tactic had the same three latent bugs found in Correct Service's first real use (Greenline). (1) It read the closed `clients` table directly for the Trello list, which answers with an empty result (not an error), so the new card was never built and the AM saw "no Trello list on file". (2) It looked up the ending service's card by the plain `.workflow` field, so template-only services (keyed `__standalone__<id>`) got no swap note on their own card. (3) It saved the new card id with a direct PATCH to `orders`, which the anon policy stops allowing ~2 hours after the order is created.
+
+**Fixed (admin/index.html, `adminConfirmSwap` only):** client list/name now come from `adminClientTrelloInfo` (RPC-backed list; separate messages for "no list on file" vs "could not look up"); the ending card is found by `adminEffectiveWorkflow`, then by name in the client's Trello list, and a visible warning appears if neither finds it; the new card id is saved through `admin_set_order_card_id` under `adminEffectiveWorkflow(startingSvc) || startingId`. The new card is still a plain card (Claire's earlier scope decision). The database function `admin_swap_tactic` is untouched.
+
+**Verified:** headless browser test driving the real `adminConfirmSwap` with the closed `clients` table returning [], a stale client cache, and a template-only ending service. New code: note reaches the ending card (known and found-by-name cases) plus the IO card, the new card is created in the client's list, id saved via RPC, zero direct `orders` writes. The same test against the previous file fails (no note on the ending card, no new card, "no Trello list" toast). **Not verifiable here:** real Trello — first real Swap is the live check. Not on the submission path; public form and SQL unchanged.

@@ -12296,7 +12296,23 @@ async function adminConfirmSwap(orderId) {
   // and on the IO card too (2026-08-21 -- found in audit: Edit/Renew both did
   // this already, Cancel and Swap didn't, so an AM watching the IO card for
   // activity would silently miss a swap).
-  const endingCardId = endingSvc.workflow ? o?.trello_card_ids?.[endingSvc.workflow] : null;
+  // Card keys use the EFFECTIVE workflow (template-only services are keyed
+  // `__standalone__<id>`, not by the empty .workflow field); if the order doesn't know the
+  // card, find it by name in the client's list, and say so if it can't be found (2026-09-30).
+  const swapWarnings = [];
+  const endingLabel = endingSvc.accounting_label || endingSvc.label || endingId;
+  const endingKey = adminEffectiveWorkflow(endingSvc);
+  let endingCardId = endingKey ? o?.trello_card_ids?.[endingKey] : null;
+  if (!endingCardId && o) {
+    try {
+      const ci0 = await adminClientTrelloInfo(o.client_id);
+      if (ci0.listId) {
+        const hit = await adminFindTrelloCardForLine({ trello_list_id: ci0.listId, name: ci0.name }, { service_id: endingId, tactic_label: endingLabel });
+        endingCardId = hit.card?.id || null;
+      }
+    } catch (e) { /* warned below */ }
+  }
+  if (!endingCardId) swapWarnings.push(`Could not find the ${endingLabel} Trello card, so it has no note about the swap. Add one by hand.`);
   const ioCardId = o?.trello_card_ids?.__io_card__;
   const swapCardIds = [...new Set([endingCardId, ioCardId].filter(Boolean))];
   // The new line's real label (variant when picked) and end date, from the
@@ -12329,9 +12345,9 @@ async function adminConfirmSwap(orderId) {
   // Plain new card for the starting tactic (per Claire's scope decision --
   // no template resolution here).
   try {
-    const clientRows = await sb(`clients?id=eq.${o.client_id}&select=trello_list_id,name`);
-    const listId = clientRows?.[0]?.trello_list_id;
-    const bizName = clientRows?.[0]?.name || o._client_name || '';
+    const ci = await adminClientTrelloInfo(o.client_id);
+    const listId = ci.listId;
+    const bizName = ci.name || o._client_name || '';
     if (listId) {
       // Card title carries the variant + date range like a form-created card
       // (2026-09-25), so Renew's name-based lookup can find it later.
@@ -12345,18 +12361,24 @@ async function adminConfirmSwap(orderId) {
       });
       const card = await createRes.json();
       if (card?.id && o) {
-        o.trello_card_ids = { ...(o.trello_card_ids || {}), [startingSvc.workflow || startingId]: card.id };
-        await sb('orders?id=eq.' + orderId, { method: 'PATCH', body: JSON.stringify({ trello_card_ids: o.trello_card_ids }), prefer: 'return=minimal' });
+        const wfKey = adminEffectiveWorkflow(startingSvc) || startingId;
+        o.trello_card_ids = { ...(o.trello_card_ids || {}), [wfKey]: card.id };
+        try {
+          await sb('rpc/admin_set_order_card_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: orderId, p_workflow: wfKey, p_card_id: card.id }) });
+        } catch (e) { swapWarnings.push('The new card was created but the order could not remember it. Link it by hand.'); }
       } else {
         showToast('Swap completed, but the new Trello card could not be created — please add it by hand', 'error');
       }
     } else {
-      showToast('Swap completed, but this client has no Trello list on file — please add the new card by hand', 'error');
+      showToast(ci.found
+        ? 'Swap completed, but this client has no Trello list on file — please add the new card by hand'
+        : 'Swap completed, but this client\'s Trello list could not be looked up — please add the new card by hand', 'error');
     }
   } catch (e) {
     console.warn('Could not create new tactic card:', e.message);
     showToast('Swap completed, but the new Trello card could not be created — please add it by hand', 'error');
   }
+  if (swapWarnings.length) showToast('Swap completed. ' + swapWarnings.join(' '), 'error');
 
   document.getElementById(`swap-panel-${orderId}`).style.display = 'none';
   showToast(`✅ Swap complete — ${result.ending_days} days to the old tactic, ${result.starting_days} to the new one`);
