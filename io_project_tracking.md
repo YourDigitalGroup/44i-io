@@ -30750,3 +30750,21 @@ a multi-agent client whose AE has no client_aes link), Step 2's Agent/County
 Split shows a long hand-typed new-agent name intact in the live form
 (screenshot). No order submitted. To undo after testing: ABC Floors back to
 single-agent; AE link can stay; discard any autosaved draft.
+
+### 2026-09-30 — Embed keys: ALL active groups keyed; developer installed the lines (Claire)
+
+Claire created every active group's key in Admin, tested them, sent the
+Shortcode Lines to her developer, who added them to the `[new_ioform]`
+`$io_keys` list. Evidence on the way: loading a group with its key showed
+that group's own draft (key → group → `get_group_drafts` twin). Safety net
+until the lockdown: a group whose line is REMOVED from the shortcode falls
+straight back to the slug path (instant rollback per group); a MISTYPED key
+is the real hazard (key present but refused → "This embed isn't set up
+yet", no fallback). Watch period: "the next few days" before the lockdown.
+Symptoms → causes: "This embed isn't set up yet" = key refused (re-paste
+the line or Replace Key); "Couldn't load just now" = outage (reload, don't
+re-key); normal load = fine. Lockdown waits on: a quiet few days, (audit
+tool prerequisite already verified 09-29). Lockdown prep (optional): Claire
+to paste `pg_proc` anon-executable list + `pg_policies` so the rollback can
+be plain re-GRANTs/re-CREATE POLICY instead of rebuilding functions.
+Login part 2 still waits on Peggy's first email sign-in.
