@@ -30768,3 +30768,29 @@ tool prerequisite already verified 09-29). Lockdown prep (optional): Claire
 to paste `pg_proc` anon-executable list + `pg_policies` so the rollback can
 be plain re-GRANTs/re-CREATE POLICY instead of rebuilding functions.
 Login part 2 still waits on Peggy's first email sign-in.
+
+### 2026-09-30 — Wrong-service picks "happen more often than not" → candidate "Correct Service" action (PARKED pending Claire's yes)
+
+Trigger: an order with Traditional Media Buying & Consultation ($875
+one-time, KOC→Carol Oren, note "Defer to Jon Peterson", start 09-30) where
+the AE meant Website One-Time — Optional Content Support (priced PER HOUR).
+Claire tried Swap Tactic. Swap is the wrong tool (monthly budget + run-
+through model; an hourly/one-time item has hours and a one-time total) —
+same class of mistake as the Michael Carter repair. Admin cannot change a
+line's service (Edit = qty/price/variant/dates) or add a service to an
+existing order; Companion = cancel/edit/renew only; Accounting "+ Add
+Service" = order-less tracking line. **For this order:** Kim to rule on
+how a cancelled one-time line in its start month appears in Accounting
+(business call, not mine); cancel the Traditional Media line (effective
+today, reason "AE selected the wrong service"); AE submits a new IO with
+Content Support + hours; tell Carol Oren, archive the built Trello card.
+Catalog row for Content Support (billing_type/unit_label/qty options) not
+yet pasted — query handed.
+**Candidate feature (not started):** `Correct Service` — same order stays the
+source of truth; Revised + history line ("Service corrected from X to Y");
+price/hours set at correction; Trello: correction comment on the wrong
+tactic's card + build the right one (reuse Swap's Trello logic); intake
+forms differ per service so the wrong service's intake must be handled;
+OPEN BUSINESS RULE: correcting a SIGNED IO means a Revised IO goes back to
+the client — or a fresh IO/signature instead? AMs to decide. Scope first
+with a read-only count of how often this has happened (order history).
