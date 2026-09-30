@@ -30736,3 +30736,212 @@ client, screenshot), so the first step was to rule out today's own changes:
   (then treat the Gravity entry as the duplicate), vs. process manually.
   The Gravity Form still renders above the iframe by Claire's decision
   (09-29), so this can recur whenever the new form misbehaves.
+**2026-09-30 (Claire):** agent-name fix merged. The 09-29 7:58pm old-way IO:
+"it was submitted that way, nothing we need to do" — the AM's team is
+handling it from the Gravity Form entry; no action on the new system.
+Clarified for Claire: the changed code only runs for clients flagged
+multi-agent (agent card hidden otherwise; `collectAgentSplits()` returns []
+when hidden), so ordinary submissions never touch it. Suggested (not yet
+done): one test IO with a hand-typed new agent on a multi-agent test client
+(e.g. ABC Floors flipped temporarily) to exercise Trello/order end to end.
+**2026-09-30 — agent-name fix CONFIRMED LIVE (Claire):** ABC Floors switched
+to multi-agent (+ an AE linked with the client's Trello list — Step 1 blocks
+a multi-agent client whose AE has no client_aes link), Step 2's Agent/County
+Split shows a long hand-typed new-agent name intact in the live form
+(screenshot). No order submitted. To undo after testing: ABC Floors back to
+single-agent; AE link can stay; discard any autosaved draft.
+
+### 2026-09-30 — Embed keys: ALL active groups keyed; developer installed the lines (Claire)
+
+Claire created every active group's key in Admin, tested them, sent the
+Shortcode Lines to her developer, who added them to the `[new_ioform]`
+`$io_keys` list. Evidence on the way: loading a group with its key showed
+that group's own draft (key → group → `get_group_drafts` twin). Safety net
+until the lockdown: a group whose line is REMOVED from the shortcode falls
+straight back to the slug path (instant rollback per group); a MISTYPED key
+is the real hazard (key present but refused → "This embed isn't set up
+yet", no fallback). Watch period: "the next few days" before the lockdown.
+Symptoms → causes: "This embed isn't set up yet" = key refused (re-paste
+the line or Replace Key); "Couldn't load just now" = outage (reload, don't
+re-key); normal load = fine. Lockdown waits on: a quiet few days, (audit
+tool prerequisite already verified 09-29). Lockdown prep (optional): Claire
+to paste `pg_proc` anon-executable list + `pg_policies` so the rollback can
+be plain re-GRANTs/re-CREATE POLICY instead of rebuilding functions.
+Login part 2 still waits on Peggy's first email sign-in.
+
+### 2026-09-30 — Wrong-service picks "happen more often than not" → candidate "Correct Service" action (PARKED pending Claire's yes)
+
+Trigger: an order with Traditional Media Buying & Consultation ($875
+one-time, KOC→Carol Oren, note "Defer to Jon Peterson", start 09-30) where
+the AE meant Website One-Time — Optional Content Support (priced PER HOUR).
+Claire tried Swap Tactic. Swap is the wrong tool (monthly budget + run-
+through model; an hourly/one-time item has hours and a one-time total) —
+same class of mistake as the Michael Carter repair. Admin cannot change a
+line's service (Edit = qty/price/variant/dates) or add a service to an
+existing order; Companion = cancel/edit/renew only; Accounting "+ Add
+Service" = order-less tracking line. **For this order:** Kim to rule on
+how a cancelled one-time line in its start month appears in Accounting
+(business call, not mine); cancel the Traditional Media line (effective
+today, reason "AE selected the wrong service"); AE submits a new IO with
+Content Support + hours; tell Carol Oren, archive the built Trello card.
+Catalog row for Content Support (billing_type/unit_label/qty options) not
+yet pasted — query handed.
+**Candidate feature (not started):** `Correct Service` — same order stays the
+source of truth; Revised + history line ("Service corrected from X to Y");
+price/hours set at correction; Trello: correction comment on the wrong
+tactic's card + build the right one (reuse Swap's Trello logic); intake
+forms differ per service so the wrong service's intake must be handled;
+OPEN BUSINESS RULE: correcting a SIGNED IO means a Revised IO goes back to
+the client — or a fresh IO/signature instead? AMs to decide. Scope first
+with a read-only count of how often this has happened (order history).
+**Catalog row (Claire, 09-30):** `w-content` and `wm-content`, both label
+"Optional Content Support", billing_type one_time, pricing_mode per_unit,
+default_price 175, unit_label hr, qty_preset_options
+[0.25,0.5,0.75,1,2,3,4,5,6,7,8] → total = hours × $175, no monthly budget.
+A fresh IO handles it natively (hours picker); Swap would be wrong. Two
+ids — presumably Website One-Time vs monthly-plan variants; AE should use
+the Website One-Time one (section query handed to confirm). Any future
+"Correct Service" action must support per_unit (hours × rate) as well as
+flat one-time and monthly services.
+
+### 2026-09-30 — SCOPE: "Correct Service" (Admin; Claire: "go ahead and scope") — NOT BUILT, awaiting decisions
+
+**What it is:** on Order Detail, a per-service "Correct service" action that
+replaces a mistakenly-picked service with the right one ON THE SAME ORDER
+(IO stays the source of truth). Not Swap (monthly budget + run-through
+model) and not Cancel + new IO (two IOs, two signatures).
+**Read from the code (verified, not assumed):**
+- Order side: `orders.line_items` (jsonb per service_id: fee/recurring/spend/
+  qty/unit_fee/start_date/end_date/notes/tactic_variant/module_names/
+  prorated_hosting_amt/setup_fee_amt…); `admin_edit_order_line_item` edits
+  fields but cannot change `service_id`; edit_history + is_revised drive
+  Revised pill/PDF; `orderLiveTotals()` recomputes from line_items at read
+  time (no stored totals to fix).
+- Campaign lines are built ONLY by the orders AFTER INSERT trigger
+  (`create_campaign_lines_from_order`, submission path) with ~7 branches:
+  spend; auto_split_labels; SEO placeholders; flat fee/recurring
+  (accounting-only, one_time/recurring); hosting-proration line; setup-fee
+  line; CPM modifiers; agent splits; + renewal-matching (re-points an
+  earlier line's order_id and sets last_renewed_*).
+- Trello: per-workflow card ids in `orders.trello_card_ids` (+ `__io_card__`);
+  Swap posts comments on the old + IO cards and creates a PLAIN card (no
+  template, by Claire's earlier scope decision); there is no card-archive
+  call (archive by hand). Form-built cards use templates + intake.
+- Intake: `orders.intake_responses` keyed by form; Admin already has an
+  inline intake editor driven by the service's form definition.
+**Proposed behavior:** pick replacement (catalog picker like Swap), fill that
+service's own fields (hours × rate for per_unit, variant, dates, notes),
+give a reason → (1) line replaced in place, total recalculated; (2) edit_
+history `service_correction` + Revised (renders on Order Detail, other
+portals, revised PDF; shared.js summary case); (3) wrong service's campaign
+lines + month rows for THIS order removed only if untouched (no actuals/
+confirmation/closed month), else refuse → use Cancel; (4) right service's
+campaign line(s) created; (5) Trello: correction comment on the wrong card +
+IO card, new card for the right service (plain, like Swap), wrong card to
+be archived by hand; (6) new service's intake appears in the order's
+intake editor; wrong service's answers left in place, not applicable.
+**Two build options:** v1 NARROW (recommended): supports services whose
+lines are simple — flat one-time/recurring accounting-only lines and plain
+spend lines — and REFUSES SEO, agent splits, modifiers, renewal-matched
+lines, anything with hosting/setup-fee sublines, with a clear message; Admin-
+only, no trigger change → not the submission path, but still executed in
+pglite first. Covers the Content Support class of mistake. v2 FULL: move the
+trigger's per-item body into a shared function the trigger AND the
+correction both call (so they can never drift) — TOUCHES THE SUBMISSION
+PATH → full CLAUDE.md protocol (pglite against each branch, bundled SQL,
+smoke test, quiet hours).
+**Decisions needed (business, not mine):** (1) signed IO: Revised IO back to
+the client for re-signature, or fresh IO/signature? (2) Trello card for the
+right service: plain (like Swap) or template-built? (3) who may use it: AM +
+super like Swap, or super only? (4) Kim: how a removed one-time line in a
+not-yet-closed month should appear in Accounting; action refuses if the
+month is closed/confirmed.
+**Risks to test:** correcting the same line twice; service with sibling
+lines (SEO = 3 rows); line re-pointed by a renewal; order with agent splits;
+per_unit hours × rate rounding; Revised PDF with a corrected service;
+Strategist/Accounting counts before vs after.
+**Frequency (read-only queries handed to Claire):** lines cancelled within 7
+days of creation, by month + detail with cancel_reason; swaps in
+edit_history.
+
+### 2026-09-30 — Correct Service (narrow v1) BUILT; SQL handed, awaiting run + merge
+
+Claire's decisions: start narrow; no new signature (reason + AM confirmation,
+like Swap); use the service's OWN Trello template; AMs + super admins; the
+closed-month point = simply refuse to change a month Accounting closed (only ~40
+orders / 5 groups in the new system, so the counting queries were skipped).
+**SQL** (`scratchpad/admin-correct-order-service.sql`; scratchpad is gitignored —
+the SQL handed inline in chat is the record): a pre-flight `do $$` block that
+RAISES if any column the function touches is missing (plpgsql doesn't check at
+CREATE time — two earlier incidents), then `admin_correct_order_service(p_name,
+p_pw, p_order_id, p_old_service_id, p_new_service_id, p_qty, p_unit_amount,
+p_start_date, p_end_date, p_tactic_variant, p_notes, p_reason, p_confirmed)` and
+`admin_set_order_card_id(p_name, p_pw, p_order_id, p_workflow, p_card_id)`. Both
+am/super only, enforced in the database. Not on the submission path: new
+functions only; no trigger/table/policy/existing function touched.
+**Executed in pglite against the REAL order trigger**
+(`pg-test-correct-service.js`): GOLDEN comparison — an order corrected from
+service A to B ends with exactly the campaign lines + month rows a direct
+submission of B produces (one-time per-hour 3×$175=525; spend; spend+variant;
+fee→spend; spend→recurring); the order's other service untouched; line replaced
+IN PLACE; line item carries every key the form writes; Revised + history entry
+with reason + confirmer; stored signed totals left as signed (like Edit).
+37 refusals each verified to leave the order BYTE-FOR-BYTE unchanged: wrong role
+(strategist/accounting/bad creds), no confirmation, blank reason, zero amount,
+end<start, same service, not on order, already on order, unknown/inactive/SEO/
+modifier/auto-split/setup-fee/hosting replacement, missing/invalid/unneeded
+variant, correcting FROM a setup-fee service, agent splits, any touched old
+line (actuals, confirmation, goal override, pause, status history, optimize
+log, open Companion request, renewal-extended, cancelled, completed),
+Accounting-closed month (old line or new start), and a replacement the client
+already runs (looks like a renewal). Plus a bystander order never touched; a
+second correction on the same order; card-id setter (adds key, keeps others,
+overwrites, refuses strategist/bad creds/unknown order/blank).
+**Screen** (admin/index.html): "Correct" button beside Edit/Renew/Cancel
+(`canSee('correctService')` = am+super, hidden for cancelled lines and obviously
+unsupported services); panel = picker of eligible services (grouped by section,
+excludes ones already on the order), hours picker for per_unit from
+`qty_preset_options`, price prefilled from client → group → catalog (group
+custom pricing wins), variant (required when offered), dates, notes, live total,
+REQUIRED reason, REQUIRED "I confirmed the correct service with the AE"
+checkbox. After the database succeeds: comments on the wrong service's card
+(says it can be archived) and the IO card; new card built from the service's
+template via `adminBuildCorrectionCards` — single-card template (copy, named
+"<variant or template name>[ + suffix][ date range] — Client"), list template
+(copies every non-🧪/non-IO/non-"AE Questions" card), or a plain card when there
+is no template; due date/reminder when there is an end date; "Needs KOC" label on
+the first card when the service requires KOC; AM/AE/additional + the service's
+strategist disciplines (+ covering digital) + koc-notify handle tagged, resolved
+against board members; services summary + correction note as the description;
+new card id saved through `admin_set_order_card_id` (NOT a direct write — Swap's
+direct PATCH to `orders` stops working 2 h after an order is created; Swap
+unchanged, flagged); revised IO PDF attached to the IO card (same as Edit). Trello
+steps are best-effort: the database correction is already done, any Trello
+failure comes back as a plain to-do in the toast, never an error.
+**Verified in headless Chromium with a recorded fake database + Trello:** the
+real Order Detail shows the button per simple service and none for a strategist;
+panel choices exclude SEO/modifier/auto-split/setup-fee/hosting/on-order;
+group rate prefill ($150 not $175); client-side validation blocks with nothing
+sent; the exact RPC payload; the exact Trello call sequence (resolved template
+id, client list, name, label, members, description, PDF → IO card only, card-id
+RPC); order mirrored locally; detail refreshed once. NOT verifiable here: real
+Trello (sandbox can't reach it) — first real use is the live check.
+shared.js: `service_correction` history wording ("Service corrected: A → B (3 ×
+$175.00), $875.00 → $525.00 one-time. Reason: … (confirmed by …)"); version
+→ `?v=20260930a`.
+**SQL RUN 2026-09-30 (Claire):** pre-flight passed (no missing columns) and both
+functions exist (`admin_correct_order_service`, `admin_set_order_card_id`).
+Verified for Claire from `git diff origin/main`: the branch changes only
+admin/index.html, shared.js (history wording), a `?v=` tag on strategist/
+accounting, and this doc; 0 lines of difference in index.html/companion; the
+public forms don't load shared.js; the SQL has no trigger/policy/ALTER/DROP
+and neither function is named anywhere in the public forms. Next: merge, then
+the ABC Floors end-to-end test (the Trello side is the part not testable here).
+**First real Correct Service (2026-09-30): Greenline Landscape, IO
+20260929-GREENL-P3H.** Pre-correction snapshot (Claire's read-only query), kept
+as the restore record: one campaign line `alc-media` "Traditional Media Buying &
+Consultation", status active, billing_type one_time, flight_start 2026-09-30,
+single month row 2026-09 $875, nothing recorded on it (exactly the shape the
+tool accepts). Replacing it with Optional Content Support (`w-content`, per
+hour, AM-confirmed hours). Kim to rule on how the removed $875 should appear;
+Carol Oren to be told; old Trello card to be archived by hand.

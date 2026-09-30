@@ -364,6 +364,17 @@ function formatEditHistoryEntrySummary(h) {
   if (field === 'qty') {
     return `Quantity: ${esc(h.old_value ?? '—')} → ${esc(h.new_value)}`;
   }
+  if (field === 'service_correction') {
+    // Admin Correct Service (2026-09-30): the AE picked the wrong service and an
+    // AM swapped it on the same order. The reason and the confirming AM ride
+    // along, so the printed Revised IO and every portal say why.
+    let s = {};
+    try { s = typeof h.new_value === 'string' ? JSON.parse(h.new_value) : (h.new_value || {}); } catch (e) {}
+    const money = n => n != null ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+    const per = s.model === 'fee' ? ' one-time' : '/mo';
+    const qtyBit = s.model === 'fee' && Number(s.qty) > 1 ? ` (${esc(s.qty)} × ${money(s.unit_amount)})` : '';
+    return `Service corrected: ${esc(s.old_label || '—')} → ${esc(s.new_label || '—')}${qtyBit}, ${money(s.old_total)} → ${money(s.new_total)}${per}. Reason: ${esc(s.reason || '—')} (confirmed by ${esc(s.confirmed_by || h.edited_by || '—')})`;
+  }
   if (field === 'swap') {
     // Admin Swap Tactic (2026-09-25): written to the order by admin_swap_tactic
     // so the swap is visible on Order Detail / View Order / the revised PDF.

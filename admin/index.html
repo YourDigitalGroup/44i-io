@@ -1806,7 +1806,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="../shared.js?v=20260925b"></script>
+<script src="../shared.js?v=20260930a"></script>
 <script>
 
 const ADMIN_ORG = '44i Digital';
@@ -1838,6 +1838,7 @@ const ADMIN_ROLE_PERMISSIONS = {
   groupAccountingOverride:  ['super'],
   groupPricingAccounting:   ['super'], // combined guard for adminSaveGroup's single payload branch covering both fields at once
   groupDeactivate:          ['super'],
+  correctService:           ['am', 'super'], // Correct Service on Order Detail (2026-09-30); the database function enforces the same
   embedKeysManage:          ['super'],   // IO Form Embed tab on the group editor (2026-09-28)
   clientAccountingOverride: ['super'],
   strategistPortalLink:     ['strategist', 'super'],
@@ -10029,10 +10030,12 @@ async function viewOrderDetail(orderId) {
       // Claire) -- Renew doesn't apply, only Cancel/date-only Edit do.
       // Cancelled (2026-09-17) also has nothing left to renew.
       const renewBtn = (isPureFee || isCancelled) ? '' : `<button type="button" onclick="adminToggleRenewPanel('${esc(o.id)}','${esc(item.service_id)}','${esc(currentEndDate)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button>`;
-      return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px">${esc(displayLabel)}${kocBadge}${cancelledBadge}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:8px 10px;font-weight:600;text-align:right">${amtCellHtml}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${cancelBtn}</div></td></tr>
+      const correctBtn = (isCancelled || !canSee('correctService') || !adminCorrectOldEligible(o, item)) ? '' : `<button type="button" onclick="adminToggleCorrectPanel('${esc(o.id)}','${esc(item.service_id)}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:700;cursor:pointer" title="The AE picked the wrong service">Correct</button>`;
+      return `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px">${esc(displayLabel)}${kocBadge}${cancelledBadge}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.start_date || o.campaign_start)}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(item.end_date || o.campaign_end)}</td><td style="padding:8px 10px;font-weight:600;text-align:right">${amtCellHtml}</td><td style="padding:8px 10px;font-size:11px;color:var(--muted)">${esc(item.notes || '—')}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap">${editBtn}${renewBtn}${correctBtn}${cancelBtn}</div></td></tr>
         <tr id="edit-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
         <tr id="renew-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
-        <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
+        <tr id="cancel-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>
+        <tr id="correct-panel-${esc(item.service_id)}" style="display:none"><td colspan="6" style="padding:0"></td></tr>`;
     }).join('');
     return header + rows;
   }).join('') || '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--muted)">No services</td></tr>';
@@ -11662,6 +11665,373 @@ async function adminConfirmCampaignLineRenewal(clientId, lineId) {
 function adminSwapDayCount(startDate, endDate) {
   return Math.round((new Date(endDate + 'T00:00:00') - new Date(startDate + 'T00:00:00')) / 86400000) + 1;
 }
+// ── CORRECT SERVICE (2026-09-30) ────────────────────────────────────────────
+// An AE picked the wrong service ("happens more often than not", per Claire) and
+// an AM replaces it ON THE SAME ORDER so the IO stays the source of truth.
+// Narrow v1: plain spend services and flat / per-unit / recurring services.
+// Decisions (Claire, 2026-09-30): no new signature -- a required reason plus the
+// AM's confirmation, recorded with their name, like Swap; AMs and super admins
+// only (admin_correct_order_service enforces it server-side too); the new
+// service's Trello card is built from ITS OWN template. The database function
+// refuses everything it cannot do faithfully (SEO, modifiers, setup fees,
+// hosting, agent splits, worked-on services, closed months) with a plain message.
+function adminCorrectServiceIsSimple(r) {
+  if (!r) return false;
+  if (r.section === 'seo') return false;
+  if (r.is_cpm_adjustment) return false;
+  let auto = r.auto_split_labels;
+  if (typeof auto === 'string') { try { auto = JSON.parse(auto); } catch (e) { auto = null; } }
+  if (Array.isArray(auto) && auto.length) return false;
+  if (r.auto_add_setup_fee) return false;
+  if (r.hosting_prompt_type) return false;
+  return true;
+}
+// spend -> flat monthly spend; monthly -> recurring; everything else -> one-time fee
+function adminCorrectModel(r) {
+  return r.pricing_mode === 'spend' ? 'spend' : (r.billing_type === 'monthly' ? 'recurring' : 'fee');
+}
+function adminCorrectOldEligible(o, item) {
+  const r = CATALOG_ROWS[item.service_id]; // only ACTIVE services are loaded; a retired one is checked by the database
+  if (r && !adminCorrectServiceIsSimple(r)) return false;
+  if (Number(item.setup_fee_amt) > 0 || Number(item.prorated_hosting_amt) > 0) return false;
+  const splits = Array.isArray(o.agent_splits) ? o.agent_splits : [];
+  return !splits.some(s => s && s.service_id === item.service_id);
+}
+function adminCorrectQtyOptions(r) {
+  let a = r.qty_preset_options;
+  if (typeof a === 'string') { try { a = JSON.parse(a); } catch (e) { a = null; } }
+  if (!Array.isArray(a)) return null;
+  const nums = a.map(Number).filter(n => n > 0);
+  return nums.length ? nums : null;
+}
+// the rate the AE's form would have shown: the client's custom price, else the group's, else the catalog's
+function adminCorrectEffectivePrice(o, r) {
+  const parse = v => { try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (e) { return null; } };
+  const client = (typeof ALL_CLIENTS !== 'undefined' ? ALL_CLIENTS : []).find(c => c.id === o.client_id);
+  const group = allGroups.find(g => g.id === o.group_id);
+  const v = parse(client?.io_pricing)?.[r.id] ?? parse(group?.io_pricing)?.[r.id] ?? r.default_price;
+  return v == null || v === '' ? '' : Number(v);
+}
+// PostgREST wraps a raised message in JSON ("Supabase error 400: {...\"message\":\"...\"}")
+function adminPgMessage(e) {
+  const m = String(e?.message || e || '');
+  const hit = m.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (!hit) return m;
+  try { return JSON.parse('"' + hit[1] + '"'); } catch (err) { return hit[1]; }
+}
+
+async function adminToggleCorrectPanel(orderId, oldServiceId) {
+  const row = document.getElementById(`correct-panel-${oldServiceId}`);
+  if (!row) return;
+  if (row.style.display !== 'none') { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
+  const o = allOrders.find(x => x.id === orderId);
+  if (!o) return;
+  try { await adminEnsureClientsLoaded(); } catch (e) { /* prices fall back to the catalog/group rate */ }
+  const oldItem = (o.line_items || []).find(li => li.service_id === oldServiceId) || {};
+  const oldSvc = CATALOG_ROWS[oldServiceId] || {};
+  const oldLabel = oldItem.tactic_variant || oldSvc.accounting_label || oldSvc.label || oldItem.label || oldServiceId;
+  const onOrder = new Set((o.line_items || []).map(li => li.service_id));
+  const choices = Object.values(CATALOG_ROWS)
+    .filter(r => r.active !== false && !onOrder.has(r.id) && adminCorrectServiceIsSimple(r))
+    .sort((a, b) => String(sectionLabel(a.section)).localeCompare(String(sectionLabel(b.section))) || String(a.label).localeCompare(String(b.label)));
+  const bySection = {};
+  choices.forEach(r => { (bySection[r.section] = bySection[r.section] || []).push(r); });
+  const optionsHtml = '<option value="">— Pick the correct service —</option>' + Object.keys(bySection).map(sec =>
+    `<optgroup label="${esc(sectionLabel(sec))}">${bySection[sec].map(r => `<option value="${esc(r.id)}">${esc(r.accounting_label || r.label)}</option>`).join('')}</optgroup>`).join('');
+  const inp = 'width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px';
+  row.querySelector('td').innerHTML = `
+    <div style="background:var(--light);padding:12px 14px">
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:4px">Correct service: ${esc(oldLabel)}</div>
+      <p style="font-size:11px;color:var(--muted);margin:0 0 10px;line-height:1.5">Use this when the AE picked the wrong service. It replaces the line on this same order, marks the order Revised with your reason, and builds the right service's Trello card from its own template. No new signature is needed. For a service this can't handle, it will say so and you can Cancel and use a new IO.</p>
+      <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">Correct service</label>
+      <select id="correct-new-${esc(oldServiceId)}" onchange="adminCorrectRenderFields('${esc(orderId)}','${esc(oldServiceId)}')" style="${inp};margin-bottom:10px">${optionsHtml}</select>
+      <div id="correct-fields-${esc(oldServiceId)}"></div>
+      <label style="display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin:10px 0 4px">Reason</label>
+      <input type="text" id="correct-reason-${esc(oldServiceId)}" placeholder="e.g. AE selected the wrong service" style="${inp}"/>
+      <label style="display:flex;gap:8px;align-items:flex-start;margin:10px 0;font-size:11.5px;cursor:pointer">
+        <input type="checkbox" id="correct-confirm-${esc(oldServiceId)}" style="margin-top:2px"/>
+        <span>I confirmed the correct service with the AE.</span>
+      </label>
+      <div style="display:flex;gap:10px">
+        <button type="button" id="correct-confirm-btn-${esc(oldServiceId)}" onclick="adminConfirmCorrection('${esc(orderId)}','${esc(oldServiceId)}')" style="padding:7px 16px;border-radius:7px;background:var(--accent-dark);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Correction</button>
+        <button type="button" onclick="adminToggleCorrectPanel('${esc(orderId)}','${esc(oldServiceId)}')" style="padding:7px 16px;border-radius:7px;background:#fff;border:1.5px solid var(--border);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer">Cancel</button>
+      </div>
+    </div>`;
+  row.style.display = 'table-row';
+}
+
+function adminCorrectRenderFields(orderId, oldServiceId) {
+  const box = document.getElementById(`correct-fields-${oldServiceId}`);
+  if (!box) return;
+  const o = allOrders.find(x => x.id === orderId);
+  const id = document.getElementById(`correct-new-${oldServiceId}`)?.value;
+  const r = id ? CATALOG_ROWS[id] : null;
+  if (!o || !r) { box.innerHTML = ''; return; }
+  const oldItem = (o.line_items || []).find(li => li.service_id === oldServiceId) || {};
+  const model = adminCorrectModel(r);
+  const today = new Date().toISOString().slice(0, 10);
+  const start = String(oldItem.start_date || o.campaign_start || today).slice(0, 10);
+  const endDefault = String(oldItem.end_date || o.campaign_end || '').slice(0, 10);
+  const qtyOpts = r.pricing_mode === 'per_unit' ? adminCorrectQtyOptions(r) : null;
+  const unit = r.unit_label || 'unit';
+  let variants = r.tactic_variants;
+  if (typeof variants === 'string') { try { variants = JSON.parse(variants); } catch (e) { variants = null; } }
+  const price = model === 'spend' ? '' : adminCorrectEffectivePrice(o, r);
+  const priceLabel = model === 'spend' ? 'Monthly spend ($)' : (qtyOpts ? `Rate per ${unit} ($)` : (model === 'recurring' ? 'Monthly price ($)' : 'Price ($)'));
+  const inp = 'width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px';
+  const lbl = 'display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px';
+  const oninput = `oninput="adminCorrectUpdateTotal('${esc(oldServiceId)}')" onchange="adminCorrectUpdateTotal('${esc(oldServiceId)}')"`;
+  box.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:8px">
+      ${qtyOpts ? `<div><label style="${lbl}">${esc(unit === 'hr' ? 'Hours' : 'Quantity (' + unit + ')')}</label>
+        <select id="correct-qty-${esc(oldServiceId)}" ${oninput} style="${inp}">${qtyOpts.map(n => `<option value="${n}" ${n === 1 ? 'selected' : ''}>${n}</option>`).join('')}</select></div>` : ''}
+      <div><label style="${lbl}">${esc(priceLabel)}</label>
+        <input type="number" step="0.01" min="0" id="correct-price-${esc(oldServiceId)}" value="${price === '' ? '' : esc(price)}" ${oninput} style="${inp}"/></div>
+      ${Array.isArray(variants) && variants.length ? `<div><label style="${lbl}">Variant</label>
+        <select id="correct-variant-${esc(oldServiceId)}" style="${inp}"><option value="">— Pick one —</option>${variants.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select></div>` : ''}
+      <div><label style="${lbl}">${model === 'fee' ? 'Date' : 'Start date'}</label>
+        <input type="date" id="correct-start-${esc(oldServiceId)}" value="${esc(start)}" style="${inp}"/></div>
+      ${model === 'fee' ? '' : `<div><label style="${lbl}">End date${model === 'spend' ? '' : ' (optional)'}</label>
+        <input type="date" id="correct-end-${esc(oldServiceId)}" value="${esc(endDefault)}" style="${inp}"/></div>`}
+    </div>
+    <label style="${lbl}">Notes</label>
+    <input type="text" id="correct-notes-${esc(oldServiceId)}" value="${esc(oldItem.notes || '')}" style="${inp}"/>
+    <div id="correct-total-${esc(oldServiceId)}" style="font-size:12px;font-weight:700;margin-top:8px;color:var(--accent-dark)"></div>`;
+  adminCorrectUpdateTotal(oldServiceId);
+}
+
+function adminCorrectUpdateTotal(oldServiceId) {
+  const el = document.getElementById(`correct-total-${oldServiceId}`);
+  const id = document.getElementById(`correct-new-${oldServiceId}`)?.value;
+  const r = id ? CATALOG_ROWS[id] : null;
+  if (!el || !r) return;
+  const model = adminCorrectModel(r);
+  const qty = Number(document.getElementById(`correct-qty-${oldServiceId}`)?.value || 1);
+  const price = Number(document.getElementById(`correct-price-${oldServiceId}`)?.value || 0);
+  const money = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!(price > 0)) { el.textContent = ''; return; }
+  el.textContent = model === 'spend' ? `New amount: ${money(price)}/mo`
+    : model === 'recurring' ? `New amount: ${money(price * qty)}/mo`
+    : `New total: ${money(price * qty)} one-time${qty !== 1 ? ` (${qty} × ${money(price)})` : ''}`;
+}
+
+// Plain-English list of the people who belong on the new card, resolved to Trello
+// handles from the Admin data already loaded (same people the IO form tags).
+async function adminCorrectionCardHandles(o, newSvc) {
+  try { await Promise.all([ensureStaffRosterLoaded(), ensureStrategistsLoaded(), ensureAeRosterLoaded(), adminEnsureClientsLoaded()]); } catch (e) { /* use whatever loaded */ }
+  const group = allGroups.find(g => g.id === o.group_id) || {};
+  const client = (typeof ALL_CLIENTS !== 'undefined' ? ALL_CLIENTS : []).find(c => c.id === o.client_id) || {};
+  const staffHandle = name => name ? (ALL_STAFF.find(s => String(s.name || '').trim().toLowerCase() === String(name).trim().toLowerCase())?.am_trello_handle || '') : '';
+  const strategistHandle = sid => sid ? (ALL_STRATEGISTS.find(s => s.id === sid)?.trello_handle || '') : '';
+  const ae = ALL_AES.find(a => a.group_id === o.group_id && String(a.name || '').trim().toLowerCase() === String(o.ae_name || '').trim().toLowerCase());
+  let disc = newSvc.strategist_disciplines;
+  if (typeof disc === 'string') { try { disc = JSON.parse(disc); } catch (e) { disc = []; } }
+  disc = Array.isArray(disc) ? disc : [];
+  const handles = [ae?.trello_handle, group.am_trello_handle, group.additional_card_trello_handle];
+  if (disc.includes('digital')) {
+    handles.push(staffHandle(client.digital_strategist_name || group.digital_strategist_name));
+    handles.push(staffHandle(client.covering_strategist_name || group.covering_strategist_name));
+  }
+  if (disc.includes('social')) handles.push(strategistHandle(client.social_strategist_id || group.social_strategist_id));
+  if (disc.includes('web')) handles.push(strategistHandle(client.web_strategist_id || group.web_strategist_id));
+  handles.push(newSvc.koc_notify_trello_handle);
+  return [...new Set(handles.filter(Boolean).map(h => String(h).replace(/^@/, '').trim().toLowerCase()))];
+}
+
+// Builds the new service's card(s) the way the IO form does: its own template (single card
+// or whole list), dated title when the service asks for one, due date, services summary,
+// "Needs KOC" label on the first card, and the same people tagged. Everything here is
+// best-effort -- the database correction has ALREADY succeeded; failures come back as
+// plain warnings for the AM to finish by hand, never as an error.
+async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason) {
+  const warnings = [];
+  const tpost = async body => {
+    const res = await fetch(PROXY, { method: 'POST', headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return await res.json();
+  };
+  const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  let listId = null, bizName = o._client_name || '';
+  try {
+    const rows = await sb(`clients?id=eq.${o.client_id}&select=trello_list_id,name`);
+    listId = rows?.[0]?.trello_list_id || null; bizName = rows?.[0]?.name || bizName;
+  } catch (e) { /* handled below */ }
+  if (!listId) { warnings.push('This client has no Trello list yet, so the new card was not created. Add it by hand.'); return { cards: [], warnings }; }
+  const group = allGroups.find(g => g.id === o.group_id) || {};
+
+  let existing = [];
+  try { const r = await tpost({ target: 'trello_get_list_cards', list_id: listId }); if (Array.isArray(r)) existing = r; } catch (e) { /* duplicates just become possible */ }
+  const existingByName = new Map(existing.map(c => [norm(c.name), c]));
+
+  const wf = newSvc.workflow || newSvc.accounting_label || newSvc.label;
+  const riding = newSvc.trello_suffix_text ? ' + ' + newSvc.trello_suffix_text : '';
+  const range = newSvc.always_new_card ? adminFormatDateRangeForTitle(item.start_date, item.end_date) : '';
+  const dated = range ? ' ' + range : '';
+  const tail = riding + dated + ' — ' + bizName;
+  const variantName = item.tactic_variant
+    ? (auditVariantIsAlreadyComplete(item.tactic_variant) ? item.tactic_variant : `${sectionLabel(newSvc.section)}: ${item.tactic_variant}`)
+    : null;
+  const due = adminCampaignDueFields(item.end_date || null);
+
+  // which card(s) the template calls for
+  const plan = []; // { copyFrom: cardId|null, name }
+  const plain = () => plan.push({ copyFrom: null, name: wf + tail });
+  const ref = newSvc.trello_template_ref;
+  if (!ref) plain();
+  else if ((newSvc.trello_template_type || 'list') === 'card') {
+    try {
+      const t = await tpost({ target: 'trello_get_card', card_id: ref });
+      if (t?.id) plan.push({ copyFrom: t.id, name: (variantName || String(t.name || wf).trim()) + tail });
+      else { warnings.push('The service\'s Trello template card could not be read, so a plain card was made instead.'); plain(); }
+    } catch (e) { warnings.push('The service\'s Trello template could not be read, so a plain card was made instead.'); plain(); }
+  } else {
+    try {
+      const list = await tpost({ target: 'trello_get_list_cards', list_id: ref });
+      if (!Array.isArray(list)) throw new Error('not a list');
+      list.forEach(c => {
+        if (String(c.name || '').startsWith('🧪')) return;
+        const cn = String(c.name || '').trim();
+        const t = norm(cn);
+        if (t === 'io' || /^io\s*[-:]/.test(t)) return;
+        if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) return;
+        plan.push({ copyFrom: c.id, name: cn + tail });
+      });
+      if (!plan.length) plain();
+    } catch (e) { warnings.push('The service\'s Trello template list could not be read, so a plain card was made instead.'); plain(); }
+  }
+
+  // label + people, resolved once for every card made here
+  let kocLabelId = null, memberIds = [];
+  try {
+    if (item.requires_koc && group.trello_board_id) {
+      const labels = await tpost({ target: 'trello_get_labels', board_id: group.trello_board_id });
+      kocLabelId = Array.isArray(labels) ? (labels.find(l => norm(l.name) === 'needs koc')?.id || null) : null;
+      if (!kocLabelId) warnings.push('The board has no "Needs KOC" label, so the new card was not labelled.');
+    }
+  } catch (e) { warnings.push('Could not look up the "Needs KOC" label.'); }
+  try {
+    const handles = await adminCorrectionCardHandles(o, newSvc);
+    if (handles.length && group.trello_board_id) {
+      const members = await tpost({ target: 'trello_get_board_members', board_id: group.trello_board_id });
+      const byName = new Map((Array.isArray(members) ? members : []).map(m => [norm(m.username), m.id]));
+      memberIds = [...new Set(handles.map(h => byName.get(norm(h))).filter(Boolean))];
+      if (memberIds.length < handles.length) warnings.push('Some of the people who belong on this card are not members of the client\'s board, so they were not tagged.');
+    }
+  } catch (e) { warnings.push('Could not look up who to tag on the new card.'); }
+
+  const fmtD = s => s ? new Date(String(s).slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+  const money = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const shown = variantName || newSvc.accounting_label || newSvc.label;
+  const amount = Number(item.spend) > 0 ? `${money(item.spend)}/mo` : Number(item.recurring) > 0 ? `${money(item.recurring)}/mo`
+    : `${money(item.fee)} one-time${Number(item.qty) > 1 ? ` (${item.qty} × ${money(item.unit_fee)})` : ''}`;
+  const flight = newSvc.billing_type === 'one_time' ? `Flight: ${fmtD(item.start_date)}` : `Flight: ${fmtD(item.start_date)} to ${item.end_date ? fmtD(item.end_date) : 'Ongoing'}`;
+  const summary = `**${shown}**\n${amount}\n${flight}${item.notes ? `\nNotes: ${item.notes}` : ''}`;
+  const desc = `${summary}\n\n**Added via Correct Service** — replaces ${oldLabel} (${reason}). Corrected by ${currentAdminUser?.name || 'an AM'}, who confirmed the correct service with the AE. The intake forms for this service are filled in from the order in Admin.`;
+
+  const made = [];
+  let first = true;
+  for (const p of plan) {
+    try {
+      const reuse = existingByName.get(norm(p.name));
+      let cardId = reuse?.id || null;
+      if (!cardId) {
+        const created = p.copyFrom
+          ? await tpost({ target: 'trello_copy_card', card_id: p.copyFrom, list_id: listId, name: p.name, pos: 'bottom', ...due })
+          : await tpost({ target: 'trello_create_card', list_id: listId, name: p.name, desc: '', pos: 'bottom', ...due });
+        cardId = created?.id || null;
+        if (!cardId) { warnings.push(`The card "${p.name}" could not be created. Add it by hand.`); continue; }
+      }
+      made.push({ id: cardId, name: p.name, reused: !!reuse });
+      await tpost({ target: 'trello_add_comment', card_id: cardId, text: `📋 Service added by correction:\n\n${summary}` });
+      if (!reuse) await tpost({ target: 'trello_update_card', card_id: cardId, desc: desc.slice(0, 16000), ...due });
+      if (first && kocLabelId) { await tpost({ target: 'trello_attach_label', card_id: cardId, label_id: kocLabelId }); }
+      for (const mid of memberIds) { try { await tpost({ target: 'trello_add_member', card_id: cardId, member_id: mid }); } catch (e) { /* one tag failing is not worth stopping */ } }
+      first = false;
+    } catch (e) { warnings.push(`Something went wrong building "${p.name}": ${e.message}`); }
+  }
+  return { cards: made, warnings };
+}
+
+async function adminConfirmCorrection(orderId, oldServiceId) {
+  const btn = document.getElementById(`correct-confirm-btn-${oldServiceId}`);
+  if (btn?.disabled) return;
+  const restore = () => { if (btn) { btn.disabled = false; btn.textContent = 'Confirm Correction'; } };
+  if (btn) { btn.disabled = true; btn.textContent = 'Correcting…'; }
+  const fail = msg => { showToast(msg, 'error'); restore(); };
+  const o = allOrders.find(x => x.id === orderId);
+  const newId = document.getElementById(`correct-new-${oldServiceId}`)?.value;
+  const newSvc = newId ? CATALOG_ROWS[newId] : null;
+  if (!o || !newSvc) return fail('Pick the correct service first');
+  const model = adminCorrectModel(newSvc);
+  const qty = Number(document.getElementById(`correct-qty-${oldServiceId}`)?.value || 1);
+  const price = Number(document.getElementById(`correct-price-${oldServiceId}`)?.value || 0);
+  const start = document.getElementById(`correct-start-${oldServiceId}`)?.value || '';
+  const end = document.getElementById(`correct-end-${oldServiceId}`)?.value || '';
+  const variant = document.getElementById(`correct-variant-${oldServiceId}`)?.value || '';
+  const notes = document.getElementById(`correct-notes-${oldServiceId}`)?.value.trim() || '';
+  const reason = document.getElementById(`correct-reason-${oldServiceId}`)?.value.trim() || '';
+  const confirmed = !!document.getElementById(`correct-confirm-${oldServiceId}`)?.checked;
+  if (!(price > 0)) return fail('Enter the price or amount');
+  if (!start) return fail('Enter a date');
+  if (model === 'spend' && !end) return fail('Enter an end date for this campaign');
+  if (document.getElementById(`correct-variant-${oldServiceId}`) && !variant) return fail('Pick which variant this is');
+  if (reason.length < 3) return fail('Enter a reason');
+  if (!confirmed) return fail('Please confirm the correct service with the AE first');
+
+  const oldItem = (o.line_items || []).find(li => li.service_id === oldServiceId) || {};
+  const oldSvc = CATALOG_ROWS[oldServiceId] || {};
+  const oldLabel = oldItem.tactic_variant || oldSvc.accounting_label || oldSvc.label || oldItem.label || oldServiceId;
+  let result;
+  try {
+    result = await sb('rpc/admin_correct_order_service', { method: 'POST', body: JSON.stringify({
+      p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: orderId,
+      p_old_service_id: oldServiceId, p_new_service_id: newId, p_qty: qty, p_unit_amount: price,
+      p_start_date: start, p_end_date: end || null, p_tactic_variant: variant || null,
+      p_notes: notes, p_reason: reason, p_confirmed: true,
+    }) });
+  } catch (e) { return fail(adminPgMessage(e)); }
+
+  // mirror what the database just wrote so Order Detail is right without a reload
+  const idx = (o.line_items || []).findIndex(li => li.service_id === oldServiceId);
+  if (idx >= 0) o.line_items = o.line_items.map((li, i) => i === idx ? result.new_item : li);
+  o.is_revised = true;
+  const oldTotal = Number(oldItem.fee || 0) + Number(oldItem.recurring || 0) + Number(oldItem.spend || 0);
+  o.edit_history = [...(o.edit_history || []), { service_id: newId, field: 'service_correction', old_value: null,
+    new_value: JSON.stringify({ old_service_id: oldServiceId, old_label: oldLabel, new_service_id: newId, new_label: result.new_label, qty, unit_amount: price, model: result.model,
+      old_total: oldTotal, new_total: Number(result.new_item.fee || 0) + Number(result.new_item.recurring || 0) + Number(result.new_item.spend || 0), reason, confirmed_by: currentAdminUser?.name }),
+    edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
+
+  // Trello: say so on the wrong service's card and the IO card, then build the right card
+  const warnings = [];
+  const tpost = async body => { const res = await fetch(PROXY, { method: 'POST', headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return res; };
+  const oldCardId = oldSvc.workflow ? o.trello_card_ids?.[oldSvc.workflow] : null;
+  const ioCardId = o.trello_card_ids?.__io_card__;
+  const text = `🔁 Service corrected: ${oldLabel} → ${result.new_label}. Reason: ${reason}. Corrected by ${currentAdminUser?.name || 'an AM'}, who confirmed the correct service with the AE.${oldCardId ? ' This card is for the service that was replaced and can be archived.' : ''}`;
+  for (const cardId of [...new Set([oldCardId, ioCardId].filter(Boolean))]) {
+    try { await tpost({ target: 'trello_add_comment', card_id: cardId, text }); } catch (e) { warnings.push('Could not comment on an existing Trello card.'); }
+  }
+  let built = { cards: [], warnings: [] };
+  try { built = await adminBuildCorrectionCards(o, newSvc, result.new_item, oldLabel, reason); } catch (e) { warnings.push('The new Trello card could not be built: ' + e.message); }
+  warnings.push(...built.warnings);
+  if (built.cards[0]) {
+    const wfKey = newSvc.workflow || newId;
+    o.trello_card_ids = { ...(o.trello_card_ids || {}), [wfKey]: built.cards[0].id };
+    try {
+      await sb('rpc/admin_set_order_card_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: orderId, p_workflow: wfKey, p_card_id: built.cards[0].id }) });
+    } catch (e) { warnings.push('The new card was created but the order could not remember it. Link it by hand.'); }
+  }
+  // the Revised IO goes on the IO card only (same as Edit)
+  if (ioCardId) {
+    try {
+      const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
+      await tpost({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' });
+    } catch (e) { warnings.push('The revised IO PDF could not be attached to the IO card.'); }
+  } else warnings.push('No IO card was found on Trello, so nothing was commented there.');
+
+  showToast(warnings.length ? `Service corrected. ${warnings.length} thing${warnings.length === 1 ? '' : 's'} to finish by hand: ${warnings[0]}` : '✅ Service corrected', warnings.length ? 'error' : 'success');
+  if (warnings.length) console.warn('Correct Service follow-ups:', warnings);
+  viewOrderDetail(orderId);
+}
+
 function adminToggleSwapPanel(orderId) {
   const box = document.getElementById(`swap-panel-${orderId}`);
   if (!box) return;
