@@ -11868,7 +11868,7 @@ async function adminClientTrelloInfo(clientId) {
 // "Needs KOC" label on the first card, and the same people tagged. Everything here is
 // best-effort -- the database correction has ALREADY succeeded; failures come back as
 // plain warnings for the AM to finish by hand, never as an error.
-async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason) {
+async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason, ctx = {}) {
   const warnings = [];
   const tpost = async body => {
     const res = await fetch(PROXY, { method: 'POST', headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -11953,7 +11953,7 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason) {
     : `${money(item.fee)} one-time${Number(item.qty) > 1 ? ` (${item.qty} × ${money(item.unit_fee)})` : ''}`;
   const flight = newSvc.billing_type === 'one_time' ? `Flight: ${fmtD(item.start_date)}` : `Flight: ${fmtD(item.start_date)} to ${item.end_date ? fmtD(item.end_date) : 'Ongoing'}`;
   const summary = `**${shown}**\n${amount}\n${flight}${item.notes ? `\nNotes: ${item.notes}` : ''}`;
-  const desc = `${summary}\n\n**Added via Correct Service** — replaces ${oldLabel} (${reason}). Corrected by ${currentAdminUser?.name || 'an AM'}, who confirmed the correct service with the AE. The intake forms for this service are filled in from the order in Admin.`;
+  const desc = ctx.desc ? `${summary}\n\n${ctx.desc}` : `${summary}\n\n**Added via Correct Service** — replaces ${oldLabel} (${reason}). Corrected by ${currentAdminUser?.name || 'an AM'}, who confirmed the correct service with the AE. The intake forms for this service are filled in from the order in Admin.`;
 
   const made = [];
   let first = true;
@@ -11969,7 +11969,7 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason) {
         if (!cardId) { warnings.push(`The card "${p.name}" could not be created. Add it by hand.`); continue; }
       }
       made.push({ id: cardId, name: p.name, reused: !!reuse });
-      await tpost({ target: 'trello_add_comment', card_id: cardId, text: `📋 Service added by correction:\n\n${summary}` });
+      await tpost({ target: 'trello_add_comment', card_id: cardId, text: `${ctx.commentLead || '📋 Service added by correction:'}\n\n${summary}` });
       if (!reuse) await tpost({ target: 'trello_update_card', card_id: cardId, desc: desc.slice(0, 16000), ...due });
       if (first && kocLabelId) { await tpost({ target: 'trello_attach_label', card_id: cardId, label_id: kocLabelId }); }
       for (const mid of memberIds) { try { await tpost({ target: 'trello_add_member', card_id: cardId, member_id: mid }); } catch (e) { /* one tag failing is not worth stopping */ } }
@@ -12016,11 +12016,35 @@ async function adminCorrectionTrelloFollowUp(o, oldServiceId, newSvc, item, oldL
       if (res && res.ok === false) warnings.push('A Trello comment about the change could not be posted.');
     } catch (e) { warnings.push('A Trello comment about the change could not be posted.'); }
   }
+  // If the order or the client's Trello list already has a card for the right service (for
+  // example an ongoing service like Content Support), reuse it with a note instead of building
+  // a duplicate (2026-09-30, per Claire -- same rule as Swap). Several matches: build a new
+  // card and warn. The wrong service's own card is never the one reused.
   let built = { cards: [], warnings: [] };
-  try { built = await adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason); } catch (e) { warnings.push('The new Trello card could not be built: ' + e.message); }
+  const newKey = adminEffectiveWorkflow(newSvc) || newSvc.id;
+  let reuseId = o.trello_card_ids?.[newKey] || null;
+  if (!reuseId) {
+    try {
+      const ci = await adminClientTrelloInfo(o.client_id);
+      if (ci.listId) {
+        const hit = await adminFindTrelloCardForLine({ trello_list_id: ci.listId, name: ci.name }, { service_id: newSvc.id, tactic_label: newLabel });
+        if (hit.card && hit.card.id !== oldCardId) reuseId = hit.card.id;
+        else if (hit.matches.length > 1) warnings.push(`The client has more than one ${newLabel} card, so a new one was built. Check whether an existing card should be used instead.`);
+      }
+    } catch (e) { /* falls through to building */ }
+  }
+  if (reuseId) {
+    try {
+      const res = await tpost({ target: 'trello_add_comment', card_id: reuseId, text: `📋 Service added by correction (replacing ${oldLabel}). Reason: ${reason}. Corrected by ${currentAdminUser?.name || 'an AM'}.` });
+      if (res && res.ok === false) warnings.push('The existing card was found but the note could not be posted to it.');
+    } catch (e) { warnings.push('The existing card was found but the note could not be posted to it.'); }
+    built = { cards: [{ id: reuseId, reused: true }], warnings: [] };
+  } else {
+    try { built = await adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason); } catch (e) { warnings.push('The new Trello card could not be built: ' + e.message); }
+  }
   warnings.push(...built.warnings);
   if (built.cards[0]) {
-    const wfKey = adminEffectiveWorkflow(newSvc) || newSvc.id;
+    const wfKey = newKey;
     o.trello_card_ids = { ...(o.trello_card_ids || {}), [wfKey]: built.cards[0].id };
     try {
       await sb('rpc/admin_set_order_card_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: o.id, p_workflow: wfKey, p_card_id: built.cards[0].id }) });
@@ -12296,7 +12320,23 @@ async function adminConfirmSwap(orderId) {
   // and on the IO card too (2026-08-21 -- found in audit: Edit/Renew both did
   // this already, Cancel and Swap didn't, so an AM watching the IO card for
   // activity would silently miss a swap).
-  const endingCardId = endingSvc.workflow ? o?.trello_card_ids?.[endingSvc.workflow] : null;
+  // Card keys use the EFFECTIVE workflow (template-only services are keyed
+  // `__standalone__<id>`, not by the empty .workflow field); if the order doesn't know the
+  // card, find it by name in the client's list, and say so if it can't be found (2026-09-30).
+  const swapWarnings = [];
+  const endingLabel = endingSvc.accounting_label || endingSvc.label || endingId;
+  const endingKey = adminEffectiveWorkflow(endingSvc);
+  let endingCardId = endingKey ? o?.trello_card_ids?.[endingKey] : null;
+  if (!endingCardId && o) {
+    try {
+      const ci0 = await adminClientTrelloInfo(o.client_id);
+      if (ci0.listId) {
+        const hit = await adminFindTrelloCardForLine({ trello_list_id: ci0.listId, name: ci0.name }, { service_id: endingId, tactic_label: endingLabel });
+        endingCardId = hit.card?.id || null;
+      }
+    } catch (e) { /* warned below */ }
+  }
+  if (!endingCardId) swapWarnings.push(`Could not find the ${endingLabel} Trello card, so it has no note about the swap. Add one by hand.`);
   const ioCardId = o?.trello_card_ids?.__io_card__;
   const swapCardIds = [...new Set([endingCardId, ioCardId].filter(Boolean))];
   // The new line's real label (variant when picked) and end date, from the
@@ -12326,37 +12366,50 @@ async function adminConfirmSwap(orderId) {
     } catch (e) { console.warn('Could not post swap comment to card', cardId, ':', e.message); }
   }
 
-  // Plain new card for the starting tactic (per Claire's scope decision --
-  // no template resolution here).
+  // New tactic's card (2026-09-30, per Claire): if the order or the client's Trello list
+  // already has this tactic's card (a renewal), reuse it -- swap note + link, no duplicate.
+  // Otherwise build it from the service's template, like Correct Service does.
   try {
-    const clientRows = await sb(`clients?id=eq.${o.client_id}&select=trello_list_id,name`);
-    const listId = clientRows?.[0]?.trello_list_id;
-    const bizName = clientRows?.[0]?.name || o._client_name || '';
-    if (listId) {
-      // Card title carries the variant + date range like a form-created card
-      // (2026-09-25), so Renew's name-based lookup can find it later.
-      const dateRange = adminFormatDateRangeForTitle(effectiveDate, result.new_flight_end || null);
-      const cardName = `${newTacticLabel}${dateRange ? ' ' + dateRange : ''} — ${bizName}`;
-      const desc = `**Started via Swap Tactic**\nReplaces: ${endingSvc.accounting_label || endingSvc.label || endingId}\nEffective: ${pendingFmtDate(effectiveDate)}${result.new_flight_end ? `\nRuns through: ${pendingFmtDate(result.new_flight_end)}` : ''}\nMonthly budget: $${Number(budget).toLocaleString()}/mo\nFirst month: $${Number(result.starting_amount).toLocaleString()} (${result.starting_days} of ${result.total_days} days)`;
-      const createRes = await fetch(PROXY, {
-        method: 'POST',
-        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: 'trello_create_card', list_id: listId, name: cardName, desc, pos: 'bottom', ...adminCampaignDueFields(result.new_flight_end || null) }),
-      });
-      const card = await createRes.json();
-      if (card?.id && o) {
-        o.trello_card_ids = { ...(o.trello_card_ids || {}), [startingSvc.workflow || startingId]: card.id };
-        await sb('orders?id=eq.' + orderId, { method: 'PATCH', body: JSON.stringify({ trello_card_ids: o.trello_card_ids }), prefer: 'return=minimal' });
-      } else {
-        showToast('Swap completed, but the new Trello card could not be created — please add it by hand', 'error');
-      }
+    const wfKey = adminEffectiveWorkflow(startingSvc) || startingId;
+    const saveCardKey = async cardId => {
+      if (o) o.trello_card_ids = { ...(o.trello_card_ids || {}), [wfKey]: cardId };
+      try {
+        await sb('rpc/admin_set_order_card_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: orderId, p_workflow: wfKey, p_card_id: cardId }) });
+      } catch (e) { swapWarnings.push('The new card was created but the order could not remember it. Link it by hand.'); }
+    };
+    const startNote = `🔁 Started via Swap Tactic, replacing ${endingLabel}, effective ${pendingFmtDate(effectiveDate)}${runsThrough}. Monthly budget: $${Number(budget).toLocaleString()}/mo (by ${currentAdminUser?.name || 'AM'}).`;
+    let reuseId = o?.trello_card_ids?.[wfKey] || null;
+    const ci = await adminClientTrelloInfo(o.client_id);
+    if (!reuseId && ci.listId) {
+      const hit = await adminFindTrelloCardForLine({ trello_list_id: ci.listId, name: ci.name }, { service_id: startingId, tactic_label: newTacticLabel });
+      if (hit.card && hit.card.id !== endingCardId) reuseId = hit.card.id;
+      else if (hit.matches.length > 1) swapWarnings.push(`The client has more than one ${newTacticLabel} card, so a new one was built. Check whether an existing card should be used instead.`);
+    }
+    if (reuseId) {
+      try {
+        await fetch(PROXY, { method: 'POST', headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ target: 'trello_add_comment', card_id: reuseId, text: startNote }) });
+      } catch (e) { swapWarnings.push('The existing card was found but the note could not be posted to it.'); }
+      await saveCardKey(reuseId);
+    } else if (!ci.listId) {
+      showToast(ci.found
+        ? 'Swap completed, but this client has no Trello list on file — please add the new card by hand'
+        : 'Swap completed, but this client\'s Trello list could not be looked up — please add the new card by hand', 'error');
     } else {
-      showToast('Swap completed, but this client has no Trello list on file — please add the new card by hand', 'error');
+      const item = { service_id: startingId, tactic_variant: newLabel || null, spend: Number(budget) || 0, recurring: 0, fee: 0, qty: 1, unit_fee: 0, notes: '',
+        start_date: effectiveDate, end_date: result.new_flight_end || null, requires_koc: startingSvc.koc_requirement === 'required' };
+      const built = await adminBuildCorrectionCards(o, startingSvc, item, endingLabel, '', {
+        commentLead: '📋 Service started via Swap Tactic:',
+        desc: `**Started via Swap Tactic**\nReplaces: ${endingLabel}\nEffective: ${pendingFmtDate(effectiveDate)}${result.new_flight_end ? `\nRuns through: ${pendingFmtDate(result.new_flight_end)}` : ''}\nFirst month: $${Number(result.starting_amount).toLocaleString()} (${result.starting_days} of ${result.total_days} days)`,
+      });
+      swapWarnings.push(...built.warnings);
+      if (built.cards[0]) await saveCardKey(built.cards[0].id);
+      else showToast('Swap completed, but the new Trello card could not be created — please add it by hand', 'error');
     }
   } catch (e) {
     console.warn('Could not create new tactic card:', e.message);
     showToast('Swap completed, but the new Trello card could not be created — please add it by hand', 'error');
   }
+  if (swapWarnings.length) showToast('Swap completed. ' + swapWarnings.join(' '), 'error');
 
   document.getElementById(`swap-panel-${orderId}`).style.display = 'none';
   showToast(`✅ Swap complete — ${result.ending_days} days to the old tactic, ${result.starting_days} to the new one`);

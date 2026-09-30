@@ -30990,3 +30990,23 @@ reads `clients?id=eq…` directly (same closed-table read) and looks up the endi
 card by `endingSvc.workflow` / saves the new card under `startingSvc.workflow ||
 id` (same standalone-service gap), and saves the card id with a direct write that
 expires after 2 hours. Asked Claire whether to fix Swap the same way.
+
+---
+
+## 2026-09-30 — Swap Tactic: same three Trello fixes as Correct Service
+
+**Found:** Swap Tactic had the same three latent bugs found in Correct Service's first real use (Greenline). (1) It read the closed `clients` table directly for the Trello list, which answers with an empty result (not an error), so the new card was never built and the AM saw "no Trello list on file". (2) It looked up the ending service's card by the plain `.workflow` field, so template-only services (keyed `__standalone__<id>`) got no swap note on their own card. (3) It saved the new card id with a direct PATCH to `orders`, which the anon policy stops allowing ~2 hours after the order is created.
+
+**Fixed (admin/index.html, `adminConfirmSwap` only):** client list/name now come from `adminClientTrelloInfo` (RPC-backed list; separate messages for "no list on file" vs "could not look up"); the ending card is found by `adminEffectiveWorkflow`, then by name in the client's Trello list, and a visible warning appears if neither finds it; the new card id is saved through `admin_set_order_card_id` under `adminEffectiveWorkflow(startingSvc) || startingId`. The new card is still a plain card (Claire's earlier scope decision). The database function `admin_swap_tactic` is untouched.
+
+**Verified:** headless browser test driving the real `adminConfirmSwap` with the closed `clients` table returning [], a stale client cache, and a template-only ending service. New code: note reaches the ending card (known and found-by-name cases) plus the IO card, the new card is created in the client's list, id saved via RPC, zero direct `orders` writes. The same test against the previous file fails (no note on the ending card, no new card, "no Trello list" toast). **Not verifiable here:** real Trello — first real Swap is the live check. Not on the submission path; public form and SQL unchanged.
+
+### 2026-09-30 (later) — Swap: template card, or reuse the existing card on a renewal
+
+**Asked by Claire** (renewal rule chosen: reuse the existing card). Swap no longer always makes a plain card. Order of decisions for the NEW tactic's card: (1) the order already has a card for it → reuse; (2) else exactly one card for that tactic (+ client name, date ranges ignored, same matcher Renew uses) in the client's Trello list, and it isn't the ending tactic's card → reuse; (3) else build it from the service's Trello template like Correct Service (template card/list, KOC label if the service requires KOC, same people tagged, due date), plain card if the service has no template. Reusing = swap note on that card + link saved to the order; nothing new created. More than one match → new card built plus a visible "check whether an existing card should be used" warning. Shared builder `adminBuildCorrectionCards` got an optional `ctx` for Swap's wording; Correct Service output unchanged.
+
+**Verified:** headless browser test of five cases (new tactic → template copy; ending card found by name; renewal with an old dated card → reused, nothing created; two matches → new card + warning; order already has the card → reused). Not verifiable here: real Trello templates/names. **Assumption to confirm live:** "Needs KOC" is applied when the service's catalog setting is "required". Not on the submission path.
+
+### 2026-09-30 (later) — Correct Service: reuse the right service's existing card (same rule as Swap)
+
+Asked "just in case". Correct already built from the template and reused an identical-title card; it now also reuses an existing card for the RIGHT service the way Swap does: the order's own card for it, else the single matching card in the client's Trello list (dates in title ignored; never the replaced service's own card), with a note and link saved via `admin_set_order_card_id`. Several matches → new template card plus a "check whether an existing card should be used" warning. Applies to the Finish Trello card recovery button too. **Verified:** headless test cases D/E/F (reuse by list match, two matches, order already holds card) pass and fail on the previous file; earlier cases A–C unchanged and passing. Real Trello not testable here. Not on the submission path.
