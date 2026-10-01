@@ -994,13 +994,29 @@ const REPORT_COLUMN_SYNONYMS = {
 // the line even existing can never spuriously flag it. edit_history now
 // rides along on strategist_get_campaign_lines' own order join (as
 // order_edit_history), so no second fetch is needed.
+// Unreviewed order changes for ONE line (same rule the banner above uses).
+function strategistLineUnreviewedChanges(l) {
+  const history = Array.isArray(l.order_edit_history) ? l.order_edit_history : [];
+  const cutoff = l.order_change_acknowledged_at || l.created_at;
+  return history.filter(h => h.service_id === l.service_id && (!cutoff || new Date(h.edited_at) > new Date(cutoff)));
+}
 function strategistFlaggedOrderChanges() {
   return ALL_CAMPAIGN_LINES.map(l => {
-    const history = Array.isArray(l.order_edit_history) ? l.order_edit_history : [];
-    const cutoff = l.order_change_acknowledged_at || l.created_at;
-    const entries = history.filter(h => h.service_id === l.service_id && (!cutoff || new Date(h.edited_at) > new Date(cutoff)));
+    const entries = strategistLineUnreviewedChanges(l);
     return entries.length ? { line: l, entries } : null;
   }).filter(Boolean);
+}
+// Small badges beside a client's name so a cancelled or revised campaign is spotted at a
+// glance without opening it or relying on the banner at the top (2026-10-01, per Claire).
+function strategistLineBadgesHtml(l) {
+  let html = '';
+  if (l.status === 'cancelled') {
+    html += `<span title="Cancelled in Admin${l.cancel_effective_date ? ' (effective ' + esc(l.cancel_effective_date) + ')' : ''}" style="font-size:9px;font-weight:700;background:#FEE2E2;color:#991B1B;padding:2px 6px;border-radius:10px;margin-left:5px;white-space:nowrap">CANCELLED</span>`;
+  }
+  if (strategistLineUnreviewedChanges(l).length) {
+    html += `<span title="This order was changed — see the Order Changes banner at the top for details" style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 6px;border-radius:10px;margin-left:5px;white-space:nowrap">REVISED</span>`;
+  }
+  return html;
 }
 
 function renderOrderChangesBanner() {
@@ -2784,7 +2800,7 @@ function renderSetupPanel(l) {
     // in right now" -- matches Accounting's own .acct-detail-card treatment).
     return `<div style="border:1px solid var(--border);border-radius:18px;padding:16px 18px;margin-bottom:16px;background:#fff;box-shadow:var(--shadow-lg)">
       <div onclick="strategistToggleSetupPanel('${l.id}')" role="button" tabindex="0" aria-expanded="${isExpanded}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistToggleSetupPanel('${l.id}')}" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${isExpanded ? '10px' : '0'};cursor:pointer">
-        <h3 style="display:inline;margin:0;font-size:13.5px;font-weight:700"><span aria-hidden="true" style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</h3>
+        <h3 style="display:inline;margin:0;font-size:13.5px;font-weight:700"><span aria-hidden="true" style="display:inline-block;width:14px;color:var(--muted)">${isExpanded ? '▾' : '▸'}</span>Campaign Setup — ${esc(client)} / ${esc(strategistTacticDisplay(l))}</h3>${strategistLineBadgesHtml(l)}
         <div style="display:flex;align-items:center;gap:8px">
           ${l.flight_start ? `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--light);color:var(--muted);white-space:nowrap">${strategistFormatFlightRange(l.flight_start, l.flight_end)}</span>` : ''}
           ${l.last_renewed_at ? `<span title="Renewed ${esc(new Date(l.last_renewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}${l.last_renewed_previous_end_date ? ` — previously ended ${esc(new Date(l.last_renewed_previous_end_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}` : ''}" style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#DBEAFE;color:#1E40AF;white-space:nowrap">↻ Renewed</span>` : ''}
@@ -3541,7 +3557,7 @@ function renderMainTable(lines) {
         <td style="padding:9px 10px">${actualPerf != null ? Number(actualPerf).toLocaleString() + ' ' + goal.unit : '—'}</td>
         <td style="padding:9px 10px">${pacingPillHtml(perfPacing)}</td>`;
       html += `<tr onclick="strategistSelectLine('${l.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();strategistSelectLine('${l.id}')}" style="cursor:pointer;border-bottom:1px solid var(--border);${selected ? 'background:var(--light)' : ''}">
-        <td style="padding:9px 10px"><strong>${esc(strategistDisplayClientName(l))}</strong></td>
+        <td style="padding:9px 10px"><strong>${esc(strategistDisplayClientName(l))}</strong>${strategistLineBadgesHtml(l)}</td>
         <td style="padding:9px 10px">${esc(strategistTacticDisplay(l))}${cpmOverrideBadgeHtml(l)}</td>
         ${platformCellHtml}
         <td style="padding:9px 10px;max-width:110px">${strategistFormatFlightRange(l.flight_start, l.flight_end)}${l.last_renewed_at ? ` <span title="Renewed ${esc(new Date(l.last_renewed_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}${l.last_renewed_previous_end_date ? ` — previously ended ${esc(new Date(l.last_renewed_previous_end_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}))}` : ''}" style="font-size:9px;font-weight:700;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;white-space:nowrap;margin-left:4px">↻</span>` : ''}</td>

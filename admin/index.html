@@ -9555,6 +9555,7 @@ async function notifyRequesterOfBatchResolution(batchRows) {
   }
 }
 
+let ADMIN_ORDER_CANCEL = {};   // order id -> { cancelled, total } service counts, for the orders-list badges
 async function loadAdminOrders() {
   const el = document.getElementById('admin-orders-table');
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading orders…</p>';
@@ -9579,6 +9580,16 @@ async function loadAdminOrders() {
     }) || [];
     loaded.forEach(o => { o._client_name = o._client_name || '(unknown)'; });
     allOrders = loaded;
+    // Which orders have cancelled services (2026-10-01, per Claire) -- one read for the whole
+    // list. Best-effort: if it fails the list still renders, just without Cancelled badges.
+    ADMIN_ORDER_CANCEL = {};
+    try {
+      const rows = await sb('rpc/admin_get_orders_cancel_summary', {
+        method: 'POST',
+        body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_days: 90 })
+      });
+      (Array.isArray(rows) ? rows : []).forEach(r => { ADMIN_ORDER_CANCEL[r.order_id] = { cancelled: Number(r.cancelled_count) || 0, total: Number(r.total_count) || 0 }; });
+    } catch (e) { console.warn('Could not load cancellation summary for the orders list:', e.message); }
     // Populate group filter
     const groupSelect = document.getElementById('orders-filter-group');
     const visibleGroupIds = [...new Set(allOrders.map(o => o.group_id).filter(Boolean))];
@@ -9765,10 +9776,18 @@ function renderAdminOrders() {
       const helpBadge = o.needs_am_help
         ? '<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 6px;border-radius:10px;margin-left:5px">AM HELP</span>'
         : '';
+      const cx = ADMIN_ORDER_CANCEL[o.id];
+      const cancelBadge = !cx || !cx.cancelled ? ''
+        : cx.cancelled >= cx.total
+          ? '<span title="Every service on this order has been cancelled" style="font-size:9px;font-weight:700;background:#FEE2E2;color:#991B1B;padding:2px 6px;border-radius:10px;margin-left:5px;white-space:nowrap">CANCELLED</span>'
+          : `<span title="${cx.cancelled} of ${cx.total} services on this order have been cancelled" style="font-size:9px;font-weight:700;background:#FEE2E2;color:#991B1B;padding:2px 6px;border-radius:10px;margin-left:5px;white-space:nowrap">PARTLY CANCELLED (${cx.cancelled} of ${cx.total})</span>`;
+      const revisedBadge = o.is_revised
+        ? '<span title="This order has been edited, renewed, swapped or corrected since it was submitted" style="font-size:9px;font-weight:700;background:#FDEDEC;color:#92300B;padding:2px 6px;border-radius:10px;margin-left:5px;white-space:nowrap">REVISED</span>'
+        : '';
       return `<tr style="border-bottom:1px solid var(--border)">
         <td style="padding:9px 10px;color:var(--muted)">${fmtDate(o.created_at)}</td>
         <td style="padding:9px 10px"><strong>${esc(groupNameById[o.group_id] || '—')}</strong></td>
-        <td style="padding:9px 10px">${esc(o._client_name || '—')}${helpBadge}</td>
+        <td style="padding:9px 10px">${esc(o._client_name || '—')}${helpBadge}${cancelBadge}${revisedBadge}</td>
         <td style="padding:9px 10px;color:var(--muted)">${esc(o.ae_name || '—')}</td>
         <td style="padding:9px 10px;text-align:right;font-weight:600">${fmtMoney(oneTime)}</td>
         <td style="padding:9px 10px;text-align:right;font-weight:600">${monthly ? fmtMoney(monthly) + '/mo' : ''}${monthly && varyingSpendTotal ? '<br>' : ''}${varyingSpendTotal ? `<span style="font-weight:400;color:var(--muted);font-size:11px">${fmtMoney(varyingSpendTotal)} total (varies)</span>` : (!monthly ? '—' : '')}</td>
