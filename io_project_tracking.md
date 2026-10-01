@@ -31042,3 +31042,14 @@ Removed by exact line id (`aa5e3e7b…`, `85aa0e5f…`, `6da88036…`) with a gu
 ### 2026-10-01 (later) — Merged; State Farm cleanup SQL run
 
 Claire merged the Strategist change (cancelled lines show under Complete) and ran the State Farm cleanup SQL. Backups remain in `campaign_lines_statefarm_backup_20261001` / `campaign_months_statefarm_backup_20261001`. Live checks still to confirm: State Farm SEM shows under Strategist's Complete tab for September; Accounting shows only the Sep SEM row (no $1 / $200). Still open: count of other cancelled lines with leftover future months (read-only query, not yet run); Kim's ruling on how Accounting treats cancelled lines.
+
+---
+
+## 2026-10-01 — Cancelled / Revised badges: Admin orders list + Strategist (Claire)
+
+**Asked:** easy-to-spot cancelled/revised markers without opening an order, and on Strategist in case the Order Changes banner is missed. **Built:**
+- **Admin orders list** (`admin/index.html`): beside the client name — red CANCELLED when every service on the order is cancelled, red PARTLY CANCELLED (n of m) when some are, amber-brown REVISED when `is_revised` (same flag/color family as the Order Detail pill). Revised needs no new data. Cancelled needs one new read-only function, **`admin_get_orders_cancel_summary`** (`scratchpad/admin-orders-cancel-summary.sql`; counts cancelled vs total services per order for the last 90 days, ignoring hosting/setup-fee lines like `admin_get_order_campaign_status`). Until Claire runs it, the list works exactly as before and just shows Revised badges (load is best-effort, failure only logs).
+- **Strategist** (`strategist/index.html`): CANCELLED (status `cancelled`, shown under Complete) and REVISED (unreviewed order changes — the same rule as the banner, so the badge disappears when the strategist reviews it) next to the client name in the main table and in Campaign Setup cards. No SQL; data already on the lines.
+- **Not done:** Accounting (no marker there yet — not asked).
+
+**Verified:** headless browser test of both pages: Admin list shows CANCELLED / PARTLY CANCELLED (1 of 3) / REVISED correctly and still renders (Revised only) if the summary function is missing; Strategist badges for cancelled, revised, both, already-reviewed (none) and plain (none), inside the Complete-tab table. SQL function executed in local Postgres: counts right, setup-fee line ignored, old (200-day) order excluded, bad password refused. Not verified: live data. Not on the submission path (read-only function; Admin and Strategist pages only).
