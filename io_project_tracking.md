@@ -31010,3 +31010,31 @@ expires after 2 hours. Asked Claire whether to fix Swap the same way.
 ### 2026-09-30 (later) — Correct Service: reuse the right service's existing card (same rule as Swap)
 
 Asked "just in case". Correct already built from the template and reused an identical-title card; it now also reuses an existing card for the RIGHT service the way Swap does: the order's own card for it, else the single matching card in the client's Trello list (dates in title ignored; never the replaced service's own card), with a note and link saved via `admin_set_order_card_id`. Several matches → new template card plus a "check whether an existing card should be used" warning. Applies to the Finish Trello card recovery button too. **Verified:** headless test cases D/E/F (reuse by list match, two matches, order already holds card) pass and fail on the previous file; earlier cases A–C unchanged and passing. Real Trello not testable here. Not on the submission path.
+
+---
+
+## 2026-09-30 — Status after merge (Claire)
+
+- Swap Tactic and Correct Service Trello changes merged to `main`. Greenline: "Finish Trello card" worked; **Greenline is done** (still by hand: tell Carol Oren the kickoff call isn't needed, archive the old Trello card).
+- First real order after the keys (Champion Lanes, Shake Broadcasting + Digital) checked with a read-only query: client/group/AE right, Trello ids saved, SEO lines as designed, Facebook line extended by the trigger's renewal handling (kept Apr 1 start, 12 months × $600). Nothing wrong. Note: nothing records whether a submission used a key, so this can't prove key use.
+- **Keys:** all groups' keys are created and placed in their iframes. Claire is waiting a few days before the lockdown. **Lockdown SQL + rollback not yet built/handed** — build only when Claire says go. Still open: Peggy's first email sign-in → login part 2 SQL; AMs' decision on Companion change-request email recipients; strategists fixing Creative Surfaces flight dates.
+
+---
+
+## 2026-10-01 — Removed 3 pending Campaign Setup lines for cancelled clients (Samantha's request)
+
+Samantha Escalante asked for pending campaigns removed from the strategist portal for clients that had submitted cancellation orders: Johnson Seamless Gutters (Location Targeting: Event, EventGeo and EventAud, CF Digital) and Balanced Bodyworks (SEM, Ohana). Read-only preview first: all three were `pending`, manual imports (no order link), no actuals or confirmations on any month, setup overrides only on two. Balanced's flight ended before it started (mistyped year). Johnson's LLO line is active and was deliberately kept.
+
+Removed by exact line id (`aa5e3e7b…`, `85aa0e5f…`, `6da88036…`) with a guarded block: backs up first to `campaign_lines_removed_backup_20261001` and `campaign_months_removed_backup_20261001` (RLS on), refuses if any line isn't pending or any month has actuals/confirmation, rolls back if the count isn't 3. Claire ran it 2026-10-01. Restore a row: `insert into campaign_lines select * from campaign_lines_removed_backup_20261001 where id = …` (same for months by `campaign_line_id`).
+
+**Verified:** executed the exact file in local Postgres across normal run, real-numbers refusal, not-pending refusal and a blocking foreign key (nothing deleted in the refusals; LLO kept every time). **Not verified here:** the live row counts Claire saw — she confirmed it ran. Not on the submission path. Open: the AM-side question of why these cancellations never marked the lines cancelled (they were manual imports with no order, so the Cancel button had no order to act on).
+
+---
+
+## 2026-10-01 — State Farm (Ross Hoekstra) cancellation IO cleanup + cancelled lines now show under Complete in Strategist
+
+**State Farm:** an AE used the IO form to cancel SEM ("$1 whole campaign total"). The order trigger's renewal matching merged it into the client's real SEM line (started Sep 2, Sep actual $33.24) and the form auto-added the $200 SEM setup fee line. Claire cancelled both in Admin; Accounting still showed $1 and $200 because Accounting never hides `cancelled` lines and Admin Cancel doesn't remove future months. Preview first showed the SEM line held real spend → NOT deleted. Cleanup SQL (Claire's yes to all three): keep SEM + Sep; remove SEM Oct–Feb months (5) and the Setup Fee line + its month; guarded, backed up to `campaign_lines_statefarm_backup_20261001` / `campaign_months_statefarm_backup_20261001`; tested locally across 6 cases (incl. real-number/extra-month/not-cancelled/September-missing refusals and an FK block). File: `scratchpad/cleanup-state-farm-cancellation-20261001.sql`. Claire to confirm it ran.
+
+**Strategist (code change, `strategist/index.html`):** a line with status `cancelled` matched none of the four tabs, so it vanished from Strategist for every month, including months it ran. Now `strategistEffectiveStatus` reads `cancelled` as Complete: the line shows under Complete in the months inside its flight dates (flight window rule unchanged — it won't show after its end month). The detail panel's status dropdown is disabled for cancelled lines with a "Cancelled in Admin" note so it can't be flipped by accident. **Verified:** headless test (September shows under Complete and in search, not after/before its flight, active lines unchanged, dropdown disabled/selected) passes and fails on the previous file. Not on the submission path; no SQL.
+
+**Open (not started, Kim/strategists):** Admin Cancel leaves future months behind on any cancelled line (count with a read-only query before deciding); Accounting still has no special handling for `cancelled`. Also noted: a cancellation submitted through the IO form merges into the existing line and re-points it at the cancellation order.

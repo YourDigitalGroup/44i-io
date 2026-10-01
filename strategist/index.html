@@ -2575,6 +2575,10 @@ function strategistHistoricalStatus(line, monthDate) {
 // specific scheduled month.
 function strategistEffectiveStatus(line, monthDate) {
   const historicalStatus = strategistHistoricalStatus(line, monthDate);
+  // A line cancelled in Admin has status 'cancelled', which no tab matched, so it vanished
+  // from this portal entirely -- even for months it ran (2026-10-01, State Farm SEM). It
+  // reads as Complete here: ended for good, still visible in the months it was active.
+  if (historicalStatus === 'cancelled') return 'complete';
   if (historicalStatus !== 'active') return historicalStatus;
   return strategistMonthPaused(line.id, monthDate) ? 'paused' : 'active';
 }
@@ -3701,11 +3705,12 @@ function renderStrategistDetailPanel() {
         <input type="checkbox" ${l.has_addl_targeting ? 'checked' : ''} onchange="strategistSaveLine('${l.id}', {has_addl_targeting: this.checked})"/> + Addl. Targeting
       </label>` : ''}
       <label class="lbl" style="margin:0" for="status-select-${l.id}">Status</label>
-      <select id="status-select-${l.id}" onchange="strategistOpenStatusChangeReason('${l.id}', this.value, '${l.status}')" style="padding:5px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px;font-weight:600">
+      <select id="status-select-${l.id}" ${l.status === 'cancelled' ? 'disabled' : ''} onchange="strategistOpenStatusChangeReason('${l.id}', this.value, '${l.status}')" style="padding:5px 8px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:12.5px;font-weight:600">
         <option value="active" ${l.status === 'active' ? 'selected' : ''}>Active</option>
         <option value="paused" ${l.status === 'paused' ? 'selected' : ''}>Paused</option>
-        <option value="complete" ${l.status === 'complete' ? 'selected' : ''}>Complete</option>
+        <option value="complete" ${l.status === 'complete' || l.status === 'cancelled' ? 'selected' : ''}>Complete</option>
       </select>
+      ${l.status === 'cancelled' ? `<span style="font-size:11px;color:var(--muted)">Cancelled in Admin${l.cancel_effective_date ? ' (effective ' + esc(l.cancel_effective_date) + ')' : ''} — status can't be changed here.</span>` : ''}
       <span style="font-size:11px;color:var(--muted)">Pausing moves this campaign to the Paused tab; switch it back to Active to pick up where you left off.</span>
       ${l.status === 'active' && strategistMonthPaused(l.id, strategistCurrentMonth) ? `<span style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;background:#FEF3C7;color:#92400E">⏸ Scheduled paused this month</span>` : ''}
     </div>
