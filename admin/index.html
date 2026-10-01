@@ -1403,6 +1403,10 @@
                 <option value="owner">Owner</option>
               </select>
             </div>
+            <div>
+              <label class="lbl" for="admin-ae-sells">Writes orders <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— untick for a GM or Owner who should not appear in the IO form's AE picker</span></label>
+              <label style="display:flex;align-items:center;gap:8px;padding:9px 0;font-size:13px"><input type="checkbox" id="admin-ae-sells" checked/> Appears in the AE picker</label>
+            </div>
           </div>
           <div style="display:flex;gap:10px">
             <button onclick="adminSaveAe()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save AE</button>
@@ -4651,7 +4655,7 @@ function renderAdminAeList() {
       <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(a.trello_handle || '—')}</td>
       <td style="padding:8px 10px;font-size:11px">${esc(a.email || '—')}</td>
       <td style="padding:8px 10px;font-size:11px">${esc(a.market || '—')}</td>
-      <td style="padding:8px 10px;font-size:11px">${esc(AE_ROLE_LABELS[a.role] || 'AE')}</td>
+      <td style="padding:8px 10px;font-size:11px">${esc(AE_ROLE_LABELS[a.role] || 'AE')}${a.sells === false ? ' <span style="font-size:9px;font-weight:700;background:#E5E7EB;color:#4B5563;padding:1px 6px;border-radius:8px">NOT IN PICKER</span>' : ''}</td>
       <td style="padding:8px 10px">${groupName}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
     </tr>`;
@@ -4681,6 +4685,7 @@ function adminNewAe() {
   document.getElementById('admin-ae-email').value = '';
   document.getElementById('admin-ae-market').value = '';
   document.getElementById('admin-ae-role').value = 'ae';
+  document.getElementById('admin-ae-sells').checked = true;
   populateAeGroupDropdown(null);
   document.getElementById('admin-ae-form').style.display = 'block';
   document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
@@ -4696,6 +4701,7 @@ function adminEditAe(id) {
   document.getElementById('admin-ae-email').value = a.email || '';
   document.getElementById('admin-ae-market').value = a.market || '';
   document.getElementById('admin-ae-role').value = ['ae', 'gm', 'owner'].includes(a.role) ? a.role : 'ae';
+  document.getElementById('admin-ae-sells').checked = a.sells !== false;
   populateAeGroupDropdown(a.group_id);
   document.getElementById('admin-ae-form').style.display = 'block';
   document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
@@ -4713,10 +4719,11 @@ async function adminSaveAe() {
   const market = document.getElementById('admin-ae-market').value.trim();
   const groupId = document.getElementById('admin-ae-group').value;
   const role = document.getElementById('admin-ae-role').value || 'ae';
+  const sells = document.getElementById('admin-ae-sells').checked;
   if (!name) { showToast('Name is required', 'error'); return; }
   if (!groupId) { showToast('Group is required', 'error'); return; }
 
-  const payload = { name, trello_handle: trelloHandle || null, email: email || null, market: market || null, group_id: groupId, role };
+  const payload = { name, trello_handle: trelloHandle || null, email: email || null, market: market || null, group_id: groupId, role, sells };
   if (isNew) payload.active = true;
   try {
     await sb('rpc/admin_save_ae', {
