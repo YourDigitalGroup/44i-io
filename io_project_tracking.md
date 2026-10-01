@@ -31018,3 +31018,13 @@ Asked "just in case". Correct already built from the template and reused an iden
 - Swap Tactic and Correct Service Trello changes merged to `main`. Greenline: "Finish Trello card" worked; **Greenline is done** (still by hand: tell Carol Oren the kickoff call isn't needed, archive the old Trello card).
 - First real order after the keys (Champion Lanes, Shake Broadcasting + Digital) checked with a read-only query: client/group/AE right, Trello ids saved, SEO lines as designed, Facebook line extended by the trigger's renewal handling (kept Apr 1 start, 12 months × $600). Nothing wrong. Note: nothing records whether a submission used a key, so this can't prove key use.
 - **Keys:** all groups' keys are created and placed in their iframes. Claire is waiting a few days before the lockdown. **Lockdown SQL + rollback not yet built/handed** — build only when Claire says go. Still open: Peggy's first email sign-in → login part 2 SQL; AMs' decision on Companion change-request email recipients; strategists fixing Creative Surfaces flight dates.
+
+---
+
+## 2026-10-01 — Removed 3 pending Campaign Setup lines for cancelled clients (Samantha's request)
+
+Samantha Escalante asked for pending campaigns removed from the strategist portal for clients that had submitted cancellation orders: Johnson Seamless Gutters (Location Targeting: Event, EventGeo and EventAud, CF Digital) and Balanced Bodyworks (SEM, Ohana). Read-only preview first: all three were `pending`, manual imports (no order link), no actuals or confirmations on any month, setup overrides only on two. Balanced's flight ended before it started (mistyped year). Johnson's LLO line is active and was deliberately kept.
+
+Removed by exact line id (`aa5e3e7b…`, `85aa0e5f…`, `6da88036…`) with a guarded block: backs up first to `campaign_lines_removed_backup_20261001` and `campaign_months_removed_backup_20261001` (RLS on), refuses if any line isn't pending or any month has actuals/confirmation, rolls back if the count isn't 3. Claire ran it 2026-10-01. Restore a row: `insert into campaign_lines select * from campaign_lines_removed_backup_20261001 where id = …` (same for months by `campaign_line_id`).
+
+**Verified:** executed the exact file in local Postgres across normal run, real-numbers refusal, not-pending refusal and a blocking foreign key (nothing deleted in the refusals; LLO kept every time). **Not verified here:** the live row counts Claire saw — she confirmed it ran. Not on the submission path. Open: the AM-side question of why these cancellations never marked the lines cancelled (they were manual imports with no order, so the Cancel button had no order to act on).
