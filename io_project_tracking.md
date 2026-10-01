@@ -31053,3 +31053,7 @@ Claire merged the Strategist change (cancelled lines show under Complete) and ra
 - **Not done:** Accounting (no marker there yet — not asked).
 
 **Verified:** headless browser test of both pages: Admin list shows CANCELLED / PARTLY CANCELLED (1 of 3) / REVISED correctly and still renders (Revised only) if the summary function is missing; Strategist badges for cancelled, revised, both, already-reviewed (none) and plain (none), inside the Complete-tab table. SQL function executed in local Postgres: counts right, setup-fee line ignored, old (200-day) order excluded, bad password refused. Not verified: live data. Not on the submission path (read-only function; Admin and Strategist pages only).
+
+### 2026-10-01 (later) — Badges merged; `admin_get_orders_cancel_summary` run
+
+Claire merged the Cancelled/Revised badge change and ran the new read-only function. Live check pending: Admin orders list shows CANCELLED on State Farm (Ross Hoekstra) and REVISED where expected; Strategist rows show the badges.
