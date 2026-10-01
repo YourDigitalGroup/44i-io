@@ -1395,6 +1395,14 @@
               <label class="lbl" for="admin-ae-market">Market <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— used in the IO submission email instead of the client's city, for AE reporting</span></label>
               <input type="text" id="admin-ae-market" placeholder="e.g. Southeast" style="width:100%;padding:9px 11px;border-radius:7px;border:1px solid var(--border);font-size:13px"/>
             </div>
+            <div>
+              <label class="lbl" for="admin-ae-role">Role <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— AE sells; GM runs the sales team; Owner owns the group. Fourge Playbook reads this for its sign-in and scoreboard</span></label>
+              <select id="admin-ae-role" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px;background:#fff">
+                <option value="ae">AE</option>
+                <option value="gm">GM / Sales Manager</option>
+                <option value="owner">Owner</option>
+              </select>
+            </div>
           </div>
           <div style="display:flex;gap:10px">
             <button onclick="adminSaveAe()" style="padding:9px 22px;border-radius:7px;background:var(--accent-dark);color:#fff;border:none;font-size:13px;font-weight:600;cursor:pointer">Save AE</button>
@@ -4626,9 +4634,11 @@ function renderAdminAeList() {
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Trello Handle</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Email</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Market</th>
+      <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Role</th>
       <th style="padding:9px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Group</th>
       <th style="padding:9px 10px"></th>
     </tr></thead><tbody>`;
+  const AE_ROLE_LABELS = { ae: 'AE', gm: 'GM', owner: 'Owner' };
   rows.forEach(a => {
     const inactive = !a.active;
     const rowStyle = inactive ? 'background:#FAFAFA' : '';
@@ -4641,6 +4651,7 @@ function renderAdminAeList() {
       <td style="padding:8px 10px;font-family:monospace;font-size:11px">${esc(a.trello_handle || '—')}</td>
       <td style="padding:8px 10px;font-size:11px">${esc(a.email || '—')}</td>
       <td style="padding:8px 10px;font-size:11px">${esc(a.market || '—')}</td>
+      <td style="padding:8px 10px;font-size:11px">${esc(AE_ROLE_LABELS[a.role] || 'AE')}</td>
       <td style="padding:8px 10px">${groupName}</td>
       <td style="padding:8px 10px;text-align:right;white-space:nowrap">${editBtn}${deactivateBtn}</td>
     </tr>`;
@@ -4669,6 +4680,7 @@ function adminNewAe() {
   document.getElementById('admin-ae-trello').value = '';
   document.getElementById('admin-ae-email').value = '';
   document.getElementById('admin-ae-market').value = '';
+  document.getElementById('admin-ae-role').value = 'ae';
   populateAeGroupDropdown(null);
   document.getElementById('admin-ae-form').style.display = 'block';
   document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
@@ -4683,6 +4695,7 @@ function adminEditAe(id) {
   document.getElementById('admin-ae-trello').value = a.trello_handle || '';
   document.getElementById('admin-ae-email').value = a.email || '';
   document.getElementById('admin-ae-market').value = a.market || '';
+  document.getElementById('admin-ae-role').value = ['ae', 'gm', 'owner'].includes(a.role) ? a.role : 'ae';
   populateAeGroupDropdown(a.group_id);
   document.getElementById('admin-ae-form').style.display = 'block';
   document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
@@ -4699,10 +4712,11 @@ async function adminSaveAe() {
   const email = document.getElementById('admin-ae-email').value.trim();
   const market = document.getElementById('admin-ae-market').value.trim();
   const groupId = document.getElementById('admin-ae-group').value;
+  const role = document.getElementById('admin-ae-role').value || 'ae';
   if (!name) { showToast('Name is required', 'error'); return; }
   if (!groupId) { showToast('Group is required', 'error'); return; }
 
-  const payload = { name, trello_handle: trelloHandle || null, email: email || null, market: market || null, group_id: groupId };
+  const payload = { name, trello_handle: trelloHandle || null, email: email || null, market: market || null, group_id: groupId, role };
   if (isNew) payload.active = true;
   try {
     await sb('rpc/admin_save_ae', {
