@@ -6872,6 +6872,20 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           }
           return start ? fmt(start) : (end ? fmt(end) : '');
         }
+        // The service(s) this agent actually bought in the workflow, for the brackets in the
+        // card title (2026-10-02, per Claire -- it used to print the workflow name, so a
+        // Targeted Display: Geotargeting & Audience order read "(Digital Advertising)").
+        // Same name the Admin/Strategist portals show (accounting_label, else label); two
+        // different services for one agent share one card, so they are joined with " + ".
+        function agentCardServiceLabel(rowsForAgent, fallback) {
+          const names = [];
+          rowsForAgent.forEach(r => {
+            const c = CATALOG_ROWS[r.service_id] || {};
+            const n = c.accounting_label || c.label;
+            if (n && !names.includes(n)) names.push(n);
+          });
+          return names.length ? names.join(' + ') : fallback;
+        }
         function datedAgentCardSuffix(originalWorkflow, rowsForAgent) {
           if (!workflowWantsDatedCard(originalWorkflow)) return '';
           const range = formatAgentDateRange(rowsForAgent);
@@ -7027,7 +7041,12 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           for (const [agentKey, rowsForAgent] of Object.entries(byAgent)) {
             const agentName = rowsForAgent[0].agent_name;
             const county = rowsForAgent[0].county;
-            const cn = `${county} — ${agentName} (${wf})` + ridingAlongSuffix(originalWorkflows[wfIdx]) + datedAgentCardSuffix(originalWorkflows[wfIdx], rowsForAgent) + ' — ' + bizName;
+            const tailName = ridingAlongSuffix(originalWorkflows[wfIdx]) + datedAgentCardSuffix(originalWorkflows[wfIdx], rowsForAgent) + ' — ' + bizName;
+            const cn = `${county} — ${agentName} (${agentCardServiceLabel(rowsForAgent, wf)})` + tailName;
+            // Cards made before 2026-10-02 carry the workflow name in the brackets; a
+            // resubmission for the same agent must still find and update that card rather
+            // than start a second one.
+            const legacyCn = `${county} — ${agentName} (${wf})` + tailName;
             const descLines = rowsForAgent.map(s => {
               const label = CATALOG_ROWS[s.service_id]?.label || s.service_id;
               return `• ${label} — $${Number(s.amount).toLocaleString()}/mo (${s.start_date || '—'} – ${s.end_date || 'Ongoing'})`;
@@ -7046,7 +7065,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             const agentEnds = rowsForAgent.map(s => s.end_date).filter(Boolean).sort();
             const agentDueFields = campaignDueFields(agentEnds.length ? agentEnds[agentEnds.length - 1] : null);
 
-            const existing = findExistingCardByName(cn);
+            const existing = findExistingCardByName(cn) || (legacyCn !== cn ? findExistingCardByName(legacyCn) : null);
             let cardId = null;
             if (existing && !addedCardNames.has(norm(cn))) {
               addedCardNames.add(norm(cn));

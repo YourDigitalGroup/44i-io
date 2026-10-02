@@ -31057,3 +31057,15 @@ Claire merged the Strategist change (cancelled lines show under Complete) and ra
 ### 2026-10-01 (later) — Badges merged; `admin_get_orders_cancel_summary` run
 
 Claire merged the Cancelled/Revised badge change and ran the new read-only function. Live check pending: Admin orders list shows CANCELLED on State Farm (Ross Hoekstra) and REVISED where expected; Strategist rows show the badges.
+
+---
+
+## 2026-10-02 — Agent/County Split Trello card title: actual service in the brackets (Claire)
+
+**Found:** MS Farm Bureau card "Yazoo — Rouse Boyce (Digital Advertising) — MS Farm Bureau Agents". The form printed the WORKFLOW name in the brackets (`wf`); the four Digital Advertising services share that workflow, so a Targeted Display: Geotargeting & Audience order read "Digital Advertising". Claire: it must say the actual service. (Tommy Scott's "Clarke - … (Search Engine Marketing) 9/9/24 - 5/31/27" is a different, older-style card — hyphens, dates, no client name; format questions on those parts left open, see below.)
+
+**Fixed (`index.html`, Trello step only, runs after the order is saved and is wrapped in try/catch):** brackets now hold the service name(s) the agent bought in that workflow — `accounting_label` else `label` (same name Admin/Strategist show), joined with " + " if one agent bought two services (they still share one card). New helper `agentCardServiceLabel`. **Resubmission safety:** before this change a re-submitted IO found its agent's card by exact title; the new title would have started a second card for every existing agent, so the form now also looks up the OLD-style title and updates that card instead. Admin Renew/Swap/Correct find agent cards by county + agent + client name (not the brackets) and the Card Name Audit tool has no agent-card handling, so neither is affected.
+
+**Verified:** extracted the real `createAgentSplitCards` from the file and ran it with fake Trello across five cases — new one-service → "(Targeted Display: Geotargeting & Audience)"; two services joined; service with no accounting label → its label; resubmit with an old-title card → that card updated (no duplicate); resubmit with a new-title card → updated. The same test on the previous file fails the first three (and creates a duplicate in case five). Not verified: a full real submission with real Trello. Existing cards keep their old titles (rename by hand if wanted).
+
+**Still open (Claire):** whether agent cards should also carry dates and use hyphens like Tommy Scott's; the "always new card" flag on a service is what adds dates. Parked until she says.
