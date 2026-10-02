@@ -6886,8 +6886,11 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           });
           return names.length ? names.join(' + ') : fallback;
         }
+        // Agent/County Split cards are ALWAYS dated (2026-10-02, per Claire -- "we mapped this
+        // out before"; last year's MS Farm Bureau cards carry their dates). This used to copy
+        // the ordinary tactic rule and only date a card when its service was flagged
+        // "always new card", so most agent cards came out with no dates at all.
         function datedAgentCardSuffix(originalWorkflow, rowsForAgent) {
-          if (!workflowWantsDatedCard(originalWorkflow)) return '';
           const range = formatAgentDateRange(rowsForAgent);
           return range ? ' ' + range : '';
         }
@@ -7041,12 +7044,18 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           for (const [agentKey, rowsForAgent] of Object.entries(byAgent)) {
             const agentName = rowsForAgent[0].agent_name;
             const county = rowsForAgent[0].county;
-            const tailName = ridingAlongSuffix(originalWorkflows[wfIdx]) + datedAgentCardSuffix(originalWorkflows[wfIdx], rowsForAgent) + ' — ' + bizName;
-            const cn = `${county} — ${agentName} (${agentCardServiceLabel(rowsForAgent, wf)})` + tailName;
-            // Cards made before 2026-10-02 carry the workflow name in the brackets; a
-            // resubmission for the same agent must still find and update that card rather
-            // than start a second one.
-            const legacyCn = `${county} — ${agentName} (${wf})` + tailName;
+            const serviceLabel = agentCardServiceLabel(rowsForAgent, wf);
+            const ridingTail = ridingAlongSuffix(originalWorkflows[wfIdx]);
+            const tailName = ridingTail + datedAgentCardSuffix(originalWorkflows[wfIdx], rowsForAgent) + ' — ' + bizName;
+            const cn = `${county} — ${agentName} (${serviceLabel})` + tailName;
+            // Cards made before 2026-10-02 carry the workflow name in the brackets and (mostly)
+            // no dates; a resubmission for the same agent must still find and update that card
+            // rather than start a second one -- exactly as the old undated title always did.
+            const legacyNames = [
+              `${county} — ${agentName} (${serviceLabel})${ridingTail} — ${bizName}`,
+              `${county} — ${agentName} (${wf})${tailName}`,
+              `${county} — ${agentName} (${wf})${ridingTail} — ${bizName}`,
+            ].filter(n => n !== cn);
             const descLines = rowsForAgent.map(s => {
               const label = CATALOG_ROWS[s.service_id]?.label || s.service_id;
               return `• ${label} — $${Number(s.amount).toLocaleString()}/mo (${s.start_date || '—'} – ${s.end_date || 'Ongoing'})`;
@@ -7065,7 +7074,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             const agentEnds = rowsForAgent.map(s => s.end_date).filter(Boolean).sort();
             const agentDueFields = campaignDueFields(agentEnds.length ? agentEnds[agentEnds.length - 1] : null);
 
-            const existing = findExistingCardByName(cn) || (legacyCn !== cn ? findExistingCardByName(legacyCn) : null);
+            let existing = findExistingCardByName(cn);
+            for (let i = 0; !existing && i < legacyNames.length; i++) existing = findExistingCardByName(legacyNames[i]);
             let cardId = null;
             if (existing && !addedCardNames.has(norm(cn))) {
               addedCardNames.add(norm(cn));
