@@ -31093,3 +31093,10 @@ Claire approved (answers 1–3): the brackets name the service the way a regular
 **Open question to Claire (not built):** "these things should be the same for both agent cards and regular cards when it comes to the services" — does she want REGULAR (non-agent) card titles changed to the same `Section: Service` naming? Regular titles today come from the service's Trello template card name, the picked variant, or the workflow name, and Renew/Swap/the Card Name Audit tool compute or search those names, so this would be a wider change than the agent cards. Waiting on her answer.
 
 **Resolved (Claire, 2026-10-02):** regular (non-agent) card titles are left exactly as they are — they take their titles from the service's template card, the picked variant, or the workflow, by design. The `Section: Service` naming applies to Agent/County Split cards only.
+
+---
+
+## 2026-10-02 — Eubanks budgets SQL run; Peggy signed in
+
+- **Eubanks (Tricia Eubanks – Health Markets, STMM Digital):** the two Location Targeting: Event lines had no month rows. Per the strategist (Bronson French): Event (Geo) $500 for Oct 3–4; Event (Aud) $1,000 whole-campaign total, Oct 3–Nov 3 (ads serve during the event and 30 days after). Claire ran `add-budgets-eubanks-event-lines-20261001.sql` (guarded insert of month rows: Geo Oct $500; Aud Oct $906.25 + Nov $93.75 by day split, flagged Whole Campaign Total). NOTE: the strategist's first message had the two amounts the other way round; his later one was used. Live check: Strategist shows $500 / $1,000 total.
+- **Login part 2:** Peggy updated her password and signed in. `auth-stage4-close-legacy-login.sql` (+ rollback) is prepared but NOT handed over or run; its header requires the roster check (every active staff login linked to Supabase Auth, James deactivated or linked, Kim and Peggy signed in) to come back clean first.
