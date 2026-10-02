@@ -8691,14 +8691,28 @@ async function adminFindTrelloCardForLine(client, line) {
   });
   const cards = await listRes.json();
   const svcLabel = CATALOG_ROWS[line.service_id]?.accounting_label || CATALOG_ROWS[line.service_id]?.label || line.tactic_label || line.service_id;
+  // Agent cards no longer end with the client name (2026-10-02, per Claire -- the card already
+  // sits in that client's list), so only county + agent are required; older cards that still
+  // carry the client name match too.
   const needParts = line.agent_name
-    ? [line.county, line.agent_name, client.name]
+    ? [line.county, line.agent_name]
     : [line.tactic_label || svcLabel, client.name];
   const needed = needParts.filter(Boolean).map(adminNormCardName);
-  const matches = Array.isArray(cards) ? cards.filter(c => {
+  let matches = Array.isArray(cards) ? cards.filter(c => {
     const stripped = adminNormCardName(adminStripDateRangeFromCardName(c.name || ''));
     return needed.every(part => stripped.includes(part));
   }) : [];
+  // One agent can have several tactic cards (e.g. SEM and Social). When more than one matches,
+  // keep the ones whose bracket text is this line's service or workflow.
+  if (line.agent_name && matches.length > 1) {
+    const svc = CATALOG_ROWS[line.service_id] || {};
+    const wanted = [svc.accounting_label, svc.label, svc.workflow, line.tactic_label].filter(Boolean).map(adminNormCardName);
+    const narrowed = matches.filter(c => {
+      const m = /\(([^)]*)\)/.exec(c.name || '');
+      return m && wanted.includes(adminNormCardName(m[1]));
+    });
+    if (narrowed.length) matches = narrowed;
+  }
   return { card: matches.length === 1 ? matches[0] : null, matches };
 }
 function pendingFmtMonth(month) {
@@ -9333,10 +9347,7 @@ async function adminApplyOrderlessRequestFollowUp(req) {
   req._trello_card_id = found.card.id;
   if (newEndDate) {
     try {
-      const baseName = adminStripDateRangeFromCardName(found.card.name || '').replace(/\s+—\s+/, ' — ');
-      const newRange = adminFormatDateRangeForTitle(line.flight_start, newEndDate);
-      const dashIdx = baseName.lastIndexOf(' — ');
-      const newName = dashIdx === -1 ? `${baseName} ${newRange}` : `${baseName.slice(0, dashIdx)} ${newRange}${baseName.slice(dashIdx)}`;
+      const newName = adminRenewedCardName(found.card.name, line.flight_start, newEndDate);
       await fetch(PROXY, {
         method: 'POST',
         headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
@@ -11545,10 +11556,31 @@ function adminToggleCampaignLineRenewPanel(clientId, lineId, currentEndDate) {
 function adminNormCardName(n) {
   return (n || '').toLowerCase().replace(/[-‐‑‒–—―−]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
 }
+// Agent cards carry a numeric term "M/D/YY - M/D/YY" (index.html's formatAgentTermNumeric(),
+// 2026-10-02); the month-name pattern above is what every other dated card uses.
+const ADMIN_NUMERIC_TERM_RE = /\d{1,2}\/\d{1,2}\/\d{2,4}(?:\s*-\s*\d{1,2}\/\d{1,2}\/\d{2,4})?/;
+function adminFormatAgentTermForTitle(startIso, endIso) {
+  const fmt = iso => { const d = new Date(iso + 'T12:00:00'); return `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`; };
+  if (startIso && endIso) return `${fmt(startIso)} - ${fmt(endIso)}`;
+  return startIso ? fmt(startIso) : (endIso ? fmt(endIso) : '');
+}
 function adminStripDateRangeFromCardName(name) {
   const months = 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec';
   const re = new RegExp(`\\s+(?:${months})\\s+\\d{1,2}(?:\\s*-\\s*(?:(?:${months})\\s+\\d{1,2}|\\d{1,2}))?`, 'gi');
-  return (name || '').replace(re, ' ').replace(/\s+/g, ' ').trim();
+  const numRe = new RegExp(ADMIN_NUMERIC_TERM_RE.source, 'g');
+  return (name || '').replace(re, ' ').replace(numRe, ' ').replace(/\s+/g, ' ').trim();
+}
+// The card's new title after a renewal. A numeric-term card (the agent format) has its term
+// replaced IN PLACE, leaving the rest of the title alone; any other card keeps the long-standing
+// rule: strip the month-name dates, splice the new range in before the trailing " — <business>".
+function adminRenewedCardName(cardName, startIso, endIso) {
+  if (ADMIN_NUMERIC_TERM_RE.test(cardName || '')) {
+    return (cardName || '').replace(ADMIN_NUMERIC_TERM_RE, adminFormatAgentTermForTitle(startIso, endIso));
+  }
+  const newRange = adminFormatDateRangeForTitle(startIso, endIso);
+  const baseName = adminStripDateRangeFromCardName(cardName || '').replace(/\s+—\s+/, ' — ');
+  const dashIdx = baseName.lastIndexOf(' — ');
+  return dashIdx === -1 ? `${baseName} ${newRange}` : `${baseName.slice(0, dashIdx)} ${newRange}${baseName.slice(dashIdx)}`;
 }
 // Same display logic as index.html's formatAgentDateRange()/
 // formatCampaignDateRange() -- kept in sync by hand, same convention as
@@ -11633,15 +11665,7 @@ async function adminConfirmCampaignLineRenewal(clientId, lineId) {
 
       if (matches.length === 1) {
         const card = matches[0];
-        const newRange = adminFormatDateRangeForTitle(line.flight_start, newEndDate);
-        const baseName = adminStripDateRangeFromCardName(card.name || '').replace(/\s+—\s+/, ' — ');
-        // Re-insert the new date range right before the trailing " — <business name>"
-        // segment, matching exactly where index.html's own datedCardSuffix()/
-        // datedAgentCardSuffix() place it when a card is first created.
-        const dashIdx = baseName.lastIndexOf(' — ');
-        const newName = dashIdx === -1
-          ? `${baseName} ${newRange}`
-          : `${baseName.slice(0, dashIdx)} ${newRange}${baseName.slice(dashIdx)}`;
+        const newName = adminRenewedCardName(card.name, line.flight_start, newEndDate);
         const dueFields = adminCampaignDueFields(newEndDate);
         await fetch(PROXY, {
           method: 'POST',
