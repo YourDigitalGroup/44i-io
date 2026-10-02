@@ -6872,12 +6872,40 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           }
           return start ? fmt(start) : (end ? fmt(end) : '');
         }
-        function datedAgentCardSuffix(originalWorkflow, rowsForAgent) {
-          if (!workflowWantsDatedCard(originalWorkflow)) return '';
-          const range = formatAgentDateRange(rowsForAgent);
-          return range ? ' ' + range : '';
+        // Agent cards show their term as M/D/YY - M/D/YY (2026-10-02, per Claire -- the original
+        // MS Farm Bureau cards read "Union — Ashley Kidd (Social Media Ads) — 10/1/25 - 9/30/27").
+        // admin/index.html's adminFormatAgentTermForTitle() mirrors this and Renew rewrites it.
+        function formatAgentTermNumeric(rowsForAgent) {
+          const starts = rowsForAgent.map(s => s.start_date).filter(Boolean).sort();
+          const ends = rowsForAgent.map(s => s.end_date).filter(Boolean).sort();
+          const fmt = iso => { const d = new Date(iso + 'T12:00:00'); return `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(-2)}`; };
+          const st = starts[0], en = ends[ends.length - 1];
+          if (st && en) return `${fmt(st)} - ${fmt(en)}`;
+          return st ? fmt(st) : (en ? fmt(en) : '');
         }
-
+        // The service(s) this agent actually bought in the workflow, for the brackets in the
+        // card title (2026-10-02, per Claire). Named the way a regular card names a service:
+        // "Section: Service" (same resolveVariantDisplayName() the variant cards use), e.g.
+        // "Social Media Ads: Facebook & Instagram", "Targeted Display: Geotargeting & Audience".
+        // A service that is the ONLY one in its section is named by the section alone, e.g.
+        // "Search Engine Marketing" (Claire's call for SEM). Two services for one agent share one
+        // card, so they are joined with " + ".
+        function agentCardServiceName(serviceId) {
+          const c = CATALOG_ROWS[serviceId];
+          if (!c) return '';
+          const sectionMates = Object.values(CATALOG_ROWS).filter(r => r.section === c.section && r.active !== false && !r.is_cpm_adjustment);
+          const secLabel = (SECTIONS.find(x => x.id === c.section) || {}).label;
+          if (secLabel && sectionMates.length === 1) return secLabel;
+          return resolveVariantDisplayName(serviceId, c.label, c.label);
+        }
+        function agentCardServiceLabel(rowsForAgent, fallback) {
+          const names = [];
+          rowsForAgent.forEach(r => {
+            const n = agentCardServiceName(r.service_id);
+            if (n && !names.includes(n)) names.push(n);
+          });
+          return names.length ? names.join(' + ') : fallback;
+        }
         // Trello card due date + reminder (2026-08-28, per Claire + AM — "add the
         // campaign dates to the trello cards and send a reminder 10 days before
         // the campaign is done"). Uses Trello's OWN native due-date reminder
@@ -7027,7 +7055,21 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           for (const [agentKey, rowsForAgent] of Object.entries(byAgent)) {
             const agentName = rowsForAgent[0].agent_name;
             const county = rowsForAgent[0].county;
-            const cn = `${county} — ${agentName} (${wf})` + ridingAlongSuffix(originalWorkflows[wfIdx]) + datedAgentCardSuffix(originalWorkflows[wfIdx], rowsForAgent) + ' — ' + bizName;
+            const serviceLabel = agentCardServiceLabel(rowsForAgent, wf);
+            const term = formatAgentTermNumeric(rowsForAgent);
+            // Title: County — Agent (Service) [+ riding service] — M/D/YY - M/D/YY. No client name
+            // on the end (2026-10-02, per Claire): the card already sits in that client's list.
+            const cn = `${county} — ${agentName} (${serviceLabel})` + ridingAlongSuffix(originalWorkflows[wfIdx]) + (term ? ' — ' + term : '');
+            // An agent who already has a card for this tactic gets THAT card updated, whatever
+            // its title says about dates or the client (older cards carry the workflow name in
+            // the brackets, month-name dates and a trailing client name; renewals change the
+            // dates). Matched on "County — Agent (<service or workflow>)" -- the closing bracket
+            // keeps one agent's SEM and Social cards, or two similarly named agents, apart.
+            // (also the catalog's short names, which the first versions of this change printed)
+            const shortLabel = rowsForAgent.map(r => CATALOG_ROWS[r.service_id]?.accounting_label || CATALOG_ROWS[r.service_id]?.label).filter(Boolean).join(' + ');
+            const stems = [serviceLabel, wf, shortLabel].filter(Boolean).map(b => norm(`${county} — ${agentName} (${b})`));
+            let existing = findExistingCardByName(cn);
+            if (!existing && Array.isArray(existingCards)) existing = existingCards.find(c => stems.some(st => norm(c.name).startsWith(st))) || null;
             const descLines = rowsForAgent.map(s => {
               const label = CATALOG_ROWS[s.service_id]?.label || s.service_id;
               return `• ${label} — $${Number(s.amount).toLocaleString()}/mo (${s.start_date || '—'} – ${s.end_date || 'Ongoing'})`;
@@ -7046,7 +7088,6 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             const agentEnds = rowsForAgent.map(s => s.end_date).filter(Boolean).sort();
             const agentDueFields = campaignDueFields(agentEnds.length ? agentEnds[agentEnds.length - 1] : null);
 
-            const existing = findExistingCardByName(cn);
             let cardId = null;
             if (existing && !addedCardNames.has(norm(cn))) {
               addedCardNames.add(norm(cn));
