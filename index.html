@@ -6884,15 +6884,24 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           return st ? fmt(st) : (en ? fmt(en) : '');
         }
         // The service(s) this agent actually bought in the workflow, for the brackets in the
-        // card title (2026-10-02, per Claire -- it used to print the workflow name, so a
-        // Targeted Display: Geotargeting & Audience order read "(Digital Advertising)").
-        // Same name the Admin/Strategist portals show (accounting_label, else label); two
-        // different services for one agent share one card, so they are joined with " + ".
+        // card title (2026-10-02, per Claire). Named the way a regular card names a service:
+        // "Section: Service" (same resolveVariantDisplayName() the variant cards use), e.g.
+        // "Social Media Ads: Facebook & Instagram", "Targeted Display: Geotargeting & Audience".
+        // A service that is the ONLY one in its section is named by the section alone, e.g.
+        // "Search Engine Marketing" (Claire's call for SEM). Two services for one agent share one
+        // card, so they are joined with " + ".
+        function agentCardServiceName(serviceId) {
+          const c = CATALOG_ROWS[serviceId];
+          if (!c) return '';
+          const sectionMates = Object.values(CATALOG_ROWS).filter(r => r.section === c.section && r.active !== false && !r.is_cpm_adjustment);
+          const secLabel = (SECTIONS.find(x => x.id === c.section) || {}).label;
+          if (secLabel && sectionMates.length === 1) return secLabel;
+          return resolveVariantDisplayName(serviceId, c.label, c.label);
+        }
         function agentCardServiceLabel(rowsForAgent, fallback) {
           const names = [];
           rowsForAgent.forEach(r => {
-            const c = CATALOG_ROWS[r.service_id] || {};
-            const n = c.accounting_label || c.label;
+            const n = agentCardServiceName(r.service_id);
             if (n && !names.includes(n)) names.push(n);
           });
           return names.length ? names.join(' + ') : fallback;
@@ -7056,7 +7065,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             // the brackets, month-name dates and a trailing client name; renewals change the
             // dates). Matched on "County — Agent (<service or workflow>)" -- the closing bracket
             // keeps one agent's SEM and Social cards, or two similarly named agents, apart.
-            const stems = [serviceLabel, wf].map(b => norm(`${county} — ${agentName} (${b})`));
+            // (also the catalog's short names, which the first versions of this change printed)
+            const shortLabel = rowsForAgent.map(r => CATALOG_ROWS[r.service_id]?.accounting_label || CATALOG_ROWS[r.service_id]?.label).filter(Boolean).join(' + ');
+            const stems = [serviceLabel, wf, shortLabel].filter(Boolean).map(b => norm(`${county} — ${agentName} (${b})`));
             let existing = findExistingCardByName(cn);
             if (!existing && Array.isArray(existingCards)) existing = existingCards.find(c => stems.some(st => norm(c.name).startsWith(st))) || null;
             const descLines = rowsForAgent.map(s => {

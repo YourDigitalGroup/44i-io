@@ -8706,7 +8706,8 @@ async function adminFindTrelloCardForLine(client, line) {
   // keep the ones whose bracket text is this line's service or workflow.
   if (line.agent_name && matches.length > 1) {
     const svc = CATALOG_ROWS[line.service_id] || {};
-    const wanted = [svc.accounting_label, svc.label, svc.workflow, line.tactic_label].filter(Boolean).map(adminNormCardName);
+    const sec = typeof sectionLabel === 'function' && svc.section ? sectionLabel(svc.section) : '';
+    const wanted = [svc.accounting_label, svc.label, svc.workflow, line.tactic_label, sec, sec && svc.label ? `${sec}: ${svc.label}` : ''].filter(Boolean).map(adminNormCardName);
     const narrowed = matches.filter(c => {
       const m = /\(([^)]*)\)/.exec(c.name || '');
       return m && wanted.includes(adminNormCardName(m[1]));
