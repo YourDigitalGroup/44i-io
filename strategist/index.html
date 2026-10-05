@@ -868,6 +868,11 @@ async function strategistSubmitImport() {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Campaign'; }
     return;
   }
+  if (strategistFlightDatesInvalid(flightStart, flightEnd)) {
+    showToast(strategistFlightDatesProblemText(flightStart, flightEnd), 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Campaign'; }
+    return;
+  }
   if (isMultiAgent && (!agentName || !county)) {
     showToast('This is a multi-agent client — pick both an Agent and a County.', 'error');
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Add Campaign'; }
@@ -1012,6 +1017,9 @@ function strategistLineBadgesHtml(l) {
   let html = '';
   if (l.status === 'cancelled') {
     html += `<span title="Cancelled in Admin${l.cancel_effective_date ? ' (effective ' + esc(l.cancel_effective_date) + ')' : ''}" style="font-size:9px;font-weight:700;background:#FEE2E2;color:#991B1B;padding:2px 6px;border-radius:10px;margin-left:5px;white-space:nowrap">CANCELLED</span>`;
+  }
+  if (strategistFlightDatesInvalid(l.flight_start, l.flight_end)) {
+    html += `<span title="${esc(strategistFlightDatesProblemText(l.flight_start, l.flight_end))}" style="font-size:9px;font-weight:700;background:#FEE2E2;color:#991B1B;padding:2px 6px;border-radius:10px;margin-left:5px;white-space:nowrap">CHECK DATES</span>`;
   }
   if (strategistLineUnreviewedChanges(l).length) {
     html += `<span title="This order was changed — see the Order Changes banner at the top for details" style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 6px;border-radius:10px;margin-left:5px;white-space:nowrap">REVISED</span>`;
@@ -1560,6 +1568,7 @@ function strategistParseBulkImport(raw, overrides = {}) {
     const identityKey = [client.id, service.id, tacticMatch.tacticLabel, platform, platformCampaignName, agentName, county].join('|');
     const rowFlightStart = get('flight_start') || null;
     const rowFlightEnd = get('flight_end') || null;
+    if (strategistFlightDatesInvalid(rowFlightStart, rowFlightEnd)) { errors.push({ rowNum, field: 'flight_dates', clientName, tacticName, startRaw: rowFlightStart, endRaw: rowFlightEnd }); return; }
     if (!groups.has(identityKey)) {
       groups.set(identityKey, {
         client_id: client.id, group_id: client.group_id, service_id: service.id,
@@ -1693,6 +1702,9 @@ function strategistRenderBulkPreview() {
     } else if (e.field === 'tactic') {
       message = `no tactic matches "${esc(e.tacticName)}"`;
       fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'serviceId', this.value)" style="padding:5px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11.5px"><option value="">— Pick the right tactic —</option>${tacticOptions}</select>`;
+    } else if (e.field === 'flight_dates') {
+      message = `the end date (${esc(e.endRaw)}) is before the start date (${esc(e.startRaw)}) — fix the year in your paste and preview again, or remove this row`;
+      fixSelect = '';
     } else if (e.field === 'setup_blocker') {
       message = `"${esc(e.blockerRaw)}" isn't a real setup blocker`;
       fixSelect = `<select onchange="strategistApplyBulkOverride(${e.rowNum}, 'setupBlocker', this.value)" style="padding:5px 8px;border-radius:6px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:11.5px"><option value="">— Pick the right blocker —</option>${blockerOptions}</select>`;
@@ -1764,6 +1776,7 @@ async function strategistConfirmBulkImport() {
   // own correction UI.
   const errors = plan.errors.map(e => {
     if (e.field === 'status') return `Row ${e.rowNum}: "${e.statusRaw}" isn't a real status`;
+    if (e.field === 'flight_dates') return `Row ${e.rowNum}: end date ${e.endRaw} is before start date ${e.startRaw}`;
     if (e.field === 'setup_blocker') return `Row ${e.rowNum}: "${e.blockerRaw}" isn't a real setup blocker`;
     return `Row ${e.rowNum}: no ${e.field} matches "${e.field === 'client' ? e.clientName : e.tacticName}"`;
   });
@@ -1918,7 +1931,7 @@ async function fetchStrategistData() {
 // reason text makes it clear this wasn't a manual click.
 async function strategistSweepFlightEndedCampaigns() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const ended = ALL_CAMPAIGN_LINES.filter(l => l.status === 'active' && l.flight_end && new Date(l.flight_end + 'T00:00:00') < today);
+  const ended = ALL_CAMPAIGN_LINES.filter(l => l.status === 'active' && l.flight_end && !strategistFlightDatesInvalid(l.flight_start, l.flight_end) && new Date(l.flight_end + 'T00:00:00') < today);
   for (const l of ended) {
     try {
       await sb('rpc/strategist_log_status_change', { method: 'POST', body: JSON.stringify({
@@ -2539,7 +2552,18 @@ function setupBudgetRowFor(lineId) {
   return rows[0] || null;
 }
 
+// A flight that ends before it starts is always a typo (2026-10-05: Bassett's Facebook and SEM lines were
+// typed as ending 2026-03-31 but starting 2026-10-01; the portal hid them in every month, then the
+// auto-complete marked them Complete). Used to refuse such dates when they are entered, and to keep any
+// line that already has them VISIBLE (flagged "Check dates") so it can be found and fixed.
+function strategistFlightDatesInvalid(start, end) {
+  return !!(start && end && String(end).slice(0, 10) < String(start).slice(0, 10));
+}
+function strategistFlightDatesProblemText(start, end) {
+  return `The end date (${String(end).slice(0, 10)}) is before the start date (${String(start).slice(0, 10)}). Check the year.`;
+}
 function strategistLineActiveInMonth(line, monthDate) {
+  if (strategistFlightDatesInvalid(line.flight_start, line.flight_end)) return true;
   const monthKey = strategistMonthKey(monthDate);
   if (line.flight_start && monthKey < strategistMonthKey(new Date(line.flight_start + 'T00:00:00'))) return false;
   if (line.flight_end && monthKey > strategistMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
@@ -3303,6 +3327,21 @@ async function strategistSaveSplitLabel(lineId, value) {
 async function strategistSaveLine(lineId, data, reload) {
   try {
     const cleanData = Object.fromEntries(Object.entries(data).map(([k,v]) => [k, v === '' ? null : v]));
+    // Refuse a flight that ends before it starts (see strategistFlightDatesInvalid above). Returns false so
+    // callers like Activate/Save Draft stop instead of announcing success; the Detail panel's date boxes go
+    // back to what is saved.
+    if ('flight_start' in cleanData || 'flight_end' in cleanData) {
+      const cur = ALL_CAMPAIGN_LINES.find(l => l.id === lineId) || {};
+      const nStart = 'flight_start' in cleanData ? cleanData.flight_start : cur.flight_start;
+      const nEnd = 'flight_end' in cleanData ? cleanData.flight_end : cur.flight_end;
+      if (strategistFlightDatesInvalid(nStart, nEnd)) {
+        showToast(strategistFlightDatesProblemText(nStart, nEnd) + ' Nothing was saved.', 'error');
+        const sEl = document.getElementById('detail-flight-start-' + lineId), eEl = document.getElementById('detail-flight-end-' + lineId);
+        if (sEl) sEl.value = cur.flight_start || '';
+        if (eEl) eEl.value = cur.flight_end || '';
+        return false;
+      }
+    }
     await sb('rpc/strategist_save_campaign_line', { method: 'POST', body: JSON.stringify({
       p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_id: lineId, p_data: cleanData
     }) });
@@ -3317,7 +3356,8 @@ async function strategistSaveLine(lineId, data, reload) {
     if (line) Object.assign(line, cleanData);
     if (reload !== false) { await fetchStrategistData(); renderStrategistDashboard(); }
     else showToast('Saved');
-  } catch(e) { showToast('Error saving: ' + e.message, 'error'); }
+    return true;
+  } catch(e) { showToast('Error saving: ' + e.message, 'error'); return false; }
 }
 
 // ── STATUS CHANGE LOG (2026-08-10, per the strategist team's own answer: a
@@ -3418,12 +3458,13 @@ async function strategistConfirmActivate(lineId) {
   const blockers = strategistReadSetupBlockers(lineId);
   const variantEl = document.getElementById('setup-tactic-variant-' + lineId);
   if (!platform) { showToast('Pick a platform before activating.', 'error'); return; }
-  await strategistSaveLine(lineId, {
+  const savedOk = await strategistSaveLine(lineId, {
     platform, platform_campaign_name: platformCampaignName || null, platform_url: platformUrl || null, trello_card_url: trelloCardUrl || null, setup_notes: notes || null, setup_blocker: blockers.length ? blockers : null,
     status: 'active', assigned_strategist: currentStrategistUser.name,
     ...strategistReadSetupFlightAndOffline(lineId),
     ...(variantEl && variantEl.value ? { tactic_label: variantEl.value } : {})
   });
+  if (savedOk === false) return;
   await strategistApplyCachedReportIfMatch(lineId);
   showToast('Campaign activated!');
 }
@@ -3436,11 +3477,12 @@ async function strategistSaveDraft(lineId) {
   const notes = document.getElementById('setup-notes-' + lineId).value.trim();
   const blockers = strategistReadSetupBlockers(lineId);
   const variantEl = document.getElementById('setup-tactic-variant-' + lineId);
-  await strategistSaveLine(lineId, {
+  const draftOk = await strategistSaveLine(lineId, {
     platform: platform || null, platform_campaign_name: platformCampaignName || null, platform_url: platformUrl || null, trello_card_url: trelloCardUrl || null, setup_notes: notes || null, setup_blocker: blockers.length ? blockers : null,
     ...strategistReadSetupFlightAndOffline(lineId),
     ...(variantEl && variantEl.value ? { tactic_label: variantEl.value } : {})
   });
+  if (draftOk === false) return;
   await strategistApplyCachedReportIfMatch(lineId);
   showToast('Draft saved');
 }
