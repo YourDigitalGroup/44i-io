@@ -2017,8 +2017,8 @@ function renderAgentSplitRows() {
           <input type="text" placeholder="New agent name" value="${esc(row.agentNewName || '')}" oninput="updateAgentSplitRow(${i},'agentNewName',this.value)" style="display:${row.agentId === '__new__' ? 'block' : 'none'};margin-top:4px;width:100%"/>
         </td>
         <td style="padding:4px 6px"><select onchange="updateAgentSplitRow(${i},'serviceId',this.value)" style="width:100%">${serviceOptionsHtml.replace(`value="${esc(row.serviceId)}"`, `value="${esc(row.serviceId)}" selected`)}</select></td>
-        <td style="padding:4px 6px"><input type="date" value="${esc(row.startDate || '')}" oninput="updateAgentSplitRow(${i},'startDate',this.value)" style="width:100%"/></td>
-        <td style="padding:4px 6px"><input type="date" value="${esc(row.endDate || '')}" oninput="updateAgentSplitRow(${i},'endDate',this.value)" style="width:100%"/></td>
+        <td style="padding:4px 6px"><input type="date" id="agent-split-start-${i}" value="${esc(row.startDate || '')}" oninput="updateAgentSplitRow(${i},'startDate',this.value)" style="width:100%"/></td>
+        <td style="padding:4px 6px"><input type="date" id="agent-split-end-${i}" value="${esc(row.endDate || '')}" oninput="updateAgentSplitRow(${i},'endDate',this.value)" style="width:100%"/></td>
         <td style="padding:4px 6px"><input type="number" step="0.01" placeholder="$" value="${esc(row.amount || '')}" oninput="updateAgentSplitRow(${i},'amount',this.value)" style="width:100%"/></td>
         <td class="agent-intake-cell" style="padding:4px 6px;white-space:nowrap">${intakeCell}</td>
         <td style="padding:4px 6px">${agentSplitRows.length > 1 ? `<button type="button" onclick="removeAgentSplitRow(${i})" title="Remove this row" style="background:none;border:none;font-size:16px;cursor:pointer;color:#B91C1C;line-height:1">✕</button>` : ''}</td>
@@ -2066,6 +2066,15 @@ function updateAgentSplitRow(i, field, value) {
     return;
   }
   agentSplitRows[i][field] = value;
+  // Warn the moment an end date lands before the start date (2026-10-05, per Claire -- not only when the AE
+  // reaches Submit). Same non-destructive highlight + toast as the tactic date boxes above.
+  if (field === 'startDate' || field === 'endDate') {
+    const r = agentSplitRows[i];
+    const bad = !!(r.startDate && r.endDate && r.endDate < r.startDate);
+    markFieldMissing(document.getElementById('agent-split-start-' + i), false);
+    markFieldMissing(document.getElementById('agent-split-end-' + i), bad);
+    if (bad) showToast('The end date is before the start date. Check the year.', 'error');
+  }
   // Picking a row's Service inherits that tactic's own Start/End (2026-08-19,
   // per Claire -- "have the flight dates transfer to the per client lines"),
   // same dates already typed on the catalog row above, instead of the AE
@@ -4997,6 +5006,20 @@ function goStep(n) {
       const rangeLabels = badRanges.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
       showToast('The end date is before the start date for: ' + rangeLabels + '. Please check the year.', 'error');
       return; // Block navigation
+    }
+    // Same check on the Agent/County Split rows, so it is caught here and not only at Submit.
+    const splitCardEl = document.getElementById('agent-split-card');
+    if (splitCardEl && splitCardEl.style.display !== 'none') {
+      const badSplitRows = agentSplitRows.map((r, i) => ({ r, i })).filter(({ r }) => r.startDate && r.endDate && r.endDate < r.startDate);
+      agentSplitRows.forEach((r, i) => markFieldMissing(document.getElementById('agent-split-end-' + i), false));
+      if (badSplitRows.length > 0) {
+        badSplitRows.forEach(({ i }) => markFieldMissing(document.getElementById('agent-split-end-' + i), true));
+        const firstBadSplit = document.getElementById('agent-split-end-' + badSplitRows[0].i);
+        if (firstBadSplit) revealElement(firstBadSplit);
+        const who = badSplitRows.map(({ r }) => r.agentId === '__new__' ? (r.agentNewName || 'a new agent') : (AGENT_ROSTER.find(a => a.id === r.agentId)?.name || 'an agent')).join(', ');
+        showToast('Agent/County Split: the end date is before the start date for ' + who + '. Please check the year.', 'error');
+        return; // Block navigation
+      }
     }
     buildReview();
     updateKocCard();
