@@ -2557,7 +2557,10 @@ function setupBudgetRowFor(lineId) {
 // auto-complete marked them Complete). Used to refuse such dates when they are entered, and to keep any
 // line that already has them VISIBLE (flagged "Check dates") so it can be found and fixed.
 function strategistFlightDatesInvalid(start, end) {
-  return !!(start && end && String(end).slice(0, 10) < String(start).slice(0, 10));
+  // Only judges dates whose year is fully typed: a date box reports half-typed years ("0002", "0020", "0202",
+  // then "2027") while someone types, and those must not be refused (or the box reset) mid-typing.
+  const yearOk = d => parseInt(String(d).slice(0, 4), 10) >= 1900;
+  return !!(start && end && yearOk(start) && yearOk(end) && String(end).slice(0, 10) < String(start).slice(0, 10));
 }
 function strategistFlightDatesProblemText(start, end) {
   return `The end date (${String(end).slice(0, 10)}) is before the start date (${String(start).slice(0, 10)}). Check the year.`;
@@ -3331,6 +3334,15 @@ async function strategistSaveLine(lineId, data, reload) {
     // callers like Activate/Save Draft stop instead of announcing success; the Detail panel's date boxes go
     // back to what is saved.
     if ('flight_start' in cleanData || 'flight_end' in cleanData) {
+      // A date box reports HALF-TYPED years while someone types ("0002", "0020", "0202", then "2027"), and its
+      // change event fires for each. Those must never be saved (they used to be: a typo year left a junk date
+      // such as 0202-03-31 in the database). Skipped quietly from the Detail panel's own date boxes; from
+      // Activate / Save Draft (a half-typed year is still sitting in the box) it says so.
+      const halfTyped = ['flight_start', 'flight_end'].some(k => k in cleanData && cleanData[k] && parseInt(String(cleanData[k]).slice(0, 4), 10) < 1900);
+      if (halfTyped) {
+        if (reload !== false) showToast('Finish typing the year in the flight date first. Nothing was saved.', 'error');
+        return false;
+      }
       const cur = ALL_CAMPAIGN_LINES.find(l => l.id === lineId) || {};
       const nStart = 'flight_start' in cleanData ? cleanData.flight_start : cur.flight_start;
       const nEnd = 'flight_end' in cleanData ? cleanData.flight_end : cur.flight_end;

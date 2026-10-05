@@ -2070,7 +2070,7 @@ function updateAgentSplitRow(i, field, value) {
   // reaches Submit). Same non-destructive highlight + toast as the tactic date boxes above.
   if (field === 'startDate' || field === 'endDate') {
     const r = agentSplitRows[i];
-    const bad = !!(r.startDate && r.endDate && r.endDate < r.startDate);
+    const bad = !!(dateYearTyped(r.startDate) && dateYearTyped(r.endDate) && r.endDate < r.startDate);
     markFieldMissing(document.getElementById('agent-split-start-' + i), false);
     markFieldMissing(document.getElementById('agent-split-end-' + i), bad);
     if (bad) showToast('The end date is before the start date. Check the year.', 'error');
@@ -3886,6 +3886,10 @@ function flightDisplayFor(id, data, fmt) {
   return `${startStr} – ${endStr}`;
 }
 
+// A date box reports half-typed years while someone types ("0002", "0020", "0202", then "2027"), so the LIVE
+// end-before-start warnings only judge dates whose year is fully typed. The Next and Submit checks always
+// judge the final values.
+function dateYearTyped(iso) { return !!iso && parseInt(String(iso).slice(0, 4), 10) >= 1900; }
 function updateTacticDate(input, id, which) {
   const iso = input.value || null;
   markFieldMissing(input, false);
@@ -3908,7 +3912,7 @@ function updateTacticDate(input, id, which) {
   // campaign vanish from the Strategist portal). Same non-destructive highlight + toast; the Step 2
   // "Next" guard below blocks it for good.
   const pairNow = selected[id];
-  if (pairNow && pairNow.start_date && pairNow.end_date && pairNow.end_date < pairNow.start_date) {
+  if (pairNow && dateYearTyped(pairNow.start_date) && dateYearTyped(pairNow.end_date) && pairNow.end_date < pairNow.start_date) {
     markFieldMissing(input, true);
     showToast('The end date is before the start date. Check the year.', 'error');
   }
