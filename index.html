@@ -2212,6 +2212,7 @@ function collectAgentSplits() {
     if (!row.serviceId) { showToast('Agent/County Split: every row needs a service', 'error'); return null; }
     if (!row.amount || Number(row.amount) <= 0) { showToast('Agent/County Split: every row needs an amount', 'error'); return null; }
     const agentName = row.agentId === '__new__' ? row.agentNewName : (AGENT_ROSTER.find(a => a.id === row.agentId)?.name || '');
+    if (row.startDate && row.endDate && row.endDate < row.startDate) { showToast(`Agent/County Split: the end date is before the start date for ${agentName}. Please check the year.`, 'error'); return null; }
     splits.push({
       agent_id: row.agentId === '__new__' ? null : row.agentId,
       agent_name: agentName,
@@ -3894,6 +3895,14 @@ function updateTacticDate(input, id, which) {
       showToast(`Start date must be after the IO date (${ioDateVal})`, 'error');
     }
   }
+  // An end date before the start date is always a typo (2026-10-05: a mistyped year made a Bassett
+  // campaign vanish from the Strategist portal). Same non-destructive highlight + toast; the Step 2
+  // "Next" guard below blocks it for good.
+  const pairNow = selected[id];
+  if (pairNow && pairNow.start_date && pairNow.end_date && pairNow.end_date < pairNow.start_date) {
+    markFieldMissing(input, true);
+    showToast('The end date is before the start date. Check the year.', 'error');
+  }
   if (iso) autoCheckIfNeeded(id);
   checkServiceDateOverlap(id);
   syncAgentSplitDatesForService(id);
@@ -4970,6 +4979,23 @@ function goStep(n) {
       if (firstBad) revealElement(firstBad);
       const badLabels = tooEarlyDates.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
       showToast(`Start date must be after the IO date (${ioDateVal}) for: ` + badLabels, 'error');
+      return; // Block navigation
+    }
+    // Guard (2026-10-05, per Claire): an end date before the start date is a typo (usually the year) and
+    // creates a campaign the Strategist portal cannot show. Same block-with-highlight pattern as above.
+    document.querySelectorAll('.svc-end-cell input.spend-missing').forEach(el => markFieldMissing(el, false));
+    const badRanges = Object.entries(selected).filter(([id, d]) => d.start_date && d.end_date && d.end_date < d.start_date);
+    if (badRanges.length > 0) {
+      badRanges.forEach(([id]) => {
+        markFieldMissing(document.getElementById('svc-end-' + id), true);
+        const row = document.querySelector(`tr[data-id="${id}"]`);
+        const section = row?.closest('.card-body');
+        if (section) section.style.display = 'block';
+      });
+      const firstBadEnd = document.querySelector('.svc-end-cell input.spend-missing');
+      if (firstBadEnd) revealElement(firstBadEnd);
+      const rangeLabels = badRanges.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
+      showToast('The end date is before the start date for: ' + rangeLabels + '. Please check the year.', 'error');
       return; // Block navigation
     }
     buildReview();
