@@ -31119,3 +31119,9 @@ Claire ran `agent-lines-start-in-campaign-setup.sql` (new agent spend lines star
 **Cleanup confirmed by Claire:** all three "nothing was kept" checks returned 0 (orders SMOKE-TEST/SMOKE-AGENT, client ZZ SMOKE TEST CLIENT, agent lines ZZ SMOKE AGENT).
 **Rouse Boyce data fix RUN by Claire** (`rouse-boyce-back-to-campaign-setup-20261005.sql`; its guards passed, so no strategist had started work on those 3 lines).
 **Still to confirm from Claire:** the 3 Rouse Boyce lines show in Strategist's Campaign Setup tab; the next real agent order lands in Campaign Setup.
+
+---
+
+## 2026-10-05 — Login part 2 RUN: the old name/password staff login is closed
+
+Claire ran `auth-stage4-close-legacy-login.sql` after the roster check came back clean (11 staff; James deactivated first; Kim and Peggy had signed in with email). Effect: `admin_resolve_role` now accepts only a real Supabase email session for an ACTIVE staff row (p_name/p_pw ignored); `admin_login` and `get_login_roster` dropped; pre-flight guard found no other function depending on them. **Live check:** Claire saved a group logo afterwards — that goes through the claude-proxy Edge Function, whose fallback used `admin_login`, so the session path works. Rollback if ever needed: `live-admin_resolve_role-2026-09-28.sql` (restores `admin_resolve_role` + `admin_login`; `get_login_roster` not restorable, not needed). **Still to confirm:** staff portals (Admin/Strategist/Accounting) load normally for the other roles; AMs/strategists have signed in since. Authentication migration Stages 4–5 are now complete; remaining security phases (Edge Function relay hardening, orders-through-RPC, key lockdown of old public reads) depend on the embed-key rollout.
