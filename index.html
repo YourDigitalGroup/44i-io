@@ -6742,6 +6742,25 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         const addedCardNames = new Set();
         const cardExists = name => existingCardNames.has(norm(name)) || addedCardNames.has(norm(name));
 
+        // Card descriptions (2026-10-06, per Bronson/Claire -- the team adds dashboard links and notes to a card's
+        // description, and every re-sold order was REPLACING the whole description, wiping them). The summary
+        // the form writes now ends with a divider line; on an update, everything BELOW that line (the team's own
+        // notes) is kept and only the summary above it is refreshed. A card that predates the divider keeps its
+        // whole old description, under a heading, the first time it is updated. If the current description
+        // cannot be read, it is left alone entirely.
+        const AUTO_DESC_END = '---\n*↑ Updated automatically by the IO form. Add your own notes below this line — they are kept.*';
+        const withAutoDivider = generated => String(generated || '').slice(0, 9000) + '\n\n' + AUTO_DESC_END;
+        function descriptionForCard(cardId, generated) {
+          const card = Array.isArray(existingCards) ? existingCards.find(c => c.id === cardId) : null;
+          if (!card) return withAutoDivider(generated);                       // created during this run
+          if (typeof card.desc !== 'string') return null;                     // existing card, description unreadable: do not touch it
+          const at = card.desc.lastIndexOf(AUTO_DESC_END);
+          let kept = '';
+          if (at >= 0) kept = card.desc.slice(at + AUTO_DESC_END.length).trim();
+          else if (card.desc.trim()) kept = '**Earlier description (kept as it was):**\n\n' + card.desc.trim();
+          return withAutoDivider(generated) + (kept ? '\n\n' + kept.slice(0, 6500) : '');
+        }
+
         // ── Step 4: Create or update IO card ──
         const existingIoCard = Array.isArray(existingCards)
           ? existingCards.find(c => isIoName(c.name))
@@ -6756,7 +6775,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           await fetch(PROXY, {
             method: 'POST',
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_update_card', card_id: existingIoCard.id, name: ioCardName, desc: ioDesc })
+            body: JSON.stringify((() => { const d = descriptionForCard(existingIoCard.id, ioDesc); return { target: 'trello_update_card', card_id: existingIoCard.id, name: ioCardName, ...(d !== null ? { desc: d } : {}) }; })())
           });
           console.log('Updated existing IO card');
         } else {
@@ -6764,7 +6783,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           const newIoCardRes = await fetch(PROXY, {
             method: 'POST',
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-            body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: ioCardName, desc: ioDesc, pos: 'top' })
+            body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: ioCardName, desc: withAutoDivider(ioDesc), pos: 'top' })
           });
           const newIoCard = await newIoCardRes.json();
           ioCardId = newIoCard?.id || null;
@@ -7038,11 +7057,12 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           // Due date/reminder refreshed here too, not just at creation — a resell
           // that pushes a campaign's end date out should move the reminder with it.
           const dueFields = campaignDueFields(workflowFlightEnd(originalWorkflows[wfIdx]));
-          if (sellDesc || Object.keys(dueFields).length) {
+          const tacticDesc = sellDesc ? descriptionForCard(cardId, sellDesc) : null;
+          if (tacticDesc !== null || Object.keys(dueFields).length) {
             await fetch(PROXY, {
               method: 'POST',
               headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-              body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, ...(sellDesc ? { desc: sellDesc.slice(0, 16000) } : {}), ...dueFields })
+              body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, ...(tacticDesc !== null ? { desc: tacticDesc } : {}), ...dueFields })
             });
           }
           if (intake) {
@@ -7148,13 +7168,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_update_card', card_id: cardId, desc, ...agentDueFields })
+                body: JSON.stringify((() => { const d = descriptionForCard(cardId, desc); return { target: 'trello_update_card', card_id: cardId, ...(d !== null ? { desc: d } : {}), ...agentDueFields }; })())
               });
             } else if (!existing && !cardExists(cn)) {
               const res = await fetch(PROXY, {
                 method: 'POST',
                 headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc, pos: newCardPos, ...agentDueFields })
+                body: JSON.stringify({ target: 'trello_create_card', list_id: clientList.id, name: cn, desc: withAutoDivider(desc), pos: newCardPos, ...agentDueFields })
               });
               const card = await res.json();
               if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
