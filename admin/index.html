@@ -8420,6 +8420,20 @@ function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
 // compared against the item's CURRENT values -- only changed ones are
 // returned, so an untouched date/variant doesn't show up as a no-op
 // "changed from X to X" alongside whatever else this panel is saving.
+// An end date before the start date is always a typo, usually the year (2026-10-05: Bassett's campaigns were
+// entered ending 2026-03-31 but starting 2026-10-01 and vanished from the Strategist portal). The Strategist
+// portal and the IO form refuse it; Admin must too. Returns a plain sentence, or '' when the dates are fine.
+function adminDatesOrderProblem(start, end) {
+  const s = String(start || '').slice(0, 10), e = String(end || '').slice(0, 10);
+  return s && e && e < s ? `The end date (${e}) is before the start date (${s}). Please check the year.` : '';
+}
+// Only looks at dates the person is CHANGING in an Edit panel, so editing a price on an order that already has
+// bad dates is not blocked by them. startOverride = the date typed in the date-only panel.
+function adminEditedDatesProblem(serviceId, item, startOverride) {
+  const extras = adminCollectExtraEditFields(serviceId, item || {});
+  if (!startOverride && !extras.start_date && !extras.end_date) return '';
+  return adminDatesOrderProblem(startOverride || extras.start_date || item?.start_date, extras.end_date || item?.end_date);
+}
 function adminCollectExtraEditFields(serviceId, item) {
   const fields = {};
   const startEl = document.getElementById(`edit-extra-start-${serviceId}`);
@@ -8997,9 +9011,27 @@ async function adminFindOrderForRequest(orderId) {
   return o || null;
 }
 
+// A Companion edit/renew request whose dates would put the end before the start (a typo) is not applied
+// (2026-10-05). Fails OPEN: if the order can't be looked up, the approval proceeds as it always has.
+async function adminPendingRequestDatesProblem(req) {
+  try {
+    const c = req.requested_changes || {};
+    if (!req.order_id || !req.service_id || (req.action !== 'renew' && req.action !== 'edit')) return '';
+    const o = await adminFindOrderForRequest(req.order_id);
+    const item = (o?.line_items || []).find(li => li.service_id === req.service_id);
+    if (!item) return '';
+    if (req.action === 'renew') return adminDatesOrderProblem(item.start_date, c.new_end_date);
+    const f = c.fields || {};
+    if (!f.start_date && !f.end_date) return '';
+    return adminDatesOrderProblem(f.start_date || item.start_date, f.end_date || item.end_date);
+  } catch (e) { return ''; }
+}
+
 async function adminApprovePendingRequestClick(id) {
   const req = ALL_PENDING_REQUESTS.find(r => r.id === id);
   if (!req) { showToast('Could not find this request', 'error'); return; }
+  const datesIssue = await adminPendingRequestDatesProblem(req);
+  if (datesIssue) { showToast(datesIssue + ' Nothing was approved. Ask the AE to resubmit with the right dates, or reject this request.', 'error'); return; }
 
   // Cancel effective-date adjustment (2026-09-24): if the AM changed the
   // date in the box above the buttons, record + apply that first, then the
@@ -10533,6 +10565,12 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     return;
   }
+  const datesProblem = adminEditedDatesProblem(serviceId, (allOrders.find(x => x.id === orderId)?.line_items || []).find(li => li.service_id === serviceId));
+  if (datesProblem) {
+    showToast(datesProblem + ' Nothing was saved.', 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    return;
+  }
 
   try {
     await sb('rpc/admin_edit_order_line_item', {
@@ -10663,6 +10701,12 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
   const newValue = input?.value;
   if (!newValue) {
     showToast('Enter a date', 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+    return;
+  }
+  const dateProblem = adminEditedDatesProblem(serviceId, (allOrders.find(x => x.id === orderId)?.line_items || []).find(li => li.service_id === serviceId), newValue);
+  if (dateProblem) {
+    showToast(dateProblem + ' Nothing was saved.', 'error');
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
     return;
   }
@@ -11225,6 +11269,13 @@ async function adminConfirmRenewal(orderId, serviceId) {
     if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
     return;
   }
+  const renewItem = (allOrders.find(x => x.id === orderId)?.line_items || []).find(li => li.service_id === serviceId);
+  const renewProblem = adminDatesOrderProblem(renewItem?.start_date, newEndDate);
+  if (renewProblem) {
+    showToast(renewProblem + ' Nothing was saved.', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
 
   let result;
   try {
@@ -11345,6 +11396,12 @@ async function adminConfirmAgentRenewal(orderId, splitIndex) {
   const split = o?.agent_splits?.[splitIndex];
   if (!split) {
     showToast('Could not find this agent split entry', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
+  const agentRenewProblem = adminDatesOrderProblem(split.start_date, newEndDate);
+  if (agentRenewProblem) {
+    showToast(agentRenewProblem + ' Nothing was saved.', 'error');
     if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
     return;
   }
@@ -11617,6 +11674,12 @@ async function adminConfirmCampaignLineRenewal(clientId, lineId) {
   const client = ALL_CLIENTS.find(c => c.id === clientId);
   if (!line || !client) {
     showToast('Could not find this line or client', 'error');
+    if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
+    return;
+  }
+  const lineRenewProblem = adminDatesOrderProblem(line.flight_start, newEndDate);
+  if (lineRenewProblem) {
+    showToast(lineRenewProblem + ' Nothing was saved.', 'error');
     if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'Confirm Renewal'; }
     return;
   }
@@ -12146,6 +12209,7 @@ async function adminConfirmCorrection(orderId, oldServiceId) {
   if (!(price > 0)) return fail('Enter the price or amount');
   if (!start) return fail('Enter a date');
   if (model === 'spend' && !end) return fail('Enter an end date for this campaign');
+  if (start && end && end < start) return fail('The end date (' + end + ') is before the start date (' + start + '). Please check the year.');
   if (document.getElementById(`correct-variant-${oldServiceId}`) && !variant) return fail('Pick which variant this is');
   if (reason.length < 3) return fail('Enter a reason');
   if (!confirmed) return fail('Please confirm the correct service with the AE first');
