@@ -1462,8 +1462,10 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}`;
 
     // Lines already in the system for this client + service + label (from the IO flow, Strategist, an earlier import).
-    const existingMatches = ALL_ACCOUNTING_LINES.filter(l => l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel);
-    if (existingMatches.length > 1) { errors.push({ rowNum, field: 'ambiguous', clientName, tacticName, detail: `${existingMatches.length} lines already match this client and service (for example different agents or counties) -- the import can't tell which one this row is for` }); return; }
+    let existingMatches = ALL_ACCOUNTING_LINES.filter(l => l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel);
+    const candidates = existingMatches; // kept for the "which line?" picker
+    if (existingMatches.length > 1 && overrides[rowNum]?.lineId) existingMatches = existingMatches.filter(l => l.id === overrides[rowNum].lineId);
+    if (existingMatches.length > 1) { errors.push({ rowNum, field: 'ambiguous', clientName, tacticName, candidates: candidates.map(l => ({ id: l.id, status: l.status || 'active', flight_start: l.flight_start, flight_end: l.flight_end, accounting_only: !!l.accounting_only, split_label: l.split_label || '', campaign_name: l.platform_campaign_name || '' })), detail: `${existingMatches.length} lines already match this client and service (for example different agents or counties) -- the import can't tell which one this row is for` }); return; }
     if (ALL_ACCOUNTING_LINES.some(l => l.client_id === client.id && l.agent_name)) { errors.push({ rowNum, field: 'agent', clientName, tacticName, detail: `this client uses Agent/County Split lines and the import can't tell agents apart -- leave this client out and add its lines another way` }); return; }
     const existingLine = existingMatches[0] || null;
 
@@ -1522,9 +1524,21 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
       }
     }
     if (wide) wideMonths.forEach(m => { m.system44i = rowExpected; });
-    // What the import will NOT change on a line that is already there.
-    if (existingLine && flightStart && existingLine.flight_start && (String(existingLine.flight_start).slice(0, 10) !== flightStart || (flightEnd && existingLine.flight_end && String(existingLine.flight_end).slice(0, 10) !== flightEnd))) {
-      flags.push({ kind: 'dates-kept', text: `this line already exists with dates ${String(existingLine.flight_start).slice(0, 10)} – ${existingLine.flight_end ? String(existingLine.flight_end).slice(0, 10) : 'ongoing'}; the import adds months but does NOT change its dates` });
+    // Date discrepancies (2026-10-07, per Claire). The import never changes an existing line's dates, so say exactly where the
+    // sheet and the system disagree, and whether the months being added land outside the line's own flight.
+    if (existingLine) {
+      const d10 = v => v ? String(v).slice(0, 10) : '';
+      const aS = d10(existingLine.flight_start), aE = d10(existingLine.flight_end);
+      const startDiff = !!(flightStart && aS && flightStart !== aS);
+      const endDiff = (flightEnd || '') !== aE && !(!flightEnd && !aE);
+      if (startDiff || (aS && endDiff)) flags.push({ kind: 'dates-kept', text: `DATES DIFFER: the sheet says ${flightStart || 'no start'} – ${flightEnd || 'no end'}, the existing line is ${aS || 'no start'} – ${aE || 'ongoing'}. The import adds months but does NOT change the line's dates.` });
+      if (wide && wideMonths) {
+        const ym = v => v.slice(0, 7), mkk = m => m.month.slice(0, 7);
+        const before = aS ? wideMonths.filter(m => mkk(m) < ym(aS)) : [], after = aE ? wideMonths.filter(m => mkk(m) > ym(aE)) : [];
+        if (before.length) flags.push({ kind: 'line-outside', text: `DATES: month(s) ${before.map(mkk).join(', ')} are BEFORE the existing line starts (${aS}).` });
+        if (after.length) flags.push({ kind: 'line-outside', text: `DATES: month(s) ${after.map(mkk).join(', ')} are AFTER the existing line ends (${aE}). Extend the line's flight in Strategist if the campaign continues.` });
+      }
+      if (['complete', 'cancelled', 'paused'].includes(existingLine.status)) flags.push({ kind: 'line-status', text: `DATES: the existing line is ${existingLine.status} (${aS || '?'} – ${aE || 'ongoing'}) but is being given months from ${wide && wideMonths && wideMonths.length ? wideMonths.map(m => m.month.slice(0, 7)).sort()[0] : 'the sheet'} on.` });
     }
     const sheetVisits = !!tacticMatch.visits || /^(true|yes|1)$/i.test(get('has_offline_visits'));
     if (existingLine && !!existingLine.has_offline_visits !== sheetVisits) flags.push({ kind: 'visits-differs', text: `the sheet says ${sheetVisits ? 'WITH' : 'WITHOUT'} Offline Visits but the existing line is ${existingLine.has_offline_visits ? 'WITH' : 'WITHOUT'} -- the import adds months but does NOT change that setting` });
@@ -1620,6 +1634,8 @@ function accountingPreviewBulkImport() {
   const totalMonths = plan.groups.reduce((s, g) => s + Math.max(g.months.length, 1), 0);
   let html = `<div style="border-top:1px solid var(--border);padding-top:10px">
     <p style="font-size:12.5px;font-weight:600;margin:0 0 8px">${plan.groups.length} campaign(s), ${totalMonths} month row(s) ready to import${plan.errors.length ? `, ${plan.errors.length} row(s) need fixing first` : ''}.</p>`;
+  const dateRows = plan.groups.filter(g => (g.flags || []).some(f => ACCT_DATE_FLAG_KINDS.includes(f.kind))).length;
+  if (dateRows) html += `<p style="font-size:12px;margin:0 0 6px;color:#7C2D12">📅 ${dateRows} row(s) have a date discrepancy (marked below). Dates on existing lines are never changed by this import.</p>`;
   if (plan.groups.length) html += `<label style="display:block;font-size:12px;margin:0 0 6px"><input type="checkbox" ${ACCT_BULK_ONLY_FLAGGED ? 'checked' : ''} onchange="accountingToggleBulkOnlyFlagged(this.checked)"/> Show only the rows that need a look (flagged or changing existing amounts)</label>`;
   html += plan.groups.map(g => {
     const trackable = accountingIsSpendTrackable(g.service.id);
@@ -1629,9 +1645,11 @@ function accountingPreviewBulkImport() {
     const visitsTag = g.hasOfflineVisits ? ' <span style="font-size:10px;font-weight:600;color:var(--accent-dark);border:1px solid var(--accent);border-radius:4px;padding:0 4px">+ Offline Visits</span>' : '';
     const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const monthTotal = g.months.reduce((t, m) => t + (m.grossBudget || 0), 0);
-    const flagHtml = (g.flags || []).map(f => `<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ ${esc(f.text)}</div>`).join('');
+    const flagHtml = (g.flags || []).map(f => ACCT_DATE_FLAG_KINDS.includes(f.kind)
+      ? `<div style="font-size:11.5px;color:#7C2D12;background:#FFEDD5;border:1px solid #FDBA74;border-radius:5px;padding:3px 8px;margin-top:4px">📅 ${esc(f.text)}</div>`
+      : `<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ ${esc(f.text)}</div>`).join('');
     const changeHtml = (g.changes || []).length ? `<div style="font-size:11.5px;color:#991B1B;background:#FEE2E2;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ This will CHANGE ${g.changes.length} amount(s) already saved on the existing line: ${g.changes.map(c => `${c.month.slice(0, 7)} ${money(c.from)} → ${money(c.to)}`).join(', ')}</div>` : '';
-    const needsLook = (g.flags || []).some(f => ['mismatch', 'nocut', 'noprice', 'differs', 'confirmed', 'closed', 'gap', 'outside', 'duplicate', 'group', 'visits-differs'].includes(f.kind)) || (g.changes || []).length > 0;
+    const needsLook = (g.flags || []).some(f => ['mismatch', 'nocut', 'noprice', 'differs', 'confirmed', 'closed', 'gap', 'outside', 'duplicate', 'group', 'visits-differs', 'dates-kept', 'line-outside', 'line-status'].includes(f.kind)) || (g.changes || []).length > 0;
     if (ACCT_BULK_ONLY_FLAGGED && !needsLook) return '';
     const holdBtn = g.rowNums && g.rowNums.length ? `<button onclick="accountingSetBulkImportOverride(${g.rowNums[0]}, 'excluded', true)" style="float:right;font-size:11px;padding:2px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer">Hold back this row</button>` : '';
     return `<div style="padding:9px 12px;font-size:12.5px;border-bottom:1px solid var(--border)">${holdBtn}
@@ -1671,6 +1689,18 @@ function accountingPreviewBulkImport() {
 // dropdown of every real option and a Remove-row button -- picking either
 // re-runs Preview against an override, the pasted text is never touched.
 function accountingRenderBulkImportErrorRow(e) {
+  if (e.field === 'ambiguous' && e.candidates && e.candidates.length > 1) {
+    const d = v => v ? String(v).slice(0, 10) : 'ongoing';
+    const opts = [...e.candidates].sort((a, b) => String(a.flight_start).localeCompare(String(b.flight_start)))
+      .map(l => `<option value="${esc(l.id)}">${l.split_label ? esc(l.split_label) + ' · ' : ''}${esc(l.status)} · ${d(l.flight_start)} – ${d(l.flight_end)} · ${l.accounting_only ? 'accounting-only' : 'also in Strategist'}${l.campaign_name ? ' · ' + esc(l.campaign_name) : ''}</option>`).join('');
+    return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 0;font-size:12px;color:#B91C1C">
+      <span>Row ${e.rowNum} (${esc(e.clientName)} — ${esc(e.tacticName)}): ${e.candidates.length} lines already exist for this client and service (separate campaigns or sub-campaigns) -- which one do these months belong to?</span>
+      <select onchange="if (this.value) accountingSetBulkImportOverride(${e.rowNum}, 'lineId', this.value)" style="font-size:11px;padding:3px 6px;border-radius:5px;border:1px dashed var(--accent);color:var(--text)">
+        <option value="">— Pick the line —</option>${opts}
+      </select>
+      <button onclick="accountingSetBulkImportOverride(${e.rowNum}, 'excluded', true)" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer;color:var(--text)">Remove row</button>
+    </div>`;
+  }
   if (e.field === 'dates' || e.field === 'amount' || e.field === 'ambiguous' || e.field === 'agent') {
     return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 0;font-size:12px;color:#B91C1C">
       <span>Row ${e.rowNum} (${esc(e.clientName)} — ${esc(e.tacticName)}): ${esc(e.detail)} -- fix it in your sheet and paste again, or remove the row.</span>
@@ -1708,6 +1738,7 @@ function accountingRenderBulkImportErrorRow(e) {
     <button onclick="accountingSetBulkImportOverride(${e.rowNum}, 'excluded', true)" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer;color:var(--text)">Remove row</button>
   </div>`;
 }
+const ACCT_DATE_FLAG_KINDS = ['dates-kept', 'line-outside', 'line-status', 'outside', 'gap'];
 let ACCT_BULK_ONLY_FLAGGED = false; // preview filter: show only rows that need a look
 function accountingToggleBulkOnlyFlagged(on) { ACCT_BULK_ONLY_FLAGGED = !!on; accountingPreviewBulkImport(); }
 let ACCT_BULK_IMPORT_OVERRIDES = {}; // rowNum -> { clientId?, serviceId?, excluded? }
@@ -1829,7 +1860,7 @@ function accountingDownloadBulkPreview(kind) {
       lines.push([g.rowNums.join('+'), g.client.name, g.client.group_name || '', g.tacticLabel, m.month.slice(0, 7), num(m.grossBudget), num(m.sheet44i), num(m.system44i), num(diff), diff == null ? '' : (Math.abs(diff) <= 0.01 ? 'yes' : 'NO'), num(savedNow), savedNow != null && Math.abs(savedNow - m.grossBudget) > 0.005 ? 'yes' : ''].map(q).join(','));
     }));
   } else {
-    lines.push(['sheet_row', 'result', 'group_in_sheet', 'client_in_sheet', 'client_in_system', 'group_in_system', 'service_in_sheet', 'service_in_system', 'offline_visits', 'existing_line', 'flight_start', 'flight_end', 'months', 'first_month', 'last_month', 'client_price_per_month', 'sheet_44i_total', 'system_44i_total', 'difference', 'system_cut_pct', 'flags', 'saved_amounts_that_would_change', 'problem'].join(','));
+    lines.push(['sheet_row', 'result', 'group_in_sheet', 'client_in_sheet', 'client_in_system', 'group_in_system', 'service_in_sheet', 'service_in_system', 'offline_visits', 'existing_line', 'flight_start', 'flight_end', 'months', 'first_month', 'last_month', 'client_price_per_month', 'sheet_44i_total', 'system_44i_total', 'difference', 'system_cut_pct', 'date_discrepancies', 'flags', 'saved_amounts_that_would_change', 'problem'].join(','));
     plan.groups.forEach(g => {
       const ms = [...g.months].sort((a, b) => a.month.localeCompare(b.month));
       const sheet = ms.reduce((t, m) => t + (m.sheet44i || 0), 0), sys = ms.reduce((t, m) => t + (m.system44i || 0), 0);
@@ -1837,11 +1868,11 @@ function accountingDownloadBulkPreview(kind) {
       lines.push([g.rowNums.join('+'), g.existingLineId ? 'Adds months to an existing line' : 'New line', g.sheetGroup, g.sheetClient, g.client.name, g.client.group_name || '', g.sheetTactic, g.tacticLabel, g.hasOfflineVisits ? 'yes' : 'no',
         g.existingLineId ? `${g.existingAccountingOnly ? 'accounting-only' : 'also in Strategist'}, status ${g.existingStatus}` : '', g.flightStart || '', g.flightEnd || '', ms.length, ms[0] ? ms[0].month.slice(0, 7) : '', ms.length ? ms[ms.length - 1].month.slice(0, 7) : '',
         num(g.clientPrice), haveBoth ? num(sheet) : '', haveBoth ? num(sys) : '', haveBoth ? num(sheet - sys) : '', g.cutPct == null ? '' : g.cutPct,
-        (g.flags || []).map(f => f.text).join(' | '), (g.changes || []).map(c => `${c.month.slice(0, 7)} ${c.from} -> ${c.to}`).join('; '), ''].map(q).join(','));
+        (g.flags || []).filter(f => ACCT_DATE_FLAG_KINDS.includes(f.kind)).map(f => f.text).join(' | '), (g.flags || []).map(f => f.text).join(' | '), (g.changes || []).map(c => `${c.month.slice(0, 7)} ${c.from} -> ${c.to}`).join('; '), ''].map(q).join(','));
     });
-    plan.errors.forEach(e => lines.push([e.rowNum, 'NEEDS FIXING', '', e.clientName, '', '', e.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem')].map(q).join(',')));
-    (plan.skipped || []).forEach(r => lines.push([r.rowNum, 'Skipped (no amount on or after the start month)', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
-    (plan.held || []).forEach(r => lines.push([r.rowNum, 'Held back / removed by you', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
+    plan.errors.forEach(e => lines.push([e.rowNum, 'NEEDS FIXING', '', e.clientName, '', '', e.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem')].map(q).join(',')));
+    (plan.skipped || []).forEach(r => lines.push([r.rowNum, 'Skipped (no amount on or after the start month)', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
+    (plan.held || []).forEach(r => lines.push([r.rowNum, 'Held back / removed by you', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
