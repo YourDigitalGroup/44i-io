@@ -1439,6 +1439,14 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     const idx = header.findIndex(h => names.includes(h));
     if (idx !== -1) colIndex[key] = idx;
   });
+  // Forgiving fallback (2026-10-07): a header that isn't an exact known name but clearly means the flight's start or end
+  // ("Start Month", "Flight Start (Month)", "Begin", "Through"...) is used for it.
+  [['flight_start', /\bstart\b|\bbegin/], ['flight_end', /\bend\b|\bthrough\b|\bthru\b/]].forEach(([key, re]) => {
+    if (colIndex[key] !== undefined) return;
+    const taken = new Set(Object.values(colIndex));
+    const idx = header.findIndex((h, i) => !taken.has(i) && re.test(h) && !accountingNormalizeMonthHeader(h));
+    if (idx !== -1) colIndex[key] = idx;
+  });
   // Wide layout (2026-10-07): any other header cell that reads as a month ("Oct 2026", "2026-10", "10/1/2026")
   // is a month column, and each data row carries its own months across -- no "Month" column needed.
   const knownIdx = new Set(Object.values(colIndex));
@@ -1520,7 +1528,6 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     let rowCut = null, rowExpected = null; // the system's 44i cut % and expected monthly 44i Revenue (for the download)
     if (wide) {
       const startISO = inferred ? inferred.start : accountingNormalizeFlightDate(get('flight_start'), 'start'), endISO = inferred ? inferred.end : accountingNormalizeFlightDate(get('flight_end'), 'end');
-      if (inferred) flags.push({ kind: 'dates-inferred', text: `DATES: this row has no flight dates, so they were worked out from the months that have an amount: ${inferred.start} – ${inferred.end}. Check that is right.` });
       monthOnlyDates = (startISO && accountingNormalizeDate(get('flight_start')) === null) || (endISO && accountingNormalizeDate(get('flight_end')) === null);
       if (startISO === null || endISO === null) { errors.push({ rowNum, field: 'dates', clientName, tacticName, detail: `a date isn't readable (start "${get('flight_start')}", end "${get('flight_end')}")` }); return; }
       if (startISO && endISO && endISO < startISO) { errors.push({ rowNum, field: 'dates', clientName, tacticName, detail: `the end date (${endISO}) is before the start date (${startISO}) -- check the year` }); return; }
@@ -1608,7 +1615,7 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
         hasOfflineVisits: !!tacticMatch.visits || /^(true|yes|1)$/i.test(get('has_offline_visits')),
         hasAddlTargeting: /^(true|yes|1)$/i.test(get('has_addl_targeting')),
         billingType: get('billing_type').toLowerCase() || null,
-        existingLineId: existingLine ? existingLine.id : null, campaignName, matchedBy, newReason, monthOnlyDates,
+        existingLineId: existingLine ? existingLine.id : null, campaignName, matchedBy, newReason, monthOnlyDates, datesInferred: !!inferred,
         altLines: (!existingLine && newReason) || matchedBy === 'dates' ? candidatesAll.map(l => ({ id: l.id, status: l.status || 'active', flight_start: l.flight_start, flight_end: l.flight_end, split_label: l.split_label || '' })) : [],
         clientPrice, cutPct: rowCut, sheetGroup: groupName, sheetClient: clientName, sheetTactic: tacticName, flags, rowNums: [rowNum],
         existingStatus: existingLine ? (existingLine.status || 'active') : null, existingAccountingOnly: existingLine ? !!existingLine.accounting_only : null,
@@ -1645,7 +1652,12 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     });
     g.months.forEach(m => { if (ACCOUNTING_CLOSED_MONTHS[m.month.slice(0, 7) + '-01']) g.flags.push({ kind: 'closed', text: `${m.month.slice(0, 7)} is a closed (billed) month` }); });
   });
-  return { groups: [...groups.values()], errors, skipped, held, wide, cutoff, rawRows: rows };
+  const roleLabel = { group: 'Group', client: 'Client', tactic: 'Tactic', campaign: 'Campaign', flight_start: 'Flight Start', flight_end: 'Flight End', client_price: 'Total Revenue (what the client pays)', fortyfouri_revenue: '44i Revenue', month: 'Month', gross_budget: 'Gross Budget', billing_type: 'Billing type', has_offline_visits: 'Offline Visits', has_addl_targeting: 'Addl. Targeting' };
+  const keyAt = {}; Object.entries(colIndex).forEach(([k, i]) => { keyAt[i] = k; });
+  const monthAt = {}; monthCols.forEach(m => { monthAt[m.idx] = m.ym; });
+  const columnsRead = rows[0].map((h, i) => ({ header: h, role: keyAt[i] ? roleLabel[keyAt[i]] || keyAt[i] : monthAt[i] ? 'month column ' + monthAt[i] : 'NOT USED' }));
+  const firstDates = rows[1] ? { start: colIndex.flight_start !== undefined ? (rows[1][colIndex.flight_start] || '') : null, end: colIndex.flight_end !== undefined ? (rows[1][colIndex.flight_end] || '') : null } : null;
+  return { groups: [...groups.values()], errors, skipped, held, wide, cutoff, rawRows: rows, columnsRead, firstDates };
 }
 
 function accountingOpenBulkImportForm() {
@@ -1690,6 +1702,16 @@ function accountingPreviewBulkImport() {
   const nStrat = plan.groups.filter(g => !g.existingLineId && accountingIsSpendTrackable(g.service.id)).length;
   const nAcctOnly = plan.groups.filter(g => !g.existingLineId && !accountingIsSpendTrackable(g.service.id)).length;
   if (plan.groups.length) html += `<p style="font-size:12px;margin:0 0 6px"><strong>Where these go:</strong> ${nExisting} add months to a line that already exists · <strong>${nStrat} new campaign(s) will appear in the Strategist portal's Campaign Setup</strong> (use "Hold back this row" to leave one out) · ${nAcctOnly} new accounting-only line(s) (not shown to strategists).</p>`;
+  if (plan.columnsRead) {
+    const mc = plan.columnsRead.filter(c => c.role.startsWith('month column')), other = plan.columnsRead.filter(c => !c.role.startsWith('month column'));
+    const fd = plan.firstDates;
+    html += `<details style="font-size:12px;margin:0 0 8px"><summary style="cursor:pointer;color:#1E3A8A">What the import read from your sheet (click to check the columns)</summary><div style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;margin-top:4px">
+      ${other.map(c => `<div>${esc(c.header || '(blank)')} → <strong style="${c.role === 'NOT USED' ? 'color:#B91C1C' : ''}">${esc(c.role)}</strong></div>`).join('')}
+      <div>${mc.length} month column(s): ${mc.length ? esc(mc[0].header) + ' … ' + esc(mc[mc.length - 1].header) : 'none'}</div>
+      <div style="margin-top:4px">First data row's flight cells: start = <strong>${fd && fd.start !== null ? '"' + esc(fd.start) + '"' : 'no Flight Start column found'}</strong>, end = <strong>${fd && fd.end !== null ? '"' + esc(fd.end) + '"' : 'no Flight End column found'}</strong></div></div></details>`;
+  }
+  const inferredRows = plan.groups.filter(g => g.datesInferred).length;
+  if (inferredRows) html += `<p style="font-size:12px;margin:0 0 6px;color:#1E3A8A">ℹ ${inferredRows} row(s) have no flight dates, so each one's dates were worked out from its months that have an amount (the 1st of the first month to the last day of the last month). They are used to match existing lines and to date NEW campaigns; existing lines' dates are never changed. The download shows the dates used for each new line.</p>`;
   const monthOnlyRows = plan.groups.filter(g => g.monthOnlyDates).length;
   if (monthOnlyRows) html += `<p style="font-size:12px;margin:0 0 6px;color:#1E3A8A">ℹ ${monthOnlyRows} row(s) give flight dates as a month only (like Feb-27). A start is read as the 1st of that month and an end as its last day; existing lines are compared by month and their dates are never changed. New lines get those whole-month dates.</p>`;
   const dateRows = plan.groups.filter(g => (g.flags || []).some(f => ACCT_DATE_FLAG_KINDS.includes(f.kind))).length;
@@ -1803,7 +1825,7 @@ function accountingRenderBulkImportErrorRow(e) {
     <button onclick="accountingSetBulkImportOverride(${e.rowNum}, 'excluded', true)" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer;color:var(--text)">Remove row</button>
   </div>`;
 }
-const ACCT_DATE_FLAG_KINDS = ['dates-kept', 'line-outside', 'line-status', 'outside', 'gap', 'dates-inferred'];
+const ACCT_DATE_FLAG_KINDS = ['dates-kept', 'line-outside', 'line-status', 'outside', 'gap'];
 let ACCT_BULK_ONLY_FLAGGED = false; // preview filter: show only rows that need a look
 function accountingToggleBulkOnlyFlagged(on) { ACCT_BULK_ONLY_FLAGGED = !!on; accountingPreviewBulkImport(); }
 let ACCT_BULK_IMPORT_OVERRIDES = {}; // rowNum -> { clientId?, serviceId?, excluded? }
@@ -1919,7 +1941,7 @@ function accountingDownloadBulkPreview() {
   const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const d10 = v => v ? String(v).slice(0, 10) : '';
   // Your sheet exactly as pasted (same columns, same order, every row), with the checks added as columns on the right.
-  const extra = ['IMPORT RESULT', 'Appears in Strategist?', 'Client (in system)', 'Group (in system)', 'Service (in system)', 'Offline Visits', 'Existing line', 'Gross saved per month (client price)', '44i Revenue per month (system)', '44i cut % (system)', 'Months not matching the system', 'Date discrepancies', 'Other flags', 'Saved amounts that would change', 'Problem'];
+  const extra = ['IMPORT RESULT', 'Appears in Strategist?', 'Client (in system)', 'Group (in system)', 'Service (in system)', 'Offline Visits', 'Existing line', 'Flight dates used for a NEW line', 'Gross saved per month (client price)', '44i Revenue per month (system)', '44i cut % (system)', 'Months not matching the system', 'Date discrepancies', 'Other flags', 'Saved amounts that would change', 'Problem'];
   const lines = [[...plan.rawRows[0], ...extra].map(q).join(',')];
   const byRow = new Map(); plan.groups.forEach(g => g.rowNums.forEach(r => byRow.set(r, g)));
   const errByRow = new Map(plan.errors.map(e => [e.rowNum, e])), skipRows = new Set((plan.skipped || []).map(r => r.rowNum)), heldRows = new Set((plan.held || []).map(r => r.rowNum));
@@ -1936,11 +1958,12 @@ function accountingDownloadBulkPreview() {
         g.existingLineId ? (ex && ex.accounting_only ? 'no (existing accounting-only line)' : 'already there') : (accountingIsSpendTrackable(g.service.id) ? 'YES - new campaign in Campaign Setup' : 'no (accounting-only)'),
         g.client.name, g.client.group_name || '', g.tacticLabel, g.hasOfflineVisits ? 'yes' : 'no',
         ex ? `${ex.split_label ? ex.split_label + ' · ' : ''}${ex.status || 'active'}, ${d10(ex.flight_start) || '?'} – ${d10(ex.flight_end) || 'ongoing'}, ${ex.accounting_only ? 'accounting-only' : 'also in Strategist'}` : '',
+        g.existingLineId ? '' : `${g.flightStart || '?'} – ${g.flightEnd || 'ongoing'}${g.datesInferred ? ' (worked out from the months)' : ''}`,
         num(g.clientPrice), ms.some(m => m.system44i != null) ? num(ms.find(m => m.system44i != null).system44i) : '', g.cutPct == null ? '' : g.cutPct,
         bad.join(' | '), dateF.map(f => f.text).join(' | '), otherF.map(f => f.text).join(' | '), (g.changes || []).map(c => `${c.month.slice(0, 7)} ${money(c.from)} -> ${money(c.to)}`).join('; '), ''];
     } else if (e) {
       out[0] = 'NEEDS FIXING';
-      out[14] = e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem');
+      out[15] = e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem');
     } else if (skipRows.has(r)) out[0] = 'Skipped (no amount on or after the start month)';
     else if (heldRows.has(r)) out[0] = 'Held back / removed by you';
     lines.push([...pad, ...out].map(q).join(','));
