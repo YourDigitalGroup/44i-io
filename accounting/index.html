@@ -1355,6 +1355,18 @@ function accountingSuggestSimilarTactic(name) {
 // service -- Group, Client, Service, Start, End, Monthly Cost -- followed by one column per month). ──
 const ACCT_MONTH_ABBR = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 // 'Oct 2026', 'October 2026', 'Oct-26', '2026-10', '2026-10-01', '10/1/2026', '10/2026' -> '2026-10', else null.
+// Flight Start / Flight End cells that only give a month ("Feb-27", "Feb 2027", "2027-02", "2/2027") are read as WHOLE MONTHS:
+// a start becomes the 1st, an end becomes the last day of that month (2026-10-07, per Claire's sheet, which shows Feb-27 / Feb-27).
+// Full dates still go through accountingNormalizeDate unchanged. Returns '' (blank), null (unreadable) or 'YYYY-MM-DD'.
+function accountingNormalizeFlightDate(s, which) {
+  const full = accountingNormalizeDate(s);
+  if (full !== null) return full;
+  const ym = accountingNormalizeMonthHeader(s);
+  if (!ym) return null;
+  if (which === 'start') return ym + '-01';
+  const [y, m] = ym.split('-').map(Number);
+  return `${ym}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+}
 function accountingNormalizeMonthHeader(h) {
   const t = String(h || '').trim().toLowerCase();
   if (!t) return null;
@@ -1476,7 +1488,7 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     if (pickedLine) { existingMatches = [pickedLine]; matchedBy = 'picked'; }
     else if (campaignName) { if (!existingMatches.length) newReason = 'named'; }
     else if (existingMatches.length && wide) {
-      const sStart = accountingNormalizeDate(get('flight_start')), sEnd = accountingNormalizeDate(get('flight_end'));
+      const sStart = accountingNormalizeFlightDate(get('flight_start'), 'start'), sEnd = accountingNormalizeFlightDate(get('flight_end'), 'end');
       if (sStart) {
         const lo = v => v ? String(v).slice(0, 10) : '0000-01-01', hi = v => v ? String(v).slice(0, 10) : '9999-12-31';
         const overlapping = existingMatches.filter(l => lo(l.flight_start) <= hi(sEnd || '') && hi(l.flight_end) >= sStart);
@@ -1492,13 +1504,14 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     if (ALL_ACCOUNTING_LINES.some(l => l.client_id === client.id && l.agent_name)) { errors.push({ rowNum, field: 'agent', clientName, tacticName, detail: `this client uses Agent/County Split lines and the import can't tell agents apart -- leave this client out and add its lines another way` }); return; }
     const existingLine = existingMatches[0] || null;
     // One group per line it joins; rows that become separate NEW campaigns are told apart by name or by their own dates.
-    const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}|${norm(campaignName)}|` + (existingLine ? 'L' + existingLine.id : (newReason === 'dates' ? 'D' + accountingNormalizeDate(get('flight_start')) + '>' + accountingNormalizeDate(get('flight_end')) : ''));
+    const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}|${norm(campaignName)}|` + (existingLine ? 'L' + existingLine.id : (newReason === 'dates' ? 'D' + accountingNormalizeFlightDate(get('flight_start'), 'start') + '>' + accountingNormalizeFlightDate(get('flight_end'), 'end') : ''));
 
     let flightStart = get('flight_start') || null, flightEnd = get('flight_end') || null;
     let wideMonths = null, clientPrice = null; const flags = [];
     let rowCut = null, rowExpected = null; // the system's 44i cut % and expected monthly 44i Revenue (for the download)
     if (wide) {
-      const startISO = accountingNormalizeDate(get('flight_start')), endISO = accountingNormalizeDate(get('flight_end'));
+      const startISO = accountingNormalizeFlightDate(get('flight_start'), 'start'), endISO = accountingNormalizeFlightDate(get('flight_end'), 'end');
+      if ((startISO && accountingNormalizeDate(get('flight_start')) === null) || (endISO && accountingNormalizeDate(get('flight_end')) === null)) flags.push({ kind: 'dates-from-months', text: `DATES: the flight dates "${get('flight_start')}" – "${get('flight_end')}" only give a month, so they were read as whole months: ${startISO || '?'} – ${endISO || '?'}. Check that is what you meant.` });
       if (startISO === null || endISO === null) { errors.push({ rowNum, field: 'dates', clientName, tacticName, detail: `a date isn't readable (start "${get('flight_start')}", end "${get('flight_end')}")` }); return; }
       if (startISO && endISO && endISO < startISO) { errors.push({ rowNum, field: 'dates', clientName, tacticName, detail: `the end date (${endISO}) is before the start date (${startISO}) -- check the year` }); return; }
       flightStart = startISO || null; flightEnd = endISO || null;
@@ -1771,7 +1784,7 @@ function accountingRenderBulkImportErrorRow(e) {
     <button onclick="accountingSetBulkImportOverride(${e.rowNum}, 'excluded', true)" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer;color:var(--text)">Remove row</button>
   </div>`;
 }
-const ACCT_DATE_FLAG_KINDS = ['dates-kept', 'line-outside', 'line-status', 'outside', 'gap'];
+const ACCT_DATE_FLAG_KINDS = ['dates-kept', 'line-outside', 'line-status', 'outside', 'gap', 'dates-from-months'];
 let ACCT_BULK_ONLY_FLAGGED = false; // preview filter: show only rows that need a look
 function accountingToggleBulkOnlyFlagged(on) { ACCT_BULK_ONLY_FLAGGED = !!on; accountingPreviewBulkImport(); }
 let ACCT_BULK_IMPORT_OVERRIDES = {}; // rowNum -> { clientId?, serviceId?, excluded? }
