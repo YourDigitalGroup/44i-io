@@ -1393,6 +1393,7 @@ function accountingParseCsvRows(text) {
 }
 const ACCT_BULK_IMPORT_COLUMNS = [
   { key: 'group', names: ['group'] },
+  { key: 'campaign', names: ['campaign', 'campaign name', 'sub-campaign', 'sub campaign', 'split', 'split label'] },
   { key: 'client', names: ['client'] },
   { key: 'tactic', names: ['tactic', 'service'] },
   { key: 'flight_start', names: ['flight start', 'start date', 'start'] },
@@ -1459,10 +1460,13 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
       : accountingResolveBulkTactic(tacticName);
     if (!client) { errors.push({ rowNum, field: 'client', clientName, tacticName }); return; }
     if (!tacticMatch) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
-    const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}`;
+    // Optional "Campaign" column: names the sub-campaign (the line's split_label). A row WITH a campaign name only ever
+    // joins a line of that same name -- if there isn't one it becomes a NEW campaign, never an extension of another.
+    const campaignName = get('campaign');
+    const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}|${norm(campaignName)}`;
 
     // Lines already in the system for this client + service + label (from the IO flow, Strategist, an earlier import).
-    let existingMatches = ALL_ACCOUNTING_LINES.filter(l => l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel);
+    let existingMatches = ALL_ACCOUNTING_LINES.filter(l => l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel && (!campaignName || norm(l.split_label) === norm(campaignName)));
     const candidates = existingMatches; // kept for the "which line?" picker
     if (existingMatches.length > 1 && overrides[rowNum]?.lineId) existingMatches = existingMatches.filter(l => l.id === overrides[rowNum].lineId);
     if (existingMatches.length > 1) { errors.push({ rowNum, field: 'ambiguous', clientName, tacticName, candidates: candidates.map(l => ({ id: l.id, status: l.status || 'active', flight_start: l.flight_start, flight_end: l.flight_end, accounting_only: !!l.accounting_only, split_label: l.split_label || '', campaign_name: l.platform_campaign_name || '' })), detail: `${existingMatches.length} lines already match this client and service (for example different agents or counties) -- the import can't tell which one this row is for` }); return; }
@@ -1557,7 +1561,7 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
         hasOfflineVisits: !!tacticMatch.visits || /^(true|yes|1)$/i.test(get('has_offline_visits')),
         hasAddlTargeting: /^(true|yes|1)$/i.test(get('has_addl_targeting')),
         billingType: get('billing_type').toLowerCase() || null,
-        existingLineId: existingLine ? existingLine.id : null,
+        existingLineId: existingLine ? existingLine.id : null, campaignName,
         clientPrice, cutPct: rowCut, sheetGroup: groupName, sheetClient: clientName, sheetTactic: tacticName, flags, rowNums: [rowNum],
         existingStatus: existingLine ? (existingLine.status || 'active') : null, existingAccountingOnly: existingLine ? !!existingLine.accounting_only : null,
         months: [],
@@ -1642,10 +1646,12 @@ function accountingPreviewBulkImport() {
     const tag = g.existingLineId
       ? `already in the system (${g.existingAccountingOnly ? 'accounting-only' : 'also in the Strategist portal'}, status ${g.existingStatus}) -- adding months to it`
       : trackable ? 'new campaign (will also appear in the Strategist portal)' : 'new campaign, accounting-only';
+    const newBecauseNamed = !g.existingLineId && g.campaignName && ALL_ACCOUNTING_LINES.some(l => l.client_id === g.client.id && l.service_id === g.service.id && l.tactic_label === g.tacticLabel);
     const visitsTag = g.hasOfflineVisits ? ' <span style="font-size:10px;font-weight:600;color:var(--accent-dark);border:1px solid var(--accent);border-radius:4px;padding:0 4px">+ Offline Visits</span>' : '';
     const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const monthTotal = g.months.reduce((t, m) => t + (m.grossBudget || 0), 0);
-    const flagHtml = (g.flags || []).map(f => ACCT_DATE_FLAG_KINDS.includes(f.kind)
+    const namedHtml = newBecauseNamed ? `<div style="font-size:11.5px;color:#1E3A8A;background:#DBEAFE;border-radius:5px;padding:3px 8px;margin-top:4px">ℹ This client already has other line(s) for this service, none named "${esc(g.campaignName)}" -- so this becomes a NEW campaign, not an extension.</div>` : '';
+    const flagHtml = namedHtml + (g.flags || []).map(f => ACCT_DATE_FLAG_KINDS.includes(f.kind)
       ? `<div style="font-size:11.5px;color:#7C2D12;background:#FFEDD5;border:1px solid #FDBA74;border-radius:5px;padding:3px 8px;margin-top:4px">📅 ${esc(f.text)}</div>`
       : `<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ ${esc(f.text)}</div>`).join('');
     const changeHtml = (g.changes || []).length ? `<div style="font-size:11.5px;color:#991B1B;background:#FEE2E2;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ This will CHANGE ${g.changes.length} amount(s) already saved on the existing line: ${g.changes.map(c => `${c.month.slice(0, 7)} ${money(c.from)} → ${money(c.to)}`).join(', ')}</div>` : '';
@@ -1653,7 +1659,7 @@ function accountingPreviewBulkImport() {
     if (ACCT_BULK_ONLY_FLAGGED && !needsLook) return '';
     const holdBtn = g.rowNums && g.rowNums.length ? `<button onclick="accountingSetBulkImportOverride(${g.rowNums[0]}, 'excluded', true)" style="float:right;font-size:11px;padding:2px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer">Hold back this row</button>` : '';
     return `<div style="padding:9px 12px;font-size:12.5px;border-bottom:1px solid var(--border)">${holdBtn}
-      <strong style="color:var(--text)">${esc(g.client.name)}</strong>${g.client.group_name ? ` <span style="color:var(--muted)">[${esc(g.client.group_name)}]</span>` : ''} — <span style="color:var(--text)">${esc(g.tacticLabel)}</span>${visitsTag} <span style="color:var(--muted)">(${g.months.length || 0} month(s)${g.months.length ? ', ' + money(monthTotal) + ' total' : ''}, ${tag})</span>${flagHtml}${changeHtml}
+      <strong style="color:var(--text)">${esc(g.client.name)}</strong>${g.client.group_name ? ` <span style="color:var(--muted)">[${esc(g.client.group_name)}]</span>` : ''} — <span style="color:var(--text)">${esc(g.tacticLabel)}</span>${g.campaignName ? ` <span style="color:var(--text)">· Campaign: <strong>${esc(g.campaignName)}</strong></span>` : ''}${visitsTag} <span style="color:var(--muted)">(${g.months.length || 0} month(s)${g.months.length ? ', ' + money(monthTotal) + ' total' : ''}, ${tag})</span>${flagHtml}${changeHtml}
     </div>`;
   }).join('');
   // Totals per group, to compare against the spreadsheet before confirming.
@@ -1796,6 +1802,7 @@ async function accountingConfirmBulkImport() {
       const data = {
         client_id: g.client.id, group_id: g.client.group_id || null, service_id: g.service.id,
         tactic_label: g.tacticLabel, flight_start: g.flightStart, flight_end: g.flightEnd,
+        split_label: g.campaignName || undefined,
         has_offline_visits: g.hasOfflineVisits,
         has_addl_targeting: g.hasAddlTargeting,
         accounting_only: !trackable,
