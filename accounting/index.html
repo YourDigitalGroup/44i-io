@@ -1193,7 +1193,8 @@ function accountingResolveBulkClient(name, groupName) {
 // Spreadsheet service names -> catalog service ids (2026-10-07, built from Claire's spreadsheet service list; every
 // SEM level is the one SEM service, per Claire). Only the unambiguous names are here -- anything not listed (or not in
 // the catalog) is shown in the preview as "service not matched" so it can be decided case by case. Used only when the
-// name doesn't already match a catalog label exactly.
+// name doesn't already match a catalog label exactly. An id ending in "+visits" means that service WITH Offline
+// Visits Tracking turned on (the "w/Visits" names in the sheet).
 const ACCT_BULK_SERVICE_ALIASES = {
  "website business starter": "w-bs",
  "website business builder": "w-bb",
@@ -1280,7 +1281,18 @@ const ACCT_BULK_SERVICE_ALIASES = {
  "youtube tv": "yttv-bp",
  "amazon prime tv": "amz-bp",
  "mobile audience targeting": "mob-bp",
- "hulu": "hulu-bp"
+ "hulu": "hulu-bp",
+ "targeted display geo-targeting & audience w/visits": "td-geo+visits",
+ "targeted display site retargeting, keyword, contextual or category contextual targeting w/visits": "td-site+visits",
+ "targeted display dynamic display ads w/visits": "td-dynamic+visits",
+ "targeted display custom site targeting & ad retargeting w/visits": "td-custom+visits",
+ "location targeting geofencing or 1st party addressable database w/visits": "lt-geo+visits",
+ "location targeting crm 1st party addressable database w/visits": "lt-crm+visits",
+ "location targeting event or lookback w/visits": "lt-event+visits",
+ "programmatic video geotargeting, keyword, contextual, category & retargeting w/visits": "pv-geo+visits",
+ "ott/ctv location w/visits": "stv-loc+visits",
+ "ott/ctv audience/demo w/visits": "stv-aud+visits",
+ "ott/ctv sports w/visits": "stv-sports+visits"
 };
 function accountingResolveBulkTactic(name) {
   const norm = (name || '').trim().toLowerCase();
@@ -1292,9 +1304,10 @@ function accountingResolveBulkTactic(name) {
   }
   const direct = Object.values(CATALOG_ROWS).find(r => eligible(r) && (r.accounting_label || r.label || '').trim().toLowerCase() === norm);
   if (direct) return { service: direct, tacticLabel: direct.accounting_label || direct.label };
-  const aliasId = ACCT_BULK_SERVICE_ALIASES[norm.replace(/\s+/g, ' ')];
+  const aliasRaw = ACCT_BULK_SERVICE_ALIASES[norm.replace(/\s+/g, ' ')] || '';
+  const aliasId = aliasRaw.replace('+visits', '');
   const aliased = aliasId && CATALOG_ROWS[aliasId];
-  return aliased && eligible(aliased) ? { service: aliased, tacticLabel: aliased.accounting_label || aliased.label } : null;
+  return aliased && eligible(aliased) ? { service: aliased, tacticLabel: aliased.accounting_label || aliased.label, visits: aliasRaw.endsWith('+visits') } : null;
 }
 // Plain edit-distance -- how many single-character insertions/deletions/
 // substitutions turn one string into the other. Used only for a "did you
@@ -1440,8 +1453,9 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     const clientOverrideId = overrides[rowNum]?.clientId;
     const serviceOverrideId = overrides[rowNum]?.serviceId;
     const client = clientOverrideId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientOverrideId) : accountingResolveBulkClient(clientName, groupName);
+    const serviceOverrideBase = serviceOverrideId ? String(serviceOverrideId).replace('+visits', '') : '';
     const tacticMatch = serviceOverrideId
-      ? (CATALOG_ROWS[serviceOverrideId] ? { service: CATALOG_ROWS[serviceOverrideId], tacticLabel: CATALOG_ROWS[serviceOverrideId].accounting_label || CATALOG_ROWS[serviceOverrideId].label } : null)
+      ? (CATALOG_ROWS[serviceOverrideBase] ? { service: CATALOG_ROWS[serviceOverrideBase], tacticLabel: CATALOG_ROWS[serviceOverrideBase].accounting_label || CATALOG_ROWS[serviceOverrideBase].label, visits: String(serviceOverrideId).endsWith('+visits') } : null)
       : accountingResolveBulkTactic(tacticName);
     if (!client) { errors.push({ rowNum, field: 'client', clientName, tacticName }); return; }
     if (!tacticMatch) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
@@ -1481,7 +1495,7 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
       if (clientPrice === null) flags.push({ kind: 'noprice', text: 'no client price (Total Revenue) on this row -- the month amounts are being imported as the Gross Budget (client price). If they are 44i Revenue, add the client price.' });
       if (clientPrice !== null) {
         // The system works 44i Revenue out as Gross x 44i cut %. Compare that with the sheet's 44i Revenue for each month.
-        const cut = accountingEffectiveCutPct(tacticMatch.service.id, client.id, client.group_id, !!(/^(true|yes|1)$/i.test(get('has_offline_visits')) || /^(true|yes|1)$/i.test(get('has_addl_targeting'))), clientPrice, existingLine ? existingLine.cut_pct_override : null);
+        const cut = accountingEffectiveCutPct(tacticMatch.service.id, client.id, client.group_id, !!(tacticMatch.visits || /^(true|yes|1)$/i.test(get('has_offline_visits')) || /^(true|yes|1)$/i.test(get('has_addl_targeting'))), clientPrice, existingLine ? existingLine.cut_pct_override : null);
         rowCut = cut; if (cut != null) rowExpected = Math.round(clientPrice * cut) / 100;
         if (cut == null) flags.push({ kind: 'nocut', text: `no 44i cut % is set for this service${client.group_name ? ' in ' + client.group_name : ''}, so the sheet's 44i Revenue can't be checked` });
         else {
@@ -1524,7 +1538,7 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
       groups.set(identityKey, {
         client, service: tacticMatch.service, tacticLabel: tacticMatch.tacticLabel,
         flightStart, flightEnd,
-        hasOfflineVisits: /^(true|yes|1)$/i.test(get('has_offline_visits')),
+        hasOfflineVisits: !!tacticMatch.visits || /^(true|yes|1)$/i.test(get('has_offline_visits')),
         hasAddlTargeting: /^(true|yes|1)$/i.test(get('has_addl_targeting')),
         billingType: get('billing_type').toLowerCase() || null,
         existingLineId: existingLine ? existingLine.id : null,
@@ -1667,13 +1681,18 @@ function accountingRenderBulkImportErrorRow(e) {
   const overrideKey = e.field === 'client' ? 'clientId' : 'serviceId';
   const options = e.field === 'client'
     ? [...ALL_ACCOUNTING_CLIENTS].sort((a, b) => a.name.localeCompare(b.name))
-        .map(c => `<option value="${esc(c.id)}" ${suggestionId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')
+        .map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')
     : Object.values(CATALOG_ROWS).filter(r => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment)
         .sort((a, b) => (a.accounting_label || a.label || '').localeCompare(b.accounting_label || b.label || ''))
-        .map(r => `<option value="${esc(r.id)}" ${suggestionId === r.id ? 'selected' : ''}>${esc(r.accounting_label || r.label)}</option>`).join('');
+        .map(r => {
+          const lbl = esc(r.accounting_label || r.label);
+          const hasVisits = Object.values(CATALOG_ROWS).some(m => m.section === r.section && m.pricing_mode === 'modifier' && /offline/i.test(m.label || ''));
+          return `<option value="${esc(r.id)}">${lbl}</option>` + (hasVisits ? `<option value="${esc(r.id)}+visits">${lbl} + Offline Visits</option>` : '');
+        }).join('');
   return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 0;font-size:12px;color:#B91C1C">
     <span>Row ${e.rowNum}: ${e.field} "${esc(rawText)}" not found${suggestionLabel ? ` — did you mean "${esc(suggestionLabel)}"?` : ''}</span>
-    <select onchange="accountingSetBulkImportOverride(${e.rowNum}, '${overrideKey}', this.value)" style="font-size:11px;padding:3px 6px;border-radius:5px;border:1px dashed var(--accent);color:var(--text)">
+    ${suggestionId ? `<button onclick="accountingSetBulkImportOverride(${e.rowNum}, '${overrideKey}', '${esc(suggestionId)}')" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--accent-dark);color:#fff;border:none;cursor:pointer">Use "${esc(suggestionLabel)}"</button>` : ''}
+    <select onchange="if (this.value) accountingSetBulkImportOverride(${e.rowNum}, '${overrideKey}', this.value)" style="font-size:11px;padding:3px 6px;border-radius:5px;border:1px dashed var(--accent);color:var(--text)">
       <option value="">— Pick the right ${e.field} —</option>
       ${options}
     </select>
