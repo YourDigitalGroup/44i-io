@@ -1190,6 +1190,98 @@ function accountingResolveBulkClient(name, groupName) {
   }
   return matches[0] || null;
 }
+// Spreadsheet service names -> catalog service ids (2026-10-07, built from Claire's spreadsheet service list; every
+// SEM level is the one SEM service, per Claire). Only the unambiguous names are here -- anything not listed (or not in
+// the catalog) is shown in the preview as "service not matched" so it can be decided case by case. Used only when the
+// name doesn't already match a catalog label exactly.
+const ACCT_BULK_SERVICE_ALIASES = {
+ "website business starter": "w-bs",
+ "website business builder": "w-bb",
+ "website business pro": "w-bp",
+ "website custom site/e-commerce": "w-custom",
+ "newsletter form, photo/video, testimonial, news/blog or calendar/event modules (each)": "w-module",
+ "website domain transfer (hourly)": "w-domain",
+ "website dns transfer": "w-dns",
+ "website convert logo to vector": "w-logo",
+ "website addl. email addresses": "w-email",
+ "website hosting fee": "w-hosting",
+ "website e-commerce hosting fee": "w-ecomm-hosting",
+ "website web accessibility hosting fee": "w-ada-hosting",
+ "website seo business pro": "seo-bp",
+ "social media management business starter": "sm-bs",
+ "social media management business builder": "sm-bb",
+ "social media management business pro": "sm-bp",
+ "social media management fee per addl. channel": "sm-addl",
+ "email marketing business builder (< 2500) first party": "em-bb-2500",
+ "email marketing business pro (> 30,000) curated": "em-bp-30kp",
+ "email marketing addl. monthly email": "em-addl",
+ "email marketing template change": "em-template",
+ "local listing optimization business pro": "llo-bp",
+ "google my business set-up": "gbp-setup",
+ "google business profile set-up": "gbp-setup",
+ "sem < $1,000 min $500 adjust spend": "sem-bp",
+ "sem $1001 - $4999": "sem-bp",
+ "sem $5000 +": "sem-bp",
+ "old - sem < $1,000 min $500 adjust spend": "sem-bp",
+ "(old) search engine marketing sem campaign": "sem-bp",
+ "targeted display geo-targeting & audience": "td-geo",
+ "targeted display site retargeting, keyword, contextual or category contextual targeting": "td-site",
+ "targeted display dynamic display ads": "td-dynamic",
+ "targeted display custom site targeting & ad retargeting": "td-custom",
+ "location targeting geofencing or 1st party addressable database": "lt-geo",
+ "location targeting crm 1st party addressable database": "lt-crm",
+ "location targeting crm": "lt-crm",
+ "location targeting event or lookback": "lt-event",
+ "fb & ig ads single image, carousel, video and event": "sma-fb",
+ "programmatic audio geotargeting, keyword, contextual, category & retargeting": "pa-geo",
+ "programmatic video geotargeting, keyword, contextual, category & retargeting": "pv-geo",
+ "native display geotargeting, keyword, contextual, category & retargeting": "nd-geo",
+ "native video geotargeting, keyword, contextual, category & retargeting": "nv-geo",
+ "youtube video outstream on google network": "yt-out",
+ "youtube video non-skippable :15": "yt-15",
+ "youtube video non-skippable :06": "yt-06",
+ "youtube video truview skippable :05 (non-skippable) :12s - 3m": "yt-skip",
+ "ott/ctv location": "stv-loc",
+ "ott/ctv audience/demo": "stv-aud",
+ "ott/ctv sports": "stv-sports",
+ "traditional media buying and consulation": "alc-media",
+ "new brand/logo": "alc-brand",
+ "(old) a la carte new brand/logo": "alc-brand",
+ "stock photography": "alc-photo",
+ "graphic design (per hour)": "alc-design",
+ "(old) a la carte graphic design (hourly)": "alc-design",
+ "social profile & cover graphics": "alc-social-graphics",
+ "(old) a la carte static banner ad set": "alc-banner",
+ "(old) local listing optimization business pro": "llo-bp",
+ "(old) reputation mangement business pro": "rep-bp",
+ "(old) website photo/video module": "w-module",
+ "(old) website testimonial module": "w-module",
+ "(old) website news/blog module": "w-module",
+ "(old) website newsletter form": "w-module",
+ "(old) website calendar/event module": "w-module",
+ "(old) website hosting fee": "w-hosting",
+ "(old) website domain transfer (hourly)": "w-domain",
+ "(old) website business starter": "w-bs",
+ "targeted landing pages business starter (1-5 pages)": "tlp-bs",
+ "targeted landing pages business builder (6-10 pages)": "tlp-bb",
+ "targeted landing pages business pro (11-15 pages)": "tlp-bp",
+ "ai chatbot": "w-ai",
+ "seo packages starter": "seo-bs",
+ "seo packages builder": "seo-bb",
+ "seo packages pro": "seo-bp",
+ "new seo business starter": "seo-bs",
+ "new seo business builder": "seo-bb",
+ "business pro seo/aeo": "seo-bp",
+ "social targeted display": "sda-bp",
+ "social ott/ctv": "ottctv-bp",
+ "tiktok": "sma-tt",
+ "snapchat": "sma-sc",
+ "linkedin ads": "sma-li",
+ "youtube tv": "yttv-bp",
+ "amazon prime tv": "amz-bp",
+ "mobile audience targeting": "mob-bp",
+ "hulu": "hulu-bp"
+};
 function accountingResolveBulkTactic(name) {
   const norm = (name || '').trim().toLowerCase();
   if (!norm) return null;
@@ -1199,7 +1291,10 @@ function accountingResolveBulkTactic(name) {
     return { service: r, tacticLabel: r.accounting_label || r.label };
   }
   const direct = Object.values(CATALOG_ROWS).find(r => eligible(r) && (r.accounting_label || r.label || '').trim().toLowerCase() === norm);
-  return direct ? { service: direct, tacticLabel: direct.accounting_label || direct.label } : null;
+  if (direct) return { service: direct, tacticLabel: direct.accounting_label || direct.label };
+  const aliasId = ACCT_BULK_SERVICE_ALIASES[norm.replace(/\s+/g, ' ')];
+  const aliased = aliasId && CATALOG_ROWS[aliasId];
+  return aliased && eligible(aliased) ? { service: aliased, tacticLabel: aliased.accounting_label || aliased.label } : null;
 }
 // Plain edit-distance -- how many single-character insertions/deletions/
 // substitutions turn one string into the other. Used only for a "did you
@@ -1339,6 +1434,9 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     const get = (key) => colIndex[key] !== undefined ? (cols[colIndex[key]] || '').trim() : '';
     const clientName = get('client'), tacticName = get('tactic'), groupName = get('group');
     if (!clientName && !tacticName) return; // blank line
+    // Wide layout: a row with no amount on or after the start month is skipped BEFORE its client/service are looked up,
+    // so old/retired services that finished before then never show up as "needs fixing" (per Claire, 2026-10-07).
+    if (wide && !monthCols.some(({ idx, ym }) => (!cutoff || ym >= cutoff) && (v => v === null || v === 0 ? false : true)(accountingParseMoney(cols[idx])))) { skipped.push({ rowNum, clientName, tacticName }); return; }
     const clientOverrideId = overrides[rowNum]?.clientId;
     const serviceOverrideId = overrides[rowNum]?.serviceId;
     const client = clientOverrideId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientOverrideId) : accountingResolveBulkClient(clientName, groupName);
@@ -1537,6 +1635,9 @@ function accountingPreviewBulkImport() {
     html += `<p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">${plan.skipped.length} row(s) skipped: no amount on or after ${esc(plan.cutoff || 'the first month')} (rows ${plan.skipped.slice(0, 15).map(r => r.rowNum).join(', ')}${plan.skipped.length > 15 ? ', …' : ''}).</p>`;
   }
   if (plan.errors.length) {
+    const unmatched = new Map();
+    plan.errors.filter(e => e.field === 'tactic').forEach(e => { const k = e.tacticName.trim(); const u = unmatched.get(k) || { n: 0, rows: [] }; u.n++; u.rows.push(e.rowNum); unmatched.set(k, u); });
+    if (unmatched.size) html += `<div style="font-size:12px;margin:10px 0 0;padding:8px 10px;border:1px solid #FCA5A5;border-radius:6px;background:#FEF2F2"><strong>${unmatched.size} service name(s) in the sheet aren't matched to a service yet</strong> (only rows with amounts from ${esc(plan.cutoff || 'the first month')} on are counted):<ul style="margin:4px 0 0 18px;padding:0">${[...unmatched.entries()].sort((x, y) => y[1].n - x[1].n).map(([k, u]) => `<li>${esc(k)} -- ${u.n} row(s)</li>`).join('')}</ul></div>`;
     html += `<p style="font-size:12px;font-weight:600;color:#B91C1C;margin:10px 0 4px">Needs fixing -- pick the right one below, or remove the row (no need to re-paste):</p>`;
     html += plan.errors.map(e => accountingRenderBulkImportErrorRow(e)).join('');
   }
