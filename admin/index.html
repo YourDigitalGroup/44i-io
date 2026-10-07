@@ -337,6 +337,13 @@
                   <option value="false">No — skip KOC for all products</option>
                 </select>
               </div>
+              <div>
+                <label class="lbl" for="admin-hide-from-strategist">Strategist Portal <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— show this group's campaigns to strategists?</span></label>
+                <select id="admin-hide-from-strategist" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px">
+                  <option value="false">Show in the Strategist Portal (normal)</option>
+                  <option value="true">Hide — Accounting only, not in the Strategist Portal</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -13382,6 +13389,7 @@ async function adminNewGroup() {
   document.getElementById('admin-color2').value = '#1C9BD7';
   document.getElementById('admin-color2-hex').value = '#1C9BD7';
   document.getElementById('admin-has-koc').value = 'true';
+  document.getElementById('admin-hide-from-strategist').value = 'false';
   document.getElementById('admin-logo-dark-bg').checked = false;
   setGroupLogoPreview('');
   document.getElementById('admin-logo-file').value = '';
@@ -13466,6 +13474,7 @@ async function adminEditGroup(id, initialTab) {
   document.getElementById('admin-trello').value = g.trello_board_id || '';
   document.getElementById('admin-io-recipient').value = g.io_recipient || '';
   document.getElementById('admin-has-koc').value = g.has_koc ? 'true' : 'false';
+  document.getElementById('admin-hide-from-strategist').value = g.hide_from_strategist ? 'true' : 'false';
   // Load existing pricing overrides
   currentPricingOverrides = {};
   if (g.io_pricing) {
@@ -13532,6 +13541,8 @@ async function adminSaveGroup() {
     trello_board_id: document.getElementById('admin-trello').value.trim(),
     io_recipient: document.getElementById('admin-io-recipient').value.trim() || null,
     has_koc: document.getElementById('admin-has-koc').value === 'true',
+    // Group switch (2026-10-07): hides this group's campaign lines + clients from the Strategist Portal (Accounting still sees them).
+    hide_from_strategist: document.getElementById('admin-hide-from-strategist').value === 'true',
   };
   // Only super admins may set pricing. For AM-tier users, omit io_pricing entirely
   // so a PATCH never overwrites the group's existing overrides.
