@@ -1289,7 +1289,10 @@ const ACCT_BULK_IMPORT_COLUMNS = [
   { key: 'tactic', names: ['tactic', 'service'] },
   { key: 'flight_start', names: ['flight start', 'start date', 'start'] },
   { key: 'flight_end', names: ['flight end', 'end date', 'end'] },
-  { key: 'monthly_cost', names: ['monthly cost', 'monthly amount', 'monthly budget', 'monthly'] },
+  // What the CLIENT pays per month ("Total Revenue" in the legacy sheet) -- this is the line's Gross Budget; the
+  // month columns then hold 44i Revenue (what 44i bills the group), which the preview checks against the system.
+  { key: 'client_price', names: ['total revenue', 'client revenue', 'client price', 'monthly cost', 'monthly amount', 'monthly budget', 'monthly'] },
+  { key: 'fortyfouri_revenue', names: ['44i revenue', '44i monthly', '44i billing', '44i bill', '44i'] },
   { key: 'month', names: ['month'] },
   { key: 'gross_budget', names: ['gross budget'] },
   { key: 'billing_type', names: ['billing', 'billing type'] },
@@ -1328,10 +1331,11 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
   const norm = v => String(v || '').trim().toLowerCase();
   const errors = []; // { rowNum, field, clientName, tacticName, detail? }
   const skipped = []; // wide layout: rows with no amounts on or after the cutoff month
+  const held = []; // rows she held back / removed in the preview (kept only so the download can list them)
   const groups = new Map(); // identityKey -> { client, service, tacticLabel, flightStart, flightEnd, hasOfflineVisits, billingType, months: [{month, grossBudget}], flags: [] }
   rows.slice(1).forEach((cols, i) => {
     const rowNum = i + 2;
-    if (overrides[rowNum]?.excluded) return; // removed from the import, per her own review
+    if (overrides[rowNum]?.excluded) { held.push({ rowNum, clientName: colIndex.client !== undefined ? (cols[colIndex.client] || '').trim() : '', tacticName: colIndex.tactic !== undefined ? (cols[colIndex.tactic] || '').trim() : '' }); return; } // removed from the import, per her own review
     const get = (key) => colIndex[key] !== undefined ? (cols[colIndex[key]] || '').trim() : '';
     const clientName = get('client'), tacticName = get('tactic'), groupName = get('group');
     if (!clientName && !tacticName) return; // blank line
@@ -1345,27 +1349,55 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     if (!tacticMatch) { errors.push({ rowNum, field: 'tactic', clientName, tacticName }); return; }
     const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}`;
 
+    // Lines already in the system for this client + service + label (from the IO flow, Strategist, an earlier import).
+    const existingMatches = ALL_ACCOUNTING_LINES.filter(l => l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel);
+    if (existingMatches.length > 1) { errors.push({ rowNum, field: 'ambiguous', clientName, tacticName, detail: `${existingMatches.length} lines already match this client and service (for example different agents or counties) -- the import can't tell which one this row is for` }); return; }
+    if (ALL_ACCOUNTING_LINES.some(l => l.client_id === client.id && l.agent_name)) { errors.push({ rowNum, field: 'agent', clientName, tacticName, detail: `this client uses Agent/County Split lines and the import can't tell agents apart -- leave this client out and add its lines another way` }); return; }
+    const existingLine = existingMatches[0] || null;
+
     let flightStart = get('flight_start') || null, flightEnd = get('flight_end') || null;
-    let wideMonths = null, monthlyCost = null; const flags = [];
+    let wideMonths = null, clientPrice = null; const flags = [];
+    let rowCut = null, rowExpected = null; // the system's 44i cut % and expected monthly 44i Revenue (for the download)
     if (wide) {
       const startISO = accountingNormalizeDate(get('flight_start')), endISO = accountingNormalizeDate(get('flight_end'));
       if (startISO === null || endISO === null) { errors.push({ rowNum, field: 'dates', clientName, tacticName, detail: `a date isn't readable (start "${get('flight_start')}", end "${get('flight_end')}")` }); return; }
       if (startISO && endISO && endISO < startISO) { errors.push({ rowNum, field: 'dates', clientName, tacticName, detail: `the end date (${endISO}) is before the start date (${startISO}) -- check the year` }); return; }
       flightStart = startISO || null; flightEnd = endISO || null;
-      monthlyCost = accountingParseMoney(get('monthly_cost'));
-      if (Number.isNaN(monthlyCost)) { errors.push({ rowNum, field: 'amount', clientName, tacticName, detail: `the monthly cost "${get('monthly_cost')}" isn't a number` }); return; }
+      clientPrice = accountingParseMoney(get('client_price'));
+      if (Number.isNaN(clientPrice)) { errors.push({ rowNum, field: 'amount', clientName, tacticName, detail: `the client price "${get('client_price')}" isn't a number` }); return; }
+      const fortyfouriMonthly = accountingParseMoney(get('fortyfouri_revenue'));
+      if (Number.isNaN(fortyfouriMonthly)) { errors.push({ rowNum, field: 'amount', clientName, tacticName, detail: `the 44i Revenue "${get('fortyfouri_revenue')}" isn't a number` }); return; }
       wideMonths = [];
       for (const { idx, ym } of monthCols) {
         if (cutoff && ym < cutoff) continue;
         const amt = accountingParseMoney(cols[idx]);
         if (Number.isNaN(amt)) { errors.push({ rowNum, field: 'amount', clientName, tacticName, detail: `the ${ym} amount "${cols[idx]}" isn't a number` }); return; }
-        if (amt !== null) wideMonths.push({ month: ym + '-01', grossBudget: amt });
+        if (amt === null) continue;
+        // With a client-price column the month cells are 44i Revenue and the line's Gross Budget is the client price;
+        // without one, the month cells are taken as Gross (and the row says so).
+        wideMonths.push({ month: ym + '-01', grossBudget: clientPrice !== null ? clientPrice : amt, sheet44i: clientPrice !== null ? amt : null });
       }
       if (!wideMonths.length) { skipped.push({ rowNum, clientName, tacticName }); return; }
       const mk = m => m.month.slice(0, 7);
-      if (monthlyCost !== null) {
-        const off = wideMonths.filter(m => Math.abs(m.grossBudget - monthlyCost) > 0.005);
-        if (off.length) flags.push({ kind: 'differs', text: `${off.length} month(s) differ from the monthly cost ($${monthlyCost.toLocaleString()}): ` + off.map(m => `${mk(m)} $${m.grossBudget.toLocaleString()}`).join(', ') });
+      const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+      if (clientPrice === null) flags.push({ kind: 'noprice', text: 'no client price (Total Revenue) on this row -- the month amounts are being imported as the Gross Budget (client price). If they are 44i Revenue, add the client price.' });
+      if (clientPrice !== null) {
+        // The system works 44i Revenue out as Gross x 44i cut %. Compare that with the sheet's 44i Revenue for each month.
+        const cut = accountingEffectiveCutPct(tacticMatch.service.id, client.id, client.group_id, !!(/^(true|yes|1)$/i.test(get('has_offline_visits')) || /^(true|yes|1)$/i.test(get('has_addl_targeting'))), clientPrice, existingLine ? existingLine.cut_pct_override : null);
+        rowCut = cut; if (cut != null) rowExpected = Math.round(clientPrice * cut) / 100;
+        if (cut == null) flags.push({ kind: 'nocut', text: `no 44i cut % is set for this service${client.group_name ? ' in ' + client.group_name : ''}, so the sheet's 44i Revenue can't be checked` });
+        else {
+          const expected = Math.round(clientPrice * cut) / 100;
+          const bad = wideMonths.filter(m => Math.abs(m.sheet44i - expected) > 0.01);
+          if (bad.length) {
+            const list = bad.slice(0, 6).map(m => `${mk(m)} ${money(m.sheet44i)}`).join(', ') + (bad.length > 6 ? `, +${bad.length - 6} more` : '');
+            flags.push({ kind: 'mismatch', text: `44i Revenue doesn't match the system for ${bad.length} of ${wideMonths.length} month(s): sheet says ${list}; the system would give ${money(expected)} (${money(clientPrice)} × ${cut}% 44i cut)` });
+          }
+        }
+        if (fortyfouriMonthly !== null) {
+          const off = wideMonths.filter(m => Math.abs(m.sheet44i - fortyfouriMonthly) > 0.005);
+          if (off.length) flags.push({ kind: 'differs', text: `${off.length} month(s) differ from the row's 44i Revenue (${money(fortyfouriMonthly)}): ` + off.slice(0, 6).map(m => `${mk(m)} ${money(m.sheet44i)}`).join(', ') + (off.length > 6 ? `, +${off.length - 6} more` : '') });
+        }
       }
       if (flightStart) { const out = wideMonths.filter(m => mk(m) < flightStart.slice(0, 7)); if (out.length) flags.push({ kind: 'outside', text: `amount(s) before the start date: ${out.map(mk).join(', ')}` }); }
       if (flightEnd) {
@@ -1377,6 +1409,11 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
         if (gaps.length) flags.push({ kind: 'gap', text: `no amount for: ${gaps.join(', ')}` });
       }
     }
+    if (wide) wideMonths.forEach(m => { m.system44i = rowExpected; });
+    // What the import will NOT change on a line that is already there.
+    if (existingLine && flightStart && existingLine.flight_start && (String(existingLine.flight_start).slice(0, 10) !== flightStart || (flightEnd && existingLine.flight_end && String(existingLine.flight_end).slice(0, 10) !== flightEnd))) {
+      flags.push({ kind: 'dates-kept', text: `this line already exists with dates ${String(existingLine.flight_start).slice(0, 10)} – ${existingLine.flight_end ? String(existingLine.flight_end).slice(0, 10) : 'ongoing'}; the import adds months but does NOT change its dates` });
+    }
     if (groupName && client.group_name && norm(client.group_name) !== norm(groupName)) flags.push({ kind: 'group', text: `the sheet says group "${groupName}" but this client is in "${client.group_name}"` });
 
     if (!groups.has(identityKey)) {
@@ -1386,8 +1423,6 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
       // per Claire: "will it know if something is already in the
       // strategist portal?"). If so, this group ADDS its pasted months
       // to that SAME line instead of creating a duplicate one.
-      const existingLine = ALL_ACCOUNTING_LINES.find(l =>
-        l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel);
       groups.set(identityKey, {
         client, service: tacticMatch.service, tacticLabel: tacticMatch.tacticLabel,
         flightStart, flightEnd,
@@ -1395,7 +1430,8 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
         hasAddlTargeting: /^(true|yes|1)$/i.test(get('has_addl_targeting')),
         billingType: get('billing_type').toLowerCase() || null,
         existingLineId: existingLine ? existingLine.id : null,
-        monthlyCost, flags, rowNums: [rowNum],
+        clientPrice, cutPct: rowCut, sheetGroup: groupName, sheetClient: clientName, sheetTactic: tacticName, flags, rowNums: [rowNum],
+        existingStatus: existingLine ? (existingLine.status || 'active') : null, existingAccountingOnly: existingLine ? !!existingLine.accounting_only : null,
         months: [],
       });
     } else if (wide) {
@@ -1425,9 +1461,11 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
       if (m.grossBudget == null) return;
       const ex = ALL_ACCOUNTING_MONTHS.find(x => x.campaign_line_id === g.existingLineId && String(x.month).slice(0, 7) === m.month.slice(0, 7));
       if (ex && ex.gross_budget != null && Math.abs(Number(ex.gross_budget) - m.grossBudget) > 0.005) g.changes.push({ month: m.month, from: Number(ex.gross_budget), to: m.grossBudget });
+      if (ex && (ex.actual_spend != null || ex.confirmed_by)) g.flags.push({ kind: 'confirmed', text: `${m.month.slice(0, 7)} already has actual spend or a confirmation on the existing line` });
     });
+    g.months.forEach(m => { if (ACCOUNTING_CLOSED_MONTHS[m.month.slice(0, 7) + '-01']) g.flags.push({ kind: 'closed', text: `${m.month.slice(0, 7)} is a closed (billed) month` }); });
   });
-  return { groups: [...groups.values()], errors, skipped, wide, cutoff };
+  return { groups: [...groups.values()], errors, skipped, held, wide, cutoff };
 }
 
 function accountingOpenBulkImportForm() {
@@ -1439,7 +1477,7 @@ function accountingOpenBulkImportForm() {
   el.style.display = 'block';
   el.innerHTML = `<div style="border:1px solid var(--accent);border-radius:10px;padding:16px 18px;background:#F0F9FF">
     <strong style="font-size:13px;display:block;margin-bottom:6px">Bulk import services (paste from a CSV or a Google Sheets range)</strong>
-    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Flight Start, Flight End, Month, Gross Budget, Billing, Offline Visits</strong>. Only <strong>Client</strong> and <strong>Tactic</strong> are required. Tab- or comma-separated -- copying a range directly out of Google Sheets pastes as tab-separated automatically. <strong>Two layouts work.</strong> (1) One row per campaign PER MONTH -- give the same Client/Tactic several rows (different Month) to bring in more than one month's budget at once. (2) <strong>One row per service with the months across</strong> (Group, Client, Service, Start Date, End Date, Monthly Cost, then a column for each month such as <em>Oct 2026</em> or <em>2026-10</em>) -- each month column's amount is imported exactly as it appears, and the preview flags any month that differs from the Monthly Cost. <strong>Billing</strong> ("Recurring" or "One-time") only matters for a service Strategist wouldn't track anyway (e.g. Website Hosting) -- ignored for an ordinary ad-spend tactic. Dates as YYYY-MM-DD or M/D/YYYY, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
+    <p style="font-size:11px;color:var(--muted);margin:0 0 10px">First row must be a header with these column names (any order): <strong>Client, Tactic, Flight Start, Flight End, Month, Gross Budget, Billing, Offline Visits</strong>. Only <strong>Client</strong> and <strong>Tactic</strong> are required. Tab- or comma-separated -- copying a range directly out of Google Sheets pastes as tab-separated automatically. <strong>Two layouts work.</strong> (1) One row per campaign PER MONTH -- give the same Client/Tactic several rows (different Month) to bring in more than one month's budget at once. (2) <strong>One row per service with the months across</strong> (Group, Client, Tactic, Flight Start, Flight End, <strong>Total Revenue</strong> = what the client pays per month, optionally <strong>44i Revenue</strong>, then a column for each month such as <em>Oct-26</em>; the month columns hold 44i Revenue, what 44i bills the group). The line's Gross Budget is the Total Revenue; the preview works out 44i Revenue the way the system does (Gross × 44i cut %) and <strong>flags every month where your sheet differs</strong>. <strong>Billing</strong> ("Recurring" or "One-time") only matters for a service Strategist wouldn't track anyway (e.g. Website Hosting) -- ignored for an ordinary ad-spend tactic. Dates as YYYY-MM-DD or M/D/YYYY, Month as YYYY-MM. Nothing is saved until you review the preview and click Confirm Import.</p>
     <div style="display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:12px"><label for="acct-bulk-cutoff" style="font-weight:600">Only import months from:</label><input type="month" id="acct-bulk-cutoff" value="${new Date().toISOString().slice(0, 7)}" style="padding:5px 8px;border-radius:6px;border:1px solid var(--border);font-size:12px"/><span style="color:var(--muted)">Earlier month columns are ignored (applies to the months-across layout).</span></div>
     <textarea id="acct-bulk-import-text" rows="8" style="width:100%;padding:10px;border-radius:7px;border:1px solid var(--border);font-size:12px;font-family:monospace;margin-bottom:10px" placeholder="Client	Tactic	Flight Start	Flight End	Month	Gross Budget	Billing	Offline Visits
 Tassel Ridge Winery	FB/IG Ads	2026-08-01	2027-01-31	2026-08	1500
@@ -1468,16 +1506,20 @@ function accountingPreviewBulkImport() {
   const totalMonths = plan.groups.reduce((s, g) => s + Math.max(g.months.length, 1), 0);
   let html = `<div style="border-top:1px solid var(--border);padding-top:10px">
     <p style="font-size:12.5px;font-weight:600;margin:0 0 8px">${plan.groups.length} campaign(s), ${totalMonths} month row(s) ready to import${plan.errors.length ? `, ${plan.errors.length} row(s) need fixing first` : ''}.</p>`;
+  if (plan.groups.length) html += `<label style="display:block;font-size:12px;margin:0 0 6px"><input type="checkbox" ${ACCT_BULK_ONLY_FLAGGED ? 'checked' : ''} onchange="accountingToggleBulkOnlyFlagged(this.checked)"/> Show only the rows that need a look (flagged or changing existing amounts)</label>`;
   html += plan.groups.map(g => {
     const trackable = accountingIsSpendTrackable(g.service.id);
     const tag = g.existingLineId
-      ? 'already in the system -- adding to it'
-      : trackable ? 'new campaign' : 'new campaign, accounting-only';
+      ? `already in the system (${g.existingAccountingOnly ? 'accounting-only' : 'also in the Strategist portal'}, status ${g.existingStatus}) -- adding months to it`
+      : trackable ? 'new campaign (will also appear in the Strategist portal)' : 'new campaign, accounting-only';
     const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const monthTotal = g.months.reduce((t, m) => t + (m.grossBudget || 0), 0);
     const flagHtml = (g.flags || []).map(f => `<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ ${esc(f.text)}</div>`).join('');
     const changeHtml = (g.changes || []).length ? `<div style="font-size:11.5px;color:#991B1B;background:#FEE2E2;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ This will CHANGE ${g.changes.length} amount(s) already saved on the existing line: ${g.changes.map(c => `${c.month.slice(0, 7)} ${money(c.from)} → ${money(c.to)}`).join(', ')}</div>` : '';
-    return `<div style="padding:9px 12px;font-size:12.5px;border-bottom:1px solid var(--border)">
+    const needsLook = (g.flags || []).some(f => ['mismatch', 'nocut', 'noprice', 'differs', 'confirmed', 'closed', 'gap', 'outside', 'duplicate', 'group'].includes(f.kind)) || (g.changes || []).length > 0;
+    if (ACCT_BULK_ONLY_FLAGGED && !needsLook) return '';
+    const holdBtn = g.rowNums && g.rowNums.length ? `<button onclick="accountingSetBulkImportOverride(${g.rowNums[0]}, 'excluded', true)" style="float:right;font-size:11px;padding:2px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer">Hold back this row</button>` : '';
+    return `<div style="padding:9px 12px;font-size:12.5px;border-bottom:1px solid var(--border)">${holdBtn}
       <strong style="color:var(--text)">${esc(g.client.name)}</strong>${g.client.group_name ? ` <span style="color:var(--muted)">[${esc(g.client.group_name)}]</span>` : ''} — <span style="color:var(--text)">${esc(g.tacticLabel)}</span> <span style="color:var(--muted)">(${g.months.length || 0} month(s)${g.months.length ? ', ' + money(monthTotal) + ' total' : ''}, ${tag})</span>${flagHtml}${changeHtml}
     </div>`;
   }).join('');
@@ -1485,11 +1527,11 @@ function accountingPreviewBulkImport() {
   if (plan.groups.length) {
     const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const byGroup = new Map();
-    plan.groups.forEach(g => { const k = g.client.group_name || '(no group)'; const t = byGroup.get(k) || { lines: 0, months: 0, total: 0 }; t.lines++; t.months += g.months.length; t.total += g.months.reduce((x, m) => x + (m.grossBudget || 0), 0); byGroup.set(k, t); });
-    const grand = [...byGroup.values()].reduce((a, t) => ({ lines: a.lines + t.lines, months: a.months + t.months, total: a.total + t.total }), { lines: 0, months: 0, total: 0 });
-    html += `<table style="margin:12px 0 4px;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--muted)"><th style="padding:3px 14px 3px 0">Totals by group</th><th style="padding:3px 14px">Campaigns</th><th style="padding:3px 14px">Months</th><th style="padding:3px 0 3px 14px;text-align:right">Amount</th></tr></thead><tbody>` +
-      [...byGroup.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([k, t]) => `<tr><td style="padding:2px 14px 2px 0">${esc(k)}</td><td style="padding:2px 14px">${t.lines}</td><td style="padding:2px 14px">${t.months}</td><td style="padding:2px 0 2px 14px;text-align:right">${money(t.total)}</td></tr>`).join('') +
-      `<tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:3px 14px 2px 0">All groups</td><td style="padding:3px 14px 2px">${grand.lines}</td><td style="padding:3px 14px 2px">${grand.months}</td><td style="padding:3px 0 2px 14px;text-align:right">${money(grand.total)}</td></tr></tbody></table>`;
+    plan.groups.forEach(g => { const k = g.client.group_name || '(no group)'; const t = byGroup.get(k) || { lines: 0, months: 0, total: 0, sheet44i: 0 }; t.lines++; t.months += g.months.length; t.total += g.months.reduce((x, m) => x + (m.grossBudget || 0), 0); t.sheet44i += g.months.reduce((x, m) => x + (m.sheet44i || 0), 0); byGroup.set(k, t); });
+    const grand = [...byGroup.values()].reduce((a, t) => ({ lines: a.lines + t.lines, months: a.months + t.months, total: a.total + t.total, sheet44i: a.sheet44i + t.sheet44i }), { lines: 0, months: 0, total: 0, sheet44i: 0 });
+    html += `<table style="margin:12px 0 4px;border-collapse:collapse;font-size:12px"><thead><tr style="text-align:left;color:var(--muted)"><th style="padding:3px 14px 3px 0">Totals by group</th><th style="padding:3px 14px">Campaigns</th><th style="padding:3px 14px">Months</th><th style="padding:3px 14px;text-align:right">Client pays (Gross)</th><th style="padding:3px 0 3px 14px;text-align:right">44i Revenue (sheet)</th></tr></thead><tbody>` +
+      [...byGroup.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([k, t]) => `<tr><td style="padding:2px 14px 2px 0">${esc(k)}</td><td style="padding:2px 14px">${t.lines}</td><td style="padding:2px 14px">${t.months}</td><td style="padding:2px 14px;text-align:right">${money(t.total)}</td><td style="padding:2px 0 2px 14px;text-align:right">${t.sheet44i ? money(t.sheet44i) : '—'}</td></tr>`).join('') +
+      `<tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:3px 14px 2px 0">All groups</td><td style="padding:3px 14px 2px">${grand.lines}</td><td style="padding:3px 14px 2px">${grand.months}</td><td style="padding:3px 14px 2px;text-align:right">${money(grand.total)}</td><td style="padding:3px 0 2px 14px;text-align:right">${grand.sheet44i ? money(grand.sheet44i) : '—'}</td></tr></tbody></table>`;
   }
   if (plan.skipped && plan.skipped.length) {
     html += `<p style="font-size:11.5px;color:var(--muted);margin:8px 0 0">${plan.skipped.length} row(s) skipped: no amount on or after ${esc(plan.cutoff || 'the first month')} (rows ${plan.skipped.slice(0, 15).map(r => r.rowNum).join(', ')}${plan.skipped.length > 15 ? ', …' : ''}).</p>`;
@@ -1499,6 +1541,8 @@ function accountingPreviewBulkImport() {
     html += plan.errors.map(e => accountingRenderBulkImportErrorRow(e)).join('');
   }
   html += `<div style="margin-top:12px">
+    <button onclick="accountingDownloadBulkPreview('rows')" class="btn-quiet-green" style="margin-right:8px;font-size:12px">Download preview (one row per service, CSV)</button>
+    <button onclick="accountingDownloadBulkPreview('months')" class="btn-quiet-green" style="margin-right:12px;font-size:12px">Download month-by-month detail (CSV)</button>
     <button id="accounting-bulk-import-confirm-btn" onclick="accountingConfirmBulkImport()" ${plan.groups.length ? '' : 'disabled'} style="padding:7px 16px;border-radius:6px;background:var(--accent-dark);color:#fff;border:none;font-size:12.5px;font-weight:600;cursor:pointer">Confirm Import</button>
   </div></div>`;
   resultsEl.innerHTML = html;
@@ -1509,7 +1553,7 @@ function accountingPreviewBulkImport() {
 // dropdown of every real option and a Remove-row button -- picking either
 // re-runs Preview against an override, the pasted text is never touched.
 function accountingRenderBulkImportErrorRow(e) {
-  if (e.field === 'dates' || e.field === 'amount') {
+  if (e.field === 'dates' || e.field === 'amount' || e.field === 'ambiguous' || e.field === 'agent') {
     return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 0;font-size:12px;color:#B91C1C">
       <span>Row ${e.rowNum} (${esc(e.clientName)} — ${esc(e.tacticName)}): ${esc(e.detail)} -- fix it in your sheet and paste again, or remove the row.</span>
       <button onclick="accountingSetBulkImportOverride(${e.rowNum}, 'excluded', true)" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer">Remove row</button>
@@ -1535,6 +1579,8 @@ function accountingRenderBulkImportErrorRow(e) {
     <button onclick="accountingSetBulkImportOverride(${e.rowNum}, 'excluded', true)" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer;color:var(--text)">Remove row</button>
   </div>`;
 }
+let ACCT_BULK_ONLY_FLAGGED = false; // preview filter: show only rows that need a look
+function accountingToggleBulkOnlyFlagged(on) { ACCT_BULK_ONLY_FLAGGED = !!on; accountingPreviewBulkImport(); }
 let ACCT_BULK_IMPORT_OVERRIDES = {}; // rowNum -> { clientId?, serviceId?, excluded? }
 function accountingSetBulkImportOverride(rowNum, key, value) {
   if (!ACCT_BULK_IMPORT_OVERRIDES[rowNum]) ACCT_BULK_IMPORT_OVERRIDES[rowNum] = {};
@@ -1580,7 +1626,7 @@ async function accountingConfirmBulkImport() {
             p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw,
             p_campaign_line_id: lineId, p_month: m.month, p_data: { gross_budget: m.grossBudget }
           }) });
-          record.push({ action: 'month added to existing line', line_id: lineId, group: g.client.group_name || '', client: g.client.name, service: g.tacticLabel, month: m.month.slice(0, 7), amount: m.grossBudget, previous: prevAmt });
+          record.push({ action: 'month added to existing line', line_id: lineId, group: g.client.group_name || '', client: g.client.name, service: g.tacticLabel, month: m.month.slice(0, 7), amount: m.grossBudget, previous: prevAmt, sheet44i: m.sheet44i });
           monthsSaved++;
         }
         continue;
@@ -1606,7 +1652,7 @@ async function accountingConfirmBulkImport() {
       }) });
       linesCreated++;
       if (firstMonth) monthsSaved++;
-      if (firstMonth && firstMonth.grossBudget != null) record.push({ action: 'new line + month', line_id: newId, group: g.client.group_name || '', client: g.client.name, service: g.tacticLabel, month: firstMonth.month.slice(0, 7), amount: firstMonth.grossBudget, previous: null });
+      if (firstMonth && firstMonth.grossBudget != null) record.push({ action: 'new line + month', line_id: newId, group: g.client.group_name || '', client: g.client.name, service: g.tacticLabel, month: firstMonth.month.slice(0, 7), amount: firstMonth.grossBudget, previous: null, sheet44i: firstMonth.sheet44i });
       // Any month beyond the first goes through accounting_save_campaign_month --
       // accounting_add_campaign_line only ever handles ONE initial month.
       for (const m of sortedMonths.slice(1)) {
@@ -1615,7 +1661,7 @@ async function accountingConfirmBulkImport() {
           p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw,
           p_campaign_line_id: newId, p_month: m.month, p_data: { gross_budget: m.grossBudget }
         }) });
-        record.push({ action: 'new line + month', line_id: newId, group: g.client.group_name || '', client: g.client.name, service: g.tacticLabel, month: m.month.slice(0, 7), amount: m.grossBudget, previous: null });
+        record.push({ action: 'new line + month', line_id: newId, group: g.client.group_name || '', client: g.client.name, service: g.tacticLabel, month: m.month.slice(0, 7), amount: m.grossBudget, previous: null, sheet44i: m.sheet44i });
         monthsSaved++;
       }
     }
@@ -1637,10 +1683,47 @@ async function accountingConfirmBulkImport() {
   }
 }
 
+// Download of the PREVIEW (2026-10-07, per Claire -- easier to cross-reference against the spreadsheet). Nothing is
+// saved by this. 'rows' = one line per sheet row with its outcome and flags; 'months' = one line per month with the
+// amount to be saved, the sheet's 44i Revenue, the system's, and the difference.
+function accountingDownloadBulkPreview(kind) {
+  const plan = ACCT_BULK_IMPORT_PLAN; if (!plan) { showToast('Click Preview first.', 'error'); return; }
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const num = v => v == null || Number.isNaN(v) ? '' : Math.round(v * 100) / 100;
+  const lines = [];
+  if (kind === 'months') {
+    lines.push(['sheet_row', 'client', 'group', 'service', 'month', 'gross_to_save', 'sheet_44i_revenue', 'system_44i_revenue', 'difference', 'matches_system', 'saved_gross_now', 'would_change_saved_amount'].join(','));
+    plan.groups.forEach(g => g.months.forEach(m => {
+      const ex = g.existingLineId ? ALL_ACCOUNTING_MONTHS.find(x => x.campaign_line_id === g.existingLineId && String(x.month).slice(0, 7) === m.month.slice(0, 7)) : null;
+      const savedNow = ex && ex.gross_budget != null ? Number(ex.gross_budget) : null;
+      const diff = m.sheet44i != null && m.system44i != null ? m.sheet44i - m.system44i : null;
+      lines.push([g.rowNums.join('+'), g.client.name, g.client.group_name || '', g.tacticLabel, m.month.slice(0, 7), num(m.grossBudget), num(m.sheet44i), num(m.system44i), num(diff), diff == null ? '' : (Math.abs(diff) <= 0.01 ? 'yes' : 'NO'), num(savedNow), savedNow != null && Math.abs(savedNow - m.grossBudget) > 0.005 ? 'yes' : ''].map(q).join(','));
+    }));
+  } else {
+    lines.push(['sheet_row', 'result', 'group_in_sheet', 'client_in_sheet', 'client_in_system', 'group_in_system', 'service_in_sheet', 'service_in_system', 'existing_line', 'flight_start', 'flight_end', 'months', 'first_month', 'last_month', 'client_price_per_month', 'sheet_44i_total', 'system_44i_total', 'difference', 'system_cut_pct', 'flags', 'saved_amounts_that_would_change', 'problem'].join(','));
+    plan.groups.forEach(g => {
+      const ms = [...g.months].sort((a, b) => a.month.localeCompare(b.month));
+      const sheet = ms.reduce((t, m) => t + (m.sheet44i || 0), 0), sys = ms.reduce((t, m) => t + (m.system44i || 0), 0);
+      const haveBoth = ms.some(m => m.sheet44i != null) && ms.some(m => m.system44i != null);
+      lines.push([g.rowNums.join('+'), g.existingLineId ? 'Adds months to an existing line' : 'New line', g.sheetGroup, g.sheetClient, g.client.name, g.client.group_name || '', g.sheetTactic, g.tacticLabel,
+        g.existingLineId ? `${g.existingAccountingOnly ? 'accounting-only' : 'also in Strategist'}, status ${g.existingStatus}` : '', g.flightStart || '', g.flightEnd || '', ms.length, ms[0] ? ms[0].month.slice(0, 7) : '', ms.length ? ms[ms.length - 1].month.slice(0, 7) : '',
+        num(g.clientPrice), haveBoth ? num(sheet) : '', haveBoth ? num(sys) : '', haveBoth ? num(sheet - sys) : '', g.cutPct == null ? '' : g.cutPct,
+        (g.flags || []).map(f => f.text).join(' | '), (g.changes || []).map(c => `${c.month.slice(0, 7)} ${c.from} -> ${c.to}`).join('; '), ''].map(q).join(','));
+    });
+    plan.errors.forEach(e => lines.push([e.rowNum, 'NEEDS FIXING', '', e.clientName, '', '', e.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem')].map(q).join(',')));
+    (plan.skipped || []).forEach(r => lines.push([r.rowNum, 'Skipped (no amount on or after the start month)', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
+    (plan.held || []).forEach(r => lines.push([r.rowNum, 'Held back / removed by you', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = `accounting-import-preview-${kind}-` + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 let ACCT_LAST_IMPORT_RECORD = [];
 function accountingDownloadImportRecord() {
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const csv = ['action,line_id,group,client,service,month,amount,previous_amount'].concat(ACCT_LAST_IMPORT_RECORD.map(r => [r.action, r.line_id, r.group, r.client, r.service, r.month, r.amount, r.previous].map(q).join(','))).join('\n');
+  const csv = ['action,line_id,group,client,service,month,gross_amount_saved,previous_amount,sheet_44i_revenue'].concat(ACCT_LAST_IMPORT_RECORD.map(r => [r.action, r.line_id, r.group, r.client, r.service, r.month, r.amount, r.previous, r.sheet44i].map(q).join(','))).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = 'accounting-import-record-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
