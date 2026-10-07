@@ -1526,6 +1526,8 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     if (existingLine && flightStart && existingLine.flight_start && (String(existingLine.flight_start).slice(0, 10) !== flightStart || (flightEnd && existingLine.flight_end && String(existingLine.flight_end).slice(0, 10) !== flightEnd))) {
       flags.push({ kind: 'dates-kept', text: `this line already exists with dates ${String(existingLine.flight_start).slice(0, 10)} – ${existingLine.flight_end ? String(existingLine.flight_end).slice(0, 10) : 'ongoing'}; the import adds months but does NOT change its dates` });
     }
+    const sheetVisits = !!tacticMatch.visits || /^(true|yes|1)$/i.test(get('has_offline_visits'));
+    if (existingLine && !!existingLine.has_offline_visits !== sheetVisits) flags.push({ kind: 'visits-differs', text: `the sheet says ${sheetVisits ? 'WITH' : 'WITHOUT'} Offline Visits but the existing line is ${existingLine.has_offline_visits ? 'WITH' : 'WITHOUT'} -- the import adds months but does NOT change that setting` });
     if (groupName && client.group_name && norm(client.group_name) !== norm(groupName)) flags.push({ kind: 'group', text: `the sheet says group "${groupName}" but this client is in "${client.group_name}"` });
 
     if (!groups.has(identityKey)) {
@@ -1624,15 +1626,16 @@ function accountingPreviewBulkImport() {
     const tag = g.existingLineId
       ? `already in the system (${g.existingAccountingOnly ? 'accounting-only' : 'also in the Strategist portal'}, status ${g.existingStatus}) -- adding months to it`
       : trackable ? 'new campaign (will also appear in the Strategist portal)' : 'new campaign, accounting-only';
+    const visitsTag = g.hasOfflineVisits ? ' <span style="font-size:10px;font-weight:600;color:var(--accent-dark);border:1px solid var(--accent);border-radius:4px;padding:0 4px">+ Offline Visits</span>' : '';
     const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const monthTotal = g.months.reduce((t, m) => t + (m.grossBudget || 0), 0);
     const flagHtml = (g.flags || []).map(f => `<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ ${esc(f.text)}</div>`).join('');
     const changeHtml = (g.changes || []).length ? `<div style="font-size:11.5px;color:#991B1B;background:#FEE2E2;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ This will CHANGE ${g.changes.length} amount(s) already saved on the existing line: ${g.changes.map(c => `${c.month.slice(0, 7)} ${money(c.from)} → ${money(c.to)}`).join(', ')}</div>` : '';
-    const needsLook = (g.flags || []).some(f => ['mismatch', 'nocut', 'noprice', 'differs', 'confirmed', 'closed', 'gap', 'outside', 'duplicate', 'group'].includes(f.kind)) || (g.changes || []).length > 0;
+    const needsLook = (g.flags || []).some(f => ['mismatch', 'nocut', 'noprice', 'differs', 'confirmed', 'closed', 'gap', 'outside', 'duplicate', 'group', 'visits-differs'].includes(f.kind)) || (g.changes || []).length > 0;
     if (ACCT_BULK_ONLY_FLAGGED && !needsLook) return '';
     const holdBtn = g.rowNums && g.rowNums.length ? `<button onclick="accountingSetBulkImportOverride(${g.rowNums[0]}, 'excluded', true)" style="float:right;font-size:11px;padding:2px 8px;border-radius:5px;background:var(--light);border:1px solid var(--border);cursor:pointer">Hold back this row</button>` : '';
     return `<div style="padding:9px 12px;font-size:12.5px;border-bottom:1px solid var(--border)">${holdBtn}
-      <strong style="color:var(--text)">${esc(g.client.name)}</strong>${g.client.group_name ? ` <span style="color:var(--muted)">[${esc(g.client.group_name)}]</span>` : ''} — <span style="color:var(--text)">${esc(g.tacticLabel)}</span> <span style="color:var(--muted)">(${g.months.length || 0} month(s)${g.months.length ? ', ' + money(monthTotal) + ' total' : ''}, ${tag})</span>${flagHtml}${changeHtml}
+      <strong style="color:var(--text)">${esc(g.client.name)}</strong>${g.client.group_name ? ` <span style="color:var(--muted)">[${esc(g.client.group_name)}]</span>` : ''} — <span style="color:var(--text)">${esc(g.tacticLabel)}</span>${visitsTag} <span style="color:var(--muted)">(${g.months.length || 0} month(s)${g.months.length ? ', ' + money(monthTotal) + ' total' : ''}, ${tag})</span>${flagHtml}${changeHtml}
     </div>`;
   }).join('');
   // Totals per group, to compare against the spreadsheet before confirming.
@@ -1826,19 +1829,19 @@ function accountingDownloadBulkPreview(kind) {
       lines.push([g.rowNums.join('+'), g.client.name, g.client.group_name || '', g.tacticLabel, m.month.slice(0, 7), num(m.grossBudget), num(m.sheet44i), num(m.system44i), num(diff), diff == null ? '' : (Math.abs(diff) <= 0.01 ? 'yes' : 'NO'), num(savedNow), savedNow != null && Math.abs(savedNow - m.grossBudget) > 0.005 ? 'yes' : ''].map(q).join(','));
     }));
   } else {
-    lines.push(['sheet_row', 'result', 'group_in_sheet', 'client_in_sheet', 'client_in_system', 'group_in_system', 'service_in_sheet', 'service_in_system', 'existing_line', 'flight_start', 'flight_end', 'months', 'first_month', 'last_month', 'client_price_per_month', 'sheet_44i_total', 'system_44i_total', 'difference', 'system_cut_pct', 'flags', 'saved_amounts_that_would_change', 'problem'].join(','));
+    lines.push(['sheet_row', 'result', 'group_in_sheet', 'client_in_sheet', 'client_in_system', 'group_in_system', 'service_in_sheet', 'service_in_system', 'offline_visits', 'existing_line', 'flight_start', 'flight_end', 'months', 'first_month', 'last_month', 'client_price_per_month', 'sheet_44i_total', 'system_44i_total', 'difference', 'system_cut_pct', 'flags', 'saved_amounts_that_would_change', 'problem'].join(','));
     plan.groups.forEach(g => {
       const ms = [...g.months].sort((a, b) => a.month.localeCompare(b.month));
       const sheet = ms.reduce((t, m) => t + (m.sheet44i || 0), 0), sys = ms.reduce((t, m) => t + (m.system44i || 0), 0);
       const haveBoth = ms.some(m => m.sheet44i != null) && ms.some(m => m.system44i != null);
-      lines.push([g.rowNums.join('+'), g.existingLineId ? 'Adds months to an existing line' : 'New line', g.sheetGroup, g.sheetClient, g.client.name, g.client.group_name || '', g.sheetTactic, g.tacticLabel,
+      lines.push([g.rowNums.join('+'), g.existingLineId ? 'Adds months to an existing line' : 'New line', g.sheetGroup, g.sheetClient, g.client.name, g.client.group_name || '', g.sheetTactic, g.tacticLabel, g.hasOfflineVisits ? 'yes' : 'no',
         g.existingLineId ? `${g.existingAccountingOnly ? 'accounting-only' : 'also in Strategist'}, status ${g.existingStatus}` : '', g.flightStart || '', g.flightEnd || '', ms.length, ms[0] ? ms[0].month.slice(0, 7) : '', ms.length ? ms[ms.length - 1].month.slice(0, 7) : '',
         num(g.clientPrice), haveBoth ? num(sheet) : '', haveBoth ? num(sys) : '', haveBoth ? num(sheet - sys) : '', g.cutPct == null ? '' : g.cutPct,
         (g.flags || []).map(f => f.text).join(' | '), (g.changes || []).map(c => `${c.month.slice(0, 7)} ${c.from} -> ${c.to}`).join('; '), ''].map(q).join(','));
     });
-    plan.errors.forEach(e => lines.push([e.rowNum, 'NEEDS FIXING', '', e.clientName, '', '', e.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem')].map(q).join(',')));
-    (plan.skipped || []).forEach(r => lines.push([r.rowNum, 'Skipped (no amount on or after the start month)', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
-    (plan.held || []).forEach(r => lines.push([r.rowNum, 'Held back / removed by you', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
+    plan.errors.forEach(e => lines.push([e.rowNum, 'NEEDS FIXING', '', e.clientName, '', '', e.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem')].map(q).join(',')));
+    (plan.skipped || []).forEach(r => lines.push([r.rowNum, 'Skipped (no amount on or after the start month)', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
+    (plan.held || []).forEach(r => lines.push([r.rowNum, 'Held back / removed by you', '', r.clientName, '', '', r.tacticName, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].map(q).join(',')));
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
