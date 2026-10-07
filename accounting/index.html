@@ -1677,6 +1677,10 @@ function accountingPreviewBulkImport() {
   const totalMonths = plan.groups.reduce((s, g) => s + Math.max(g.months.length, 1), 0);
   let html = `<div style="border-top:1px solid var(--border);padding-top:10px">
     <p style="font-size:12.5px;font-weight:600;margin:0 0 8px">${plan.groups.length} campaign(s), ${totalMonths} month row(s) ready to import${plan.errors.length ? `, ${plan.errors.length} row(s) need fixing first` : ''}.</p>`;
+  const nExisting = plan.groups.filter(g => g.existingLineId).length;
+  const nStrat = plan.groups.filter(g => !g.existingLineId && accountingIsSpendTrackable(g.service.id)).length;
+  const nAcctOnly = plan.groups.filter(g => !g.existingLineId && !accountingIsSpendTrackable(g.service.id)).length;
+  if (plan.groups.length) html += `<p style="font-size:12px;margin:0 0 6px"><strong>Where these go:</strong> ${nExisting} add months to a line that already exists · <strong>${nStrat} new campaign(s) will appear in the Strategist portal's Campaign Setup</strong> (use "Hold back this row" to leave one out) · ${nAcctOnly} new accounting-only line(s) (not shown to strategists).</p>`;
   const monthOnlyRows = plan.groups.filter(g => g.monthOnlyDates).length;
   if (monthOnlyRows) html += `<p style="font-size:12px;margin:0 0 6px;color:#1E3A8A">ℹ ${monthOnlyRows} row(s) give flight dates as a month only (like Feb-27). A start is read as the 1st of that month and an end as its last day; existing lines are compared by month and their dates are never changed. New lines get those whole-month dates.</p>`;
   const dateRows = plan.groups.filter(g => (g.flags || []).some(f => ACCT_DATE_FLAG_KINDS.includes(f.kind))).length;
@@ -1906,7 +1910,7 @@ function accountingDownloadBulkPreview() {
   const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const d10 = v => v ? String(v).slice(0, 10) : '';
   // Your sheet exactly as pasted (same columns, same order, every row), with the checks added as columns on the right.
-  const extra = ['IMPORT RESULT', 'Client (in system)', 'Group (in system)', 'Service (in system)', 'Offline Visits', 'Existing line', 'Gross saved per month (client price)', '44i Revenue per month (system)', '44i cut % (system)', 'Months not matching the system', 'Date discrepancies', 'Other flags', 'Saved amounts that would change', 'Problem'];
+  const extra = ['IMPORT RESULT', 'Appears in Strategist?', 'Client (in system)', 'Group (in system)', 'Service (in system)', 'Offline Visits', 'Existing line', 'Gross saved per month (client price)', '44i Revenue per month (system)', '44i cut % (system)', 'Months not matching the system', 'Date discrepancies', 'Other flags', 'Saved amounts that would change', 'Problem'];
   const lines = [[...plan.rawRows[0], ...extra].map(q).join(',')];
   const byRow = new Map(); plan.groups.forEach(g => g.rowNums.forEach(r => byRow.set(r, g)));
   const errByRow = new Map(plan.errors.map(e => [e.rowNum, e])), skipRows = new Set((plan.skipped || []).map(r => r.rowNum)), heldRows = new Set((plan.held || []).map(r => r.rowNum));
@@ -1920,13 +1924,14 @@ function accountingDownloadBulkPreview() {
       const bad = ms.filter(m => m.sheet44i != null && m.system44i != null && Math.abs(m.sheet44i - m.system44i) > 0.01).map(m => `${m.month.slice(0, 7)} sheet ${money(m.sheet44i)} vs system ${money(m.system44i)}`);
       const dateF = (g.flags || []).filter(f => ACCT_DATE_FLAG_KINDS.includes(f.kind)), otherF = (g.flags || []).filter(f => !ACCT_DATE_FLAG_KINDS.includes(f.kind));
       out = [(g.existingLineId ? 'Adds months to an existing line' : 'New line') + (g.rowNums.length > 1 ? ` (rows ${g.rowNums.join(' + ')} combined)` : ''),
+        g.existingLineId ? (ex && ex.accounting_only ? 'no (existing accounting-only line)' : 'already there') : (accountingIsSpendTrackable(g.service.id) ? 'YES - new campaign in Campaign Setup' : 'no (accounting-only)'),
         g.client.name, g.client.group_name || '', g.tacticLabel, g.hasOfflineVisits ? 'yes' : 'no',
         ex ? `${ex.split_label ? ex.split_label + ' · ' : ''}${ex.status || 'active'}, ${d10(ex.flight_start) || '?'} – ${d10(ex.flight_end) || 'ongoing'}, ${ex.accounting_only ? 'accounting-only' : 'also in Strategist'}` : '',
         num(g.clientPrice), ms.some(m => m.system44i != null) ? num(ms.find(m => m.system44i != null).system44i) : '', g.cutPct == null ? '' : g.cutPct,
         bad.join(' | '), dateF.map(f => f.text).join(' | '), otherF.map(f => f.text).join(' | '), (g.changes || []).map(c => `${c.month.slice(0, 7)} ${money(c.from)} -> ${money(c.to)}`).join('; '), ''];
     } else if (e) {
       out[0] = 'NEEDS FIXING';
-      out[13] = e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem');
+      out[14] = e.detail || (e.field === 'client' ? 'client name not found in the system (check spelling / group)' : e.field === 'tactic' ? 'service not matched to a catalog service' : e.field + ' problem');
     } else if (skipRows.has(r)) out[0] = 'Skipped (no amount on or after the start month)';
     else if (heldRows.has(r)) out[0] = 'Held back / removed by you';
     lines.push([...pad, ...out].map(q).join(','));
