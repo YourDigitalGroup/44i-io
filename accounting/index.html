@@ -1463,15 +1463,36 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
     // Optional "Campaign" column: names the sub-campaign (the line's split_label). A row WITH a campaign name only ever
     // joins a line of that same name -- if there isn't one it becomes a NEW campaign, never an extension of another.
     const campaignName = get('campaign');
-    const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}|${norm(campaignName)}`;
 
     // Lines already in the system for this client + service + label (from the IO flow, Strategist, an earlier import).
     let existingMatches = ALL_ACCOUNTING_LINES.filter(l => l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel && (!campaignName || norm(l.split_label) === norm(campaignName)));
-    const candidates = existingMatches; // kept for the "which line?" picker
-    if (existingMatches.length > 1 && overrides[rowNum]?.lineId) existingMatches = existingMatches.filter(l => l.id === overrides[rowNum].lineId);
+    const candidatesAll = ALL_ACCOUNTING_LINES.filter(l => l.client_id === client.id && l.service_id === tacticMatch.service.id && l.tactic_label === tacticMatch.tacticLabel); // every line for this client+service, for the "add to an existing line instead" choice
+    let candidates = existingMatches; // kept for the "which line?" picker
+    // Which existing line is this row for? (1) a line she picked in the preview; (2) the campaign name; (3) the flight dates:
+    // a row only joins a line whose flight overlaps its own dates, and a row that overlaps none is a NEW campaign, never an
+    // extension (2026-10-07, per Claire: separate campaigns for the same client/service are common in the legacy sheet).
+    let matchedBy = null, newReason = null;
+    const pickedLine = overrides[rowNum]?.lineId ? ALL_ACCOUNTING_LINES.find(l => l.id === overrides[rowNum].lineId && l.client_id === client.id) : null;
+    if (pickedLine) { existingMatches = [pickedLine]; matchedBy = 'picked'; }
+    else if (campaignName) { if (!existingMatches.length) newReason = 'named'; }
+    else if (existingMatches.length && wide) {
+      const sStart = accountingNormalizeDate(get('flight_start')), sEnd = accountingNormalizeDate(get('flight_end'));
+      if (sStart) {
+        const lo = v => v ? String(v).slice(0, 10) : '0000-01-01', hi = v => v ? String(v).slice(0, 10) : '9999-12-31';
+        const overlapping = existingMatches.filter(l => lo(l.flight_start) <= hi(sEnd || '') && hi(l.flight_end) >= sStart);
+        if (!overlapping.length) { newReason = 'dates'; existingMatches = []; }
+        else if (overlapping.length === 1) { if (existingMatches.length > 1) matchedBy = 'dates'; existingMatches = overlapping; }
+        else {
+          const exact = overlapping.filter(l => String(l.flight_start || '').slice(0, 10) === sStart && (sEnd ? String(l.flight_end || '').slice(0, 10) === sEnd : !l.flight_end));
+          if (exact.length === 1) { existingMatches = exact; matchedBy = 'dates'; } else { existingMatches = overlapping; candidates = overlapping; }
+        }
+      }
+    }
     if (existingMatches.length > 1) { errors.push({ rowNum, field: 'ambiguous', clientName, tacticName, candidates: candidates.map(l => ({ id: l.id, status: l.status || 'active', flight_start: l.flight_start, flight_end: l.flight_end, accounting_only: !!l.accounting_only, split_label: l.split_label || '', campaign_name: l.platform_campaign_name || '' })), detail: `${existingMatches.length} lines already match this client and service (for example different agents or counties) -- the import can't tell which one this row is for` }); return; }
     if (ALL_ACCOUNTING_LINES.some(l => l.client_id === client.id && l.agent_name)) { errors.push({ rowNum, field: 'agent', clientName, tacticName, detail: `this client uses Agent/County Split lines and the import can't tell agents apart -- leave this client out and add its lines another way` }); return; }
     const existingLine = existingMatches[0] || null;
+    // One group per line it joins; rows that become separate NEW campaigns are told apart by name or by their own dates.
+    const identityKey = `${client.id}|${tacticMatch.service.id}|${tacticMatch.tacticLabel}|${norm(campaignName)}|` + (existingLine ? 'L' + existingLine.id : (newReason === 'dates' ? 'D' + accountingNormalizeDate(get('flight_start')) + '>' + accountingNormalizeDate(get('flight_end')) : ''));
 
     let flightStart = get('flight_start') || null, flightEnd = get('flight_end') || null;
     let wideMonths = null, clientPrice = null; const flags = [];
@@ -1561,7 +1582,8 @@ function accountingParseBulkImport(raw, overrides = {}, options = {}) {
         hasOfflineVisits: !!tacticMatch.visits || /^(true|yes|1)$/i.test(get('has_offline_visits')),
         hasAddlTargeting: /^(true|yes|1)$/i.test(get('has_addl_targeting')),
         billingType: get('billing_type').toLowerCase() || null,
-        existingLineId: existingLine ? existingLine.id : null, campaignName,
+        existingLineId: existingLine ? existingLine.id : null, campaignName, matchedBy, newReason,
+        altLines: (!existingLine && newReason) || matchedBy === 'dates' ? candidatesAll.map(l => ({ id: l.id, status: l.status || 'active', flight_start: l.flight_start, flight_end: l.flight_end, split_label: l.split_label || '' })) : [],
         clientPrice, cutPct: rowCut, sheetGroup: groupName, sheetClient: clientName, sheetTactic: tacticName, flags, rowNums: [rowNum],
         existingStatus: existingLine ? (existingLine.status || 'active') : null, existingAccountingOnly: existingLine ? !!existingLine.accounting_only : null,
         months: [],
@@ -1646,11 +1668,17 @@ function accountingPreviewBulkImport() {
     const tag = g.existingLineId
       ? `already in the system (${g.existingAccountingOnly ? 'accounting-only' : 'also in the Strategist portal'}, status ${g.existingStatus}) -- adding months to it`
       : trackable ? 'new campaign (will also appear in the Strategist portal)' : 'new campaign, accounting-only';
-    const newBecauseNamed = !g.existingLineId && g.campaignName && ALL_ACCOUNTING_LINES.some(l => l.client_id === g.client.id && l.service_id === g.service.id && l.tactic_label === g.tacticLabel);
+    const dd = v => v ? String(v).slice(0, 10) : 'ongoing';
+    const altSelect = (g.altLines || []).length ? ` <select onchange="if (this.value) accountingSetBulkImportOverride(${g.rowNums[0]}, 'lineId', this.value)" style="font-size:11px;padding:2px 5px;border-radius:5px;border:1px dashed var(--accent);color:var(--text)"><option value="">${g.existingLineId ? 'Use a different line…' : 'Add to an existing line instead…'}</option>${g.altLines.map(l => `<option value="${esc(l.id)}">${l.split_label ? esc(l.split_label) + ' · ' : ''}${esc(l.status)} · ${dd(l.flight_start)} – ${dd(l.flight_end)}</option>`).join('')}</select>` : '';
+    const newBecauseNamed = g.newReason === 'named' && (g.altLines || []).length > 0;
     const visitsTag = g.hasOfflineVisits ? ' <span style="font-size:10px;font-weight:600;color:var(--accent-dark);border:1px solid var(--accent);border-radius:4px;padding:0 4px">+ Offline Visits</span>' : '';
     const money = n => '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
     const monthTotal = g.months.reduce((t, m) => t + (m.grossBudget || 0), 0);
-    const namedHtml = newBecauseNamed ? `<div style="font-size:11.5px;color:#1E3A8A;background:#DBEAFE;border-radius:5px;padding:3px 8px;margin-top:4px">ℹ This client already has other line(s) for this service, none named "${esc(g.campaignName)}" -- so this becomes a NEW campaign, not an extension.</div>` : '';
+    const infoBox = t => `<div style="font-size:11.5px;color:#1E3A8A;background:#DBEAFE;border-radius:5px;padding:3px 8px;margin-top:4px">ℹ ${t}${altSelect}</div>`;
+    const namedHtml = newBecauseNamed ? infoBox(`This client already has other line(s) for this service, none named "${esc(g.campaignName)}" -- so this becomes a NEW campaign, not an extension.`)
+      : (!g.existingLineId && g.newReason === 'dates' && (g.altLines || []).length) ? infoBox(`No existing line for this service overlaps these dates (${esc(g.flightStart || '?')} – ${esc(g.flightEnd || 'ongoing')}) -- so this becomes a NEW campaign, not an extension.`)
+      : g.matchedBy === 'dates' ? infoBox(`Matched to the existing line whose dates overlap this row's dates (the client has ${g.altLines.length} lines for this service).`)
+      : g.matchedBy === 'picked' ? `<div style="font-size:11.5px;color:#1E3A8A;background:#DBEAFE;border-radius:5px;padding:3px 8px;margin-top:4px">ℹ Added to the line you picked.</div>` : '';
     const flagHtml = namedHtml + (g.flags || []).map(f => ACCT_DATE_FLAG_KINDS.includes(f.kind)
       ? `<div style="font-size:11.5px;color:#7C2D12;background:#FFEDD5;border:1px solid #FDBA74;border-radius:5px;padding:3px 8px;margin-top:4px">📅 ${esc(f.text)}</div>`
       : `<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border-radius:5px;padding:3px 8px;margin-top:4px">⚠ ${esc(f.text)}</div>`).join('');
