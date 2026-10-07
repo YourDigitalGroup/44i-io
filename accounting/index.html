@@ -1682,13 +1682,19 @@ function accountingRenderBulkImportErrorRow(e) {
   const options = e.field === 'client'
     ? [...ALL_ACCOUNTING_CLIENTS].sort((a, b) => a.name.localeCompare(b.name))
         .map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')
-    : Object.values(CATALOG_ROWS).filter(r => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment)
-        .sort((a, b) => (a.accounting_label || a.label || '').localeCompare(b.accounting_label || b.label || ''))
-        .map(r => {
-          const lbl = esc(r.accounting_label || r.label);
-          const hasVisits = Object.values(CATALOG_ROWS).some(m => m.section === r.section && m.pricing_mode === 'modifier' && /offline/i.test(m.label || ''));
-          return `<option value="${esc(r.id)}">${lbl}</option>` + (hasVisits ? `<option value="${esc(r.id)}+visits">${lbl} + Offline Visits</option>` : '');
-        }).join('');
+    : (() => {
+        // Grouped by section (e.g. "Location Targeting") because many catalog names are only the variant ("Event or Lookback").
+        const eligibleRows = Object.values(CATALOG_ROWS).filter(r => r.pricing_mode !== 'modifier' && !r.is_cpm_adjustment);
+        const order = id => { const k = ACCOUNTING_SECTIONS.findIndex(x => x.id === id); return k < 0 ? 999 : k; };
+        const secIds = [...new Set(eligibleRows.map(r => r.section))].sort((a, b) => order(a) - order(b));
+        return secIds.map(sec => `<optgroup label="${esc(accountingSectionLabel(sec))}">` + eligibleRows.filter(r => r.section === sec)
+          .sort((a, b) => (a.accounting_label || a.label || '').localeCompare(b.accounting_label || b.label || ''))
+          .map(r => {
+            const lbl = esc(r.accounting_label || r.label);
+            const hasVisits = Object.values(CATALOG_ROWS).some(m => m.section === r.section && m.pricing_mode === 'modifier' && /offline/i.test(m.label || ''));
+            return `<option value="${esc(r.id)}">${lbl}</option>` + (hasVisits ? `<option value="${esc(r.id)}+visits">${lbl} + Offline Visits</option>` : '');
+          }).join('') + '</optgroup>').join('');
+      })();
   return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:5px 0;font-size:12px;color:#B91C1C">
     <span>Row ${e.rowNum}: ${e.field} "${esc(rawText)}" not found${suggestionLabel ? ` — did you mean "${esc(suggestionLabel)}"?` : ''}</span>
     ${suggestionId ? `<button onclick="accountingSetBulkImportOverride(${e.rowNum}, '${overrideKey}', '${esc(suggestionId)}')" style="font-size:11px;padding:3px 8px;border-radius:5px;background:var(--accent-dark);color:#fff;border:none;cursor:pointer">Use "${esc(suggestionLabel)}"</button>` : ''}
