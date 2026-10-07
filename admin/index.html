@@ -13043,11 +13043,13 @@ async function ensureAeRosterLoaded() {
 function populateAmPickerDropdown(selectedAmName) {
   const sel = document.getElementById('admin-am-picker');
   if (!sel) return;
+  // Super admins are listed as well as AMs (2026-10-07, per Claire -- Jon is Super and needs to be a group's AM; the Digital
+  // Strategist picker below already lists strategist + super).
   // Deactivated staff (2026-07-18, added alongside the Users tab) are excluded from
   // new picks — same convention as deactivated groups in the AE assignment dropdown —
   // except a match against the group's own already-set am_name, kept selectable so
   // editing a group whose AM has since been deactivated doesn't silently blank it out.
-  const ams = ALL_STAFF.filter(s => s.role === 'am' && (s.active !== false || (selectedAmName && s.name.toLowerCase() === selectedAmName.trim().toLowerCase())));
+  const ams = ALL_STAFF.filter(s => (s.role === 'am' || s.role === 'super') && (s.active !== false || (selectedAmName && s.name.toLowerCase() === selectedAmName.trim().toLowerCase())));
   const matched = selectedAmName ? ams.find(a => a.name.toLowerCase() === selectedAmName.trim().toLowerCase()) : null;
   sel.innerHTML = '<option value="">— Select AM —</option>' +
     ams.map(a => `<option value="${esc(a.name)}">${esc(a.name)}${a.active === false ? ' (inactive)' : ''}</option>`).join('');
