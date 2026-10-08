@@ -8732,7 +8732,7 @@ async function loadAdminPendingRequests() {
       if (line) {
         const whoWhere = [line.county, line.agent_name].filter(Boolean).join(' · ');
         r._line_label = (line.tactic_label || r._service_label) + (whoWhere ? ` — ${whoWhere}` : '');
-        r._service_label = r._line_label + ' (no IO on file)';
+        r._service_label = r._line_label + (line.order_id ? '' : ' (no IO on file)');
       }
     });
     // Pulls in whichever orders these requests reference (an order can be
@@ -8818,12 +8818,25 @@ async function adminEnsureClientsLoaded() {
 // it (2026-09-24). Returns { card, matches }: card is set only on an
 // UNAMBIGUOUS single match; 0 or 2+ matches leaves it null so the caller
 // tells the AM to update Trello by hand rather than guessing.
-async function adminFindTrelloCardForLine(client, line) {
-  if (!client?.trello_list_id) return { card: null, matches: [], noList: true };
+// A split (agent/county) line's cards live on that AE's OWN Trello list -- the one its order was submitted with
+// (orders.trello_client_list_id) -- not the client's general list (2026-10-08, Companion per-agent requests). Every other line
+// uses the client's list. Returns null when neither is known.
+async function adminTrelloListIdForLine(client, line) {
+  if (line?.agent_name && line?.order_id) {
+    try {
+      const o = await adminFindOrderForRequest(line.order_id);
+      if (o?.trello_client_list_id) return o.trello_client_list_id;
+    } catch (e) { console.warn('Could not look up the AE list for this agent line:', e.message); }
+  }
+  return client?.trello_list_id || null;
+}
+async function adminFindTrelloCardForLine(client, line, opts = {}) {
+  const listId = opts.listId || client?.trello_list_id;
+  if (!listId) return { card: null, matches: [], noList: true };
   const listRes = await fetch(PROXY, {
     method: 'POST',
     headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ target: 'trello_get_list_cards', list_id: client.trello_list_id }),
+    body: JSON.stringify({ target: 'trello_get_list_cards', list_id: listId }),
   });
   const cards = await listRes.json();
   const svcLabel = CATALOG_ROWS[line.service_id]?.accounting_label || CATALOG_ROWS[line.service_id]?.label || line.tactic_label || line.service_id;
@@ -9518,7 +9531,7 @@ async function adminApplyOrderlessRequestFollowUp(req) {
   await adminEnsureClientsLoaded();
   const client = ALL_CLIENTS.find(cl => cl.id === req.client_id);
   let found;
-  try { found = await adminFindTrelloCardForLine(client, line); }
+  try { found = await adminFindTrelloCardForLine(client, line, { listId: await adminTrelloListIdForLine(client, line) }); }
   catch (e) { console.warn('Could not search Trello for this line:', e.message); found = { card: null, matches: [] }; }
   if (found.noList) { showToast('Approved, but this client has no Trello list on file \u2014 please update Trello by hand', 'error'); return; }
   // Two cards can take the comment (2026-10-08, per Claire): the campaign's own card (found by name) and the
@@ -9650,7 +9663,7 @@ async function finalizeBatchIfReady(batchId) {
         await adminEnsureClientsLoaded();
         const client = ALL_CLIENTS.find(cl => cl.id === r.client_id);
         try {
-          const f = await adminFindTrelloCardForLine(client, line);
+          const f = await adminFindTrelloCardForLine(client, line, { listId: await adminTrelloListIdForLine(client, line) });
           cardId = f.card?.id || null;
           ioId = f.ioCard?.id || null;
         } catch (e) { console.warn('Could not search Trello for batched line:', e.message); }
@@ -10558,6 +10571,15 @@ async function adminSaveOrderIntakeForm(orderId, formKey, markComplete) {
 // split cards aren't covered yet -- a workflow with multiple agent cards
 // has no single card to resolve to; flagged as a known gap, not silently
 // guessed at.
+// Order Detail's Cancel / Edit / Renew buttons act on the whole SERVICE of the order. For a service split across agents that is
+// every agent's line at once (2026-10-08). Say so right in the panel; one agent is changed through that agent's own row in the
+// Agent / County Split table (Renew) or by the AE's per-agent Companion request.
+function adminSplitServiceNoteHtml(orderId, serviceId) {
+  const o = allOrders.find(x => x.id === orderId);
+  const split = (o?.agent_splits || []).some(sp => sp.service_id === serviceId);
+  if (!split) return '';
+  return `<div style="display:flex;gap:8px;background:#FFF3DA;border-left:3px solid #C68A1E;border-radius:0 6px 6px 0;padding:9px 12px;font-size:11.5px;color:#92650B;margin:8px 0">\u26A0 This service is split across agents. This change applies to <strong>every agent's line</strong> for it. To change just one agent, use that agent's row in the Agent / County Split table (Renew), or have the AE send a request for that agent in the Companion form.</div>`;
+}
 // The AM confirms with the AE before ANY change made in Admin (2026-10-08, per Claire: "we should add that check to any
 // changes done in the admin"). Same wording/idea as Correct Service's "I confirmed the correct service with the AE." and the
 // Cancel panel's box. Required before anything is saved; recorded in the Trello comment where the change posts one.
@@ -10591,6 +10613,7 @@ function adminToggleCancelPanel(orderId, serviceId) {
         </div>
       </div>
       <div id="cancel-warning-${esc(serviceId)}"></div>
+      ${adminSplitServiceNoteHtml(orderId, serviceId)}
       <label style="display:flex;gap:8px;align-items:flex-start;margin:10px 0 0;font-size:11.5px;cursor:pointer">
         <input type="checkbox" id="cancel-confirm-${esc(serviceId)}" style="margin-top:2px"/>
         <span>I confirmed this cancellation with the AE.</span>
@@ -10727,6 +10750,7 @@ function adminToggleEditPanel(orderId, serviceId, field, currentValue) {
         <button type="button" id="edit-save-btn-${esc(serviceId)}" onclick="adminSaveLineItemEdit('${esc(orderId)}','${esc(serviceId)}','${esc(field)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
         <button type="button" onclick="adminToggleEditPanel('${esc(orderId)}','${esc(serviceId)}','${esc(field)}',${currentValue})" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
       </div>
+      ${adminSplitServiceNoteHtml(orderId, serviceId)}
       ${adminAeConfirmBoxHtml(`ae-confirm-edit-${serviceId}`)}
     </div>`;
   row.style.display = 'table-row';
@@ -10861,6 +10885,7 @@ function adminToggleEditDatePanel(orderId, serviceId, currentDate, includeEndDat
         <input type="date" id="edit-extra-end-${esc(serviceId)}" value="${esc(item?.end_date || '')}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>
       </div>` : ''}
       ${adminExtraVariantAndModuleHtml(serviceId, item)}
+      ${adminSplitServiceNoteHtml(orderId, serviceId)}
       ${adminAeConfirmBoxHtml(`ae-confirm-date-${serviceId}`)}
     </div>`;
   row.style.display = 'table-row';
@@ -11172,6 +11197,7 @@ function adminToggleBudgetEditPanel(orderId, serviceId) {
         <button type="button" id="edit-budget-save-btn-${esc(serviceId)}" onclick="adminSaveBudgetEdit('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:var(--accent-dark);color:#fff;font-size:11px;font-weight:700;border:none;cursor:pointer">Save</button>
         <button type="button" onclick="adminToggleBudgetEditPanel('${esc(orderId)}','${esc(serviceId)}')" style="padding:5px 10px;border-radius:6px;background:#fff;border:1px solid var(--border);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer">Cancel</button>
       </div>
+      ${adminSplitServiceNoteHtml(orderId, serviceId)}
       ${adminAeConfirmBoxHtml(`ae-confirm-budget-${serviceId}`)}
     </div>`;
   row.style.display = 'table-row';
@@ -11424,6 +11450,7 @@ function adminToggleRenewPanel(orderId, serviceId, currentEndDate) {
           <input type="number" step="0.01" id="renew-budget-${esc(serviceId)}" placeholder="Leave blank to keep current" style="width:100%;padding:6px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px"/>
         </div>
       </div>
+      ${adminSplitServiceNoteHtml(orderId, serviceId)}
       ${adminAeConfirmBoxHtml(`ae-confirm-renew-${serviceId}`)}
       <div style="display:flex;gap:10px">
         <button type="button" id="renew-confirm-btn-${esc(serviceId)}" onclick="adminConfirmRenewal('${esc(orderId)}','${esc(serviceId)}')" style="padding:7px 16px;border-radius:7px;background:#1F7A42;color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer">Confirm Renewal</button>
@@ -11930,7 +11957,7 @@ async function adminConfirmCampaignLineRenewal(clientId, lineId) {
       // so the Pending Requests approval can find an order-less line's card
       // the same way; behavior here is unchanged.
       const svcLabel = CATALOG_ROWS[line.service_id]?.accounting_label || CATALOG_ROWS[line.service_id]?.label || line.tactic_label || line.service_id;
-      const { matches, ioCard, ioCardCount } = await adminFindTrelloCardForLine(client, line);
+      const { matches, ioCard, ioCardCount } = await adminFindTrelloCardForLine(client, line, { listId: await adminTrelloListIdForLine(client, line) });
 
       // The comment also goes on the client's IO card (2026-10-08, per Claire: the IO card is the overall view of
       // what the client is doing). The campaign card still only acts on an UNAMBIGUOUS single match, and is
