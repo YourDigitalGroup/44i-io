@@ -8566,6 +8566,79 @@ function adminEffectiveWorkflow(svc) {
   return svc.workflow || (svc.trello_template_ref ? '__standalone__' + svc.id : null);
 }
 
+// ── SIBLING CARDS OF A MULTI-CARD (LIST-TEMPLATE) SERVICE (2026-10-08, per Claire) ─────────────────────────
+// A service whose Trello template is a whole LIST (e.g. the SEO and Website packages) makes several cards (a Process
+// card, Reputation Monitoring, ...), but the order only remembers ONE card id per workflow -- whichever card was saved
+// last (Perrys, 2026-10-08: the cancellation comment and the due date went to "Reputation Monitoring", never to the
+// Process card). So for these services Admin also finds the rest of the package on the client's own Trello list:
+// the template list's card names are the stems; a card on the client's list belongs to the package when its name
+// (date range stripped) starts with a stem and carries the client's name -- the same naming the IO form gives them
+// ("<template card name> ... -- <client>"). Each card goes to its LONGEST matching stem; a stem that matches exactly one
+// card is used; a stem that matches several is skipped and reported (never guessed). Services whose template is not a
+// list are untouched. Admin only; read-only Trello searches; any failure just means no extra cards.
+const ADMIN_TEMPLATE_STEM_CACHE = {};   // template list id -> normalized stems, for this page session
+const ADMIN_SIBLING_CACHE = {};         // `${orderId}:${serviceId}` -> { at, promise }, so one action searches once
+async function adminTemplateCardStems(ref) {
+  if (ADMIN_TEMPLATE_STEM_CACHE[ref]) return ADMIN_TEMPLATE_STEM_CACHE[ref];
+  const res = await fetch(PROXY, {
+    method: 'POST',
+    headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ target: 'trello_get_list_cards', list_id: ref }),
+  });
+  const cards = await res.json();
+  if (!Array.isArray(cards)) return [];
+  const stems = cards
+    .map(c => String(c.name || '').trim())
+    .filter(n => n && !n.startsWith('\u{1F9EA}') && !adminIsIoCardName(n) && !/^\*AE\*/i.test(n) && !/^AE Questions/i.test(n))
+    .map(adminNormCardName);
+  ADMIN_TEMPLATE_STEM_CACHE[ref] = stems;
+  return stems;
+}
+async function adminFindSiblingTacticCardIds(o, svc) {
+  try {
+    const info = await adminClientTrelloInfo(o.client_id);
+    const listId = o.trello_client_list_id || info.listId;
+    if (!listId) return [];
+    const stems = await adminTemplateCardStems(svc.trello_template_ref);
+    if (!stems.length) return [];
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target: 'trello_get_list_cards', list_id: listId }),
+    });
+    const cards = await res.json();
+    if (!Array.isArray(cards)) return [];
+    const clientNorm = adminNormCardName(info.name);
+    const byStem = {};
+    for (const c of cards) {
+      if (adminIsIoCardName(c.name)) continue;
+      const n = adminNormCardName(adminStripDateRangeFromCardName(c.name || ''));
+      if (clientNorm && !n.includes(clientNorm)) continue;
+      let best = null;
+      for (const st of stems) if (n.startsWith(st) && (!best || st.length > best.length)) best = st;
+      if (best) (byStem[best] = byStem[best] || []).push(c);
+    }
+    const ids = [], ambiguous = [];
+    for (const [stem, list] of Object.entries(byStem)) {
+      if (list.length === 1) ids.push(list[0].id); else ambiguous.push(`${list.length} cards for "${stem}"`);
+    }
+    if (ambiguous.length) showToast(`Found ${ambiguous.join(' and ')} on the client's list, so those were skipped — please update the right card by hand`, 'error');
+    return ids;
+  } catch (e) {
+    console.warn('Could not look for the other cards in this package:', e.message);
+    return [];
+  }
+}
+async function adminSiblingTacticCardIds(o, svc) {
+  if (!o || !svc || svc.trello_template_type !== 'list' || !svc.trello_template_ref) return [];
+  const key = `${o.id}:${svc.id}`;
+  const hit = ADMIN_SIBLING_CACHE[key];
+  if (hit && Date.now() - hit.at < 15000) return hit.promise;
+  const promise = adminFindSiblingTacticCardIds(o, svc);
+  ADMIN_SIBLING_CACHE[key] = { at: Date.now(), promise };
+  return promise;
+}
+
 // Updates a tactic's own Trello card: its title (when renameTitle is true,
 // i.e. a variant/module pick changed) and/or its due date (whenever
 // item.end_date is set) — both land on the same card via one
@@ -8575,6 +8648,21 @@ async function adminUpdateTacticCard(orderId, serviceId, item, { renameTitle } =
     const o = allOrders.find(x => x.id === orderId);
     const svc = CATALOG_ROWS[serviceId] || {};
     const tacticCardId = o?.trello_card_ids?.[adminEffectiveWorkflow(svc)];
+    // The rest of a multi-card package gets the same due date (never a rename -- the title logic is for the saved card).
+    const dueOnly = adminCampaignDueFields(item?.end_date);
+    if (Object.keys(dueOnly).length) {
+      for (const sibId of await adminSiblingTacticCardIds(o, svc)) {
+        if (sibId === tacticCardId) continue;
+        try {
+          const sres = await fetch(PROXY, {
+            method: 'POST',
+            headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: 'trello_update_card', card_id: sibId, ...dueOnly }),
+          });
+          if (!sres.ok) console.warn('Could not update Trello card', sibId, ':', sres.status);
+        } catch (e) { console.warn('Could not update Trello card:', e.message); }
+      }
+    }
     if (!tacticCardId) return;
     const payload = { target: 'trello_update_card', card_id: tacticCardId, ...adminCampaignDueFields(item?.end_date) };
     if (renameTitle) {
@@ -9213,7 +9301,7 @@ async function adminApprovePendingRequestClick(id) {
     const c = req.requested_changes || {};
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    const cardIds = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
     let commentText = '';
     let attachRevisedPdf = false;
     // Captured for edit/renew ONLY, and persisted server-side for a
@@ -9577,7 +9665,7 @@ async function finalizeBatchIfReady(batchId) {
     const label = svc.accounting_label || svc.label || r.service_id;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-    const targets = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    const targets = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
     if (!targets.length) continue;
     if (ioCardId) orderIoCardIds[o.id] = ioCardId;
 
@@ -10548,7 +10636,7 @@ async function adminSubmitCancellation(orderId, serviceId) {
   // silently miss a cancellation -- the more important one not to miss).
   const ioCardId = o?.trello_card_ids?.__io_card__;
   const tacticCardId = o?.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-  const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+  const cardIds = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
   // A cancellation is effectively a new (earlier) end for the tactic, so its
   // card's Trello due date needs to move too, same as an edit/renewal that
   // changes end_date (2026-09-02, per Claire: "it didn't update the due date"
@@ -10683,7 +10771,7 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     const commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    const cardIds = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
         const res = await fetch(PROXY, {
@@ -10855,7 +10943,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     const commentText = `📅 ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    const cardIds = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
         const res = await fetch(PROXY, {
@@ -11224,7 +11312,7 @@ async function adminSaveBudgetEdit(orderId, serviceId) {
   const commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}).`;
   const ioCardId = o.trello_card_ids?.__io_card__;
   const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-  const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+  const cardIds = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
   for (const cardId of cardIds) {
     try {
       const res = await fetch(PROXY, {
@@ -11396,7 +11484,7 @@ async function adminConfirmRenewal(orderId, serviceId) {
     const commentText = `🔁 Renewed ${label} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-    const cardIds = [...new Set([ioCardId, tacticCardId].filter(Boolean))];
+    const cardIds = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
         const res = await fetch(PROXY, {
