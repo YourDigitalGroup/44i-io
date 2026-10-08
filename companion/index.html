@@ -113,6 +113,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-
 
     <div id="services-card" class="card hidden">
       <h2>Which service(s), and what do you need?</h2>
+      <p class="muted-note" id="county-filter-note" style="display:none"></p>
       <div id="services-list"></div>
       <p class="muted-note" id="no-services-note" style="display:none">This client has no active services to change right now — check with your AM if you expected to see one.</p>
     </div>
@@ -324,10 +325,15 @@ async function loadAeRoster(groupId) {
 }
 function applyAePick(id) {
   const nameEl = document.getElementById('ae-name');
-  if (!id) { nameEl.value = ''; return; }
-  const a = AE_ROSTER.find(x => x.id === id);
-  if (!a) return;
-  nameEl.value = a.name || '';
+  if (!id) { nameEl.value = ''; }
+  else {
+    const a = AE_ROSTER.find(x => x.id === id);
+    if (!a) return;
+    nameEl.value = a.name || '';
+  }
+  // Which agent lines the list shows depends on the AE (see companionScopeAgentLines), so a client that is already picked is
+  // listed again for the new AE (2026-10-08). Ticks made before the switch are not kept.
+  if (selectedClientId) applyClientPick(selectedClientId);
 }
 
 async function loadClientRoster(groupId) {
@@ -340,6 +346,37 @@ async function loadClientRoster(groupId) {
   if (!CLIENT_ROSTER.length) { wrap.style.display = 'none'; noNote.style.display = 'block'; return; }
   sel.innerHTML = '<option value="">— Select a client —</option>' + CLIENT_ROSTER.map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
   wrap.style.display = 'block';
+}
+
+// An AE only sees the agent/county lines in HER OWN counties (2026-10-08, per Claire; the same rule as the IO form's county/agent
+// scoping): the AE's client_aes rows for this client, and every county belongs to one of those rows. Lines with no agent are never
+// filtered. Anything missing falls back to showing everything, as the IO form does: no AE picked yet, an AE with no client_aes row
+// for this client, or either lookup failing -- better a long list than a hidden agent. County names are compared ignoring case and
+// spacing. When lines are hidden, a short note says how many.
+function companionNormCounty(n) { return String(n || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+async function companionScopeAgentLines(rows, clientId) {
+  const note = document.getElementById('county-filter-note');
+  if (note) { note.style.display = 'none'; note.textContent = ''; }
+  const aeId = document.getElementById('ae-picker')?.value || '';
+  if (!aeId || !rows.some(r => r.agent_name)) return rows;
+  const body = JSON.stringify(EMBED_KEY_PRESENT ? { p_t: EMBED_KEY, p_client_id: clientId } : { p_client_id: clientId });
+  let aes = [], counties = [];
+  try {
+    [aes, counties] = await Promise.all([
+      sb('rpc/get_client_aes', { method: 'POST', body }),
+      sb('rpc/get_client_counties', { method: 'POST', body }),
+    ]);
+  } catch (e) { console.warn('Could not load this client\'s AE counties:', e.message); return rows; }
+  const mine = (aes || []).filter(a => a.ae_id === aeId && a.active !== false).map(a => a.id);
+  if (!mine.length) return rows;
+  const myCounties = new Set((counties || []).filter(c => mine.includes(c.client_ae_id)).map(c => companionNormCounty(c.name)));
+  const kept = rows.filter(r => !r.agent_name || myCounties.has(companionNormCounty(r.county)));
+  const hidden = rows.length - kept.length;
+  if (hidden > 0 && note) {
+    note.textContent = `Showing the agents in your counties. ${hidden} agent line${hidden === 1 ? '' : 's'} in other counties ${hidden === 1 ? 'is' : 'are'} hidden. If you need one of those, ask your AM.`;
+    note.style.display = 'block';
+  }
+  return kept;
 }
 
 async function applyClientPick(id) {
@@ -364,6 +401,7 @@ async function applyClientPick(id) {
     console.warn('Could not load active services:', e.message);
     ACTIVE_SERVICES = [];
   }
+  ACTIVE_SERVICES = await companionScopeAgentLines(ACTIVE_SERVICES, id);
   if (!ACTIVE_SERVICES.length) { noServicesNote.style.display = 'block'; return; }
 
   // Pull each service's catalog-level pricing shape straight from the
