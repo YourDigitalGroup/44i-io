@@ -2140,6 +2140,33 @@ function rebuildPriceableServices() {
   PRICEABLE_SERVICES = groupOrder.map(section => ({ section, items: groupMap[section] }));
 }
 
+// ── TOAST THAT KEEPS A TRELLO WARNING VISIBLE (2026-10-08, per Claire) ─────────────────
+// Many handlers show a red "...please update Trello by hand" toast and then, in the same
+// moment, the green success toast. There is only one #toast, so the success text replaced the
+// warning before anyone could read it. Now: a Trello-style warning followed within 5 seconds by a
+// success toast is shown as ONE red message (success text + the warning) and stays longer.
+// Same signature as shared.js's showToast(msg, type); everything else behaves as before.
+let adminToastTimer = null;
+let adminPendingTrelloWarning = null; // { msg, at }
+showToast = function (msg, type = 'success') {
+  const t = document.getElementById('toast');
+  if (!t) { console.warn('[showToast] no #toast element on this page:', msg); return; }
+  let text = msg, cls = type, ms = 8000;
+  if (type === 'error') {
+    adminPendingTrelloWarning = { msg, at: Date.now() };
+  } else {
+    const w = adminPendingTrelloWarning;
+    adminPendingTrelloWarning = null;
+    if (w && Date.now() - w.at < 5000 && /by hand|Trello|check the card/i.test(w.msg)) {
+      text = `${msg} \u26A0 ${w.msg}`; cls = 'error'; ms = 14000;
+    }
+  }
+  t.textContent = text;
+  t.className = 'toast show ' + cls;
+  clearTimeout(adminToastTimer);
+  adminToastTimer = setTimeout(() => t.className = 'toast', ms);
+};
+
 // ── ADMIN TAB SWITCHER ────────────────────────────────────────
 async function adminTab(tab) {
   // AM-tier users cannot view or adjust custom pricing or accounting overrides — both
@@ -8735,7 +8762,10 @@ async function adminFindTrelloCardForLine(client, line) {
     });
     if (narrowed.length) matches = narrowed;
   }
-  return { card: matches.length === 1 ? matches[0] : null, matches };
+  // The IO card lives on the same list, so no second fetch is needed. Exactly one IO card counts as found;
+  // none or several are left for the caller to report (callers that don't read these fields are unaffected).
+  const ioCards = Array.isArray(cards) ? cards.filter(c => adminIsIoCardName(c.name)) : [];
+  return { card: matches.length === 1 ? matches[0] : null, matches, ioCard: ioCards.length === 1 ? ioCards[0] : null, ioCardCount: ioCards.length };
 }
 function pendingFmtMonth(month) {
   return new Date(month + '-01T12:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
@@ -9379,13 +9409,17 @@ async function adminApplyOrderlessRequestFollowUp(req) {
   let found;
   try { found = await adminFindTrelloCardForLine(client, line); }
   catch (e) { console.warn('Could not search Trello for this line:', e.message); found = { card: null, matches: [] }; }
-  if (found.noList) { showToast('Approved, but this client has no Trello list on file — please update Trello by hand', 'error'); return; }
-  if (!found.card) {
-    showToast(found.matches.length ? `Approved, but found ${found.matches.length} possible matching Trello cards — please update the right one by hand` : 'Approved, but no matching Trello card was found — please update Trello by hand', 'error');
-    return;
-  }
-  req._trello_card_id = found.card.id;
-  if (newEndDate) {
+  if (found.noList) { showToast('Approved, but this client has no Trello list on file \u2014 please update Trello by hand', 'error'); return; }
+  // Two cards can take the comment (2026-10-08, per Claire): the campaign's own card (found by name) and the
+  // client's IO card (found by its IO naming rule). Either one alone is enough to post; each missing one is reported.
+  const ioCardId = found.ioCard?.id || null;
+  req._trello_card_id = found.card?.id || null;
+  req._io_card_id = ioCardId;
+  const missing = [];
+  if (!found.card) missing.push(found.matches.length ? `found ${found.matches.length} possible matching campaign cards` : 'no matching campaign card was found');
+  if (!ioCardId) missing.push(found.ioCardCount ? `found ${found.ioCardCount} IO cards on the client's list` : 'no IO card was found on the client\'s list');
+  if (missing.length) showToast(`Approved, but ${missing.join(' and ')} \u2014 please update the right card by hand`, 'error');
+  if (found.card && newEndDate) {
     try {
       const newName = adminRenewedCardName(found.card.name, line.flight_start, newEndDate);
       await fetch(PROXY, {
@@ -9396,14 +9430,16 @@ async function adminApplyOrderlessRequestFollowUp(req) {
     } catch (e) { console.warn('Could not update Trello card title/due date:', e.message); }
   }
   if (!req.submission_batch_id && commentText) {
-    try {
-      const res = await fetch(PROXY, {
-        method: 'POST',
-        headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: 'trello_add_comment', card_id: found.card.id, text: commentText }),
-      });
-      if (!res.ok) console.warn('Could not post approval comment to card', found.card.id, ':', res.status);
-    } catch (e) { console.warn('Could not post approval comment to card:', e.message); }
+    for (const cardId of [...new Set([req._trello_card_id, ioCardId].filter(Boolean))]) {
+      try {
+        const res = await fetch(PROXY, {
+          method: 'POST',
+          headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
+        });
+        if (!res.ok) console.warn('Could not post approval comment to card', cardId, ':', res.status);
+      } catch (e) { console.warn('Could not post approval comment to card:', e.message); }
+    }
   }
 }
 
@@ -9492,18 +9528,24 @@ async function finalizeBatchIfReady(batchId) {
 
   for (const r of batchRows) {
     if (!r.order_id && r.campaign_line_id) {
-      // Order-less line (2026-09-24): its one card, found by name -- reuse
-      // the id the approval step just resolved when it's still in memory,
-      // else search again (a rejection never searched). No IO card, no PDF.
+      // Order-less line (2026-09-24): its campaign card, found by name -- reuse the ids the approval step just
+      // resolved when they are still in memory, else search again (a rejection never searched). Since 2026-10-08
+      // the client's IO card also gets the line (found by its IO naming rule), like an order-backed item. No PDF:
+      // there is no order to build a revised IO from.
       const line = PENDING_REQUEST_LINES[r.campaign_line_id];
       let cardId = r._trello_card_id || null;
-      if (!cardId && line) {
+      let ioId = r._io_card_id || null;
+      if (!cardId && !ioId && line) {
         await adminEnsureClientsLoaded();
         const client = ALL_CLIENTS.find(cl => cl.id === r.client_id);
-        try { cardId = (await adminFindTrelloCardForLine(client, line)).card?.id || null; }
-        catch (e) { console.warn('Could not search Trello for batched line:', e.message); }
+        try {
+          const f = await adminFindTrelloCardForLine(client, line);
+          cardId = f.card?.id || null;
+          ioId = f.ioCard?.id || null;
+        } catch (e) { console.warn('Could not search Trello for batched line:', e.message); }
       }
-      if (cardId) (cardLines[cardId] = cardLines[cardId] || []).push(buildBatchResolutionLine(r, r._line_label || r.service_id));
+      const resolution = buildBatchResolutionLine(r, r._line_label || r.service_id);
+      for (const id of new Set([cardId, ioId].filter(Boolean))) (cardLines[id] = cardLines[id] || []).push(resolution);
       continue;
     }
     const o = await adminFindOrderForRequest(r.order_id);
@@ -11621,6 +11663,13 @@ function adminToggleCampaignLineRenewPanel(clientId, lineId, currentEndDate) {
 function adminNormCardName(n) {
   return (n || '').toLowerCase().replace(/[-‐‑‒–—―−]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
 }
+// The client's IO card is named "IO" or "IO - ..."/"IO: ..." -- the same rule index.html's IO form uses to find
+// and reuse it (isIoName), so Admin finds the card the form created (2026-10-08, for order-less lines, which have
+// no stored __io_card__ id).
+function adminIsIoCardName(name) {
+  const n = adminNormCardName(name);
+  return n === 'io' || /^io\s*[-:]/.test(n);
+}
 // Agent cards carry a numeric term "M/D/YY - M/D/YY" (index.html's formatAgentTermNumeric(),
 // 2026-10-02); the month-name pattern above is what every other dated card uses.
 const ADMIN_NUMERIC_TERM_RE = /\d{1,2}\/\d{1,2}\/\d{2,4}(?:\s*-\s*\d{1,2}\/\d{1,2}\/\d{2,4})?/;
@@ -11732,30 +11781,36 @@ async function adminConfirmCampaignLineRenewal(clientId, lineId) {
       // so the Pending Requests approval can find an order-less line's card
       // the same way; behavior here is unchanged.
       const svcLabel = CATALOG_ROWS[line.service_id]?.accounting_label || CATALOG_ROWS[line.service_id]?.label || line.tactic_label || line.service_id;
-      const { matches } = await adminFindTrelloCardForLine(client, line);
+      const { matches, ioCard, ioCardCount } = await adminFindTrelloCardForLine(client, line);
 
-      if (matches.length === 1) {
-        const card = matches[0];
-        const newName = adminRenewedCardName(card.name, line.flight_start, newEndDate);
+      // The comment also goes on the client's IO card (2026-10-08, per Claire: the IO card is the overall view of
+      // what the client is doing). The campaign card still only acts on an UNAMBIGUOUS single match, and is
+      // the only one whose title/due date move; each missing card is reported in one message.
+      const campaignCard = matches.length === 1 ? matches[0] : null;
+      if (campaignCard) {
+        const newName = adminRenewedCardName(campaignCard.name, line.flight_start, newEndDate);
         const dueFields = adminCampaignDueFields(newEndDate);
         await fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target: 'trello_update_card', card_id: card.id, name: newName, ...dueFields }),
+          body: JSON.stringify({ target: 'trello_update_card', card_id: campaignCard.id, name: newName, ...dueFields }),
         });
-        const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
-        const commentText = `🔁 Renewed ${svcLabel} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
+      }
+      const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
+      const commentText = `🔁 Renewed ${svcLabel} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
+      for (const cardId of [...new Set([campaignCard?.id, ioCard?.id].filter(Boolean))]) {
         const res = await fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target: 'trello_add_comment', card_id: card.id, text: commentText }),
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
         });
-        if (!res.ok) console.warn('Could not post renewal comment to card', card.id, ':', res.status);
-      } else if (matches.length === 0) {
-        showToast('Renewed in the system, but no matching Trello card was found — please update Trello by hand', 'error');
-      } else {
-        showToast(`Renewed in the system, but found ${matches.length} possible matching Trello cards — please update the right one by hand`, 'error');
+        if (!res.ok) console.warn('Could not post renewal comment to card', cardId, ':', res.status);
       }
+      const missing = [];
+      if (matches.length === 0) missing.push('no matching campaign card was found');
+      else if (matches.length > 1) missing.push(`found ${matches.length} possible matching campaign cards`);
+      if (!ioCard) missing.push(ioCardCount ? `found ${ioCardCount} IO cards on the client's list` : 'no IO card was found on the client\'s list');
+      if (missing.length) showToast(`Renewed in the system, but ${missing.join(' and ')} \u2014 please update the right card by hand`, 'error');
     } catch (e) {
       console.warn('Could not search/update Trello card for renewal:', e.message);
       showToast('Renewed in the system, but the Trello update failed — please update Trello by hand', 'error');
