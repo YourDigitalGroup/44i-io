@@ -2613,8 +2613,22 @@ async function loadAccountingDashboard() {
 // separation Strategist's own architecture already has -- a line outside
 // its flight for this month is excluded here, full stop, regardless of
 // what accountingMonthRowFor would have computed for it.
+function accountingCancelledTag(line) {
+  if (line.status !== 'cancelled') return '';
+  const cx = line.cancel_effective_date ? new Date(String(line.cancel_effective_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }) : null;
+  return ` <span title="${cx ? 'Cancelled effective ' + cx + '. Later months no longer show.' : 'Cancelled, but no effective date was recorded, so every month still shows. Set a cancel date in Admin.'}" style="font-size:10px;font-weight:700;color:#B91C1C;background:#FEE2E2;border-radius:4px;padding:0 5px">Cancelled${cx ? ' ' + cx : ' (no date)'}</span>`;
+}
 function accountingLineActiveInMonth(line, monthDate) {
   const monthKey = accountingMonthKey(monthDate);
+  // Cancelled lines (2026-10-08, per Claire -- RWS Tree Service / State Farm: a cancelled line kept showing and counting).
+  // Months AFTER the month of the cancel effective date no longer show or count, and a line cancelled before it ever started
+  // shows nowhere. The cancel month itself still shows in full -- how a mid-month cancel should be billed (full month, prorated,
+  // none) is Kim's call and not decided yet. A cancelled line with NO effective date keeps its old behaviour (and gets a tag).
+  if (line.status === 'cancelled' && line.cancel_effective_date) {
+    const cx = String(line.cancel_effective_date).slice(0, 10);
+    if (line.flight_start && cx < String(line.flight_start).slice(0, 10)) return false;
+    if (monthKey > accountingMonthKey(new Date(cx + 'T00:00:00'))) return false;
+  }
   if (line.flight_start && monthKey < accountingMonthKey(new Date(line.flight_start + 'T00:00:00'))) return false;
   // A one-time fee (ACCOUNTING_ONE_TIME_BILLING_TYPES, defined above
   // alongside accountingMonthRowFor() -- reused here too) only ever
@@ -2809,7 +2823,7 @@ function accountingRenderRow(r) {
   const dollarStyle = accountingRowIsPaused(r) ? ' style="color:var(--muted)"' : '';
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingSelectLine('${r.line.id}')}">
     <td><strong>${esc(accountingDisplayClientName(r.line))}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}${accountingAfterBillingBadgeHtml(r)}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingCancelledTag(r.line)}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}${accountingAfterBillingBadgeHtml(r)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end, ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(r.line.billing_type))}</td>
     <td class="num"${dollarStyle}>${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td class="num"${dollarStyle}>${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
