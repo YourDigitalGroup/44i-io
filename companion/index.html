@@ -1187,18 +1187,54 @@ async function submitRequests() {
 // order covering every item in this submission, not a separate comment
 // per item per card. A tactic card only needs to hear about a change once
 // it's actually resolved, not while it's still pending.
+// The picked client's IO card id, found on the client's own Trello list (its id comes from the new read-only
+// companion_get_client_trello_list RPC). The IO card is named "IO" or "IO - ..." / "IO: ..." -- the same rule the IO form
+// uses to find and reuse it. Returns null unless there is exactly one.
+async function companionFindClientIoCardId() {
+  const listId = await sb('rpc/companion_get_client_trello_list', {
+    method: 'POST',
+    body: JSON.stringify({ ...groupScope(selectedGroup.id), p_client_id: selectedClientId })
+  });
+  if (!listId || typeof listId !== 'string') return null;
+  const res = await fetch(PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY },
+    body: JSON.stringify({ target: 'trello_get_list_cards', list_id: listId }),
+  });
+  const cards = await res.json();
+  if (!Array.isArray(cards)) return null;
+  const isIoName = n => {
+    const t = String(n || '').toLowerCase().replace(/[-\u2010-\u2015\u2212]/g, '-').replace(/\s+/g, ' ').trim().replace(/[\s\-:]+$/g, '').trim();
+    return t === 'io' || /^io\s*[-:]/.test(t);
+  };
+  const ios = cards.filter(c => isIoName(c.name));
+  return ios.length === 1 ? ios[0].id : null;
+}
 async function postSubmitTrelloComments(aeName, submitted) {
   const actionVerb = { cancel: 'cancel', edit: 'edit', renew: 'renew' };
   const ioLines = {}; // ioCardId -> [line, ...]
+  const orderlessLines = []; // items for campaigns with no Insertion Order on file
   for (const p of submitted) {
     const svc = ACTIVE_SERVICES.find(s => s.service_id === p.service_id && (s.order_id || null) === (p.order_id || null) && (s.campaign_line_id || null) === (p.campaign_line_id || null));
     if (!svc) continue;
     const label = svc._accountingLabel || svc.label;
-    // An order-less line has no IO card; its heads-up is the AM email only.
-    if (!p.order_id) continue;
+    // An order-less line has no stored IO card id; its IO card is looked up on the client's Trello list below.
+    if (!p.order_id) { orderlessLines.push(`${actionVerb[p.action] || p.action} ${label}`); continue; }
     const ioCardId = (ORDER_TRELLO_CARDS[p.order_id] || {}).__io_card__;
     if (!ioCardId) continue;
     (ioLines[ioCardId] = ioLines[ioCardId] || []).push(`${actionVerb[p.action] || p.action} ${label}`);
+  }
+  // Campaigns with no order (2026-10-08, per Claire: "the form is supposed to search for the card, the client list will
+  // already be connected"): find the client's IO card on its Trello list, the same way the IO form does, and add these
+  // items to the same one combined heads-up. Exactly one IO card counts as found; anything else (no list, no IO card,
+  // several, or a lookup error) just means no Trello note for these items -- the AM email still goes.
+  if (orderlessLines.length) {
+    try {
+      const ioId = await companionFindClientIoCardId();
+      if (ioId) (ioLines[ioId] = ioLines[ioId] || []).push(...orderlessLines);
+    } catch (e) {
+      console.warn('Could not find the client IO card for a no-IO request:', e.message);
+    }
   }
   for (const [cardId, lines] of Object.entries(ioLines)) {
     const text = `📝 ${aeName} requested to change ${lines.length} item${lines.length > 1 ? 's' : ''} — awaiting AM approval:\n${lines.map(l => '• ' + l).join('\n')}`;
