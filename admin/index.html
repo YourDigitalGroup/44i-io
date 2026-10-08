@@ -11781,30 +11781,36 @@ async function adminConfirmCampaignLineRenewal(clientId, lineId) {
       // so the Pending Requests approval can find an order-less line's card
       // the same way; behavior here is unchanged.
       const svcLabel = CATALOG_ROWS[line.service_id]?.accounting_label || CATALOG_ROWS[line.service_id]?.label || line.tactic_label || line.service_id;
-      const { matches } = await adminFindTrelloCardForLine(client, line);
+      const { matches, ioCard, ioCardCount } = await adminFindTrelloCardForLine(client, line);
 
-      if (matches.length === 1) {
-        const card = matches[0];
-        const newName = adminRenewedCardName(card.name, line.flight_start, newEndDate);
+      // The comment also goes on the client's IO card (2026-10-08, per Claire: the IO card is the overall view of
+      // what the client is doing). The campaign card still only acts on an UNAMBIGUOUS single match, and is
+      // the only one whose title/due date move; each missing card is reported in one message.
+      const campaignCard = matches.length === 1 ? matches[0] : null;
+      if (campaignCard) {
+        const newName = adminRenewedCardName(campaignCard.name, line.flight_start, newEndDate);
         const dueFields = adminCampaignDueFields(newEndDate);
         await fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target: 'trello_update_card', card_id: card.id, name: newName, ...dueFields }),
+          body: JSON.stringify({ target: 'trello_update_card', card_id: campaignCard.id, name: newName, ...dueFields }),
         });
-        const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
-        const commentText = `🔁 Renewed ${svcLabel} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
+      }
+      const budgetNote = newBudget != null ? `, new monthly budget $${Number(newBudget).toLocaleString()} starting the renewed term` : '';
+      const commentText = `🔁 Renewed ${svcLabel} — new end date ${newEndDate}${budgetNote} (by ${currentAdminUser?.name || 'AM'}).`;
+      for (const cardId of [...new Set([campaignCard?.id, ioCard?.id].filter(Boolean))]) {
         const res = await fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target: 'trello_add_comment', card_id: card.id, text: commentText }),
+          body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
         });
-        if (!res.ok) console.warn('Could not post renewal comment to card', card.id, ':', res.status);
-      } else if (matches.length === 0) {
-        showToast('Renewed in the system, but no matching Trello card was found — please update Trello by hand', 'error');
-      } else {
-        showToast(`Renewed in the system, but found ${matches.length} possible matching Trello cards — please update the right one by hand`, 'error');
+        if (!res.ok) console.warn('Could not post renewal comment to card', cardId, ':', res.status);
       }
+      const missing = [];
+      if (matches.length === 0) missing.push('no matching campaign card was found');
+      else if (matches.length > 1) missing.push(`found ${matches.length} possible matching campaign cards`);
+      if (!ioCard) missing.push(ioCardCount ? `found ${ioCardCount} IO cards on the client's list` : 'no IO card was found on the client\'s list');
+      if (missing.length) showToast(`Renewed in the system, but ${missing.join(' and ')} \u2014 please update the right card by hand`, 'error');
     } catch (e) {
       console.warn('Could not search/update Trello card for renewal:', e.message);
       showToast('Renewed in the system, but the Trello update failed — please update Trello by hand', 'error');
