@@ -94,6 +94,7 @@
   #page-accounting .acct-status-pill.external{background:#DBEAFE;color:#1E40AF}
   #page-accounting .acct-status-pill.paused{background:#E5E7EB;color:#4B5563}
   #page-accounting .acct-status-pill.pending{background:#EDE9FE;color:#6D28D9}
+  #page-accounting .acct-status-pill.cancelled{background:#FEE2E2;color:#991B1B}
   /* Distinct from .paused on purpose (2026-09-10) -- a permanently completed/
      cancelled line reads very differently from a temporary pause for anyone
      doing revenue reconciliation, so it gets its own color rather than
@@ -1985,7 +1986,7 @@ function accountingDownloadImportRecord() {
 }
 
 function accountingStatusPill(kind, text) {
-  const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external', paused: 'paused', pending: 'pending', complete: 'complete' }[kind];
+  const cls = { confirmed: 'confirmed', needs: 'needs', external: 'external', paused: 'paused', pending: 'pending', complete: 'complete', cancelled: 'cancelled' }[kind];
   return `<span class="acct-status-pill ${cls}">${esc(text)}</span>`;
 }
 // Confirmed = a real actual-spend figure entered for the month, OR a manual
@@ -2034,6 +2035,8 @@ function accountingLineStatusPill(r) {
   if (r.isComplete) return accountingStatusPill('complete', 'Complete');
   if (r.paused) return accountingStatusPill('paused', 'Paused');
   if (r.confirmed) return accountingStatusPill('confirmed', 'Confirmed');
+  // A cancelled line is not waiting on a charge to be confirmed the way a live one is (2026-10-08, per Claire).
+  if (r.line.status === 'cancelled') return accountingStatusPill('cancelled', 'Cancelled');
   return accountingStatusPill('needs', 'Needs confirmation');
 }
 // Status text for a rollup PARENT row -- summarizes across all its children
@@ -2618,8 +2621,18 @@ function accountingCancelledTag(line) {
   const cx = line.cancel_effective_date ? new Date(String(line.cancel_effective_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }) : null;
   return ` <span title="${cx ? 'Cancelled effective ' + cx + '. Later months no longer show.' : 'Cancelled, but no effective date was recorded, so every month still shows. Set a cancel date in Admin.'}" style="font-size:10px;font-weight:700;color:#B91C1C;background:#FEE2E2;border-radius:4px;padding:0 5px">Cancelled${cx ? ' ' + cx : ' (no date)'}</span>`;
 }
+// A line cancelled BEFORE it ever launched bills nothing in any month (2026-10-08, per Claire -- Armageddon Arsenal Supply:
+// YouTube TV ordered 9/25, still pending, cancelled 10/1 and replaced by Streaming TV; the cancelled line kept showing $1,650).
+// "Never launched" = cancelled AND no platform was ever set on it AND no month has real actual spend or a manual confirmation.
+// Billed-externally and accounting-only lines are excluded on purpose: they never carry platform data or automatic spend, so
+// "nothing recorded" would not mean "never ran" for them.
+function accountingCancelledNeverLaunched(line) {
+  if (line.status !== 'cancelled' || line.platform || line.billed_externally || line.accounting_only) return false;
+  return !ALL_ACCOUNTING_MONTHS.some(m => m.campaign_line_id === line.id && (m.actual_spend != null || m.confirmed_by));
+}
 function accountingLineActiveInMonth(line, monthDate) {
   const monthKey = accountingMonthKey(monthDate);
+  if (accountingCancelledNeverLaunched(line)) return false;
   // Cancelled lines (2026-10-08, per Claire -- RWS Tree Service / State Farm: a cancelled line kept showing and counting).
   // Months AFTER the month of the cancel effective date no longer show or count, and a line cancelled before it ever started
   // shows nowhere. The cancel month itself still shows in full -- how a mid-month cancel should be billed (full month, prorated,
