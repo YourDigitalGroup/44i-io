@@ -8995,8 +8995,30 @@ function adminTogglePendingBatch(key) {
 // finding out a request came in. Independent of the Trello/PDF follow-up
 // below — sent (or attempted) regardless of whether that succeeds, same
 // "the database change already happened, this is just a courtesy" posture.
+// Who gets a resolution email (2026-10-08, per Claire: "have the bcc emailed as well on the resolution so everyone stays
+// in the loop", then "lets do the IO recipients as well since that can be the group accountant that would need to know"):
+// To = the AE who submitted the request plus the group's IO recipients (the same addresses the Companion's submit-time
+// email puts in To); Bcc = the global always-BCC list. An address is listed once (case-insensitive; To wins over Bcc).
+// With no AE email the IO recipients are the To; with nobody in To the Bcc list becomes To (same rule as the Companion's
+// email). A failed read of the always-BCC list just means it is left off, as before; nothing to send = no email.
+async function adminResolutionRecipients(requesterEmail, groupId) {
+  let always = [];
+  try {
+    const rows = await sb('notification_settings?id=eq.1&select=always_bcc_recipients') || [];
+    always = String(rows[0]?.always_bcc_recipients || '').split(',').map(x => x.trim()).filter(Boolean);
+  } catch (e) { console.warn('Could not load the always-BCC list for the resolution email:', e.message); }
+  const group = (typeof allGroups !== 'undefined' ? allGroups : []).find(g => g.id === groupId);
+  const ioRecipients = String(group?.io_recipient || '').split(',').map(x => x.trim()).filter(Boolean);
+  const seen = new Set();
+  const pick = list => list.filter(r => { const k = r.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  const to = pick([...(requesterEmail ? [String(requesterEmail).trim()] : []), ...ioRecipients]);
+  const bcc = pick(always);
+  if (!to.length && bcc.length) return { to: bcc.join(','), bcc: '' };
+  return { to: to.join(','), bcc: bcc.join(',') };
+}
 async function notifyRequesterOfResolution(req, status, note) {
-  if (!req.requested_by_email) return;
+  const rec = await adminResolutionRecipients(req.requested_by_email, req.group_id);
+  if (!rec.to) return;
   try {
     const group = allGroups.find(g => g.id === req.group_id);
     const color = group?.brand_color || '#1C9BD7';
@@ -9008,6 +9030,7 @@ async function notifyRequesterOfResolution(req, status, note) {
       <div style="border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;padding:20px">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <tr><td style="padding:6px 0;color:#6B7280;width:140px">Client</td><td style="padding:6px 0;font-weight:600">${esc(req._client_name || '')}</td></tr>
+          ${req.requested_by ? `<tr><td style="padding:6px 0;color:#6B7280">Requested by</td><td style="padding:6px 0">${esc(req.requested_by)}</td></tr>` : ''}
           <tr><td style="padding:6px 0;color:#6B7280">Service</td><td style="padding:6px 0">${esc(req._service_label || req.service_id)}</td></tr>
           <tr><td style="padding:6px 0;color:#6B7280">Action</td><td style="padding:6px 0;text-transform:capitalize">${esc(req.action)}</td></tr>
           <tr><td style="padding:6px 0;color:#6B7280">Status</td><td style="padding:6px 0;font-weight:600">${verb}</td></tr>
@@ -9018,7 +9041,7 @@ async function notifyRequesterOfResolution(req, status, note) {
     const res = await fetch(PROXY, {
       method: 'POST',
       headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: 'send_email', to: req.requested_by_email, subject: `Change request ${status}`, html }),
+      body: JSON.stringify({ target: 'send_email', to: rec.to, bcc: rec.bcc, subject: `Change request ${status}`, html }),
     });
     if (!res.ok) console.warn('Could not send resolution email:', res.status);
   } catch (e) {
@@ -9612,7 +9635,8 @@ async function finalizeBatchIfReady(batchId) {
 // covers email, not just Trello).
 async function notifyRequesterOfBatchResolution(batchRows) {
   const email = batchRows.find(r => r.requested_by_email)?.requested_by_email;
-  if (!email) return;
+  const rec = await adminResolutionRecipients(email, batchRows[0]?.group_id);
+  if (!rec.to) return;
   try {
     const first = batchRows[0];
     const group = allGroups.find(g => g.id === first.group_id);
@@ -9634,13 +9658,14 @@ async function notifyRequesterOfBatchResolution(batchRows) {
         <div style="color:#fff;font-size:16px;font-weight:700">Your Change Request${batchRows.length > 1 ? 's Have' : ' Has'} Been Resolved — ${esc(first._client_name || '')}</div>
       </div>
       <div style="border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;padding:20px">
+        ${first.requested_by ? `<p style="font-size:13px;color:#6B7280;margin:0 0 10px">Requested by <strong style="color:#111827">${esc(first.requested_by)}</strong></p>` : ''}
         <table style="width:100%;border-collapse:collapse;font-size:13px">${rows}</table>
       </div>
     </div>`;
     const res = await fetch(PROXY, {
       method: 'POST',
       headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target: 'send_email', to: email, subject: 'Your change request(s) have been resolved', html }),
+      body: JSON.stringify({ target: 'send_email', to: rec.to, bcc: rec.bcc, subject: 'Your change request(s) have been resolved', html }),
     });
     if (!res.ok) console.warn('Could not send batch resolution email:', res.status);
   } catch (e) {
