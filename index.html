@@ -4358,6 +4358,24 @@ function renderMonthPreviewTable(plan, editable, id) {
   const totalRow = editable ? '' : `<tr style="font-weight:700;border-top:1px solid var(--border)"><td style="padding:5px 8px">Total</td><td style="padding:5px 8px">${plan.reduce((s, m) => s + m.days, 0)} days</td><td style="padding:5px 8px">${fmt(total)}</td></tr>`;
   return `<table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px">${editable ? '<caption style="display:none"></caption>' : ''}<thead>${head}</thead><tbody>${rows}${totalRow}</tbody></table>`;
 }
+// Compact month breakdown for the PRINTED / PDF IO (2026-10-08, per Claire -- the 5-row table with a "days in flight"
+// column made long varying-budget services take most of a page, and the days read as misleading once a month is paused).
+// Months run ACROSS (6 per strip), amounts underneath; a paused month says "Paused"; the last strip ends with the total.
+// The on-screen review still uses renderMonthPreviewTable().
+function renderPrintMonthStrip(plan) {
+  const fmtAmt = n => '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const short = m => { const [y, mo] = String(m.month).split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'short' }) + " '" + String(y).slice(2); };
+  const total = plan.reduce((t, m) => t + (m.amount || 0), 0);
+  const chunks = [];
+  for (let i = 0; i < plan.length; i += 6) chunks.push(plan.slice(i, i + 6));
+  const th = 'text-align:right;padding:3px 8px;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280;border-bottom:1px solid #E5E7EB';
+  const td = 'text-align:right;padding:4px 8px;font-size:9pt';
+  return chunks.map((chunk, ci) => {
+    const last = ci === chunks.length - 1;
+    return `<table style="width:100%;border-collapse:collapse;margin-top:${ci ? 4 : 2}px"><thead><tr style="background:#F9FAFB">${chunk.map(m => `<th style="${th}">${esc(short(m))}</th>`).join('')}${last ? `<th style="${th};color:#111827">Total</th>` : ''}</tr></thead>` +
+      `<tbody><tr>${chunk.map(m => `<td style="${td}${m.paused ? ';color:#9CA3AF;font-style:italic' : ''}">${m.paused ? 'Paused' : fmtAmt(m.amount)}</td>`).join('')}${last ? `<td style="${td};font-weight:700">${fmtAmt(total)}</td>` : ''}</tr></tbody></table>`;
+  }).join('');
+}
 function renderBudgetDetailRow(id) {
   const row = document.querySelector(`tr[data-id="${id}"]`);
   const colCount = row ? row.children.length : 6;
@@ -7702,9 +7720,14 @@ function buildIoDocumentHtml() {
     if (!grouped[sec]) return;
     const items = grouped[sec];
     let sectionOneTime = 0, sectionMonthly = 0, sectionVaryingTotal = 0;
+    // Each service's rows (the service line, its month breakdown, hosting proration, setup fee) are collected as one
+    // BLOCK so a page break can never separate a service from its own breakdown (2026-10-08, per Claire). The section
+    // header travels with the first block and the subtotal with the last one.
+    const svcBlocks = [];
     let sectionRows = '';
 
     items.forEach(([id, data]) => {
+      sectionRows = '';
       // Same (data.qty || 1) safe no-op multiplier as buildReview() — only per-unit items
       // ever have qty set, so this preserves the printed total exactly for everything else.
       const qty = data.qty || 1;
@@ -7820,7 +7843,7 @@ function buildIoDocumentHtml() {
       // -- same reuse of renderMonthPreviewTable() as buildReview(), so the
       // contract shows the identical numbers the AE reviewed on Step 3.
       if (data.monthPlan && data.monthPlan.length > 1 && new Set(data.monthPlan.map(m => m.amount)).size > 1) {
-        sectionRows += `<tr><td colspan="4" style="padding:2px 10px 10px 24px">${renderMonthPreviewTable(data.monthPlan, false)}</td></tr>`;
+        sectionRows += `<tr><td colspan="4" style="padding:2px 10px 10px 24px">${renderPrintMonthStrip(data.monthPlan)}</td></tr>`;
       }
 
       const h = hostingChoices[id];
@@ -7835,10 +7858,11 @@ function buildIoDocumentHtml() {
         sectionOneTime += setupFeeInfo.amount;
         sectionRows += `<tr class="prorate-row"><td class="svc-name">↳ Setup Fee (campaign under ${fmt(setupFeeInfo.threshold)}/mo)</td><td class="svc-amt">${fmt(setupFeeInfo.amount)}</td><td></td><td class="svc-notes">Auto-applied — campaign spend is below the minimum</td></tr>`;
       }
+      svcBlocks.push(sectionRows);
     });
 
-    // Section header + rows + subtotal
-    lineItemsHtml += `<tr class="section-row"><td colspan="4">${esc(secDef.label)}</td></tr>` + sectionRows;
+    // Section header (with the first block) + blocks + subtotal (with the last block)
+    let subtotalHtml = '';
     if (sectionOneTime > 0 || sectionMonthly > 0 || sectionVaryingTotal > 0) {
       const parts = [];
       if (sectionOneTime > 0) parts.push(fmt(sectionOneTime) + ' one-time');
@@ -7850,7 +7874,15 @@ function buildIoDocumentHtml() {
       // rather than being blended into a number that would otherwise imply
       // a flat recurring charge.
       if (sectionVaryingTotal > 0) parts.push(fmt(sectionVaryingTotal) + ' total (varying campaigns)');
-      lineItemsHtml += `<tr class="subtotal-row"><td>Subtotal</td><td class="svc-amt">${parts.join(' + ')}</td><td></td><td></td></tr>`;
+      subtotalHtml = `<tr class="subtotal-row"><td>Subtotal</td><td class="svc-amt">${parts.join(' + ')}</td><td></td><td></td></tr>`;
+    }
+    if (svcBlocks.length) {
+      svcBlocks[0] = `<tr class="section-row"><td colspan="4">${esc(secDef.label)}</td></tr>` + svcBlocks[0];
+      svcBlocks[svcBlocks.length - 1] += subtotalHtml;
+      // Closes the surrounding <tbody>, opens one block per service, then reopens a plain <tbody> for whatever follows.
+      lineItemsHtml += svcBlocks.map(b => `</tbody><tbody class="svc-block">${b}</tbody><tbody>`).join('');
+    } else {
+      lineItemsHtml += `<tr class="section-row"><td colspan="4">${esc(secDef.label)}</td></tr>` + subtotalHtml;
     }
   });
 
@@ -7897,6 +7929,7 @@ function buildIoDocumentHtml() {
     thead{display:table-header-group}
     tfoot{display:table-footer-group}
     tr,.no-break{page-break-inside:avoid}
+    tbody.svc-block{page-break-inside:avoid;break-inside:avoid}
     .section-row td{page-break-after:avoid}
     .subtotal-row,.totals-box{page-break-inside:avoid}
     .sig-section{page-break-inside:avoid}
@@ -8121,7 +8154,7 @@ ${(() => {
   return html ? `<div class="section-title">Agent / County Split</div>${html}` : '';
 })()}
 
-${specialInstructions ? `<div class="special-box"><strong>Additional Notes</strong>${specialInstructions}</div>` : ''}
+${specialInstructions ? `<div class="special-box no-break"><strong>Additional Notes</strong>${specialInstructions}</div>` : ''}
 
 <!-- Legal -->
 <div class="legal">
@@ -8203,7 +8236,7 @@ function computeUnsafeZonesMm(iframeDoc, imgWidthMm) {
   // document (the real element is .totals-box, wrapping the One-Time/Monthly/First
   // Month Total rows) -- meaning the totals box had no real atomic protection at all,
   // just whatever the generic `tr` selector happened to catch for its individual rows.
-  const selector = 'tr, .no-break, .section-row, .subtotal-row, .totals-box, .sig-section, .doc-footer';
+  const selector = 'tr, tbody.svc-block, .no-break, .section-row, .subtotal-row, .totals-box, .sig-section, .doc-footer';
   return Array.from(iframeDoc.querySelectorAll(selector))
     .map(el => {
       const r = el.getBoundingClientRect();
