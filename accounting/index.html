@@ -252,7 +252,8 @@ function showAccountingPanel(show) {
 // Portal (2026-09-04, per Claire). The login carries over on its own now: both
 // portals share the same Supabase session (2026-09-28, Stage 4/5 -- the old
 // name/password handoff is gone). The `?line=` param is read by
-// strategist/index.html's strategistOpenDeepLinkedLine().
+// strategist/index.html's strategistOpenDeepLinkedLine(). The detail card hides the
+// button for accounting-only lines (2026-10-09, per Claire): Strategist never shows them.
 function strategistPortalHandoffToLine(lineId) {
   location.href = '../strategist/index.html?line=' + encodeURIComponent(lineId);
 }
@@ -709,7 +710,7 @@ function accountingRenderDetailCard() {
         ${accountingCutPctOverrideFieldHtml(line)}
         ${accountingBudgetModePillHtml(line)}
         ${line.order_id ? `<button onclick="accountingViewOrder('${esc(line.order_id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">View Order</button>` : ''}
-        ${currentAccountingUser?.role === 'super' ? `<button onclick="strategistPortalHandoffToLine('${esc(line.id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Open in Strategist Portal →</button>` : ''}
+        ${currentAccountingUser?.role === 'super' && !line.accounting_only ? `<button onclick="strategistPortalHandoffToLine('${esc(line.id)}')" style="padding:5px 12px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);font-size:11px;font-weight:600;cursor:pointer">Open in Strategist Portal →</button>` : ''}
         <button class="acct-detail-close" onclick="accountingCloseDetailCard()">✕ Close</button>
       </div>
     </div>
