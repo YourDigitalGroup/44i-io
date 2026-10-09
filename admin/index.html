@@ -6143,11 +6143,11 @@ async function scanAeImportCandidates() {
       return;
     }
 
-    let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:10px">A board's members include the AM (and possibly super admins) — uncheck anyone who isn't actually an AE before importing.</p>
+    let html = `<p style="font-size:11px;color:var(--muted);margin-bottom:10px">A board's members include the AM (and possibly super admins) — check only the people who are actually AEs before importing.</p>
       <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;background:#fff;margin-bottom:12px">`;
     AE_IMPORT_CANDIDATES.forEach((m, idx) => {
       html += `<label style="display:flex;align-items:center;gap:8px;padding:5px 4px;font-size:12.5px;cursor:pointer">
-        <input type="checkbox" id="ae-import-candidate-${idx}" checked style="width:14px;height:14px;accent-color:var(--accent)"/>
+        <input type="checkbox" id="ae-import-candidate-${idx}" style="width:14px;height:14px;accent-color:var(--accent)"/>
         ${esc(m.fullName || m.username)} <span style="color:var(--muted);font-family:monospace;font-size:11px">@${esc(m.username)}</span>
       </label>`;
     });
