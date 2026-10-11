@@ -1271,8 +1271,21 @@ select.qty-field{background-image:none;padding-right:3px}
           </div>
         </div>
 
+        <!-- Signed in Fourge Playbook (2026-10-11): a draft that arrived from a signed
+             Playbook proposal carries the client's signature already. This panel shows it
+             in place of the Draw/Type pen; the AE still ticks the three agreements above,
+             finishes the intake forms and the kick-off call, and submits. Hidden unless
+             the resumed draft carries a `playbook` block (see applyPlaybookSignature()). -->
+        <div id="playbook-sig-panel" style="display:none;margin-bottom:8px">
+          <label class="lbl">Signature</label>
+          <div style="border:1.5px solid var(--border);border-radius:8px;padding:12px 16px;background:#fff">
+            <img id="playbook-sig-img" alt="Client signature" style="display:block;height:64px;max-width:100%;object-fit:contain;object-position:left"/>
+            <p id="playbook-sig-note" style="font-size:12px;color:var(--muted);margin-top:8px"></p>
+          </div>
+        </div>
+
         <!-- Signature tabs -->
-        <div style="margin-bottom:8px">
+        <div id="sig-pen-block" style="margin-bottom:8px">
           <label class="lbl">Signature</label>
           <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:1px solid var(--border);width:fit-content;margin-bottom:12px">
             <button type="button" id="sig-tab-draw" onclick="setSigTab('draw')" style="padding:7px 18px;font-size:12px;font-weight:600;border:none;background:var(--accent);color:#fff;cursor:pointer">✏️ Draw</button>
@@ -5432,7 +5445,58 @@ function initCanvas() {
   canvas.addEventListener('touchend', () => drawing = false);
 }
 
+// ── SIGNED IN FOURGE PLAYBOOK (2026-10-11) ───────────────────────
+// A draft written by the Playbook at the client's signature carries a `playbook`
+// block: who signed, when, the signature image (a data: image, drawn or typed),
+// the proposal id and address. The form shows it in place of the pen and the
+// order takes it as its signature, with the client's own signing time. Everything
+// else on the form stays the AE's: the agreements, the intake forms, the
+// kick-off call, the lines. Kept in buildDraft() so Save Draft never loses it;
+// cleared by resetForm().
+let playbookSignature = null;
+
+function applyPlaybookSignature(pb) {
+  const ok = pb && typeof pb === 'object' && typeof pb.signature_data === 'string' && pb.signature_data.startsWith('data:image') && pb.signer_name;
+  playbookSignature = ok ? pb : null;
+  const panel = document.getElementById('playbook-sig-panel');
+  const pen = document.getElementById('sig-pen-block');
+  const nameEl = document.getElementById('auth-name');
+  const titleEl = document.getElementById('auth-title');
+  const dateEl = document.getElementById('auth-date');
+  if (!panel || !pen) return;
+  if (!ok) {
+    panel.style.display = 'none';
+    pen.style.display = '';
+    if (nameEl) nameEl.readOnly = false;
+    if (titleEl) titleEl.readOnly = false;
+    return;
+  }
+  const signedDay = playbookSignedDate(pb.signed_at);
+  if (nameEl) { nameEl.value = pb.signer_name; nameEl.readOnly = true; }
+  if (titleEl) { titleEl.value = pb.signer_title || ''; titleEl.readOnly = true; }
+  if (dateEl && signedDay) dateEl.value = signedDay;
+  document.getElementById('playbook-sig-img').src = pb.signature_data;
+  const when = signedDay ? new Date(signedDay + 'T12:00:00').toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'}) : '';
+  document.getElementById('playbook-sig-note').textContent =
+    `Signed in ${pb.source || 'Fourge Playbook'} by ${pb.signer_name}${pb.signer_title ? ', ' + pb.signer_title : ''}${when ? ' on ' + when : ''}. ` +
+    'The signature and the signed proposal are on file there. Tick the three agreements above, finish the intake forms and the kick-off call, and submit.';
+  panel.style.display = '';
+  pen.style.display = 'none';
+}
+
+// The client's signing day as YYYY-MM-DD in Central time (the Playbook stores an
+// ISO instant), for the Date Signed field and the note.
+function playbookSignedDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+  const get = t => parts.find(p => p.type === t)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 function hasSignature() {
+  if (playbookSignature) return true;
   if (sigMode === 'type') return !!document.getElementById('auth-name').value.trim();
   const canvas = document.getElementById('sig-canvas');
   const ctx = canvas.getContext('2d');
@@ -5441,6 +5505,7 @@ function hasSignature() {
 }
 
 function getSignatureData() {
+  if (playbookSignature) return playbookSignature.signature_data;
   if (sigMode === 'type') return 'typed:' + document.getElementById('auth-name').value.trim();
   return document.getElementById('sig-canvas').toDataURL();
 }
@@ -5933,7 +5998,8 @@ async function submitIO() {
       signer_name: document.getElementById('auth-name').value,
       signer_title: document.getElementById('auth-title').value,
       signature_data: getSignatureData(),
-      signed_at: new Date().toISOString(),
+      // A Playbook signature keeps the client's own signing time (2026-10-11).
+      signed_at: playbookSignature?.signed_at || new Date().toISOString(),
       line_items: lineItems,
       intake_responses: intakeData,
       hosting_choices: hostingChoices,
@@ -8496,6 +8562,9 @@ function buildDraft() {
     noteValues: {},
     qtyValues: {},
     quotedValues: {},
+    // The client's signature from a signed Playbook proposal (2026-10-11), when
+    // this draft came from one; null otherwise. See applyPlaybookSignature().
+    playbook: playbookSignature,
   };
   Object.keys(selected).forEach(id => {
     const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -8678,6 +8747,9 @@ function applyDraftFields(d) {
     set('campaign-end', d.campaignEnd);
     set('campaign-notes', d.campaignNotes);
     set('special-instructions', d.specialInstructions);
+    // Signed in Fourge Playbook (2026-10-11): show the client's signature in place
+    // of the pen, or put the pen back for an ordinary draft.
+    applyPlaybookSignature(d.playbook || null);
     if (d.selected && typeof d.selected === 'object') {
       Object.entries(d.selected).forEach(([id, data]) => {
         const row = document.querySelector(`tr[data-id="${id}"]`);
@@ -9008,6 +9080,7 @@ function resetForm() {
   selectedAeId = null;
   setAeNameLocked(false);
   window.__lastIoNumber = null; // clear so the next IO generates its own number
+  applyPlaybookSignature(null); // the pen is back for the next IO (2026-10-11)
   kocCalendarOpened = false;
   kocSpecificCalendarOpened = false;
   currentIntakeServiceId = null;
