@@ -13006,6 +13006,26 @@ async function generateAdminRevisedIoPdfBlob(o) {
     </tr>`;
   }).join('');
 
+  // Group's own media (2026-10-11, Jim: "I love option b"): the radio, print or event
+  // lines the client signed for on the same Playbook proposal, kept on the order as
+  // `partner_media` (display-only) by the public form and printed here as its own block
+  // under the totals, the same way the original signed document prints it. Never a line
+  // item, never in the totals; nothing else in Admin reads it.
+  const partnerMediaRows = (Array.isArray(o.partner_media) ? o.partner_media : [])
+    .filter(m => m && typeof m === 'object' && m.label)
+    .map(m => {
+      const oneTimeItem = m.billing === 'one_time';
+      const amount = fmt(m.amount) + (oneTimeItem ? ' one-time' : '/mo');
+      const flight = (m.start || m.end)
+        ? (oneTimeItem ? fmtDate(m.start) : `${fmtDate(m.start)} – ${m.end ? fmtDate(m.end) : 'Ongoing'}`)
+        : '—';
+      return `<tr>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#111827">${esc(m.label)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#374151">${esc(amount)}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid #F1F3F5;font-size:9.5pt;color:#6B7280">${esc(flight)}${m.note ? ` · ${esc(m.note)}` : ''}</td>
+    </tr>`;
+    }).join('');
+
   // Per-field description (2026-09-02 fix): previously ran EVERY field's old/new
   // value through the currency formatter above, so a date field's old/new (a
   // "YYYY-MM-DD" string, not a number) rendered as literal "$NaN" -- exactly the
@@ -13092,6 +13112,10 @@ async function generateAdminRevisedIoPdfBlob(o) {
     <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:14px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Current Services</div>
     <table style="width:100%;border-collapse:collapse">${rows}</table>
     <div style="margin-top:10px;font-size:9.5pt;color:#111827"><strong>One-Time Total:</strong> ${fmt(oneTime)} &nbsp;&nbsp; <strong>Monthly Recurring:</strong> ${fmt(monthly)}/mo${campaignTotal > 0 ? ` &nbsp;&nbsp; <strong>Whole Campaign Total${(() => { const n = items.filter(li => describeLineItemAmount(li).varies).length; return n > 1 ? 's' : ''; })()}:</strong> ${fmt(campaignTotal)}` : ''}</div>
+    ${partnerMediaRows ? `
+    <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 4px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Group's Own Media</div>
+    <div style="font-size:8.5pt;color:#6B7280;font-style:italic;margin-bottom:6px">Billed by ${esc(group.name || 'the group')} directly. Not included in the totals above.</div>
+    <table style="width:100%;border-collapse:collapse">${partnerMediaRows}</table>` : ''}
     ${historyRows ? `
     <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Change History</div>
     <table style="width:100%;border-collapse:collapse">${historyRows}</table>` : ''}
