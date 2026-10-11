@@ -5455,6 +5455,37 @@ function initCanvas() {
 // cleared by resetForm().
 let playbookSignature = null;
 
+// The group's own media (radio, print, events) that came with a Playbook signature
+// (2026-10-11, Jim: "I love option b"): a clean list, or [] when there is none or the
+// block is malformed. It is printed on the IO document as its own block under the
+// totals and kept on the order as `partner_media`; it is never a line item, never in
+// the totals, and nothing in Trello, the strategist or accounting pages reads it.
+function playbookPartnerMedia(pb = playbookSignature) {
+  const list = Array.isArray(pb?.partner_media) ? pb.partner_media : [];
+  return list
+    .filter(m => m && typeof m === 'object' && typeof m.label === 'string' && m.label.trim())
+    .map(m => ({
+      label: m.label.trim(),
+      amount: Number(m.amount) || 0,
+      billing: m.billing === 'one_time' ? 'one_time' : 'monthly',
+      start: /^\d{4}-\d{2}-\d{2}$/.test(m.start || '') ? m.start : null,
+      end: /^\d{4}-\d{2}-\d{2}$/.test(m.end || '') ? m.end : null,
+      note: m.note ? String(m.note).trim() : null,
+    }));
+}
+
+// The two cells that describe one of those items: "$600.00/mo" or "$300.00 one-time",
+// and its flight in the same shape as a service's Flight column (a one-time item shows
+// its date only, never a range).
+function partnerMediaCells(m) {
+  const money = '$' + Number(m.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const day = iso => iso ? new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }) : '';
+  const amount = m.billing === 'one_time' ? money + ' one-time' : money + '/mo';
+  let flight = '—';
+  if (m.start || m.end) flight = m.billing === 'one_time' ? (day(m.start) || '—') : `${day(m.start) || '—'} – ${m.end ? day(m.end) : 'Ongoing'}`;
+  return { amount, flight };
+}
+
 function applyPlaybookSignature(pb) {
   const ok = pb && typeof pb === 'object' && typeof pb.signature_data === 'string' && pb.signature_data.startsWith('data:image') && pb.signer_name;
   playbookSignature = ok ? pb : null;
@@ -6010,6 +6041,11 @@ async function submitIO() {
       // order the way it always has.
       agent_splits: agentSplits.length ? agentSplits : null,
     };
+    // The group's own media from a signed Playbook proposal (2026-10-11), kept on the order
+    // for the document only (`orders.partner_media`, display-only). The key is absent, not
+    // null, when there is none, so an ordinary order never touches that column.
+    const partnerMedia = playbookPartnerMedia();
+    if (partnerMedia.length) orderPayload.partner_media = partnerMedia;
     const orders = await sb('orders', {method:'POST', body: JSON.stringify(orderPayload)});
     const orderId = Array.isArray(orders) ? orders[0]?.id : orders?.id;
 
@@ -8047,6 +8083,8 @@ function buildIoDocumentHtml() {
   .totals-table .grand .label{color:${color};font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:9pt}
   .totals-table .grand .value{color:${color};font-size:13pt;font-weight:800}
   .first-month-note{margin-top:6px;font-size:8.5pt;color:#6B7280;text-align:right;font-style:italic}
+  /* Group's own media block (2026-10-11): one line under its section title, before its table. */
+  .partner-media-note{margin:-2px 0 8px;font-size:8.5pt;color:#6B7280;font-style:italic}
 
   /* Special instructions */
   .special-box{margin-top:18px;padding:11px 14px;background:#FFF7ED;border-left:3px solid #F59E0B;border-radius:3px;font-size:9.5pt;color:#92400E;line-height:1.5}
@@ -8176,6 +8214,26 @@ function buildIoDocumentHtml() {
      instead, with each LINE's own Flight column being the source of truth
      for when it actually starts billing. -->
 ${(monthly > 0 || varyingTotal > 0) ? `<div class="first-month-note">See each service's own Flight dates above for when its billing actually starts — services on this IO may not all begin the same month.</div>` : ''}
+
+${(() => {
+  // Group's own media (2026-10-11, Jim: "I love option b"): the radio, print or event
+  // lines the client signed for on the same Playbook proposal, printed here as their
+  // own block so the signed document shows everything the client agreed to. Billed by
+  // the group itself, never a service row, never in the totals above. Nothing when the
+  // order did not come from a Playbook signature or the proposal had none.
+  const media = playbookPartnerMedia();
+  if (!media.length) return '';
+  const rows = media.map(m => {
+    const c = partnerMediaCells(m);
+    return `<tr><td class="svc-name">${esc(m.label)}</td><td class="svc-amt">${esc(c.amount)}</td><td class="svc-flight">${esc(c.flight)}</td><td class="svc-notes">${esc(m.note) || '—'}</td></tr>`;
+  }).join('');
+  return `<div class="section-title">Group's Own Media</div>
+<div class="partner-media-note">Billed by ${groupName} directly. Not included in the totals above.</div>
+<table class="services">
+  <thead><tr><th>Item</th><th class="amt">Amount</th><th class="flight">Flight</th><th class="notes">Notes</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>`;
+})()}
 
 ${(() => {
   // Agent/County Split (2026-08-19, per Claire -- "add the agent information
