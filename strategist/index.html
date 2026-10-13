@@ -2148,12 +2148,36 @@ function strategistEffectiveRetailCpm(serviceId, clientId, groupId, lineOverride
   const groupClient = ALL_STRATEGIST_CLIENTS.find(c => c.group_id === groupId && c.group_io_pricing && c.group_io_pricing[serviceId] != null);
   return groupClient ? Number(groupClient.group_io_pricing[serviceId]) : null;
 }
-function budgetedImpressions(grossBudget, serviceId, clientId, groupId, lineOverride) {
+// The Offline Visits Tracking CPM adjustment that goes with a tactic (2026-10-13, per Claire: Splash Car Wash showed
+// 37,500 impressions for $1,500 with Offline Visits checked, but at the sold $42 CPM it is 35,714). Same pairing and
+// same arithmetic as Admin's Accounting Map "combined CPM": the is_cpm_adjustment "offline" service in the tactic's own
+// section; if that section has exactly ONE spend tactic and the modifier has its own Retail CPM, that number is the
+// combined CPM outright, otherwise the tactic's CPM + the modifier's dollar amount. Returns null when there is no
+// unambiguous offline modifier (the plain CPM is then used, as before).
+function strategistOfflineVisitsModifier(serviceId) {
+  const base = CATALOG_ROWS[serviceId];
+  if (!base) return null;
+  const mods = Object.values(CATALOG_ROWS).filter(r => r.is_cpm_adjustment && r.section === base.section && /offline/i.test((r.label || '') + ' ' + r.id));
+  if (mods.length !== 1) return null;
+  const spendSiblings = Object.values(CATALOG_ROWS).filter(r => r.pricing_mode === 'spend' && r.section === base.section && r.id !== mods[0].id);
+  return { mod: mods[0], onlyOneTactic: spendSiblings.length === 1 };
+}
+// withOfflineVisits is passed ONLY by the Goal calculations (computeGoal / computeGoalTotal). In-Platform Budget calls this
+// without it on purpose, so it keeps matching the Accounting Portal's Expected Spend, which has not been changed.
+// A CPM typed on the campaign itself (lineOverride) is the real sold rate and is never adjusted.
+function budgetedImpressions(grossBudget, serviceId, clientId, groupId, lineOverride, withOfflineVisits) {
   const row = CATALOG_ROWS[serviceId];
   if (grossBudget == null || !row) return null;
   const retailCpmOverride = strategistEffectiveRetailCpm(serviceId, clientId, groupId, lineOverride);
-  const retailCpm = retailCpmOverride != null ? retailCpmOverride : (row.retail_cpm != null ? Number(row.retail_cpm) : null);
+  let retailCpm = retailCpmOverride != null ? retailCpmOverride : (row.retail_cpm != null ? Number(row.retail_cpm) : null);
   if (retailCpm == null) return null;
+  if (withOfflineVisits && lineOverride == null) {
+    const m = strategistOfflineVisitsModifier(serviceId);
+    if (m) {
+      if (retailCpmOverride == null && m.onlyOneTactic && m.mod.retail_cpm != null) retailCpm = Number(m.mod.retail_cpm);
+      else if (m.mod.modifier_amount != null) retailCpm += Number(m.mod.modifier_amount);
+    }
+  }
   return (Number(grossBudget) / retailCpm) * 1000;
 }
 
@@ -2370,7 +2394,7 @@ function computeGoal(line, monthRow) {
     }
     return { value: null, unit, manual: true };
   }
-  const auto = budgetedImpressions(monthRow?.gross_budget, line.service_id, line.client_id, line.group_id, line.retail_cpm_override);
+  const auto = budgetedImpressions(monthRow?.gross_budget, line.service_id, line.client_id, line.group_id, line.retail_cpm_override, !!line.has_offline_visits);
   return { value: auto, unit, manual: false, display: auto != null ? Math.round(auto).toLocaleString() : null };
 }
 
@@ -2413,7 +2437,7 @@ function computeGoalTotal(line, monthRows) {
   monthRows.forEach(m => {
     const parsed = parseGoalOverride(m.goal_override, false);
     if (parsed) { sum += parsed.value; any = true; return; }
-    const auto = budgetedImpressions(m.gross_budget, line.service_id, line.client_id, line.group_id, line.retail_cpm_override);
+    const auto = budgetedImpressions(m.gross_budget, line.service_id, line.client_id, line.group_id, line.retail_cpm_override, !!line.has_offline_visits);
     if (auto != null) { sum += auto; any = true; }
   });
   return any ? { unit, display: Math.round(sum).toLocaleString() } : null;
