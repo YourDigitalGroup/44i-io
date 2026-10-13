@@ -167,6 +167,7 @@
         <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
         <button onclick="accountingOpenBulkMatchForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Match</button>
         <button onclick="accountingOpenBulkImportForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
+        <button onclick="accountingExportCsv()" title="Download what Accounting currently holds (the group filter applies): one row per campaign line, 44i Revenue for each month" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Export CSV</button>
       </div>
     </div>
 
@@ -1988,6 +1989,57 @@ function accountingDownloadImportRecord() {
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   a.download = 'accounting-import-record-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
   document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ── EXPORT WHAT IS IN ACCOUNTING AS A CSV (2026-10-13, per Claire: easier to cross-reference before importing) ──
+// One row per campaign line (every status, accounting-only and SSH-billed lines included, each marked in its own column;
+// LLO/Rep Monitoring stay out like everywhere else in Accounting), the group filter applies, the client search / status
+// filters do not. Same column names as Bulk Import where they overlap. The month columns hold 44i REVENUE (what 44i bills
+// the group, like the legacy sheet), computed exactly as the table does: a month only has a value if the line is active in
+// it, flat/recurring amounts carry forward, cut % from the same overrides/tiers. "Total Revenue" = the client's monthly
+// price in the latest month up to today (the last month with an amount if the line has not started yet). Months run from
+// the earliest to the latest month that has a saved amount on any exported line. Read-only: nothing is written.
+function accountingExportCsv() {
+  const q = v => { let t = typeof v === 'number' ? String(v) : String(v == null ? '' : v); if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(t)) t = "'" + t; return '"' + t.replace(/"/g, '""') + '"'; };
+  const round2 = n => n == null || Number.isNaN(n) ? '' : Math.round(n * 100) / 100;
+  const d10 = v => v ? String(v).slice(0, 10) : '';
+  const lines = ALL_ACCOUNTING_LINES.filter(l => !ACCOUNTING_EXCLUDED_TACTIC_LABELS.includes(l.tactic_label) && (!accountingGroupFilter || l.group_name === accountingGroupFilter));
+  if (!lines.length) { showToast('Nothing to export for this group.', 'error'); return; }
+  const ids = new Set(lines.map(l => l.id));
+  const keys = ALL_ACCOUNTING_MONTHS.filter(m => ids.has(m.campaign_line_id) && m.gross_budget != null).map(m => String(m.month).slice(0, 7)).sort();
+  if (!keys.length) { showToast('No months with an amount to export yet.', 'error'); return; }
+  const months = [];
+  let [y, mo] = keys[0].split('-').map(Number);
+  const [ey, em] = keys[keys.length - 1].split('-').map(Number);
+  while (y < ey || (y === ey && mo <= em)) { months.push(new Date(y, mo - 1, 1)); mo++; if (mo > 12) { mo = 1; y++; } }
+  const cell = (l, d) => {
+    if (!accountingLineActiveInMonth(l, d)) return null;
+    const row = accountingMonthRowFor(l.id, d);
+    const gross = row?.gross_budget != null ? Number(row.gross_budget) : null;
+    const cutPct = l.billing_type === 'setup_fee'
+      ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
+      : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override);
+    return { gross, cutPct, f: accountingSplitRevenue(gross, cutPct).fortyfouri };
+  };
+  const now = new Date(), nowKey = accountingMonthKey(new Date(now.getFullYear(), now.getMonth(), 1));
+  const header = ['Group', 'Client', 'Tactic', 'Campaign', 'Agent', 'County', 'Status', 'Flight Start', 'Flight End', 'Billing', 'Accounting Only', 'SSH Billing', 'Offline Visits', 'Addl Targeting', 'Total Revenue', '44i Cut %', 'Line ID', ...months.map(accountingMonthKey)];
+  const sorted = [...lines].sort((a, b) => (a.group_name || '').localeCompare(b.group_name || '') || (a.client_name || '').localeCompare(b.client_name || '') || (a.tactic_label || '').localeCompare(b.tactic_label || '') || String(a.flight_start || '').localeCompare(String(b.flight_start || '')));
+  const out = [header.map(q).join(',')];
+  sorted.forEach(l => {
+    const cells = months.map(d => cell(l, d));
+    const withGross = months.map((d, i) => ({ k: accountingMonthKey(d), c: cells[i] })).filter(x => x.c && x.c.gross != null);
+    const pick = [...withGross].reverse().find(x => x.k <= nowKey) || withGross[0] || null;
+    const yn = v => v ? 'yes' : 'no';
+    out.push([l.group_name || '', l.client_name || '', l.tactic_label || l.service_id || '', l.split_label || '', l.agent_name || '', l.county || '', l.status || '',
+      d10(l.flight_start), d10(l.flight_end), l.billing_type || '', yn(l.accounting_only), yn(l.billed_externally), yn(l.has_offline_visits), yn(l.has_addl_targeting),
+      pick ? round2(pick.c.gross) : '', pick && pick.c.cutPct != null ? Number(pick.c.cutPct) : '', l.id,
+      ...cells.map(c => c && c.f != null ? round2(c.f) : '')].map(q).join(','));
+  });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'accounting-export-' + (accountingGroupFilter ? accountingGroupFilter.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'all-groups') + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  showToast('Exported ' + sorted.length + ' campaign line' + (sorted.length !== 1 ? 's' : '') + ' (' + months.length + ' months).');
 }
 
 function accountingStatusPill(kind, text) {
