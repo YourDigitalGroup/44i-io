@@ -683,7 +683,7 @@ function accountingRenderDetailCard() {
     // don't apply and would just be dead code for this billing_type anyway.
     const cutPct = line.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(line.service_id, line.client_id, line.group_id)
-      : accountingEffectiveCutPct(line.service_id, line.client_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross, line.cut_pct_override);
+      : accountingEffectiveCutPct(line.service_id, line.client_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross, line.cut_pct_override, !!(line.agent_name && line.county));
     const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting, line.retail_cpm_override, cutPct, !!line.has_offline_visits);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
@@ -2018,7 +2018,7 @@ function accountingExportCsv() {
     const gross = row?.gross_budget != null ? Number(row.gross_budget) : null;
     const cutPct = l.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
-      : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override);
+      : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override, !!(l.agent_name && l.county));
     return { gross, cutPct, f: accountingSplitRevenue(gross, cutPct).fortyfouri };
   };
   const now = new Date(), nowKey = accountingMonthKey(new Date(now.getFullYear(), now.getMonth(), 1));
@@ -2257,11 +2257,22 @@ function accountingEffectiveCutPctTier(serviceId, groupId, grossBudget) {
 // services in the UI (accountingCutPctOverrideFieldHtml), but not re-checked
 // here -- a stray value on a non-QUR line would still just mean "use this
 // instead," same as every other override in this chain.
-function accountingEffectiveCutPct(serviceId, clientId, groupId, hasModifier, grossBudget, lineOverride) {
+// isAgentLine (2026-10-13, per Claire: "they just have 1 line for all SEM services... it is not tiered... just the one SEM percentage") --
+// a line with BOTH an agent and a county (MS Farm Bureau's per-agent lines, each only a small budget) is not tiered by its own tiny
+// amount: a flat client/group 44i Cut % for the service (Admin -> Accounting Overrides, e.g. SEM 85%) is used INSTEAD of the spend tiers.
+// With no such override set, the tiers apply exactly as before. Ordinary (non-agent) lines and every other service are unchanged.
+function accountingEffectiveCutPct(serviceId, clientId, groupId, hasModifier, grossBudget, lineOverride, isAgentLine) {
   if (lineOverride != null) return Number(lineOverride);
   if (hasModifier) {
     const pairingRate = ACCOUNTING_CUT_RATES.pairing[serviceId];
     if (pairingRate != null) return pairingRate;
+  }
+  if (isAgentLine) {
+    const c0 = clientId ? ALL_ACCOUNTING_CLIENTS.find(c => c.id === clientId) : null;
+    const flatClient = c0?.accounting_overrides?.[serviceId]?.fortyfouri_cut_pct;
+    if (flatClient != null) return Number(flatClient);
+    const flatGroup = groupId ? ACCOUNTING_CUT_RATES.group[`${groupId}|${serviceId}`] : undefined;
+    if (flatGroup != null) return flatGroup;
   }
   const tierRate = accountingEffectiveCutPctTier(serviceId, groupId, grossBudget);
   if (tierRate != null) return tierRate;
@@ -2802,7 +2813,7 @@ function accountingBuildRows() {
     const actualSpend = monthRow?.actual_spend != null ? Number(monthRow.actual_spend) : null;
     const cutPct = l.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
-      : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override);
+      : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override, !!(l.agent_name && l.county));
     const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override, cutPct, !!l.has_offline_visits);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
