@@ -8337,7 +8337,8 @@ function applyFieldChangeLocally(item, field, value) {
   } else {
     historyOldValue = item ? item[field] : null;
     if (item) item[field] = parseFloat(value);
-    description = `${field} changed from $${Number(historyOldValue).toLocaleString()} to $${Number(value).toLocaleString()}`;
+    const amt = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 });
+    description = `${field} changed from $${amt(historyOldValue)} to $${amt(value)}`;
   }
   return { description, historyOldValue };
 }
@@ -8507,8 +8508,14 @@ async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
   // save/comment/history sequence as qty itself, using this line's own
   // stored unit_fee -- no separate RPC change needed, `fee` was already a
   // supported field.
-  if ('qty' in extraFields && item?.unit_fee != null) {
+  if ('qty' in extraFields && Number(item?.unit_fee) > 0) {
     extraFields = { ...extraFields, fee: String(Number(item.unit_fee) * Number(extraFields.qty)) };
+  } else if ('qty' in extraFields && Number(item?.recurring) > 0) {
+    // A MONTHLY per-unit service (e.g. Addl. Email Addresses, $7.50 each per month) stores no unit_fee: the IO form saves
+    // recurring = unit price x quantity. Without this, changing the quantity left the monthly amount untouched ($7.50 x 7 showed
+    // as $7.50/mo, 2026-10-14, STMM). Scales the saved amount by new / old quantity.
+    const oldQty = Number(item.qty) > 0 ? Number(item.qty) : 1;
+    extraFields = { ...extraFields, recurring: String(Math.round(Number(item.recurring) / oldQty * Number(extraFields.qty) * 100) / 100) };
   }
   const descriptions = [];
   const historyEntries = [];
@@ -10812,21 +10819,22 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     if (Object.keys(extraFields).length) {
       const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
       descriptions.push(...extra.descriptions);
-      o.edit_history.push(...extra.historyEntries);
+      o.edit_history = [...(o.edit_history || []), ...extra.historyEntries]; // was .push on a possibly-null list: the FIRST edit on an order (no history yet, start date unchanged) crashed here after saving (2026-10-14, STMM Quantity edit)
     }
 
     const label = svc.accounting_label || svc.label || serviceId;
     const commentText = `✏️ ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}, who confirmed this change with the AE).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-    const cardIds = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
+    const siblingIds = await adminWithTimeout(adminSiblingTacticCardIds(o, svc), 30000, 'Trello card lookup').catch(e => { console.warn(e.message); return []; });
+    const cardIds = [...new Set([ioCardId, tacticCardId, ...siblingIds].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
-        const res = await fetch(PROXY, {
+        const res = await adminWithTimeout(fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
-        });
+        }), 30000, 'Trello comment');
         if (!res.ok) console.warn('Could not post edit comment to card', cardId, ':', res.status);
       } catch (e) {
         console.warn('Could not post edit comment to card', cardId, ':', e.message);
@@ -10841,12 +10849,12 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     // revised summary document).
     if (ioCardId) {
       try {
-        const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
-        const attachRes = await fetch(PROXY, {
+        const { base64, fileName } = await adminWithTimeout(generateAdminRevisedIoPdfBlob(o), 60000, 'revised IO PDF');
+        const attachRes = await adminWithTimeout(fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
-        });
+        }), 60000, 'revised IO PDF upload');
         if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
       } catch (e) {
         console.warn('Could not generate/attach revised IO PDF:', e.message);
@@ -10900,6 +10908,13 @@ function adminExtraVariantAndModuleHtml(serviceId, item) {
   return full.replace(/<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">[\s\S]*?<\/div>/, '');
 }
 
+// Never let a slow Trello / PDF step leave a Save button stuck on "Saving…" (2026-10-14: a Quantity edit saved but the button never came back).
+function adminWithTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error((label || 'step') + ' timed out')), ms);
+    Promise.resolve(promise).then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
+}
 async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
   if (!adminAeConfirmed('ae-confirm-date-' + serviceId)) return;
   // Same double-submit guard as adminSaveLineItemEdit() (found the same day,
@@ -10987,21 +11002,22 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     if (Object.keys(extraFields).length) {
       const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
       descriptions.push(...extra.descriptions);
-      o.edit_history.push(...extra.historyEntries);
+      o.edit_history = [...(o.edit_history || []), ...extra.historyEntries]; // was .push on a possibly-null list: the FIRST edit on an order (no history yet, start date unchanged) crashed here after saving (2026-10-14, STMM Quantity edit)
     }
 
     const label = svc.accounting_label || svc.label || serviceId;
     const commentText = `📅 ${label}: ${descriptions.join('; ')} (by ${currentAdminUser?.name || 'AM'}, who confirmed this change with the AE).`;
     const ioCardId = o.trello_card_ids?.__io_card__;
     const tacticCardId = o.trello_card_ids?.[adminEffectiveWorkflow(svc)];
-    const cardIds = [...new Set([ioCardId, tacticCardId, ...(await adminSiblingTacticCardIds(o, svc))].filter(Boolean))];
+    const siblingIds = await adminWithTimeout(adminSiblingTacticCardIds(o, svc), 30000, 'Trello card lookup').catch(e => { console.warn(e.message); return []; });
+    const cardIds = [...new Set([ioCardId, tacticCardId, ...siblingIds].filter(Boolean))];
     for (const cardId of cardIds) {
       try {
-        const res = await fetch(PROXY, {
+        const res = await adminWithTimeout(fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text: commentText }),
-        });
+        }), 30000, 'Trello comment');
         if (!res.ok) console.warn('Could not post edit comment to card', cardId, ':', res.status);
       } catch (e) {
         console.warn('Could not post edit comment to card', cardId, ':', e.message);
@@ -11013,12 +11029,12 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     // (2026-09-01, per Claire).
     if (ioCardId) {
       try {
-        const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o);
-        const attachRes = await fetch(PROXY, {
+        const { base64, fileName } = await adminWithTimeout(generateAdminRevisedIoPdfBlob(o), 60000, 'revised IO PDF');
+        const attachRes = await adminWithTimeout(fetch(PROXY, {
           method: 'POST',
           headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({ target: 'trello_attach_file', card_id: ioCardId, base64, filename: fileName, mime_type: 'application/pdf' }),
-        });
+        }), 60000, 'revised IO PDF upload');
         if (!attachRes.ok) console.warn('Could not attach revised IO PDF to card', ioCardId, ':', attachRes.status);
       } catch (e) {
         console.warn('Could not generate/attach revised IO PDF:', e.message);
@@ -11361,7 +11377,7 @@ async function adminSaveBudgetEdit(orderId, serviceId) {
   if (Object.keys(extraFields).length) {
     const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
     descriptions.push(...extra.descriptions);
-    o.edit_history.push(...extra.historyEntries);
+    o.edit_history = [...(o.edit_history || []), ...extra.historyEntries]; // was .push on a possibly-null list: the FIRST edit on an order (no history yet, start date unchanged) crashed here after saving (2026-10-14, STMM Quantity edit)
   }
 
   const label = svc.accounting_label || svc.label || serviceId;
