@@ -91,6 +91,11 @@ building before assuming a schema change is enough on its own.
   and read back the rows. Pattern: scratchpad `pg-test-swap.js` (2026-09-25). This is
   the check that would have caught both incidents; "shape-checked only" is no longer
   an acceptable verification level for a function Claire is about to run.
+- **Run the safety-net tests before every push, and give every fixed bug a test (2026-10-14).**
+  `node tests/run-all.js` (see `tests/README.md`). A bug is not "fixed" until a test that fails on
+  the old code and passes on the new code is in `tests/`. Test the WHOLE path with unusual data
+  (custom group price, cents, a first edit, agent lines, a gap month), not only the piece that
+  changed. Today's bugs all lived where two features met or on data nobody had tried.
 - **Business-logic ambiguity gets parked, not guessed at.** Several real examples exist
   in the tracking doc of exactly this pattern — read a couple before assuming you should
   resolve an ambiguous rule yourself.
