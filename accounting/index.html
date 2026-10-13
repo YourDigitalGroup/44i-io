@@ -684,7 +684,7 @@ function accountingRenderDetailCard() {
     const cutPct = line.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(line.service_id, line.client_id, line.group_id)
       : accountingEffectiveCutPct(line.service_id, line.client_id, line.group_id, line.has_offline_visits || line.has_addl_targeting, gross, line.cut_pct_override);
-    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting, line.retail_cpm_override, cutPct);
+    const expectedSpend = accountingComputeExpectedSpend(gross, line.service_id, line.client_id, line.group_id, monthRow?.in_platform_override, line.has_offline_visits || line.has_addl_targeting, line.retail_cpm_override, cutPct, !!line.has_offline_visits);
     const split = accountingSplitRevenue(gross, cutPct);
     const manuallyConfirmed = !!monthRow?.confirmed_by;
     return {
@@ -2451,11 +2451,35 @@ function accountingEffectiveBudgetedSpendPct(serviceId, groupId) {
   const baseRate = ACCOUNTING_BUDGETED_SPEND_RATES.base[serviceId];
   return baseRate != null ? Number(baseRate) : null;
 }
-function accountingComputeExpectedSpend(grossBudget, serviceId, clientId, groupId, inPlatformOverride, hasModifier, retailCpmLineOverride, cutPct) {
+// The Offline Visits Tracking CPM adjustment that goes with a tactic (2026-10-13, per Claire/the legacy spreadsheet: with Visits the
+// budget is divided by the COMBINED retail CPM, tactic + the modifier's $2, while the platform CPM stays as entered -- every
+// "w/ Offline Visits" budgeted-spend % in the Accounting Map is platform CPM / (retail + 2)). Same pairing and arithmetic as
+// Admin's Accounting Map "combined CPM" and as the Strategist Goal / In-Platform Budget (each portal keeps its own copy): the
+// is_cpm_adjustment "offline" service in the tactic's own section; if the section has exactly ONE spend tactic and the modifier has
+// its own Retail CPM that number is the combined CPM outright, otherwise the tactic's CPM + the modifier's dollar amount.
+// null when there is no unambiguous offline modifier (the plain CPM is used, as before).
+function accountingOfflineVisitsModifier(serviceId) {
+  const base = CATALOG_ROWS[serviceId];
+  if (!base) return null;
+  const mods = Object.values(CATALOG_ROWS).filter(r => r.is_cpm_adjustment && r.section === base.section && /offline/i.test((r.label || '') + ' ' + r.id));
+  if (mods.length !== 1) return null;
+  const spendSiblings = Object.values(CATALOG_ROWS).filter(r => r.pricing_mode === 'spend' && r.section === base.section && r.id !== mods[0].id);
+  return { mod: mods[0], onlyOneTactic: spendSiblings.length === 1 };
+}
+// withOfflineVisits is the line's own Offline Visits flag (NOT Addl. Targeting, which is a billed add-on and only changes the
+// platform CPM). A CPM typed on the campaign itself (retailCpmLineOverride) is the real sold rate and is never adjusted.
+function accountingComputeExpectedSpend(grossBudget, serviceId, clientId, groupId, inPlatformOverride, hasModifier, retailCpmLineOverride, cutPct, withOfflineVisits) {
   if (inPlatformOverride != null) return Number(inPlatformOverride);
   if (grossBudget == null) return null;
   const retailCpmOverride = accountingEffectiveRetailCpm(serviceId, clientId, groupId, retailCpmLineOverride);
-  const retailCpm = retailCpmOverride != null ? retailCpmOverride : (CATALOG_ROWS[serviceId]?.retail_cpm != null ? Number(CATALOG_ROWS[serviceId].retail_cpm) : null);
+  let retailCpm = retailCpmOverride != null ? retailCpmOverride : (CATALOG_ROWS[serviceId]?.retail_cpm != null ? Number(CATALOG_ROWS[serviceId].retail_cpm) : null);
+  if (retailCpm != null && withOfflineVisits && retailCpmLineOverride == null) {
+    const m = accountingOfflineVisitsModifier(serviceId);
+    if (m) {
+      if (retailCpmOverride == null && m.onlyOneTactic && m.mod.retail_cpm != null) retailCpm = Number(m.mod.retail_cpm);
+      else if (m.mod.modifier_amount != null) retailCpm += Number(m.mod.modifier_amount);
+    }
+  }
   const platformCpm = accountingEffectivePlatformCpm(serviceId, clientId, groupId, hasModifier);
   if (retailCpm != null && platformCpm != null) {
     const impressions = (Number(grossBudget) / retailCpm) * 1000;
@@ -2779,7 +2803,7 @@ function accountingBuildRows() {
     const cutPct = l.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
       : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override);
-    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override, cutPct);
+    const expectedSpend = accountingComputeExpectedSpend(gross, l.service_id, l.client_id, l.group_id, monthRow?.in_platform_override, l.has_offline_visits || l.has_addl_targeting, l.retail_cpm_override, cutPct, !!l.has_offline_visits);
     const split = accountingSplitRevenue(gross, cutPct);
     // Confirmed = real actual-spend entered for the month (automatic), OR a
     // manual confirm from the detail card (for tactics the Strategist Portal
