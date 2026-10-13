@@ -231,7 +231,7 @@ function priceAndFrequency(r) {
   }
   if (r.default_price == null) return { fee: 'QUR', freq: '—' };
 
-  const n = Number(r.default_price).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  const n = Number(r.default_price).toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(Number(r.default_price)) ? 0 : 2, maximumFractionDigits: 2 });
   const fee = `$${n}`;
 
   // Per-unit and billing cadence can BOTH apply (e.g. "$7 each, monthly"),

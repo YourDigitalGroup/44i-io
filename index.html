@@ -3839,8 +3839,13 @@ function applyCustomPricing(pricing) {
       if (row) {
         const priceCell = row.querySelector('td.svc-fee') || row.querySelector('td.right');
         if (priceCell) {
-          const formatted = Number(price).toLocaleString('en-US', {maximumFractionDigits:0});
-          priceCell.textContent = `$${formatted}`;
+          const formatted = Number(price).toLocaleString('en-US', {minimumFractionDigits: Number.isInteger(Number(price)) ? 0 : 2, maximumFractionDigits: 2}); // cents shown (a $7.50 custom price was displayed as $8)
+          // A per-unit row keeps its price in the first <div> and its "How many?" box / "Choose" link after it. Setting the whole
+          // cell's text (what this used to do) deleted that box, so a group with a custom price on an Addl. Email / hours service had NO way
+          // to pick a quantity (2026-10-13, STMM: "add 7 emails" ended up in the note, quantity stuck at 1).
+          const feeLine = priceCell.querySelector(':scope > div:first-child');
+          if (feeLine && priceCell.querySelector('.qty-field')) feeLine.textContent = `$${formatted}`;
+          else priceCell.textContent = `$${formatted}`;
         }
       }
     });
@@ -5082,7 +5087,8 @@ function goStep(n) {
 // $43.75). minimumFractionDigits stays 0 so every existing whole-dollar amount still
 // renders exactly as before ("$175", not "$175.00") — only a genuinely fractional total
 // picks up decimals now, instead of being silently rounded away.
-function fmt(n) { return n ? '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}) : '—'; }
+// Cents only when the price has them (2026-10-13: the signed IO printed $7.5/mo for $7.50); whole-dollar prices look as before.
+function fmt(n) { return n ? '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:Number.isInteger(Number(n)) ? 0 : 2,maximumFractionDigits:2}) : '—'; }
 
 // Tracks which section headers are collapsed on the Step 3 Selected Services
 // Summary (2026-08-14, per Claire -- wanted a way to close a section once done
@@ -9535,7 +9541,7 @@ function priceAndFrequency(r) {
   }
   if (r.default_price == null) return { fee: 'QUR', freq: '—' };
 
-  const n = Number(r.default_price).toLocaleString('en-US', { maximumFractionDigits: 0 });
+  const n = Number(r.default_price).toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(Number(r.default_price)) ? 0 : 2, maximumFractionDigits: 2 });
   const fee = `$${n}`;
 
   // Per-unit and billing cadence can BOTH apply (e.g. "$7 each, monthly"),
@@ -9941,8 +9947,11 @@ function renderPriceCells() {
         ? `<select class="qty-field" onchange="updateQty(this,'${esc(id)}')" style="width:58px;padding:2px 3px;font-size:11px;border:1px solid var(--border);border-radius:5px" title="Quantity">
             ${presetOptions.map(h => `<option value="${h}" ${h === 1 ? 'selected' : ''}>${esc(qtyOptionLabel(h))}</option>`).join('')}
           </select>`
-        : `<input type="number" class="qty-field" min="1" value="1" onchange="updateQty(this,'${esc(id)}')" style="width:36px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity"/>`;
-      feeTd.innerHTML = `<div>${esc(fee)}</div><div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> ${qtyControl}</div>` +
+        : `<input type="number" class="qty-field" min="1" value="1" onchange="updateQty(this,'${esc(id)}')" style="width:46px;padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:5px;text-align:center" title="Quantity - how many"/>`;
+      // "How many?" label (2026-10-13, per Claire: an AE left the quantity at 1 and typed "add 7 emails" in the note) -- only for the
+      // boxes someone types/picks in, not the read-only module count.
+      const qtyLabel = namedOptions.length ? '' : '<div style="margin-top:2px;font-size:10px;font-weight:700;color:var(--muted)">How many?</div>';
+      feeTd.innerHTML = `<div>${esc(fee)}</div>${qtyLabel}<div style="margin-top:2px;white-space:nowrap"><span style="color:var(--muted);font-size:11px">×</span> ${qtyControl}</div>` +
         (namedOptions.length ? `<div style="margin-top:2px"><a href="#" onclick="event.preventDefault();toggleModuleDetail('${esc(id)}')" style="font-size:10px;font-weight:700;color:var(--accent-dark);text-decoration:none">▾ Choose</a></div>` : '');
     } else {
       feeTd.textContent = fee;
