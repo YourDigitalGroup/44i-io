@@ -9972,7 +9972,7 @@ function renderAdminOrders() {
     const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : new Date(s);
     return d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
   };
-  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US',{maximumFractionDigits:0}) : '—';
+  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 }) : '—'; // cents shown only when the price has them (2026-10-13: $7.50 was shown as $8)
 
   el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <thead><tr style="background:var(--light)">
@@ -10044,7 +10044,7 @@ async function viewOrderDetail(orderId) {
     console.warn('Could not load live cancellation status:', e.message);
   }
   const groupName = (allGroups.find(g => g.id === o.group_id) || {}).name || '—';
-  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US',{maximumFractionDigits:0}) : '—';
+  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 }) : '—'; // cents shown only when the price has them (2026-10-13: $7.50 was shown as $8)
   // Parse YYYY-MM-DD as local noon to dodge UTC timezone drift (one day off in US)
   const fmtDate = s => {
     if (!s) return '—';
@@ -11761,7 +11761,7 @@ async function loadCampaignLinesForClient(clientId) {
 function renderCampaignLinesTable(clientId) {
   const el = document.getElementById('admin-campaignlines-table');
   const rows = ALL_CAMPAIGN_LINES_FOR_CLIENT;
-  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US',{maximumFractionDigits:0}) : '—';
+  const fmtMoney = n => n ? '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 }) : '—'; // cents shown only when the price has them (2026-10-13: $7.50 was shown as $8)
   const fmtDate = s => {
     if (!s) return '—';
     return new Date(s + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
