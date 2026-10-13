@@ -8495,6 +8495,14 @@ function adminCollectExtraEditFields(serviceId, item) {
 // via the same applyFieldChangeLocally() every other Edit path uses.
 // Returns the description strings to fold into the caller's own Trello
 // comment, rather than posting a second separate comment.
+// Says plainly when part of an Edit did not save (2026-10-14, per Claire: "make the error loud"). Returns true when something failed.
+const ADMIN_EDIT_FIELD_NAMES = { qty: 'quantity', recurring: 'monthly amount', fee: 'fee', spend: 'spend', start_date: 'start date', end_date: 'end date', tactic_variant: 'variant', module_names: 'modules', notes: 'notes' };
+function adminReportFailedFields(extra) {
+  if (!extra || !extra.failed || !extra.failed.length) return false;
+  const names = extra.failed.map(f => ADMIN_EDIT_FIELD_NAMES[f.field] || f.field).join(', ');
+  showToast('NOT everything saved: the ' + names + ' did not save (' + String(extra.failed[0].message || 'unknown error').slice(0, 120) + '). Check the order and edit it again before telling anyone it is done.', 'error');
+  return true;
+}
 async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
   // Real bug found live (2026-09-17, Claire -- a client needed a second
   // Radio to Video Ad Creation, a per_unit priced service): the Quantity
@@ -8519,6 +8527,7 @@ async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
   }
   const descriptions = [];
   const historyEntries = [];
+  const failed = []; // fields whose save failed (2026-10-14: these used to be swallowed, the screen still said "Change saved")
   for (const [field, value] of Object.entries(extraFields)) {
     try {
       await sb('rpc/admin_edit_order_line_item', {
@@ -8530,6 +8539,7 @@ async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
       });
     } catch (e) {
       console.warn('Could not save', field, ':', e.message);
+      failed.push({ field, message: e.message });
       continue;
     }
     const { description, historyOldValue } = applyFieldChangeLocally(item, field, value);
@@ -8546,7 +8556,7 @@ async function adminSaveExtraEditFields(orderId, serviceId, item, extraFields) {
   if ('tactic_variant' in extraFields || 'module_names' in extraFields || 'end_date' in extraFields) {
     await adminUpdateTacticCard(orderId, serviceId, item, { renameTitle: 'tactic_variant' in extraFields || 'module_names' in extraFields });
   }
-  return { descriptions, historyEntries };
+  return { descriptions, historyEntries, failed };
 }
 
 // Same Trello due-date/reminder convention as index.html's campaignDueFields()
@@ -10805,6 +10815,7 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
 
   const o = allOrders.find(x => x.id === orderId);
   const svc = CATALOG_ROWS[serviceId] || {};
+  let hadFailures = false;
   if (o) {
     const item = (o.line_items || []).find(li => li.service_id === serviceId);
     const oldValue = item ? item[field] : null;
@@ -10819,6 +10830,7 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     if (Object.keys(extraFields).length) {
       const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
       descriptions.push(...extra.descriptions);
+      if (adminReportFailedFields(extra)) hadFailures = true;
       o.edit_history = [...(o.edit_history || []), ...extra.historyEntries]; // was .push on a possibly-null list: the FIRST edit on an order (no history yet, start date unchanged) crashed here after saving (2026-10-14, STMM Quantity edit)
     }
 
@@ -10863,7 +10875,7 @@ async function adminSaveLineItemEdit(orderId, serviceId, field) {
     }
   }
 
-  showToast('✅ Change saved');
+  if (!hadFailures) showToast('✅ Change saved');
   viewOrderDetail(orderId);
 }
 
@@ -10973,6 +10985,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
 
   const o = allOrders.find(x => x.id === orderId);
   const svc = CATALOG_ROWS[serviceId] || {};
+  let hadFailures = false;
   if (o) {
     const item = (o.line_items || []).find(li => li.service_id === serviceId);
     const oldValue = item ? item.start_date : null;
@@ -10980,6 +10993,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
       if (item) item.start_date = newValue;
       o.edit_history = [...(o.edit_history || []), { service_id: serviceId, field: 'start_date', old_value: oldValue, new_value: newValue, edited_by: currentAdminUser?.name, edited_at: new Date().toISOString() }];
     }
+    const wasRevised = o.is_revised;
     o.is_revised = true;
 
     // Real bug found live (2026-09-17, Claire -- Quantity edit "didn't stick"):
@@ -11002,7 +11016,15 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     if (Object.keys(extraFields).length) {
       const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
       descriptions.push(...extra.descriptions);
+      if (adminReportFailedFields(extra)) hadFailures = true;
       o.edit_history = [...(o.edit_history || []), ...extra.historyEntries]; // was .push on a possibly-null list: the FIRST edit on an order (no history yet, start date unchanged) crashed here after saving (2026-10-14, STMM Quantity edit)
+    }
+
+    if (!descriptions.length) {
+      // Nothing at all saved (only extra fields were edited and every one failed): no Trello comment / PDF for a change that did not happen.
+      o.is_revised = wasRevised;
+      if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+      return;
     }
 
     const label = svc.accounting_label || svc.label || serviceId;
@@ -11043,7 +11065,7 @@ async function adminSaveLineItemDateEdit(orderId, serviceId, includeEndDate) {
     }
   }
 
-  showToast('✅ Change saved');
+  if (!hadFailures) showToast('✅ Change saved');
   viewOrderDetail(orderId);
 }
 
@@ -11291,6 +11313,7 @@ function adminRefreshBudgetTotalPreview(orderId, serviceId) {
 }
 
 async function adminSaveBudgetEdit(orderId, serviceId) {
+  let hadFailures = false;
   if (!adminAeConfirmed('ae-confirm-budget-' + serviceId)) return;
   // Same double-submit guard as adminSaveLineItemEdit() (found live
   // 2026-09-04): RPC save + Trello comment + PDF attach is slow enough that a
@@ -11377,6 +11400,7 @@ async function adminSaveBudgetEdit(orderId, serviceId) {
   if (Object.keys(extraFields).length) {
     const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
     descriptions.push(...extra.descriptions);
+    if (adminReportFailedFields(extra)) hadFailures = true;
     o.edit_history = [...(o.edit_history || []), ...extra.historyEntries]; // was .push on a possibly-null list: the FIRST edit on an order (no history yet, start date unchanged) crashed here after saving (2026-10-14, STMM Quantity edit)
   }
 
@@ -11416,7 +11440,7 @@ async function adminSaveBudgetEdit(orderId, serviceId) {
     }
   }
 
-  showToast('✅ Change saved');
+  if (!hadFailures) showToast('✅ Change saved');
   viewOrderDetail(orderId);
 }
 
