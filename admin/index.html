@@ -13572,6 +13572,18 @@ function populateDigitalStrategistDropdown(selectId, selectedName, defaultLabel)
   sel.innerHTML = `<option value="">${blankLabel}</option>` +
     people.map(s => `<option value="${esc(s.name)}">${esc(s.name)}${s.active === false ? ' (inactive)' : ''}</option>`).join('');
   sel.value = selectedName || '';
+  // Never let a saved name silently disappear (2026-10-13, Sammy's covering strategists went
+  // missing): if the stored name has no matching option -- the staff list failed to load, the
+  // person's role isn't Strategist/Super, or the spelling differs -- the box used to show blank,
+  // and the next Save wrote that blank over the real name. Keep the saved name as its own option.
+  if (selectedName && sel.value !== selectedName) {
+    const match = people.find(s => s.name.toLowerCase() === selectedName.trim().toLowerCase());
+    if (match) sel.value = match.name;
+    else {
+      sel.insertAdjacentHTML('beforeend', `<option value="${esc(selectedName)}">${esc(selectedName)} (not in Users list)</option>`);
+      sel.value = selectedName;
+    }
+  }
 }
 
 // ── GROUP LOGO UPLOAD (2026-07-18) ──────────────────────────────

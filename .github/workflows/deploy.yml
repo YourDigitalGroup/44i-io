@@ -46,3 +46,5 @@ jobs:
             **/.github/**
             README.md
             .gitignore
+            tests/**
+            **/node_modules/**
