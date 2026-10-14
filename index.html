@@ -1326,7 +1326,8 @@ select.qty-field{background-image:none;padding-right:3px}
       <div class="success-screen">
         <div class="success-icon">🎉</div>
         <h2>Insertion Order Submitted!</h2>
-        <p>The client record has been created and the Trello card has been built on the group's board. The Account Manager has been notified.</p>
+        <p id="success-message">The client record has been created and the Trello card has been built on the group's board. The Account Manager has been notified.</p>
+        <div id="success-notices"></div>
         <div class="workflow-chips" id="success-chips" style="justify-content:center;margin-bottom:24px"></div>
         <button class="btn btn-primary" onclick="resetForm()">Submit Another IO</button>
       </div>
@@ -6143,6 +6144,11 @@ async function submitIO() {
     const orders = await sb('orders', {method:'POST', body: JSON.stringify(orderPayload)});
     const orderId = Array.isArray(orders) ? orders[0]?.id : orders?.id;
 
+    // Things that did not finish AFTER the order was saved (Trello cards, PDF attach, email). Shown to the AE on the success screen and used to set
+    // trello_synced honestly (2026-10-14 audit batch 2a): before, each was only a console warning and the screen still said "Trello list ready".
+    const setupIssues = [];
+    const noteIssue = msg => { if (!setupIssues.includes(msg)) setupIssues.push(msg); };
+
     // 2. Build Trello board
     if (selectedGroup.trello_board_id) {
       try {
@@ -6154,6 +6160,7 @@ async function submitIO() {
         }).catch(() => null);
         if (!proxyTest || !proxyTest.ok) {
           console.warn('Trello proxy unavailable — skipping Trello setup');
+          noteIssue('Trello could not be reached, so no Trello list or cards were created.');
           showToast('IO saved! Trello setup pending — proxy not configured', 'error');
         } else {
         showToast('Setting up Trello…', 'info');
@@ -6743,6 +6750,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
             body: JSON.stringify({ target: 'trello_get_list', list_id: effectiveTrelloListId })
           });
+          // A busy or failing Trello (5xx / rate limit) is NOT the same as a deleted list: stop instead of falling through to a name search that can
+          // create a SECOND list for this client (2026-10-14).
+          if (storedListRes.status >= 500 || storedListRes.status === 429) throw new Error('Trello is not answering right now, so this client\'s list could not be checked. Nothing was created on Trello (to avoid a duplicate list)');
           const storedList = await storedListRes.json();
           if (storedList?.id) {
             if (storedList.closed) {
@@ -6861,6 +6871,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           body: JSON.stringify({ target: 'trello_get_list_cards', list_id: clientList.id })
         });
         const existingCards = await existingCardsRes.json();
+        // An unreadable answer (Trello error / rate limit) is NOT "no cards": carrying on would re-create every card next to the existing ones (2026-10-14).
+        if (!Array.isArray(existingCards)) throw new Error('Trello did not return the cards already on this client\'s list, so no cards were created (to avoid duplicates)');
 
         // Normalize card names for comparison: lowercase, canonicalize every dash-like
         // Unicode variant to a plain hyphen EVERYWHERE in the string (not just at the
@@ -6983,6 +6995,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
           });
           const newIoCard = await newIoCardRes.json();
           ioCardId = newIoCard?.id || null;
+          if (!ioCardId) noteIssue('The IO card could not be created on Trello.');
           addedCardNames.add(norm('IO'));
           console.log('Created IO card');
         }
@@ -7020,11 +7033,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             // explicitly or a failed attach silently logs as a success.
             if (!attachRes.ok) {
               console.warn('Could not attach IO PDF to Trello card:', attachRes.status, attachData);
+              noteIssue('The signed IO PDF could not be attached to the IO card on Trello.');
             } else {
               console.log('Attached IO PDF to card');
             }
           } catch(e) {
             console.warn('Could not attach IO PDF to Trello card:', e.message);
+            noteIssue('The signed IO PDF could not be attached to the IO card on Trello.');
           }
         }
 
@@ -7220,9 +7235,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
               body: JSON.stringify({ target: 'trello_add_comment', card_id: cardId, text })
             });
-            if (!res.ok) console.warn('Could not post order comment to card', cardId, ':', res.status);
+            if (!res.ok) { console.warn('Could not post order comment to card', cardId, ':', res.status); noteIssue('An order summary comment could not be posted on a Trello card.'); }
           } catch (e) {
             console.warn('Could not post order comment to card', cardId, ':', e.message);
+            noteIssue('An order summary comment could not be posted on a Trello card.');
           }
         }
 
@@ -7270,9 +7286,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' })
               });
               const attachData = await attachRes.json().catch(() => null);
-              if (!attachRes.ok) console.warn('Could not attach intake PDF to card', cardId, ':', attachRes.status, attachData);
+              if (!attachRes.ok) { console.warn('Could not attach intake PDF to card', cardId, ':', attachRes.status, attachData); noteIssue('An intake form PDF could not be attached to a Trello card.'); }
             } catch (e) {
               console.warn('Could not generate/attach intake PDF for card', cardId, ':', e.message);
+              noteIssue('An intake form PDF could not be attached to a Trello card.');
             }
           }
           const workflowNeedsKoc = lineItems.some(li => li.workflow === originalWorkflows[wfIdx] && li.requires_koc);
@@ -7374,6 +7391,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               });
               const card = await res.json();
               if (card?.id) { addedCardNames.add(norm(cn)); cardsAdded++; cardId = card.id; }
+              else noteIssue('A Trello card for an agent split could not be created.');
             }
             await postOrderComment(cardId, `📋 New order submitted:\n\n${descLines}`);
             if (cardId && formKey) formKeyCardIds[`${formKey}::agent::${agentKey}`] = cardId;
@@ -7386,9 +7404,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   body: JSON.stringify({ target: 'trello_attach_file', card_id: cardId, base64, filename: fileName, mime_type: 'application/pdf' })
                 });
                 const attachData = await attachRes.json().catch(() => null);
-                if (!attachRes.ok) console.warn('Could not attach agent intake PDF to card', cardId, ':', attachRes.status, attachData);
+                if (!attachRes.ok) { console.warn('Could not attach agent intake PDF to card', cardId, ':', attachRes.status, attachData); noteIssue('An intake form PDF could not be attached to a Trello card.'); }
               } catch (e) {
                 console.warn('Could not generate/attach agent intake PDF for card', cardId, ':', e.message);
+                noteIssue('An intake form PDF could not be attached to a Trello card.');
               }
             }
             if (cardId) await assignCardMembers(cardId, memberIdsForLineItems(tacticLineItems));
@@ -7428,8 +7447,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               });
               const plainCard = await plainRes.json();
               addedCardNames.add(norm(plainName));
-              cardsAdded++;
-              if (plainCard?.id) await finalizeTacticCard(plainCard.id, wfIdx);
+              if (plainCard?.id) { cardsAdded++; await finalizeTacticCard(plainCard.id, wfIdx); }
+              else noteIssue(`The Trello card for ${wf} could not be created.`);
             }
             continue;
           }
@@ -7460,6 +7479,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 // lookup failed, the ref itself is bad (deleted card, wrong id, etc.) —
                 // log it and skip rather than attempt a copy that's certain to fail too.
                 console.warn(`Could not resolve single-card template for workflow "${originalWorkflows[wfIdx]}" (ref ${template.ref}) — no card added. Check the Trello Template field on the relevant service.`);
+                noteIssue(`The Trello template for ${friendlyWorkflowName(originalWorkflows[wfIdx])} could not be read, so its card was not created (check its Trello Template in Admin > Services).`);
                 continue;
               }
               // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
@@ -7485,6 +7505,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   isFirstCardThisWorkflow = false;
                 } else {
                   console.warn(`Failed to copy single-card template for workflow "${originalWorkflows[wfIdx]}":`, copiedCard);
+                  noteIssue(`The Trello card for ${friendlyWorkflowName(originalWorkflows[wfIdx])} could not be created from its template.`);
                 }
               }
             } else if (template.type === 'list') {
@@ -7545,6 +7566,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   const copiedCard = await copyRes.json();
                   if (!copiedCard?.id) {
                     console.warn(`Failed to copy template card "${cn}":`, copiedCard);
+                    noteIssue(`The Trello card "${cn}" could not be created from its template.`);
                     continue;
                   }
                   addedCardNames.add(norm(cn));
@@ -7553,6 +7575,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   isFirstCardThisWorkflow = false;
                 }
               } else {
+                noteIssue(`The Trello template list for ${friendlyWorkflowName(originalWorkflows[wfIdx])} could not be read, so a plain card was created instead of its template cards.`);
                 // Template list id configured but its cards couldn't be read (e.g. the
                 // list was deleted) — fall back to a plain card so submission still works
                 // Tactic — Client (2026-07-14, per Claire)
@@ -7570,8 +7593,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                   });
                   const fallbackCard = await fallbackRes.json();
                   addedCardNames.add(norm(fallbackName));
-                  cardsAdded++;
-                  if (fallbackCard?.id) await finalizeTacticCard(fallbackCard.id, wfIdx, isFirstCardThisWorkflow);
+                  if (fallbackCard?.id) { cardsAdded++; await finalizeTacticCard(fallbackCard.id, wfIdx, isFirstCardThisWorkflow); }
                   isFirstCardThisWorkflow = false;
                 }
               }
@@ -7605,6 +7627,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             const template = await infoRes.json();
             if (!template?.id) {
               console.warn(`Could not resolve the ${label} template card (${shortLink}) — no card added.`);
+              noteIssue(`The ${label} marker card could not be added to the list.`);
               return;
             }
             // dedupe (Green only, per Claire — "only needs to be on the list once"):
@@ -7620,9 +7643,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
               body: JSON.stringify({ target: 'trello_copy_card', card_id: template.id, list_id: clientList.id, name: template.name, pos })
             });
             const copied = await copyRes.json();
-            if (!copied?.id) console.warn(`Failed to copy the ${label} template card:`, copied);
+            if (!copied?.id) { console.warn(`Failed to copy the ${label} template card:`, copied); noteIssue(`The ${label} marker card could not be added to the list.`); }
           } catch (e) {
             console.warn(`Could not add the ${label} card:`, e.message);
+            noteIssue(`The ${label} marker card could not be added to the list.`);
           }
         }
         // Gold — a fresh copy at the top on EVERY IO submission, never deduped.
@@ -7630,7 +7654,8 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // Green — only the very first time ever for this client.
         await addMarkerCard(GREEN_CARD_SOURCE, 'bottom', true, 'Green');
 
-        showToast(`✅ Trello list ready — ${cardsAdded} new card${cardsAdded !== 1 ? 's' : ''} added`);
+        if (setupIssues.length) showToast(`⚠ Order saved, but ${setupIssues.length} Trello setup step${setupIssues.length !== 1 ? 's' : ''} did not finish. Details are on the next screen.`, 'error');
+        else showToast(`✅ Trello list ready — ${cardsAdded} new card${cardsAdded !== 1 ? 's' : ''} added`);
 
         // Mark the order as successfully synced to Trello (guards future auto-purge).
         // Also stamps each intake form's real Trello card id onto intake_responses
@@ -7651,8 +7676,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             await sb('orders?id=eq.' + orderId, {
               method: 'PATCH',
               body: JSON.stringify({
-                trello_synced: true,
-                trello_synced_at: new Date().toISOString(),
+                // true only when every Trello step finished; otherwise Admin's Orders list shows its "not synced" warning for the AM (2026-10-14)
+                trello_synced: setupIssues.length === 0,
+                trello_synced_at: setupIssues.length === 0 ? new Date().toISOString() : null,
                 trello_client_list_id: clientList?.id || null,
                 intake_responses: intakeWithCardIds,
                 trello_card_ids: workflowCardIds,
@@ -7661,11 +7687,13 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             });
           } catch(e) {
             console.warn('Could not mark order as Trello-synced:', e.message);
+            noteIssue('The order could not be marked as synced to Trello.');
           }
         }
         } // end proxy check
       } catch(e) {
         console.warn('Trello setup failed:', e.message);
+        noteIssue('Trello setup stopped partway: ' + e.message);
         showToast('IO submitted but Trello setup failed: ' + e.message, 'error');
       }
     }
@@ -7738,6 +7766,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
         // crashed every single send, not just ones without Trello configured. Read
         // fresh here instead, same pattern as marketVal/overallNotesVal right above.
         const aeName = document.getElementById('ae-name').value.trim();
+        // Build the PDF FIRST: if that fails the email still goes out, without the attachment, and the AE is told (2026-10-14; before, no email was sent at all).
+        let emailPdf = null;
+        try { emailPdf = await generateIoPdfBlob(); } catch (e) { console.warn('Could not build the IO PDF for the email:', e.message); noteIssue('The signed IO PDF could not be built, so the notification email was sent WITHOUT the PDF attached.'); }
         const emailHtml = `
           <div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px">
             <div style="background:${color};padding:16px 20px;border-radius:8px 8px 0 0">
@@ -7752,11 +7783,10 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
                 <tr><td style="padding:6px 0;color:#6B7280">KOC</td><td style="padding:6px 0">${esc(kocDate || '—')}${kocTime ? ' at ' + esc(kocTime) : ''}</td></tr>
                 ${overallNotesVal ? `<tr><td style="padding:6px 0;color:#6B7280;vertical-align:top">Overall Notes</td><td style="padding:6px 0">${esc(overallNotesVal)}</td></tr>` : ''}
               </table>
-              <p style="font-size:12px;color:#6B7280;margin-top:16px">Full details attached as PDF.</p>
+              <p style="font-size:12px;color:#6B7280;margin-top:16px">${emailPdf ? 'Full details attached as PDF.' : 'The PDF could not be attached to this email. The signed copy is on the IO card in Trello.'}</p>
             </div>
           </div>`;
 
-        const { base64, fileName } = await generateIoPdfBlob();
         const emailRes = await fetch(PROXY, {
           method: 'POST',
           headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
@@ -7766,22 +7796,34 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.sl
             bcc: emailBcc,
             subject: 'New submission from Insertion Order Submission',
             html: emailHtml,
-            base64, filename: fileName, mime_type: 'application/pdf'
+            ...(emailPdf ? { base64: emailPdf.base64, filename: emailPdf.fileName, mime_type: 'application/pdf' } : {})
           })
         });
         const emailData = await emailRes.json().catch(() => null);
-        if (!emailRes.ok) console.warn('Could not send submission email:', emailRes.status, emailData);
+        if (!emailRes.ok) { console.warn('Could not send submission email:', emailRes.status, emailData); noteIssue('The notification email could not be sent, so the group and AM did not receive it.'); }
         else console.log('Submission email sent');
       } else {
         console.log('No email recipients configured for this group — skipping submission email.');
       }
     } catch(e) {
       console.warn('Could not send submission email:', e.message);
+      noteIssue('The notification email could not be sent, so the group and AM did not receive it.');
     }
 
         // 3. Show success
     const chips = [...workflows].map(w => `<span class="chip green">${friendlyWorkflowName(w)}</span>`).join('');
     document.getElementById('success-chips').innerHTML = chips;
+    // Persistent, plain-English list of anything that did not finish (2026-10-14 audit batch 2a) -- the order itself IS saved.
+    {
+      const box = document.getElementById('success-notices'), msg = document.getElementById('success-message');
+      if (box) box.innerHTML = setupIssues.length
+        ? '<div role="alert" style="text-align:left;background:#FFFBEB;border:1.5px solid #F59E0B;border-radius:8px;padding:14px 16px;margin:0 auto 20px;max-width:560px;font-size:13px;color:#78350F;line-height:1.5">' +
+          '<strong>Your order was saved, but ' + (setupIssues.length === 1 ? 'one step' : setupIssues.length + ' steps') + ' did not finish:</strong>' +
+          '<ul style="margin:6px 0 8px 18px;padding:0">' + setupIssues.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' +
+          'Please tell your account manager' + (selectedGroup && selectedGroup.am_name ? ' (' + esc(selectedGroup.am_name) + ')' : '') + ' so these can be finished by hand. You do not need to submit again.</div>'
+        : '';
+      if (msg) msg.textContent = setupIssues.length ? 'Your order has been saved.' : 'The client record has been created and the Trello card has been built on the group\'s board. The Account Manager has been notified.';
+    }
     document.getElementById('page-3').style.display = 'none';
     document.getElementById('page-success').style.display = 'block';
     setStepsNavEnabled(false);
