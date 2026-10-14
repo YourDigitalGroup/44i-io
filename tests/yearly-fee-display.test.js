@@ -59,6 +59,8 @@ const SERVICES = [svc({ id: 'w-hosting', label: 'Hosting Fee*', section: 'web-ot
     const c = await run(['w-mon']);
     check('A normal monthly-only order is unchanged: no Annual tile, no Annual row', [c.annualShown, /Annual\s*\$/.test(c.printed), c.monthlyTile], [false, false, '$69/mo']);
     check('no page errors', errs, []);
+    check('Admin: Correct Service total and Campaign Lines amount say /yr for a yearly service', [/New amount: \$\{money\(price \* qty\)\}\$\{\['yearly', 'annual'\]\.includes\(r\.billing_type\)/.test(admin), /CATALOG_ROWS\[r\.service_id\]\?\.billing_type\) \? '\/yr'/.test(admin)], [true, true]);
+    check('Accounting: add-service panel says Yearly fee and /yr for a yearly service', [/'Yearly fee'/.test(read('accounting/index.html')), /'\/yr' : '\/mo'\)\}` : 'Not set in the catalog/.test(read('accounting/index.html'))], [true, true]);
     // the Trello card text and the order-summary text come from submitIO(), so check the source uses the shared rule
     const idx = read('index.html');
     check('Trello card price text uses the /yr rule in both places', (idx.match(/recurringSuffix\(li\.service_id\)/g) || []).length, 2);
