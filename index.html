@@ -1070,6 +1070,8 @@ select.qty-field{background-image:none;padding-right:3px}
            blended in — hidden entirely (not just $0) when nothing on the
            order actually varies by month, so a normal order looks completely
            unchanged. -->
+      <!-- Annual tile (2026-10-14): yearly fees such as the Hosting Fee are shown here as "/yr", never in Monthly Recurring. Hidden when the order has none. -->
+      <div class="total-item" id="total-annual-wrap" style="display:none"><div class="val" id="total-annual">$0/yr</div><div class="lbl">Annual</div></div>
       <div class="total-item" id="total-varying-wrap" style="display:none"><div class="val" id="total-varying">$0</div><div class="lbl">Varying Campaign Total</div></div>
       <div class="total-item"><div class="val" id="total-items">0</div><div class="lbl">Services Selected</div></div>
     </div>
@@ -5102,8 +5104,21 @@ function toggleReviewSection(sectionId) {
   buildReview();
 }
 
+// Yearly / annual fees (2026-10-14, Rollins Construction: the $450 ANNUAL Hosting Fee was printed on the signed IO as
+// "$450/mo" and counted in "Monthly Recurring"). Such a fee is still stored in `recurring` (so the database, the order
+// trigger and Accounting are untouched), but everywhere it is SHOWN or TOTALLED it is "/yr" and kept out of Monthly
+// Recurring, in its own Annual total. Decided from the catalog's billing_type, so it also fixes orders already placed.
+function isYearlyService(id) { const b = CATALOG_ROWS[id]?.billing_type; return b === 'yearly' || b === 'annual'; }
+function recurringSuffix(id) { return isYearlyService(id) ? '/yr' : '/mo'; }
+// Splits a submitted order's line items into the monthly and the annual recurring totals.
+function splitRecurringTotals(lineItems) {
+  let monthly = 0, annual = 0;
+  (lineItems || []).forEach(li => { const r = li.recurring || 0; if (isYearlyService(li.service_id)) annual += r; else monthly += r; });
+  return { monthly, annual };
+}
+
 function buildReview() {
-  let oneTime = 0, monthly = 0, varyingTotal = 0, count = 0;
+  let oneTime = 0, monthly = 0, annual = 0, varyingTotal = 0, count = 0;
   const sectionBoxes = [];
   const workflows = new Set();
 
@@ -5142,7 +5157,7 @@ function buildReview() {
     const feeTotal = (data.fee || 0) * qty;
     const recurringTotal = (data.recurring || 0) * qty;
     if (feeTotal > 0) oneTime += feeTotal;
-    if (recurringTotal > 0) monthly += recurringTotal;
+    if (recurringTotal > 0) { if (isYearlyService(id)) annual += recurringTotal; else monthly += recurringTotal; }
     // Varying-campaign real total tracked separately from genuine "/mo"
     // spend (2026-08-31) — see monthPlanVariesAndTotal()'s own comment.
     if (data.spend > 0) {
@@ -5178,9 +5193,9 @@ function buildReview() {
     // where "recurring" is actually true.
     let amtDisplay;
     if (recurringTotal > 0 && data.spend > 0) {
-      amtDisplay = (qty > 1 ? `${fmt(data.recurring)} × ${qty} = ${fmt(recurringTotal)}/mo` : fmt(recurringTotal) + '/mo') + ' + ' + fmt(data.spend) + '/mo spend';
+      amtDisplay = (qty > 1 ? `${fmt(data.recurring)} × ${qty} = ${fmt(recurringTotal)}${recurringSuffix(id)}` : fmt(recurringTotal) + recurringSuffix(id)) + ' + ' + fmt(data.spend) + '/mo spend';
     } else if (recurringTotal > 0) {
-      amtDisplay = qty > 1 ? `${fmt(data.recurring)} × ${qty} = ${fmt(recurringTotal)}/mo` : fmt(recurringTotal) + '/mo';
+      amtDisplay = qty > 1 ? `${fmt(data.recurring)} × ${qty} = ${fmt(recurringTotal)}${recurringSuffix(id)}` : fmt(recurringTotal) + recurringSuffix(id);
     } else if (data.spend > 0) {
       // Budget entry form states (2026-08-20) -- data.spend is always kept as
       // the AVERAGE of monthPlan's real amounts (see splitAmountAcrossMonths'
@@ -5328,6 +5343,8 @@ function buildReview() {
 
   document.getElementById('total-onetime').textContent = fmt(oneTime);
   document.getElementById('total-monthly').textContent = fmt(monthly) + '/mo';
+  const annualWrap = document.getElementById('total-annual-wrap');
+  if (annualWrap) { annualWrap.style.display = annual > 0 ? '' : 'none'; document.getElementById('total-annual').textContent = fmt(annual) + '/yr'; }
   document.getElementById('total-items').textContent = count;
   // Varying-campaign tile only shows when the order actually has one
   // (2026-08-31) — a normal order with nothing varying by month looks
@@ -5890,7 +5907,9 @@ async function submitIO() {
     // the THIRD independent place that was still blending a varying
     // campaign's plain `spend` (an average) into "monthly" — this one feeds
     // the Trello/email order summary text below (**Monthly Recurring:** ...).
-    let monthly = lineItems.reduce((a,li) => a + (li.recurring||0), 0);
+    const recurringSplit = splitRecurringTotals(lineItems);
+    let monthly = recurringSplit.monthly;   // yearly fees (Hosting Fee) are NOT monthly -- see isYearlyService()
+    const annual = recurringSplit.annual;
     let varyingSpendTotal = 0;
     lineItems.forEach(li => {
       if (!(li.spend > 0)) return;
@@ -6299,7 +6318,7 @@ async function submitIO() {
             const itemLines = [`• **${displayName}**`];
             const priceParts = [];
             if (li.fee > 0) priceParts.push(`$${li.fee.toLocaleString()} one-time`);
-            if (li.recurring > 0) priceParts.push(`$${li.recurring.toLocaleString()}/mo`);
+            if (li.recurring > 0) priceParts.push(`$${li.recurring.toLocaleString()}${recurringSuffix(li.service_id)}`);
             // Real per-month breakdown on the Trello card too (2026-08-20) --
             // same consistency principle as Review/Print: li.spend is always
             // the AVERAGE, which read as a real flat rate to whoever's
@@ -6568,7 +6587,7 @@ async function submitIO() {
           const lines = [`• **${displayName}**`];
           const priceParts = [];
           if (li.fee > 0) priceParts.push(`$${li.fee.toLocaleString()} one-time`);
-          if (li.recurring > 0) priceParts.push(`$${li.recurring.toLocaleString()}/mo`);
+          if (li.recurring > 0) priceParts.push(`$${li.recurring.toLocaleString()}${recurringSuffix(li.service_id)}`);
           // Whole-campaign-total/custom-by-month figures need the same real-
           // campaign-total fix as formatSiblingLineItems() below (2026-08-28,
           // per Claire) -- li.spend here is always the AVERAGE of a varying
@@ -6626,7 +6645,7 @@ async function submitIO() {
 ${servicesDesc}
 
 **One-Time Total:** $${oneTime.toLocaleString()}
-**Monthly Recurring:** $${monthly.toLocaleString()}/mo${varyingSpendTotal > 0 ? `\n**Varying Campaign Total:** $${varyingSpendTotal.toLocaleString()} (see per-month breakdown)` : ''}
+**Monthly Recurring:** $${monthly.toLocaleString()}/mo${annual > 0 ? `\n**Annual:** $${annual.toLocaleString()}/yr` : ''}${varyingSpendTotal > 0 ? `\n**Varying Campaign Total:** $${varyingSpendTotal.toLocaleString()} (see per-month breakdown)` : ''}
 
 **Special Instructions:** ${document.getElementById('special-instructions')?.value||'None'}
 ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.slice(0, 16000);
@@ -7802,14 +7821,14 @@ function buildIoDocumentHtml() {
     grouped[sec].push([id, data]);
   });
 
-  let oneTime = 0, monthly = 0, varyingTotal = 0;
+  let oneTime = 0, monthly = 0, annual = 0, varyingTotal = 0;
   let lineItemsHtml = '';
 
   SECTIONS.forEach(secDef => {
     const sec = secDef.id;
     if (!grouped[sec]) return;
     const items = grouped[sec];
-    let sectionOneTime = 0, sectionMonthly = 0, sectionVaryingTotal = 0;
+    let sectionOneTime = 0, sectionMonthly = 0, sectionAnnual = 0, sectionVaryingTotal = 0;
     let sectionRows = '';
 
     items.forEach(([id, data]) => {
@@ -7819,7 +7838,7 @@ function buildIoDocumentHtml() {
       const feeTotal = (data.fee || 0) * qty;
       const recurringTotal = (data.recurring || 0) * qty;
       if (feeTotal > 0) { oneTime += feeTotal; sectionOneTime += feeTotal; }
-      if (recurringTotal > 0) { monthly += recurringTotal; sectionMonthly += recurringTotal; }
+      if (recurringTotal > 0) { if (isYearlyService(id)) { annual += recurringTotal; sectionAnnual += recurringTotal; } else { monthly += recurringTotal; sectionMonthly += recurringTotal; } }
       // Varying-campaign real total tracked separately from genuine "/mo"
       // spend (2026-08-31, per Claire — the section subtotal blending a
       // varying campaign's AVERAGE into "$X/mo" was "a little confusing";
@@ -7855,7 +7874,7 @@ function buildIoDocumentHtml() {
         // been exercised by a real per-unit-AND-recurring item until now.
         amtCol = fmt(data.fee) + ' × ' + qty + ' = ' + fmt(feeTotal) + (recurringTotal > 0 || data.spend > 0 ? ' one-time' : '');
       } else if (feeTotal > 0 && (recurringTotal > 0 || data.spend > 0)) {
-        amtCol = fmt(feeTotal) + ' setup + ' + fmt(recurringTotal > 0 ? recurringTotal : data.spend) + '/mo';
+        amtCol = fmt(feeTotal) + ' setup + ' + fmt(recurringTotal > 0 ? recurringTotal : data.spend) + (recurringTotal > 0 ? recurringSuffix(id) : '/mo');
       } else if (feeTotal > 0) {
         amtCol = fmt(feeTotal) + ' one-time';
       } else if (recurringTotal > 0 && data.spend > 0) {
@@ -7865,14 +7884,14 @@ function buildIoDocumentHtml() {
         // Keeping the word (not deleting it outright, unlike the plain
         // spend-only case) since it's disambiguating WHICH of the two dollar
         // figures on this one line is the flat fee vs. the variable ad spend.
-        amtCol = fmt(recurringTotal) + '/mo + ' + fmt(data.spend) + '/mo spend';
+        amtCol = fmt(recurringTotal) + recurringSuffix(id) + ' + ' + fmt(data.spend) + '/mo spend';
       } else if (recurringTotal > 0) {
         // Same "show the × breakdown when qty > 1" treatment buildReview()
         // already gives a recurring per-unit item (2026-08-31 fix, found
         // alongside the "— × 1 = —" bug above) — a qty of 1 doesn't need it
         // (nothing to break down), so this only changes anything for an
         // actual multi-unit recurring add-on.
-        amtCol = (qty > 1 ? fmt(data.recurring) + ' × ' + qty + ' = ' + fmt(recurringTotal) : fmt(recurringTotal)) + '/mo';
+        amtCol = (qty > 1 ? fmt(data.recurring) + ' × ' + qty + ' = ' + fmt(recurringTotal) : fmt(recurringTotal)) + recurringSuffix(id);
       } else if (data.spend > 0) {
         // Same "varies by month" consistency check as buildReview() (2026-08-20)
         // -- this is the signed contract document, so it needs to match the
@@ -7947,10 +7966,11 @@ function buildIoDocumentHtml() {
 
     // Section header + rows + subtotal
     lineItemsHtml += `<tr class="section-row"><td colspan="4">${esc(secDef.label)}</td></tr>` + sectionRows;
-    if (sectionOneTime > 0 || sectionMonthly > 0 || sectionVaryingTotal > 0) {
+    if (sectionOneTime > 0 || sectionMonthly > 0 || sectionAnnual > 0 || sectionVaryingTotal > 0) {
       const parts = [];
       if (sectionOneTime > 0) parts.push(fmt(sectionOneTime) + ' one-time');
       if (sectionMonthly > 0) parts.push(fmt(sectionMonthly) + '/mo');
+      if (sectionAnnual > 0) parts.push(fmt(sectionAnnual) + '/yr');
       // Kept as its own separate piece, not folded into the "/mo" figure
       // above (2026-08-31, per Claire — "the subtotal line in Social Media
       // Ads is a little confusing") — a varying campaign's real dollar total
@@ -8200,6 +8220,7 @@ function buildIoDocumentHtml() {
   <table class="totals-table">
     ${oneTime > 0 ? `<tr><td class="label">One-Time Charges</td><td class="value">${fmt(oneTime)}</td></tr>` : ''}
     ${monthly > 0 ? `<tr class="grand"><td class="label">Monthly Recurring</td><td class="value">${fmt(monthly)}/mo</td></tr>` : ''}
+    ${annual > 0 ? `<tr class="grand"><td class="label">Annual</td><td class="value">${fmt(annual)}/yr</td></tr>` : ''}
     <!-- Shown as its own row, not folded into Monthly Recurring (2026-08-31,
          per Claire, same fix as the section subtotals above) — a varying
          campaign's real dollar figure is a multi-month TOTAL, not a flat
@@ -8219,7 +8240,7 @@ function buildIoDocumentHtml() {
      Each category total (One-Time/Monthly/Varying) stands on its own
      instead, with each LINE's own Flight column being the source of truth
      for when it actually starts billing. -->
-${(monthly > 0 || varyingTotal > 0) ? `<div class="first-month-note">See each service's own Flight dates above for when its billing actually starts — services on this IO may not all begin the same month.</div>` : ''}
+${(monthly > 0 || annual > 0 || varyingTotal > 0) ? `<div class="first-month-note">See each service's own Flight dates above for when its billing actually starts — services on this IO may not all begin the same month.</div>` : ''}
 
 ${(() => {
   // Group's own media (2026-10-11, Jim: "I love option b"): the radio, print or event
