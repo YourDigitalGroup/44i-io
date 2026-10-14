@@ -9969,12 +9969,15 @@ function adminOrderVaryingSpendTotal(o) {
 function adminOrderLiveTotals(o) {
   const items = o.line_items || [];
   const oneTime = items.reduce((s, li) => s + (Number(li.fee) || 0) + (Number(li.prorated_hosting_amt) || 0) + (Number(li.setup_fee_amt) || 0), 0);
+  // A yearly fee (Hosting Fee etc.) is stored in `recurring` but is shown as "/yr" and kept out of Monthly (2026-10-14).
+  const yearlyLine = li => ['yearly', 'annual'].includes(CATALOG_ROWS[li.service_id]?.billing_type);
   const monthly = items.reduce((s, li) => {
-    let m = Number(li.recurring) || 0;
+    let m = yearlyLine(li) ? 0 : (Number(li.recurring) || 0);
     if (li.spend > 0 && !adminLineSpendVaries(li)) m += Number(li.spend) || 0;
     return s + m;
   }, 0);
-  return { oneTime, monthly };
+  const annual = items.reduce((s, li) => s + (yearlyLine(li) ? (Number(li.recurring) || 0) : 0), 0);
+  return { oneTime, monthly, annual };
 }
 
 function renderAdminOrders() {
@@ -10028,7 +10031,7 @@ function renderAdminOrders() {
       <th style="padding:9px 10px"></th>
     </tr></thead>
     <tbody>${filtered.map(o => {
-      const { oneTime, monthly } = adminOrderLiveTotals(o);
+      const { oneTime, monthly, annual } = adminOrderLiveTotals(o);
       const varyingSpendTotal = adminOrderVaryingSpendTotal(o);
       const synced = o.trello_synced
         ? '<span title="Synced to Trello" style="color:#10B981;font-size:14px">✓</span>'
@@ -10050,7 +10053,7 @@ function renderAdminOrders() {
         <td style="padding:9px 10px">${esc(o._client_name || '—')}${helpBadge}${cancelBadge}${revisedBadge}</td>
         <td style="padding:9px 10px;color:var(--muted)">${esc(o.ae_name || '—')}</td>
         <td style="padding:9px 10px;text-align:right;font-weight:600">${fmtMoney(oneTime)}</td>
-        <td style="padding:9px 10px;text-align:right;font-weight:600">${monthly ? fmtMoney(monthly) + '/mo' : ''}${monthly && varyingSpendTotal ? '<br>' : ''}${varyingSpendTotal ? `<span style="font-weight:400;color:var(--muted);font-size:11px">${fmtMoney(varyingSpendTotal)} total (varies)</span>` : (!monthly ? '—' : '')}</td>
+        <td style="padding:9px 10px;text-align:right;font-weight:600">${monthly ? fmtMoney(monthly) + '/mo' : ''}${monthly && annual ? '<br>' : ''}${annual ? fmtMoney(annual) + '/yr' : ''}${(monthly || annual) && varyingSpendTotal ? '<br>' : ''}${varyingSpendTotal ? `<span style="font-weight:400;color:var(--muted);font-size:11px">${fmtMoney(varyingSpendTotal)} total (varies)</span>` : (!monthly && !annual ? '—' : '')}</td>
         <td style="padding:9px 10px;color:var(--muted);font-size:11px">${fmtDate(o.koc_date)}${o.koc_time ? '<br>'+esc(o.koc_time) : ''}</td>
         <td style="padding:9px 10px;text-align:center">${synced}</td>
         <td style="padding:9px 10px;text-align:right">
@@ -10137,7 +10140,8 @@ async function viewOrderDetail(orderId) {
         amtParts.push(item.qty != null ? `${fmtMoney(unitFee)} × ${liQty} = ${fmtMoney(item.fee)} one-time` : fmtMoney(item.fee) + ' one-time');
       }
       if (item.recurring > 0) {
-        amtParts.push(liQty > 1 ? `${fmtMoney(item.recurring / liQty)} × ${liQty} = ${fmtMoney(item.recurring)}/mo` : fmtMoney(item.recurring) + '/mo');
+        const rsuf = ['yearly', 'annual'].includes(CATALOG_ROWS[item.service_id]?.billing_type) ? '/yr' : '/mo';
+        amtParts.push(liQty > 1 ? `${fmtMoney(item.recurring / liQty)} × ${liQty} = ${fmtMoney(item.recurring)}${rsuf}` : fmtMoney(item.recurring) + rsuf);
       }
       // Real campaign total instead of the misleading average (2026-08-28,
       // per Claire) -- Admin's own Orders tab had the same bug already
@@ -10463,6 +10467,7 @@ async function viewOrderDetail(orderId) {
           <div><strong>End:</strong> ${fmtDate(o.campaign_end)}</div>
           <div><strong>One-Time:</strong> ${fmtMoney(adminOrderLiveTotals(o).oneTime)}</div>
           <div><strong>Monthly:</strong> ${adminOrderLiveTotals(o).monthly ? fmtMoney(adminOrderLiveTotals(o).monthly) + '/mo' : '—'}</div>
+          ${adminOrderLiveTotals(o).annual ? `<div><strong>Annual:</strong> ${fmtMoney(adminOrderLiveTotals(o).annual)}/yr</div>` : ''}
           ${adminOrderVaryingSpendTotal(o) ? `<div><strong>Varying Campaign Total:</strong> ${fmtMoney(adminOrderVaryingSpendTotal(o))} <span style="color:var(--muted);font-weight:400">(see per-month breakdown below)</span></div>` : ''}
           ${o.campaign_notes ? '<div style="margin-top:6px;font-size:11px;color:var(--muted)"><strong>Notes:</strong> ' + esc(o.campaign_notes) + '</div>' : ''}
         </div>
@@ -12358,7 +12363,7 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason, ctx 
   const fmtD = s => s ? new Date(String(s).slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
   const money = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const shown = variantName || newSvc.accounting_label || newSvc.label;
-  const amount = Number(item.spend) > 0 ? `${money(item.spend)}/mo` : Number(item.recurring) > 0 ? `${money(item.recurring)}/mo`
+  const amount = Number(item.spend) > 0 ? `${money(item.spend)}/mo` : Number(item.recurring) > 0 ? `${money(item.recurring)}${['yearly', 'annual'].includes(newSvc.billing_type) ? '/yr' : '/mo'}`
     : `${money(item.fee)} one-time${Number(item.qty) > 1 ? ` (${item.qty} × ${money(item.unit_fee)})` : ''}`;
   const flight = newSvc.billing_type === 'one_time' ? `Flight: ${fmtD(item.start_date)}` : `Flight: ${fmtD(item.start_date)} to ${item.end_date ? fmtD(item.end_date) : 'Ongoing'}`;
   const summary = `**${shown}**\n${amount}\n${flight}${item.notes ? `\nNotes: ${item.notes}` : ''}`;
@@ -13056,7 +13061,7 @@ async function generateAdminRevisedIoPdfBlob(o) {
   // row: budget_mode-aware, quantity breakdown, whole-campaign lines totalled
   // separately, and a one-time item shows just its date (nothing "Ongoing"
   // about a one-off fee).
-  const { oneTime, monthly, campaignTotal } = orderLiveTotals(o);
+  const { oneTime, monthly, annual, campaignTotal } = orderLiveTotals(o);
   const rows = items.map(item => {
     const label = CATALOG_ROWS[item.service_id]?.accounting_label || item.accounting_label || item.label || item.service_id;
     const amt = describeLineItemAmount(item);
@@ -13175,7 +13180,7 @@ async function generateAdminRevisedIoPdfBlob(o) {
 
     <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:14px 0 6px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Current Services</div>
     <table style="width:100%;border-collapse:collapse">${rows}</table>
-    <div style="margin-top:10px;font-size:9.5pt;color:#111827"><strong>One-Time Total:</strong> ${fmt(oneTime)} &nbsp;&nbsp; <strong>Monthly Recurring:</strong> ${fmt(monthly)}/mo${campaignTotal > 0 ? ` &nbsp;&nbsp; <strong>Whole Campaign Total${(() => { const n = items.filter(li => describeLineItemAmount(li).varies).length; return n > 1 ? 's' : ''; })()}:</strong> ${fmt(campaignTotal)}` : ''}</div>
+    <div style="margin-top:10px;font-size:9.5pt;color:#111827"><strong>One-Time Total:</strong> ${fmt(oneTime)} &nbsp;&nbsp; <strong>Monthly Recurring:</strong> ${fmt(monthly)}/mo${annual > 0 ? ` &nbsp;&nbsp; <strong>Annual:</strong> ${fmt(annual)}/yr` : ''}${campaignTotal > 0 ? ` &nbsp;&nbsp; <strong>Whole Campaign Total${(() => { const n = items.filter(li => describeLineItemAmount(li).varies).length; return n > 1 ? 's' : ''; })()}:</strong> ${fmt(campaignTotal)}` : ''}</div>
     ${partnerMediaRows ? `
     <div style="font-size:8pt;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${color};margin:18px 0 4px;padding-bottom:5px;border-bottom:1.5px solid ${color}">Group's Own Media</div>
     <div style="font-size:8.5pt;color:#6B7280;font-style:italic;margin-bottom:6px">Billed by ${esc(group.name || 'the group')} directly. Not included in the totals above.</div>

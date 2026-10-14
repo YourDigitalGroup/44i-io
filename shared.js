@@ -434,16 +434,20 @@ function lineSpendVaries(li) {
 function describeLineItemAmount(item) {
   const fmtMoney = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const parts = [];
-  let oneTime = 0, monthly = 0, campaignTotal = 0;
+  let oneTime = 0, monthly = 0, annual = 0, campaignTotal = 0;
   const qty = Number(item.qty) || 1;
+  // A yearly/annual fee (Hosting Fee etc.) is stored in `recurring` but is "/yr" and never part of the monthly total
+  // (2026-10-14, Rollins Construction). Decided from the catalog's billing_type, same as index.html's isYearlyService().
+  const yearly = ['yearly', 'annual'].includes(CATALOG_ROWS[item.service_id]?.billing_type);
+  const rsuf = yearly ? '/yr' : '/mo';
   if (item.fee > 0) {
     const unitFee = item.unit_fee != null ? Number(item.unit_fee) : item.fee / qty;
     parts.push(item.qty != null ? `${fmtMoney(unitFee)} × ${qty} = ${fmtMoney(item.fee)} one-time` : fmtMoney(item.fee) + ' one-time');
     oneTime += Number(item.fee);
   }
   if (item.recurring > 0) {
-    parts.push(qty > 1 ? `${fmtMoney(item.recurring / qty)} × ${qty} = ${fmtMoney(item.recurring)}/mo` : fmtMoney(item.recurring) + '/mo');
-    monthly += Number(item.recurring);
+    parts.push(qty > 1 ? `${fmtMoney(item.recurring / qty)} × ${qty} = ${fmtMoney(item.recurring)}${rsuf}` : fmtMoney(item.recurring) + rsuf);
+    if (yearly) annual += Number(item.recurring); else monthly += Number(item.recurring);
   }
   const varies = lineSpendVaries(item);
   if (item.spend > 0 || (varies && item.month_budgets.some(m => Number(m.amount) > 0))) {
@@ -461,15 +465,15 @@ function describeLineItemAmount(item) {
   // A pure one-time cost happens on a date; it has no "end" and never
   // "continues" -- so no end date / "Ongoing" for it.
   const isOneTimeOnly = item.fee > 0 && !(item.recurring > 0) && !(item.spend > 0) && !varies;
-  return { text: parts.join(' + ') || '—', oneTime, monthly, campaignTotal, varies, isOneTimeOnly };
+  return { text: parts.join(' + ') || '—', oneTime, monthly, annual, campaignTotal, varies, isOneTimeOnly };
 }
 function orderLiveTotals(order) {
   const items = Array.isArray(order.line_items) ? order.line_items : [];
   return items.reduce((acc, li) => {
     const d = describeLineItemAmount(li);
-    acc.oneTime += d.oneTime; acc.monthly += d.monthly; acc.campaignTotal += d.campaignTotal;
+    acc.oneTime += d.oneTime; acc.monthly += d.monthly; acc.annual += d.annual; acc.campaignTotal += d.campaignTotal;
     return acc;
-  }, { oneTime: 0, monthly: 0, campaignTotal: 0 });
+  }, { oneTime: 0, monthly: 0, annual: 0, campaignTotal: 0 });
 }
 
 // ── Edit history, grouped into what a reader actually did (2026-09-24, per
@@ -706,7 +710,7 @@ function renderOrderDetailModal(order, sections) {
       <div><strong>Campaign Start:</strong> ${fmtDate(order.campaign_start)}</div>
       <div><strong>Campaign End:</strong> ${fmtDate(order.campaign_end)}</div>
       <div><strong>One-Time Total:</strong> ${fmtMoney(liveTotals.oneTime)}</div>
-      <div><strong>Monthly Total:</strong> ${fmtMoney(liveTotals.monthly)}/mo${liveTotals.campaignTotal > 0 ? ` &nbsp;·&nbsp; <strong>Campaign Total:</strong> ${fmtMoney(liveTotals.campaignTotal)}` : ''}</div>
+      <div><strong>Monthly Total:</strong> ${fmtMoney(liveTotals.monthly)}/mo${liveTotals.annual > 0 ? ` &nbsp;·&nbsp; <strong>Annual:</strong> ${fmtMoney(liveTotals.annual)}/yr` : ''}${liveTotals.campaignTotal > 0 ? ` &nbsp;·&nbsp; <strong>Campaign Total:</strong> ${fmtMoney(liveTotals.campaignTotal)}` : ''}</div>
     </div>
     ${order.campaign_notes ? `<p style="font-size:11px;color:var(--muted);margin-bottom:12px"><strong>Campaign Notes:</strong> ${esc(order.campaign_notes)}</p>` : ''}
     <p style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Services Ordered</p>
