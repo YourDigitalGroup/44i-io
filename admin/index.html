@@ -5937,6 +5937,12 @@ function updateAccountingYdaPreview() {
 // SEM Business Pro's $200), so the split preview below can compute $ amounts without
 // re-looking up the service on every keystroke. Only meaningful while the form is open.
 let ACCOUNTING_CURRENT_SETUP_FEE_AMT = null;
+// The setup-fee split already stored on the row being edited (2026-10-14). The box is hidden for a service whose setup fee is
+// currently switched off (and for pairing overrides); Save used to send that hidden, blank box as "no split" and erase the stored
+// number. While the box is hidden, Save now sends back what was stored.
+let ACCOUNTING_STORED_SETUP_FEE_CUT = null;
+// True when the row being edited does not exist yet ("Set Up" / first override) -- Save refuses to create an all-empty row.
+let ACCOUNTING_EDITING_NEW_ROW = false;
 
 function updateAccountingSetupFeePreview() {
   const cutVal = parseFloat(document.getElementById('admin-accounting-setup-fee-cut-pct').value);
@@ -5962,6 +5968,8 @@ function adminEditAccounting(serviceId, pairWithServiceId) {
   // never touching serviceId's own plain (unpaired) entry.
   const pairKey = pairWithServiceId || '';
   const a = ALL_ACCOUNTING_MAP.find(x => x.service_id === serviceId && (x.pair_with_service_id || '') === pairKey);
+  ACCOUNTING_EDITING_NEW_ROW = !a;
+  ACCOUNTING_STORED_SETUP_FEE_CUT = a?.setup_fee_cut_pct ?? null;
   const pairService = pairKey ? allServicesMap.find(x => x.id === pairKey) : null;
   document.getElementById('admin-accounting-form-title').textContent = 'Accounting Map — ' + (s.accounting_label || s.label) +
     (pairService ? ` (w/ ${pairService.accounting_label || pairService.label})` : '');
@@ -6079,11 +6087,21 @@ async function adminSaveAccountingMap() {
   spendTiers.sort(byMaxAsc);
   inPlatformTiers.sort(byMaxAsc);
 
+  // The setup-fee box is only shown when this service's setup fee is switched on (never for a pairing override). When it is hidden
+  // its blank value does not mean "no split" -- keep whatever is stored.
+  const setupFeeBoxShown = document.getElementById('admin-accounting-setup-fee-block').style.display !== 'none';
+  const setupFeeCutToSave = setupFeeBoxShown ? (setupFeeCutVal === '' ? null : parseFloat(setupFeeCutVal)) : ACCOUNTING_STORED_SETUP_FEE_CUT;
+  const nothingEntered = [cutVal, budgetedVal, platformCpmVal, inPlatformPctVal, cpcLowVal, cpcHighVal].every(v => v === '') && !spendTiers.length && !inPlatformTiers.length && setupFeeCutToSave == null;
+  if (ACCOUNTING_EDITING_NEW_ROW && nothingEntered) {
+    // An all-empty row would be saved as a real (empty) entry that overrides the service's own / inherited percentages.
+    showToast('Nothing was entered, so nothing was saved. Fill in at least one value, or press Cancel.', 'error');
+    return;
+  }
   const payload = {
     fortyfouri_cut_pct: cutVal === '' ? null : parseFloat(cutVal),
     budgeted_spend_pct: budgetedVal === '' ? null : parseFloat(budgetedVal),
     platform_cpm: platformCpmVal === '' ? null : parseFloat(platformCpmVal),
-    setup_fee_cut_pct: setupFeeCutVal === '' ? null : parseFloat(setupFeeCutVal),
+    setup_fee_cut_pct: setupFeeCutToSave,
     in_platform_pct: inPlatformPctVal === '' ? null : parseFloat(inPlatformPctVal),
     cpc_low: cpcLowVal === '' ? null : parseFloat(cpcLowVal),
     cpc_high: cpcHighVal === '' ? null : parseFloat(cpcHighVal),
@@ -11444,6 +11462,18 @@ function adminRefreshBudgetTotalPreview(orderId, serviceId) {
   }).join('');
 }
 
+// Is the budget the AM is about to save exactly what the line already has? (2026-10-14) Saving "the same thing" used to re-split
+// the months (clearing any paused month in whole-campaign-total mode), re-write a flat rate over every campaign month, and post a
+// "budget changed from $X to $X" comment + revised PDF to Trello. `newBudget` is { rate } | { split } | { rows } for the chosen mode.
+function adminBudgetUnchanged(mode, oldMode, item, newBudget) {
+  if (mode !== oldMode) return false;
+  const cents = n => Math.round((Number(n) || 0) * 100);
+  const old = Array.isArray(item.month_budgets) ? item.month_budgets : [];
+  if (mode === 'monthly') return cents(newBudget.rate) === cents(item.spend);
+  const next = mode === 'total' ? newBudget.split : newBudget.rows;
+  if (!Array.isArray(next) || next.length !== old.length) return false;
+  return next.every((m, i) => m.month === old[i].month && cents(m.amount) === cents(old[i].amount) && (mode === 'total' || !!m.paused === !!old[i].paused));
+}
 async function adminSaveBudgetEdit(orderId, serviceId) {
   let hadFailures = false;
   if (!adminAeConfirmed('ae-confirm-budget-' + serviceId)) return;
@@ -11497,6 +11527,12 @@ async function adminSaveBudgetEdit(orderId, serviceId) {
     summary = `${fmt2(rows.reduce((s, m) => s + m.amount, 0))} custom by month`;
   }
 
+  const budgetUnchanged = adminBudgetUnchanged(mode, oldMode, item, { rate: parseFloat(document.getElementById(`edit-budget-monthly-${serviceId}`)?.value), split: mode === 'total' ? adminSplitAmountAcrossMonths(parseFloat(document.getElementById(`edit-budget-total-${serviceId}`)?.value) || 0, adminBudgetEditDates(serviceId, item, o).start, adminBudgetEditDates(serviceId, item, o).end) : null, rows: mode === 'custom' ? [...document.querySelectorAll(`.edit-month-value-${CSS.escape(serviceId)}`)].map(inp => ({ month: inp.dataset.month, amount: parseFloat(inp.value) || 0, paused: inp.dataset.paused === '1' })) : null });
+  const extraFields = adminCollectExtraEditFields(serviceId, item);
+  if (budgetUnchanged) {
+    saves.length = 0;
+    if (!Object.keys(extraFields).length) { showToast('Nothing was changed, so nothing was saved.', 'error'); resetBtn(); return; }
+  }
   const svc = CATALOG_ROWS[serviceId] || {};
   const newHistory = [];
   for (const { field, value } of saves) {
@@ -11525,10 +11561,9 @@ async function adminSaveBudgetEdit(orderId, serviceId) {
   // ONE human-readable line for the Trello comment ("budget changed from
   // $3,000.00/mo to $3,000.00 whole campaign total ..."), not one per
   // underlying field save.
-  const descriptions = [`budget changed from ${oldDesc} to ${summary}`];
+  const descriptions = budgetUnchanged ? [] : [`budget changed from ${oldDesc} to ${summary}`];
   // Any changed Start/End Date or Variant fields (2026-08-31) get saved and
   // folded into this SAME comment, not a second separate one.
-  const extraFields = adminCollectExtraEditFields(serviceId, item);
   if (Object.keys(extraFields).length) {
     const extra = await adminSaveExtraEditFields(orderId, serviceId, item, extraFields);
     descriptions.push(...extra.descriptions);
