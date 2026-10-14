@@ -1126,6 +1126,17 @@ function collectServicePayload(i) {
   return null;
 }
 
+// A batch whose first items went in but a later one failed (2026-10-14, audit finding): the AE is told to "try the rest again", but
+// the already-submitted rows used to stay ticked, so the retry sent them a SECOND time (a duplicate pending request for the AM).
+// Now those rows are locked as "Submitted", and the retry reuses the same batch id so Admin still groups it as one submission.
+let PARTIAL_BATCH = null; // { clientId, id }
+function markServiceSubmitted(i) {
+  const chk = document.getElementById(`svc-chk-${i}`); if (!chk) return;
+  chk.checked = false; chk.disabled = true;
+  document.getElementById(`svc-detail-${i}`)?.classList.remove('open');
+  const meta = chk.closest('.svc-row')?.querySelector('.svc-meta');
+  if (meta && !meta.querySelector('.submitted-tag')) meta.insertAdjacentHTML('beforeend', ' · <strong class="submitted-tag" style="color:#166534">✓ Submitted — do not resubmit</strong>');
+}
 async function submitRequests() {
   const aeName = document.getElementById('ae-name').value.trim();
   if (!aeName) { showToast('Please select your name', 'error'); return; }
@@ -1152,6 +1163,7 @@ async function submitRequests() {
     // Which campaign line this is about -- the only handle an order-less
     // line has (2026-09-24). Null for an order-backed service, whose
     // order_id + service_id identify it as before.
+    p._i = i;
     p.campaign_line_id = ACTIVE_SERVICES[i].campaign_line_id || null;
     p.order_id = ACTIVE_SERVICES[i].order_id || null;
     // Stored inside requested_changes so no database change is needed for
@@ -1168,7 +1180,8 @@ async function submitRequests() {
   // per Claire -- "could we have [notifications] based on the submission" --
   // Admin groups Pending Requests by this id and holds the Trello comment/
   // resolution email until every item sharing it has been approved/rejected).
-  const submissionBatchId = crypto.randomUUID();
+  if (!PARTIAL_BATCH || PARTIAL_BATCH.clientId !== selectedClientId) PARTIAL_BATCH = { clientId: selectedClientId, id: crypto.randomUUID() };
+  const submissionBatchId = PARTIAL_BATCH.id;
   const submitted = [];
   try {
     for (const p of payloads) {
@@ -1183,7 +1196,9 @@ async function submitRequests() {
         })
       });
       submitted.push(p);
+      markServiceSubmitted(p._i);
     }
+    PARTIAL_BATCH = null;
   } catch (e) {
     // A partial failure here (e.g. item 2 of 3 fails) previously left
     // whatever DID submit successfully completely unnotified -- those rows
@@ -1199,7 +1214,7 @@ async function submitRequests() {
       await postSubmitTrelloComments(aeName, submitted);
     }
     showToast(submitted.length
-      ? `${submitted.length} of ${payloads.length} submitted before an error: ${e.message}. The AM has been notified about those. Please try the rest again.`
+      ? `${submitted.length} of ${payloads.length} submitted before an error: ${e.message}. The AM has been notified about those, and they are now locked so they cannot be sent twice. Please submit the rest again.`
       : 'Could not submit: ' + e.message, 'error');
     btn.disabled = false; btn.textContent = 'Submit Request(s)';
     return;

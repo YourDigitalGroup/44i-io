@@ -31839,3 +31839,21 @@ Claire: proceed in the suggested order (2a, then the Accounting pause rule, then
 **Verified:** `tests/campaign-total-wording.test.js` (13 checks, real browser for Review + printed IO) fails on the old form (3 failures matching what was seen) and passes now; updated one pattern in `yearly-fee-display.test.js`. Full suite 26 files / 301 checks green. NOT proven by simulation: an actual Trello card/email from a live submit — needs one real test order from Claude Test Group (an evenly split Whole Campaign Total plus a $7.50 line).
 
 **Follow-up test (2026-10-14, before merge):** `tests/io-form-total-submit.test.js` runs the REAL submit (fake Supabase + fake Trello/email) with an evenly split $3,000 Whole Campaign Total and a $7.50 line. On the new code: order saves, saved `total_monthly` 0 (campaign total kept out of monthly), Trello card text + email say "$3,000 total" and "$7.50", Monthly Recurring $0; a plain monthly $1,500 spend is unchanged. On the previous commit (465b900) the same test fails 4 ways (saved monthly 1,500, "$1,500/mo" text, "$7.5", Monthly Recurring not $0). Suite 27 files / 308 checks green. Still unproven: a real Trello card/email from the live site (fake proxy only).
+
+**LIVE CHECK PASSED (2026-10-14, noon):** Claire merged and placed a real test order from Claude Test Group (evenly split Whole Campaign Total + cents line); Review, PDF, Trello/IO cards and email all read correctly. Audit item #1 closed. Test Trello cards still to be archived by Claire.
+
+---
+
+## 2026-10-14 — Companion: a half-failed batch can no longer be sent twice (`companion/index.html` only, no SQL, NOT the submission path; Companion not live yet)
+**Found (audit, parked since 10-13):** if item 2 of 3 failed, item 1 was already saved and the AE was told "try the rest again" — but item 1 stayed ticked, so the retry sent it a second time (a duplicate pending request for the AM, under a different batch id).
+**Fixed:** rows that were saved are now unticked, locked and tagged "✓ Submitted — do not resubmit"; the message says so; the retry reuses the same batch id (Admin groups it as one submission) and only sends what is left. The batch id resets after a clean finish or if a different client is picked.
+**Verified:** `tests/companion-partial-submit.test.js` (7 checks, real `submitRequests()` in jsdom with a fake database call that fails on item 2): retry sends only items 2–3, batch id shared, AM notified only about item 1. Old code has none of this (the test fails loudly on it). Suite 28 files green.
+**Not covered:** a request that timed out AFTER the database saved it looks like a failure to the AE and would be re-sent — Admin's pending list is the place to spot that; no dedupe was added (would need SQL).
+
+---
+
+## 2026-10-14 — Admin: "Check types" button on the Trello Template Titles panel (Admin only, read-only, no SQL, not the submission path)
+**Why:** a card template saved as "List" quietly made the wrong card (Rollins; 16 services had the same mismatch). Claire asked for a way to catch these without hunting.
+**What it does:** Admin → Services → "Trello Template Titles" → **Check types**. For every distinct template it asks Trello whether the saved type works; if not, whether the OTHER type does. Result per template: ✓ Matches / ✗ Saved as list but it is a card (change Template Type to Card) / ✗ Trello cannot find it / ? Trello did not answer (busy) — never reported as a mismatch. Wrong ones sort first; services sharing a template are listed together. It only reads from Trello and changes nothing; fix a mismatch in the service's own editor.
+**Verified:** `tests/admin-template-type-check.test.js` (9 checks, real Admin code in jsdom, fake Trello incl. a rate-limited answer; asserts only read calls were made). Not verified against live Trello (fake only) — Claire's first click is the live check.
+**Honest note:** one full-suite run during this work showed 1 failing check that I could not reproduce; the next four full runs were all green (29 files, 324 checks). Treated as a one-off timing flake in a browser test, not explained — if it recurs, check which file.

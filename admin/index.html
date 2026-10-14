@@ -843,6 +843,7 @@
           <div id="admin-template-titles-results"><p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Click "Load" to fetch live titles from Trello.</p></div>
           <div style="display:flex;gap:10px;margin-top:10px">
             <button onclick="adminListTemplateTitles()" class="btn-quiet-green">Load</button>
+            <button onclick="adminCheckTemplateTypes()" class="btn-quiet-green" title="Asks Trello whether each template really is the type it is saved as. Read-only.">Check types</button>
             <button onclick="toggleTemplateTitlesPanel()" class="btn-quiet-green">Close</button>
           </div>
         </div>
@@ -7097,6 +7098,58 @@ async function adminListTemplateTitles() {
   });
   html += '</tbody></table>';
   resultsEl.innerHTML = html;
+}
+
+// Template TYPE checker (2026-10-14): a service's template is saved as a "list" (24-character ID) or a single "card"
+// (8-character code); a card saved as "list" quietly made the WRONG card (Rollins, 16 services found the same way).
+// For every distinct template this asks Trello whether the saved type works; if not, whether the OTHER type does.
+// Read-only: it makes Trello reads only and changes nothing -- fix a mismatch in the service's own editor.
+async function adminProbeTemplate(ref, asType) {
+  // returns 'ok' | 'no' | 'unknown' (Trello busy / unreachable -- never reported as a mismatch)
+  try {
+    const res = await fetch(PROXY, {
+      method: 'POST',
+      headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(asType === 'card' ? { target: 'trello_get_card', card_id: ref } : { target: 'trello_get_list_cards', list_id: ref }),
+    });
+    if (res.status === 429 || res.status >= 500) return 'unknown';
+    const body = await res.json().catch(() => null);
+    if (asType === 'card') return body && typeof body === 'object' && !Array.isArray(body) && body.id ? 'ok' : 'no';
+    return Array.isArray(body) ? 'ok' : 'no';
+  } catch (e) { return 'unknown'; }
+}
+async function adminCheckTemplateTypes() {
+  const resultsEl = document.getElementById('admin-template-titles-results');
+  const templated = Object.values(CATALOG_ROWS).filter(r => r.trello_template_ref);
+  if (!templated.length) { resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">No services have a Trello Template linked yet.</p>'; return; }
+  resultsEl.innerHTML = '<p style="color:var(--muted);font-size:12px;text-align:center;padding:12px">Checking every template against Trello…</p>';
+  const groups = {};
+  templated.forEach(r => {
+    const type = r.trello_template_type || 'list';
+    (groups[type + ':' + r.trello_template_ref] = groups[type + ':' + r.trello_template_ref] || { type, ref: r.trello_template_ref, services: [] }).services.push(r);
+  });
+  const rows = await Promise.all(Object.values(groups).map(async g => {
+    const other = g.type === 'card' ? 'list' : 'card';
+    const own = await adminProbeTemplate(g.ref, g.type);
+    if (own === 'ok') return { ...g, verdict: 'ok' };
+    if (own === 'unknown') return { ...g, verdict: 'unknown' };
+    const alt = await adminProbeTemplate(g.ref, other);
+    if (alt === 'ok') return { ...g, verdict: 'wrong', other };
+    return { ...g, verdict: alt === 'unknown' ? 'unknown' : 'broken' };
+  }));
+  const order = { wrong: 0, broken: 1, unknown: 2, ok: 3 };
+  rows.sort((a, b) => order[a.verdict] - order[b.verdict] || a.services[0].label.localeCompare(b.services[0].label));
+  const count = v => rows.filter(r => r.verdict === v).length;
+  const say = r => ({
+    wrong: `<span style="color:#991B1B;font-weight:700">✗ Saved as ${esc(r.type)}, but it is a ${esc(r.other)} — change Template Type to ${esc(r.other === 'card' ? 'Card' : 'List')}</span>`,
+    broken: '<span style="color:#991B1B;font-weight:700">✗ Trello cannot find this as a card or a list — the code may be wrong or the card deleted</span>',
+    unknown: '<span style="color:#92400E;font-weight:600">? Trello did not answer (busy or unreachable) — run the check again</span>',
+    ok: '<span style="color:#166534">✓ Matches</span>' }[r.verdict]);
+  let html = `<p style="font-size:12px;margin-bottom:8px"><strong>${rows.length}</strong> distinct templates checked (${templated.length} services): <span style="color:#166534">${count('ok')} match</span> · <span style="color:#991B1B">${count('wrong')} wrong type · ${count('broken')} not found</span> · <span style="color:#92400E">${count('unknown')} not checked</span>. Nothing was changed.</p>
+    <table style="font-size:12.5px;border-collapse:collapse;width:100%"><thead><tr style="background:var(--light)">
+      <th style="padding:9px 10px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase">Service(s)</th><th style="padding:9px 10px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase">Saved type · code</th><th style="padding:9px 10px;text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase">Result</th></tr></thead><tbody>`;
+  rows.forEach(r => { html += `<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px">${r.services.map(x => esc(x.label)).join('<br>')}</td><td style="padding:8px 10px;font-family:monospace">${esc(r.type)} · ${esc(r.ref)}</td><td style="padding:8px 10px">${say(r)}</td></tr>`; });
+  resultsEl.innerHTML = html + '</tbody></table>';
 }
 
 async function adminAuditClientTrelloCards() {
