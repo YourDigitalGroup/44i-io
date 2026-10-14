@@ -3153,6 +3153,11 @@ async function adminFreshenList(key, reload) {
 }
 const adminReloadGroups = async () => { allGroups = await adminLoadAllGroups(); };
 const adminReloadClients = async () => { ALL_CLIENTS = await sbAll('rpc/admin_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || []; };
+const adminReloadUsers = async () => { ALL_ADMIN_USERS = await sb('rpc/admin_get_staff', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || []; };
+const adminReloadStrategists = async () => { ALL_STRATEGISTS = await sb('rpc/admin_get_strategists', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || []; };
+const adminReloadSections = async () => { SECTIONS = await sb('sections?order=sort_order&select=*') || []; };
+const adminReloadIntakeForms = async () => { ALL_INTAKE_FORMS = await sb('intake_forms?order=title&select=*') || []; };
+const adminReloadServices = async () => { allServicesMap = await sb('services?order=section,sort_order&select=*') || []; };
 const adminReloadAes = async () => { ALL_AES = await sbAll('rpc/admin_get_aes', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || []; };
 
 async function adminLoadAllGroups() {
@@ -3220,7 +3225,7 @@ async function toggleHostingSettings() {
   const panel = document.getElementById('admin-hosting-settings');
   const opening = panel.style.display === 'none';
   panel.style.display = opening ? 'block' : 'none';
-  if (opening && !HOSTING_SETTINGS_ROWS.length) await loadHostingSettings();
+  if (opening) await loadHostingSettings(); // every open, not just the first (2026-10-14): Save writes every row shown
 }
 
 async function loadHostingSettings() {
@@ -3390,6 +3395,7 @@ async function loadSuggestedMap() {
   try {
     // ALL services (active + inactive) so parked rows are visible
     allServicesMap = await sb('services?order=section,sort_order&select=*') || [];
+    ADMIN_LIST_LOADED_AT.services = Date.now();
     // Populate section filter
     const sel = document.getElementById('map-filter-section');
     const sections = [...new Set(allServicesMap.map(s => s.section))];
@@ -3670,6 +3676,7 @@ async function loadAdminSections() {
   try {
     // ALL sections (active + inactive), same "show parked rows too" pattern as Suggested Map.
     SECTIONS = await sb('sections?order=sort_order&select=*') || [];
+    ADMIN_LIST_LOADED_AT.sections = Date.now();
     renderAdminSectionsList();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading sections: ${esc(e.message)}</p>`;
@@ -3883,11 +3890,12 @@ function adminNewSection() {
   document.getElementById('admin-section-form').scrollIntoView({behavior:'smooth'});
 }
 
-function adminEditSection(id) {
+async function adminEditSection(id) {
   if (!canSee('sectionsManage')) {
     showToast('Section management is restricted to super admins', 'error');
     return;
   }
+  if (!(await adminFreshenList('sections', adminReloadSections))) return;
   const sec = SECTIONS.find(s => s.id === id);
   if (!sec) return;
   document.getElementById('admin-section-form-title').textContent = 'Edit Section — ' + sec.label;
@@ -4028,6 +4036,7 @@ async function loadAdminIntakeForms() {
   el.innerHTML = '<p style="color:var(--muted);font-size:13px;text-align:center;padding:30px">Loading…</p>';
   try {
     ALL_INTAKE_FORMS = await sb('intake_forms?order=title&select=*') || [];
+    ADMIN_LIST_LOADED_AT.intake = Date.now();
     renderAdminIntakeList();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading intake forms: ${esc(e.message)}</p>`;
@@ -4471,11 +4480,12 @@ function adminNewIntakeForm() {
   document.getElementById('admin-intake-form').scrollIntoView({behavior:'smooth'});
 }
 
-function adminEditIntakeForm(id) {
+async function adminEditIntakeForm(id) {
   if (!canSee('intakeFormsManage')) {
     showToast('Intake form management is restricted to super admins', 'error');
     return;
   }
+  if (!(await adminFreshenList('intake', adminReloadIntakeForms))) return;
   const f = ALL_INTAKE_FORMS.find(x => x.id === id);
   if (!f) return;
   const def = (typeof f.definition === 'string') ? JSON.parse(f.definition || '{}') : (f.definition || {});
@@ -5291,6 +5301,7 @@ async function loadAdminStrategists() {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
+    ADMIN_LIST_LOADED_AT.strategists = Date.now();
     renderAdminStrategistList();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading strategists: ${esc(e.message)}</p>`;
@@ -5341,7 +5352,8 @@ function adminNewStrategist() {
   document.getElementById('admin-strategist-form').scrollIntoView({behavior:'smooth'});
 }
 
-function adminEditStrategist(id) {
+async function adminEditStrategist(id) {
+  if (!(await adminFreshenList('strategists', adminReloadStrategists))) return;
   const s = ALL_STRATEGISTS.find(x => x.id === id);
   if (!s) return;
   document.getElementById('admin-strategist-form-title').textContent = 'Edit Strategist — ' + s.name;
@@ -5470,6 +5482,7 @@ async function loadAdminUsers() {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
+    ADMIN_LIST_LOADED_AT.users = Date.now();
     renderAdminUsersList();
   } catch(e) {
     el.innerHTML = `<p style="color:#EF4444;font-size:13px;text-align:center;padding:30px">Error loading users: ${esc(e.message)}</p>`;
@@ -5537,7 +5550,8 @@ function adminNewUser() {
   document.getElementById('admin-user-form').scrollIntoView({behavior:'smooth'});
 }
 
-function adminEditUser(name) {
+async function adminEditUser(name) {
+  if (!(await adminFreshenList('users', adminReloadUsers))) return;
   const u = ALL_ADMIN_USERS.find(x => x.name === name);
   if (!u) return;
   document.getElementById('admin-user-form-title').textContent = 'Edit User — ' + u.name;
@@ -7948,7 +7962,7 @@ function adminNewService() {
   document.getElementById('admin-service-form').scrollIntoView({behavior:'smooth'});
 }
 
-function adminEditService(id) {
+async function adminEditService(id) {
   // Same restriction as adminNewService() — this closes the exact gap found live: an
   // AM login could open this form and type into it (the save was already correctly
   // blocked server-side, but the form itself shouldn't have been reachable at all).
@@ -7956,6 +7970,7 @@ function adminEditService(id) {
     showToast('Service catalog management is restricted to super admins', 'error');
     return;
   }
+  if (!(await adminFreshenList('services', adminReloadServices))) return;
   const s = allServicesMap.find(x => x.id === id);
   if (!s) return;
   document.getElementById('admin-service-form-title').textContent = 'Edit Service — ' + s.label;
@@ -8535,6 +8550,15 @@ function adminModuleOptions(serviceId) {
   return Array.isArray(arr) ? arr : null;
 }
 
+// Options for the Quantity dropdown (2026-10-14). A saved quantity that is not one of the presets (an old order, or presets edited since)
+// used to leave NO option selected, so the browser showed the FIRST preset, and Save for any other reason changed the quantity to it.
+// The saved quantity is now always an option, selected.
+function adminQtyOptionsHtml(presetOptions, currentQty) {
+  const has = presetOptions.some(v => Number(v) === Number(currentQty));
+  const opts = presetOptions.map(v => `<option value="${esc(v)}" ${Number(v) === Number(currentQty) ? 'selected' : ''}>${esc(v)}</option>`);
+  if (!has) opts.unshift(`<option value="${esc(currentQty)}" selected>${esc(currentQty)} (current)</option>`);
+  return opts.join('');
+}
 function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
   const svc = CATALOG_ROWS[serviceId] || {};
   const variantOptions = Array.isArray(svc.tactic_variants) ? svc.tactic_variants : null;
@@ -8585,7 +8609,7 @@ function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
     const currentQty = item?.qty ?? 1;
     const qtyControl = presetOptions && presetOptions.length
       ? `<select id="edit-extra-qty-${esc(serviceId)}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px">
-          ${presetOptions.map(v => `<option value="${esc(v)}" ${Number(v) === Number(currentQty) ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+          ${adminQtyOptionsHtml(presetOptions, currentQty)}
         </select>`
       : `<input type="number" min="1" id="edit-extra-qty-${esc(serviceId)}" value="${esc(currentQty)}" style="width:70px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>`;
     html += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
