@@ -31849,3 +31849,11 @@ Claire: proceed in the suggested order (2a, then the Accounting pause rule, then
 **Fixed:** rows that were saved are now unticked, locked and tagged "✓ Submitted — do not resubmit"; the message says so; the retry reuses the same batch id (Admin groups it as one submission) and only sends what is left. The batch id resets after a clean finish or if a different client is picked.
 **Verified:** `tests/companion-partial-submit.test.js` (7 checks, real `submitRequests()` in jsdom with a fake database call that fails on item 2): retry sends only items 2–3, batch id shared, AM notified only about item 1. Old code has none of this (the test fails loudly on it). Suite 28 files green.
 **Not covered:** a request that timed out AFTER the database saved it looks like a failure to the AE and would be re-sent — Admin's pending list is the place to spot that; no dedupe was added (would need SQL).
+
+---
+
+## 2026-10-14 — Admin: "Check types" button on the Trello Template Titles panel (Admin only, read-only, no SQL, not the submission path)
+**Why:** a card template saved as "List" quietly made the wrong card (Rollins; 16 services had the same mismatch). Claire asked for a way to catch these without hunting.
+**What it does:** Admin → Services → "Trello Template Titles" → **Check types**. For every distinct template it asks Trello whether the saved type works; if not, whether the OTHER type does. Result per template: ✓ Matches / ✗ Saved as list but it is a card (change Template Type to Card) / ✗ Trello cannot find it / ? Trello did not answer (busy) — never reported as a mismatch. Wrong ones sort first; services sharing a template are listed together. It only reads from Trello and changes nothing; fix a mismatch in the service's own editor.
+**Verified:** `tests/admin-template-type-check.test.js` (9 checks, real Admin code in jsdom, fake Trello incl. a rate-limited answer; asserts only read calls were made). Not verified against live Trello (fake only) — Claire's first click is the live check.
+**Honest note:** one full-suite run during this work showed 1 failing check that I could not reproduce; the next four full runs were all green (29 files, 324 checks). Treated as a one-off timing flake in a browser test, not explained — if it recurs, check which file.
