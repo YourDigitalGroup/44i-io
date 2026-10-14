@@ -5401,6 +5401,14 @@ function populateStrategistDropdown(selectId, discipline, selectedId, defaultLab
   sel.innerHTML = `<option value="">${blankLabel}</option>` +
     options.map(s => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
   sel.value = selectedId || '';
+  // Never blank a saved strategist (2026-10-14): the list above only offers ACTIVE strategists, so a group/client
+  // whose saved Social/Web strategist has since been deactivated used to open with this box empty, and the next
+  // Save wrote "none" over them. Keep the saved person as their own option.
+  if (selectedId && sel.value !== String(selectedId)) {
+    const saved = ALL_STRATEGISTS.find(s => String(s.id) === String(selectedId));
+    sel.insertAdjacentHTML('beforeend', `<option value="${esc(selectedId)}">${esc(saved ? saved.name + ' (inactive)' : 'Saved strategist (not in list)')}</option>`);
+    sel.value = selectedId;
+  }
 }
 
 // Re-populates the Client editor's 3 override dropdowns' BLANK-option label whenever
@@ -7450,6 +7458,9 @@ function populateServiceSectionDropdown(isNew, currentSection) {
   const note = document.getElementById('admin-svc-section-note');
   const sections = SECTIONS.filter(s => s.active).map(s => s.id);
   sel.innerHTML = sections.map(s => `<option value="${esc(s)}">${esc(sectionLabel(s))}</option>`).join('');
+  // A service whose section was later deactivated used to open on the FIRST section in the list, and (being a disabled
+  // box) Save sent that wrong/blank section (2026-10-14). Keep the saved section as its own option.
+  if (currentSection && !sections.includes(currentSection)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(currentSection)}">${esc(sectionLabel(currentSection))} (inactive section)</option>`);
   if (currentSection) sel.value = currentSection;
   sel.disabled = !isNew; // disabled when editing (section fixed after creation)
   note.textContent = isNew
@@ -7464,6 +7475,9 @@ function populateServiceIntakeDropdown(current) {
   const ids = Object.keys(INTAKE_FORMS || {});
   sel.innerHTML = '<option value="">None</option>' +
     ids.map(id => `<option value="${esc(id)}">${esc(INTAKE_FORMS[id]?.title || id)}</option>`).join('');
+  // A saved intake form that isn't in the list (retired/inactive, or the list failed to load) used to open as "None" and
+  // the next Save wrote null over it (2026-10-14). Keep it as its own option.
+  if (current && !ids.includes(current)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(current)}">${esc(current)} (not in list)</option>`);
   sel.value = current || '';
   onServiceIntakeChange(false);
 }
@@ -7787,6 +7801,7 @@ function adminNewService() {
    'admin-svc-trello-suffix'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
+  { const tv = document.getElementById('admin-svc-tactic-variants'); if (tv) { tv.dataset.origText = ''; tv.dataset.origList = ''; } }
   document.getElementById('admin-svc-auto-setup').value = 'false';
   document.getElementById('admin-svc-cpm-adjustment').checked = false;
   document.getElementById('admin-svc-trello-template-type').value = 'list';
@@ -7844,7 +7859,11 @@ function adminEditService(id) {
   document.getElementById('admin-svc-price-history-date').value = '';
   document.getElementById('admin-svc-price-history-value').value = '';
   adminLoadRateHistory('admin-svc-price', 'base', null, s.id, 'default_price');
-  document.getElementById('admin-svc-tactic-variants').value = Array.isArray(s.tactic_variants) ? s.tactic_variants.join(', ') : '';
+  const tvEl = document.getElementById('admin-svc-tactic-variants');
+  tvEl.value = Array.isArray(s.tactic_variants) ? s.tactic_variants.join(', ') : '';
+  // The box is comma-separated, so a variant that itself contains a comma ("Display, Retargeting") would be split in two
+  // by an untouched Save. Remember the stored list; adminSaveService() sends it back as-is unless the text was edited (2026-10-14).
+  tvEl.dataset.origText = tvEl.value; tvEl.dataset.origList = JSON.stringify(Array.isArray(s.tactic_variants) ? s.tactic_variants : null);
   document.getElementById('admin-svc-sort').value = s.sort_order ?? '';
   document.getElementById('admin-svc-pricing-mode').value = s.pricing_mode || 'flat';
   document.getElementById('admin-svc-price').value = s.default_price ?? '';
@@ -8090,7 +8109,9 @@ async function adminSaveService() {
   const unitLabelFinal = pricingModeVal === 'per_unit' ? (document.getElementById('admin-svc-unit').value || null) : null;
   const modifierAmountFinal = pricingModeVal === 'modifier' ? (modifierVal === '' ? null : parseFloat(modifierVal)) : null;
   const isCpmAdjustmentFinal = pricingModeVal === 'modifier' && document.getElementById('admin-svc-cpm-adjustment').checked;
-  const retailCpmFinal = pricingModeVal === 'spend' ? (cpmVal === '' ? null : parseFloat(cpmVal)) : null;
+  // A Modifier flagged as a CPM adjustment also uses Retail CPM (its own combined-CPM override -- see updateCpmWrapVisibility()),
+  // so it must be kept for that case too, or every Save of such a modifier (e.g. Offline Visits Tracking) wiped it (2026-10-14).
+  const retailCpmFinal = (pricingModeVal === 'spend' || isCpmAdjustmentFinal) ? (cpmVal === '' ? null : parseFloat(cpmVal)) : null;
   const spendMinimumFinal = pricingModeVal === 'spend' ? (spendMinVal === '' ? null : parseFloat(spendMinVal)) : null;
   // Same hard-guarantee pattern as spend_minimum above: forced null whenever Intake
   // Form isn't "tlp", regardless of whatever's still sitting in the (hidden) input.
@@ -8152,9 +8173,12 @@ async function adminSaveService() {
   const payload = {
     label: label,
     accounting_label: document.getElementById('admin-svc-accounting-label').value.trim() || null,
-    tactic_variants: document.getElementById('admin-svc-tactic-variants').value.trim()
-      ? document.getElementById('admin-svc-tactic-variants').value.split(',').map(v => v.trim()).filter(Boolean)
-      : null,
+    tactic_variants: (() => {
+      const el = document.getElementById('admin-svc-tactic-variants');
+      if (!el.value.trim()) return null;
+      if (el.dataset.origList && el.dataset.origText === el.value) { const kept = JSON.parse(el.dataset.origList); if (kept) return kept; }
+      return el.value.split(',').map(v => v.trim()).filter(Boolean);
+    })(),
     section: document.getElementById('admin-svc-section').value,
     pricing_mode: document.getElementById('admin-svc-pricing-mode').value,
     default_price: priceVal === '' ? null : parseFloat(priceVal),
