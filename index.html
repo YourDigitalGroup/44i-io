@@ -8538,6 +8538,31 @@ function paginateImageIntoPdf(pdf, imgData, imgWidth, imgHeight, unsafeZones) {
 // fully-decoded bytes by the time html2canvas gets to it — no load race possible
 // either. Fails soft: an image that can't be fetched this way (e.g. a genuinely dead
 // URL) is left with its original src, exactly as before this existed.
+// Redraws an SVG as a PNG at a fixed size (2026-10-14): the 44i logo (an SVG) came out partly drawn / cropped in the emailed and Trello PDFs while the
+// Print button, which lets the browser draw it, was fine. html2canvas has its own SVG drawing with known gaps, and an SVG with no width/height of
+// its own has no size for it to work from. Here the BROWSER draws the SVG (so it looks exactly like Print), at a size taken from the SVG's own
+// viewBox, onto a canvas, and the PNG goes to the PDF builder instead. Returns null on any problem (the caller then keeps the plain data: URI).
+async function svgBlobToPngDataUri(blob) {
+  try {
+    const doc = new DOMParser().parseFromString(await blob.text(), 'image/svg+xml');
+    const root = doc.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== 'svg' || doc.getElementsByTagName('parsererror').length) return null;
+    let w, h;
+    const vb = (root.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    if (vb.length === 4 && vb[2] > 0 && vb[3] > 0) { w = vb[2]; h = vb[3]; }
+    else { w = parseFloat(root.getAttribute('width')); h = parseFloat(root.getAttribute('height')); }
+    if (!(w > 0 && h > 0)) return null;
+    let outH = 176, outW = Math.round(w / h * 176);   // 4x the 44px logo box, so it stays sharp
+    if (outW > 960) { outW = 960; outH = Math.round(h / w * 960); }
+    root.setAttribute('width', outW); root.setAttribute('height', outH);
+    if (!root.getAttribute('xmlns')) root.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(root));
+    const image = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const canvas = document.createElement('canvas'); canvas.width = outW; canvas.height = outH;
+    canvas.getContext('2d').drawImage(image, 0, 0, outW, outH);
+    return canvas.toDataURL('image/png');
+  } catch (e) { return null; }
+}
 async function inlineImagesAsDataUris(doc) {
   const imgs = Array.from(doc.images);
   await Promise.all(imgs.map(async img => {
@@ -8547,7 +8572,9 @@ async function inlineImagesAsDataUris(doc) {
       const res = await fetch(src);
       if (!res.ok) return;
       const blob = await res.blob();
-      const dataUri = await new Promise((resolve, reject) => {
+      const isSvg = /svg/i.test(blob.type) || /\.svg(\?|#|$)/i.test(src);
+      const png = isSvg ? await svgBlobToPngDataUri(blob) : null;
+      const dataUri = png || await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
