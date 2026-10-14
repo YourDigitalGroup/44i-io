@@ -31841,3 +31841,11 @@ Claire: proceed in the suggested order (2a, then the Accounting pause rule, then
 **Follow-up test (2026-10-14, before merge):** `tests/io-form-total-submit.test.js` runs the REAL submit (fake Supabase + fake Trello/email) with an evenly split $3,000 Whole Campaign Total and a $7.50 line. On the new code: order saves, saved `total_monthly` 0 (campaign total kept out of monthly), Trello card text + email say "$3,000 total" and "$7.50", Monthly Recurring $0; a plain monthly $1,500 spend is unchanged. On the previous commit (465b900) the same test fails 4 ways (saved monthly 1,500, "$1,500/mo" text, "$7.5", Monthly Recurring not $0). Suite 27 files / 308 checks green. Still unproven: a real Trello card/email from the live site (fake proxy only).
 
 **LIVE CHECK PASSED (2026-10-14, noon):** Claire merged and placed a real test order from Claude Test Group (evenly split Whole Campaign Total + cents line); Review, PDF, Trello/IO cards and email all read correctly. Audit item #1 closed. Test Trello cards still to be archived by Claire.
+
+---
+
+## 2026-10-14 — Companion: a half-failed batch can no longer be sent twice (`companion/index.html` only, no SQL, NOT the submission path; Companion not live yet)
+**Found (audit, parked since 10-13):** if item 2 of 3 failed, item 1 was already saved and the AE was told "try the rest again" — but item 1 stayed ticked, so the retry sent it a second time (a duplicate pending request for the AM, under a different batch id).
+**Fixed:** rows that were saved are now unticked, locked and tagged "✓ Submitted — do not resubmit"; the message says so; the retry reuses the same batch id (Admin groups it as one submission) and only sends what is left. The batch id resets after a clean finish or if a different client is picked.
+**Verified:** `tests/companion-partial-submit.test.js` (7 checks, real `submitRequests()` in jsdom with a fake database call that fails on item 2): retry sends only items 2–3, batch id shared, AM notified only about item 1. Old code has none of this (the test fails loudly on it). Suite 28 files green.
+**Not covered:** a request that timed out AFTER the database saved it looks like a failure to the AE and would be re-sent — Admin's pending list is the place to spot that; no dedupe was added (would need SQL).
