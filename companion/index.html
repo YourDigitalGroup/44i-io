@@ -419,11 +419,12 @@ async function applyClientPick(id) {
   // checkbox split for these two mechanisms.
   try {
     const ids = [...new Set(ACTIVE_SERVICES.map(s => s.service_id))];
-    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price,workflow,trello_template_ref,accounting_label,intake_form_id`) || [];
+    const rows = await sb(`services?id=in.(${ids.map(encodeURIComponent).join(',')})&select=id,billing_type,tactic_variants,qty_option_labels,qty_preset_options,pricing_mode,default_price,workflow,trello_template_ref,accounting_label,intake_form_id`) || [];
     const byId = Object.fromEntries(rows.map(r => [r.id, r]));
     ACTIVE_SERVICES.forEach(svc => {
       const r = byId[svc.service_id] || {};
       svc._variantOptions = Array.isArray(r.tactic_variants) ? r.tactic_variants : null;
+      svc._isYearly = ['yearly', 'annual'].includes(r.billing_type); // a yearly fee (Hosting Fee) reads "/yr", not "/mo" (2026-10-14)
       const moduleOptions = typeof r.qty_option_labels === 'string' ? JSON.parse(r.qty_option_labels || 'null') : r.qty_option_labels;
       // An order-less line (imported / Strategist-created, 2026-09-24) has
       // no line item to hold modules or a quantity, so those two editors
@@ -603,7 +604,7 @@ function renderServiceRow(svc, i) {
   const varies = monthsVary(svc.month_budgets);
   const currentAmt = svc.fee > 0 ? fmtMoney(svc.fee) + ' one-time'
     : varies ? fmtMoney(svc.month_budgets.reduce((s,m) => s + (Number(m.amount)||0), 0)) + ' total (varies by month)'
-    : svc.recurring > 0 ? fmtMoney(svc.recurring) + '/mo'
+    : svc.recurring > 0 ? fmtMoney(svc.recurring) + (svc._isYearly ? '/yr' : '/mo')
     : svc.spend > 0 ? fmtMoney(svc.spend) + '/mo' : '—';
   // An agent/county split line (MS Farm Bureau style) is identified by who
   // and where, not just the tactic -- shown on the row so two lines for the

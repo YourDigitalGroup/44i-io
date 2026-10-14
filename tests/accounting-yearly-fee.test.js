@@ -5,7 +5,7 @@ const { read, grab, check, done } = require('./lib');
 const A = read('accounting/index.html');
 eval([grab(A, /function accountingMonthKey\([^\n]*\n/), grab(A, /const ACCOUNTING_ONE_TIME_BILLING_TYPES = [^\n]*\n/), grab(A, /function accountingIsYearlyLine[\s\S]*?\n\}\n/), grab(A, /function accountingYearlyBillsInMonth[\s\S]*?\n\}\n/),
   grab(A, /function accountingMonthRowFor[\s\S]*?\n\}\n/), grab(A, /function accountingMostRecentPriorMonth[\s\S]*?\n\}\n/), grab(A, /function accountingCancelledNeverLaunched[\s\S]*?\n\}\n/),
-  grab(A, /let ACCOUNTING_EXPLICIT_MONTHS_SRC[\s\S]*?\n\}\n(?=\/\/ "\+ Add month")/), grab(A, /function accountingLineActiveInMonth[\s\S]*?\n\}\n/)].join('\n') + ';global.act=accountingLineActiveInMonth;global.row=accountingMonthRowFor;');
+  grab(A, /let ACCOUNTING_EXPLICIT_MONTHS_SRC[\s\S]*?\n\}\n(?=\/\/ "\+ Add month")/), grab(A, /function accountingFlightDatesInvalid[\s\S]*?\n\}\n/), grab(A, /function accountingLineActiveInMonth[\s\S]*?\n\}\n/)].join('\n') + ';global.act=accountingLineActiveInMonth;global.row=accountingMonthRowFor;');
 global.CATALOG_ROWS = { 'w-hosting': { billing_type: 'yearly' }, 'wm-hosting': { billing_type: 'monthly' } };
 const M = (y, m) => new Date(y, m - 1, 1);
 const yearly = (o = {}) => ({ id: 'Y', service_id: 'w-hosting', billing_type: 'recurring', flight_start: '2027-01-01', flight_end: '2028-12-31', status: 'active', accounting_only: true, ...o });

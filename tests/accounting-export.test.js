@@ -4,7 +4,7 @@ const { read, grab, check, done } = require('./lib');
 global.CATALOG_ROWS = global.CATALOG_ROWS || {};
 const A = read('accounting/index.html');
 eval([grab(A, /function accountingMonthKey\([^\n]*\n/), grab(A, /const ACCOUNTING_ONE_TIME_BILLING_TYPES = [^\n]*\n/), grab(A, /function accountingCancelledNeverLaunched[\s\S]*?\n\}\n/),
-  grab(A, /let ACCOUNTING_EXPLICIT_MONTHS_SRC[\s\S]*?\n\}\n(?=\/\/ "\+ Add month")/), grab(A, /function accountingIsYearlyLine[\s\S]*?\n\}\n/), grab(A, /function accountingYearlyBillsInMonth[\s\S]*?\n\}\n/), grab(A, /function accountingLineActiveInMonth[\s\S]*?\n\}\n/),
+  grab(A, /let ACCOUNTING_EXPLICIT_MONTHS_SRC[\s\S]*?\n\}\n(?=\/\/ "\+ Add month")/), grab(A, /function accountingIsYearlyLine[\s\S]*?\n\}\n/), grab(A, /function accountingYearlyBillsInMonth[\s\S]*?\n\}\n/), grab(A, /function accountingFlightDatesInvalid[\s\S]*?\n\}\n/), grab(A, /function accountingLineActiveInMonth[\s\S]*?\n\}\n/),
   grab(A, /function accountingMonthRowFor[\s\S]*?\n\}\nfunction accountingMostRecentPriorMonth[\s\S]*?\n\}\n/), grab(A, /function accountingSplitRevenue[\s\S]*?\n\}\n/),
   grab(A, /const ACCOUNTING_EXCLUDED_TACTIC_LABELS = [^\n]*\n/), grab(A, /function accountingExportCsv\(\) \{[\s\S]*?\n\}\n(?=\nfunction accountingStatusPill)/)].join('\n') + ';global.exp=accountingExportCsv;');
 let blobText = null, dl = null, toasts = [];

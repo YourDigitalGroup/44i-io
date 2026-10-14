@@ -4,7 +4,7 @@ const { read, grab, check, done } = require('./lib');
 global.CATALOG_ROWS = global.CATALOG_ROWS || {};
 const A = read('accounting/index.html');
 eval([grab(A, /function accountingMonthKey\([^\n]*\n/), grab(A, /const ACCOUNTING_ONE_TIME_BILLING_TYPES = [^\n]*\n/), grab(A, /function accountingCancelledNeverLaunched[\s\S]*?\n\}\n/),
-  grab(A, /let ACCOUNTING_EXPLICIT_MONTHS_SRC[\s\S]*?\n\}\n(?=\/\/ "\+ Add month")/), grab(A, /async function accountingAddNextMonth[\s\S]*?\n\}\n/), grab(A, /function accountingIsYearlyLine[\s\S]*?\n\}\n/), grab(A, /function accountingYearlyBillsInMonth[\s\S]*?\n\}\n/), grab(A, /function accountingLineActiveInMonth[\s\S]*?\n\}\n/)].join('\n') + ';global.act=accountingLineActiveInMonth;global.add=accountingAddNextMonth;');
+  grab(A, /let ACCOUNTING_EXPLICIT_MONTHS_SRC[\s\S]*?\n\}\n(?=\/\/ "\+ Add month")/), grab(A, /async function accountingAddNextMonth[\s\S]*?\n\}\n/), grab(A, /function accountingIsYearlyLine[\s\S]*?\n\}\n/), grab(A, /function accountingYearlyBillsInMonth[\s\S]*?\n\}\n/), grab(A, /function accountingFlightDatesInvalid[\s\S]*?\n\}\n/), grab(A, /function accountingLineActiveInMonth[\s\S]*?\n\}\n/)].join('\n') + ';global.act=accountingLineActiveInMonth;global.add=accountingAddNextMonth;');
 global.ALL_ACCOUNTING_MONTHS = []; const saved = [], toasts = [];
 global.accountingSaveMonth = async (id, m, d) => { saved.push([m, d.gross_budget]); ALL_ACCOUNTING_MONTHS = [...ALL_ACCOUNTING_MONTHS, { campaign_line_id: id, month: m, gross_budget: d.gross_budget }]; };
 global.showToast = (t, k) => toasts.push((k || 'ok') + ': ' + t);
