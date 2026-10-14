@@ -7,6 +7,7 @@ Safety net for the pages (nothing here is deployed to the website).
 Two tests need extras and say `SKIP` if they are missing:
 - `io-form-per-unit-row.test.js` runs the real IO form in a headless browser (needs `playwright`).
 - `db-admin-edit-line-item.test.js` runs the live Admin edit function in an in-memory Postgres (needs `@electric-sql/pglite`).
+- `admin-service-editor-roundtrip.test.js` / `admin-group-editor-roundtrip.test.js` open each Admin editor on realistic saved data and press Save without changing anything: what is sent must equal what was stored (needs `jsdom`). Add a row here whenever an editor gets a new field, and whenever a saved value turns out to change just by opening the editor.
   Install both once with `cd tests && npm install`.
 
 **How it works:** most tests pull the real functions out of `index.html`, `admin/`, `accounting/` and `strategist/` and run them with made-up data. If someone renames or deletes a function a test needs, the test fails with `MISSING` instead of quietly passing.
