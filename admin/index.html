@@ -11850,7 +11850,7 @@ function renderCampaignLinesTable(clientId) {
       <td style="padding:8px 10px">${esc(svcLabel)}${' '}${linkBadge}</td>
       <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(r.flight_start)}</td>
       <td style="padding:8px 10px;font-size:11px;color:var(--muted)">${fmtDate(r.flight_end)}${r.last_renewed_at ? ` <span title="Renewed ${esc(fmtDate(r.last_renewed_at.slice(0,10)))}${r.last_renewed_previous_end_date ? ` — previously ended ${esc(fmtDate(r.last_renewed_previous_end_date))}` : ''}" style="font-size:9px;font-weight:700;background:#DBEAFE;color:#1E40AF;padding:1px 6px;border-radius:8px;white-space:nowrap">↻ Renewed</span>` : ''}</td>
-      <td style="padding:8px 10px;font-weight:600;text-align:right">${fmtMoney(r.current_budget)}${r.billing_type === 'spend' || r.billing_type === 'recurring' ? '/mo' : ''}</td>
+      <td style="padding:8px 10px;font-weight:600;text-align:right">${fmtMoney(r.current_budget)}${['yearly', 'annual'].includes(CATALOG_ROWS[r.service_id]?.billing_type) ? '/yr' : (r.billing_type === 'spend' || r.billing_type === 'recurring' ? '/mo' : '')}</td>
       <td style="padding:8px 10px"><button type="button" onclick="adminToggleCampaignLineRenewPanel('${esc(clientId)}','${esc(r.id)}','${esc(r.flight_end || '')}')" style="padding:4px 10px;border-radius:6px;border:1.5px solid #1F7A42;background:#fff;color:#1F7A42;font-size:10.5px;font-weight:700;cursor:pointer">↻ Renew</button></td>
     </tr>
     <tr id="campaignline-renew-panel-${esc(r.id)}" style="display:none"><td colspan="7" style="padding:0"></td></tr>`;
@@ -12229,7 +12229,7 @@ function adminCorrectUpdateTotal(oldServiceId) {
   const money = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (!(price > 0)) { el.textContent = ''; return; }
   el.textContent = model === 'spend' ? `New amount: ${money(price)}/mo`
-    : model === 'recurring' ? `New amount: ${money(price * qty)}/mo`
+    : model === 'recurring' ? `New amount: ${money(price * qty)}${['yearly', 'annual'].includes(r.billing_type) ? '/yr' : '/mo'}`
     : `New total: ${money(price * qty)} one-time${qty !== 1 ? ` (${qty} × ${money(price)})` : ''}`;
 }
 

@@ -938,10 +938,10 @@ function accountingAddServiceTacticChanged() {
   document.getElementById('acct-add-gross-budget-wrap').style.display = trackable ? '' : 'none';
   if (serviceId && !trackable) {
     document.getElementById('acct-add-billing-derived').textContent =
-      isOneTime ? 'One-time fee' : 'Recurring monthly';
+      isOneTime ? 'One-time fee' : (['yearly', 'annual'].includes(CATALOG_ROWS[serviceId]?.billing_type) ? 'Yearly fee' : 'Recurring monthly');
     const amount = accountingDerivedAmount(serviceId, clientId);
     document.getElementById('acct-add-amount-derived').textContent =
-      amount != null ? `$${amount.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}${isOneTime ? '' : '/mo'}` : 'Not set in the catalog -- add it in Admin first';
+      amount != null ? `$${amount.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2})}${isOneTime ? '' : (['yearly', 'annual'].includes(CATALOG_ROWS[serviceId]?.billing_type) ? '/yr' : '/mo')}` : 'Not set in the catalog -- add it in Admin first';
   }
   helpText.textContent = serviceId && !trackable
     ? 'This creates an Accounting-only line, same as the IO would for a flat/recurring/one-time service -- Strategist never sees this one, there’s no setup step for it.'
@@ -2643,11 +2643,26 @@ async function fetchAccountingData() {
 // same sense 'one_time' is -- each only ever happened in the single month it
 // was billed -- so they're excluded from carry-forward the same way.
 const ACCOUNTING_ONE_TIME_BILLING_TYPES = ['one_time', 'hosting_proration', 'setup_fee'];
+// A YEARLY / ANNUAL fee (Hosting Fee $450, E-Commerce Hosting $750, Web Accessibility Hosting $1,000 -- catalog billing_type
+// 'yearly') is billed ONCE A YEAR, in the month its flight starts and again every 12 months after (2026-10-14, per Claire:
+// "fix all of this so it is correct"). It is stored as a 'recurring' line, so without this it showed its full amount in EVERY
+// month of a long flight. Months in between show nothing, unless someone typed an amount for that month on purpose.
+function accountingIsYearlyLine(line) {
+  const b = line && CATALOG_ROWS[line.service_id]?.billing_type;
+  return b === 'yearly' || b === 'annual';
+}
+function accountingYearlyBillsInMonth(line, monthKey) {
+  if (!line.flight_start) return true; // no start date to count years from: behave like any recurring line
+  const start = String(line.flight_start).slice(0, 7);
+  const diff = (Number(monthKey.slice(0, 4)) - Number(start.slice(0, 4))) * 12 + (Number(monthKey.slice(5, 7)) - Number(start.slice(5, 7)));
+  return diff >= 0 && diff % 12 === 0;
+}
 function accountingMonthRowFor(lineId, monthDate) {
   const key = accountingMonthKey(monthDate);
   const exact = ALL_ACCOUNTING_MONTHS.find(m => m.campaign_line_id === lineId && m.month.slice(0, 7) === key);
   const line = ALL_ACCOUNTING_LINES.find(l => l.id === lineId);
-  const carriesForward = line && !ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(line.billing_type) && !line.budget_varies_by_month;
+  const carriesForward = line && !ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(line.billing_type) && !line.budget_varies_by_month
+    && (!accountingIsYearlyLine(line) || accountingYearlyBillsInMonth(line, key));
 
   // Same edge case Strategist's own monthRowFor() already handles: a real
   // row can exist for this exact month with actual_spend/confirmed_by set
@@ -2785,6 +2800,8 @@ function accountingLineActiveInMonth(line, monthDate) {
     return line.billing_type === 'one_time' && accountingExplicitMonthKeys(line.id).has(monthKey);
   }
   if (line.flight_end && monthKey > accountingMonthKey(new Date(line.flight_end + 'T00:00:00'))) return false;
+  // A yearly fee only counts in its anniversary months (or a month someone gave an amount on purpose) -- see accountingIsYearlyLine().
+  if (accountingIsYearlyLine(line) && !accountingYearlyBillsInMonth(line, monthKey) && !accountingExplicitMonthKeys(line.id).has(monthKey)) return false;
   return true;
 }
 // LLO (SEO) and Rep Monitoring (SEO) aren't their own billed service -- they're
