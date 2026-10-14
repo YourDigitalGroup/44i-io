@@ -65,7 +65,7 @@ const SERVICES = [svc({ id: 'w-hosting', label: 'Hosting Fee*', section: 'web-ot
     // the Trello card text and the order-summary text come from submitIO(), so check the source uses the shared rule
     const idx = read('index.html');
     check('Trello card price text uses the /yr rule in both places', (idx.match(/recurringSuffix\(li\.service_id\)/g) || []).length, 2);
-    check('order summary adds an Annual line and saves monthly without yearly fees', [/\*\*Annual:\*\* \$\$\{annual/.test(idx), /let monthly = recurringSplit\.monthly;/.test(idx)], [true, true]);
+    check('order summary adds an Annual line and saves monthly without yearly fees', [/\*\*Annual:\*\* \$\{moneyText\(annual\)\}\/yr/.test(idx), /let monthly = recurringSplit\.monthly;/.test(idx)], [true, true]);
   } finally { await browser.close(); }
   done();
 })().catch(e => { console.log('FAIL browser test crashed: ' + e.message); process.exitCode = 1; });
