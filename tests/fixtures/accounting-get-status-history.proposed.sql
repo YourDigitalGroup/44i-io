@@ -21,7 +21,7 @@ begin
     'new_status', h.new_status,
     'changed_at', h.changed_at)
   from campaign_status_history h
-  order by h.changed_at, h.campaign_line_id, h.new_status
+  order by h.changed_at, h.id
   limit p_limit offset coalesce(p_offset, 0);
 end;
 $function$;
