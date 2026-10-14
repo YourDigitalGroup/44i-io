@@ -2737,7 +2737,8 @@ function accountingMostRecentPriorMonth(lineId, key) {
 // Complete, vanished from June's tiles (and, on Nov 1, every campaign ending Oct 31 would have dropped out of OCTOBER the moment it auto-completed).
 // Strategist already files each month under the status the line had THEN, from campaign_status_history (strategistHistoricalStatus). This does the
 // same for Accounting, and goes one step further: a line paused or completed PART of a month counts for the days it ran.
-//   - A day counts as "running" unless the line's status that day was Paused or Complete (status at the END of that day, in local time).
+//   - A day counts as "running" unless the line was Paused or Complete AT THE START of that day, i.e. a pause/complete takes effect from the NEXT day
+//     (2026-10-14: a campaign marked Complete on the last day of its flight, or paused on the 10th, still ran that day).
 //   - Only days inside the line's own flight count, so a mid-month start or end still bills the whole month the way it always did.
 //   - A month's own "paused" checkbox still means the whole month is off.
 //   - Cancelled/pending lines are NOT touched here (cancel billing is Kim's open question; pending already has its own rule).
@@ -2763,8 +2764,12 @@ function accountingIndexStatusHistory() {
 function accountingStatusOnDay(line, dayIso) {
   const hist = ACCOUNTING_HISTORY_LOADED ? ACCOUNTING_HISTORY_BY_LINE.get(line.id) : null;
   if (!hist || !hist.length) return line.status;
-  let status = null;
-  for (const h of hist) { if (h.day <= dayIso) status = h.new_status; else break; }
+  let status = null, lastIdx = -1;
+  for (let i = 0; i < hist.length; i++) { if (hist[i].day <= dayIso) { status = hist[i].new_status; lastIdx = i; } else break; }
+  // SAFETY NET (2026-10-14): a status can change WITHOUT a history row (a renewal order reviving a Complete line, a status set by hand). After the last
+  // recorded change the line's CURRENT status is the best truth we have: if it disagrees with where the log ended up, trust the current status for the days
+  // after that last change, so a revived line is never left out as "Complete" just because nobody logged the revival.
+  if (lastIdx === hist.length - 1 && status != null && line.status && line.status !== status) return line.status;
   return status != null ? status : (hist[0].old_status || line.status);
 }
 // How much of this month the line was actually running. fraction 1 = the whole month (as before), 0 = none of it, in between = partly.
@@ -2783,9 +2788,11 @@ function accountingMonthActivity(line, monthDate, monthRow) {
   const eligible = [];
   for (let d = 1; d <= daysInMonth; d++) { const day = iso(d); if ((!start || day >= start) && (!end || day <= end)) eligible.push(day); }
   if (!eligible.length) return legacy();
-  const running = eligible.filter(day => !ACCOUNTING_NOT_RUNNING_STATUSES.includes(accountingStatusOnDay(line, day)));
+  const dayBefore = day => accountingLocalDayIso(new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, Number(day.slice(8, 10)) - 1));
+  const startOfDayStatus = day => accountingStatusOnDay(line, dayBefore(day)); // status at the END of the previous day = at the START of this one
+  const running = eligible.filter(day => !ACCOUNTING_NOT_RUNNING_STATUSES.includes(startOfDayStatus(day)));
   const fraction = wholeMonthOff ? 0 : running.length / eligible.length;
-  const lastStatus = accountingStatusOnDay(line, eligible[eligible.length - 1]);
+  const lastStatus = startOfDayStatus(eligible[eligible.length - 1]);
   return { fraction, activeDays: wholeMonthOff ? 0 : running.length, eligibleDays: eligible.length, paused: fraction === 0, isComplete: fraction === 0 && lastStatus === 'complete', viaHistory: true };
 }
 // What the headline tiles add up, one CHILD line at a time (a rollup is several lines under one tactic), each scaled by how much of the month it

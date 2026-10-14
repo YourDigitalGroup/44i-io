@@ -24,8 +24,8 @@ check('the same line before history existed would have been dropped from October
 // 2. marked Complete EARLY (client left) on Sep 15, flight to Dec 31
 L = { id: 'B', status: 'complete', flight_start: '2026-06-01', flight_end: '2026-12-31' };
 setHist([chg('B', at(2026, 9, 15), 'active', 'complete')], true);
-check('Complete on Sep 15: August full, September 14 of 30 days, October and later none (and shown as Complete)',
-  [act(L, M(2026, 8), null).fraction, near(act(L, M(2026, 9), null).fraction, 14 / 30), act(L, M(2026, 10), null).fraction, act(L, M(2026, 10), null).isComplete, act(L, M(2026, 12), null).paused], [1, true, 0, true, true]);
+check('Complete on Sep 15: August full, September 15 of 30 days (it still ran on the 15th), October and later none (and shown as Complete)',
+  [act(L, M(2026, 8), null).fraction, near(act(L, M(2026, 9), null).fraction, 15 / 30), act(L, M(2026, 10), null).fraction, act(L, M(2026, 10), null).isComplete, act(L, M(2026, 12), null).paused], [1, true, 0, true, true]);
 
 // 3. paused Mar 10, resumed Mar 20 (a status Pause: the history holds the click time)
 L = { id: 'C', status: 'active', flight_start: '2026-01-01', flight_end: '2026-12-31' };
@@ -34,11 +34,27 @@ r = act(L, M(2026, 3), null);
 check('paused Mar 10, resumed Mar 20: March counts 21 of 31 days (10 paused days); Feb and Apr are full', [r.activeDays, r.eligibleDays, near(r.fraction, 21 / 31), act(L, M(2026, 2), null).fraction, act(L, M(2026, 4), null).fraction], [21, 31, true, 1, 1]);
 // 4. two pauses in one month, and a pause that spans a month boundary
 setHist([chg('C', at(2026, 3, 5), 'active', 'paused'), chg('C', at(2026, 3, 8), 'paused', 'active'), chg('C', at(2026, 3, 25), 'active', 'paused'), chg('C', at(2026, 4, 5), 'paused', 'active')], true);
-check('two pauses in March (3 days + 7 days): 21 of 31 days; April lost its first 4 days (26 of 30)', [act(L, M(2026, 3), null).activeDays, act(L, M(2026, 4), null).activeDays], [21, 26]);
+check('two pauses (Mar 5-8 = 3 off days; Mar 25-Apr 5 = 6 off days in March and 5 in April): March 22 of 31 days, April 25 of 30', [act(L, M(2026, 3), null).activeDays, act(L, M(2026, 4), null).activeDays], [22, 25]);
 // 5. a change late in the evening counts for that local day, the LAST change of a day wins
 setHist([chg('C', new Date(2026, 2, 10, 23, 30).toISOString(), 'active', 'paused'), chg('C', new Date(2026, 2, 12, 9, 0).toISOString(), 'paused', 'active'), chg('C', new Date(2026, 2, 12, 17, 0).toISOString(), 'active', 'paused'), chg('C', at(2026, 3, 14), 'paused', 'active')], true);
 check('status is the one at the END of the day: Mar 10 (paused 11:30pm) counts paused, Mar 12 (active then paused again) counts paused', [onDay(L, '2026-03-09'), onDay(L, '2026-03-10'), onDay(L, '2026-03-12'), onDay(L, '2026-03-14')], ['active', 'paused', 'paused', 'active']);
 
+// 5b. completed on the LAST DAY of its flight (MS Farm Bureau SEM, Aug 27): it still ran that whole day, so the month counts in full
+L = { id: 'G', status: 'complete', flight_start: '2025-07-01', flight_end: '2026-08-27' };
+setHist([chg('G', at(2026, 8, 27), 'active', 'complete')], true);
+r = act(L, M(2026, 8), null);
+check('marked Complete ON the last day of its flight: all 27 days still count (a change takes effect the next day)', [r.activeDays, r.eligibleDays, r.fraction], [27, 27, 1]);
+L = { id: 'H', status: 'complete', flight_start: '2026-01-01', flight_end: '2026-12-31' };
+setHist([chg('H', at(2026, 8, 20), 'active', 'complete')], true);
+check('client left, marked Complete Aug 20: August counts Aug 1-20 (20 of 31 days), September none', [act(L, M(2026, 8), null).activeDays, act(L, M(2026, 8), null).eligibleDays, act(L, M(2026, 9), null).fraction], [20, 31, 0]);
+// 5c. SAFETY NET: a renewal revived a Complete line WITHOUT writing a history row (the three lines found in Blocker 3). History says Complete since Sep 1, the line is
+// Active now: the days after the last logged change use the CURRENT status, so the running line is not left out.
+L = { id: 'I', status: 'active', flight_start: '2026-01-01', flight_end: '2027-03-31' };
+setHist([chg('I', at(2026, 9, 1), 'active', 'complete')], true);
+check('revived without a history row (log ends "complete", line is Active now): Oct and later count in full; August (before the log\'s completion) too',
+  [act(L, M(2026, 8), null).fraction, act(L, M(2026, 10), null).fraction, act(L, M(2026, 12), null).fraction], [1, 1, 1]);
+check('...and a line that is really still Complete (log and current agree) is still left out after the completion', (L = { ...L, status: 'complete' }, act(L, M(2026, 10), null).fraction), 0);
+check('a cancelled line whose cancel was never logged is not reduced (cancelled is not a "not running" status here)', (L = { ...L, status: 'cancelled' }, setHist([chg('I', at(2026, 3, 1), 'pending', 'active')], true), act(L, M(2026, 10), null).fraction), 1);
 // 6. flights: only days inside the flight count, so a mid-month start/end still bills the month as it always did
 L = { id: 'D', status: 'active', flight_start: '2026-03-15', flight_end: '2026-05-10' };
 setHist([chg('D', at(2026, 1, 1), 'pending', 'active')], true);
