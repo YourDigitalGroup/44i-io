@@ -10,7 +10,7 @@ win.eval([
   fn(shared, 'esc'),
   ...['populateAmPickerDropdown', 'populateAdditionalCardMemberDropdown', 'applyAmPick', 'populateDigitalStrategistDropdown', 'populateStrategistDropdown', 'setGroupLogoPreview', 'adminEditGroup', 'adminSaveGroup'].map(n => fn(admin, n)),
   `var allGroups = [], ALL_STAFF = [], ALL_AES = [], ALL_STRATEGISTS = [], currentPricingOverrides = {}, currentAccountingOverrides = {}, ADMIN_EMBED_ONE_TIME = null, currentAdminUser = { name: 't', pw: 'p', role: 'super' };
-  async function adminFreshenList() { return true; } /* the list is already loaded in this test; the real helper has its own test (admin-edit-fresh-data) */ function canSee() { return true; } function showToast() {} function adminTab() {} function checkGroupSlugCollision() {} function loadAdminGroups() {}
+  var adminReloadGroups = async () => {}; async function adminFreshenList() { return true; } /* the list is already loaded in this test; the real helper has its own test (admin-edit-fresh-data) */ function canSee() { return true; } function showToast() {} function adminTab() {} function checkGroupSlugCollision() {} function loadAdminGroups() {}
   async function ensureAeRosterLoaded() {} async function ensureStaffRosterLoaded() {} async function ensureStrategistsLoaded() {}
   async function sb(path, opts) { window.__sent = JSON.parse(opts.body).p_data; }`,
 ].join('\n'));
