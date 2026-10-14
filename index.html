@@ -1675,6 +1675,9 @@ let selectedClientId = null;
 // website/city/business type, is_multi_agent, io_pricing). Null whenever no real
 // client is selected, same lifecycle as selectedClientId itself.
 let selectedClientDetails = null;
+// True when picking a returning client could not load that client's saved details/custom prices (2026-10-14): the AE must re-pick before submitting,
+// instead of quietly submitting at catalog prices with blank contact fields.
+let clientDetailsFailed = false;
 
 // Real scenario Claire's boss raised: an AE submitted a duplicate IO for a
 // service the client already had an active/overlapping order for. Fetched via
@@ -1723,6 +1726,7 @@ function setBizNameLocked(locked) {
 async function applyClientPick(id) {
   selectedClientId = id || null;
   selectedClientDetails = null;
+  clientDetailsFailed = false;
   if (!id) {
     // Switched back to "New Client" — clear the fields so a previously-picked
     // client's info doesn't linger on what's now meant to be a fresh record.
@@ -1762,6 +1766,8 @@ async function applyClientPick(id) {
   } catch(e) {
     console.warn('Could not load this client\'s details:', e.message);
     selectedClientDetails = null;
+    clientDetailsFailed = true;
+    showToast('This client\'s saved details and prices did not load. Please click the client again before continuing.', 'error');
   }
   const d = selectedClientDetails || {};
   document.getElementById('contact-name').value = d.contact_name || '';
@@ -1775,7 +1781,8 @@ async function applyClientPick(id) {
   // from one (to a different client, or back to "New Client") needs it removed
   // again rather than left stuck on screen. Now runs AFTER selectedClientDetails
   // is populated (2026-09-15) — it reads io_pricing from there, not CLIENT_ROSTER.
-  reapplyPricingOverrides();
+  const repricedOnPick = reapplyPricingOverrides();
+  if (repricedOnPick && repricedOnPick.length) showToast('Prices updated for this client: ' + repricedOnPick.join('; '), 'success');
   try {
     CLIENT_SERVICE_HISTORY = await sb('rpc/get_client_service_flights', { method: 'POST', body: JSON.stringify(withKey({ p_client_id: id })) }) || [];
   } catch(e) {
@@ -3808,6 +3815,8 @@ function reapplyPricingOverrides() {
   if (selectedClientId && selectedClientDetails?.io_pricing) {
     applyCustomPricing(selectedClientDetails.io_pricing);
   }
+  // Services the AE had ALREADY ticked are copies made before this pricing layer existed (2026-10-14) -- bring them in line, and report what changed.
+  return resyncSelectedFromCatalog();
 }
 
 function applyCustomPricing(pricing) {
@@ -4028,6 +4037,80 @@ function toggleSection(id) {
   // header is a div with a click/keydown handler, not a native <button>, so nothing
   // marks its open/closed state unless this function does it explicitly.
   if (head) head.setAttribute('aria-expanded', expand ? 'true' : 'false');
+}
+
+// ── KEEP CHECKED SERVICES IN STEP WITH THE CATALOG (2026-10-14 logic audit) ──────────────────────────────
+// A checked service is a COPY of its catalog row made at the moment it was ticked. When the price list changes underneath it -- the AE picks a
+// returning client with custom prices AFTER ticking services, or reopens a draft saved before a price/label changed -- the copy used to keep the
+// OLD price, so Review, the signed PDF, line_items and Trello carried it. This re-syncs everything that comes from the catalog and keeps everything
+// the AE typed (quantity, dates, notes, spend, variant, modules, a typed Quote-Upon-Request price). Returns plain-English notes for what changed.
+const CATALOG_DERIVED_FIELDS = ['label', 'section', 'workflow', 'fee', 'recurring', 'is_qur', 'is_cpm_adjustment', 'cpm_adjustment_amt', 'cpm', 'cpc'];
+function resyncSelectedFromCatalog() {
+  const notes = [];
+  Object.keys(selected).forEach(id => {
+    const sd = SERVICE_DATA[id], cur = selected[id];
+    if (!sd || !cur) return;
+    const keepTypedPrice = !!cur.quotedPriceEntered;
+    const before = { fee: Number(cur.fee || 0), recurring: Number(cur.recurring || 0) };
+    CATALOG_DERIVED_FIELDS.forEach(k => {
+      if (keepTypedPrice && (k === 'fee' || k === 'recurring')) return;
+      if (k in sd) cur[k] = sd[k];
+    });
+    const after = { fee: Number(cur.fee || 0), recurring: Number(cur.recurring || 0) };
+    if (before.fee !== after.fee || before.recurring !== after.recurring) {
+      const money = o => o.recurring ? fmt(o.recurring) + recurringSuffix(id) : fmt(o.fee) + ' one-time';
+      notes.push(`${cur.label || id}: price is now ${money(after)} (was ${money(before)})`);
+    }
+  });
+  return notes;
+}
+// A plain-English box at the top of Step 1 (dismissible). Used when a restored draft changed or lost something.
+function showDraftChangesNotice(lines) {
+  const old = document.getElementById('draft-changes-notice'); if (old) old.remove();
+  if (!lines || !lines.length) return;
+  const box = document.createElement('div');
+  box.id = 'draft-changes-notice';
+  box.setAttribute('role', 'alert');
+  box.style.cssText = 'background:#FFFBEB;border:1.5px solid #F59E0B;border-radius:8px;padding:12px 14px;margin:0 0 14px;font-size:13px;color:#78350F;line-height:1.5';
+  box.innerHTML = '<strong>Your saved draft was updated to today\'s catalog:</strong><ul style="margin:6px 0 8px 18px;padding:0">' + lines.map(l => '<li>' + esc(l) + '</li>').join('') + '</ul>' +
+    '<button type="button" onclick="this.parentNode.remove()" style="padding:5px 12px;border-radius:6px;border:1px solid #B45309;background:#fff;color:#78350F;font-size:12px;cursor:pointer">Got it</button>';
+  const page = document.getElementById('page-1');
+  if (page) page.insertBefore(box, page.firstChild); else document.body.insertBefore(box, document.body.firstChild);
+}
+// Prorated hosting counts ONLY for services still on the order (2026-10-14: swapping a Website package left the dropped package's hosting in the total).
+function proratedHostingTotal() {
+  let t = 0;
+  Object.entries(hostingChoices).forEach(([hid, h]) => { if (selected[hid] && h && h.choice === 'us' && h.proratedAmt) t += h.proratedAmt; });
+  return t;
+}
+// "Whole campaign total" needs an end date to know how many months to spread it over. Without one it became a single month, so $6,000 was
+// saved and printed as $6,000 a MONTH (2026-10-14 audit).
+function totalModeMissingEndDate() {
+  return Object.entries(selected).filter(([id, d]) => d.budgetMode === 'total' && !d.end_date).map(([id]) => id);
+}
+// Looks up (or creates) the client. A failure STOPS the submission with a clear message, nothing is saved, and the AE can click Submit again.
+// (2026-10-14, Claire: before, the order saved anyway with no client record -- Strategist/Accounting/Trello could not find it -- and the AE saw success.)
+async function findOrCreateClientOrThrow(clientPayload) {
+  let result = null;
+  try {
+    result = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify(withKey({ p_payload: clientPayload })) });
+  } catch (e) {
+    console.warn('find_or_create_client failed:', e.message);
+  }
+  if (!(result && result.id)) {
+    throw new Error('We could not save this client\'s record just now, so the order was NOT submitted and nothing was saved. Please wait a moment and click Submit again. If it keeps happening, tell your account manager.');
+  }
+  return {
+    id: result.id,
+    trello_list_id: result.trello_list_id || null,
+    // Assigned strategists (2026-08-06) -- this client's own digital/social/web strategist Trello handles, resolved server-side by
+    // find_or_create_client's join against the strategists table; empty when nothing is assigned.
+    digitalStrategistTrello: result.digital_strategist_trello || '',
+    socialStrategistTrello: result.social_strategist_trello || '',
+    webStrategistTrello: result.web_strategist_trello || '',
+    // Covering Digital Strategist (2026-09-24): the group's covering_strategist_name's handle; empty for every group with no cover set.
+    coveringStrategistTrello: result.covering_strategist_trello || '',
+  };
 }
 
 // ── SERVICE TOGGLE ────────────────────────────────────────────
@@ -4568,13 +4651,12 @@ function toggleSingle(cb, id, groupName) {
     // Uncheck and deselect all others in the group
     groupIds.forEach(otherId => {
       if (otherId !== id && selected[otherId]) {
-        delete selected[otherId];
+        // Uncheck it exactly the way unchecking by hand does (2026-10-14): the old shortcut only deleted selected[], leaving that package's hosting
+        // choice, intake answers and budget row behind -- its prorated hosting was still added to the order's one-time total.
         const otherRow = document.querySelector(`tr[data-id="${otherId}"]`);
-        if (otherRow) {
-          otherRow.classList.remove('selected');
-          const otherCb = otherRow.querySelector('input[type=checkbox]');
-          if (otherCb) otherCb.checked = false;
-        }
+        const otherCb = otherRow && otherRow.querySelector('input[type=checkbox]');
+        if (otherCb) { otherCb.checked = false; toggle(otherCb, otherId); }
+        else { delete selected[otherId]; delete hostingChoices[otherId]; }
       }
     });
     // Disable the opposite VID group
@@ -4991,6 +5073,21 @@ function goStep(n) {
       const dateLabels = missingDates.map(([id]) => CATALOG_ROWS[id]?.label || id).join(', ');
       showToast('Please enter a start date for: ' + dateLabels, 'error');
       return; // Block navigation
+    }
+    // Whole campaign total with no end date (2026-10-14): would be saved as ONE month, i.e. $X a month. Same block-with-message pattern.
+    {
+      const noEnd = totalModeMissingEndDate();
+      if (noEnd.length) {
+        noEnd.forEach(id => {
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          const endInput = row && row.querySelector('.svc-end-cell input');
+          markFieldMissing(endInput, true);
+          const section = row?.closest('.card-body'); if (section) section.style.display = 'block';
+        });
+        const first = document.querySelector('.svc-end-cell input.spend-missing'); if (first) revealElement(first);
+        showToast('Please enter an end date for: ' + noEnd.map(id => CATALOG_ROWS[id]?.label || id).join(', ') + ' (a whole campaign total needs an end date to be spread over the months).', 'error');
+        return; // Block navigation
+      }
     }
     // Guard (2026-08-20, per Claire): a service's start date can't be on or before the
     // IO's own date -- a start date that early makes no sense for a brand-new order.
@@ -5689,6 +5786,8 @@ async function submitIO() {
     if (!document.getElementById('agree-pricing').checked) throw new Error('Please confirm the pricing terms');
     if (!document.getElementById('auth-name').value.trim()) throw new Error('Please enter the authorized signer name');
     if (!hasSignature()) throw new Error('Please provide a signature');
+    if (totalModeMissingEndDate().length) throw new Error('A whole campaign total needs an end date. Go back to Step 2 and enter one.');
+    if (selectedClientId && clientDetailsFailed) throw new Error('This client\'s saved details and prices did not load. Click the client in the list again (or pick them again) before submitting.');
     if (!selectedGroup) throw new Error('Please select a group');
     const bizName = document.getElementById('biz-name').value.trim();
     if (!bizName) throw new Error('Business name is required');
@@ -5880,7 +5979,7 @@ async function submitIO() {
 
     // Prorated hosting additions to one-time total
     let proratedTotal = 0;
-    Object.values(hostingChoices).forEach(h => { if (h.choice === 'us' && h.proratedAmt) proratedTotal += h.proratedAmt; });
+    proratedTotal = proratedHostingTotal();
 
     // Auto-applied setup fee additions to one-time total (see getSetupFeeInfo — SEM's
     // sub-$1,000 campaigns, etc.). Summed the same way proratedTotal is, from the
@@ -5965,40 +6064,10 @@ async function submitIO() {
       has_gmb: !!selected['gbp-setup'],
     };
 
-    let client = null;
-    // find_or_create_client RPC is the ONLY path to the clients table (2026-07-13) —
-    // `clients` holds real customer contact info and has no public read/write policy
-    // at all now (a leftover wide-open policy that granted unrestricted public access
-    // was found and closed this week). A direct-REST fallback used to sit here for
-    // when the RPC call errored, but it could only ever fail the same way the RPC did
-    // (no public access either way) — removed rather than kept as dead code that always
-    // fails. If this RPC call fails, the order still saves below, just without a linked
-    // client record (client?.id is already handled as optional everywhere it's read).
-    // RPC RETURNS jsonb ({id, trello_list_id}) instead of a bare uuid (2026-07-10) —
-    // trello_list_id is the reliable, stored link to this client's actual Trello list
-    // (see the client-list resolution below), replacing the old name-search-only
-    // approach that couldn't tell an archived list from a genuinely new client.
-    try {
-      const result = await sb('rpc/find_or_create_client', { method:'POST', body: JSON.stringify(withKey({ p_payload: clientPayload })) });
-      if (result && result.id) {
-        client = {
-          id: result.id,
-          trello_list_id: result.trello_list_id || null,
-          // Assigned strategists (2026-08-06) — this client's own digital/social/web
-          // strategist Trello handles, resolved server-side by find_or_create_client's
-          // join against the strategists table. Only ever populated via a roster pick on
-          // the Client Profile editor — a client with nothing assigned just has these
-          // come back null, same "silently skip" behavior as AE/AM already have.
-          digitalStrategistTrello: result.digital_strategist_trello || '',
-          socialStrategistTrello: result.social_strategist_trello || '',
-          webStrategistTrello: result.web_strategist_trello || '',
-          // Covering Digital Strategist (2026-09-24, per Claire -- leave cover):
-          // the group's covering_strategist_name's handle, resolved by the same
-          // RPC. Empty for every group with no cover set, so nothing changes.
-          coveringStrategistTrello: result.covering_strategist_trello || '',
-        };
-      }
-    } catch(e) { console.warn('find_or_create_client failed — order will save without a linked client record:', e.message); }
+    // find_or_create_client RPC is the ONLY path to the clients table (2026-07-13): `clients` holds real customer contact info and has no
+    // public read/write policy. RPC RETURNS jsonb ({id, trello_list_id, ...}); trello_list_id is the stored link to this client's real Trello list.
+    // A failure now STOPS the submission (2026-10-14) -- see findOrCreateClientOrThrow().
+    const client = await findOrCreateClientOrThrow(clientPayload);
 
     // Auto-register a typed AE into the admin roster (2026-08-07, per Claire — an
     // AM/AE who types their name instead of picking from the roster used to only ever
@@ -6058,7 +6127,7 @@ async function submitIO() {
       signed_at: playbookSignature?.signed_at || new Date().toISOString(),
       line_items: lineItems,
       intake_responses: intakeData,
-      hosting_choices: hostingChoices,
+      hosting_choices: Object.fromEntries(Object.entries(hostingChoices).filter(([hid]) => selected[hid])),
       special_instructions: document.getElementById('special-instructions')?.value || '',
       needs_am_help: Object.values(intakeData).some(d => d.bypassed),
       // Agent/County Split (2026-08-19, MS Farm Bureau) -- null (not []) when this
@@ -8835,10 +8904,11 @@ function applyDraftFields(d) {
     // Signed in Fourge Playbook (2026-10-11): show the client's signature in place
     // of the pen, or put the pen back for an ordinary draft.
     applyPlaybookSignature(d.playbook || null);
+    const draftNotes = [];
     if (d.selected && typeof d.selected === 'object') {
       Object.entries(d.selected).forEach(([id, data]) => {
         const row = document.querySelector(`tr[data-id="${id}"]`);
-        if (!row) return;
+        if (!row) { draftNotes.push(`${(data && data.label) || id} is no longer available, so it was removed from this order`); return; }
         const cb = row.querySelector('input[type=checkbox]');
         if (cb && !cb.checked) {
           cb.checked = true;
@@ -8933,6 +9003,11 @@ function applyDraftFields(d) {
     }
     if (d.intakeData) intakeData = d.intakeData;
     if (d.hostingChoices) hostingChoices = d.hostingChoices;
+    // A restored draft is brought up to date with TODAY's catalog (2026-10-14): old prices/labels/workflows are replaced, and hosting choices are kept
+    // only for services still on the order; the AE is told what changed.
+    Object.keys(hostingChoices).forEach(hid => { if (!selected[hid]) delete hostingChoices[hid]; });
+    draftNotes.push(...resyncSelectedFromCatalog());
+    showDraftChangesNotice(draftNotes);
     // Re-apply the standalone hosting lock so a restored draft doesn't show a
     // standalone hosting fee as selectable when it shouldn't be (or vice versa).
     updateStandaloneHostingLocks();
@@ -9012,6 +9087,7 @@ async function restorePickerSelections(d, attemptsLeft) {
     }
     if (d.selectedClientId && CLIENT_ROSTER.some(c => c.id === d.selectedClientId)) {
       selectedClientId = d.selectedClientId;
+      clientDetailsFailed = false;
       const picker = document.getElementById('client-picker');
       if (picker) picker.value = d.selectedClientId;
       setBizNameLocked(true);
@@ -9027,8 +9103,11 @@ async function restorePickerSelections(d, attemptsLeft) {
       } catch(e) {
         console.warn('Could not load this client\'s details:', e.message);
         selectedClientDetails = null;
+        clientDetailsFailed = true;
+        showToast('This client\'s saved details and prices did not load. Please click the client again before continuing.', 'error');
       }
-      reapplyPricingOverrides();
+      const repriced = reapplyPricingOverrides();
+      if (repriced && repriced.length) showDraftChangesNotice(repriced);
       const c = selectedClientDetails;
       if (c?.is_multi_agent) {
         await loadAgentSplitRosters(d.selectedClientId);
