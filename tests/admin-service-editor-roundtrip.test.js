@@ -20,7 +20,8 @@ win.eval([
   var allServicesMap = [], SECTIONS = [], INTAKE_FORMS = {}, currentAdminUser = { name: 't', pw: 'p', role: 'super' };
   function canSee() { return true; } function showToast() {} function adminLoadRateHistory() {} function adminCancelServiceEdit() {} function loadSuggestedMap() {}
   async function loadCatalog() {} function rebuildPriceableServices() {} function promptNewServiceAccountingSetup() {}
-  async function sb(path, opts) { window.__sent = JSON.parse(opts.body).p_data; }`,
+  async function sb(path, opts) { window.__sent = JSON.parse(opts.body).p_data; }
+  var adminReloadServices = async () => {}; async function adminFreshenList() { return true; } /* the list is already loaded in this test; the real helper has its own test (admin-edit-fresh-data) */`,
 ].join('\n'));
 
 const setWorld = (rows, intake) => { win.allServicesMap = rows; win.eval('SECTIONS = ' + JSON.stringify([{ id: 'web-ot', label: 'Website One-Time', active: true }, { id: 'lt', label: 'Location Targeting', active: true }, { id: 'alc', label: 'A la carte', active: true }, { id: 'old', label: 'Retired', active: false }])); win.eval('INTAKE_FORMS = ' + JSON.stringify(intake || { seo: { title: 'SEO' }, tlp: { title: 'TLP' } })); };
@@ -59,11 +60,12 @@ const R = {
 const lister = { ...base, id: 'x-2', exclusivity_group: 'web-tier', workflow: 'Website', pricing_group: 'Hosting Fees', subsection_label: 'Sub A' };
 const NOTE = {}; // reason a difference is by design, per field + case
 const diffs = {};
+(async () => {
 for (const [name, row] of Object.entries(R)) {
   setWorld([row, lister]);
   win.__sent = null;
-  win.adminEditService(row.id);
-  await_(win.adminSaveService());
+  await win.adminEditService(row.id);
+  await win.adminSaveService();
   const got = win.__sent;
   const bad = [];
   for (const k of Object.keys(got || {})) {
@@ -74,21 +76,21 @@ for (const [name, row] of Object.entries(R)) {
   }
   diffs[name] = bad;
 }
-function await_(p) { /* adminSaveService only awaits stubbed no-ops, so it has finished by the time the stub ran */ }
-setTimeout(() => {
+{
   // Editing the variants box still saves what was typed (the "keep the stored list" rule only applies to an untouched box).
-  setWorld([R['tactic variant containing a comma'], lister]); win.adminEditService('x-1'); win.document.getElementById('admin-svc-tactic-variants').value = 'Display, CRM'; win.adminSaveService();
+  setWorld([R['tactic variant containing a comma'], lister]); await win.adminEditService('x-1'); win.document.getElementById('admin-svc-tactic-variants').value = 'Display, CRM'; await win.adminSaveService();
   check('an edited variants box saves the edit', win.__sent.tactic_variants, ['Display', 'CRM']);
   // A Trello CARD code (8 characters) saved as List: Admin offers to switch it to Card.
   const shortRow = { ...base, trello_template_ref: 'abc12345', trello_template_type: 'list' }; setWorld([shortRow, lister]);
-  win.confirm = () => true; win.adminEditService('x-1'); win.adminSaveService();
+  win.confirm = () => true; await win.adminEditService('x-1'); await win.adminSaveService();
   check('8-character code + List: OK switches it to Card', win.__sent.trello_template_type, 'card');
-  win.confirm = () => false; win.adminEditService('x-1'); win.adminSaveService();
+  win.confirm = () => false; await win.adminEditService('x-1'); await win.adminSaveService();
   check('8-character code + List: Cancel keeps List', win.__sent.trello_template_type, 'list');
   win.confirm = () => true;
   const longRow = { ...base, trello_template_ref: '69a0ca52ccb9a9c454e3384e', trello_template_type: 'list' }; setWorld([longRow, lister]); let asked = false; win.confirm = () => { asked = true; return true; };
-  win.adminEditService('x-1'); win.adminSaveService();
+  await win.adminEditService('x-1'); await win.adminSaveService();
   check('a real 24-character list ID is never questioned', [asked, win.__sent.trello_template_type], [false, 'list']); win.confirm = () => true;
   for (const [name, bad] of Object.entries(diffs)) check('unchanged save keeps everything: ' + name + (bad.length ? '   <- ' + bad.join(' | ') : ''), bad, []);
   done();
-}, 50);
+}
+})();
