@@ -713,7 +713,7 @@ function accountingRenderDetailCard() {
       // at all: found live via Claire's screenshot, the top summary still
       // showed "Paused" for a Complete/cancelled line's month even after
       // the main table row below it correctly switched to "Complete").
-      paused: !!monthRow?.paused || line.status === 'paused' || line.status === 'complete',
+      paused: accountingMonthActivity(line, d, monthRow).paused,
     };
   });
 
@@ -2116,6 +2116,8 @@ function accountingLineStatusPill(r) {
   // anyone doing revenue reconciliation.
   if (r.isComplete) return accountingStatusPill('complete', 'Complete');
   if (r.paused) return accountingStatusPill('paused', 'Paused');
+  // Ran only part of the month (paused or completed mid-month): the tiles count just those days (2026-10-14).
+  if (r.fraction > 0 && r.fraction < 1 && r.activeDays != null) return accountingStatusPill('paused', 'Ran ' + r.activeDays + ' of ' + r.eligibleDays + ' days');
   if (r.confirmed) return accountingStatusPill('confirmed', 'Confirmed');
   // A cancelled line is not waiting on a charge to be confirmed the way a live one is (2026-10-08, per Claire).
   if (r.line.status === 'cancelled') return accountingStatusPill('cancelled', 'Cancelled');
@@ -2600,6 +2602,16 @@ async function fetchAccountingData() {
     sb('rpc/accounting_get_closed_months', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }),
   ]);
   ALL_ACCOUNTING_LINES = lines || [];
+  // Status history (2026-10-14): read-only RPC accounting_get_status_history. If it is not there yet (or fails), Accounting keeps the OLD rule for
+  // every line (current status for every month) and says so under the tiles -- it never guesses.
+  try {
+    ALL_ACCOUNTING_STATUS_HISTORY = await sbAll('rpc/accounting_get_status_history', { method: 'POST', body: JSON.stringify({ p_name: currentAccountingUser.name, p_pw: currentAccountingUser.pw }) }) || [];
+    ACCOUNTING_HISTORY_LOADED = true;
+  } catch (e) {
+    console.warn('Could not load status history -- using each line\'s current status for every month:', e.message);
+    ALL_ACCOUNTING_STATUS_HISTORY = []; ACCOUNTING_HISTORY_LOADED = false;
+  }
+  accountingIndexStatusHistory();
   ACCOUNTING_CLOSED_MONTHS = {};
   (closedMonths || []).forEach(c => { ACCOUNTING_CLOSED_MONTHS[c.month] = { closed_by: c.closed_by, closed_at: c.closed_at }; });
   ALL_ACCOUNTING_MONTHS = months || [];
@@ -2718,6 +2730,85 @@ function accountingMostRecentPriorMonth(lineId, key) {
     .filter(m => m.campaign_line_id === lineId && m.month.slice(0, 7) < key)
     .sort((a, b) => a.month.localeCompare(b.month));
   return priorRows.length ? priorRows[priorRows.length - 1] : null;
+}
+
+// ── MONTH-AWARE STATUS, PAUSES COUNTED BY THE DAY (2026-10-14, Claire: "by day that is paused is the correct way to look at it") ──────
+// Accounting used to read only a line's CURRENT status, for every month it was viewing: a campaign that finished in June, and was then marked
+// Complete, vanished from June's tiles (and, on Nov 1, every campaign ending Oct 31 would have dropped out of OCTOBER the moment it auto-completed).
+// Strategist already files each month under the status the line had THEN, from campaign_status_history (strategistHistoricalStatus). This does the
+// same for Accounting, and goes one step further: a line paused or completed PART of a month counts for the days it ran.
+//   - A day counts as "running" unless the line's status that day was Paused or Complete (status at the END of that day, in local time).
+//   - Only days inside the line's own flight count, so a mid-month start or end still bills the whole month the way it always did.
+//   - A month's own "paused" checkbox still means the whole month is off.
+//   - Cancelled/pending lines are NOT touched here (cancel billing is Kim's open question; pending already has its own rule).
+//   - A line with no history rows, or history that did not load, keeps the old rule (current status for every month).
+let ALL_ACCOUNTING_STATUS_HISTORY = [];
+let ACCOUNTING_HISTORY_LOADED = false;
+let ACCOUNTING_HISTORY_BY_LINE = new Map();
+const ACCOUNTING_NOT_RUNNING_STATUSES = ['paused', 'complete'];
+function accountingLocalDayIso(value) {
+  const d = value instanceof Date ? value : new Date(value);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function accountingIndexStatusHistory() {
+  ACCOUNTING_HISTORY_BY_LINE = new Map();
+  ALL_ACCOUNTING_STATUS_HISTORY.forEach(h => {
+    if (!h || !h.campaign_line_id || !h.changed_at) return;
+    if (!ACCOUNTING_HISTORY_BY_LINE.has(h.campaign_line_id)) ACCOUNTING_HISTORY_BY_LINE.set(h.campaign_line_id, []);
+    ACCOUNTING_HISTORY_BY_LINE.get(h.campaign_line_id).push({ at: new Date(h.changed_at).getTime(), day: accountingLocalDayIso(h.changed_at), old_status: h.old_status || null, new_status: h.new_status });
+  });
+  ACCOUNTING_HISTORY_BY_LINE.forEach(list => list.sort((a, b) => a.at - b.at));
+}
+// The status a line had at the END of the given day (YYYY-MM-DD, local). Before its first recorded change it had that change's old status.
+function accountingStatusOnDay(line, dayIso) {
+  const hist = ACCOUNTING_HISTORY_LOADED ? ACCOUNTING_HISTORY_BY_LINE.get(line.id) : null;
+  if (!hist || !hist.length) return line.status;
+  let status = null;
+  for (const h of hist) { if (h.day <= dayIso) status = h.new_status; else break; }
+  return status != null ? status : (hist[0].old_status || line.status);
+}
+// How much of this month the line was actually running. fraction 1 = the whole month (as before), 0 = none of it, in between = partly.
+function accountingMonthActivity(line, monthDate, monthRow) {
+  const y = monthDate.getFullYear(), m = monthDate.getMonth();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const iso = d => y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+  const wholeMonthOff = !!monthRow?.paused;
+  const hist = ACCOUNTING_HISTORY_LOADED ? ACCOUNTING_HISTORY_BY_LINE.get(line.id) : null;
+  const legacy = () => {
+    const off = wholeMonthOff || line.status === 'paused' || line.status === 'complete';
+    return { fraction: off ? 0 : 1, activeDays: off ? 0 : null, eligibleDays: null, paused: off, isComplete: line.status === 'complete', viaHistory: false };
+  };
+  if (!hist || !hist.length) return legacy();
+  const start = line.flight_start ? String(line.flight_start).slice(0, 10) : null, end = line.flight_end ? String(line.flight_end).slice(0, 10) : null;
+  const eligible = [];
+  for (let d = 1; d <= daysInMonth; d++) { const day = iso(d); if ((!start || day >= start) && (!end || day <= end)) eligible.push(day); }
+  if (!eligible.length) return legacy();
+  const running = eligible.filter(day => !ACCOUNTING_NOT_RUNNING_STATUSES.includes(accountingStatusOnDay(line, day)));
+  const fraction = wholeMonthOff ? 0 : running.length / eligible.length;
+  const lastStatus = accountingStatusOnDay(line, eligible[eligible.length - 1]);
+  return { fraction, activeDays: wholeMonthOff ? 0 : running.length, eligibleDays: eligible.length, paused: fraction === 0, isComplete: fraction === 0 && lastStatus === 'complete', viaHistory: true };
+}
+// What the headline tiles add up, one CHILD line at a time (a rollup is several lines under one tactic), each scaled by how much of the month it
+// ran. Pending rows stay out entirely (their own rule). Actual spend is a real number entered by someone, so it is never scaled.
+function accountingComputeTileTotals(rows) {
+  const t = { gross: 0, expectedSpend: 0, actualSpend: 0, fortyfouri: 0, billedExternally: 0, awaitingGross: 0, awaitingExpectedSpend: 0, awaitingFortyfouri: 0 };
+  rows.forEach(r => {
+    if (accountingRowIsPending(r)) return;
+    (r.isRollup ? r.children : [r]).forEach(c => {
+      const f = c.fraction != null ? c.fraction : (c.paused ? 0 : 1);
+      if (f <= 0) return;
+      const one = { ...c, isRollup: false };
+      t.gross += (c.gross || 0) * f;
+      if (c.expectedSpend != null) t.expectedSpend += c.expectedSpend * f;
+      if (c.actualSpend != null) t.actualSpend += c.actualSpend;
+      const inv = accountingSplitInvoiceable(one);
+      t.fortyfouri += inv.invoiceable * f;
+      t.billedExternally += inv.excluded * f;
+      const aw = accountingAwaitingParts(one);
+      t.awaitingGross += aw.gross * f; t.awaitingExpectedSpend += aw.expectedSpend * f; t.awaitingFortyfouri += aw.fortyfouri * f;
+    });
+  });
+  return t;
 }
 
 async function loadAccountingDashboard() {
@@ -2898,8 +2989,10 @@ function accountingBuildRows() {
     // paused, and a permanently completed line should be excluded there too.
     // isComplete is tracked separately so the PILL can still say "Complete"
     // specifically instead of being folded into the same "Paused" label.
-    const paused = !!monthRow?.paused || l.status === 'paused' || l.status === 'complete';
-    const isComplete = l.status === 'complete';
+    // Month-aware (2026-10-14): how much of THIS month the line ran, from its status history (see accountingMonthActivity()). `paused` now means "ran none
+    // of this month" -- the same all-or-nothing flag the pills and tiles already used -- and `fraction` carries the partial case.
+    const activity = accountingMonthActivity(l, accountingCurrentMonth, monthRow);
+    const paused = activity.paused, isComplete = activity.isComplete;
     // Flags anything that showed up in a month AFTER it was already marked
     // billed (2026-09-18, per Claire's accountant -- see ACCOUNTING_CLOSED_MONTHS'
     // own comment). addedAfterBilling covers a whole new campaign line
@@ -2918,7 +3011,7 @@ function accountingBuildRows() {
       if (l.created_at && new Date(l.created_at) > closedAt) addedAfterBilling = true;
       else if (monthRow?.updated_at && new Date(monthRow.updated_at) > closedAt) changedAfterBilling = true;
     }
-    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed, paused, isComplete, addedAfterBilling, changedAfterBilling };
+    return { line: l, gross, actualSpend, expectedSpend, cutPct, split, monthStr, confirmed, paused, isComplete, fraction: activity.fraction, activeDays: activity.activeDays, eligibleDays: activity.eligibleDays, addedAfterBilling, changedAfterBilling };
   }).filter(r => r.gross != null || r.line.status === 'pending');
   // A pending campaign still shows as a line item for every month in its
   // own flight (2026-08-12, per Claire: "I would like there to be line
@@ -3084,22 +3177,12 @@ function renderAccountingDashboard() {
   // themselves stay the full figures, since the table's own Total row (and
   // every individual row) still shows its real number regardless of
   // confirmation status, same as Billed Externally rows always have.
-  let totalGross = 0, totalExpectedSpend = 0, totalActualSpend = 0, totalFortyfouri = 0, totalBilledExternally = 0;
-  let awaitingGross = 0, awaitingExpectedSpend = 0, awaitingFortyfouri = 0;
-  rows.forEach(r => {
-    if (accountingRowIsPending(r)) return;
-    if (accountingRowIsPaused(r)) return;
-    totalGross += r.gross || 0;
-    if (r.expectedSpend != null) totalExpectedSpend += r.expectedSpend;
-    if (r.actualSpend != null) totalActualSpend += r.actualSpend;
-    const { invoiceable, excluded } = accountingSplitInvoiceable(r);
-    totalFortyfouri += invoiceable;
-    totalBilledExternally += excluded;
-    const awaiting = accountingAwaitingParts(r);
-    awaitingGross += awaiting.gross;
-    awaitingExpectedSpend += awaiting.expectedSpend;
-    awaitingFortyfouri += awaiting.fortyfouri;
-  });
+  // One child line at a time, each scaled by how much of the month it ran (2026-10-14, see accountingComputeTileTotals()): a fully paused or completed
+  // month adds nothing (as before), a part-month adds the days it ran, and a rollup no longer drags in a child that did not run.
+  const tileTotals = accountingComputeTileTotals(rows);
+  const totalGross = tileTotals.gross, totalExpectedSpend = tileTotals.expectedSpend, totalActualSpend = tileTotals.actualSpend,
+        totalFortyfouri = tileTotals.fortyfouri, totalBilledExternally = tileTotals.billedExternally;
+  const awaitingGross = tileTotals.awaitingGross, awaitingExpectedSpend = tileTotals.awaitingExpectedSpend, awaitingFortyfouri = tileTotals.awaitingFortyfouri;
   // Group-brand-color tinting, take 2 (2026-08-12) -- the first version tinted
   // the shared #accounting-stats CONTAINER, which leaked the group's color
   // through the gaps between tiles once they became individually-boxed cards
@@ -3125,7 +3208,8 @@ function renderAccountingDashboard() {
     stat('Expected Spend', '$' + acctMoney(totalExpectedSpend - awaitingExpectedSpend), '', awaitingSub(awaitingExpectedSpend)) +
     stat('Actual Spend', '$' + acctMoney(totalActualSpend)) +
     stat('44i Revenue', '$' + acctMoney(totalFortyfouri - awaitingFortyfouri), '', awaitingSub(awaitingFortyfouri)) +
-    stat('SSH Billing (excl.)', '$' + acctMoney(totalBilledExternally));
+    stat('SSH Billing (excl.)', '$' + acctMoney(totalBilledExternally)) +
+    (ACCOUNTING_HISTORY_LOADED ? '' : '<div style="flex-basis:100%;font-size:11px;color:var(--muted);padding:4px 2px">Status history is not loaded, so every month uses each campaign\'s CURRENT status (paused/complete campaigns are left out of past months too).</div>');
 
   accountingRenderDetailCard();
 
