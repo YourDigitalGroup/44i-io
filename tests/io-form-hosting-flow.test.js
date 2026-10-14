@@ -24,7 +24,8 @@ const SERVICES = [
     const click = sel => pg.evaluate(sel => document.querySelector(sel).click(), sel);
     const tick = id => click('tr[data-id="' + id + '"] input[type=checkbox]');
     const chooseHost = async (how, pkg) => { await click('input[name="hosting-choice"][value="' + how + '"]'); if (how === 'us') await click('input[name="hosting-pkg"][value="' + pkg + '"]'); await click('#hosting-modal .btn-primary'); };
-    const state = () => pg.evaluate(() => ({ selected: Object.keys(selected).sort(), hosting: Object.fromEntries(Object.entries(hostingChoices).map(([k, v]) => [k, v.choice])), prorated: proratedHostingTotal(), hostLocked: document.querySelector('tr[data-id="w-host"] input[type=checkbox]').disabled, modalOpen: document.getElementById('hosting-modal').style.display !== 'none' }));
+    // 'prorated' below = what the order total adds, summed over EVERY stored hosting choice (exactly how the old form computed it)
+    const state = () => pg.evaluate(() => ({ selected: Object.keys(selected).sort(), hosting: Object.fromEntries(Object.entries(hostingChoices).map(([k, v]) => [k, v.choice])), prorated: Object.values(hostingChoices).reduce((t, h) => t + (h.choice === 'us' && h.proratedAmt ? h.proratedAmt : 0), 0), hostLocked: document.querySelector('tr[data-id="w-host"] input[type=checkbox]').disabled, modalOpen: document.getElementById('hosting-modal').style.display !== 'none' }));
 
     // add a package and choose "we host"
     await tick('w-bs'); check('ticking a package opens the hosting popup', (await state()).modalOpen, true);
