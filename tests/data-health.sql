@@ -322,8 +322,8 @@ union all
 select 'D04 campaign_lines on an INACTIVE service', 'MEDIUM', service_id, count(*) || ' line(s); the screens only load active services, so billing_type/labels fall back to monthly/blank'
   from campaign_lines cl join s_all a on a.id = cl.service_id where not a.active group by service_id
 union all
-select 'D05 campaign_lines.billing_type not spend/recurring/one_time', 'MEDIUM', service_id, 'billing_type = "' || coalesce(billing_type,'NULL') || '" on ' || count(*) || ' line(s)'
-  from campaign_lines where billing_type is null or billing_type not in ('spend','recurring','one_time') group by service_id, billing_type
+select 'D05 campaign_lines.billing_type not spend/recurring/one_time/setup_fee/hosting_proration', 'MEDIUM', service_id, 'billing_type = "' || coalesce(billing_type,'NULL') || '" on ' || count(*) || ' line(s)'
+  from campaign_lines where billing_type is null or billing_type not in ('spend','recurring','one_time','setup_fee','hosting_proration') group by service_id, billing_type
 union all
 select 'D06 order line_items.service_id not in services', 'HIGH', service_id, count(*) || ' order line(s), e.g. order ' || min(order_id)
   from order_items oi where service_id is not null and not exists (select 1 from s_all a where a.id = oi.service_id) group by service_id
