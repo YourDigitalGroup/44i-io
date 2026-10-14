@@ -8550,6 +8550,15 @@ function adminModuleOptions(serviceId) {
   return Array.isArray(arr) ? arr : null;
 }
 
+// Options for the Quantity dropdown (2026-10-14). A saved quantity that is not one of the presets (an old order, or presets edited since)
+// used to leave NO option selected, so the browser showed the FIRST preset, and Save for any other reason changed the quantity to it.
+// The saved quantity is now always an option, selected.
+function adminQtyOptionsHtml(presetOptions, currentQty) {
+  const has = presetOptions.some(v => Number(v) === Number(currentQty));
+  const opts = presetOptions.map(v => `<option value="${esc(v)}" ${Number(v) === Number(currentQty) ? 'selected' : ''}>${esc(v)}</option>`);
+  if (!has) opts.unshift(`<option value="${esc(currentQty)}" selected>${esc(currentQty)} (current)</option>`);
+  return opts.join('');
+}
 function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
   const svc = CATALOG_ROWS[serviceId] || {};
   const variantOptions = Array.isArray(svc.tactic_variants) ? svc.tactic_variants : null;
@@ -8600,7 +8609,7 @@ function adminExtraEditFieldsHtml(serviceId, item, includeEndDate) {
     const currentQty = item?.qty ?? 1;
     const qtyControl = presetOptions && presetOptions.length
       ? `<select id="edit-extra-qty-${esc(serviceId)}" style="padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px">
-          ${presetOptions.map(v => `<option value="${esc(v)}" ${Number(v) === Number(currentQty) ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+          ${adminQtyOptionsHtml(presetOptions, currentQty)}
         </select>`
       : `<input type="number" min="1" id="edit-extra-qty-${esc(serviceId)}" value="${esc(currentQty)}" style="width:70px;padding:5px 7px;border-radius:6px;border:1px solid var(--border);background:#fff;font-size:12px"/>`;
     html += `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
