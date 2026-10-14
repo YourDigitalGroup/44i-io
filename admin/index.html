@@ -3136,6 +3136,24 @@ new ResizeObserver(() => fitAdminTableHeight()).observe(document.getElementById(
 // isn't deployed yet (or errors), fall back to today's direct read so Admin
 // can't break between the frontend deploy and the SQL run; that fallback is
 // removed with the policy in Phase 2.
+// ── OPEN EDITORS ON FRESH DATA (2026-10-14 logic audit) ─────────────────────────────────────────────────────
+// Every Admin editor saves the WHOLE record it opened, and that record came from a list loaded earlier (when the tab opened). So anything changed
+// since -- an IO submission writing a client's Trello list link or contact info, another AM saving the same group -- was silently undone by the next
+// Save (found while chasing the vanished covering strategists). Before an editor opens, the list is reloaded if it is more than 20 seconds old; if the
+// reload fails the editor does NOT open (an old copy could overwrite newer work). Last-write-wins between two people editing at the same moment would
+// need a server-side version check; this closes the long-open-tab case, which is the realistic one.
+const ADMIN_FRESH_MS = 20000;
+const ADMIN_LIST_LOADED_AT = {};
+async function adminFreshenList(key, reload) {
+  const at = ADMIN_LIST_LOADED_AT[key];
+  if (at && Date.now() - at < ADMIN_FRESH_MS) return true;
+  try { await reload(); ADMIN_LIST_LOADED_AT[key] = Date.now(); return true; }
+  catch (e) { showToast('Could not load the latest version, so this was not opened (an old copy could overwrite newer changes). Please try again. (' + e.message + ')', 'error'); return false; }
+}
+const adminReloadGroups = async () => { allGroups = await adminLoadAllGroups(); };
+const adminReloadClients = async () => { ALL_CLIENTS = await sbAll('rpc/admin_get_clients', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || []; };
+const adminReloadAes = async () => { ALL_AES = await sbAll('rpc/admin_get_aes', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || []; };
+
 async function adminLoadAllGroups() {
   try {
     const rows = await sb('rpc/admin_get_groups', {
@@ -3152,6 +3170,7 @@ async function adminLoadAllGroups() {
 async function loadAdminGroups() {
   try {
     allGroups = await adminLoadAllGroups();
+    ADMIN_LIST_LOADED_AT.groups = Date.now();
     renderAdminGroups();
   } catch(e) {
     showToast('Error loading groups: ' + e.message, 'error');
@@ -4625,6 +4644,7 @@ async function loadAdminAes() {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
+    ADMIN_LIST_LOADED_AT.aes = Date.now();
     populateAeFilterGroupDropdown();
     renderAdminAeList();
   } catch(e) {
@@ -4708,7 +4728,8 @@ function adminNewAe() {
   document.getElementById('admin-ae-form').scrollIntoView({behavior:'smooth'});
 }
 
-function adminEditAe(id) {
+async function adminEditAe(id) {
+  if (!(await adminFreshenList('aes', adminReloadAes))) return;
   const a = ALL_AES.find(x => x.id === id);
   if (!a) return;
   document.getElementById('admin-ae-form-title').textContent = 'Edit AE — ' + a.name;
@@ -6525,6 +6546,7 @@ async function loadAdminClients() {
       method: 'POST',
       body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' })
     }) || [];
+    ADMIN_LIST_LOADED_AT.clients = Date.now();
     populateClientFilterGroupDropdown();
     renderAdminClients();
   } catch(e) {
@@ -6651,6 +6673,7 @@ async function adminNewClient() {
 }
 
 async function adminEditClient(id) {
+  if (!(await adminFreshenList('clients', adminReloadClients))) return;
   const c = ALL_CLIENTS.find(x => x.id === id);
   if (!c) return;
   document.getElementById('admin-client-form-title').textContent = 'Edit Client — ' + c.name;
@@ -13795,6 +13818,7 @@ async function adminNewGroup() {
 // desired tab in directly and switching to it here, in the correct final order,
 // removes the race entirely instead of tuning the timeout.
 async function adminEditGroup(id, initialTab) {
+  if (!(await adminFreshenList('groups', adminReloadGroups))) return;
   const g = allGroups.find(x => x.id === id);
   if (!g) return;
   document.getElementById('tab-btn-embed').style.display = canSee('embedKeysManage') ? '' : 'none';
