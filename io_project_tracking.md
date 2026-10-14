@@ -31717,3 +31717,11 @@ Request relayed by Claire (screenshot of a teammate's message): delete the first
 **Verified:** both new tests fail on the old Admin code (4 service cases, 2 group cases) and pass on the new; full suite passes.
 
 **Update (2026-10-14, later):** Claire ran the 16-service Template Type SQL (List -> Card for the 8-character codes; backup table `services_template_type_backup_20261014`). Still to do by hand: submit one test order on an affected service (e.g. Stock Photography) and one hosting-only order on a test client, confirm the real template card is created (not a bare "Website (1-page)" card), then archive the test cards.
+
+## 2026-10-14 — PARKED (not built): services available to the 44i group first (AM request via Claire)
+
+**Request:** some services are offered to 44i's own group before other groups. Today a service is either Active (everyone) or not (nobody); nothing per-group exists (grepped `shared.js`/`index.html`/`admin/index.html`: only `services?active=eq.true`).
+**Claire's answer so far:** "typically only the 44i group first."
+**Proposed shape (not agreed or built):** one switch per service in Admin -> Services ("44i only -- not released to other groups yet"), off = available to everyone (the default, so every existing service is unchanged). The form decides "is this the 44i group?" from a flag on the GROUP (not the group's name). A tick-list of groups is the alternative if another group ever needs early access.
+**Open for the AM:** (1) existing orders if a service is pulled back (expected: unchanged); (2) whether submission should ALSO refuse a hidden service (recommended: yes, so a saved link/draft can't sneak it through); (3) who can change it (expected: super admins only); (4) is another group ever given early access?
+**Care when built:** the filter sits on the form's service-load path (shared by the IO form and Companion), so label SQL as touching the load path, keep a group with no setting working exactly as today, and add a test (a hidden service is absent for another group, present for 44i, present for everyone once released).
