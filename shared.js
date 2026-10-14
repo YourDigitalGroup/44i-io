@@ -431,6 +431,12 @@ function lineSpendVaries(li) {
   if (li.budget_mode === 'monthly') return false;
   return Array.isArray(li.month_budgets) && li.month_budgets.length > 1 && new Set(li.month_budgets.map(m => m.amount)).size > 1;
 }
+// "$175 × 3 = $525 one-time" is for a per-unit service (always, even at 1, so it reads as unit price × count) or any quantity above 1.
+// A flat one-time line (stored qty 1) reads just "$450" -- same as the printed IO (2026-10-14: Admin/revised IO said "$450.00 × 1 = $450.00").
+function lineShowsQtyBreakdown(item, qty) {
+  if (item.qty == null) return false;
+  return Number(qty) > 1 || CATALOG_ROWS[item.service_id]?.pricing_mode === 'per_unit';
+}
 function describeLineItemAmount(item) {
   const fmtMoney = n => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const parts = [];
@@ -442,7 +448,7 @@ function describeLineItemAmount(item) {
   const rsuf = yearly ? '/yr' : '/mo';
   if (item.fee > 0) {
     const unitFee = item.unit_fee != null ? Number(item.unit_fee) : item.fee / qty;
-    parts.push(item.qty != null ? `${fmtMoney(unitFee)} × ${qty} = ${fmtMoney(item.fee)} one-time` : fmtMoney(item.fee) + ' one-time');
+    parts.push(lineShowsQtyBreakdown(item, qty) ? `${fmtMoney(unitFee)} × ${qty} = ${fmtMoney(item.fee)} one-time` : fmtMoney(item.fee) + ' one-time');
     oneTime += Number(item.fee);
   }
   if (item.recurring > 0) {

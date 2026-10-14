@@ -6,7 +6,7 @@ const { read, fn, check, done, ROOT } = require('./lib');
 // ---- shared.js + Admin (pure functions) -------------------------------------------------------------
 const shared = read('shared.js'), admin = read('admin/index.html');
 const CATALOG_ROWS = { 'w-hosting': { billing_type: 'yearly' }, 'wm-hosting': { billing_type: 'monthly' }, 'w-flat': { billing_type: 'one_time' } };
-const sh = new Function('CATALOG_ROWS', fn(shared, 'lineSpendVaries') + fn(shared, 'describeLineItemAmount') + fn(shared, 'orderLiveTotals') + '; return { describeLineItemAmount, orderLiveTotals };')(CATALOG_ROWS);
+const sh = new Function('CATALOG_ROWS', fn(shared, 'lineSpendVaries') + fn(shared, 'lineShowsQtyBreakdown') + fn(shared, 'describeLineItemAmount') + fn(shared, 'orderLiveTotals') + '; return { describeLineItemAmount, orderLiveTotals };')(CATALOG_ROWS);
 const host = { service_id: 'w-hosting', recurring: 450, fee: 0 }, mon = { service_id: 'wm-hosting', recurring: 69, fee: 0 }, flat = { service_id: 'w-flat', fee: 175, recurring: 0 };
 check('shared: yearly line reads $450.00/yr', sh.describeLineItemAmount(host).text, '$450.00/yr');
 check('shared: monthly line still reads /mo', sh.describeLineItemAmount(mon).text, '$69.00/mo');

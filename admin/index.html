@@ -2308,7 +2308,7 @@ async function adminSavePricingFieldHistory(prefix, scope, scopeId, serviceId) {
   const histPrefix = `${prefix}-price-hist-${serviceId}`;
   const value = document.getElementById(histPrefix + '-history-value')?.value;
   const effectiveDate = document.getElementById(histPrefix + '-history-date')?.value;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = adminLocalToday();
   const isImmediate = effectiveDate && effectiveDate <= today && value !== '';
   await adminAddRateHistoryChange(histPrefix, scope, scopeId, serviceId, 'price', async () => {
     if (!isImmediate) return;
@@ -3143,6 +3143,13 @@ new ResizeObserver(() => fitAdminTableHeight()).observe(document.getElementById(
 // Save (found while chasing the vanished covering strategists). Before an editor opens, the list is reloaded if it is more than 20 seconds old; if the
 // reload fails the editor does NOT open (an old copy could overwrite newer work). Last-write-wins between two people editing at the same moment would
 // need a server-side version check; this closes the long-open-tab case, which is the realistic one.
+// Today's date as the AM sees it (2026-10-14). The old way, a UTC date string cut from toISOString(), is TOMORROW from about
+// 7pm Central on: a rate change dated tomorrow applied immediately, the cancel form defaulted to tomorrow, and the early-cancel notice
+// warning counted a day short. This uses the browser's own calendar day instead.
+function adminLocalToday() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 const ADMIN_FRESH_MS = 20000;
 const ADMIN_LIST_LOADED_AT = {};
 async function adminFreshenList(key, reload) {
@@ -8077,7 +8084,7 @@ function adminRenderRateHistory(prefix, rows) {
   const listEl = document.getElementById(prefix + '-history-list');
   if (!listEl) return;
   if (!rows.length) { listEl.innerHTML = '<em>No scheduled changes yet — the field above is today\'s standard value.</em>'; return; }
-  const today = new Date().toISOString().slice(0,10);
+  const today = adminLocalToday();
   listEl.innerHTML = rows.map(r => {
     const isFuture = r.effective_date > today;
     return `<div style="display:flex;justify-content:space-between;padding:3px 0">
@@ -8169,7 +8176,7 @@ async function adminSaveOverrideFieldHistory(rowPrefix, overrideKey, scope, scop
   // DOM inputs inside the callback.
   const value = document.getElementById(prefix + '-history-value')?.value;
   const effectiveDate = document.getElementById(prefix + '-history-date')?.value;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = adminLocalToday();
   const isImmediate = effectiveDate && effectiveDate <= today && value !== '';
   await adminAddRateHistoryChange(prefix, scope, scopeId, overrideKey, field, async () => {
     if (!isImmediate) return;
@@ -10282,7 +10289,7 @@ async function viewOrderDetail(orderId) {
       const liQty = Number(item.qty) || 1;
       if (item.fee > 0) {
         const unitFee = item.unit_fee != null ? Number(item.unit_fee) : item.fee / liQty;
-        amtParts.push(item.qty != null ? `${fmtMoney(unitFee)} × ${liQty} = ${fmtMoney(item.fee)} one-time` : fmtMoney(item.fee) + ' one-time');
+        amtParts.push(lineShowsQtyBreakdown(item, liQty) ? `${fmtMoney(unitFee)} × ${liQty} = ${fmtMoney(item.fee)} one-time` : fmtMoney(item.fee) + ' one-time');
       }
       if (item.recurring > 0) {
         const rsuf = ['yearly', 'annual'].includes(CATALOG_ROWS[item.service_id]?.billing_type) ? '/yr' : '/mo';
@@ -10789,7 +10796,7 @@ function adminToggleCancelPanel(orderId, serviceId) {
   if (row.style.display !== 'none') { row.style.display = 'none'; row.querySelector('td').innerHTML = ''; return; }
   const svc = CATALOG_ROWS[serviceId] || {};
   const label = svc.accounting_label || svc.label || serviceId;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = adminLocalToday();
   row.querySelector('td').innerHTML = `
     <div style="background:var(--light);padding:12px 14px">
       <div style="font-size:11.5px;font-weight:700;margin-bottom:8px">Cancel: ${esc(label)}</div>
@@ -10826,7 +10833,7 @@ function adminUpdateCancelWarning(serviceId) {
   const noticeDays = svc.cancel_notice_days;
   const penaltyType = svc.cancel_penalty_type;
   if (!dateVal || !noticeDays || !penaltyType || penaltyType === 'none') { warnEl.innerHTML = ''; return; }
-  const daysUntil = Math.round((new Date(dateVal + 'T00:00:00') - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')) / 86400000);
+  const daysUntil = Math.round((new Date(dateVal + 'T00:00:00') - new Date(adminLocalToday() + 'T00:00:00')) / 86400000);
   if (daysUntil >= noticeDays) { warnEl.innerHTML = ''; return; }
   const penaltyText = penaltyType === 'flat'
     ? `a flat $${Number(svc.cancel_penalty_amount || 0).toLocaleString()} early-termination fee`
@@ -12350,7 +12357,7 @@ function adminCorrectRenderFields(orderId, oldServiceId) {
   if (!o || !r) { box.innerHTML = ''; return; }
   const oldItem = (o.line_items || []).find(li => li.service_id === oldServiceId) || {};
   const model = adminCorrectModel(r);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = adminLocalToday();
   const start = String(oldItem.start_date || o.campaign_start || today).slice(0, 10);
   const endDefault = String(oldItem.end_date || o.campaign_end || '').slice(0, 10);
   const qtyOpts = r.pricing_mode === 'per_unit' ? adminCorrectQtyOptions(r) : null;
@@ -12723,7 +12730,7 @@ function adminToggleSwapPanel(orderId) {
   const endingOptions = (o.line_items || []).map(li => `<option value="${esc(li.service_id)}">${esc(CATALOG_ROWS[li.service_id]?.accounting_label || li.label || li.service_id)}</option>`).join('');
   const startingOptions = Object.values(CATALOG_ROWS).filter(s => s.active !== false)
     .map(s => `<option value="${esc(s.id)}">${esc(s.accounting_label || s.label)}</option>`).join('');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = adminLocalToday();
   box.innerHTML = `
     <div style="background:var(--light);border-radius:8px;padding:14px 16px">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:10px">
