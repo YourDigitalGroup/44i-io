@@ -5494,7 +5494,9 @@ function renderAdminUsersList() {
 // adminNewUser()/adminEditUser() so the field's visibility always matches whatever
 // role is currently selected, not just the one the form opened with.
 function adminUserRoleChanged() {
-  const isAm = document.getElementById('admin-user-role').value === 'am';
+  // Super Admins can be a group's AM too (since 2026-10-07), so they keep a calendar link as well (2026-10-14: saving a Super
+  // used to null it, and that blanked the KOC booking link on every group where they are the AM).
+  const isAm = ['am', 'super'].includes(document.getElementById('admin-user-role').value);
   document.getElementById('admin-user-calendar-wrap').style.display = isAm ? 'block' : 'none';
 }
 
@@ -5554,7 +5556,7 @@ async function adminSaveUser() {
     // Calendar URL is AM-only — sending null for every other role means switching a
     // user OFF Account Manager clears out any stale link left over from when they
     // were one, rather than silently keeping it around unused.
-    am_calendar_url: role === 'am' ? (calendarUrl || null) : null
+    am_calendar_url: ['am', 'super'].includes(role) ? (calendarUrl || null) : null
   };
   if (password) payload.new_password = password;
   try {
@@ -6207,9 +6209,14 @@ const LEGAL_FIELDS = [
   'checkbox_terms', 'checkbox_ip', 'checkbox_pricing',
 ];
 
+// Saving sends EVERY box, so if the boxes never loaded (a failed request showed only a toast) one edit + Save would write
+// blanks over all 11 clauses (found in the 2026-10-14 logic audit). Saving is refused until a load has actually succeeded.
+let LEGAL_LOADED = false;
 async function loadAdminLegalContent() {
+  LEGAL_LOADED = false;
   try {
     const rows = await sb('legal_content?id=eq.1&select=*') || [];
+    LEGAL_LOADED = true;
     const row = rows[0] || {};
     LEGAL_FIELDS.forEach(f => {
       const el = document.getElementById('legal-' + f);
@@ -6223,6 +6230,10 @@ async function loadAdminLegalContent() {
 async function adminSaveLegalContent() {
   if (!canSee('legalTextEdit')) {
     showToast('Legal text can only be changed by a super admin', 'error');
+    return;
+  }
+  if (!LEGAL_LOADED) {
+    showToast('The legal text did not load, so saving now would erase it. Reload this page, open Legal Text again, and check the boxes are filled in before saving.', 'error');
     return;
   }
   const payload = {};
@@ -6250,9 +6261,12 @@ async function adminSaveLegalContent() {
 // edits directly, not a per-item list she'd add new rows to. BCC (not CC, per Claire
 // 2026-07-15) — recipients on this list shouldn't see each other or the group's own
 // io_recipient addresses in the To/CC headers.
+let NOTIF_LOADED = false; // same reason as LEGAL_LOADED above
 async function loadAdminNotificationSettings() {
+  NOTIF_LOADED = false;
   try {
     const rows = await sb('notification_settings?id=eq.1&select=*') || [];
+    NOTIF_LOADED = true;
     const row = rows[0] || {};
     document.getElementById('notif-always_bcc_recipients').value = row.always_bcc_recipients || '';
   } catch(e) {
@@ -6263,6 +6277,10 @@ async function loadAdminNotificationSettings() {
 async function adminSaveNotificationSettings() {
   if (!canSee('notificationsEdit')) {
     showToast('Notification settings can only be changed by a super admin', 'error');
+    return;
+  }
+  if (!NOTIF_LOADED) {
+    showToast('The notification settings did not load, so saving now would erase the BCC list. Reload this page and check the box is filled in before saving.', 'error');
     return;
   }
   const payload = {
@@ -8170,6 +8188,15 @@ async function adminSaveService() {
     ? ['digital','social','web'].filter(d => document.getElementById('admin-svc-strategist-' + d).checked)
     : (document.getElementById('admin-svc-strategist-discipline').value ? [document.getElementById('admin-svc-strategist-discipline').value] : []);
 
+  // A Trello CARD code is 8 characters (a list has a longer 24-character ID). Saved as "List", the form cannot read the template and makes a
+  // plain card named after the workflow instead (2026-10-14: 16 services were set up this way). Offer to switch it to Card.
+  {
+    const refEl = document.getElementById('admin-svc-trello-template-ref'), typeEl = document.getElementById('admin-svc-trello-template-type');
+    const ref = refEl.value.trim();
+    if (ref && typeEl.value === 'list' && /^[A-Za-z0-9]{8}$/.test(ref) && !/^[0-9a-f]{24}$/.test(ref)) {
+      if (confirm('This Trello code is 8 characters long, which is how a Trello CARD is written (a list has a longer ID).\n\nSaved as "List", this service would create a plain card named after its workflow instead of copying your template.\n\nOK = save it as Card (recommended)\nCancel = keep it as List')) typeEl.value = 'card';
+    }
+  }
   const payload = {
     label: label,
     accounting_label: document.getElementById('admin-svc-accounting-label').value.trim() || null,

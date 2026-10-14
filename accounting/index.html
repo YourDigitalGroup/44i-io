@@ -458,7 +458,9 @@ let ACCOUNTING_SPEND_TIER_TOP_OVERRIDE = { group: {} }; // group_id|service_id -
 // wall off" posture as the Strategist Split mismatch warning -- it just
 // makes anything that happens afterward visible instead of silent.
 let ACCOUNTING_CLOSED_MONTHS = {};
-let accountingCurrentMonth = new Date();
+// First of the LOCAL month (2026-10-14): a raw new Date() combined with the UTC month key (accountingMonthKey) showed NEXT month on the last
+// evening of a month in US time zones -- the night billing gets marked complete.
+let accountingCurrentMonth = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); })();
 let accountingGroupFilter = '';
 // Pure display filters (2026-09-02) -- unlike accountingGroupFilter above,
 // these never touch the stat tiles, only which rows the table shows. Both
@@ -655,6 +657,20 @@ function accountingRowNeedsConfirmation(r) {
   }
   if (r.line.billed_externally) return false;
   return !r.confirmed;
+}
+// The part of a row still awaiting confirmation, for the tiles' "$X awaiting confirmation" sub-totals. A plain row is all-or-nothing; a ROLLUP
+// (several agent/region lines under one tactic) counts only its UNCONFIRMED, not-billed-externally children -- before (2026-10-14 audit) one
+// unconfirmed child moved the WHOLE rollup, confirmed children included, out of the headline tiles while Actual Spend still counted them.
+function accountingAwaitingParts(r) {
+  const out = { gross: 0, expectedSpend: 0, fortyfouri: 0 };
+  const add = c => {
+    out.gross += c.gross || 0;
+    if (c.expectedSpend != null) out.expectedSpend += c.expectedSpend;
+    if (c.split && c.split.fortyfouri != null) out.fortyfouri += c.split.fortyfouri;
+  };
+  if (r.isRollup) r.children.forEach(c => { if (!c.line.billed_externally && !c.confirmed) add(c); });
+  else if (accountingRowNeedsConfirmation(r)) add(r);
+  return out;
 }
 function accountingRenderDetailCard() {
   const el = document.getElementById('accounting-detail-card');
@@ -899,6 +915,11 @@ function accountingIsSpendTrackable(serviceId) {
 function accountingDerivedBillingType(serviceId) {
   return CATALOG_ROWS[serviceId]?.billing_type === 'one_time' ? 'one_time' : 'recurring';
 }
+// Bulk import: typed text wins when it clearly says one-time ("One Time", "one-time", "one_time"); otherwise the catalog decides, same as
+// "+ Add Service" (2026-10-14: a missing or odd Billing column used to make a one-time setup fee RECURRING, carried forward into every month).
+function accountingImportBillingType(typed, serviceId) {
+  return /^one[\s_-]?time$/.test(String(typed || '').trim().toLowerCase()) ? 'one_time' : accountingDerivedBillingType(serviceId);
+}
 // The catalog's own default_price (or a group's own io_pricing override, same
 // mechanism the public IO form itself uses -- see applyCustomPricing() in
 // index.html) already says what a flat/recurring/one-time service costs --
@@ -1048,6 +1069,8 @@ async function accountingSubmitAddService() {
   if (!clientId || !serviceId) { showToast('Client and Tactic are both required.', 'error'); return; }
   const groupId = clientEl.selectedOptions[0]?.dataset.groupId || null;
   const flightStart = document.getElementById('acct-add-flight-start').value || null;
+  const flightEndTyped = document.getElementById('acct-add-flight-end').value || null;
+  if (accountingFlightDatesInvalid(flightStart, flightEndTyped)) { showToast(accountingFlightDatesProblemText(flightStart, flightEndTyped), 'error'); return; }
   const trackable = accountingIsSpendTrackable(serviceId);
   const data = {
     client_id: clientId, group_id: groupId || null, service_id: serviceId,
@@ -1069,7 +1092,7 @@ async function accountingSubmitAddService() {
     const grossBudget = document.getElementById('acct-add-gross-budget').value;
     if (grossBudget) {
       data.initial_gross_budget = parseFloat(grossBudget);
-      data.initial_month = new Date().toISOString().slice(0, 10);
+      data.initial_month = accountingTodayIso();
     }
   } else {
     // Flat/recurring/one-time: amount comes from the catalog (or the
@@ -1080,7 +1103,7 @@ async function accountingSubmitAddService() {
     const derived = accountingDerivedAmount(serviceId, clientId);
     if (derived != null) {
       data.initial_gross_budget = derived;
-      data.initial_month = flightStart || new Date().toISOString().slice(0, 10);
+      data.initial_month = flightStart || accountingTodayIso();
     }
   }
   try {
@@ -1896,7 +1919,9 @@ async function accountingConfirmBulkImport() {
         has_addl_targeting: g.hasAddlTargeting,
         accounting_only: !trackable,
         status: trackable ? undefined : 'active',
-        billing_type: trackable ? 'spend' : (g.billingType === 'one-time' || g.billingType === 'one_time' ? 'one_time' : 'recurring'),
+        // Typed text wins when it clearly says one-time ("One Time", "one-time", "one_time"); otherwise the catalog decides, same as "+ Add Service"
+        // (2026-10-14: a missing/odd column used to make a one-time setup fee RECURRING, carried forward into every month).
+        billing_type: trackable ? 'spend' : accountingImportBillingType(g.billingType, g.service.id),
       };
       if (firstMonth && firstMonth.grossBudget != null) {
         data.initial_gross_budget = firstMonth.grossBudget;
@@ -2116,6 +2141,8 @@ function accountingRollupStatusPill(r) {
 }
 
 function accountingMonthKey(d) { return d.toISOString().slice(0, 7); }
+// Today's date as YYYY-MM-DD in the LOCAL time zone (toISOString() is UTC, i.e. tomorrow after about 7pm Central).
+function accountingTodayIso() { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); }
 function accountingMonthLabel(d) { return d.toLocaleString('en-US', { month: 'long', year: 'numeric' }); }
 
 // Month-close lookup/actions (2026-09-18) -- see ACCOUNTING_CLOSED_MONTHS'
@@ -2723,6 +2750,19 @@ async function loadAccountingDashboard() {
 // separation Strategist's own architecture already has -- a line outside
 // its flight for this month is excluded here, full stop, regardless of
 // what accountingMonthRowFor would have computed for it.
+// A flight whose END is BEFORE its START (usually a mistyped year). Strategist keeps such a line visible and flags it "Check dates";
+// Accounting used to hide it in EVERY month, so its revenue silently vanished (2026-10-14 audit). Same rule as strategistFlightDatesInvalid().
+function accountingFlightDatesInvalid(start, end) {
+  const yearOk = d => parseInt(String(d).slice(0, 4), 10) >= 1900; // a half-typed year is not judged
+  return !!(start && end && yearOk(start) && yearOk(end) && String(end).slice(0, 10) < String(start).slice(0, 10));
+}
+function accountingFlightDatesProblemText(start, end) {
+  return `The end date (${String(end).slice(0, 10)}) is before the start date (${String(start).slice(0, 10)}). Check the year.`;
+}
+function accountingCheckDatesTag(line) {
+  return accountingFlightDatesInvalid(line.flight_start, line.flight_end)
+    ? ` <span title="${esc(accountingFlightDatesProblemText(line.flight_start, line.flight_end))}" style="font-size:9px;font-weight:700;background:#FEE2E2;color:#991B1B;padding:2px 6px;border-radius:10px;margin-left:4px;white-space:nowrap">CHECK DATES</span>` : '';
+}
 function accountingCancelledTag(line) {
   if (line.status !== 'cancelled') return '';
   const cx = line.cancel_effective_date ? new Date(String(line.cancel_effective_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' }) : null;
@@ -2779,6 +2819,11 @@ function accountingLineActiveInMonth(line, monthDate) {
     if (monthKey > accountingMonthKey(new Date(cx + 'T00:00:00'))) return false;
   }
   if (line.flight_start && monthKey < accountingMonthKey(new Date(line.flight_start + 'T00:00:00'))) return false;
+  // End before start (mistyped year): stays visible, flagged, but ONLY in its start month and months that have an amount of their own --
+  // never carried forward, so a bad date can never invent billed months (Strategist keeps these visible in every month).
+  if (accountingFlightDatesInvalid(line.flight_start, line.flight_end)) {
+    return monthKey === accountingMonthKey(new Date(String(line.flight_start).slice(0, 10) + 'T00:00:00')) || accountingExplicitMonthKeys(line.id).has(monthKey);
+  }
   // A one-time fee (ACCOUNTING_ONE_TIME_BILLING_TYPES, defined above
   // alongside accountingMonthRowFor() -- reused here too) only ever
   // happened in the single month it was billed. It
@@ -2980,7 +3025,7 @@ function accountingRenderRow(r) {
   const dollarStyle = accountingRowIsPaused(r) ? ' style="color:var(--muted)"' : '';
   return `<tr class="acct-row${selected ? ' selected' : ''}" onclick="accountingSelectLine('${r.line.id}')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();accountingSelectLine('${r.line.id}')}">
     <td><strong>${esc(accountingDisplayClientName(r.line))}</strong></td>
-    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingCancelledTag(r.line)}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}${accountingAfterBillingBadgeHtml(r)}</td>
+    <td>${esc(r.line.tactic_label || r.line.service_id || '—')}${accountingCancelledTag(r.line)}${accountingCheckDatesTag(r.line)}${r.line.has_offline_visits ? ' <span style="font-size:10px;color:var(--muted)">+Visits</span>' : ''}${r.line.has_addl_targeting ? ' <span style="font-size:10px;color:var(--muted)">+Addl. Targeting</span>' : ''}${cpmOverrideBadgeHtml(r.line)}${cutPctOverrideBadgeHtml(r.line)}${accountingAfterBillingBadgeHtml(r)}</td>
     <td>${accountingFormatFlightRange(r.line.flight_start, r.line.flight_end, ACCOUNTING_ONE_TIME_BILLING_TYPES.includes(r.line.billing_type))}</td>
     <td class="num"${dollarStyle}>${r.gross != null ? '$' + r.gross.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
     <td class="num"${dollarStyle}>${r.split.fortyfouri != null ? '$' + r.split.fortyfouri.toLocaleString(undefined,{minimumFractionDigits:2, maximumFractionDigits:2}) : '—'}</td>
@@ -3050,11 +3095,10 @@ function renderAccountingDashboard() {
     const { invoiceable, excluded } = accountingSplitInvoiceable(r);
     totalFortyfouri += invoiceable;
     totalBilledExternally += excluded;
-    if (accountingRowNeedsConfirmation(r)) {
-      awaitingGross += r.gross || 0;
-      if (r.expectedSpend != null) awaitingExpectedSpend += r.expectedSpend;
-      awaitingFortyfouri += invoiceable;
-    }
+    const awaiting = accountingAwaitingParts(r);
+    awaitingGross += awaiting.gross;
+    awaitingExpectedSpend += awaiting.expectedSpend;
+    awaitingFortyfouri += awaiting.fortyfouri;
   });
   // Group-brand-color tinting, take 2 (2026-08-12) -- the first version tinted
   // the shared #accounting-stats CONTAINER, which leaked the group's color

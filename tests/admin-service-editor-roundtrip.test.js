@@ -50,7 +50,7 @@ const R = {
   'one-discipline strategist': { ...base, strategist_disciplines: ['social'] },
   'intake form that is in the list': { ...base, intake_form_id: 'seo' },
   'intake form that is NOT in the list': { ...base, intake_form_id: 'retired-form' },
-  'blank template type WITH a template code': { ...base, trello_template_ref: 'abc12345', trello_template_type: null },
+  'blank template type WITH a list ID': { ...base, trello_template_ref: '69a0ca52ccb9a9c454e3384e', trello_template_type: null },
   'TLP intake with page cap': { ...base, intake_form_id: 'tlp', tlp_page_cap: 15 },
   'section that is no longer active': { ...base, section: 'old' },
   'shares exclusivity/workflow/pricing group/subsection': { ...base, exclusivity_group: 'web-tier', workflow: 'Website', pricing_group: 'Hosting Fees', subsection_label: 'Sub A' },
@@ -79,6 +79,16 @@ setTimeout(() => {
   // Editing the variants box still saves what was typed (the "keep the stored list" rule only applies to an untouched box).
   setWorld([R['tactic variant containing a comma'], lister]); win.adminEditService('x-1'); win.document.getElementById('admin-svc-tactic-variants').value = 'Display, CRM'; win.adminSaveService();
   check('an edited variants box saves the edit', win.__sent.tactic_variants, ['Display', 'CRM']);
+  // A Trello CARD code (8 characters) saved as List: Admin offers to switch it to Card.
+  const shortRow = { ...base, trello_template_ref: 'abc12345', trello_template_type: 'list' }; setWorld([shortRow, lister]);
+  win.confirm = () => true; win.adminEditService('x-1'); win.adminSaveService();
+  check('8-character code + List: OK switches it to Card', win.__sent.trello_template_type, 'card');
+  win.confirm = () => false; win.adminEditService('x-1'); win.adminSaveService();
+  check('8-character code + List: Cancel keeps List', win.__sent.trello_template_type, 'list');
+  win.confirm = () => true;
+  const longRow = { ...base, trello_template_ref: '69a0ca52ccb9a9c454e3384e', trello_template_type: 'list' }; setWorld([longRow, lister]); let asked = false; win.confirm = () => { asked = true; return true; };
+  win.adminEditService('x-1'); win.adminSaveService();
+  check('a real 24-character list ID is never questioned', [asked, win.__sent.trello_template_type], [false, 'list']); win.confirm = () => true;
   for (const [name, bad] of Object.entries(diffs)) check('unchanged save keeps everything: ' + name + (bad.length ? '   <- ' + bad.join(' | ') : ''), bad, []);
   done();
 }, 50);
