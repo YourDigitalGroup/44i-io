@@ -2764,8 +2764,12 @@ function accountingIndexStatusHistory() {
 function accountingStatusOnDay(line, dayIso) {
   const hist = ACCOUNTING_HISTORY_LOADED ? ACCOUNTING_HISTORY_BY_LINE.get(line.id) : null;
   if (!hist || !hist.length) return line.status;
-  let status = null;
-  for (const h of hist) { if (h.day <= dayIso) status = h.new_status; else break; }
+  let status = null, lastIdx = -1;
+  for (let i = 0; i < hist.length; i++) { if (hist[i].day <= dayIso) { status = hist[i].new_status; lastIdx = i; } else break; }
+  // SAFETY NET (2026-10-14): a status can change WITHOUT a history row (a renewal order reviving a Complete line, a status set by hand). After the last
+  // recorded change the line's CURRENT status is the best truth we have: if it disagrees with where the log ended up, trust the current status for the days
+  // after that last change, so a revived line is never left out as "Complete" just because nobody logged the revival.
+  if (lastIdx === hist.length - 1 && status != null && line.status && line.status !== status) return line.status;
   return status != null ? status : (hist[0].old_status || line.status);
 }
 // How much of this month the line was actually running. fraction 1 = the whole month (as before), 0 = none of it, in between = partly.

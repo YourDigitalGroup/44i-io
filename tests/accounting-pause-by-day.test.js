@@ -47,6 +47,14 @@ check('marked Complete ON the last day of its flight: all 27 days still count (a
 L = { id: 'H', status: 'complete', flight_start: '2026-01-01', flight_end: '2026-12-31' };
 setHist([chg('H', at(2026, 8, 20), 'active', 'complete')], true);
 check('client left, marked Complete Aug 20: August counts Aug 1-20 (20 of 31 days), September none', [act(L, M(2026, 8), null).activeDays, act(L, M(2026, 8), null).eligibleDays, act(L, M(2026, 9), null).fraction], [20, 31, 0]);
+// 5c. SAFETY NET: a renewal revived a Complete line WITHOUT writing a history row (the three lines found in Blocker 3). History says Complete since Sep 1, the line is
+// Active now: the days after the last logged change use the CURRENT status, so the running line is not left out.
+L = { id: 'I', status: 'active', flight_start: '2026-01-01', flight_end: '2027-03-31' };
+setHist([chg('I', at(2026, 9, 1), 'active', 'complete')], true);
+check('revived without a history row (log ends "complete", line is Active now): Oct and later count in full; August (before the log\'s completion) too',
+  [act(L, M(2026, 8), null).fraction, act(L, M(2026, 10), null).fraction, act(L, M(2026, 12), null).fraction], [1, 1, 1]);
+check('...and a line that is really still Complete (log and current agree) is still left out after the completion', (L = { ...L, status: 'complete' }, act(L, M(2026, 10), null).fraction), 0);
+check('a cancelled line whose cancel was never logged is not reduced (cancelled is not a "not running" status here)', (L = { ...L, status: 'cancelled' }, setHist([chg('I', at(2026, 3, 1), 'pending', 'active')], true), act(L, M(2026, 10), null).fraction), 1);
 // 6. flights: only days inside the flight count, so a mid-month start/end still bills the month as it always did
 L = { id: 'D', status: 'active', flight_start: '2026-03-15', flight_end: '2026-05-10' };
 setHist([chg('D', at(2026, 1, 1), 'pending', 'active')], true);
