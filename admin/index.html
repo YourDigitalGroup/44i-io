@@ -12131,9 +12131,10 @@ function adminCorrectServiceIsSimple(r) {
   if (r.hosting_prompt_type) return false;
   return true;
 }
-// spend -> flat monthly spend; monthly -> recurring; everything else -> one-time fee
+// spend -> flat monthly spend; monthly or yearly -> recurring; everything else -> one-time fee. MUST match admin_correct_order_service's v_model
+// (2026-10-14: a yearly Hosting Fee used to be written as a one-time fee by both; the database function was fixed in the same change).
 function adminCorrectModel(r) {
-  return r.pricing_mode === 'spend' ? 'spend' : (r.billing_type === 'monthly' ? 'recurring' : 'fee');
+  return r.pricing_mode === 'spend' ? 'spend' : (['monthly', 'yearly', 'annual'].includes(r.billing_type) ? 'recurring' : 'fee');
 }
 function adminCorrectOldEligible(o, item) {
   const r = CATALOG_ROWS[item.service_id]; // only ACTIVE services are loaded; a retired one is checked by the database
@@ -12222,7 +12223,7 @@ function adminCorrectRenderFields(orderId, oldServiceId) {
   let variants = r.tactic_variants;
   if (typeof variants === 'string') { try { variants = JSON.parse(variants); } catch (e) { variants = null; } }
   const price = model === 'spend' ? '' : adminCorrectEffectivePrice(o, r);
-  const priceLabel = model === 'spend' ? 'Monthly spend ($)' : (qtyOpts ? `Rate per ${unit} ($)` : (model === 'recurring' ? 'Monthly price ($)' : 'Price ($)'));
+  const priceLabel = model === 'spend' ? 'Monthly spend ($)' : (qtyOpts ? `Rate per ${unit} ($)` : (model === 'recurring' ? (['yearly', 'annual'].includes(r.billing_type) ? 'Yearly price ($)' : 'Monthly price ($)') : 'Price ($)'));
   const inp = 'width:100%;padding:7px 9px;border-radius:6px;border:1px solid var(--border);font-size:12px';
   const lbl = 'display:block;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px';
   const oninput = `oninput="adminCorrectUpdateTotal('${esc(oldServiceId)}')" onchange="adminCorrectUpdateTotal('${esc(oldServiceId)}')"`;
