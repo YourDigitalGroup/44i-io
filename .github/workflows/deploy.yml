@@ -47,4 +47,7 @@ jobs:
             README.md
             .gitignore
             tests/**
+            CLAUDE.md
+            io_project_tracking.md
+            AUTH_MIGRATION_PLAN.md
             **/node_modules/**
