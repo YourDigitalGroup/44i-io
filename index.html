@@ -4232,6 +4232,13 @@ function toggle(cb, id) {
     if (qtyInput) qtyInput.value = CATALOG_ROWS[id]?.qty_option_labels ? '0' : '1';
     const quotedInput = row.querySelector('input[type=number].quoted-price-field');
     if (quotedInput) quotedInput.value = '';
+    // Dates, notes and the chosen variant too (2026-10-15, Claire: unchecking a service left its dates and notes in place, and ticking it again silently picked
+    // them back up). A first tick starts with all of these empty, so an unticked row is put back exactly there.
+    ['svc-start-' + id, 'svc-end-' + id].forEach(fid => { const el = document.getElementById(fid); if (el) { el.value = ''; markFieldMissing(el, false); } });
+    const noteEl = row.querySelector('.notes-field');
+    if (noteEl) { noteEl.value = ''; if (typeof autoGrowNotesField === 'function') autoGrowNotesField(noteEl); }
+    const variantEl = row.querySelector('.tactic-variant-field');
+    if (variantEl) variantEl.value = '';
 
     // Clear intake data when unchecked so reselect re-prompts
     const cfg = PRODUCT_CONFIG[id];
@@ -4880,7 +4887,9 @@ function syncRowInputs() {
     // value per service), but kept explicit rather than relying on that never happening.
     const qtyInput = row.querySelector('.qty-field');
     // parseFloat, not parseInt (2026-07-16) — same reasoning as updateQty().
-    if (qtyInput) selected[id].qty = parseFloat(qtyInput.value) || 1;
+    // A named-module service (Website Modules) legitimately sits at 0 until something is picked; `|| 1` turned that 0 into a paid quantity of 1, so the
+    // "pick at least one option" check at submit could never fire (2026-10-15). Everything else keeps "blank or 0 means 1".
+    if (qtyInput) { const qv = parseFloat(qtyInput.value); selected[id].qty = qv > 0 ? qv : (CATALOG_ROWS[id]?.qty_option_labels ? 0 : 1); }
     // Quoted Price (2026-07-14) has its own class for the same reason qty does — without
     // excluding it here too, a QUR row's quoted-price input would be misidentified as the
     // ad-spend input below and silently overwrite `selected[id].spend` with the quoted
@@ -5127,6 +5136,26 @@ function goStep(n) {
         });
         const first = document.querySelector('.svc-end-cell input.spend-missing'); if (first) revealElement(first);
         showToast('Please enter an end date for: ' + noEnd.map(id => CATALOG_ROWS[id]?.label || id).join(', ') + ' (a whole campaign total needs an end date to be spread over the months).', 'error');
+        return; // Block navigation
+      }
+    }
+    // Modules with nothing picked / quote-upon-request with no quoted price (2026-10-15, Claire: "the warning should come before they get to step 3" --
+    // both are caught HERE, when Next is pressed, not first at the final Submit; the Submit-time checks stay as a safety net). Same block-with-message pattern.
+    document.querySelectorAll('.quoted-price-field.spend-missing').forEach(el => markFieldMissing(el, false));
+    {
+      const label = id => CATALOG_ROWS[id]?.label || id;
+      const noModules = Object.entries(selected).filter(([id, d]) => CATALOG_ROWS[id]?.qty_option_labels && !(d.qty > 0)).map(([id]) => id);
+      const noQuote = Object.entries(selected).filter(([id, d]) => d.is_qur && !d.quotedPriceEntered).map(([id]) => id);
+      if (noModules.length || noQuote.length) {
+        [...noModules, ...noQuote].forEach(id => { const row = document.querySelector(`tr[data-id="${id}"]`); const section = row?.closest('.card-body'); if (section) section.style.display = 'block'; });
+        noModules.forEach(id => ensureModuleDetailOpen(id));   // show the checklist so the AE can pick
+        noQuote.forEach(id => markFieldMissing(document.querySelector(`tr[data-id="${id}"] .quoted-price-field`), true));
+        const first = [...noModules, ...noQuote][0];
+        revealElement(document.querySelector(`tr[data-id="${first}"]`));
+        const parts = [];
+        if (noModules.length) parts.push('pick at least one option for: ' + noModules.map(label).join(', '));
+        if (noQuote.length) parts.push('enter the quoted price for: ' + noQuote.map(label).join(', '));
+        showToast('Please ' + parts.join(' — and ') + ' before continuing', 'error');
         return; // Block navigation
       }
     }
@@ -5914,6 +5943,16 @@ async function submitIO() {
     for (const id of Object.keys(selected)) {
       if (CATALOG_ROWS[id]?.qty_option_labels && !(selected[id].qty > 0)) {
         showToast(`Please pick at least one option for ${CATALOG_ROWS[id]?.label || id} before submitting`, 'error');
+        btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
+        revealElement(document.querySelector(`tr[data-id="${id}"]`));
+        return;
+      }
+    }
+
+    // Quote-upon-request services need their quoted price (2026-10-15, Claire: block the submit instead of saving a $0 line nobody flagged).
+    for (const id of Object.keys(selected)) {
+      if (selected[id].is_qur && !selected[id].quotedPriceEntered) {
+        showToast(`Please enter the quoted price for ${CATALOG_ROWS[id]?.label || id} before submitting`, 'error');
         btn.innerHTML = '✓ Submit Insertion Order'; btn.disabled = false;
         revealElement(document.querySelector(`tr[data-id="${id}"]`));
         return;
@@ -6746,7 +6785,7 @@ async function submitIO() {
           return lines.join('\n');
         }).join('\n\n');
 
-        const ioDesc = `**IO #:** ${ioNumber}
+        const buildIoDesc = (servicesDescText) => `**IO #:** ${ioNumber}
 **Client:** ${bizName}
 **Contact:** ${document.getElementById('contact-name').value}
 **Email:** ${document.getElementById('contact-email').value}
@@ -6757,13 +6796,24 @@ async function submitIO() {
 **IO Notes:** ${document.getElementById('campaign-notes').value||'None'}
 
 **Services Sold:**
-${servicesDesc}
+${servicesDescText}
 
 **One-Time Total:** ${moneyText(oneTime)}
 **Monthly Recurring:** ${moneyText(monthly)}/mo${annual > 0 ? `\n**Annual:** ${moneyText(annual)}/yr` : ''}${varyingSpendTotal > 0 ? `\n**Varying Campaign Total:** ${moneyText(varyingSpendTotal)} (see per-month breakdown)` : ''}
 
 **Special Instructions:** ${document.getElementById('special-instructions')?.value||'None'}
-${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`.slice(0, 16000);
+${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
+        // Trello allows ~16,000 characters. A long order used to be cut off at the END, losing the totals first (2026-10-15). Now only the services list is
+        // shortened (at a line break, with a note) so the totals, special instructions and AM/AE lines always fit.
+        const IO_DESC_MAX = 16000;
+        let ioDesc = buildIoDesc(servicesDesc);
+        if (ioDesc.length > IO_DESC_MAX) {
+          const note = '\n…(list shortened here — the full list is on the signed IO PDF attached to this card)';
+          const over = ioDesc.length - IO_DESC_MAX + note.length;
+          let cut = servicesDesc.slice(0, Math.max(0, servicesDesc.length - over));
+          const nl = cut.lastIndexOf('\n'); if (nl > 0) cut = cut.slice(0, nl);
+          ioDesc = buildIoDesc(cut + note).slice(0, IO_DESC_MAX);   // last-resort cap (only if the tail alone is over the limit)
+        }
 
         // ── Step 1-2: Resolve the client's Trello list (2026-07-13) ──
         // Prefers the STORED, PERMANENT id on the client record (clients.trello_list_id)
