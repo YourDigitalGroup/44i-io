@@ -167,6 +167,9 @@
         <button onclick="accountingOpenAddServiceForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">+ Add Service</button>
         <button onclick="accountingOpenBulkMatchForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Match</button>
         <button onclick="accountingOpenBulkImportForm()" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Bulk Import (CSV)</button>
+        <span title="Optional: export only these months (year-month, for example 2026-10). Leave both blank for every month." style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)">Months
+          <input type="month" id="accounting-export-from" placeholder="From 2026-10" aria-label="Export from month" style="padding:4px 6px;border-radius:6px;border:1px solid var(--border);font-size:12px;width:128px"/>to
+          <input type="month" id="accounting-export-to" placeholder="To 2026-12" aria-label="Export to month" style="padding:4px 6px;border-radius:6px;border:1px solid var(--border);font-size:12px;width:128px"/></span>
         <button onclick="accountingExportCsv()" title="Download what Accounting currently holds (the group filter applies): one row per campaign line, 44i Revenue for each month" style="padding:6px 14px;border-radius:999px;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer;font-weight:600;font-size:12px">Export CSV</button>
       </div>
     </div>
@@ -2033,10 +2036,22 @@ function accountingExportCsv() {
   const ids = new Set(lines.map(l => l.id));
   const keys = ALL_ACCOUNTING_MONTHS.filter(m => ids.has(m.campaign_line_id) && m.gross_budget != null).map(m => String(m.month).slice(0, 7)).sort();
   if (!keys.length) { showToast('No months with an amount to export yet.', 'error'); return; }
-  const months = [];
+  let months = [];
   let [y, mo] = keys[0].split('-').map(Number);
   const [ey, em] = keys[keys.length - 1].split('-').map(Number);
   while (y < ey || (y === ey && mo <= em)) { months.push(new Date(y, mo - 1, 1)); mo++; if (mo > 12) { mo = 1; y++; } }
+  // Optional month range (2026-10-15, Claire: "an option to select certain months"): the From / To boxes next to the button, both blank = every month as before.
+  // Typed as YYYY-MM (the browser's month picker gives exactly that). Only lines running in at least one chosen month are listed; the bottom rows add up the chosen months.
+  const boxVal = id => (typeof document.getElementById === 'function' && document.getElementById(id) ? String(document.getElementById(id).value || '').trim() : '');
+  const fromV = boxVal('accounting-export-from'), toV = boxVal('accounting-export-to');
+  const monthOk = v => !v || /^\d{4}-(0[1-9]|1[0-2])$/.test(v);
+  if (!monthOk(fromV) || !monthOk(toV)) { showToast('Type the months as year-month, for example 2026-10.', 'error'); return; }
+  if (fromV && toV && fromV > toV) { showToast('The From month is after the To month.', 'error'); return; }
+  const rangeSet = !!(fromV || toV);
+  if (rangeSet) {
+    months = months.filter(d => { const k = accountingMonthKey(d); return (!fromV || k >= fromV) && (!toV || k <= toV); });
+    if (!months.length) { showToast('No months with data between those two months.', 'error'); return; }
+  }
   const cell = (l, d) => {
     if (!accountingLineActiveInMonth(l, d)) return null;
     const row = accountingMonthRowFor(l.id, d);
@@ -2070,7 +2085,8 @@ function accountingExportCsv() {
   });
   const now = new Date(), nowKey = accountingMonthKey(new Date(now.getFullYear(), now.getMonth(), 1));
   const header = ['Group', 'Client', 'Tactic', 'Campaign', 'Agent', 'County', 'Status', 'Flight Start', 'Flight End', 'Billing', 'Accounting Only', 'SSH Billing', 'Offline Visits', 'Addl Targeting', 'Total Revenue', '44i Cut %', 'Line ID', ...months.map(accountingMonthKey)];
-  const sorted = [...lines].sort((a, b) => (a.group_name || '').localeCompare(b.group_name || '') || (a.client_name || '').localeCompare(b.client_name || '') || (a.tactic_label || '').localeCompare(b.tactic_label || '') || String(a.flight_start || '').localeCompare(String(b.flight_start || '')));
+  const sorted = lines.filter(l => !rangeSet || months.some(d => accountingLineActiveInMonth(l, d))).sort((a, b) => (a.group_name || '').localeCompare(b.group_name || '') || (a.client_name || '').localeCompare(b.client_name || '') || (a.tactic_label || '').localeCompare(b.tactic_label || '') || String(a.flight_start || '').localeCompare(String(b.flight_start || '')));
+  if (!sorted.length) { showToast('No campaign lines run in those months.', 'error'); return; }
   const out = [header.map(q).join(',')];
   const rowCells = sorted.map(l => months.map(d => cell(l, d)));
   sorted.forEach((l, n) => {
@@ -2097,7 +2113,7 @@ function accountingExportCsv() {
   out.push([...pad('Counted on the screen: total (confirmed + awaiting)'), ...confR.map((v, i) => round2(v + awR[i]))].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
-  a.download = 'accounting-export-' + (accountingGroupFilter ? accountingGroupFilter.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'all-groups') + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
+  a.download = 'accounting-export-' + (accountingGroupFilter ? accountingGroupFilter.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'all-groups') + (rangeSet ? '-' + accountingMonthKey(months[0]) + '-to-' + accountingMonthKey(months[months.length - 1]) : '') + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
   document.body.appendChild(a); a.click(); a.remove();
   showToast('Exported ' + sorted.length + ' campaign line' + (sorted.length !== 1 ? 's' : '') + ' (' + months.length + ' months).');
 }
