@@ -9652,6 +9652,10 @@ function rowToProductConfig(r) {
 function getSetupFeeInfo(id, spend) {
   const r = CATALOG_ROWS[id];
   if (!r || !r.auto_add_setup_fee || r.setup_fee == null || r.setup_fee_threshold == null) return null;
+  // A multi-agent client (MS Farm Bureau Agents) never pays the setup fee (2026-10-15, Claire: "for MS Farm Bureau there is no SEM setup fee";
+  // option B = the existing multi-agent client setting decides, no new database column). Before this the form added a $200 setup fee to
+  // their agent orders under $1,000/mo.
+  if (isMultiAgentClientActive()) return null;
   const threshold = Number(r.setup_fee_threshold);
   if (!(spend > 0 && spend < threshold)) return null;
   return { amount: Number(r.setup_fee), threshold };
