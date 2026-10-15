@@ -45,6 +45,29 @@ const SERVICES = [...'abcd'].map((k, i) => svc({ id: 'sp-' + k, label: 'Spend Se
     check('wording and numbers unchanged: an evenly split Whole Campaign Total still reads "$3,000 total"; the printed IO shows the setup fee and the subtotal', [/\$3,000(\.00)? total/.test(struct.text), /Setup Fee/.test(struct.text), /Subtotal/.test(struct.text)], [true, true, true]);
     check('the on-screen Step 3 review is NOT changed (it still shows the month table with its days column)', /days/i.test(built.review), true);
     check('the PDF page-cutter knows about the blocks (its protected-zone list includes tbody.svc-block)', /selector = 'tr, tbody\.svc-block,/.test(read('index.html')), true);
+    // 13 months, a paused month, and amounts whose cents add up with floating-point noise (the real case from Claire's test order)
+    const grid = await pg.evaluate(() => {
+      Object.keys(selected).forEach(k => delete selected[k]);
+      const amts = [234.85, 234.85, 212.12, 234.85, 227.27, 234.85, 227.27, 234.85, 234.85, 227.27, 234.85, 227.27, 234.85];
+      const plan = amts.map((a, i) => ({ month: new Date(2026, 11 + i, 1).getFullYear() + '-' + String(new Date(2026, 11 + i, 1).getMonth() + 1).padStart(2, '0'), amount: a, paused: i === 6, days: 30 }));
+      plan[6].amount = 0;   // the paused month has no amount
+      const noisy = amts.map((a, i) => ({ month: plan[i].month, amount: a, paused: false, days: 30 }));
+      selected['sp-a'] = { ...SERVICE_DATA['sp-a'], section: 'ads', label: 'Spend Service A', spend: 230, start_date: '2026-12-01', end_date: '2027-12-31', monthPlan: noisy, customizingMonths: true, budgetMode: 'total', spendTotal: 3000 };
+      selected['sp-b'] = { ...SERVICE_DATA['sp-b'], section: 'ads', label: 'Spend Service B', spend: 200, start_date: '2026-12-01', end_date: '2027-12-31', monthPlan: plan, customizingMonths: true, budgetMode: 'monthly' };
+      window.getSignatureData = () => 'typed:Pat Client'; buildReview();
+      const d = new DOMParser().parseFromString(buildIoDocumentHtml().html, 'text/html');
+      const blocks = [...d.querySelectorAll('tbody.svc-block')];
+      const strips = b => [...b.querySelectorAll('table.month-strip')];
+      const info = b => strips(b).map(t => ({ monthCells: [...t.querySelectorAll('thead th')].filter(th => th.textContent.trim() && th.textContent.trim() !== 'Total').length, cols: t.querySelectorAll('thead th').length, fixed: /table-layout:fixed/.test(t.getAttribute('style')), colgroup: t.querySelectorAll('col').length }));
+      return { a: info(blocks[0]), b: info(blocks[1]), text: d.body.innerText.replace(/\s+/g, ' ') , html: buildIoDocumentHtml().html }; });
+    check('13 months print as 3 balanced rows of 5 + 5 + 3 months (not 6 + 6 + 1)', [grid.a.map(r => r.monthCells), grid.b.map(r => r.monthCells)], [[5, 5, 3], [5, 5, 3]]);
+    check('every row is on the same fixed grid (same number of columns, table-layout fixed, a column list), so a "Paused" cell cannot shift the others', [grid.a.every(r => r.fixed && r.cols === 6 && r.colgroup === 6), grid.b.every(r => r.fixed && r.cols === 6 && r.colgroup === 6)], [true, true]);
+    check('totals are rounded to the cent: months that add up to 2999.9999999999995 print "$3,000 total", not "$3,000.00 total"', [/\$3,000 total/.test(grid.text), /\$3,000\.00 total/.test(grid.text)], [true, false]);
+    // real geometry (a second page holds the document): column N sits at the SAME place in every row of a block, whether or not a month is paused
+    const doc2 = await browser.newPage({ viewport: { width: 900, height: 1200 } }); await doc2.setContent(grid.html, { waitUntil: 'load' });
+    const edges = await doc2.evaluate(() => [...document.querySelectorAll('tbody.svc-block')].slice(0, 2).map(b => [...b.querySelectorAll('table.month-strip')].map(t => [...t.querySelectorAll('thead th')].map(th => Math.round(th.getBoundingClientRect().right)))));
+    check('real geometry: in both services (service B has a paused month in the middle row) every row\'s columns end at exactly the same x position', [edges[0].every(r => JSON.stringify(r) === JSON.stringify(edges[0][0])), edges[1].every(r => JSON.stringify(r) === JSON.stringify(edges[1][0]))], [true, true]);
+    await doc2.close();
     // real PDF: a service name and its month strip never land on different pages
     const py = spawnSync('python3', ['-c', 'import pypdfium2'], { encoding: 'utf8' });
     if (py.status !== 0) console.log('NOTE: PDF page-split check skipped (pypdfium2 is not installed)');
