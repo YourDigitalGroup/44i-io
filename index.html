@@ -4337,7 +4337,7 @@ function monthsInFlight(startDateStr, endDateStr) {
 function monthPlanVariesAndTotal(monthPlan, mode) {
   const isTotalMode = mode === 'total' || mode === 'custom';
   const varies = !!(monthPlan && monthPlan.length > 0 && (isTotalMode || (monthPlan.length > 1 && new Set(monthPlan.map(m => m.amount)).size > 1)));
-  const total = varies ? monthPlan.reduce((s, m) => s + (m.amount || 0), 0) : 0;
+  const total = varies ? Math.round(monthPlan.reduce((s, m) => s + (m.amount || 0), 0) * 100) / 100 : 0;   // to the cent: 13 month amounts can add up to 2999.9999999999995
   return { varies, total };
 }
 // The mode of an in-memory selected[id], spelled the way line items save it.
@@ -4484,15 +4484,22 @@ function renderMonthPreviewTable(plan, editable, id) {
 function renderPrintMonthStrip(plan) {
   const fmtAmt = n => '$' + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const short = m => { const [y, mo] = String(m.month).split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'short' }) + " '" + String(y).slice(2); };
-  const total = plan.reduce((t, m) => t + (m.amount || 0), 0);
+  const total = Math.round(plan.reduce((t, m) => t + (m.amount || 0), 0) * 100) / 100;   // rounded: 13 monthly cents add up to 2999.9999999999995, which printed as "$3,000.00"
+  // (2026-10-15, from Claire's test order) Rows are BALANCED (13 months = 5 + 5 + 3, not 6 + 6 + 1) and every row uses the SAME fixed grid: equal month
+  // columns plus one Total column, `table-layout:fixed`. Before, each row was its own auto-sized table, so a narrow "Paused" cell changed that row's column
+  // widths and the amounts under it no longer lined up with the rows above and below.
+  const rowCount = Math.max(1, Math.ceil(plan.length / 6));
+  const perRow = Math.ceil(plan.length / rowCount);
   const chunks = [];
-  for (let i = 0; i < plan.length; i += 6) chunks.push(plan.slice(i, i + 6));
+  for (let i = 0; i < plan.length; i += perRow) chunks.push(plan.slice(i, i + perRow));
   const th = 'text-align:right;padding:3px 8px;font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#6B7280;border-bottom:1px solid #E5E7EB';
   const td = 'text-align:right;padding:4px 8px;font-size:9pt';
+  const colgroup = `<colgroup>${Array.from({ length: perRow }, () => `<col style="width:${(84 / perRow).toFixed(3)}%">`).join('')}<col style="width:16%"></colgroup>`;
   return chunks.map((chunk, ci) => {
     const last = ci === chunks.length - 1;
-    return `<table style="width:100%;border-collapse:collapse;margin-top:${ci ? 4 : 2}px"><thead><tr style="background:#F9FAFB">${chunk.map(m => `<th style="${th}">${esc(short(m))}</th>`).join('')}${last ? `<th style="${th};color:#111827">Total</th>` : ''}</tr></thead>` +
-      `<tbody><tr>${chunk.map(m => `<td style="${td}${m.paused ? ';color:#9CA3AF;font-style:italic' : ''}">${m.paused ? 'Paused' : fmtAmt(m.amount)}</td>`).join('')}${last ? `<td style="${td};font-weight:700">${fmtAmt(total)}</td>` : ''}</tr></tbody></table>`;
+    const pad = perRow - chunk.length;   // empty cells keep every row on the same grid
+    return `<table style="width:100%;table-layout:fixed;border-collapse:collapse;margin-top:${ci ? 4 : 2}px" class="month-strip">${colgroup}<thead><tr style="background:#F9FAFB">${chunk.map(m => `<th style="${th}">${esc(short(m))}</th>`).join('')}${('<th style="' + th + '"></th>').repeat(pad)}<th style="${th};color:#111827">${last ? 'Total' : ''}</th></tr></thead>` +
+      `<tbody><tr>${chunk.map(m => `<td style="${td}${m.paused ? ';color:#9CA3AF;font-style:italic' : ''}">${m.paused ? 'Paused' : fmtAmt(m.amount)}</td>`).join('')}${('<td style="' + td + '"></td>').repeat(pad)}<td style="${td};font-weight:700">${last ? fmtAmt(total) : ''}</td></tr></tbody></table>`;
   }).join('');
 }
 function renderBudgetDetailRow(id) {
@@ -5293,7 +5300,7 @@ function buildReview() {
     // spend (2026-08-31) — see monthPlanVariesAndTotal()'s own comment.
     if (data.spend > 0) {
       const mv = monthPlanVariesAndTotal(data.monthPlan, selectedBudgetMode(data));
-      if (mv.varies) varyingTotal += mv.total; else monthly += data.spend;
+      if (mv.varies) varyingTotal = Math.round((varyingTotal + mv.total) * 100) / 100; else monthly += data.spend;
     }
     if (data.workflow) workflows.add(data.workflow);
     // Fee column: for a one-time per-unit item, shows "$175 × 3 = $525" (the multiplied
@@ -5357,7 +5364,7 @@ function buildReview() {
       // don't diverge (same principle as every other Review/Print
       // consistency fix today).
       amtDisplay = variesByMonth
-        ? `${fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0))} total`
+        ? `${fmt(monthPlanVariesAndTotal(data.monthPlan, selectedBudgetMode(data)).total)} total`
         : fmt(data.spend) + '/mo';
     } else if (data.cpm || data.cpc) {
       amtDisplay = '<span style="color:#EF4444;font-weight:600">⚠ No spend entered</span>';
@@ -6046,7 +6053,7 @@ async function submitIO() {
     lineItems.forEach(li => {
       if (!(li.spend > 0)) return;
       const mv = monthPlanVariesAndTotal(li.month_budgets, li.budget_mode);
-      if (mv.varies) varyingSpendTotal += mv.total; else monthly += li.spend;
+      if (mv.varies) varyingSpendTotal = Math.round((varyingSpendTotal + mv.total) * 100) / 100; else monthly += li.spend;
     });
 
     // Use real UUID group_id, or null for dev mode
@@ -7994,7 +8001,7 @@ function buildIoDocumentHtml() {
       if (data.spend > 0) {
         const mv = monthPlanVariesAndTotal(data.monthPlan, selectedBudgetMode(data));
         if (mv.varies) {
-          varyingTotal += mv.total; sectionVaryingTotal += mv.total;
+          varyingTotal = Math.round((varyingTotal + mv.total) * 100) / 100; sectionVaryingTotal = Math.round((sectionVaryingTotal + mv.total) * 100) / 100;
         } else { monthly += data.spend; sectionMonthly += data.spend; }
       }
 
@@ -8055,7 +8062,7 @@ function buildIoDocumentHtml() {
         // "campaign" dropped (2026-08-31, per Claire — "could we drop the
         // 'campaign' in the print IO?") -- matches buildReview()'s identical fix.
         amtCol = variesByMonth
-          ? (fmt(data.monthPlan.reduce((s, m) => s + (m.amount || 0), 0)) + ' total')
+          ? (fmt(monthPlanVariesAndTotal(data.monthPlan, selectedBudgetMode(data)).total) + ' total')
           : (fmt(data.spend) + '/mo');
       } else if (data.is_cpm_adjustment) {
         // Explicit "No Charge" rather than falling through to "TBD" — this is a signed
@@ -8186,9 +8193,7 @@ function buildIoDocumentHtml() {
     .subtotal-row,.totals-box{page-break-inside:avoid}
     .sig-section{page-break-inside:avoid}
     .legal{page-break-inside:auto}
-    .doc-footer{page-break-inside:avoid}
   }
-  .doc-footer{margin-top:14px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:8pt;color:#9CA3AF;text-align:center}
   @media screen{
     body{max-width:8.5in;margin:0 auto;padding:0.5in;box-shadow:0 4px 24px rgba(0,0,0,.1);background:#fff;min-height:11in}
   }
@@ -8452,12 +8457,8 @@ ${specialInstructions ? `<div class="special-box no-break"><strong>Additional No
   </div>
 </div>
 
-<!-- Document footer — appears once at the true end of the document, not repeated per
-     printed page. See the @page comment near the top of the <style> block for why a
-     repeating per-page version was removed. -->
-<div class="doc-footer">
-  <span>${groupName} · ${ioNumber}</span>
-</div>
+<!-- No document footer (2026-10-15, Claire: "drop the footer"). It only repeated the group name and IO number already in the letterhead, and
+     it landed alone on an extra last page whenever the signature ended near the bottom of a page. -->
 
 </body></html>`;
 
@@ -8511,7 +8512,7 @@ function computeUnsafeZonesMm(iframeDoc, imgWidthMm) {
   // document (the real element is .totals-box, wrapping the One-Time/Monthly/First
   // Month Total rows) -- meaning the totals box had no real atomic protection at all,
   // just whatever the generic `tr` selector happened to catch for its individual rows.
-  const selector = 'tr, tbody.svc-block, .no-break, .section-row, .subtotal-row, .totals-box, .sig-section, .doc-footer';
+  const selector = 'tr, tbody.svc-block, .no-break, .section-row, .subtotal-row, .totals-box, .sig-section';
   return Array.from(iframeDoc.querySelectorAll(selector))
     .map(el => {
       const r = el.getBoundingClientRect();
