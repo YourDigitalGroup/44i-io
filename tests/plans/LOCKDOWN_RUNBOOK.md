@@ -4,7 +4,7 @@ Everything below is built and tested in a throwaway database (`tests/db-lockdown
 
 ## What the lockdown does
 - **Section 1:** takes public access away from the 17 OLD (no-key) versions of the form functions. The key versions (same names, first argument `p_t`) are untouched. Revoked, not dropped: the owner and the service-role key keep access.
-- **Section 2:** drops the public read of the `groups` table (pricing, AM emails, Trello board ids) and of `notification_settings` (the always-BCC list).
+- **Section 2A:** drops the public read of `notification_settings` (the always-BCC list). **Section 2B:** drops the public read of the `groups` table (pricing, AM emails, Trello board ids). **2B IS HELD:** the API logs (2026-10-15) show an unknown automatic job reading `groups` every hour at :15 (about 159 requests a week; columns id, name, io_slug, logo, colours, trello_board_id, AM/recipient/from emails, portal domain...). Dropping the policy would break it until its owner is found and moved to a narrow read.
 - **Section 3 (separate, later):** the old functions the Fourge Playbook may use: `save_group_draft(p_group_id…)`, `get_group_roster`, `get_group_clients(p_group_id)`, `get_group_aes(p_group_id)`.
 - A form opened WITHOUT its key (the old slug address) stops loading. That is the point.
 
@@ -20,7 +20,7 @@ Everything below is built and tested in a throwaway database (`tests/db-lockdown
 2. Claude commits `tests/fixtures/lockdown-callers.patch` (+ moves `tests/lockdown-callers.test.js.pending` into place) to the branch; full suite; Claire merges. Check: Admin > Settings shows the always-BCC list; Admin > Reconcile links a client (or one Retry Trello on a client with no list); Strategist > New Campaign import for a multi-agent client lists agents/counties.
 3. Before touching anything: one test order through a keyed IO link and one Companion request through a keyed Companion link (baseline).
 4. Run `tests/fixtures/lockdown.sql` SECTION 1 only. Reload a keyed IO form and Companion (client picker, AE picker, drafts); submit a test order. 
-5. Run SECTION 2. Reload the keyed forms again; submit a test order; open Admin > Settings and Groups.
+5. Run SECTION 2A (after checking the logs for `/rest/v1/notification_settings`). Reload the keyed forms again; submit a test order; open Admin > Settings. SECTION 2B only when the hourly job's owner is found and moved.
 6. Section 3 only when the Playbook is confirmed on keys / service key (`tests/fixtures/lockdown-section3-playbook.sql`); ask the Playbook team to save one test draft right after.
 
 ## Rollback (seconds; plain re-grants / re-create policy)

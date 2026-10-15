@@ -22,7 +22,13 @@ revoke execute on function public.log_draft_save(uuid, text, text) from public, 
 revoke execute on function public.set_client_trello_list_id(uuid, text) from public, anon, authenticated;
 revoke execute on function public.get_client_names(uuid[]) from public, anon, authenticated;
 
--- ===== SECTION 2: remove the public read of the group table and of the always-BCC list =====
--- (the forms read both through the key-based functions; Admin reads them through admin_get_groups / admin_get_notification_settings)
-drop policy if exists groups_public_read on public.groups;
+-- ===== SECTION 2A: remove the public read of the always-BCC list =====
+-- (the forms read it through the key-based function; Admin reads it through admin_get_notification_settings).
+-- Check the API logs for requests to /rest/v1/notification_settings first: anything other than Admin / old slug-address forms would break.
 drop policy if exists notification_settings_public_read on public.notification_settings;
+
+-- ===== SECTION 2B: remove the public read of the group table =====
+-- HELD (2026-10-15): the API logs show an automatic job reading this table every hour at :15 (id, name, io_slug, logo, colours, trello_board_id, AM and recipient
+-- emails, from name/email, portal domain...). It is not in this repo. Dropping this policy would break it. Run 2B only after that job's owner has moved to a
+-- narrow key- or login-protected read (or has been told to expect the change).
+drop policy if exists groups_public_read on public.groups;
