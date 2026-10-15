@@ -2178,6 +2178,47 @@ showToast = function (msg, type = 'success') {
   adminToastTimer = setTimeout(() => t.className = 'toast', ms);
 };
 
+// ── ADMIN NETWORK SAFETY (2026-10-15) ── one guard around every Admin call to the database and to the Trello/email proxy.
+// (1) TIMEOUT: a call that gets no answer within ADMIN_FETCH_TIMEOUT_MS is stopped with a plain message, instead of leaving the button on "Working…" forever.
+//     It covers waiting for the answer to START; the message says a save may still have gone through, and every editor reloads fresh data when opened.
+// (2) TRELLO WRITES THAT FAIL: approvals, edits, cancellations, renewals and swaps post comments / due dates / PDFs to Trello after the database change is already
+//     done, and most only wrote a line to the browser console when Trello said no, so the AM never knew a card was not updated. A failed Trello WRITE now raises a
+//     red toast ("... by hand on the card"); the toast code above merges it with the green success toast that follows, so both are read. Reads are not flagged.
+// Only calls to the database and the proxy are touched; the order form and the other pages do not load this code.
+var ADMIN_FETCH_TIMEOUT_MS = 120000;
+var ADMIN_TRELLO_PROBLEMS = [];
+const ADMIN_TRELLO_WRITE_LABELS = { trello_add_comment: 'a comment', trello_update_card: 'a card name/due-date update', trello_attach_file: 'a file attachment', trello_create_card: 'a new card',
+  trello_copy_card: 'a new card', trello_create_list: 'a new list', trello_update_list: 'a list update' };
+function adminTrelloWriteLabel(init) {
+  try { return ADMIN_TRELLO_WRITE_LABELS[JSON.parse(init && init.body).target] || null; } catch (e) { return null; }
+}
+function adminNoteTrelloProblem(label, why) {
+  const now = Date.now();
+  ADMIN_TRELLO_PROBLEMS = ADMIN_TRELLO_PROBLEMS.filter(p => now - p.at < 15000).concat([{ label, why, at: now }]);
+  const what = [...new Set(ADMIN_TRELLO_PROBLEMS.map(p => p.label))].join(', ');
+  showToast(`Trello was not fully updated: ${what} did not go through (${why}). Please add it by hand on the card.`, 'error');
+}
+async function adminFetchGuard(orig, url, init) {
+  const u = String(url && url.url ? url.url : url);
+  const isProxy = typeof PROXY !== 'undefined' && u.startsWith(PROXY);
+  const ours = isProxy || (typeof SUPABASE_URL !== 'undefined' && u.startsWith(SUPABASE_URL));
+  if (!ours || (init && init.signal)) return orig(url, init);
+  const ms = ADMIN_FETCH_TIMEOUT_MS;
+  const ctl = ms > 0 && typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), ms) : null;
+  const label = isProxy ? adminTrelloWriteLabel(init) : null;
+  try {
+    const res = await orig(url, ctl ? { ...(init || {}), signal: ctl.signal } : init);
+    if (label && res && res.ok === false) adminNoteTrelloProblem(label, 'Trello answered with an error, ' + res.status);
+    return res;
+  } catch (e) {
+    const timedOut = !!(ctl && ctl.signal.aborted);
+    if (label) adminNoteTrelloProblem(label, timedOut ? 'the connection timed out' : 'the connection failed');
+    throw timedOut ? new Error('The connection took too long (over ' + Math.round(ms / 1000) + ' seconds) and was stopped. If you were saving, reload and check whether it saved before trying again.') : e;
+  } finally { if (timer) clearTimeout(timer); }
+}
+(function installAdminFetchGuard() { const orig = window.fetch.bind(window); window.fetch = (url, init) => adminFetchGuard(orig, url, init); })();
+
 // ── ADMIN TAB SWITCHER ────────────────────────────────────────
 async function adminTab(tab) {
   // AM-tier users cannot view or adjust custom pricing or accounting overrides — both
@@ -10183,6 +10224,28 @@ function adminRetryIoDescription(o, bizName) {
   });
   return `**IO — ${bizName}**\nRebuilt by ${currentAdminUser?.name || 'an AM'} with Retry Trello (the original card could not be created when the order was submitted).\nAE: ${o.ae_name || '—'}\n\n**Services**\n${lines.join('\n')}`.slice(0, 16000);
 }
+// Finds the client's list on the group's board by name (the plain name, or "Name - AE" as the form names them), reopens it if archived, or creates it at board slot 5
+// like the order form does. Never creates when Trello could not show the board's lists (that could duplicate an existing one).
+async function adminFindOrCreateClientList(o, bizName, tpost) {
+  const g = (typeof allGroups !== 'undefined' ? allGroups : []).find(x => x.id === o.group_id);
+  const boardId = String(g?.trello_board_id || '').trim();
+  const lists = await tpost({ target: 'trello_get_lists', board_id: boardId, filter: 'all' });
+  if (!Array.isArray(lists)) throw new Error('Trello did not show the lists on this group\'s board, so no list was created (that could make a duplicate). Try again in a minute.');
+  const open = lists.filter(l => !l.closed).sort((a, b) => a.pos - b.pos);
+  const pos = open.length >= 5 ? (open[3].pos + open[4].pos) / 2 : 'bottom';
+  const lower = String(bizName || '').toLowerCase();
+  const existing = lower ? lists.find(l => { const n = String(l.name || '').toLowerCase(); return n === lower || n.startsWith(lower + ' - '); }) : null;
+  if (existing) {
+    if (!existing.closed) return { list: existing, how: 'found' };
+    const re = await tpost({ target: 'trello_update_list', list_id: existing.id, closed: false, pos });
+    if (re && re.message && !re.id) throw new Error('The client\'s archived list was found but Trello would not reopen it.');
+    return { list: existing, how: 'reopened' };
+  }
+  const aeName = String(o.ae_name || '').trim();
+  const made = await tpost({ target: 'trello_create_list', board_id: boardId, name: aeName ? `${bizName} - ${aeName}` : bizName, pos });
+  if (!made || !made.id) throw new Error('Trello would not create the client\'s list.');
+  return { list: made, how: 'created' };
+}
 async function adminRetryTrello(orderId) {
   const btn = document.getElementById('retry-trello-btn');
   if (btn?.disabled) return;
@@ -10203,9 +10266,19 @@ async function adminRetryTrello(orderId) {
   };
   try {
     const ci = await adminClientTrelloInfo(o.client_id);
-    const listId = o.trello_client_list_id || ci.listId;
+    let listId = o.trello_client_list_id || ci.listId;
     const bizName = ci.name || o._client_name || '';
-    if (!listId) { report.failed.push('This client has no Trello list yet. Create the list first, then retry.'); show(); setBtn('Retry Trello', false); showToast('No Trello list found for this client', 'error'); return; }
+    if (!listId && ci.found && !ci.multiAgent) {
+      // No list on file (2026-10-15): look for the client's list on the group's board by name (an archived one is reopened), and only create one if there is none, the
+      // same way the order form does. A multi-agent client has one list PER AE, so there the AM still picks the list by hand.
+      if (!confirm(`This client has no Trello list yet.\n\nRetry will look on the group's Trello board for a list named "${bizName}" (an archived one is reopened) and, if there is none, create "${bizName}${o.ae_name ? ' - ' + o.ae_name : ''}" and build the cards in it.`)) { setBtn('Retry Trello', false); return; }
+      const got = await adminFindOrCreateClientList(o, bizName, tpost);
+      listId = got.list.id;
+      (got.how === 'created' ? report.created : report.existed).push(got.how === 'created' ? 'Client list (created)' : got.how === 'reopened' ? 'Client list (archived list reopened)' : 'Client list (found by name)');
+      try { await sb('rpc/set_client_trello_list_id', { method: 'POST', body: JSON.stringify({ p_client_id: o.client_id, p_trello_list_id: listId }) }); if (typeof ALL_CLIENTS !== 'undefined') { const cc = ALL_CLIENTS.find(c => c.id === o.client_id); if (cc) cc.trello_list_id = listId; } }
+      catch (e) { report.notes.push('The list is ready, but the client record could not be linked to it (' + adminPgMessage(e) + '). The next Retry or order will find it by name.'); }
+    }
+    if (!listId) { report.failed.push(ci.multiAgent ? 'This is a multi-agent client with no Trello list on file for this order. Pick the AE\'s list by hand, then retry.' : 'This client has no Trello list yet. Create the list first, then retry.'); show(); setBtn('Retry Trello', false); showToast('No Trello list found for this client', 'error'); return; }
     let cards = null;
     try { cards = await tpost({ target: 'trello_get_list_cards', list_id: listId }); } catch (e) { cards = null; }
     if (!Array.isArray(cards)) { report.failed.push('Trello did not show the cards already on this client\'s list, so nothing was created (that could make duplicates). Try again in a minute.'); show(); setBtn('Retry Trello', false); showToast('Trello did not answer, nothing was created', 'error'); return; }
@@ -12588,7 +12661,7 @@ async function adminClientTrelloInfo(clientId) {
     } catch (e) { console.warn('Could not refresh clients:', e.message); }
     c = find();
   }
-  return c ? { found: true, listId: c.trello_list_id || null, name: c.name || '' } : { found: false, listId: null, name: '' };
+  return c ? { found: true, listId: c.trello_list_id || null, name: c.name || '', multiAgent: !!c.is_multi_agent } : { found: false, listId: null, name: '', multiAgent: false };
 }
 
 // Builds the new service's card(s) the way the IO form does: its own template (single card
