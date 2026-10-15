@@ -2069,7 +2069,7 @@ function accountingExportCsv() {
     return m;
   });
   const now = new Date(), nowKey = accountingMonthKey(new Date(now.getFullYear(), now.getMonth(), 1));
-  const header = ['Group', 'Client', 'Tactic', 'Campaign', 'Agent', 'County', 'Status', 'Flight Start', 'Flight End', 'Billing', 'Accounting Only', 'SSH Billing', 'Offline Visits', 'Addl Targeting', 'Total Revenue', '44i Cut %', 'Line ID', ...months.map(accountingMonthKey), ...months.map(d => 'Counted ' + accountingMonthKey(d)), ...months.map(d => 'Awaiting ' + accountingMonthKey(d))];
+  const header = ['Group', 'Client', 'Tactic', 'Campaign', 'Agent', 'County', 'Status', 'Flight Start', 'Flight End', 'Billing', 'Accounting Only', 'SSH Billing', 'Offline Visits', 'Addl Targeting', 'Total Revenue', '44i Cut %', 'Line ID', ...months.map(accountingMonthKey)];
   const sorted = [...lines].sort((a, b) => (a.group_name || '').localeCompare(b.group_name || '') || (a.client_name || '').localeCompare(b.client_name || '') || (a.tactic_label || '').localeCompare(b.tactic_label || '') || String(a.flight_start || '').localeCompare(String(b.flight_start || '')));
   const out = [header.map(q).join(',')];
   const rowCells = sorted.map(l => months.map(d => cell(l, d)));
@@ -2081,17 +2081,17 @@ function accountingExportCsv() {
     out.push([l.group_name || '', l.client_name || '', l.tactic_label || l.service_id || '', l.split_label || '', l.agent_name || '', l.county || '', l.status || '',
       d10(l.flight_start), d10(l.flight_end), l.billing_type || '', yn(l.accounting_only), yn(l.billed_externally), yn(l.has_offline_visits), yn(l.has_addl_targeting),
       pick ? round2(pick.c.gross) : '', pick && pick.c.cutPct != null ? Number(pick.c.cutPct) : '', l.id,
-      ...cells.map(c => c && c.f != null ? round2(c.f) : ''),
-      ...cells.map((c, i) => c && c.f != null ? round2(monthParts[i].get(l.id)?.counted || 0) : ''),
-      ...cells.map((c, i) => c && c.f != null ? round2(monthParts[i].get(l.id)?.awaiting || 0) : '')].map(q).join(','));
+      ...cells.map(c => c && c.f != null ? round2(c.f) : '')].map(q).join(','));
   });
-  // Bottom rows, to check the file against the screen: TOTAL = Counted + Awaiting sums; the next row = Counted minus Awaiting = the screen's "44i Revenue" tile
-  // (confirmed only); Awaiting alone is the tile's "awaiting confirmation" line. Both come from the same per-line numbers as the rows above.
+  // Bottom rows, under the month columns (Claire, 2026-10-15: no extra columns, "only count the services it is supposed to based on the status"). The month
+  // columns above show EVERY line's 44i revenue (sort/filter them by Status); these three rows add up only what the Accounting screen counts for that month, using
+  // the screen's own row builder and tile steps (see monthParts above), so they equal the screen's tiles.
   const sumOf = key => months.map((d, i) => sorted.reduce((sum, l) => sum + (monthParts[i].get(l.id)?.[key] || 0), 0));
-  const cTot = sumOf('counted'), aTot = sumOf('awaiting'), blank = n => Array(n).fill('');
-  const pad = label => blank(17 + months.length).map((v, i) => i === 0 ? label : v);
-  out.push([...pad('TOTAL counted = the screen\'s 44i Revenue tile + its "awaiting confirmation" line'), ...cTot.map(round2), ...aTot.map(round2)].map(q).join(','));
-  out.push([...pad('TOTAL confirmed only = the screen\'s 44i Revenue tile'), ...cTot.map((v, i) => round2(v - aTot[i])), ...blank(months.length)].map(q).join(','));
+  const cTot = sumOf('counted'), aTot = sumOf('awaiting');
+  const pad = label => Array(17).fill('').map((v, i) => i === 0 ? label : v);
+  out.push([...pad('Counted on the screen: 44i Revenue tile (confirmed)'), ...cTot.map((v, i) => round2(v - aTot[i]))].map(q).join(','));
+  out.push([...pad('Counted on the screen: awaiting confirmation'), ...aTot.map(round2)].map(q).join(','));
+  out.push([...pad('Counted on the screen: total (confirmed + awaiting)'), ...cTot.map(round2)].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
   a.download = 'accounting-export-' + (accountingGroupFilter ? accountingGroupFilter.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'all-groups') + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
