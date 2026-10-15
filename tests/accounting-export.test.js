@@ -48,7 +48,7 @@ const r2 = n => Math.round(n * 100) / 100;
 const screen = d => { setMonth(d); const t = tiles(buildRows()); return { full: t.fortyfouri, awaiting: t.awaitingFortyfouri, tile: t.fortyfouri - t.awaitingFortyfouri }; };
 const tail3 = () => { global.accountingGroupFilter = ''; setHist([], true); exp(); const rr = parse(blobText); const n = rr.length; const mo = rr[0].slice(17).map(h => { const [y, m] = h.split('-').map(Number); return new Date(y, m - 1, 1); });
   return { rr, labels: [rr[n - 3][0], rr[n - 2][0], rr[n - 1][0]], conf: rr[n - 3].slice(17).map(Number), aw: rr[n - 2].slice(17).map(Number), tot: rr[n - 1].slice(17).map(Number), mo }; };
-const vsScreen = (t) => [t.conf, t.aw, t.tot].map(x => x.join()).join('|') === [t.mo.map(d => r2(screen(d).tile)), t.mo.map(d => r2(screen(d).awaiting)), t.mo.map(d => r2(screen(d).full))].map(x => x.join()).join('|');
+const vsScreen = (t) => [t.conf, t.aw].map(x => x.join()).join('|') === [t.mo.map(d => r2(screen(d).tile)), t.mo.map(d => r2(screen(d).awaiting))].map(x => x.join()).join('|') && t.tot.every((v, i) => Math.abs(v - screen(t.mo[i]).full) < 0.011) && t.tot.every((v, i) => r2(t.conf[i] + t.aw[i]) === v);
 let T = tail3();
 check('three labelled rows at the bottom, same width as the rest, nothing else added', [T.labels.every(l => /^Counted on the screen/.test(l)), T.rr[T.rr.length - 1].length === T.rr[0].length], [true, true]);
 check('the three rows equal the screen\'s 44i Revenue tile / awaiting / total for every month (real row builder + real tile function)', vsScreen(T), true);
@@ -77,4 +77,9 @@ global.ALL_ACCOUNTING_LINES.push(L({ id: 'r1', client_id: 'roll', group_name: 'G
 T = tail3();
 check('...and with a mixed rollup (confirmed + unconfirmed + pending child) in', vsScreen(T), true);
 check('...the unconfirmed and pending children add $200 each to awaiting in October, and the confirmed child $200 more to the total ($600 in all)', [r2(T.aw[2] - awBefore), r2(T.tot[2] - totBefore)], [400, 600]);
+// the exact case Claire hit: three amounts whose unrounded parts each end in .xx5-ish must still add up on paper to the cent
+global.ALL_ACCOUNTING_LINES.length = 0; global.ALL_ACCOUNTING_MONTHS.length = 0;
+global.ALL_ACCOUNTING_LINES.push(L({ id: 'q1', client_id: 'k1', group_name: 'G', client_name: 'K1', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-10-01', flight_end: '2026-10-31' }), L({ id: 'q2', client_id: 'k2', group_name: 'G', client_name: 'K2', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-10-01', flight_end: '2026-10-31' }));
+global.ALL_ACCOUNTING_MONTHS.push(M('q1', '2026-10', 333.33, { actual_spend: 300 }), M('q2', '2026-10', 333.33));
+const T9 = tail3(); check('confirmed + awaiting = total to the cent even when the pieces have fractions of a cent', [r2(T9.conf[0] + T9.aw[0]) === T9.tot[0], T9.conf[0] > 0, T9.aw[0] > 0], [true, true, true]);
 done();

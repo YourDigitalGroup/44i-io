@@ -2089,9 +2089,12 @@ function accountingExportCsv() {
   const sumOf = key => months.map((d, i) => sorted.reduce((sum, l) => sum + (monthParts[i].get(l.id)?.[key] || 0), 0));
   const cTot = sumOf('counted'), aTot = sumOf('awaiting');
   const pad = label => Array(17).fill('').map((v, i) => i === 0 ? label : v);
-  out.push([...pad('Counted on the screen: 44i Revenue tile (confirmed)'), ...cTot.map((v, i) => round2(v - aTot[i]))].map(q).join(','));
-  out.push([...pad('Counted on the screen: awaiting confirmation'), ...aTot.map(round2)].map(q).join(','));
-  out.push([...pad('Counted on the screen: total (confirmed + awaiting)'), ...cTot.map(round2)].map(q).join(','));
+  // Each row is rounded to the cent first and the total is the sum of the two ROUNDED rows, so the three rows always add up on paper (rounding each separately
+  // was a cent out: 331,211.13 + 46,498.86 showed as 377,709.98).
+  const confR = cTot.map((v, i) => round2(v - aTot[i])), awR = aTot.map(round2);
+  out.push([...pad('Counted on the screen: 44i Revenue tile (confirmed)'), ...confR].map(q).join(','));
+  out.push([...pad('Counted on the screen: awaiting confirmation'), ...awR].map(q).join(','));
+  out.push([...pad('Counted on the screen: total (confirmed + awaiting)'), ...confR.map((v, i) => round2(v + awR[i]))].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
   a.download = 'accounting-export-' + (accountingGroupFilter ? accountingGroupFilter.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'all-groups') + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
