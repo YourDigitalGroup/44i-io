@@ -23,6 +23,9 @@ Everything below is built and tested in a throwaway database (`tests/db-lockdown
 5. Run SECTION 2A (after checking the logs for `/rest/v1/notification_settings`). Reload the keyed forms again; submit a test order; open Admin > Settings. SECTION 2B only when the hourly job's owner is found and moved.
 6. Section 3 only when the Playbook is confirmed on keys / service key (`tests/fixtures/lockdown-section3-playbook.sql`); ask the Playbook team to save one test draft right after.
 
+## Proof after each section
+Run `tests/fixtures/lockdown-verify.sql` (read-only): after Section 1 every `section_1` row must show `anon_can_run = false`, `signed_in_can_run = false` and `service_role_can_run = true`; after Section 2 the policy list at the bottom must return no rows.
+
 ## Rollback (seconds; plain re-grants / re-create policy)
 `tests/fixtures/lockdown-rollback.sql` has three parts, one per section; run only the part for the section that went wrong. Symptoms: "Couldn't load just now" / empty client or AE pickers = a function still closed that a page calls; an Admin tab blank = Admin patch not merged before Section 2.
 
