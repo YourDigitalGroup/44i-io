@@ -1,0 +1,82 @@
+diff --git a/admin/index.html b/admin/index.html
+index ddab624..9c7e671 100644
+--- a/admin/index.html
++++ b/admin/index.html
+@@ -6383,7 +6383,8 @@ let NOTIF_LOADED = false; // same reason as LEGAL_LOADED above
+ async function loadAdminNotificationSettings() {
+   NOTIF_LOADED = false;
+   try {
+-    const rows = await sb('notification_settings?id=eq.1&select=*') || [];
++    // through the login-protected function (2026-10-15 lockdown prep): the table's public-read policy is dropped at lockdown
++    const rows = await sb('rpc/admin_get_notification_settings', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || [];
+     NOTIF_LOADED = true;
+     const row = rows[0] || {};
+     document.getElementById('notif-always_bcc_recipients').value = row.always_bcc_recipients || '';
+@@ -6584,9 +6585,9 @@ async function confirmReconcileRow(idx) {
+   const listId = sel?.value || '';
+   if (!listId) { dismissReconcileRow(idx); return; }
+   try {
+-    await sb('rpc/set_client_trello_list_id', {
++    await sb('rpc/admin_set_client_trello_list_id', {
+       method: 'POST',
+-      body: JSON.stringify({ p_client_id: row.client.id, p_trello_list_id: listId })
++      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: row.client.id, p_trello_list_id: listId })
+     });
+     showToast(`Linked ${row.client.name} to their Trello list`);
+     RECONCILE_ROWS.splice(idx, 1);
+@@ -9355,7 +9356,7 @@ function adminTogglePendingBatch(key) {
+ async function adminResolutionRecipients(requesterEmail, groupId) {
+   let always = [];
+   try {
+-    const rows = await sb('notification_settings?id=eq.1&select=always_bcc_recipients') || [];
++    const rows = await sb('rpc/admin_get_notification_settings', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || [];
+     always = String(rows[0]?.always_bcc_recipients || '').split(',').map(x => x.trim()).filter(Boolean);
+   } catch (e) { console.warn('Could not load the always-BCC list for the resolution email:', e.message); }
+   const group = (typeof allGroups !== 'undefined' ? allGroups : []).find(g => g.id === groupId);
+@@ -10275,7 +10276,7 @@ async function adminRetryTrello(orderId) {
+       const got = await adminFindOrCreateClientList(o, bizName, tpost);
+       listId = got.list.id;
+       (got.how === 'created' ? report.created : report.existed).push(got.how === 'created' ? 'Client list (created)' : got.how === 'reopened' ? 'Client list (archived list reopened)' : 'Client list (found by name)');
+-      try { await sb('rpc/set_client_trello_list_id', { method: 'POST', body: JSON.stringify({ p_client_id: o.client_id, p_trello_list_id: listId }) }); if (typeof ALL_CLIENTS !== 'undefined') { const cc = ALL_CLIENTS.find(c => c.id === o.client_id); if (cc) cc.trello_list_id = listId; } }
++      try { await sb('rpc/admin_set_client_trello_list_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: o.client_id, p_trello_list_id: listId }) }); if (typeof ALL_CLIENTS !== 'undefined') { const cc = ALL_CLIENTS.find(c => c.id === o.client_id); if (cc) cc.trello_list_id = listId; } }
+       catch (e) { report.notes.push('The list is ready, but the client record could not be linked to it (' + adminPgMessage(e) + '). The next Retry or order will find it by name.'); }
+     }
+     if (!listId) { report.failed.push(ci.multiAgent ? 'This is a multi-agent client with no Trello list on file for this order. Pick the AE\'s list by hand, then retry.' : 'This client has no Trello list yet. Create the list first, then retry.'); show(); setBtn('Retry Trello', false); showToast('No Trello list found for this client', 'error'); return; }
+diff --git a/strategist/index.html b/strategist/index.html
+index b446da7..f8cb7ac 100644
+--- a/strategist/index.html
++++ b/strategist/index.html
+@@ -774,9 +774,11 @@ async function strategistImportClientChanged() {
+   wrap.style.display = 'block';
+   try {
+     const [counties, agents] = await Promise.all([
+-      sb('rpc/get_client_counties', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
+-      sb('rpc/get_client_agents', { method: 'POST', body: JSON.stringify({ p_client_id: clientId }) }),
+-    ]);
++      // login-protected functions (2026-10-15 lockdown prep): the old public get_client_counties / get_client_agents lose public access at lockdown.
++      // They return inactive rows too, which the old ones left out, so those are filtered here.
++      sb('rpc/admin_get_counties', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_client_id: clientId }) }),
++      sb('rpc/admin_get_agents', { method: 'POST', body: JSON.stringify({ p_name: currentStrategistUser.name, p_pw: currentStrategistUser.pw, p_client_id: clientId }) }),
++    ]).then(([c, a]) => [(c || []).filter(x => x.active !== false), (a || []).filter(x => x.active !== false)]);
+     countySel.innerHTML = '<option value="">— Select —</option>' + (counties || []).map(c => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+     agentSel.innerHTML = '<option value="">— Select —</option>' + (agents || []).map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+   } catch (e) {
+diff --git a/tests/admin-retry-trello.test.js b/tests/admin-retry-trello.test.js
+index dd65d73..fed75b4 100644
+--- a/tests/admin-retry-trello.test.js
++++ b/tests/admin-retry-trello.test.js
+@@ -95,11 +95,11 @@ const creates = r => r.calls.filter(c => c.target === 'trello_create_card' || c.
+   const listCalls = r => r.calls.filter(c => c.target === 'trello_create_list' || c.target === 'trello_update_list');
+   noList(); t = mk({ lists: [{ id: 'L1', name: 'Other Client', pos: 1 }] }); r = await run({ services, trello: t }, noListOrder());
+   check('O no list on the board for this client: ONE list is created, named "Client - AE", at the bottom (fewer than 5 lists); the cards are built in it', [listCalls(r).map(c => [c.target, c.name, c.pos]), creates(r).length > 0 && r.calls.filter(c => c.target === 'trello_create_card').every(c => c.list_id === 'NEWLIST')], [[['trello_create_list', 'Smoke Test Co - Ann AE', 'bottom']], true]);
+-  check('O ...the client is linked to the new list (permanent id saved), the order records the list, and the report says the list was created', [r.saved.some(x => x.path === 'rpc/set_client_trello_list_id' && x.body.p_client_id === 'c1' && x.body.p_trello_list_id === 'NEWLIST'), r.saved.find(x => x.path === 'rpc/admin_set_order_trello_state').body.p_data.trello_client_list_id, /Client list \(created\)|created 4/.test(r.report)], [true, 'NEWLIST', true]);
++  check('O ...the client is linked to the new list (permanent id saved), the order records the list, and the report says the list was created', [r.saved.some(x => x.path === 'rpc/admin_set_client_trello_list_id' && x.body.p_name === 'Carol' && x.body.p_client_id === 'c1' && x.body.p_trello_list_id === 'NEWLIST'), r.saved.find(x => x.path === 'rpc/admin_set_order_trello_state').body.p_data.trello_client_list_id, /Client list \(created\)|created 4/.test(r.report)], [true, 'NEWLIST', true]);
+   noList(); t = mk({ lists: [{ id: 'L1', name: 'Smoke Test Co - Bob', pos: 1 }] }); r = await run({ services, trello: t }, noListOrder());
+-  check('O the client\'s list already exists on the board under "Client - another AE": it is USED, nothing is created or reopened', [listCalls(r).length, r.saved.find(x => x.path === 'rpc/set_client_trello_list_id').body.p_trello_list_id], [0, 'L1']);
++  check('O the client\'s list already exists on the board under "Client - another AE": it is USED, nothing is created or reopened', [listCalls(r).length, r.saved.find(x => x.path === 'rpc/admin_set_client_trello_list_id').body.p_trello_list_id], [0, 'L1']);
+   noList(); t = mk({ lists: [{ id: 'L9', name: 'Smoke Test Co', pos: 3, closed: true }, { id: 'A', name: 'a', pos: 1 }, { id: 'B', name: 'b', pos: 2 }, { id: 'C', name: 'c', pos: 4 }, { id: 'D', name: 'd', pos: 6 }, { id: 'E', name: 'e', pos: 8 }] }); r = await run({ services, trello: t }, noListOrder());
+-  check('O an ARCHIVED list for the client is reopened (at slot 5: halfway between the 4th and 5th open lists, here 6 and 8 = 7) and used; no new list is made', [listCalls(r).map(c => [c.target, c.list_id, c.closed, c.pos]), r.saved.find(x => x.path === 'rpc/set_client_trello_list_id').body.p_trello_list_id], [[['trello_update_list', 'L9', false, 7]], 'L9']);
++  check('O an ARCHIVED list for the client is reopened (at slot 5: halfway between the 4th and 5th open lists, here 6 and 8 = 7) and used; no new list is made', [listCalls(r).map(c => [c.target, c.list_id, c.closed, c.pos]), r.saved.find(x => x.path === 'rpc/admin_set_client_trello_list_id').body.p_trello_list_id], [[['trello_update_list', 'L9', false, 7]], 'L9']);
+   noList(); t = mk({ listsFail: true }); r = await run({ services, trello: t }, noListOrder());
+   check('O Trello will not show the board\'s lists: NOTHING is created (could duplicate a list), nothing is recorded, the AM is told', [r.calls.filter(c => /create|copy/.test(c.target)).length, r.saved.length, /duplicate/.test(r.report)], [0, 0, true]);
+   noList(); t = mk({ lists: [], createListFails: true }); r = await run({ services, trello: t }, noListOrder());
