@@ -31,3 +31,9 @@ Run `tests/fixtures/lockdown-verify.sql` (read-only): after Section 1 every `sec
 
 ## Not covered by this lockdown (separate later phases in the notes)
 Anon `orders` insert and 2-hour read/update; `pending_requests` anon insert; the Trello/email relay requiring the key; `group_service_overrides` public read (no caller in the forms; tidy-up candidate); `get_group_logo` stays open on purpose (audit tool).
+
+## Playbook orders check (Claire asked, 2026-10-15; answered by reading the Playbook code)
+- Since 2026-10-11 the Playbook does NOT create orders in the IO: signing writes a DRAFT (`save_group_draft`, service key) and the AE presses Resume in the keyed IO form and submits, so the form creates the client, order, cards and PDF (`_shared/handoff.ts` header). No Playbook code inserts into `orders`. (Its docs/RUNBOOK section for 2026-10-01 still describes the old direct order insert with the public key: stale docs.)
+- What it still does with orders: READS them (service key) to mark the hand-off done; the older `io-trello` function (manual retry buttons) can PATCH an order's Trello fields (public key until the two-line change, then the service key).
+- The lockdown does not touch `orders` or its policies. The link the Playbook gives AEs is the WordPress page (`partner.io_page_url`, default `https://yourdigitalgroupresources.com/insertion-order/`), which carries the key.
+- Extra end-to-end test after Section 1 (and again after Section 3): the Playbook team signs a TEST proposal for the Claude Test Group, Claire (as the AE) opens the IO link from the card, presses Resume, and submits; the order and cards should appear as usual.
