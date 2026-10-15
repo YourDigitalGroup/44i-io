@@ -5132,6 +5132,26 @@ function goStep(n) {
         return; // Block navigation
       }
     }
+    // Modules with nothing picked / quote-upon-request with no quoted price (2026-10-15, Claire: "the warning should come before they get to step 3" --
+    // both are caught HERE, when Next is pressed, not first at the final Submit; the Submit-time checks stay as a safety net). Same block-with-message pattern.
+    document.querySelectorAll('.quoted-price-field.spend-missing').forEach(el => markFieldMissing(el, false));
+    {
+      const label = id => CATALOG_ROWS[id]?.label || id;
+      const noModules = Object.entries(selected).filter(([id, d]) => CATALOG_ROWS[id]?.qty_option_labels && !(d.qty > 0)).map(([id]) => id);
+      const noQuote = Object.entries(selected).filter(([id, d]) => d.is_qur && !d.quotedPriceEntered).map(([id]) => id);
+      if (noModules.length || noQuote.length) {
+        [...noModules, ...noQuote].forEach(id => { const row = document.querySelector(`tr[data-id="${id}"]`); const section = row?.closest('.card-body'); if (section) section.style.display = 'block'; });
+        noModules.forEach(id => ensureModuleDetailOpen(id));   // show the checklist so the AE can pick
+        noQuote.forEach(id => markFieldMissing(document.querySelector(`tr[data-id="${id}"] .quoted-price-field`), true));
+        const first = [...noModules, ...noQuote][0];
+        revealElement(document.querySelector(`tr[data-id="${first}"]`));
+        const parts = [];
+        if (noModules.length) parts.push('pick at least one option for: ' + noModules.map(label).join(', '));
+        if (noQuote.length) parts.push('enter the quoted price for: ' + noQuote.map(label).join(', '));
+        showToast('Please ' + parts.join(' — and ') + ' before continuing', 'error');
+        return; // Block navigation
+      }
+    }
     // Guard (2026-08-20, per Claire): a service's start date can't be on or before the
     // IO's own date -- a start date that early makes no sense for a brand-new order.
     // Same block-with-highlight pattern as the two checks above, string-compared as

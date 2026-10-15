@@ -73,6 +73,26 @@ const SERVICES = [svc({ id: 'w-flat', label: 'Website Flat Thing', section: 'web
     ({ pg, seen } = await open()); await submit(pg, ['w-flat', 'sem-m']);
     const d2 = (seen.cards.find(c => /^IO — /.test(c.name || '')) || {}).desc || '';
     check('a normal order\'s description is unchanged (no shortening note)', [/list shortened here/.test(d2), /One-Time Total/.test(d2)], [false, true]); await pg.close();
+    // 4. the warnings come EARLIER, when Next is pressed from the services step (before the review/signature step), not only at the final Submit
+    const next = (pg, ids, prep) => pg.evaluate(({ ids, prep }) => {
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+      set('biz-name', 'Smoke Test Co'); set('contact-name', 'Pat'); set('contact-phone', '555-1212'); set('contact-email', 'pat@x.test'); set('website-url', 'https://x.test'); set('city', 'Des Moines'); set('biz-type', 'Retail');
+      set('ae-name', 'Ann AE'); set('ae-email', 'ann@x.test'); set('io-date', '2026-10-15'); set('campaign-start', '2027-01-01');
+      ids.forEach(id => { const cb = document.querySelector('tr[data-id="' + id + '"] input[type=checkbox]'); cb.checked = true; toggle(cb, id); selected[id].start_date = '2027-01-01'; selected[id].end_date = '2027-01-31'; });
+      if (prep) eval(prep);
+      const toasts = []; const real = showToast; window.showToast = (m, t) => { toasts.push(m); real(m, t); };
+      goStep(3);
+      return { step: currentStep, toasts, moduleChecklistOpen: !!document.getElementById('module-detail-w-module'), quoteFlagged: !!document.querySelector('tr[data-id="w-custom"] .quoted-price-field.spend-missing') }; }, { ids, prep });
+    ({ pg, seen } = await open()); let n = await next(pg, ['w-module']);
+    check('modules with nothing picked: pressing Next does NOT reach step 3, says what to do, and opens the module checklist', [n.step === 3, n.toasts.some(m => /pick at least one option for: Modules before continuing/.test(m)), n.moduleChecklistOpen], [false, true, true]);
+    n = await pg.evaluate(() => { onModuleCheckboxChange('w-module', 'Newsletter', true); goStep(3); return { step: currentStep }; });
+    check('after picking a module, Next goes through to step 3', n.step, 3); await pg.close();
+    ({ pg, seen } = await open()); n = await next(pg, ['w-custom']);
+    check('quote-upon-request with no price: pressing Next does NOT reach step 3, says what to do, and highlights the price box', [n.step === 3, n.toasts.some(m => /enter the quoted price for: Custom Build before continuing/.test(m)), n.quoteFlagged], [false, true, true]);
+    n = await pg.evaluate(() => { document.querySelector('tr[data-id="w-custom"] .quoted-price-field').value = '300'; goStep(3); return { step: currentStep, stillFlagged: !!document.querySelector('.quoted-price-field.spend-missing') }; });
+    check('after the price is typed, Next goes through and the highlight is gone', [n.step, n.stillFlagged], [3, false]); await pg.close();
+    ({ pg, seen } = await open()); n = await next(pg, ['w-flat']);
+    check('an ordinary service goes straight through to step 3 (unchanged)', n.step, 3); await pg.close();
     check('no page errors', seen.errs, []);
   } finally { await browser.close(); }
   done();
