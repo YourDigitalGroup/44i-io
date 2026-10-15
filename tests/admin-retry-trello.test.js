@@ -5,12 +5,12 @@ let JSDOM; try { ({ JSDOM } = require('jsdom')); } catch (e) { console.log('SKIP
 const admin = read('admin/index.html'), shared = read('shared.js');
 const win = new JSDOM('<body><button id="retry-trello-btn">Retry Trello</button><div id="retry-trello-report"></div><div id="order-trello-line"></div></body>', { runScripts: 'outside-only' }).window;
 win.eval([fn(shared, 'esc'), ...['adminNormCardName', 'adminStripDateRangeFromCardName', 'adminIsIoCardName', 'adminFindTrelloCardForLine', 'adminEffectiveWorkflow', 'adminCampaignDueFields', 'adminFormatDateRangeForTitle', 'auditVariantIsAlreadyComplete',
-    'adminPgMessage', 'adminBuildCorrectionCards', 'adminOrderTooFreshForRetry', 'adminOrderHasTrelloBoard', 'adminOrderNeedsAttention', 'adminRetryIoDescription', 'adminRetryTrello'].map(n => fn(admin, n)),
+    'adminPgMessage', 'adminBuildCorrectionCards', 'adminOrderTooFreshForRetry', 'adminOrderHasTrelloBoard', 'adminOrderNeedsAttention', 'adminRetryIoDescription', 'adminFindOrCreateClientList', 'adminRetryTrello'].map(n => fn(admin, n)),
   `const ADMIN_ATTENTION_DEFAULT_DAYS = 90; const ADMIN_RETRY_MIN_AGE_MINUTES = 10; var ADMIN_CAMPAIGN_END_REMINDER_MINUTES = 540; var ADMIN_NUMERIC_TERM_RE = /\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}(?:\\s*-\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})?/; var ADMIN_ORDER_CANCEL = {}; var allGroups = [{ id: 'g1', trello_board_id: 'BOARD1' }, { id: 'g2', trello_board_id: '' }];
    var CATALOG_ROWS = {}, allOrders = [], currentAdminUser = { name: 'Carol', pw: 'x' }, PROXY = 'proxy', __toasts = [], __saved = [], __calls = [], __trello = null, __pdfOk = true;
    function sbAuthHeaders() { return {}; } function showToast(m, t) { __toasts.push((t || 'ok') + ': ' + m); } function sectionLabel(x) { return x; }
    async function adminCorrectionCardHandles() { return []; }
-   function adminClientTrelloInfo() { return Promise.resolve({ found: true, listId: 'LIST1', name: 'Smoke Test Co' }); }
+   var __ci = { found: true, listId: 'LIST1', name: 'Smoke Test Co', multiAgent: false }; var ALL_CLIENTS = [{ id: 'c1', trello_list_id: null }]; function adminClientTrelloInfo() { return Promise.resolve(__ci); }
    function describeLineItemAmount(li) { return { text: '$' + (li.fee || li.recurring || li.spend || 0) }; }
    async function generateAdminRevisedIoPdfBlob() { if (!__pdfOk) throw new Error('pdf'); return { base64: 'AAAA', fileName: 'io.pdf' }; }
    async function sb(path, o) { __saved.push({ path, body: JSON.parse(o.body) }); return {}; }
@@ -23,6 +23,9 @@ const mk = (opts = {}) => { const cards = (opts.cards || []).map((c, i) => ({ id
     if (b.target === 'trello_get_list_cards') { if (opts.listFails) return { message: 'rate limited' }; return cards.map(c => ({ id: c.id, name: c.name })); }
     if (b.target === 'trello_get_card') return opts.templateUnreadable ? { message: 'not found' } : { id: b.card_id, name: opts.templateName || 'Website Tactic' };
     if (b.target === 'trello_create_card' || b.target === 'trello_copy_card') { if (opts.createFailsFor && b.name.includes(opts.createFailsFor)) return {}; const c = { id: 'N' + (n++), name: b.name }; cards.push(c); return c; }
+    if (b.target === 'trello_get_lists') { if (opts.listsFail) return { message: 'nope' }; return (opts.lists || []).map(l => ({ ...l })); }
+    if (b.target === 'trello_create_list') { if (opts.createListFails) return {}; return { id: 'NEWLIST', name: b.name }; }
+    if (b.target === 'trello_update_list') return opts.reopenFails ? { message: 'no' } : { id: b.list_id };
     return { ok: true };
   }; return { cards, h }; };
 const run = async (world, order, optsFn) => { win.eval(`CATALOG_ROWS = ${JSON.stringify(world.services)}; allOrders = [${JSON.stringify(order)}]; __calls.length = 0; __saved.length = 0; __toasts.length = 0; __pdfOk = ${optsFn?.pdfOk === false ? 'false' : 'true'};`);
@@ -86,6 +89,27 @@ const creates = r => r.calls.filter(c => c.target === 'trello_create_card' || c.
   check('N an order placed 3 minutes ago is NOT on the attention list (the form may still be setting up Trello)', [win.adminOrderNeedsAttention(fresh, 90), win.adminOrderTooFreshForRetry(fresh), win.adminOrderTooFreshForRetry(order({ created_at: new Date(Date.now() - 30 * 60000).toISOString() }))], [false, true, false]);
   t = mk(); r = await run({ services, trello: t }, fresh);
   check('N pressing Retry on a 3-minute-old order does nothing: no Trello calls at all, the AM is told to wait', [r.calls.length, r.saved.length, r.toasts.some(m => /less than 10 minutes/.test(m))], [0, 0, true]);
+  // O. the client has NO Trello list yet: Retry finds it by name / reopens it / creates it, links the client, then builds the cards in it
+  const noList = (ci) => win.eval(`__ci = ${JSON.stringify({ found: true, listId: null, name: 'Smoke Test Co', multiAgent: false, ...ci })}; ALL_CLIENTS = [{ id: 'c1', trello_list_id: null }]`);
+  const noListOrder = () => order({ trello_client_list_id: null });
+  const listCalls = r => r.calls.filter(c => c.target === 'trello_create_list' || c.target === 'trello_update_list');
+  noList(); t = mk({ lists: [{ id: 'L1', name: 'Other Client', pos: 1 }] }); r = await run({ services, trello: t }, noListOrder());
+  check('O no list on the board for this client: ONE list is created, named "Client - AE", at the bottom (fewer than 5 lists); the cards are built in it', [listCalls(r).map(c => [c.target, c.name, c.pos]), creates(r).length > 0 && r.calls.filter(c => c.target === 'trello_create_card').every(c => c.list_id === 'NEWLIST')], [[['trello_create_list', 'Smoke Test Co - Ann AE', 'bottom']], true]);
+  check('O ...the client is linked to the new list (permanent id saved), the order records the list, and the report says the list was created', [r.saved.some(x => x.path === 'rpc/set_client_trello_list_id' && x.body.p_client_id === 'c1' && x.body.p_trello_list_id === 'NEWLIST'), r.saved.find(x => x.path === 'rpc/admin_set_order_trello_state').body.p_data.trello_client_list_id, /Client list \(created\)|created 4/.test(r.report)], [true, 'NEWLIST', true]);
+  noList(); t = mk({ lists: [{ id: 'L1', name: 'Smoke Test Co - Bob', pos: 1 }] }); r = await run({ services, trello: t }, noListOrder());
+  check('O the client\'s list already exists on the board under "Client - another AE": it is USED, nothing is created or reopened', [listCalls(r).length, r.saved.find(x => x.path === 'rpc/set_client_trello_list_id').body.p_trello_list_id], [0, 'L1']);
+  noList(); t = mk({ lists: [{ id: 'L9', name: 'Smoke Test Co', pos: 3, closed: true }, { id: 'A', name: 'a', pos: 1 }, { id: 'B', name: 'b', pos: 2 }, { id: 'C', name: 'c', pos: 4 }, { id: 'D', name: 'd', pos: 6 }, { id: 'E', name: 'e', pos: 8 }] }); r = await run({ services, trello: t }, noListOrder());
+  check('O an ARCHIVED list for the client is reopened (at slot 5: halfway between the 4th and 5th open lists, here 6 and 8 = 7) and used; no new list is made', [listCalls(r).map(c => [c.target, c.list_id, c.closed, c.pos]), r.saved.find(x => x.path === 'rpc/set_client_trello_list_id').body.p_trello_list_id], [[['trello_update_list', 'L9', false, 7]], 'L9']);
+  noList(); t = mk({ listsFail: true }); r = await run({ services, trello: t }, noListOrder());
+  check('O Trello will not show the board\'s lists: NOTHING is created (could duplicate a list), nothing is recorded, the AM is told', [r.calls.filter(c => /create|copy/.test(c.target)).length, r.saved.length, /duplicate/.test(r.report)], [0, 0, true]);
+  noList(); t = mk({ lists: [], createListFails: true }); r = await run({ services, trello: t }, noListOrder());
+  check('O the list cannot be created: no cards, nothing recorded, reported', [r.calls.filter(c => c.target === 'trello_create_card').length, r.saved.length, /would not create/.test(r.report)], [0, 0, true]);
+  noList({ multiAgent: true }); t = mk({ lists: [] }); r = await run({ services, trello: t }, noListOrder());
+  check('O a MULTI-AGENT client (one list per AE) is never guessed: no list is looked up or created, the AM is told to pick the AE\'s list by hand', [r.calls.length, r.saved.length, /multi-agent/.test(r.report)], [0, 0, true]);
+  noList(); t = mk({ lists: [] }); win.eval('__declineOnce = true'); win.confirm = () => true;
+  const declined = await (async () => { win.eval(`CATALOG_ROWS = ${JSON.stringify(services)}; allOrders = [${JSON.stringify(noListOrder())}]; __calls.length = 0; __saved.length = 0; __pdfOk = true;`); win.__trello = t.h; let n = 0; win.confirm = () => (++n === 1); await win.adminRetryTrello('o1'); return { calls: win.eval('__calls.length'), saved: win.eval('__saved.length') }; })();
+  check('O saying No to "create the list?" does nothing at all', [declined.calls, declined.saved], [0, 0]);
+  win.confirm = () => true; win.eval(`__ci = { found: true, listId: 'LIST1', name: 'Smoke Test Co', multiAgent: false }`);
   // K. wiring in the page
   check('the Orders tab has the attention filter and Order Detail has the Retry button only for unsynced, not-brand-new orders of groups with a board', [/id="orders-filter-attention"/.test(admin), /adminOrderNeedsAttention\(o, attentionDays\)/.test(admin), /!o\.trello_synced && adminOrderHasTrelloBoard\(o\) && !adminOrderTooFreshForRetry\(o\)/.test(admin)], [true, true, true]);
   check('the Correct Service builder still behaves as before when strict is not passed (defaults unchanged)', [/ctx\.strict && !listReadable/.test(admin), /if \(ctx\.strict && reuse\)/.test(admin), /const plainUnlessStrict = \(\) => \{ if \(!ctx\.strict\) plain\(\); \}/.test(admin)], [true, true, true]);
