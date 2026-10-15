@@ -190,6 +190,7 @@
                Create shows the key once, Replace mints-then-retires, Revoke kills one.
                Super admins only (hidden for everyone else in adminEditGroup/adminNewGroup). -->
           <button id="tab-btn-embed" role="tab" aria-selected="false" aria-controls="tab-embed" onclick="adminTab('embed')" style="display:none;padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">IO Form Embed</button>
+          <button id="tab-btn-history" role="tab" aria-selected="false" aria-controls="tab-history" onclick="adminTab('history')" style="display:none;padding:8px 16px;border-radius:999px;font-size:12.5px;font-weight:600;border:1.5px solid var(--accent-dark);background:#fff;color:var(--accent-dark);cursor:pointer">History</button>
         </div>
 
         <div style="padding:20px">
@@ -363,6 +364,11 @@
             <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6">Override this group's 44i Cut %, Budgeted Spend %, and Setup Fee Split % on a per-service basis. Leave a field blank to use the standard value from the Accounting Map. A CPM-adjustment modifier (like Offline Visits Tracking) shows one row per tactic it can combine with, so each pairing (e.g. Geo-Targeting w/ Offline Tracking vs. Site-Targeting w/ Offline Tracking) can be overridden separately for this group.</p>
             <div id="accounting-override-fields"></div>
             <p style="font-size:10px;color:var(--muted);margin-top:12px">Internal only — never shown to clients or on the printed IO. Affects only how this group's real margin is calculated, not anything on the public form.</p>
+          </div>
+
+          <div id="tab-history" role="tabpanel" aria-labelledby="tab-btn-history" style="display:none">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.6">Every change saved to this group, newest first: who made it, when, and what it was before. Custom pricing and accounting overrides only show "changed" (no numbers).</p>
+            <div id="admin-history-body"></div>
           </div>
 
           <div id="tab-embed" role="tabpanel" aria-labelledby="tab-btn-embed" style="display:none">
@@ -2186,6 +2192,12 @@ async function adminTab(tab) {
   document.getElementById('tab-pricing').style.display  = tab==='pricing' ? 'block' : 'none';
   document.getElementById('tab-accounting-override').style.display = tab==='accounting-override' ? 'block' : 'none';
   document.getElementById('tab-embed').style.display = tab==='embed' ? 'block' : 'none';
+  document.getElementById('tab-history').style.display = tab==='history' ? 'block' : 'none';
+  const histBtn = document.getElementById('tab-btn-history');
+  histBtn.style.background = tab==='history' ? 'var(--accent-dark)' : '#fff';
+  histBtn.style.color = tab==='history' ? '#fff' : 'var(--accent-dark)';
+  histBtn.setAttribute('aria-selected', tab==='history' ? 'true' : 'false');
+  if (tab === 'history') await adminRenderGroupHistory();
   const embedBtn = document.getElementById('tab-btn-embed');
   embedBtn.style.background = tab==='embed' ? 'var(--accent-dark)' : '#fff';
   embedBtn.style.color = tab==='embed' ? '#fff' : 'var(--accent-dark)';
@@ -14052,6 +14064,7 @@ function adminClearGroupLogo() {
 async function adminNewGroup() {
   document.getElementById('tab-btn-embed').style.display = canSee('embedKeysManage') ? '' : 'none';
   ADMIN_EMBED_ONE_TIME = null;
+  document.getElementById('tab-btn-history').style.display = 'none';
   document.getElementById('admin-form-title').textContent = 'New Group';
   document.getElementById('admin-group-id').value = '';
   ['admin-name','admin-slug','admin-am-name','admin-am-email','admin-am-calendar','admin-am-trello',
@@ -14112,6 +14125,7 @@ async function adminEditGroup(id, initialTab) {
   if (!g) return;
   document.getElementById('tab-btn-embed').style.display = canSee('embedKeysManage') ? '' : 'none';
   ADMIN_EMBED_ONE_TIME = null;
+  document.getElementById('tab-btn-history').style.display = '';
   document.getElementById('admin-form-title').textContent = 'Edit Group — ' + g.name;
   document.getElementById('admin-group-id').value = g.id;
   document.getElementById('admin-name').value = g.name || '';
@@ -14177,6 +14191,45 @@ async function adminEditGroup(id, initialTab) {
   adminTab(initialTab || 'info');
   document.getElementById('admin-group-form').style.display = 'block';
   document.getElementById('admin-group-form').scrollIntoView({behavior:'smooth'});
+}
+
+// ── GROUP CHANGE HISTORY (2026-10-15) ── read-only list of what changed on a group, from admin_get_group_history.
+const GROUP_HISTORY_LABELS = { name: 'Group name', io_slug: 'IO link name', am_name: 'Account Manager', am_email: 'AM email', am_calendar_url: 'AM calendar link', am_trello_handle: 'AM Trello handle',
+  additional_card_trello_handle: 'Additional card member', additional_card_member_role: 'Additional card role', brand_color: 'Brand colour', brand_color2: 'Second brand colour', logo_url: 'Logo',
+  logo_dark_bg: 'Logo on dark background', trello_board_id: 'Trello board', from_name: 'Email "from" name', from_email: 'Email "from" address', io_recipient: 'IO recipients', has_koc: 'Kickoff call',
+  io_pricing: 'Custom pricing', accounting_overrides: 'Accounting overrides', active: 'Status', digital_strategist_name: 'Digital Strategist', covering_strategist_name: 'Covering Strategist',
+  social_strategist_id: 'Social Strategist', web_strategist_id: 'Web Strategist', hide_from_strategist: 'Hidden from Strategist view' };
+function groupHistoryValue(field, v) {
+  if (v === null || v === undefined || v === '') return '(blank)';
+  if (field === 'active') return v ? 'Active' : 'Archived';
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  if (field === 'social_strategist_id' || field === 'web_strategist_id') { const st = (typeof ALL_STRATEGISTS !== 'undefined' ? ALL_STRATEGISTS : []).find(x => String(x.id) === String(v)); return st ? st.name : 'a strategist'; }
+  if (field === 'logo_url') return 'an image';
+  return String(v);
+}
+function groupHistoryEntryHtml(e) {
+  const when = new Date(e.changed_at); const whenTxt = isNaN(when) ? '' : when.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const head = '<div style="font-size:12px;font-weight:700;color:var(--text)">' + esc(whenTxt) + ' <span style="font-weight:500;color:var(--muted)">— ' + esc(e.changed_by || 'unknown') + (e.action === 'created' ? ' created this group' : '') + '</span></div>';
+  if (e.action === 'created') return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' + head + '</div>';
+  const lines = Object.keys(e.changes || {}).map(k => {
+    const label = GROUP_HISTORY_LABELS[k] || k, c = e.changes[k] || {};
+    if (k === 'io_pricing' || k === 'accounting_overrides') return '<li>' + esc(label) + ' changed</li>';
+    return '<li>' + esc(label) + ': <span style="color:var(--muted)">' + esc(groupHistoryValue(k, c.from)) + '</span> → <strong>' + esc(groupHistoryValue(k, c.to)) + '</strong></li>';
+  }).join('');
+  return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">' + head + '<ul style="margin:6px 0 0 18px;font-size:12.5px;line-height:1.6">' + lines + '</ul></div>';
+}
+async function adminRenderGroupHistory() {
+  const box = document.getElementById('admin-history-body'); const id = document.getElementById('admin-group-id').value;
+  if (!box) return;
+  if (!id) { box.innerHTML = '<p style="font-size:12px;color:var(--muted)">Save the group first; its history starts then.</p>'; return; }
+  box.innerHTML = '<p style="font-size:12px;color:var(--muted)">Loading…</p>';
+  try {
+    const rows = await sb('rpc/admin_get_group_history', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_group_id: id }) });
+    if (document.getElementById('admin-group-id').value !== id) return;
+    box.innerHTML = Array.isArray(rows) && rows.length ? rows.map(groupHistoryEntryHtml).join('') : '<p style="font-size:12px;color:var(--muted)">No changes recorded yet. Changes saved from now on will appear here.</p>';
+  } catch (e) {
+    box.innerHTML = '<p style="font-size:12px;color:var(--red,#b00020)">Could not load history: ' + esc(e.message) + '</p>';
+  }
 }
 
 function adminCancelEdit() {
