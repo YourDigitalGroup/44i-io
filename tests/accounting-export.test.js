@@ -77,6 +77,29 @@ global.ALL_ACCOUNTING_LINES.push(L({ id: 'r1', client_id: 'roll', group_name: 'G
 T = tail3();
 check('...and with a mixed rollup (confirmed + unconfirmed + pending child) in', vsScreen(T), true);
 check('...the unconfirmed and pending children add $200 each to awaiting in October, and the confirmed child $200 more to the total ($600 in all)', [r2(T.aw[2] - awBefore), r2(T.tot[2] - totBefore)], [400, 600]);
+// ── optional month range (From / To boxes) ──
+const boxes = { 'accounting-export-from': { value: '' }, 'accounting-export-to': { value: '' } }; global.document.getElementById = id => boxes[id] || null;
+const setRange = (f, t) => { boxes['accounting-export-from'].value = f; boxes['accounting-export-to'].value = t; };
+const run = (f, t) => { setRange(f, t); toasts.length = 0; blobText = null; dl = null; global.accountingGroupFilter = ''; setHist([], true); exp(); return blobText ? parse(blobText) : null; };
+let R = run('', '');
+check('both boxes blank: every month, as before', R[0].slice(17), ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12']);
+const allLines = R.length - 4;
+R = run('2026-10', '2026-11');
+check('From 2026-10 To 2026-11: only those two month columns', R[0].slice(17), ['2026-10', '2026-11']);
+const screenMonth = k => { const [y, m] = k.split('-').map(Number); setMonth(new Date(y, m - 1, 1)); const t = tiles(buildRows()); return [r2(t.fortyfouri - t.awaitingFortyfouri), r2(t.awaitingFortyfouri)]; };
+const n = R.length;
+check('the bottom rows for the chosen months equal the screen for those months', [R[n - 3].slice(17).map(Number), R[n - 2].slice(17).map(Number)], [[screenMonth('2026-10')[0], screenMonth('2026-11')[0]], [screenMonth('2026-10')[1], screenMonth('2026-11')[1]]]);
+check('the file name carries the range', /2026-10-to-2026-11/.test(dl), true);
+R = run('2026-12', '2026-12'); check('only lines that run in a chosen month are listed (one-time and ended lines drop out of a December-only file)', [R.length - 4 < allLines, R.slice(1, -3).some(r => r[1] === 'Beta "B"'), R.slice(1, -3).some(r => r[1] === 'Acme, Inc.')], [true, false, true]);
+R = run('2026-11', '');
+check('only a From month: from then on', R[0].slice(17), ['2026-11', '2026-12']);
+R = run('', '2026-09');
+check('only a To month: up to then', R[0].slice(17), ['2026-08', '2026-09']);
+R = run('2026-10', '2026-10'); check('one month alone works', R[0].slice(17), ['2026-10']);
+R = run('2026-12', '2026-10'); check('From after To: a message, no file', [R, /From month is after/.test(toasts[0] || '')], [null, true]);
+R = run('Oct 2026', ''); check('text that is not year-month: a message, no file', [R, /year-month/.test(toasts[0] || '')], [null, true]);
+R = run('2030-01', '2030-03'); check('a range with no data: a message, no file', [R, /No months with data/.test(toasts[0] || '')], [null, true]);
+setRange('', '');
 // the exact case Claire hit: three amounts whose unrounded parts each end in .xx5-ish must still add up on paper to the cent
 global.ALL_ACCOUNTING_LINES.length = 0; global.ALL_ACCOUNTING_MONTHS.length = 0;
 global.ALL_ACCOUNTING_LINES.push(L({ id: 'q1', client_id: 'k1', group_name: 'G', client_name: 'K1', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-10-01', flight_end: '2026-10-31' }), L({ id: 'q2', client_id: 'k2', group_name: 'G', client_name: 'K2', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-10-01', flight_end: '2026-10-31' }));
