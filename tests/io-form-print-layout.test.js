@@ -64,6 +64,13 @@ const SERVICES = [...'abcd'].map((k, i) => svc({ id: 'sp-' + k, label: 'Spend Se
     check('13 months print as 3 balanced rows of 5 + 5 + 3 months (not 6 + 6 + 1)', [grid.a.map(r => r.monthCells), grid.b.map(r => r.monthCells)], [[5, 5, 3], [5, 5, 3]]);
     check('every row is on the same fixed grid (same number of columns, table-layout fixed, a column list), so a "Paused" cell cannot shift the others', [grid.a.every(r => r.fixed && r.cols === 6 && r.colgroup === 6), grid.b.every(r => r.fixed && r.cols === 6 && r.colgroup === 6)], [true, true]);
     check('totals are rounded to the cent: months that add up to 2999.9999999999995 print "$3,000 total", not "$3,000.00 total"', [/\$3,000 total/.test(grid.text), /\$3,000\.00 total/.test(grid.text)], [true, false]);
+    // a signed Fourge Playbook proposal's "Group's Own Media" block (a separate table after the services) is untouched by the block layout
+    const pb = await pg.evaluate(() => {
+      playbookSignature = { signer_name: 'Pat Client', signature: 'data:image/png;base64,AAAA', partner_media: [{ label: 'Radio spots', amount: 600, billing: 'monthly', start: '2027-01-01', end: '2027-06-30', note: 'Provided by the group' }] };
+      const html = buildIoDocumentHtml().html; playbookSignature = null;
+      const d = new DOMParser().parseFromString(html, 'text/html');
+      return { has: /Group's Own Media/.test(d.body.innerText), item: /Radio spots/.test(d.body.innerText), note: /Not included in the totals above/.test(d.body.innerText), tables: d.querySelectorAll('table.services').length, blocksStillThere: d.querySelectorAll('tbody.svc-block').length }; });
+    check('Playbook partner media still prints as its own block after the services (not inside a service block), and services are unchanged', [pb.has, pb.item, pb.note, pb.tables >= 2, pb.blocksStillThere], [true, true, true, true, 2]);
     // real geometry (a second page holds the document): column N sits at the SAME place in every row of a block, whether or not a month is paused
     const doc2 = await browser.newPage({ viewport: { width: 900, height: 1200 } }); await doc2.setContent(grid.html, { waitUntil: 'load' });
     const edges = await doc2.evaluate(() => [...document.querySelectorAll('tbody.svc-block')].slice(0, 2).map(b => [...b.querySelectorAll('table.month-strip')].map(t => [...t.querySelectorAll('thead th')].map(th => Math.round(th.getBoundingClientRect().right)))));
