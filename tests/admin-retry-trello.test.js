@@ -5,8 +5,8 @@ let JSDOM; try { ({ JSDOM } = require('jsdom')); } catch (e) { console.log('SKIP
 const admin = read('admin/index.html'), shared = read('shared.js');
 const win = new JSDOM('<body><button id="retry-trello-btn">Retry Trello</button><div id="retry-trello-report"></div><div id="order-trello-line"></div></body>', { runScripts: 'outside-only' }).window;
 win.eval([fn(shared, 'esc'), ...['adminNormCardName', 'adminStripDateRangeFromCardName', 'adminIsIoCardName', 'adminFindTrelloCardForLine', 'adminEffectiveWorkflow', 'adminCampaignDueFields', 'adminFormatDateRangeForTitle', 'auditVariantIsAlreadyComplete',
-    'adminPgMessage', 'adminBuildCorrectionCards', 'adminOrderHasTrelloBoard', 'adminOrderNeedsAttention', 'adminRetryIoDescription', 'adminRetryTrello'].map(n => fn(admin, n)),
-  `const ADMIN_ATTENTION_DEFAULT_DAYS = 90; var ADMIN_CAMPAIGN_END_REMINDER_MINUTES = 540; var ADMIN_NUMERIC_TERM_RE = /\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}(?:\\s*-\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})?/; var ADMIN_ORDER_CANCEL = {}; var allGroups = [{ id: 'g1', trello_board_id: 'BOARD1' }, { id: 'g2', trello_board_id: '' }];
+    'adminPgMessage', 'adminBuildCorrectionCards', 'adminOrderTooFreshForRetry', 'adminOrderHasTrelloBoard', 'adminOrderNeedsAttention', 'adminRetryIoDescription', 'adminRetryTrello'].map(n => fn(admin, n)),
+  `const ADMIN_ATTENTION_DEFAULT_DAYS = 90; const ADMIN_RETRY_MIN_AGE_MINUTES = 10; var ADMIN_CAMPAIGN_END_REMINDER_MINUTES = 540; var ADMIN_NUMERIC_TERM_RE = /\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}(?:\\s*-\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})?/; var ADMIN_ORDER_CANCEL = {}; var allGroups = [{ id: 'g1', trello_board_id: 'BOARD1' }, { id: 'g2', trello_board_id: '' }];
    var CATALOG_ROWS = {}, allOrders = [], currentAdminUser = { name: 'Carol', pw: 'x' }, PROXY = 'proxy', __toasts = [], __saved = [], __calls = [], __trello = null, __pdfOk = true;
    function sbAuthHeaders() { return {}; } function showToast(m, t) { __toasts.push((t || 'ok') + ': ' + m); } function sectionLabel(x) { return x; }
    async function adminCorrectionCardHandles() { return []; }
@@ -81,8 +81,13 @@ const creates = r => r.calls.filter(c => c.target === 'trello_create_card' || c.
   check('L Correct Service (not strict): an unreadable list still goes ahead and builds (unchanged behaviour)', [d.out.cards.length, d.out.stopped || false], [1, false]);
   d = await direct({ listFails: true }, { strict: true });
   check('M strict mode: an unreadable list builds nothing and says so', [d.out.cards.length, d.out.stopped], [0, true]);
+  // N. an order the form may still be setting up is not "needs attention" and Retry refuses
+  const fresh = order({ created_at: new Date(Date.now() - 3 * 60000).toISOString() });
+  check('N an order placed 3 minutes ago is NOT on the attention list (the form may still be setting up Trello)', [win.adminOrderNeedsAttention(fresh, 90), win.adminOrderTooFreshForRetry(fresh), win.adminOrderTooFreshForRetry(order({ created_at: new Date(Date.now() - 30 * 60000).toISOString() }))], [false, true, false]);
+  t = mk(); r = await run({ services, trello: t }, fresh);
+  check('N pressing Retry on a 3-minute-old order does nothing: no Trello calls at all, the AM is told to wait', [r.calls.length, r.saved.length, r.toasts.some(m => /less than 10 minutes/.test(m))], [0, 0, true]);
   // K. wiring in the page
-  check('the Orders tab has the attention filter and Order Detail has the Retry button only for unsynced orders of groups with a board', [/id="orders-filter-attention"/.test(admin), /adminOrderNeedsAttention\(o, attentionDays\)/.test(admin), /!o\.trello_synced && adminOrderHasTrelloBoard\(o\)/.test(admin)], [true, true, true]);
+  check('the Orders tab has the attention filter and Order Detail has the Retry button only for unsynced, not-brand-new orders of groups with a board', [/id="orders-filter-attention"/.test(admin), /adminOrderNeedsAttention\(o, attentionDays\)/.test(admin), /!o\.trello_synced && adminOrderHasTrelloBoard\(o\) && !adminOrderTooFreshForRetry\(o\)/.test(admin)], [true, true, true]);
   check('the Correct Service builder still behaves as before when strict is not passed (defaults unchanged)', [/ctx\.strict && !listReadable/.test(admin), /if \(ctx\.strict && reuse\)/.test(admin), /const plainUnlessStrict = \(\) => \{ if \(!ctx\.strict\) plain\(\); \}/.test(admin)], [true, true, true]);
   done();
 })();

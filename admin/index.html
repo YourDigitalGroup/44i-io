@@ -10143,6 +10143,12 @@ function adminOrderLiveTotals(o) {
 // (listed for the AM to finish by hand). The result is saved with admin_set_order_trello_state (the anonymous key can only update an order
 // for 2 hours after it is created).
 const ADMIN_ATTENTION_DEFAULT_DAYS = 90;
+// The order form builds the Trello cards for a few minutes after an order is saved. Retry must not run alongside it (two writers could
+// both create the same card), so an order younger than this is "still setting up", not "needs attention" (2026-10-15).
+const ADMIN_RETRY_MIN_AGE_MINUTES = 10;
+function adminOrderTooFreshForRetry(o) {
+  return !!o.created_at && (Date.now() - new Date(o.created_at).getTime()) < ADMIN_RETRY_MIN_AGE_MINUTES * 60000;
+}
 function adminOrderHasTrelloBoard(o) {
   const g = (typeof allGroups !== 'undefined' ? allGroups : []).find(x => x.id === o.group_id);
   return !!(g && String(g.trello_board_id || '').trim());
@@ -10150,6 +10156,7 @@ function adminOrderHasTrelloBoard(o) {
 function adminOrderNeedsAttention(o, days) {
   if (o.trello_synced) return false;
   if (!adminOrderHasTrelloBoard(o)) return false;
+  if (adminOrderTooFreshForRetry(o)) return false;   // the form may still be setting it up
   const cx = (typeof ADMIN_ORDER_CANCEL !== 'undefined' ? ADMIN_ORDER_CANCEL : {})[o.id];
   if (cx && cx.total > 0 && cx.cancelled >= cx.total) return false;   // every service cancelled: nothing left to set up
   if (days && o.created_at && new Date(o.created_at).getTime() < Date.now() - days * 86400000) return false;
@@ -10170,6 +10177,7 @@ async function adminRetryTrello(orderId) {
   const o = allOrders.find(x => x.id === orderId);
   if (!o) return;
   if (!adminOrderHasTrelloBoard(o)) { showToast('This order\'s group has no Trello board set up', 'error'); return; }
+  if (adminOrderTooFreshForRetry(o)) { showToast(`This order was placed less than ${ADMIN_RETRY_MIN_AGE_MINUTES} minutes ago, so the order form may still be setting up Trello. Check again in a few minutes.`, 'error'); return; }
   if (!confirm('Retry Trello for this order?\n\nThis only creates cards that are missing. Cards already on the client\'s Trello list are left alone.')) return;
   const box = document.getElementById('retry-trello-report');
   const setBtn = (text, disabled) => { if (btn) { btn.disabled = disabled; btn.textContent = text; } };
@@ -10731,7 +10739,8 @@ async function viewOrderDetail(orderId) {
           <div><strong>IO Date:</strong> ${fmtDate(o.io_date)}</div>
           <div><strong>KOC:</strong> ${fmtDate(o.koc_date)}${o.koc_time ? ' at ' + esc(o.koc_time) : ''}</div>
           <div id="order-trello-line"><strong>Trello Synced:</strong> ${o.trello_synced ? '✅ ' + fmtDateTime(o.trello_synced_at) : '⚠ No'}</div>
-          ${(!o.trello_synced && adminOrderHasTrelloBoard(o)) ? `<div style="margin-top:6px"><button id="retry-trello-btn" onclick="adminRetryTrello('${esc(o.id)}')" class="btn-quiet-green">Retry Trello</button> <span style="font-size:11px;color:var(--muted)">Creates only the cards that are missing; cards already on the client's list are left alone.</span></div><div id="retry-trello-report" style="margin-top:6px;font-size:12px"></div>` : ''}
+          ${(!o.trello_synced && adminOrderHasTrelloBoard(o) && adminOrderTooFreshForRetry(o)) ? `<div style="margin-top:6px;font-size:11px;color:var(--muted)">This order is under ${ADMIN_RETRY_MIN_AGE_MINUTES} minutes old, so the order form may still be setting up Trello. Check again shortly.</div>` : ''}
+          ${(!o.trello_synced && adminOrderHasTrelloBoard(o) && !adminOrderTooFreshForRetry(o)) ? `<div style="margin-top:6px"><button id="retry-trello-btn" onclick="adminRetryTrello('${esc(o.id)}')" class="btn-quiet-green">Retry Trello</button> <span style="font-size:11px;color:var(--muted)">Creates only the cards that are missing; cards already on the client's list are left alone.</span></div><div id="retry-trello-report" style="margin-top:6px;font-size:12px"></div>` : ''}
           ${o.needs_am_help ? '<div style="margin-top:6px;padding:5px 10px;background:#FEF3C7;border-radius:5px;font-size:11px;color:#92400E"><strong>⚠ AM HELP REQUESTED</strong> on one or more intake forms</div>' : ''}
         </div>
       </div>
