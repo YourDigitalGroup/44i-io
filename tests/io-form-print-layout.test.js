@@ -45,6 +45,7 @@ const SERVICES = [...'abcd'].map((k, i) => svc({ id: 'sp-' + k, label: 'Spend Se
     check('wording and numbers unchanged: an evenly split Whole Campaign Total still reads "$3,000 total"; the printed IO shows the setup fee and the subtotal', [/\$3,000(\.00)? total/.test(struct.text), /Setup Fee/.test(struct.text), /Subtotal/.test(struct.text)], [true, true, true]);
     check('the on-screen Step 3 review is NOT changed (it still shows the month table with its days column)', /days/i.test(built.review), true);
     check('the PDF page-cutter knows about the blocks (its protected-zone list includes tbody.svc-block)', /selector = 'tr, tbody\.svc-block,/.test(read('index.html')), true);
+    check('the printed IO has no document footer (it repeated the letterhead and landed alone on an extra page)', [/doc-footer/.test(built.html), /doc-footer/.test(read('index.html'))], [false, false]);
     // 13 months, a paused month, and amounts whose cents add up with floating-point noise (the real case from Claire's test order)
     const grid = await pg.evaluate(() => {
       Object.keys(selected).forEach(k => delete selected[k]);
@@ -78,6 +79,7 @@ const SERVICES = [...'abcd'].map((k, i) => svc({ id: 'sp-' + k, label: 'Spend Se
       const pages = JSON.parse(out.stdout); const withStrip = ['Spend Service A', 'Spend Service B', 'Spend Service C', 'Spend Service D', 'Even Total Service'];
       const perPage = pages.map(raw => { const t = raw.replace(/\s+/g, ' '); return { names: withStrip.filter(n => t.includes(n)).length, totals: (t.match(/'\d{2} TOTAL/g) || []).length }; });
       check('real PDF: on every page the number of services equals the number of month strips (a service is never separated from its breakdown)', [perPage.every(p => p.names === p.totals), perPage.reduce((s, p) => s + p.names, 0)], [true, 5]);
+      check('real PDF: no page holds only a footer line (group name + IO number)', pages.some(p => { const x = p.replace(/\s+/g, ' ').trim(); return x.length < 90 && /· \d{8}-/.test(x); }), false);
       check('real PDF: the long order fits in 3 pages or fewer (the old layout took 6 for a smaller one)', pages.length <= 3, true);
     }
     check('no page errors', errs, []);

@@ -8193,9 +8193,7 @@ function buildIoDocumentHtml() {
     .subtotal-row,.totals-box{page-break-inside:avoid}
     .sig-section{page-break-inside:avoid}
     .legal{page-break-inside:auto}
-    .doc-footer{page-break-inside:avoid}
   }
-  .doc-footer{margin-top:14px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:8pt;color:#9CA3AF;text-align:center}
   @media screen{
     body{max-width:8.5in;margin:0 auto;padding:0.5in;box-shadow:0 4px 24px rgba(0,0,0,.1);background:#fff;min-height:11in}
   }
@@ -8459,12 +8457,8 @@ ${specialInstructions ? `<div class="special-box no-break"><strong>Additional No
   </div>
 </div>
 
-<!-- Document footer — appears once at the true end of the document, not repeated per
-     printed page. See the @page comment near the top of the <style> block for why a
-     repeating per-page version was removed. -->
-<div class="doc-footer">
-  <span>${groupName} · ${ioNumber}</span>
-</div>
+<!-- No document footer (2026-10-15, Claire: "drop the footer"). It only repeated the group name and IO number already in the letterhead, and
+     it landed alone on an extra last page whenever the signature ended near the bottom of a page. -->
 
 </body></html>`;
 
@@ -8518,7 +8512,7 @@ function computeUnsafeZonesMm(iframeDoc, imgWidthMm) {
   // document (the real element is .totals-box, wrapping the One-Time/Monthly/First
   // Month Total rows) -- meaning the totals box had no real atomic protection at all,
   // just whatever the generic `tr` selector happened to catch for its individual rows.
-  const selector = 'tr, tbody.svc-block, .no-break, .section-row, .subtotal-row, .totals-box, .sig-section, .doc-footer';
+  const selector = 'tr, tbody.svc-block, .no-break, .section-row, .subtotal-row, .totals-box, .sig-section';
   return Array.from(iframeDoc.querySelectorAll(selector))
     .map(el => {
       const r = el.getBoundingClientRect();
