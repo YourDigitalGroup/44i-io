@@ -420,6 +420,10 @@
                 <input type="checkbox" id="orders-filter-help" onchange="renderAdminOrders()" style="width:14px;height:14px;accent-color:var(--accent)"/>
                 Needs AM help
               </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:7px 0 7px 14px" title="Orders whose Trello setup did not finish (groups with a Trello board only). Looks back 90 days unless you pick a shorter Date Range.">
+                <input type="checkbox" id="orders-filter-attention" onchange="renderAdminOrders()" style="width:14px;height:14px;accent-color:var(--accent)"/>
+                <span id="orders-attention-label">⚠ Trello needs attention</span>
+              </label>
             </div>
           </div>
 
@@ -2919,7 +2923,7 @@ window.addEventListener('resize', () => {
 // being left), so returning to a tab always shows the same clean state it
 // would on a fresh page load, matching what Claire expects.
 const ADMIN_TAB_FILTER_IDS = [
-  'orders-filter-group', 'orders-filter-search', 'orders-filter-date', 'orders-filter-help',
+  'orders-filter-group', 'orders-filter-search', 'orders-filter-date', 'orders-filter-help', 'orders-filter-attention',
   'clients-filter-search', 'clients-filter-group', 'clients-filter-show-hidden',
   'campaignlines-client-picker',
   'map-filter-section', 'map-filter-search', 'map-filter-inactive',
@@ -10132,14 +10136,140 @@ function adminOrderLiveTotals(o) {
   return { oneTime, monthly, annual };
 }
 
+// ── RETRY TRELLO (2026-10-15, Claire: AMs create missing cards by hand today and want it standard) ──────────────────────────────
+// Admin only. Creates ONLY what is missing for one order: the IO card (with the revised IO PDF) and each service's card(s). Anything already on
+// the client's Trello list is left alone, so pressing it twice never duplicates. It stops (creating nothing) if Trello will not show what is
+// already on the list, and never invents a bare card when a template cannot be read. Agent-split orders: the per-agent cards are NOT built here
+// (listed for the AM to finish by hand). The result is saved with admin_set_order_trello_state (the anonymous key can only update an order
+// for 2 hours after it is created).
+const ADMIN_ATTENTION_DEFAULT_DAYS = 90;
+// The order form builds the Trello cards for a few minutes after an order is saved. Retry must not run alongside it (two writers could
+// both create the same card), so an order younger than this is "still setting up", not "needs attention" (2026-10-15).
+const ADMIN_RETRY_MIN_AGE_MINUTES = 10;
+function adminOrderTooFreshForRetry(o) {
+  return !!o.created_at && (Date.now() - new Date(o.created_at).getTime()) < ADMIN_RETRY_MIN_AGE_MINUTES * 60000;
+}
+function adminOrderHasTrelloBoard(o) {
+  const g = (typeof allGroups !== 'undefined' ? allGroups : []).find(x => x.id === o.group_id);
+  return !!(g && String(g.trello_board_id || '').trim());
+}
+function adminOrderNeedsAttention(o, days) {
+  if (o.trello_synced) return false;
+  if (!adminOrderHasTrelloBoard(o)) return false;
+  if (adminOrderTooFreshForRetry(o)) return false;   // the form may still be setting it up
+  const cx = (typeof ADMIN_ORDER_CANCEL !== 'undefined' ? ADMIN_ORDER_CANCEL : {})[o.id];
+  if (cx && cx.total > 0 && cx.cancelled >= cx.total) return false;   // every service cancelled: nothing left to set up
+  if (days && o.created_at && new Date(o.created_at).getTime() < Date.now() - days * 86400000) return false;
+  return true;
+}
+function adminRetryIoDescription(o, bizName) {
+  const lines = (o.line_items || []).map(li => {
+    const svc = CATALOG_ROWS[li.service_id] || {};
+    const label = li.tactic_variant || svc.accounting_label || svc.label || li.label || li.service_id;
+    let amt = ''; try { amt = describeLineItemAmount(li).text || ''; } catch (e) { /* the line just shows without an amount */ }
+    return `• ${label}${amt ? ' — ' + amt : ''}`;
+  });
+  return `**IO — ${bizName}**\nRebuilt by ${currentAdminUser?.name || 'an AM'} with Retry Trello (the original card could not be created when the order was submitted).\nAE: ${o.ae_name || '—'}\n\n**Services**\n${lines.join('\n')}`.slice(0, 16000);
+}
+async function adminRetryTrello(orderId) {
+  const btn = document.getElementById('retry-trello-btn');
+  if (btn?.disabled) return;
+  const o = allOrders.find(x => x.id === orderId);
+  if (!o) return;
+  if (!adminOrderHasTrelloBoard(o)) { showToast('This order\'s group has no Trello board set up', 'error'); return; }
+  if (adminOrderTooFreshForRetry(o)) { showToast(`This order was placed less than ${ADMIN_RETRY_MIN_AGE_MINUTES} minutes ago, so the order form may still be setting up Trello. Check again in a few minutes.`, 'error'); return; }
+  if (!confirm('Retry Trello for this order?\n\nThis only creates cards that are missing. Cards already on the client\'s Trello list are left alone.')) return;
+  const box = document.getElementById('retry-trello-report');
+  const setBtn = (text, disabled) => { if (btn) { btn.disabled = disabled; btn.textContent = text; } };
+  setBtn('Working…', true);
+  const report = { created: [], existed: [], failed: [], notes: [] };
+  const tpost = async body => { const res = await fetch(PROXY, { method: 'POST', headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return await res.json(); };
+  const show = () => {
+    if (!box) return;
+    const li = (arr, color) => arr.map(x => `<li style="color:${color}">${esc(x)}</li>`).join('');
+    box.innerHTML = `<div style="padding:8px 10px;background:var(--light);border-radius:6px"><strong>Retry result:</strong> created ${report.created.length} · already there ${report.existed.length} · could not create ${report.failed.length}<ul style="margin:4px 0 0 18px">${li(report.created, '#166534')}${li(report.existed, 'var(--muted)')}${li(report.failed, '#991B1B')}${li(report.notes, '#92400E')}</ul></div>`;
+  };
+  try {
+    const ci = await adminClientTrelloInfo(o.client_id);
+    const listId = o.trello_client_list_id || ci.listId;
+    const bizName = ci.name || o._client_name || '';
+    if (!listId) { report.failed.push('This client has no Trello list yet. Create the list first, then retry.'); show(); setBtn('Retry Trello', false); showToast('No Trello list found for this client', 'error'); return; }
+    let cards = null;
+    try { cards = await tpost({ target: 'trello_get_list_cards', list_id: listId }); } catch (e) { cards = null; }
+    if (!Array.isArray(cards)) { report.failed.push('Trello did not show the cards already on this client\'s list, so nothing was created (that could make duplicates). Try again in a minute.'); show(); setBtn('Retry Trello', false); showToast('Trello did not answer, nothing was created', 'error'); return; }
+    const cardIds = new Set(cards.map(c => c.id));
+    const nextIds = { ...(o.trello_card_ids || {}) };
+
+    // 1. the IO card
+    let ioCard = cards.find(c => c.id === nextIds.__io_card__) || cards.find(c => adminIsIoCardName(c.name)) || null;
+    if (ioCard) { report.existed.push('IO card'); nextIds.__io_card__ = ioCard.id; }
+    else {
+      const made = await tpost({ target: 'trello_create_card', list_id: listId, name: 'IO — ' + bizName, desc: adminRetryIoDescription(o, bizName), pos: 'top' });
+      if (made?.id) {
+        nextIds.__io_card__ = made.id; report.created.push('IO card');
+        try { const { base64, fileName } = await generateAdminRevisedIoPdfBlob(o); const att = await tpost({ target: 'trello_attach_file', card_id: made.id, base64, filename: fileName, mime_type: 'application/pdf' }); if (att && att.error) throw new Error(att.error); }
+        catch (e) { report.notes.push('The IO card was created but the IO PDF could not be attached to it. Attach it by hand.'); }
+      } else report.failed.push('The IO card could not be created.');
+    }
+
+    // 2. each service's card(s)
+    const hasSplits = Array.isArray(o.agent_splits) && o.agent_splits.length > 0;
+    for (const item of (o.line_items || [])) {
+      const svc = CATALOG_ROWS[item.service_id];
+      const label = item.tactic_variant || svc?.accounting_label || svc?.label || item.label || item.service_id;
+      if (!svc) { report.failed.push(`${label}: this service is no longer in the catalog, so its card cannot be built.`); continue; }
+      if (svc.is_cpm_adjustment) continue;   // an add-on (e.g. Offline Visits) rides on its tactic's card
+      if (hasSplits && (o.agent_splits || []).some(sp => sp.service_id === item.service_id)) { report.notes.push(`${label}: split across agents. Its per-agent cards are not built here; check them by hand.`); continue; }
+      const key = adminEffectiveWorkflow(svc) || svc.id;
+      if (nextIds[key] && cardIds.has(nextIds[key])) { report.existed.push(label); continue; }
+      let hit = null; try { hit = await adminFindTrelloCardForLine({ trello_list_id: listId, name: bizName }, { service_id: item.service_id, tactic_label: label }); } catch (e) { hit = null; }
+      if (hit?.card) { nextIds[key] = hit.card.id; report.existed.push(label); continue; }
+      if (hit && hit.matches && hit.matches.length > 1) { report.existed.push(`${label} (${hit.matches.length} cards on the list match, none changed)`); continue; }
+      let built; try { built = await adminBuildCorrectionCards(o, svc, item, label, '', { strict: true, commentLead: `📋 Card added by Retry Trello (${currentAdminUser?.name || 'an AM'}):` }); }
+      catch (e) { report.failed.push(`${label}: ${e.message}`); continue; }
+      const first = built.cards[0];
+      if (first) {
+        // the card exists: anything else the builder mentions (a person that could not be tagged, a label) is a note, not a failure
+        nextIds[key] = first.id; (first.left ? report.existed : report.created).push(label);
+        built.warnings.forEach(w => report.notes.push(`${label}: ${w}`));
+      } else {
+        built.warnings.forEach(w => report.failed.push(`${label}: ${w}`));
+        if (!built.warnings.length) report.failed.push(`${label}: no card was created.`);
+        if (built.stopped) break;
+      }
+    }
+
+    // 3. record the result: synced only if nothing is left undone
+    const ok = report.failed.length === 0;
+    try {
+      await sb('rpc/admin_set_order_trello_state', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: o.id,
+        p_data: { trello_card_ids: nextIds, trello_client_list_id: listId, trello_synced: ok, trello_synced_at: ok ? new Date().toISOString() : '' } }) });
+      o.trello_card_ids = nextIds; o.trello_client_list_id = listId; o.trello_synced = ok; o.trello_synced_at = ok ? new Date().toISOString() : null;
+    } catch (e) { report.notes.push('The cards above are on Trello, but the order could not be updated to say so (' + adminPgMessage(e) + '). It is safe to press Retry again: it will find them.'); }
+    show();
+    const line = document.getElementById('order-trello-line');
+    if (line && o.trello_synced) line.innerHTML = '<strong>Trello Synced:</strong> ✅ just now';
+    showToast(ok ? `✅ Trello complete — ${report.created.length} created, ${report.existed.length} already there` : `Trello is still incomplete: ${report.failed.length} thing${report.failed.length === 1 ? '' : 's'} could not be done`, ok ? 'success' : 'error');
+    if (typeof renderAdminOrders === 'function' && document.getElementById('admin-orders-table')) renderAdminOrders();
+  } catch (e) {
+    report.failed.push('Something went wrong: ' + e.message); show(); showToast('Retry Trello stopped: ' + e.message, 'error');
+  } finally { setBtn('Retry Trello', false); }
+}
+
 function renderAdminOrders() {
   const el = document.getElementById('admin-orders-table');
   const groupFilter = document.getElementById('orders-filter-group').value;
   const search = (document.getElementById('orders-filter-search').value || '').toLowerCase().trim();
   const dateFilter = document.getElementById('orders-filter-date').value;
   const helpOnly = document.getElementById('orders-filter-help').checked;
+  const attentionOnly = document.getElementById('orders-filter-attention')?.checked;
+  // "Needs attention" looks back 90 days unless a shorter Date Range is chosen (2026-10-15, Claire: 90 days)
+  const attentionDays = parseInt(dateFilter, 10) || ADMIN_ATTENTION_DEFAULT_DAYS;
+  const attentionLabel = document.getElementById('orders-attention-label');
+  if (attentionLabel) { const n = allOrders.filter(o => adminOrderNeedsAttention(o, attentionDays)).length; attentionLabel.textContent = `⚠ Trello needs attention (${n})`; }
 
   let filtered = allOrders.slice();
+  if (attentionOnly) filtered = filtered.filter(o => adminOrderNeedsAttention(o, attentionDays));
   if (groupFilter) filtered = filtered.filter(o => o.group_id === groupFilter);
   if (helpOnly) filtered = filtered.filter(o => o.needs_am_help);
   if (dateFilter && dateFilter !== 'all') {
@@ -10608,7 +10738,9 @@ async function viewOrderDetail(orderId) {
           <div><strong>Group:</strong> ${esc(groupName)}</div>
           <div><strong>IO Date:</strong> ${fmtDate(o.io_date)}</div>
           <div><strong>KOC:</strong> ${fmtDate(o.koc_date)}${o.koc_time ? ' at ' + esc(o.koc_time) : ''}</div>
-          <div><strong>Trello Synced:</strong> ${o.trello_synced ? '✅ ' + fmtDateTime(o.trello_synced_at) : '⚠ No'}</div>
+          <div id="order-trello-line"><strong>Trello Synced:</strong> ${o.trello_synced ? '✅ ' + fmtDateTime(o.trello_synced_at) : '⚠ No'}</div>
+          ${(!o.trello_synced && adminOrderHasTrelloBoard(o) && adminOrderTooFreshForRetry(o)) ? `<div style="margin-top:6px;font-size:11px;color:var(--muted)">This order is under ${ADMIN_RETRY_MIN_AGE_MINUTES} minutes old, so the order form may still be setting up Trello. Check again shortly.</div>` : ''}
+          ${(!o.trello_synced && adminOrderHasTrelloBoard(o) && !adminOrderTooFreshForRetry(o)) ? `<div style="margin-top:6px"><button id="retry-trello-btn" onclick="adminRetryTrello('${esc(o.id)}')" class="btn-quiet-green">Retry Trello</button> <span style="font-size:11px;color:var(--muted)">Creates only the cards that are missing; cards already on the client's list are left alone.</span></div><div id="retry-trello-report" style="margin-top:6px;font-size:12px"></div>` : ''}
           ${o.needs_am_help ? '<div style="margin-top:6px;padding:5px 10px;background:#FEF3C7;border-radius:5px;font-size:11px;color:#92400E"><strong>⚠ AM HELP REQUESTED</strong> on one or more intake forms</div>' : ''}
         </div>
       </div>
@@ -12471,7 +12603,16 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason, ctx 
   const group = allGroups.find(g => g.id === o.group_id) || {};
 
   let existing = [];
-  try { const r = await tpost({ target: 'trello_get_list_cards', list_id: listId }); if (Array.isArray(r)) existing = r; } catch (e) { /* duplicates just become possible */ }
+  let listReadable = false;
+  try { const r = await tpost({ target: 'trello_get_list_cards', list_id: listId }); if (Array.isArray(r)) { existing = r; listReadable = true; } } catch (e) { /* duplicates just become possible */ }
+  // Retry Trello (2026-10-15) runs this in STRICT mode: an unreadable list is never treated as "nothing there" (that is how duplicate cards
+  // got made before), a card that already exists is left completely alone (no second comment), and a template that cannot be read does NOT
+  // become a bare made-up card. Correct Service does not pass `strict` and behaves exactly as it always has.
+  if (ctx.strict && !listReadable) {
+    warnings.push('Trello did not return the cards already on this client\'s list, so nothing was created for ' + (newSvc.accounting_label || newSvc.label) + ' (that could make duplicates). Try again in a minute.');
+    return { cards: [], warnings, stopped: true };
+  }
+  const plainNote = ctx.strict ? 'so nothing was created for it' : 'so a plain card was made instead';
   const existingByName = new Map(existing.map(c => [norm(c.name), c]));
 
   const wf = newSvc.workflow || newSvc.accounting_label || newSvc.label;
@@ -12487,14 +12628,15 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason, ctx 
   // which card(s) the template calls for
   const plan = []; // { copyFrom: cardId|null, name }
   const plain = () => plan.push({ copyFrom: null, name: wf + tail });
+  const plainUnlessStrict = () => { if (!ctx.strict) plain(); };
   const ref = newSvc.trello_template_ref;
   if (!ref) plain();
   else if ((newSvc.trello_template_type || 'list') === 'card') {
     try {
       const t = await tpost({ target: 'trello_get_card', card_id: ref });
       if (t?.id) plan.push({ copyFrom: t.id, name: (variantName || String(t.name || wf).trim()) + tail });
-      else { warnings.push('The service\'s Trello template card could not be read, so a plain card was made instead.'); plain(); }
-    } catch (e) { warnings.push('The service\'s Trello template could not be read, so a plain card was made instead.'); plain(); }
+      else { warnings.push(`The service's Trello template card could not be read, ${plainNote}.`); plainUnlessStrict(); }
+    } catch (e) { warnings.push(`The service's Trello template could not be read, ${plainNote}.`); plainUnlessStrict(); }
   } else {
     try {
       const list = await tpost({ target: 'trello_get_list_cards', list_id: ref });
@@ -12507,8 +12649,8 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason, ctx 
         if (/^\*AE\*/i.test(cn) || /^AE Questions/i.test(cn)) return;
         plan.push({ copyFrom: c.id, name: cn + tail });
       });
-      if (!plan.length) plain();
-    } catch (e) { warnings.push('The service\'s Trello template list could not be read, so a plain card was made instead.'); plain(); }
+      if (!plan.length) { if (ctx.strict) warnings.push(`The service's Trello template list has no cards to copy, ${plainNote}.`); plainUnlessStrict(); }
+    } catch (e) { warnings.push(`The service's Trello template list could not be read, ${plainNote}.`); plainUnlessStrict(); }
   }
 
   // label + people, resolved once for every card made here
@@ -12545,6 +12687,7 @@ async function adminBuildCorrectionCards(o, newSvc, item, oldLabel, reason, ctx 
     try {
       const reuse = existingByName.get(norm(p.name));
       let cardId = reuse?.id || null;
+      if (ctx.strict && reuse) { made.push({ id: cardId, name: p.name, reused: true, left: true }); continue; }
       if (!cardId) {
         const created = p.copyFrom
           ? await tpost({ target: 'trello_copy_card', card_id: p.copyFrom, list_id: listId, name: p.name, pos: 'bottom', ...due })
