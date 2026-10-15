@@ -1,0 +1,25 @@
+diff --git a/index.html b/index.html
+index 35c913f..3b0d5b8 100644
+--- a/index.html
++++ b/index.html
+@@ -5052,6 +5052,12 @@ function goStep(n) {
+   }
+   if (n >= 2 && !validateStep1()) return;
+   if (n === 3) {
++    // No service ticked = nothing to order (2026-10-15, Claire: "block empty orders", timed with the Companion release). Blank IOs were how AEs asked for
++    // changes and cancellations; those now go through the Companion. Submit checks again as a safety net.
++    if (!Object.keys(selected).length) {
++      showToast('Select at least one service. To change or cancel an existing service, use the Companion.', 'error');
++      return; // Block navigation
++    }
+     // Hard block if ad products selected with no spend — highlight the fields.
+     // FIXED (2026-07-10, found live by Claire): also requires pricing_mode==='spend' —
+     // SPEND_MINIMUMS is derived from ANY row with a spend_minimum set, regardless of
+@@ -5858,6 +5864,7 @@ async function submitIO() {
+     if (totalModeMissingEndDate().length) throw new Error('A whole campaign total needs an end date. Go back to Step 2 and enter one.');
+     if (selectedClientId && clientDetailsFailed) throw new Error('This client\'s saved details and prices did not load. Click the client in the list again (or pick them again) before submitting.');
+     if (!selectedGroup) throw new Error('Please select a group');
++    if (!Object.keys(selected).length) throw new Error('Select at least one service. To change or cancel an existing service, use the Companion.');
+     const bizName = document.getElementById('biz-name').value.trim();
+     if (!bizName) throw new Error('Business name is required');
+ 
