@@ -231,3 +231,8 @@ Open questions: which pieces Retry covers (tactic cards; the IO overview card + 
 
 ### Added to Step 2 (Claire, 2026-10-15): a "don't copy the team" switch for test groups
 Every test order emails the whole team because the always-BCC list is copied on each order email. Agreed (Claire: "makes sense for future testing"): a per-group setting, ON for Claude Test Group, that leaves the always-BCC list off that group's emails -- the order email, the Resend button and the new AM alert. It needs a new column on `groups` + the group editor field in Admin + the group read the form makes on load + the function that saves a group, all in ONE SQL block (a function that names a column ships with the column), tested in pglite against the real live function text, then its own quiet window. NEEDED FROM CLAIRE before building: the live text of the functions that read/write `groups` (found with a query listing every function that mentions `io_recipient`).
+
+---
+
+## 8. Blank-IO plan, revised (Claire, 2026-10-15)
+Measured (5 blank IOs in 3 weeks, all legitimate change requests) and then decided: the Companion "message to my AM" is DROPPED (the Companion will cover almost everything by November and AEs already use Trello with their AMs). Recommended remaining scope: only the SOFT WARNING in the IO form around Nov 2-15 (submit still allowed); NO global switch column and NO hard block unless blank IOs keep happening after the Companion release (re-run `tests/queries/find-empty-orders.sql` then). Awaiting Claire's yes/no on keeping the soft warning.
