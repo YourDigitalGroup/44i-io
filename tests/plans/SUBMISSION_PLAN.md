@@ -133,3 +133,28 @@ Each needs your answers before I can plan it properly. What I would ask:
 3. **4A trade-off:** confirm that a corrected second IO creating duplicate lines (cleaned up by the AM) is acceptable.
 4. **Item 5:** confirm the November dates still stand.
 5. **Item 7:** which of the four features, if any, you want designed before the end of November.
+
+---
+
+## 5. Claire's answers (2026-10-15) and what was built since
+
+| Decision | Answer | Effect on the plan |
+|---|---|---|
+| 2d: quote-on-request with no price | **Block the submit** | Goes into Item 2 (BEFORE SAVE): the AE must type a quote before the order can be submitted. |
+| 4C: setup fee per NEW agent? | **Claire will confirm** | Item 4C stays out of the SQL block until answered. |
+| 4A trade-off: a corrected second IO makes duplicate lines | "Shouldn't happen once the Companion is used" | Mostly true -- the Companion's Edit changes start date, end date and budget, which covers "please update IO". But NOTHING stops an AE submitting a second full IO for the same service; only EMPTY IOs are blocked (Item 5). So it depends on AEs using the Companion. Optional safeguard to discuss: a warning in the IO form when the client already has an active line for a service being ordered ("use the Companion to change it"). |
+| Item 5: November dates | **Yes, they stand** | Calendar unchanged. |
+| Item 7: which features to design | **All four** (Retry Trello, covering strategists, "44i first", lockdown) | Design talks, one at a time; questions are listed under Item 7. |
+| Check 1 (is the saved order-trigger text live?) | **Yes -- md5 matched exactly** | The saved fixture is the live function. |
+| Check 2 (other triggers on `orders`) | **Only `trg_create_campaign_lines`** (AFTER INSERT, calls that function) | Nothing else fires on an order insert. |
+
+### Built (draft only, NOT live): the renewal bundle parts A and B, tested in pglite
+- `tests/fixtures/create-campaign-lines-from-order.proposed-renewal-bundle.DRAFT.sql` -- the live function with two changes: (A) spend and flat services always create a new line (no renewal), (B) reviving a Complete/Cancelled/Paused agent line writes a `campaign_status_history` row "Renewed by order". Part C (setup-fee agent label) and the gap-month item are NOT in it.
+- `tests/db-order-trigger-renewal.test.js` -- 16 checks. It runs the LIVE function and the draft against the same orders in an in-memory Postgres. The "today" half reproduces what you have seen live (Perrys: second SEO order renews the first; a shorter repeat order shortens an active line), which also proves the harness is faithful. The "after" half shows the new rule. Unchanged things are asserted identical: three back-to-back spend orders, auto-split services, hosting proration month, setup-fee lines, varying monthly plans, empty orders, an agent split with no county (creates a new line every order today and after -- a quirk this change does not touch).
+- **Still to do before this can go live:** the rebuilt smoke test (`smoke-test-submission-path.sql`), the previous-live rollback file (the saved live fixture is it), the final SQL block labelled "touches the submission path", C once decided, your quiet window and the Companion go-live.
+
+### Update (same day): "For MS Farm Bureau there is no SEM setup fee"
+This changes Item 4C. The agent label on the setup-fee line is **probably not needed**: the real problem is that the order form ADDED setup fees for Farm Bureau (any SEM order under $1,000 a month gets one; the rule is read only from the service's catalog settings and no group can opt out). Two such lines exist (Oct 5 and Oct 9, shown as "(unlabeled split)" in Accounting).
+- **New design item (to discuss):** a way to waive the setup fee for a group (or client). Touches the form's price rule (BEFORE SAVE) and a new column + Admin field + the group read the form makes on load (so: SQL block with the column, the Admin editor field and the function that saves it, per the one-block rule).
+- **Questions:** is it Farm Bureau only, or other groups/clients too (group setting vs per-service)? Does agent-split ordering exist for any group other than Farm Bureau (if not, 4C is dropped)?
+- **Clean-up (data, not the submission path):** the two existing setup-fee lines and the setup fee on the signed IOs of those two orders -- Claire to check whether the client was actually invoiced for them.
