@@ -1,0 +1,23 @@
+// Strategist: a line cancelled in Admin keeps running until the month of its cancel effective date (like Accounting), then reads Complete.
+process.env.TZ = 'America/Chicago';
+const { read, grab, check, done } = require('./lib');
+const S = read('strategist/index.html');
+global.ALL_STATUS_HISTORY = []; global.ALL_CAMPAIGN_MONTHS = [];
+eval([grab(S, /function strategistMonthKey\([\s\S]*?\n\}\n/), grab(S, /function strategistMonthPaused[\s\S]*?\n\}\n/), grab(S, /function strategistHistoricalStatus[\s\S]*?\n\}\n/), grab(S, /function strategistEffectiveStatus[\s\S]*?\n\}\n/), ';global.eff=strategistEffectiveStatus;'].join('\n'));
+const M = (y, m) => new Date(y, m - 1, 1);
+const line = { id: 'L1', status: 'cancelled', cancel_effective_date: '2026-11-15', flight_start: '2026-06-01', flight_end: '2026-12-31' };
+const cancelRow = (old = 'active', at = new Date(2026, 9, 10, 12).toISOString()) => ({ campaign_line_id: 'L1', changed_at: at, old_status: old, new_status: 'cancelled' });
+ALL_STATUS_HISTORY = [cancelRow()];
+check('cancelled Oct 10, effective Nov 15: October (cancel recorded, not yet effective) and November still read Active; December reads Complete', [eff(line, M(2026, 10)), eff(line, M(2026, 11)), eff(line, M(2026, 12))], ['active', 'active', 'complete']);
+check('earlier months are untouched (still Active from history)', eff(line, M(2026, 8)), 'active');
+ALL_STATUS_HISTORY = [cancelRow('paused')];
+check('a line that was Paused when cancelled stays Paused until the effective date', [eff(line, M(2026, 10)), eff(line, M(2026, 11)), eff(line, M(2026, 12))], ['paused', 'paused', 'complete']);
+ALL_STATUS_HISTORY = []; 
+check('no history at all: still active up to the effective month, Complete after', [eff(line, M(2026, 9)), eff(line, M(2026, 11)), eff(line, M(2026, 12))], ['active', 'active', 'complete']);
+ALL_CAMPAIGN_MONTHS = [{ campaign_line_id: 'L1', month: '2026-10-01', paused: true }];
+check('a month scheduled as paused still reads Paused before the effective date', [eff(line, M(2026, 10)), eff(line, M(2026, 11))], ['paused', 'active']); ALL_CAMPAIGN_MONTHS = [];
+const noDate = { ...line, cancel_effective_date: null };
+check('cancelled with NO effective date: old behaviour (Complete in every month)', [eff(noDate, M(2026, 8)), eff(noDate, M(2026, 12))], ['complete', 'complete']);
+check('effective date on the first of a month: that month still reads Active, the next is Complete', [eff({ ...line, cancel_effective_date: '2026-11-01' }, M(2026, 11)), eff({ ...line, cancel_effective_date: '2026-11-01' }, M(2026, 12))], ['active', 'complete']);
+check('an ordinary active line is unaffected', eff({ id: 'L2', status: 'active' }, M(2026, 11)), 'active');
+done();

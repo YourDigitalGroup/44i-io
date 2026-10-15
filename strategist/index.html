@@ -2645,7 +2645,16 @@ function strategistEffectiveStatus(line, monthDate) {
   // A line cancelled in Admin has status 'cancelled', which no tab matched, so it vanished
   // from this portal entirely -- even for months it ran (2026-10-01, State Farm SEM). It
   // reads as Complete here: ended for good, still visible in the months it was active.
-  if (historicalStatus === 'cancelled') return 'complete';
+  // 2026-10-15 (Claire: "wait for the cancel effective date, as Accounting does"): until the month of the cancel effective date the line is
+  // still running (Accounting counts that month in full and stops after it), so it keeps the status it had before the cancel; only the months
+  // AFTER that read Complete. A cancel with no effective date keeps the old behaviour (Complete in every month).
+  if (historicalStatus === 'cancelled') {
+    const cx = line.cancel_effective_date ? String(line.cancel_effective_date).slice(0, 10) : null;
+    if (!cx || strategistMonthKey(monthDate) > strategistMonthKey(new Date(cx + 'T00:00:00'))) return 'complete';
+    const cancelRow = ALL_STATUS_HISTORY.filter(h => h.campaign_line_id === line.id && h.new_status === 'cancelled').sort((x, y) => new Date(y.changed_at) - new Date(x.changed_at))[0];
+    const before = cancelRow && cancelRow.old_status && cancelRow.old_status !== 'cancelled' && cancelRow.old_status !== 'complete' ? cancelRow.old_status : 'active';
+    return before === 'active' ? (strategistMonthPaused(line.id, monthDate) ? 'paused' : 'active') : before;
+  }
   if (historicalStatus !== 'active') return historicalStatus;
   return strategistMonthPaused(line.id, monthDate) ? 'paused' : 'active';
 }

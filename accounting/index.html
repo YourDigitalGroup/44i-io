@@ -2044,22 +2044,33 @@ function accountingExportCsv() {
     const cutPct = l.billing_type === 'setup_fee'
       ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
       : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override, !!(l.agent_name && l.county));
-    return { gross, cutPct, f: accountingSplitRevenue(gross, cutPct).fortyfouri };
+    const f = accountingSplitRevenue(gross, cutPct).fortyfouri;
+    // COUNTED (2026-10-15, Claire: the export should match the screen's totals): exactly what the 44i Revenue tile adds up for this line in this month
+    // (accountingComputeTileTotals): nothing for a Pending line, nothing for a month it ran none of (paused / complete), nothing for an externally billed
+    // line, and a part month scaled by the days it ran. The plain month columns still show the table's number for every line.
+    const fraction = accountingMonthActivity(l, d, row).fraction;
+    const counted = f == null ? null : (l.status === 'pending' || l.billed_externally || !(fraction > 0) ? 0 : f * fraction);
+    return { gross, cutPct, f, counted };
   };
   const now = new Date(), nowKey = accountingMonthKey(new Date(now.getFullYear(), now.getMonth(), 1));
-  const header = ['Group', 'Client', 'Tactic', 'Campaign', 'Agent', 'County', 'Status', 'Flight Start', 'Flight End', 'Billing', 'Accounting Only', 'SSH Billing', 'Offline Visits', 'Addl Targeting', 'Total Revenue', '44i Cut %', 'Line ID', ...months.map(accountingMonthKey)];
+  const header = ['Group', 'Client', 'Tactic', 'Campaign', 'Agent', 'County', 'Status', 'Flight Start', 'Flight End', 'Billing', 'Accounting Only', 'SSH Billing', 'Offline Visits', 'Addl Targeting', 'Total Revenue', '44i Cut %', 'Line ID', ...months.map(accountingMonthKey), ...months.map(d => 'Counted ' + accountingMonthKey(d))];
   const sorted = [...lines].sort((a, b) => (a.group_name || '').localeCompare(b.group_name || '') || (a.client_name || '').localeCompare(b.client_name || '') || (a.tactic_label || '').localeCompare(b.tactic_label || '') || String(a.flight_start || '').localeCompare(String(b.flight_start || '')));
   const out = [header.map(q).join(',')];
-  sorted.forEach(l => {
-    const cells = months.map(d => cell(l, d));
+  const rowCells = sorted.map(l => months.map(d => cell(l, d)));
+  sorted.forEach((l, n) => {
+    const cells = rowCells[n];
     const withGross = months.map((d, i) => ({ k: accountingMonthKey(d), c: cells[i] })).filter(x => x.c && x.c.gross != null);
     const pick = [...withGross].reverse().find(x => x.k <= nowKey) || withGross[0] || null;
     const yn = v => v ? 'yes' : 'no';
     out.push([l.group_name || '', l.client_name || '', l.tactic_label || l.service_id || '', l.split_label || '', l.agent_name || '', l.county || '', l.status || '',
       d10(l.flight_start), d10(l.flight_end), l.billing_type || '', yn(l.accounting_only), yn(l.billed_externally), yn(l.has_offline_visits), yn(l.has_addl_targeting),
       pick ? round2(pick.c.gross) : '', pick && pick.c.cutPct != null ? Number(pick.c.cutPct) : '', l.id,
-      ...cells.map(c => c && c.f != null ? round2(c.f) : '')].map(q).join(','));
+      ...cells.map(c => c && c.f != null ? round2(c.f) : ''),
+      ...cells.map(c => c && c.counted != null ? round2(c.counted) : '')].map(q).join(','));
   });
+  // Last row: what the screen's 44i Revenue tile shows for each month (the sum of the Counted columns), so the file can be checked against the screen.
+  const countedTotals = months.map((d, i) => sorted.reduce((sum, l, n) => { const c = rowCells[n][i]; return sum + (c && c.counted != null ? c.counted : 0); }, 0));
+  out.push([...Array(17 + months.length).fill('').map((v, i) => i === 0 ? 'TOTAL = the 44i Revenue tile on the Accounting screen (Counted columns only)' : v), ...countedTotals.map(round2)].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
   a.download = 'accounting-export-' + (accountingGroupFilter ? accountingGroupFilter.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'all-groups') + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
