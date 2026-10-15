@@ -2045,15 +2045,31 @@ function accountingExportCsv() {
       ? accountingEffectiveSetupFeeCutPct(l.service_id, l.client_id, l.group_id)
       : accountingEffectiveCutPct(l.service_id, l.client_id, l.group_id, l.has_offline_visits || l.has_addl_targeting, gross, l.cut_pct_override, !!(l.agent_name && l.county));
     const f = accountingSplitRevenue(gross, cutPct).fortyfouri;
-    // COUNTED (2026-10-15, Claire: the export should match the screen's totals): exactly what the 44i Revenue tile adds up for this line in this month
-    // (accountingComputeTileTotals): nothing for a Pending line, nothing for a month it ran none of (paused / complete), nothing for an externally billed
-    // line, and a part month scaled by the days it ran. The plain month columns still show the table's number for every line.
-    const fraction = accountingMonthActivity(l, d, row).fraction;
-    const counted = f == null ? null : (l.status === 'pending' || l.billed_externally || !(fraction > 0) ? 0 : f * fraction);
-    return { gross, cutPct, f, counted };
+    return { gross, cutPct, f };
   };
+  // COUNTED / AWAITING (2026-10-15, Claire: the export should match the screen's totals; her first check was $374,070.73 vs the tile's $331,211.13 + $44,958.86
+  // awaiting). The screen's 44i Revenue tile shows only CONFIRMED revenue and breaks the unconfirmed part out as "awaiting confirmation". So that the two can never
+  // drift apart, the numbers here come from the SCREEN'S OWN row builder and tile rules (accountingBuildRows + the same per-child steps as
+  // accountingComputeTileTotals), run once per month: Counted = confirmed + awaiting (nothing for a Pending row, a month the line ran none of, or an
+  // externally billed line; a part month scaled by the days run); Awaiting = the part of Counted still awaiting confirmation.
+  const monthParts = months.map(d => {
+    const saved = accountingCurrentMonth, m = new Map();
+    accountingCurrentMonth = d;
+    try {
+      accountingBuildRows().forEach(r => {
+        if (accountingRowIsPending(r)) return;
+        (r.isRollup ? r.children : [r]).forEach(c => {
+          const f = c.fraction != null ? c.fraction : (c.paused ? 0 : 1);
+          if (f <= 0) return;
+          const one = { ...c, isRollup: false };
+          m.set(c.line.id, { counted: accountingSplitInvoiceable(one).invoiceable * f, awaiting: accountingAwaitingParts(one).fortyfouri * f });
+        });
+      });
+    } finally { accountingCurrentMonth = saved; }
+    return m;
+  });
   const now = new Date(), nowKey = accountingMonthKey(new Date(now.getFullYear(), now.getMonth(), 1));
-  const header = ['Group', 'Client', 'Tactic', 'Campaign', 'Agent', 'County', 'Status', 'Flight Start', 'Flight End', 'Billing', 'Accounting Only', 'SSH Billing', 'Offline Visits', 'Addl Targeting', 'Total Revenue', '44i Cut %', 'Line ID', ...months.map(accountingMonthKey), ...months.map(d => 'Counted ' + accountingMonthKey(d))];
+  const header = ['Group', 'Client', 'Tactic', 'Campaign', 'Agent', 'County', 'Status', 'Flight Start', 'Flight End', 'Billing', 'Accounting Only', 'SSH Billing', 'Offline Visits', 'Addl Targeting', 'Total Revenue', '44i Cut %', 'Line ID', ...months.map(accountingMonthKey), ...months.map(d => 'Counted ' + accountingMonthKey(d)), ...months.map(d => 'Awaiting ' + accountingMonthKey(d))];
   const sorted = [...lines].sort((a, b) => (a.group_name || '').localeCompare(b.group_name || '') || (a.client_name || '').localeCompare(b.client_name || '') || (a.tactic_label || '').localeCompare(b.tactic_label || '') || String(a.flight_start || '').localeCompare(String(b.flight_start || '')));
   const out = [header.map(q).join(',')];
   const rowCells = sorted.map(l => months.map(d => cell(l, d)));
@@ -2066,11 +2082,16 @@ function accountingExportCsv() {
       d10(l.flight_start), d10(l.flight_end), l.billing_type || '', yn(l.accounting_only), yn(l.billed_externally), yn(l.has_offline_visits), yn(l.has_addl_targeting),
       pick ? round2(pick.c.gross) : '', pick && pick.c.cutPct != null ? Number(pick.c.cutPct) : '', l.id,
       ...cells.map(c => c && c.f != null ? round2(c.f) : ''),
-      ...cells.map(c => c && c.counted != null ? round2(c.counted) : '')].map(q).join(','));
+      ...cells.map((c, i) => c && c.f != null ? round2(monthParts[i].get(l.id)?.counted || 0) : ''),
+      ...cells.map((c, i) => c && c.f != null ? round2(monthParts[i].get(l.id)?.awaiting || 0) : '')].map(q).join(','));
   });
-  // Last row: what the screen's 44i Revenue tile shows for each month (the sum of the Counted columns), so the file can be checked against the screen.
-  const countedTotals = months.map((d, i) => sorted.reduce((sum, l, n) => { const c = rowCells[n][i]; return sum + (c && c.counted != null ? c.counted : 0); }, 0));
-  out.push([...Array(17 + months.length).fill('').map((v, i) => i === 0 ? 'TOTAL = the 44i Revenue tile on the Accounting screen (Counted columns only)' : v), ...countedTotals.map(round2)].map(q).join(','));
+  // Bottom rows, to check the file against the screen: TOTAL = Counted + Awaiting sums; the next row = Counted minus Awaiting = the screen's "44i Revenue" tile
+  // (confirmed only); Awaiting alone is the tile's "awaiting confirmation" line. Both come from the same per-line numbers as the rows above.
+  const sumOf = key => months.map((d, i) => sorted.reduce((sum, l) => sum + (monthParts[i].get(l.id)?.[key] || 0), 0));
+  const cTot = sumOf('counted'), aTot = sumOf('awaiting'), blank = n => Array(n).fill('');
+  const pad = label => blank(17 + months.length).map((v, i) => i === 0 ? label : v);
+  out.push([...pad('TOTAL counted = the screen\'s 44i Revenue tile + its "awaiting confirmation" line'), ...cTot.map(round2), ...aTot.map(round2)].map(q).join(','));
+  out.push([...pad('TOTAL confirmed only = the screen\'s 44i Revenue tile'), ...cTot.map((v, i) => round2(v - aTot[i])), ...blank(months.length)].map(q).join(','));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(['\ufeff' + out.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
   a.download = 'accounting-export-' + (accountingGroupFilter ? accountingGroupFilter.replace(/[^a-z0-9]+/gi, '-').toLowerCase() : 'all-groups') + '-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
