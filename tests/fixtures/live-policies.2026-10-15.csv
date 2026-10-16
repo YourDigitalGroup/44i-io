@@ -1,0 +1,13 @@
+tablename,policyname,cmd,roles,qual,with_check
+group_service_overrides,Public can read group_service_overrides,SELECT,{public},true,null
+groups,groups_public_read,SELECT,"{anon,authenticated}",true,null
+hosting_proration_settings,public read hosting_proration_settings,SELECT,"{anon,authenticated}",true,null
+intake_forms,Public can read intake forms,SELECT,{public},true,null
+legal_content,legal_content_public_read,SELECT,"{anon,authenticated}",true,null
+notification_settings,notification_settings_public_read,SELECT,"{anon,authenticated}",true,null
+orders,orders_public_insert,INSERT,{anon},null,true
+orders,orders_recent_read,SELECT,{anon},(created_at > (now() - '02:00:00'::interval)),null
+orders,orders_recent_update,UPDATE,{anon},(created_at > (now() - '02:00:00'::interval)),(created_at > (now() - '02:00:00'::interval))
+pending_requests,pending_requests_public_insert,INSERT,{anon},null,true
+sections,Allow public read access to active sections,SELECT,"{anon,authenticated}",true,null
+services,Public can read services,SELECT,{public},true,null

@@ -28,9 +28,9 @@ revoke execute on function public.get_client_names(uuid[]) from public, anon, au
 drop policy if exists notification_settings_public_read on public.notification_settings;
 
 -- ===== SECTION 2B: remove the public read of the group table =====
--- HELD (2026-10-15): the API logs show an automatic job reading this table every hour at :15 (id, name, io_slug, logo, colours, trello_board_id, AM and recipient
--- emails, from name/email, portal domain...). It is not in this repo. Dropping this policy would break it. Run 2B only after that job's owner has moved to a
--- narrow key- or login-protected read (or has been told to expect the change).
+-- HELD (2026-10-16): an automatic job reads this table every hour at :15 with the PUBLIC key (id, name, io_slug, logo, colours, trello_board_id, AM and recipient emails, from
+-- name/email, portal domain...). It is the Fourge Playbook's `directory-sync` (fourge-playbook/supabase/functions/directory-sync/index.ts). Dropping this policy would break it
+-- until the Playbook developer switches its IO calls to the service-role key (two defaults in its _shared/io.ts) and deploys. Run 2B only after that is confirmed.
 drop policy if exists groups_public_read on public.groups;
 
 -- ===== SECTION 2C: remove the public read of an unused table =====

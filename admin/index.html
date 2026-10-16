@@ -6383,7 +6383,8 @@ let NOTIF_LOADED = false; // same reason as LEGAL_LOADED above
 async function loadAdminNotificationSettings() {
   NOTIF_LOADED = false;
   try {
-    const rows = await sb('notification_settings?id=eq.1&select=*') || [];
+    // through the login-protected function (2026-10-15 lockdown prep): the table's public-read policy is dropped at lockdown
+    const rows = await sb('rpc/admin_get_notification_settings', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || [];
     NOTIF_LOADED = true;
     const row = rows[0] || {};
     document.getElementById('notif-always_bcc_recipients').value = row.always_bcc_recipients || '';
@@ -6584,9 +6585,9 @@ async function confirmReconcileRow(idx) {
   const listId = sel?.value || '';
   if (!listId) { dismissReconcileRow(idx); return; }
   try {
-    await sb('rpc/set_client_trello_list_id', {
+    await sb('rpc/admin_set_client_trello_list_id', {
       method: 'POST',
-      body: JSON.stringify({ p_client_id: row.client.id, p_trello_list_id: listId })
+      body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: row.client.id, p_trello_list_id: listId })
     });
     showToast(`Linked ${row.client.name} to their Trello list`);
     RECONCILE_ROWS.splice(idx, 1);
@@ -9355,7 +9356,7 @@ function adminTogglePendingBatch(key) {
 async function adminResolutionRecipients(requesterEmail, groupId) {
   let always = [];
   try {
-    const rows = await sb('notification_settings?id=eq.1&select=always_bcc_recipients') || [];
+    const rows = await sb('rpc/admin_get_notification_settings', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || [];
     always = String(rows[0]?.always_bcc_recipients || '').split(',').map(x => x.trim()).filter(Boolean);
   } catch (e) { console.warn('Could not load the always-BCC list for the resolution email:', e.message); }
   const group = (typeof allGroups !== 'undefined' ? allGroups : []).find(g => g.id === groupId);
@@ -10275,7 +10276,7 @@ async function adminRetryTrello(orderId) {
       const got = await adminFindOrCreateClientList(o, bizName, tpost);
       listId = got.list.id;
       (got.how === 'created' ? report.created : report.existed).push(got.how === 'created' ? 'Client list (created)' : got.how === 'reopened' ? 'Client list (archived list reopened)' : 'Client list (found by name)');
-      try { await sb('rpc/set_client_trello_list_id', { method: 'POST', body: JSON.stringify({ p_client_id: o.client_id, p_trello_list_id: listId }) }); if (typeof ALL_CLIENTS !== 'undefined') { const cc = ALL_CLIENTS.find(c => c.id === o.client_id); if (cc) cc.trello_list_id = listId; } }
+      try { await sb('rpc/admin_set_client_trello_list_id', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_client_id: o.client_id, p_trello_list_id: listId }) }); if (typeof ALL_CLIENTS !== 'undefined') { const cc = ALL_CLIENTS.find(c => c.id === o.client_id); if (cc) cc.trello_list_id = listId; } }
       catch (e) { report.notes.push('The list is ready, but the client record could not be linked to it (' + adminPgMessage(e) + '). The next Retry or order will find it by name.'); }
     }
     if (!listId) { report.failed.push(ci.multiAgent ? 'This is a multi-agent client with no Trello list on file for this order. Pick the AE\'s list by hand, then retry.' : 'This client has no Trello list yet. Create the list first, then retry.'); show(); setBtn('Retry Trello', false); showToast('No Trello list found for this client', 'error'); return; }

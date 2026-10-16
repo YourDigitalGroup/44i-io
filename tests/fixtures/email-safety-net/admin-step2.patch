@@ -1,5 +1,5 @@
 diff --git a/admin/index.html b/admin/index.html
-index 9c7e671..9fc453a 100644
+index 9c7e671..1132966 100644
 --- a/admin/index.html
 +++ b/admin/index.html
 @@ -345,6 +345,13 @@
@@ -43,18 +43,23 @@ index 9c7e671..9fc453a 100644
    if (!to.length && bcc.length) return { to: bcc.join(','), bcc: '' };
    return { to: to.join(','), bcc: bcc.join(',') };
  }
-@@ -10207,9 +10214,74 @@ function adminOrderHasTrelloBoard(o) {
+@@ -10207,9 +10214,79 @@ function adminOrderHasTrelloBoard(o) {
    const g = (typeof allGroups !== 'undefined' ? allGroups : []).find(x => x.id === o.group_id);
    return !!(g && String(g.trello_board_id || '').trim());
  }
 +// ── ORDER EMAIL STATUS + RESEND (2026-10-16, email safety net) ──
 +// The order form records `email_sent_at` on the order when the mail service accepted the order email. Empty = not sent. An order without the key at all (the column does not
-+// exist yet) shows nothing, and a group with no IO recipients is never flagged (nothing was attempted for it). An order under 10 minutes old is still being set up by the form.
++// exist yet) shows nothing. An order under 10 minutes old is still being set up by the form.
 +function adminOrderEmailState(o) {
 +  if (!o || !('email_sent_at' in o)) return { state: 'unknown' };
 +  if (o.email_sent_at) return { state: 'sent', at: o.email_sent_at };
-+  const g = (typeof allGroups !== 'undefined' ? allGroups : []).find(x => x.id === o.group_id);
-+  if (!String(g?.io_recipient || '').trim()) return { state: 'none' };
++  // The order form emails the group's IO recipients, the AE (when picked from the roster) AND the always-BCC list (unless the group is set to "don't copy the team"), and when the group
++  // has no IO recipients it still goes to the AE and the team list. So an unsent email is only "nothing was attempted" when the group has no IO recipients, the AE has no email on
++  // the roster, and the team copy is off.
++  const g = (typeof allGroups !== 'undefined' ? allGroups : []).find(x => x.id === o.group_id) || {};
++  const ae = (typeof ALL_AES !== 'undefined' ? ALL_AES : []).find(a => a.group_id === o.group_id && String(a.name || '').trim().toLowerCase() === String(o.ae_name || '').trim().toLowerCase());
++  const attempted = String(g.io_recipient || '').trim() || String(ae?.email || '').trim() || !g.no_team_copy;
++  if (!attempted) return { state: 'none' };
 +  if (adminOrderTooFreshForRetry(o)) return { state: 'pending' };
 +  return { state: 'unsent' };
 +}
@@ -67,7 +72,7 @@ index 9c7e671..9fc453a 100644
 +function adminOrderEmailLineHtml(o) {
 +  const st = adminOrderEmailState(o);
 +  if (st.state === 'unknown') return '';
-+  const text = st.state === 'sent' ? '✉ sent ' + fmtDateTime(st.at) : st.state === 'unsent' ? '⚠ not sent' : st.state === 'pending' ? 'being set up…' : 'no recipients set for this group';
++  const text = st.state === 'sent' ? '✉ sent ' + fmtDateTime(st.at) : st.state === 'unsent' ? '⚠ not sent' : st.state === 'pending' ? 'being set up…' : 'nobody to email for this group';
 +  const btn = st.state === 'unsent' || st.state === 'sent'
 +    ? ` <button id="resend-email-btn" onclick="adminResendOrderEmail('${esc(o.id)}')" class="btn-quiet-green">${st.state === 'sent' ? 'Resend order email' : 'Send order email'}</button>` : '';
 +  return `<div id="order-email-line" style="margin-top:6px"><strong>Order email:</strong> ${text}${btn}</div>`;
@@ -120,7 +125,7 @@ index 9c7e671..9fc453a 100644
    if (adminOrderTooFreshForRetry(o)) return false;   // the form may still be setting it up
    const cx = (typeof ADMIN_ORDER_CANCEL !== 'undefined' ? ADMIN_ORDER_CANCEL : {})[o.id];
    if (cx && cx.total > 0 && cx.cancelled >= cx.total) return false;   // every service cancelled: nothing left to set up
-@@ -10352,7 +10424,7 @@ function renderAdminOrders() {
+@@ -10352,7 +10429,7 @@ function renderAdminOrders() {
    // "Needs attention" looks back 90 days unless a shorter Date Range is chosen (2026-10-15, Claire: 90 days)
    const attentionDays = parseInt(dateFilter, 10) || ADMIN_ATTENTION_DEFAULT_DAYS;
    const attentionLabel = document.getElementById('orders-attention-label');
@@ -129,7 +134,7 @@ index 9c7e671..9fc453a 100644
  
    let filtered = allOrders.slice();
    if (attentionOnly) filtered = filtered.filter(o => adminOrderNeedsAttention(o, attentionDays));
-@@ -10423,7 +10495,7 @@ function renderAdminOrders() {
+@@ -10423,7 +10500,7 @@ function renderAdminOrders() {
          <td style="padding:9px 10px;text-align:right;font-weight:600">${fmtMoney(oneTime)}</td>
          <td style="padding:9px 10px;text-align:right;font-weight:600">${monthly ? fmtMoney(monthly) + '/mo' : ''}${monthly && annual ? '<br>' : ''}${annual ? fmtMoney(annual) + '/yr' : ''}${(monthly || annual) && varyingSpendTotal ? '<br>' : ''}${varyingSpendTotal ? `<span style="font-weight:400;color:var(--muted);font-size:11px">${fmtMoney(varyingSpendTotal)} total (varies)</span>` : (!monthly && !annual ? '—' : '')}</td>
          <td style="padding:9px 10px;color:var(--muted);font-size:11px">${fmtDate(o.koc_date)}${o.koc_time ? '<br>'+esc(o.koc_time) : ''}</td>
@@ -138,7 +143,7 @@ index 9c7e671..9fc453a 100644
          <td style="padding:9px 10px;text-align:right">
            <button onclick="viewOrderDetail('${esc(o.id)}')" style="padding:5px 12px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:11px;font-weight:600;cursor:pointer">View</button>
          </td>
-@@ -10825,6 +10897,7 @@ async function viewOrderDetail(orderId) {
+@@ -10825,6 +10902,7 @@ async function viewOrderDetail(orderId) {
            <div><strong>IO Date:</strong> ${fmtDate(o.io_date)}</div>
            <div><strong>KOC:</strong> ${fmtDate(o.koc_date)}${o.koc_time ? ' at ' + esc(o.koc_time) : ''}</div>
            <div id="order-trello-line"><strong>Trello Synced:</strong> ${o.trello_synced ? '✅ ' + fmtDateTime(o.trello_synced_at) : '⚠ No'}</div>
@@ -146,7 +151,7 @@ index 9c7e671..9fc453a 100644
            ${(!o.trello_synced && adminOrderHasTrelloBoard(o) && adminOrderTooFreshForRetry(o)) ? `<div style="margin-top:6px;font-size:11px;color:var(--muted)">This order is under ${ADMIN_RETRY_MIN_AGE_MINUTES} minutes old, so the order form may still be setting up Trello. Check again shortly.</div>` : ''}
            ${(!o.trello_synced && adminOrderHasTrelloBoard(o) && !adminOrderTooFreshForRetry(o)) ? `<div style="margin-top:6px"><button id="retry-trello-btn" onclick="adminRetryTrello('${esc(o.id)}')" class="btn-quiet-green">Retry Trello</button> <span style="font-size:11px;color:var(--muted)">Creates only the cards that are missing; cards already on the client's list are left alone.</span></div><div id="retry-trello-report" style="margin-top:6px;font-size:12px"></div>` : ''}
            ${o.needs_am_help ? '<div style="margin-top:6px;padding:5px 10px;background:#FEF3C7;border-radius:5px;font-size:11px;color:#92400E"><strong>⚠ AM HELP REQUESTED</strong> on one or more intake forms</div>' : ''}
-@@ -14155,6 +14228,7 @@ async function adminNewGroup() {
+@@ -14155,6 +14233,7 @@ async function adminNewGroup() {
    document.getElementById('admin-color2-hex').value = '#1C9BD7';
    document.getElementById('admin-has-koc').value = 'true';
    document.getElementById('admin-hide-from-strategist').value = 'false';
@@ -154,7 +159,7 @@ index 9c7e671..9fc453a 100644
    document.getElementById('admin-logo-dark-bg').checked = false;
    setGroupLogoPreview('');
    document.getElementById('admin-logo-file').value = '';
-@@ -14242,6 +14316,7 @@ async function adminEditGroup(id, initialTab) {
+@@ -14242,6 +14321,7 @@ async function adminEditGroup(id, initialTab) {
    document.getElementById('admin-io-recipient').value = g.io_recipient || '';
    document.getElementById('admin-has-koc').value = g.has_koc ? 'true' : 'false';
    document.getElementById('admin-hide-from-strategist').value = g.hide_from_strategist ? 'true' : 'false';
@@ -162,7 +167,7 @@ index 9c7e671..9fc453a 100644
    // Load existing pricing overrides
    currentPricingOverrides = {};
    if (g.io_pricing) {
-@@ -14272,7 +14347,7 @@ const GROUP_HISTORY_LABELS = { name: 'Group name', io_slug: 'IO link name', am_n
+@@ -14272,7 +14352,7 @@ const GROUP_HISTORY_LABELS = { name: 'Group name', io_slug: 'IO link name', am_n
    additional_card_trello_handle: 'Additional card member', additional_card_member_role: 'Additional card role', brand_color: 'Brand colour', brand_color2: 'Second brand colour', logo_url: 'Logo',
    logo_dark_bg: 'Logo on dark background', trello_board_id: 'Trello board', from_name: 'Email "from" name', from_email: 'Email "from" address', io_recipient: 'IO recipients', has_koc: 'Kickoff call',
    io_pricing: 'Custom pricing', accounting_overrides: 'Accounting overrides', active: 'Status', digital_strategist_name: 'Digital Strategist', covering_strategist_name: 'Covering Strategist',
@@ -171,7 +176,7 @@ index 9c7e671..9fc453a 100644
  function groupHistoryValue(field, v) {
    if (v === null || v === undefined || v === '') return '(blank)';
    if (field === 'active') return v ? 'Active' : 'Archived';
-@@ -14349,6 +14424,8 @@ async function adminSaveGroup() {
+@@ -14349,6 +14429,8 @@ async function adminSaveGroup() {
      has_koc: document.getElementById('admin-has-koc').value === 'true',
      // Group switch (2026-10-07): hides this group's campaign lines + clients from the Strategist Portal (Accounting still sees them).
      hide_from_strategist: document.getElementById('admin-hide-from-strategist').value === 'true',

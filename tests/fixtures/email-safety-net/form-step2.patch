@@ -1,5 +1,5 @@
 diff --git a/index.html b/index.html
-index 35c913f..9d6b4a7 100644
+index 35c913f..55cc641 100644
 --- a/index.html
 +++ b/index.html
 @@ -7799,6 +7799,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
@@ -31,7 +31,7 @@ index 35c913f..9d6b4a7 100644
        } else {
          console.log('No email recipients configured for this group — skipping submission email.');
        }
-@@ -7899,6 +7905,30 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
+@@ -7899,6 +7905,32 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
        noteIssue('The notification email could not be sent, so the group and AM did not receive it.');
      }
  
@@ -52,9 +52,11 @@ index 35c913f..9d6b4a7 100644
 +          const alertHtml = `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px"><p><strong>Order ${esc(ioNumber)} for ${esc(bizName)} (${esc(selectedGroup.name || '')}) was saved, but Trello is incomplete.</strong></p>`
 +            + `<ul>${trelloIssues.map(i => '<li>' + esc(i) + '</li>').join('')}</ul>`
 +            + `<p>Open the order in Admin (https://io.yourdigitalgroupresources.com/admin/ , Orders) and press <strong>Retry Trello</strong>. It only creates what is missing.</p></div>`;
-+          const alertRes = await fetch(PROXY, { method: 'POST', headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
-+            body: JSON.stringify({ target: 'send_email', to: amTo.join(','), bcc: alertBcc.filter(x => !lower.has(x.toLowerCase())).join(','), subject: `Order ${ioNumber} saved, but Trello is incomplete (${bizName})`, html: alertHtml }) });
-+          if (!alertRes.ok) console.warn('Could not send the Trello-incomplete alert:', alertRes.status);
++          const alertSend = fetch(PROXY, { method: 'POST', headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
++            body: JSON.stringify({ target: 'send_email', to: amTo.join(','), bcc: alertBcc.filter(x => !lower.has(x.toLowerCase())).join(','), subject: `Order ${ioNumber} saved, but Trello is incomplete (${bizName})`, html: alertHtml }) })
++            .then(r => { if (!r.ok) console.warn('Could not send the Trello-incomplete alert:', r.status); });
++          // Wait for it, but never longer than 8 seconds: a mail service that hangs must not hold the AE on the submit screen (the order is already saved).
++          await Promise.race([alertSend, new Promise(res => setTimeout(res, 8000))]);
 +        } catch (e) { console.warn('Could not send the Trello-incomplete alert:', e.message); }
 +      }
 +    }
