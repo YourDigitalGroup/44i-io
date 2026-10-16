@@ -2089,11 +2089,28 @@ function accountingExportCsv() {
   if (!sorted.length) { showToast('No campaign lines run in those months.', 'error'); return; }
   const out = [header.map(q).join(',')];
   const rowCells = sorted.map(l => months.map(d => cell(l, d)));
+  // TOTAL ROW FOR SEPARATE CAMPAIGNS (2026-10-16, Claire: "for services that have separate campaigns could we have a total row to start those", e.g. 13 Location Targeting: Event
+  // campaigns for one client, because the legacy spreadsheet does not split them). Lines sharing group + client + tactic, when there are at least two and at least one has a
+  // campaign name, get ONE total row above them: Campaign reads "TOTAL (n campaigns)", Total Revenue and each month are the sums of the rows below (the ROUNDED numbers shown on
+  // the rows below, added up, so the total always equals what the eye adds; adding the unrounded amounts was a cent out), Line ID is blank. The "Counted on the screen" bottom rows are built from the lines, NOT from this sheet, so these total rows never
+  // change them; but anyone adding up a spreadsheet column by hand must skip rows whose Campaign starts with "TOTAL (".
+  const grpKey = l => [l.group_name, l.client_id, l.client_name, l.tactic_label || l.service_id].map(v => v == null ? '' : v).join('\u0001');
+  const grpIdx = new Map();
+  sorted.forEach((l, n) => { const k = grpKey(l); if (!grpIdx.has(k)) grpIdx.set(k, []); grpIdx.get(k).push(n); });
+  const pickOf = cells => { const wg = months.map((d, i) => ({ k: accountingMonthKey(d), c: cells[i] })).filter(x => x.c && x.c.gross != null); return [...wg].reverse().find(x => x.k <= nowKey) || wg[0] || null; };
   sorted.forEach((l, n) => {
     const cells = rowCells[n];
     const withGross = months.map((d, i) => ({ k: accountingMonthKey(d), c: cells[i] })).filter(x => x.c && x.c.gross != null);
     const pick = [...withGross].reverse().find(x => x.k <= nowKey) || withGross[0] || null;
     const yn = v => v ? 'yes' : 'no';
+    const grp = grpIdx.get(grpKey(l));
+    if (grp.length > 1 && grp[0] === n && grp.some(i => sorted[i].split_label)) {
+      const sumM = months.map((d, i) => grp.reduce((t, gi) => t + (rowCells[gi][i] && rowCells[gi][i].f != null ? round2(rowCells[gi][i].f) : 0), 0));
+      const hasM = months.map((d, i) => grp.some(gi => rowCells[gi][i] && rowCells[gi][i].f != null));
+      const totRev = grp.reduce((t, gi) => { const pk = pickOf(rowCells[gi]); return t + (pk ? round2(pk.c.gross) : 0); }, 0);
+      out.push([l.group_name || '', l.client_name || '', l.tactic_label || l.service_id || '', 'TOTAL (' + grp.length + ' campaigns)', '', '', '', '', '', '', '', '', '', '', round2(totRev), '', '',
+        ...sumM.map((v, i) => hasM[i] ? round2(v) : '')].map(q).join(','));
+    }
     out.push([l.group_name || '', l.client_name || '', l.tactic_label || l.service_id || '', l.split_label || '', l.agent_name || '', l.county || '', l.status || '',
       d10(l.flight_start), d10(l.flight_end), l.billing_type || '', yn(l.accounting_only), yn(l.billed_externally), yn(l.has_offline_visits), yn(l.has_addl_targeting),
       pick ? round2(pick.c.gross) : '', pick && pick.c.cutPct != null ? Number(pick.c.cutPct) : '', l.id,
