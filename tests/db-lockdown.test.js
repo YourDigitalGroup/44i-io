@@ -68,6 +68,11 @@ const PASTED = new Set(['get_client_agents', 'get_client_counties', 'get_group_a
   // ---- rollback ----
   await db.exec(F('lockdown-rollback.sql'));
   check('ROLLBACK: every old function is open again, the policies are back, and the anon reads of the group table, the always-BCC list and the unused table work as before', [(await oldAll('anon')).every(Boolean), (await asRole('anon', 'select * from groups')).length, (await asRole('anon', 'select * from notification_settings')).length, (await asRole('anon', 'select * from group_service_overrides')).length], [true, 1, 1, 1]);
+  { const rows = F('live-policies.2026-10-15.csv').trim().split('\n').slice(1).map(l => l.match(/("([^"]*)"|[^,]+)/g).map(x => x.replace(/^"|"$/g, '')));
+    const rec = n => rows.find(r => r[1] === n), got = n => db.query(`select cmd, roles::text r, qual from pg_policies where policyname = $1`, [n]).then(r => r.rows[0]);
+    const three = ['groups_public_read', 'notification_settings_public_read', 'Public can read group_service_overrides']; const out = [];
+    for (const n of three) { const g = await got(n), c = rec(n); out.push(g && g.cmd === c[2] && g.r.replace(/\s/g, '') === c[3] && g.qual === c[4]); }
+    check('the policies the rollback re-creates match the live pg_policies rows Claire pasted (command, roles, USING) exactly', out, [true, true, true]); }
   check('...and the rollback is repeatable and the lockdown can be run again (idempotent both ways)', (await db.exec(F('lockdown.sql')), await db.exec(F('lockdown-rollback.sql')), await db.exec(F('lockdown.sql')), (await asRole('anon', 'select * from groups')).length), 0);
   // ---- new login-protected replacements ----
   const call = (who, pw, sql) => asRole('anon', sql.replace('$W', who).replace('$P', pw));

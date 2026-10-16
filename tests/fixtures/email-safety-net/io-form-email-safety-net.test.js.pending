@@ -36,6 +36,7 @@ const SERVICES = [svc({ id: 'w-flat', label: 'Website Flat Thing', section: 'web
           else if (t === 'trello_get_card') body = JSON.stringify({ id: 'TPL1', name: 'Marker' });
           else if (t === 'trello_copy_card') body = JSON.stringify({ id: 'COPY1' });
           else if (t === 'trello_get_board_members' || t === 'trello_get_labels') body = '[]';
+          else if (t === 'send_email' && opt.hangAlert && /Trello is incomplete/.test(req.subject || '')) { seen.emails.push(req); await new Promise(res => setTimeout(res, 25000)); }
           else if (t === 'send_email') { seen.emails.push(req); if (mode === 'email-fails') { status = 500; body = '{"error":"mail down"}'; } else body = '{"ok":true}'; }
           else body = '{}';
         }
@@ -87,7 +88,9 @@ const SERVICES = [svc({ id: 'w-flat', label: 'Website Flat Thing', section: 'web
     let h = await run('ok', { noTeamCopy: true, noRecipients: true });
     check('H "don\'t copy the team" and nobody else to email: nothing is sent (the team is not used as a fallback To)', orderMailsOf(h).length, 0);
     // I. the alert email itself fails: nothing else changes
-    check('no page errors in any run', [a.errs, b.errs, c.errs, d.errs, e.errs, f.errs, g.errs, h.errs], [[], [], [], [], [], [], [], []]);
+    const t0 = Date.now(); let hg = await run('card-create-fails', { hangAlert: true }); const took = Date.now() - t0;
+    check('I a mail service that hangs on the AM alert cannot hold the AE on the submit screen: the success screen still appears (the wait is capped at 8 seconds) and the order email was recorded', [hg.success, took < 20000, stamped(hg).length], [true, true, 1]);
+    check('no page errors in any run', [a.errs, b.errs, c.errs, d.errs, e.errs, f.errs, g.errs, h.errs, hg.errs], [[], [], [], [], [], [], [], [], []]);
   } finally { await browser.close(); }
   done();
 })().catch(e => { console.log('FAIL browser test crashed: ' + e.message); process.exitCode = 1; });
