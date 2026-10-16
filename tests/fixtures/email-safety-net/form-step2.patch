@@ -1,0 +1,80 @@
+diff --git a/index.html b/index.html
+index 35c913f..9d6b4a7 100644
+--- a/index.html
++++ b/index.html
+@@ -7799,6 +7799,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
+     // the claude-proxy Edge Function, send_email just returns an error and this
+     // silently no-ops (logged as a console warning, nothing shown to the AE — the IO
+     // itself already saved successfully regardless of whether this email goes out).
++    // EMAIL SAFETY NET (2026-10-16): `emailSent` is true only when the mail service accepted the order email; it is recorded on the order below so Admin can show
++    // "sent" / "not sent" and offer Resend. `alertBcc` is the team-copy list the AM alert also uses.
++    let emailSent = false, alertBcc = [];
+     try {
+       const groupRecipients = (selectedGroup.io_recipient || '')
+         .split(',').map(s => s.trim()).filter(Boolean);
+@@ -7824,6 +7827,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
+       } catch(e) {
+         console.warn('Could not load notification_settings (table may not exist yet):', e.message);
+       }
++      // "Don't copy the team" (2026-10-16): a test group can leave the always-BCC list off its emails (the order email and the AM alert; Admin's Resend follows the same setting).
++      if (selectedGroup.no_team_copy) alwaysBcc = [];
++      alertBcc = alwaysBcc;
+       // Dedup: don't BCC someone who's already in the group's own To list, so they
+       // don't get the same email twice (see io_project_tracking.md — flagged before
+       // this was built).
+@@ -7890,7 +7896,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
+         });
+         const emailData = await emailRes.json().catch(() => null);
+         if (!emailRes.ok) { console.warn('Could not send submission email:', emailRes.status, emailData); noteIssue('The notification email could not be sent, so the group and AM did not receive it.'); }
+-        else console.log('Submission email sent');
++        else { console.log('Submission email sent'); emailSent = true; }
+       } else {
+         console.log('No email recipients configured for this group — skipping submission email.');
+       }
+@@ -7899,6 +7905,30 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
+       noteIssue('The notification email could not be sent, so the group and AM did not receive it.');
+     }
+ 
++    // Record that the order email went out (nothing is written when it failed or was not attempted: empty means "not sent"). The order is already saved; a failure here
++    // changes nothing else (Admin would show "not sent" for an email that did go, which is the safe direction).
++    if (emailSent && orderId) {
++      try { await sb('orders?id=eq.' + orderId, { method: 'PATCH', body: JSON.stringify({ email_sent_at: new Date().toISOString() }), prefer: 'return=minimal' }); }
++      catch (e) { console.warn('Could not record that the order email was sent:', e.message); }
++    }
++    // AM alert: when the Trello setup did not finish, tell the group's AM by email so it is not left until someone happens to look (Admin's Orders list and Retry Trello are the
++    // dependable signal; this email is a convenience and cannot report anything if the mail service itself is down). A failure here changes nothing.
++    {
++      const trelloIssues = setupIssues.filter(i => /Trello/i.test(i));
++      const amTo = (selectedGroup.am_email || '').split(',').map(x => x.trim()).filter(Boolean);
++      if (trelloIssues.length && amTo.length) {
++        try {
++          const lower = new Set(amTo.map(x => x.toLowerCase()));
++          const alertHtml = `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px"><p><strong>Order ${esc(ioNumber)} for ${esc(bizName)} (${esc(selectedGroup.name || '')}) was saved, but Trello is incomplete.</strong></p>`
++            + `<ul>${trelloIssues.map(i => '<li>' + esc(i) + '</li>').join('')}</ul>`
++            + `<p>Open the order in Admin (https://io.yourdigitalgroupresources.com/admin/ , Orders) and press <strong>Retry Trello</strong>. It only creates what is missing.</p></div>`;
++          const alertRes = await fetch(PROXY, { method: 'POST', headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
++            body: JSON.stringify({ target: 'send_email', to: amTo.join(','), bcc: alertBcc.filter(x => !lower.has(x.toLowerCase())).join(','), subject: `Order ${ioNumber} saved, but Trello is incomplete (${bizName})`, html: alertHtml }) });
++          if (!alertRes.ok) console.warn('Could not send the Trello-incomplete alert:', alertRes.status);
++        } catch (e) { console.warn('Could not send the Trello-incomplete alert:', e.message); }
++      }
++    }
++
+         // 3. Show success
+     const chips = [...workflows].map(w => `<span class="chip green">${friendlyWorkflowName(w)}</span>`).join('');
+     document.getElementById('success-chips').innerHTML = chips;
+diff --git a/tests/io-form-trello-failures.test.js b/tests/io-form-trello-failures.test.js
+index 0afd3b8..17e6619 100644
+--- a/tests/io-form-trello-failures.test.js
++++ b/tests/io-form-trello-failures.test.js
+@@ -75,8 +75,9 @@ const SERVICES = [svc({ id: 'w-flat', label: 'Website Flat Thing', section: 'web
+     check('email fails: the AE is told the notification email was not sent', [d.success, /notification email could not be sent/.test(d.notice)], [true, true]);
+     // E. the PDF cannot be built -> the email is still sent, without it, and the AE is told
+     let e = await run('pdf-fails');
+-    check('PDF cannot be built: the email is STILL sent (without the PDF) and the AE is told both the email and the Trello attachment are affected', [e.emails.length, e.emails[0] && 'base64' in e.emails[0], /sent WITHOUT the PDF attached/.test(e.notice), /could not be attached to the IO card/.test(e.notice)], [1, false, true, true]);
+-    check('PDF cannot be built: the email text says the PDF is on the Trello card instead', /could not be attached to this email/.test(e.emails[0] ? e.emails[0].html : ''), true);
++    const orderMail = e.emails.filter(x => /New submission/.test(x.subject || ''));   // (an AM alert for the IO card's missing PDF may also go out since 2026-10-16)
++    check('PDF cannot be built: the email is STILL sent (without the PDF) and the AE is told both the email and the Trello attachment are affected', [orderMail.length, orderMail[0] && 'base64' in orderMail[0], /sent WITHOUT the PDF attached/.test(e.notice), /could not be attached to the IO card/.test(e.notice)], [1, false, true, true]);
++    check('PDF cannot be built: the email text says the PDF is on the Trello card instead', /could not be attached to this email/.test(orderMail[0] ? orderMail[0].html : ''), true);
+     check('no page errors in any run', [a.errs, b.errs, c.errs, d.errs, e.errs], [[], [], [], [], []]);
+   } finally { await browser.close(); }
+   done();

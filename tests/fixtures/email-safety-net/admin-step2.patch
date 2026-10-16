@@ -1,0 +1,214 @@
+diff --git a/admin/index.html b/admin/index.html
+index 9c7e671..9fc453a 100644
+--- a/admin/index.html
++++ b/admin/index.html
+@@ -345,6 +345,13 @@
+                   <option value="true">Hide — Accounting only, not in the Strategist Portal</option>
+                 </select>
+               </div>
++              <div>
++                <label class="lbl" for="admin-no-team-copy">Team copy <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">— copy the always-BCC list on this group's order emails?</span></label>
++                <select id="admin-no-team-copy" style="width:100%;padding:9px 11px;border-radius:999px;border:1.5px solid var(--accent-dark);color:var(--accent-dark);font-size:13px">
++                  <option value="false">Yes — copy the team (normal)</option>
++                  <option value="true">No — leave the team off (for test groups)</option>
++                </select>
++              </div>
+             </div>
+           </div>
+ 
+@@ -428,7 +435,7 @@
+               </label>
+               <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:7px 0 7px 14px" title="Orders whose Trello setup did not finish (groups with a Trello board only). Looks back 90 days unless you pick a shorter Date Range.">
+                 <input type="checkbox" id="orders-filter-attention" onchange="renderAdminOrders()" style="width:14px;height:14px;accent-color:var(--accent)"/>
+-                <span id="orders-attention-label">⚠ Trello needs attention</span>
++                <span id="orders-attention-label">⚠ Trello or email needs attention</span>
+               </label>
+             </div>
+           </div>
+@@ -9353,7 +9360,7 @@ function adminTogglePendingBatch(key) {
+ // email puts in To); Bcc = the global always-BCC list. An address is listed once (case-insensitive; To wins over Bcc).
+ // With no AE email the IO recipients are the To; with nobody in To the Bcc list becomes To (same rule as the Companion's
+ // email). A failed read of the always-BCC list just means it is left off, as before; nothing to send = no email.
+-async function adminResolutionRecipients(requesterEmail, groupId) {
++async function adminResolutionRecipients(requesterEmail, groupId, opts = {}) {
+   let always = [];
+   try {
+     const rows = await sb('rpc/admin_get_notification_settings', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '' }) }) || [];
+@@ -9364,7 +9371,7 @@ async function adminResolutionRecipients(requesterEmail, groupId) {
+   const seen = new Set();
+   const pick = list => list.filter(r => { const k = r.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+   const to = pick([...(requesterEmail ? [String(requesterEmail).trim()] : []), ...ioRecipients]);
+-  const bcc = pick(always);
++  const bcc = opts.noTeamCopy ? [] : pick(always);
+   if (!to.length && bcc.length) return { to: bcc.join(','), bcc: '' };
+   return { to: to.join(','), bcc: bcc.join(',') };
+ }
+@@ -10207,9 +10214,74 @@ function adminOrderHasTrelloBoard(o) {
+   const g = (typeof allGroups !== 'undefined' ? allGroups : []).find(x => x.id === o.group_id);
+   return !!(g && String(g.trello_board_id || '').trim());
+ }
++// ── ORDER EMAIL STATUS + RESEND (2026-10-16, email safety net) ──
++// The order form records `email_sent_at` on the order when the mail service accepted the order email. Empty = not sent. An order without the key at all (the column does not
++// exist yet) shows nothing, and a group with no IO recipients is never flagged (nothing was attempted for it). An order under 10 minutes old is still being set up by the form.
++function adminOrderEmailState(o) {
++  if (!o || !('email_sent_at' in o)) return { state: 'unknown' };
++  if (o.email_sent_at) return { state: 'sent', at: o.email_sent_at };
++  const g = (typeof allGroups !== 'undefined' ? allGroups : []).find(x => x.id === o.group_id);
++  if (!String(g?.io_recipient || '').trim()) return { state: 'none' };
++  if (adminOrderTooFreshForRetry(o)) return { state: 'pending' };
++  return { state: 'unsent' };
++}
++function adminOrderEmailMarkerHtml(o) {
++  const st = adminOrderEmailState(o);
++  if (st.state === 'sent') return '<span title="Order email sent" style="color:#10B981;font-size:13px;margin-left:4px">✉</span>';
++  if (st.state === 'unsent') return '<span title="The order email was not sent" style="color:#F59E0B;font-size:13px;margin-left:4px">✉⚠</span>';
++  return '';
++}
++function adminOrderEmailLineHtml(o) {
++  const st = adminOrderEmailState(o);
++  if (st.state === 'unknown') return '';
++  const text = st.state === 'sent' ? '✉ sent ' + fmtDateTime(st.at) : st.state === 'unsent' ? '⚠ not sent' : st.state === 'pending' ? 'being set up…' : 'no recipients set for this group';
++  const btn = st.state === 'unsent' || st.state === 'sent'
++    ? ` <button id="resend-email-btn" onclick="adminResendOrderEmail('${esc(o.id)}')" class="btn-quiet-green">${st.state === 'sent' ? 'Resend order email' : 'Send order email'}</button>` : '';
++  return `<div id="order-email-line" style="margin-top:6px"><strong>Order email:</strong> ${text}${btn}</div>`;
++}
++// Sends the order email again to exactly who the original goes to: the group's IO recipients, the AE (when the AE is on the group's roster), and the always-BCC list
++// (left off for a group set to "don't copy the team"), with the revised-IO PDF. Records the time through the login-protected order function.
++async function adminResendOrderEmail(orderId) {
++  const btn = document.getElementById('resend-email-btn');
++  if (btn?.disabled) return;
++  const o = allOrders.find(x => x.id === orderId);
++  if (!o) return;
++  const group = (typeof allGroups !== 'undefined' ? allGroups : []).find(g => g.id === o.group_id) || {};
++  try { await ensureAeRosterLoaded(); } catch (e) { /* the AE is then simply not added */ }
++  const ae = (typeof ALL_AES !== 'undefined' ? ALL_AES : []).find(a => a.group_id === o.group_id && String(a.name || '').trim().toLowerCase() === String(o.ae_name || '').trim().toLowerCase());
++  const rec = await adminResolutionRecipients(ae?.email || '', o.group_id, { noTeamCopy: !!group.no_team_copy });
++  if (!rec.to) { showToast('There is nobody to send this order email to (no IO recipients on the group).', 'error'); return; }
++  if (!confirm(`Send the order email for ${o._client_name || 'this order'} again?\n\nTo: ${rec.to}${rec.bcc ? '\nBcc: ' + rec.bcc : ''}`)) return;
++  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
++  try {
++    let pdf = null;
++    try { pdf = await generateAdminRevisedIoPdfBlob(o); } catch (e) { console.warn('Could not build the IO PDF for the resend:', e.message); }
++    const color = group.brand_color || '#1C9BD7';
++    const html = `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px"><div style="background:${color};padding:16px 20px;border-radius:8px 8px 0 0"><div style="color:#fff;font-size:16px;font-weight:700">Insertion Order — ${esc(group.name || '')}</div></div>`
++      + `<div style="border:1px solid #E5E7EB;border-top:none;border-radius:0 0 8px 8px;padding:20px"><table style="width:100%;border-collapse:collapse;font-size:13px"><tr><td style="padding:6px 0;color:#6B7280;width:140px">IO #</td><td style="padding:6px 0;font-weight:600">${esc(o.io_number || '')}</td></tr>`
++      + `<tr><td style="padding:6px 0;color:#6B7280">Client</td><td style="padding:6px 0;font-weight:600">${esc(o._client_name || '')}</td></tr><tr><td style="padding:6px 0;color:#6B7280">AE</td><td style="padding:6px 0">${esc(o.ae_name || '')}</td></tr></table>`
++      + `<p style="font-size:12px;color:#6B7280;margin-top:16px">Sent again by ${esc(currentAdminUser?.name || 'an account manager')} (the first email did not reach you). ${pdf ? 'Full details attached as PDF.' : 'The PDF could not be attached; the signed copy is on the IO card in Trello.'}</p></div></div>`;
++    const res = await fetch(PROXY, { method: 'POST', headers: { ...sbAuthHeaders(), 'Content-Type': 'application/json' },
++      body: JSON.stringify({ target: 'send_email', to: rec.to, bcc: rec.bcc, subject: 'New submission from Insertion Order Submission (resent)', html, ...(pdf ? { base64: pdf.base64, filename: pdf.fileName, mime_type: 'application/pdf' } : {}) }) });
++    if (!res.ok) throw new Error('the mail service answered ' + res.status);
++    const now = new Date().toISOString();
++    try {
++      await sb('rpc/admin_set_order_trello_state', { method: 'POST', body: JSON.stringify({ p_name: currentAdminUser?.name || '', p_pw: currentAdminUser?.pw || '', p_order_id: o.id, p_data: { email_sent_at: now } }) });
++      o.email_sent_at = now;
++      showToast('Order email sent');
++    } catch (e) { showToast('The email was sent, but the order could not be marked as sent (' + adminPgMessage(e) + ').', 'error'); }
++    const line = document.getElementById('order-email-line');
++    if (line) line.outerHTML = adminOrderEmailLineHtml(o);
++    if (typeof renderAdminOrders === 'function' && document.getElementById('admin-orders-table')) renderAdminOrders();
++  } catch (e) {
++    showToast('The order email could not be sent: ' + e.message, 'error');
++    if (btn) { btn.disabled = false; btn.textContent = 'Send order email'; }
++  }
++}
+ function adminOrderNeedsAttention(o, days) {
+-  if (o.trello_synced) return false;
+-  if (!adminOrderHasTrelloBoard(o)) return false;
++  const trelloMissing = !o.trello_synced && adminOrderHasTrelloBoard(o);
++  const emailMissing = adminOrderEmailState(o).state === 'unsent';
++  if (!trelloMissing && !emailMissing) return false;
+   if (adminOrderTooFreshForRetry(o)) return false;   // the form may still be setting it up
+   const cx = (typeof ADMIN_ORDER_CANCEL !== 'undefined' ? ADMIN_ORDER_CANCEL : {})[o.id];
+   if (cx && cx.total > 0 && cx.cancelled >= cx.total) return false;   // every service cancelled: nothing left to set up
+@@ -10352,7 +10424,7 @@ function renderAdminOrders() {
+   // "Needs attention" looks back 90 days unless a shorter Date Range is chosen (2026-10-15, Claire: 90 days)
+   const attentionDays = parseInt(dateFilter, 10) || ADMIN_ATTENTION_DEFAULT_DAYS;
+   const attentionLabel = document.getElementById('orders-attention-label');
+-  if (attentionLabel) { const n = allOrders.filter(o => adminOrderNeedsAttention(o, attentionDays)).length; attentionLabel.textContent = `⚠ Trello needs attention (${n})`; }
++  if (attentionLabel) { const n = allOrders.filter(o => adminOrderNeedsAttention(o, attentionDays)).length; attentionLabel.textContent = `⚠ Trello or email needs attention (${n})`; }
+ 
+   let filtered = allOrders.slice();
+   if (attentionOnly) filtered = filtered.filter(o => adminOrderNeedsAttention(o, attentionDays));
+@@ -10423,7 +10495,7 @@ function renderAdminOrders() {
+         <td style="padding:9px 10px;text-align:right;font-weight:600">${fmtMoney(oneTime)}</td>
+         <td style="padding:9px 10px;text-align:right;font-weight:600">${monthly ? fmtMoney(monthly) + '/mo' : ''}${monthly && annual ? '<br>' : ''}${annual ? fmtMoney(annual) + '/yr' : ''}${(monthly || annual) && varyingSpendTotal ? '<br>' : ''}${varyingSpendTotal ? `<span style="font-weight:400;color:var(--muted);font-size:11px">${fmtMoney(varyingSpendTotal)} total (varies)</span>` : (!monthly && !annual ? '—' : '')}</td>
+         <td style="padding:9px 10px;color:var(--muted);font-size:11px">${fmtDate(o.koc_date)}${o.koc_time ? '<br>'+esc(o.koc_time) : ''}</td>
+-        <td style="padding:9px 10px;text-align:center">${synced}</td>
++        <td style="padding:9px 10px;text-align:center;white-space:nowrap">${synced}${adminOrderEmailMarkerHtml(o)}</td>
+         <td style="padding:9px 10px;text-align:right">
+           <button onclick="viewOrderDetail('${esc(o.id)}')" style="padding:5px 12px;border-radius:6px;background:var(--light);border:1px solid var(--border);font-size:11px;font-weight:600;cursor:pointer">View</button>
+         </td>
+@@ -10825,6 +10897,7 @@ async function viewOrderDetail(orderId) {
+           <div><strong>IO Date:</strong> ${fmtDate(o.io_date)}</div>
+           <div><strong>KOC:</strong> ${fmtDate(o.koc_date)}${o.koc_time ? ' at ' + esc(o.koc_time) : ''}</div>
+           <div id="order-trello-line"><strong>Trello Synced:</strong> ${o.trello_synced ? '✅ ' + fmtDateTime(o.trello_synced_at) : '⚠ No'}</div>
++          ${adminOrderEmailLineHtml(o)}
+           ${(!o.trello_synced && adminOrderHasTrelloBoard(o) && adminOrderTooFreshForRetry(o)) ? `<div style="margin-top:6px;font-size:11px;color:var(--muted)">This order is under ${ADMIN_RETRY_MIN_AGE_MINUTES} minutes old, so the order form may still be setting up Trello. Check again shortly.</div>` : ''}
+           ${(!o.trello_synced && adminOrderHasTrelloBoard(o) && !adminOrderTooFreshForRetry(o)) ? `<div style="margin-top:6px"><button id="retry-trello-btn" onclick="adminRetryTrello('${esc(o.id)}')" class="btn-quiet-green">Retry Trello</button> <span style="font-size:11px;color:var(--muted)">Creates only the cards that are missing; cards already on the client's list are left alone.</span></div><div id="retry-trello-report" style="margin-top:6px;font-size:12px"></div>` : ''}
+           ${o.needs_am_help ? '<div style="margin-top:6px;padding:5px 10px;background:#FEF3C7;border-radius:5px;font-size:11px;color:#92400E"><strong>⚠ AM HELP REQUESTED</strong> on one or more intake forms</div>' : ''}
+@@ -14155,6 +14228,7 @@ async function adminNewGroup() {
+   document.getElementById('admin-color2-hex').value = '#1C9BD7';
+   document.getElementById('admin-has-koc').value = 'true';
+   document.getElementById('admin-hide-from-strategist').value = 'false';
++  document.getElementById('admin-no-team-copy').value = 'false';
+   document.getElementById('admin-logo-dark-bg').checked = false;
+   setGroupLogoPreview('');
+   document.getElementById('admin-logo-file').value = '';
+@@ -14242,6 +14316,7 @@ async function adminEditGroup(id, initialTab) {
+   document.getElementById('admin-io-recipient').value = g.io_recipient || '';
+   document.getElementById('admin-has-koc').value = g.has_koc ? 'true' : 'false';
+   document.getElementById('admin-hide-from-strategist').value = g.hide_from_strategist ? 'true' : 'false';
++  document.getElementById('admin-no-team-copy').value = g.no_team_copy ? 'true' : 'false';
+   // Load existing pricing overrides
+   currentPricingOverrides = {};
+   if (g.io_pricing) {
+@@ -14272,7 +14347,7 @@ const GROUP_HISTORY_LABELS = { name: 'Group name', io_slug: 'IO link name', am_n
+   additional_card_trello_handle: 'Additional card member', additional_card_member_role: 'Additional card role', brand_color: 'Brand colour', brand_color2: 'Second brand colour', logo_url: 'Logo',
+   logo_dark_bg: 'Logo on dark background', trello_board_id: 'Trello board', from_name: 'Email "from" name', from_email: 'Email "from" address', io_recipient: 'IO recipients', has_koc: 'Kickoff call',
+   io_pricing: 'Custom pricing', accounting_overrides: 'Accounting overrides', active: 'Status', digital_strategist_name: 'Digital Strategist', covering_strategist_name: 'Covering Strategist',
+-  social_strategist_id: 'Social Strategist', web_strategist_id: 'Web Strategist', hide_from_strategist: 'Hidden from Strategist view' };
++  social_strategist_id: 'Social Strategist', web_strategist_id: 'Web Strategist', hide_from_strategist: 'Hidden from Strategist view', no_team_copy: 'Team copy off (test group)' };
+ function groupHistoryValue(field, v) {
+   if (v === null || v === undefined || v === '') return '(blank)';
+   if (field === 'active') return v ? 'Active' : 'Archived';
+@@ -14349,6 +14424,8 @@ async function adminSaveGroup() {
+     has_koc: document.getElementById('admin-has-koc').value === 'true',
+     // Group switch (2026-10-07): hides this group's campaign lines + clients from the Strategist Portal (Accounting still sees them).
+     hide_from_strategist: document.getElementById('admin-hide-from-strategist').value === 'true',
++    // "Don't copy the team" (2026-10-16): leaves the always-BCC list off this group's order emails, AM alerts and resends.
++    no_team_copy: document.getElementById('admin-no-team-copy').value === 'true',
+   };
+   // Only super admins may set pricing. For AM-tier users, omit io_pricing entirely
+   // so a PATCH never overwrites the group's existing overrides.
+diff --git a/tests/admin-group-editor-roundtrip.test.js b/tests/admin-group-editor-roundtrip.test.js
+index 8fd6597..8aed545 100644
+--- a/tests/admin-group-editor-roundtrip.test.js
++++ b/tests/admin-group-editor-roundtrip.test.js
+@@ -21,12 +21,13 @@ const strategists = [{ id: 'soc-1', discipline: 'social', name: 'Social One', ac
+ const aes = [{ id: 'ae1', group_id: 'g1', name: 'Ann AE', trello_handle: 'annae', active: true }];
+ const base = { id: 'g1', name: 'Test Group', io_slug: 'test-group', am_name: 'Shania', am_email: 'sh@x.test', am_calendar_url: 'https://cal.test/sh', am_trello_handle: 'shania', additional_card_trello_handle: null, additional_card_member_role: null,
+   digital_strategist_name: 'Sammy', covering_strategist_name: 'Bronson', social_strategist_id: 'soc-1', web_strategist_id: 'web-1', brand_color: '#112233', brand_color2: '#445566', logo_url: 'https://x.test/l.png', logo_dark_bg: false,
+-  trello_board_id: 'abc123', io_recipient: 'a@b.test', has_koc: true, hide_from_strategist: false, io_pricing: { 'w-hosting': 500 }, accounting_overrides: { 'sem-bp': { cut: 0.75 } }, active: true };
++  trello_board_id: 'abc123', io_recipient: 'a@b.test', has_koc: true, hide_from_strategist: false, no_team_copy: false, io_pricing: { 'w-hosting': 500 }, accounting_overrides: { 'sem-bp': { cut: 0.75 } }, active: true };
+ const R = {
+   'fully filled': { ...base },
+   'everything blank': { ...base, am_name: null, am_email: null, am_calendar_url: null, am_trello_handle: null, digital_strategist_name: null, covering_strategist_name: null, social_strategist_id: null, web_strategist_id: null,
+     brand_color: '#1C9BD7', brand_color2: null, logo_url: '', trello_board_id: '', io_recipient: null, has_koc: false, io_pricing: null, accounting_overrides: null },
+   'hidden from Strategist, no KOC': { ...base, hide_from_strategist: true, has_koc: false },
++  'team copy switched off (test group)': { ...base, no_team_copy: true },
+   'brand colour never set (null)': { ...base, brand_color: null },
+   'pricing stored as a JSON string': { ...base, io_pricing: JSON.stringify({ 'w-hosting': 500 }), accounting_overrides: JSON.stringify({ 'sem-bp': { cut: 0.75 } }) },
+   'social strategist who is now inactive': { ...base, social_strategist_id: 'soc-old' },
+diff --git a/tests/admin-retry-trello.test.js b/tests/admin-retry-trello.test.js
+index fed75b4..d57e8d0 100644
+--- a/tests/admin-retry-trello.test.js
++++ b/tests/admin-retry-trello.test.js
+@@ -5,7 +5,7 @@ let JSDOM; try { ({ JSDOM } = require('jsdom')); } catch (e) { console.log('SKIP
+ const admin = read('admin/index.html'), shared = read('shared.js');
+ const win = new JSDOM('<body><button id="retry-trello-btn">Retry Trello</button><div id="retry-trello-report"></div><div id="order-trello-line"></div></body>', { runScripts: 'outside-only' }).window;
+ win.eval([fn(shared, 'esc'), ...['adminNormCardName', 'adminStripDateRangeFromCardName', 'adminIsIoCardName', 'adminFindTrelloCardForLine', 'adminEffectiveWorkflow', 'adminCampaignDueFields', 'adminFormatDateRangeForTitle', 'auditVariantIsAlreadyComplete',
+-    'adminPgMessage', 'adminBuildCorrectionCards', 'adminOrderTooFreshForRetry', 'adminOrderHasTrelloBoard', 'adminOrderNeedsAttention', 'adminRetryIoDescription', 'adminFindOrCreateClientList', 'adminRetryTrello'].map(n => fn(admin, n)),
++    'adminPgMessage', 'adminBuildCorrectionCards', 'adminOrderTooFreshForRetry', 'adminOrderHasTrelloBoard', 'adminOrderEmailState', 'adminOrderNeedsAttention', 'adminRetryIoDescription', 'adminFindOrCreateClientList', 'adminRetryTrello'].map(n => fn(admin, n)),
+   `const ADMIN_ATTENTION_DEFAULT_DAYS = 90; const ADMIN_RETRY_MIN_AGE_MINUTES = 10; var ADMIN_CAMPAIGN_END_REMINDER_MINUTES = 540; var ADMIN_NUMERIC_TERM_RE = /\\d{1,2}\\/\\d{1,2}\\/\\d{2,4}(?:\\s*-\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{2,4})?/; var ADMIN_ORDER_CANCEL = {}; var allGroups = [{ id: 'g1', trello_board_id: 'BOARD1' }, { id: 'g2', trello_board_id: '' }];
+    var CATALOG_ROWS = {}, allOrders = [], currentAdminUser = { name: 'Carol', pw: 'x' }, PROXY = 'proxy', __toasts = [], __saved = [], __calls = [], __trello = null, __pdfOk = true;
+    function sbAuthHeaders() { return {}; } function showToast(m, t) { __toasts.push((t || 'ok') + ': ' + m); } function sectionLabel(x) { return x; }
