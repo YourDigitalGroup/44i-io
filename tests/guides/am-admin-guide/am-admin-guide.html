@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Changing an Order in Admin</title>
+<style>
+@page { size: Letter; margin: 0.6in 0.75in 0.6in 0.75in; }
+*{box-sizing:border-box}
+body{font-family:Helvetica,Arial,'Liberation Sans',sans-serif;color:#2b2f36;font-size:9.4pt;line-height:1.38;margin:0}
+h1{font-size:20pt;color:#1779AE;margin:0 0 4px;line-height:1.15}
+.sub{color:#5b6573;font-size:10.5pt;margin:0 0 6px}
+.intro{color:#5b6573;font-style:italic;font-size:9pt;margin:0 0 10px}
+h2{font-size:12.5pt;color:#16202c;margin:13px 0 6px;padding-bottom:3px;border-bottom:2px solid #1B8AC4;break-after:avoid}
+p{margin:0 0 6px}
+.chip{display:inline-block;background:#D5E5F2;color:#16202c;font-weight:700;font-size:8.6pt;padding:0 6px;border-radius:4px;line-height:1.55;white-space:nowrap}
+table{width:100%;border-collapse:collapse;margin:4px 0 8px;font-size:9pt}
+th{background:#EAF3FA;text-align:left;padding:5px 8px;font-weight:700}
+td{padding:4px 8px;border-top:1px solid #dfe5ec;vertical-align:top}
+tr{break-inside:avoid}
+td.k{font-weight:700;white-space:nowrap}
+.note,.tip{border-radius:2px;padding:6px 10px;margin:7px 0;font-size:8.8pt;break-inside:avoid}
+.note{background:#FDF1E0;border-left:3px solid #E08A1E}.note b{color:#C26A00}
+.tip{background:#E6F4EE;border-left:3px solid #1F8A62}.tip b{color:#0F6B4A}
+.act{background:#EAF3FA;border-radius:6px;padding:6px 11px;margin:0 0 6px;break-inside:avoid}
+.act .hd{font-weight:700;color:#16202c;margin-bottom:3px;font-size:9.8pt}
+.act .hd span.w{font-weight:400;color:#46515f}
+.r{display:grid;grid-template-columns:62px 1fr;gap:0 8px;margin-top:2px}
+.r > b{color:#1779AE;font-size:8.4pt;text-transform:uppercase;letter-spacing:.03em;padding-top:1px}
+.r.w > b{color:#C26A00}
+.foot{border-top:1px solid #dfe5ec;margin-top:12px;padding-top:5px;color:#6b7480;font-size:7.8pt}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.two .act{margin:0}
+</style></head><body>
+
+<h1>Changing an Order in Admin</h1>
+<div class="sub">A quick guide for Account Managers</div>
+<p class="intro">Almost every change starts the same way: <b>Orders</b> → <span class="chip">View</span> on the order → the <b>Services</b> table. Each service has its own buttons; <span class="chip">⇄ Swap Tactic</span> sits above the table. Button names below match the screen.</p>
+
+<h2>Which button do I use?</h2>
+<table>
+<tr><th>What happened</th><th>Use</th><th>Trello</th></tr>
+<tr><td>Client is switching one tactic for another</td><td class="k"><span class="chip">⇄ Swap Tactic</span></td><td>Comment on old card + IO card; new card built</td></tr>
+<tr><td>AE picked the wrong service</td><td class="k"><span class="chip">Correct</span></td><td>Comment, new card built, revised IO attached</td></tr>
+<tr><td>Client wants to stop a service</td><td class="k"><span class="chip">Cancel</span></td><td>Comment; due date moves to the effective date</td></tr>
+<tr><td>Campaign continues past its end date</td><td class="k"><span class="chip">↻ Renew</span></td><td>Comment; due date moves to the new end date</td></tr>
+<tr><td>Amount, dates, or budget need changing</td><td class="k"><span class="chip">✎ Edit</span></td><td>Comment, revised IO attached</td></tr>
+<tr><td>Website hosting start date moved</td><td class="k"><span class="chip">✎ Edit Hosting Date</span></td><td>Nothing, update Trello yourself</td></tr>
+<tr><td>You collected intake answers on a call</td><td class="k"><span class="chip">✎ Fill in this intake form</span></td><td>On Mark Complete: comment + form on that tactic's card</td></tr>
+<tr><td>The order's Trello setup didn't finish (⚠ in the Orders list)</td><td class="k"><span class="chip">Retry Trello</span></td><td>Creates only the missing cards</td></tr>
+<tr><td>An AE sent a request from the Companion Form</td><td class="k"><span class="chip">Pending Requests</span> tab</td><td>See "Requests" below</td></tr>
+</table>
+<div class="note"><b>Watch for a red message.</b> Admin finds cards from the IDs saved on the order (or, for campaigns with no Insertion Order, by searching the client's Trello list). If it can't find a card, it skips that comment and shows the success message with a red warning naming the missed card, for about 14 seconds. Update that card by hand. Some older orders have no saved IO card, so the IO comment and revised IO are skipped. For a service that makes several Trello cards (for example the SEO package), Admin comments on every card in the package and moves their due dates when the end date changes. The same red message appears if Trello refuses a comment or file (“Trello was not fully updated”); add it by hand.</div>
+<div class="tip"><b>Confirm with the AE first.</b> Cancel, Edit, Renew, Swap Tactic and Correct each have a box like "I confirmed this change with the AE." (Correct and Cancel word it for that action). You must tick it before anything saves, and the Trello comment says you confirmed. Approving or rejecting an AE's request doesn't need it.</div>
+
+<h2>Changing a service</h2>
+
+<div class="act"><div class="hd"><span class="chip">⇄ Swap Tactic</span> <span class="w">&nbsp;Client switches tactics, e.g. YouTube TV → Streaming TV</span></div>
+<div class="r"><b>Steps</b><div>Pick <span class="chip">Current Tactic</span>, <span class="chip">New Tactic</span>, <span class="chip">Effective Date</span>, <span class="chip">New Monthly Budget</span>, <span class="chip">New Tactic Runs Through</span> (and a <span class="chip">Variant</span> if asked). A preview shows the first month split by days. Click <span class="chip">Confirm Swap</span>.</div></div>
+<div class="r"><b>Result</b><div>Old tactic ends the day before the effective date (or is cancelled if it hadn't started). New tactic starts on the effective date; its card is reused if the client has one, otherwise built from the service's template.</div></div>
+<div class="r w"><b>Watch for</b><div>Use this instead of Cancel plus a new Insertion Order, which leaves two lines for one client. The Services table keeps showing the original tactic; the swap is in the order's history.</div></div></div>
+
+<div class="act"><div class="hd"><span class="chip">Correct</span> <span class="w">&nbsp;AE picked the wrong service</span></div>
+<div class="r"><b>Steps</b><div>Pick the <span class="chip">Correct service</span>, fill in price, dates, and variant, add a <span class="chip">Reason</span> (3+ characters), tick <span class="chip">I confirmed the correct service with the AE.</span>, click <span class="chip">Confirm Correction</span>.</div></div>
+<div class="r"><b>Result</b><div>Replaces the service on the same order with no new signature. Order is marked Revised, the right card is built (or reused), and a revised IO is attached. If the card couldn't be built, a <span class="chip">Finish Trello card</span> button appears.</div></div>
+<div class="r w"><b>Watch for</b><div>Not offered for SEO, add-ons, setup fees, hosting, or agent splits. Refused if the old service already has spend, a confirmation, a pause, an open request, or a closed Accounting month. Then Cancel it and use a new Insertion Order.</div></div></div>
+
+<div class="act"><div class="hd"><span class="chip">Cancel</span> <span class="w">&nbsp;Client stops a service</span></div>
+<div class="r"><b>Steps</b><div>Click <span class="chip">Cancel</span> on the row, set the <span class="chip">Effective Date</span> (starts as today), add a reason if you like, click <span class="chip">Submit Cancellation</span>.</div></div>
+<div class="r"><b>Result</b><div>Red <b>Cancelled</b> badge; the Renew button goes away. Order totals don't change; they still show what was sold. Strategist and Accounting keep the line running through the month of the effective date.</div></div>
+<div class="r w"><b>Watch for</b><div>If the service has a notice period or early-termination fee and the date is too soon, an amber warning appears. It doesn't block you. Past dates are allowed, and the date isn't compared to the service's start, so double-check it.</div></div></div>
+
+<div class="act"><div class="hd"><span class="chip">↻ Renew</span> <span class="w">&nbsp;Campaign continues past its end date</span></div>
+<div class="r"><b>Steps</b><div>Click <span class="chip">↻ Renew</span>. Where the amount is editable, choose <span class="chip">Renew as is</span> or <span class="chip">Renew with modifications</span>. Enter <span class="chip">New End Date</span> (required) and, if modifying, an optional <span class="chip">New Monthly Budget</span> (one number). Click <span class="chip">Confirm Renewal</span>.</div></div>
+<div class="r"><b>Result</b><div>Same line continues with a "Renewed" badge. No new card, no revised IO.</div></div>
+<div class="r w"><b>Watch for</b><div>It only checks the new end is after the start, not after the current end. No Renew for one-time or cancelled services. An agent/county split has its own Renew, which comments on that agent's card only.</div></div></div>
+
+<div class="act"><div class="hd"><span class="chip">✎ Edit</span> <span class="w">&nbsp;Change an amount, dates, variant, modules, or quantity</span></div>
+<div class="r"><b>Steps</b><div>Ad budget services: <span class="chip">Monthly Rate</span>, <span class="chip">Whole Campaign Total</span> (split by days), or <span class="chip">Custom by Month</span>. Single monthly amount with no catalog price: <span class="chip">New amount</span>. One-time or fixed-price: dates and variant only. Click Save.</div></div>
+<div class="r"><b>Result</b><div>Order shows a <b>Revised</b> tag with the old amount. Strategist and Accounting update too. A revised IO is attached to the IO card. The tactic card's due date or title only changes if you changed the end date, variant, or modules.</div></div>
+<div class="r w"><b>Watch for</b><div>A service with more than one amount (e.g. setup fee plus monthly) has no Edit button; ask an admin. Monthly Rate mode doesn't warn if the end is before the start.</div></div></div>
+
+<div class="two">
+<div class="act"><div class="hd"><span class="chip">✎ Edit Hosting Date</span></div>
+<div class="r" style="grid-template-columns:1fr"><div>Enter the <span class="chip">New Hosting Start Date</span>; the prorated charge is recalculated. Updates Admin and Accounting only. <b>Trello is not changed</b>, so update the card yourself.</div></div></div>
+<div class="act"><div class="hd"><span class="chip">✎ Fill in this intake form</span></div>
+<div class="r" style="grid-template-columns:1fr"><div><span class="chip">Save as Draft</span> sends nothing. <span class="chip">Save &amp; Mark Complete</span> comments on that tactic's card and attaches the form (not on the IO card). Nothing is required, and a Complete form can't be reopened.</div></div></div>
+</div>
+
+<div class="act" style="margin-top:8px"><div class="hd"><span class="chip">Retry Trello</span> <span class="w">&nbsp;An order's Trello setup didn't finish</span></div>
+<div class="r"><b>Steps</b><div><b>Orders</b> → tick <span class="chip">⚠ Trello needs attention</span> → <span class="chip">View</span> the order → <span class="chip">Retry Trello</span> → OK.</div></div>
+<div class="r"><b>Result</b><div>Creates only the missing cards (the IO card with its PDF, and the service cards); cards already there are left alone. When nothing is left, the order is marked synced.</div></div>
+<div class="r w"><b>Watch for</b><div>Not on an order under 10 minutes old. If the client has no Trello list, it asks first, then finds or creates one. Multi-agent clients and per-agent cards: it lists what's missing and you finish by hand. If Trello won't show the list, it stops and creates nothing.</div></div></div>
+
+<h2>Requests from the Companion Form</h2>
+<div class="act">
+<div class="r"><b>Arrives</b><div>You get an email naming the client, the AE, and the services and actions only. Open the <b>Pending Requests</b> tab for dates and amounts, plus the AE's confirmation that the client authorized the change.</div></div>
+<div class="r"><b>Buttons</b><div><span class="chip">Approve</span> makes the change now (order, Strategist, Accounting, Trello). <span class="chip">Reject</span> opens a note box; closing it without typing <b>still rejects</b>. On a Cancel, <span class="chip">Effective date to apply</span> lets you change the date first; the AE is told. Any note you write goes to the AE and the group's IO recipients, so write it for them.</div></div>
+<div class="r"><b>After</b><div>When every item in a submission is resolved: one combined comment on each affected card, a revised IO if any item was an Edit or Renew, and one email to the AE and the group's IO recipients (the always-BCC list is blind-copied).</div></div>
+<div class="r w"><b>Watch for</b><div>Approving a Cancel does <b>not</b> show the notice-period warning, so check the contract first. A Renew or Edit that puts the end before the start is blocked; ask the AE to resubmit or reject.</div></div></div>
+
+<div class="act"><div class="hd">Campaigns with no Insertion Order on file <span class="w">&nbsp;(imported or strategist-created)</span></div>
+<div class="r"><b>How</b><div>AEs request changes in the Companion Form as usual; they show in Pending Requests as <b>(no IO on file)</b>. There is no Cancel, Edit, or Swap button in Admin for them, so requests are how they are changed.</div></div>
+<div class="r"><b>Trello</b><div>Admin looks in the client's list for the <b>campaign card</b> (tactic name + client name) and the <b>IO card</b> (named "IO" or "IO - …") and comments on both. If it finds only one, it comments there and names the one it missed. If several could match, it skips that card and tells you.</div></div>
+<div class="r w"><b>Watch for</b><div>No module or quantity changes, no intake choice, and no revised IO, since there is no signed order.</div></div></div>
+
+<h2>Also good to know</h2>
+<table>
+<tr><td class="k">You manage</td><td><b>Clients</b> (add, edit, hide, import from Trello, audit card names; leave the <span class="chip">Trello List ID</span> alone unless you're sure) · <b>Groups</b> (Group Info, IO recipients, Trello board, Strategist Portal setting, and a <b>History</b> tab showing who changed what and when) · <b>AEs and Strategists</b>.</td></tr>
+<tr><td class="k">Ask an admin</td><td>Service catalog, intake forms, legal text · custom pricing, accounting overrides, Accounting Map · user logins and roles · deactivating a group · the always-BCC list.</td></tr>
+<tr><td class="k">New service?</td><td>There is no Admin button to add a service to an existing order. Submit a new Insertion Order.</td></tr>
+<tr><td class="k">Red message?</td><td>A card wasn't found, or Trello refused the comment or file, so nothing was posted there. Add it by hand and check the card is named the usual way.</td></tr>
+</table>
+
+<div class="foot">44i Digital — Internal AM Reference · For account managers changing orders in the Admin portal</div>
+</body></html>
