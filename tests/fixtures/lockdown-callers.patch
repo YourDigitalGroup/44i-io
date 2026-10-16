@@ -80,3 +80,16 @@ index dd65d73..fed75b4 100644
    noList(); t = mk({ listsFail: true }); r = await run({ services, trello: t }, noListOrder());
    check('O Trello will not show the board\'s lists: NOTHING is created (could duplicate a list), nothing is recorded, the AM is told', [r.calls.filter(c => /create|copy/.test(c.target)).length, r.saved.length, /duplicate/.test(r.report)], [0, 0, true]);
    noList(); t = mk({ lists: [], createListFails: true }); r = await run({ services, trello: t }, noListOrder());
+diff --git a/tests/admin-save-guards.test.js b/tests/admin-save-guards.test.js
+index 443dccc..d4a63b6 100644
+--- a/tests/admin-save-guards.test.js
++++ b/tests/admin-save-guards.test.js
+@@ -9,7 +9,7 @@ win.eval([
+   ...['loadAdminLegalContent', 'adminSaveLegalContent', 'loadAdminNotificationSettings', 'adminSaveNotificationSettings', 'adminUserRoleChanged', 'adminSaveUser'].map(n => fn(admin, n)),
+   `var currentAdminUser = { name: 'a', pw: 'p', role: 'super' }, ALL_STAFF = [], ALL_AES = [], __calls = [], __toasts = [], __rows = null, __fail = false;
+    function canSee() { return true; } function showToast(m, t) { __toasts.push((t || 'ok') + ': ' + m); } function loadAdminUsers() {} function adminCancelUserEdit() {}
+-   async function sb(path, opts) { if (path.startsWith('rpc/')) { __calls.push([path, JSON.parse(opts.body).p_data]); return {}; } if (__fail) throw new Error('boom'); return __rows; }`,
++   async function sb(path, opts) { if (path === 'rpc/admin_get_notification_settings') { if (__fail) throw new Error('boom'); return __rows; } if (path.startsWith('rpc/')) { __calls.push([path, JSON.parse(opts.body).p_data]); return {}; } if (__fail) throw new Error('boom'); return __rows; }`,
+ ].join('\n'));
+ const doc = win.document, LF = win.eval('LEGAL_FIELDS');
+ const fill = () => LF.forEach(f => { doc.getElementById('legal-' + f).value = 'clause ' + f; });

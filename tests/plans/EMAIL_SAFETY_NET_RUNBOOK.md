@@ -17,5 +17,5 @@ Failure paths (mail service down, Trello incomplete) cannot be provoked safely l
 ## Rollback
 Form: revert the merge (the columns can stay unused). Admin: revert the merge. SQL: re-run the previous function texts (`live-step2-functions.2026-10-16.sql`, `../admin-save-group-with-history.proposed.sql`); the two new columns are harmless.
 
-## Known edge (accepted)
-A group with NO IO recipients is never flagged as "not sent" (nothing is attempted for it unless the always-BCC list exists); a send failure for such a group is not shown.
+## Who counts as "should have been emailed" (Claire's correction, 2026-10-16)
+The order form emails the group's IO recipients, the AE (when picked from the roster) and the always-BCC list; with no IO recipients it still goes to the AE and the team list. So Admin flags an order whose email time is empty in EVERY case, except a group set to "don't copy the team" that also has no IO recipients and an AE with no email on the roster (nothing was attempted there).
