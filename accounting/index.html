@@ -2098,6 +2098,16 @@ function accountingExportCsv() {
   const grpIdx = new Map();
   sorted.forEach((l, n) => { const k = grpKey(l); if (!grpIdx.has(k)) grpIdx.set(k, []); grpIdx.get(k).push(n); });
   const pickOf = cells => { const wg = months.map((d, i) => ({ k: accountingMonthKey(d), c: cells[i] })).filter(x => x.c && x.c.gross != null); return [...wg].reverse().find(x => x.k <= nowKey) || wg[0] || null; };
+  // TOTAL REVENUE column (2026-10-16, Claire: a "Whole Campaign Total" line showed only its first month, e.g. 2,735.29 instead of the 3,000 total the order was sold for): for a line entered as a
+  // whole-campaign total the number is the SUM of every month's amount saved on it (all months, whatever From/To range is chosen), because "this month's price" means nothing for it.
+  // Every other line keeps the monthly figure (the latest month up to today).
+  const totalRevOf = (l, cells) => {
+    if (l.budget_entry_mode === 'total') {
+      const g = ALL_ACCOUNTING_MONTHS.filter(m => m.campaign_line_id === l.id && m.gross_budget != null).map(m => Number(m.gross_budget));
+      return g.length ? g.reduce((t, v) => t + v, 0) : null;
+    }
+    const pk = pickOf(cells); return pk ? pk.c.gross : null;
+  };
   sorted.forEach((l, n) => {
     const cells = rowCells[n];
     const withGross = months.map((d, i) => ({ k: accountingMonthKey(d), c: cells[i] })).filter(x => x.c && x.c.gross != null);
@@ -2107,13 +2117,13 @@ function accountingExportCsv() {
     if (grp.length > 1 && grp[0] === n && grp.some(i => sorted[i].split_label)) {
       const sumM = months.map((d, i) => grp.reduce((t, gi) => t + (rowCells[gi][i] && rowCells[gi][i].f != null ? round2(rowCells[gi][i].f) : 0), 0));
       const hasM = months.map((d, i) => grp.some(gi => rowCells[gi][i] && rowCells[gi][i].f != null));
-      const totRev = grp.reduce((t, gi) => { const pk = pickOf(rowCells[gi]); return t + (pk ? round2(pk.c.gross) : 0); }, 0);
+      const totRev = grp.reduce((t, gi) => { const v = totalRevOf(sorted[gi], rowCells[gi]); return t + (v != null ? round2(v) : 0); }, 0);
       out.push([l.group_name || '', l.client_name || '', l.tactic_label || l.service_id || '', 'TOTAL (' + grp.length + ' campaigns)', '', '', '', '', '', '', '', '', '', '', round2(totRev), '', '',
         ...sumM.map((v, i) => hasM[i] ? round2(v) : '')].map(q).join(','));
     }
     out.push([l.group_name || '', l.client_name || '', l.tactic_label || l.service_id || '', l.split_label || '', l.agent_name || '', l.county || '', l.status || '',
       d10(l.flight_start), d10(l.flight_end), l.billing_type || '', yn(l.accounting_only), yn(l.billed_externally), yn(l.has_offline_visits), yn(l.has_addl_targeting),
-      pick ? round2(pick.c.gross) : '', pick && pick.c.cutPct != null ? Number(pick.c.cutPct) : '', l.id,
+      (() => { const v = totalRevOf(l, cells); return v != null ? round2(v) : ''; })(), pick && pick.c.cutPct != null ? Number(pick.c.cutPct) : '', l.id,
       ...cells.map(c => c && c.f != null ? round2(c.f) : '')].map(q).join(','));
   });
   // Bottom rows, under the month columns (Claire, 2026-10-15: no extra columns, "only count the services it is supposed to based on the status"). The month

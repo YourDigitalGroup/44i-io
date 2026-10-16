@@ -127,4 +127,17 @@ check('Total Revenue on the total row is the sum of the rows below; Line ID and 
 check('total rows are the only rows added: every line still appears once', qb.filter(r => !isTot(r)).length, 8);
 check('the three bottom rows are unchanged by the total rows and still equal the screen', vsScreen(tail3()), true);
 const noTot = Q.slice(1).filter(r => !isTot(r)); check('a total row never carries a Line ID, so filtering on Line ID removes it', qb.filter(isTot).every(r => r[16] === ''), true);
+// ── Whole Campaign Total lines: Total Revenue is the sum of all months, not the first month (Claire 2026-10-16, ESPN Arkansas / Tim Shepard) ──
+global.ALL_ACCOUNTING_LINES.length = 0; global.ALL_ACCOUNTING_MONTHS.length = 0; setHist([], true);
+const wct = (id, label, extra = {}) => L({ id, client_id: 'ts', group_name: 'ESPN Arkansas', client_name: 'Tim Shepard', tactic_label: 'Streaming TV: Audience', service_id: 'stv-aud', split_label: label, flight_start: '2026-10-01', flight_end: '2026-11-30', budget_entry_mode: 'total', ...extra });
+global.ALL_ACCOUNTING_LINES.push(wct('sp', 'Spanish'), wct('en', 'English'), L({ id: 'mo', client_id: 'ts2', group_name: 'ESPN Arkansas', client_name: 'Monthly Co', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-10-01', flight_end: '2026-11-30' }));
+[['sp', '2026-10', 2735.29], ['sp', '2026-11', 264.71], ['en', '2026-10', 7750], ['en', '2026-11', 750], ['mo', '2026-10', 400], ['mo', '2026-11', 400]].forEach(([id, m, g]) => global.ALL_ACCOUNTING_MONTHS.push(M(id, m, g)));
+global.accountingGroupFilter = ''; exp(); let W = parse(blobText).slice(1, -3);
+const wRow = c => W.find(r => r[3] === c), wTot = W.find(r => /^TOTAL \(/.test(r[3]));
+check('whole-campaign-total lines show the SUM of their months as Total Revenue (3000 and 8500), not October alone', [Number(wRow('Spanish')[14]), Number(wRow('English')[14])], [3000, 8500]);
+check('the TOTAL row adds the two (11500)', Number(wTot[14]), 11500);
+check('a normal monthly line still shows one month\'s price (400, not 800)', Number(W.find(r => r[1] === 'Monthly Co')[14]), 400);
+const setR = (f, t) => { document.getElementById = id => ({ value: id.endsWith('from') ? f : t }); exp(); const x = parse(blobText).slice(1, -3); delete document.getElementById; return x; };
+const WR = setR('2026-10', '2026-10');
+check('choosing only October does not shrink a whole-campaign total (still 3000 / 8500)', [Number(WR.find(r => r[3] === 'Spanish')[14]), Number(WR.find(r => r[3] === 'English')[14])], [3000, 8500]);
 done();
