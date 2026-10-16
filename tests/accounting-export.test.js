@@ -105,4 +105,26 @@ global.ALL_ACCOUNTING_LINES.length = 0; global.ALL_ACCOUNTING_MONTHS.length = 0;
 global.ALL_ACCOUNTING_LINES.push(L({ id: 'q1', client_id: 'k1', group_name: 'G', client_name: 'K1', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-10-01', flight_end: '2026-10-31' }), L({ id: 'q2', client_id: 'k2', group_name: 'G', client_name: 'K2', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-10-01', flight_end: '2026-10-31' }));
 global.ALL_ACCOUNTING_MONTHS.push(M('q1', '2026-10', 333.33, { actual_spend: 300 }), M('q2', '2026-10', 333.33));
 const T9 = tail3(); check('confirmed + awaiting = total to the cent even when the pieces have fractions of a cent', [r2(T9.conf[0] + T9.aw[0]) === T9.tot[0], T9.conf[0] > 0, T9.aw[0] > 0], [true, true, true]);
+// ── total row above separate campaigns (Claire 2026-10-16: 13 Location Targeting: Event campaigns for one client) ──
+global.ALL_ACCOUNTING_LINES.length = 0; global.ALL_ACCOUNTING_MONTHS.length = 0; setHist([], true);
+const camp = (id, label, extra = {}) => L({ id, client_id: 'gg', group_name: 'BR Digital', client_name: 'Grain Guardian LLC', tactic_label: 'Location Targeting: Event', service_id: 'lt-event', split_label: label, flight_start: '2026-10-01', flight_end: '2026-12-31', ...extra });
+global.ALL_ACCOUNTING_LINES.push(camp('e1', 'Iowa Fire Chiefs'), camp('e2', 'Grain Bin Rescue'), camp('e3', 'Instructor 1', { flight_start: '2026-11-01' }),
+  L({ id: 'solo', client_id: 'gg', group_name: 'BR Digital', client_name: 'Grain Guardian LLC', tactic_label: 'SEM', service_id: 'sem', split_label: 'Only one', flight_start: '2026-10-01', flight_end: '2026-12-31' }),
+  L({ id: 'plain1', client_id: 'pp', group_name: 'BR Digital', client_name: 'Plain Co', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-10-01', flight_end: '2026-12-31' }),
+  L({ id: 'plain2', client_id: 'pp', group_name: 'BR Digital', client_name: 'Plain Co', tactic_label: 'SEM', service_id: 'sem', flight_start: '2026-11-01', flight_end: '2026-12-31' }),
+  camp('o1', 'Other client A', { client_id: 'g2', client_name: 'Other Client' }), camp('o2', 'Other client B', { client_id: 'g2', client_name: 'Other Client' }));
+[['e1', 333.33], ['e2', 333.33], ['e3', 333.33], ['solo', 500], ['plain1', 500], ['plain2', 500], ['o1', 200], ['o2', 300]].forEach(([id, g]) => ['2026-10', '2026-11', '2026-12'].forEach(m => { if (id === 'e3' && m === '2026-10') return; global.ALL_ACCOUNTING_MONTHS.push(M(id, m, g)); }));
+global.accountingGroupFilter = ''; exp(); let Q = parse(blobText); const qb = Q.slice(1, -3);
+const isTot = r => /^TOTAL \(/.test(r[3]);
+const totals = qb.filter(isTot);
+check('a total row for each client+service with 2+ lines and a campaign name (Grain Guardian, Other Client); none for a single campaign or for unnamed lines', totals.map(r => r[1] + '|' + r[3]), ['Grain Guardian LLC|TOTAL (3 campaigns)', 'Other Client|TOTAL (2 campaigns)']);
+const gi = qb.findIndex(isTot && (r => r[1] === 'Grain Guardian LLC' && isTot(r)));
+check('the total row sits directly above its three campaigns', qb.slice(gi + 1, gi + 4).map(r => r[3]).sort(), ['Grain Bin Rescue', 'Instructor 1', 'Iowa Fire Chiefs']);
+const gt = qb[gi], kids = qb.slice(gi + 1, gi + 4);
+const sumCol = (col) => r2(kids.reduce((t, r) => t + (r[col] === '' ? 0 : Number(r[col])), 0));
+check('each month on the total row is the sum of the rows below, to the cent (Oct has only two lines running)', [17, 18, 19].map(c => Number(gt[c])), [17, 18, 19].map(sumCol));
+check('Total Revenue on the total row is the sum of the rows below; Line ID and Status are blank', [Number(gt[14]), r2(kids.reduce((t, r) => t + Number(r[14]), 0)), gt[16], gt[6]], [r2(kids.reduce((t, r) => t + Number(r[14]), 0)), r2(kids.reduce((t, r) => t + Number(r[14]), 0)), '', '']);
+check('total rows are the only rows added: every line still appears once', qb.filter(r => !isTot(r)).length, 8);
+check('the three bottom rows are unchanged by the total rows and still equal the screen', vsScreen(tail3()), true);
+const noTot = Q.slice(1).filter(r => !isTot(r)); check('a total row never carries a Line ID, so filtering on Line ID removes it', qb.filter(isTot).every(r => r[16] === ''), true);
 done();
