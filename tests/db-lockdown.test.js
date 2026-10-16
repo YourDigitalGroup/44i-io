@@ -19,7 +19,7 @@ const PASTED = new Set(['get_client_agents', 'get_client_counties', 'get_group_a
     create table groups(id uuid primary key, name text, io_slug text); create table clients(id uuid primary key, group_id uuid, name text, hidden boolean default false, trello_list_id text);
     create table agents(id uuid primary key default gen_random_uuid(), client_id uuid, name text, active boolean default true); create table counties(id uuid primary key default gen_random_uuid(), client_id uuid, name text, active boolean default true);
     create table ae(id uuid primary key default gen_random_uuid(), group_id uuid, name text, trello_handle text, email text, market text, role text, active boolean default true, sells boolean default true);
-    create table notification_settings(id int primary key, always_bcc_recipients text);
+    create table notification_settings(id int primary key, always_bcc_recipients text); create table group_service_overrides(id int primary key, note text); alter table group_service_overrides enable row level security; create policy "Public can read group_service_overrides" on group_service_overrides for select to public using (true); insert into group_service_overrides values (1, 'x');
     alter table groups enable row level security; alter table clients enable row level security; alter table notification_settings enable row level security;
     create policy groups_public_read on groups for select to anon, authenticated using (true);
     create policy notification_settings_public_read on notification_settings for select to anon, authenticated using (true);
@@ -44,6 +44,7 @@ const PASTED = new Set(['get_client_agents', 'get_client_counties', 'get_group_a
   const oldAll = async role => { const out = []; for (const [n, a] of OLD) out.push(await can(role, n, a)); return out; };
   check('every signature the lockdown names exists (a typo would have stopped the revoke)', OLD.length, 21);
   check('BEFORE: anon can run every old function, read the group table and the always-BCC list', [(await oldAll('anon')).every(Boolean), (await asRole('anon', 'select * from groups')).length, (await asRole('anon', 'select * from notification_settings')).length], [true, 1, 1]);
+  check('BEFORE: anon can read the unused group_service_overrides table', (await asRole('anon', 'select * from group_service_overrides')).length, 1);
   // ---- run sections 1 and 2 ----
   await db.exec(F('lockdown.sql'));
   const s12 = OLD.filter(([n]) => !['save_group_draft', 'get_group_roster', 'get_group_clients', 'get_group_aes'].includes(n) || (n === 'get_client_names'));
@@ -58,14 +59,15 @@ const PASTED = new Set(['get_client_agents', 'get_client_counties', 'get_group_a
   check('...the owner can still read them (Admin goes through its login-protected functions)', [(await db.query('select count(*)::int n from groups')).rows[0].n, (await asRole('anon', `select count(*)::int n from admin_get_groups('Jon', 'pw')`))[0].n], [1, 1]);
   { const v = await db.query((F('lockdown-verify.sql').split('\n\n-- And the two policies')[0]).replace(/;\s*$/, '')); const s1 = v.rows.filter(r => r.part === 'section_1'), s3 = v.rows.filter(r => r.part === 'section_3');
     check('the verification query (lockdown-verify.sql) shows after Section 1: all 17 closed to anon and signed-in users, service role still open; Section 3 ones still open', [s1.length, s1.every(r => r.anon_can_run === false && r.signed_in_can_run === false && r.service_role_can_run === true), s3.length, s3.every(r => r.anon_can_run === true)], [17, true, 4, true]); }
-  check('...and its policy check lists no policy after Section 2', (await db.query(`select policyname from pg_policies where schemaname = 'public' and policyname in ('notification_settings_public_read', 'groups_public_read')`)).rows.length, 0);
+  check('...and its policy check lists no policy after Section 2', (await db.query(`select policyname from pg_policies where schemaname = 'public' and policyname in ('notification_settings_public_read', 'groups_public_read', 'Public can read group_service_overrides')`)).rows.length, 0);
+  check('...and the unused group_service_overrides table (2C) returns nothing to anon', (await asRole('anon', 'select * from group_service_overrides')).length, 0);
   // ---- section 3 ----
   await db.exec(F('lockdown-section3-playbook.sql'));
   check('AFTER section 3: the Playbook-possible functions are closed to anon, but the service role keeps them', [await Promise.all(play.map(([n, a]) => can('anon', n, a))), await Promise.all(play.map(([n, a]) => can('service_role', n, a)))], [[false, false, false, false], [true, true, true, true]]);
   check('...the key versions of those still work', [(await asRole('anon', `select name from get_group_aes('goodkey')`)).map(r => r.name)], [['Eve AE']]);
   // ---- rollback ----
   await db.exec(F('lockdown-rollback.sql'));
-  check('ROLLBACK: every old function is open again, the policies are back, and the anon read of the group and the always-BCC list works as before', [(await oldAll('anon')).every(Boolean), (await asRole('anon', 'select * from groups')).length, (await asRole('anon', 'select * from notification_settings')).length], [true, 1, 1]);
+  check('ROLLBACK: every old function is open again, the policies are back, and the anon reads of the group table, the always-BCC list and the unused table work as before', [(await oldAll('anon')).every(Boolean), (await asRole('anon', 'select * from groups')).length, (await asRole('anon', 'select * from notification_settings')).length, (await asRole('anon', 'select * from group_service_overrides')).length], [true, 1, 1, 1]);
   check('...and the rollback is repeatable and the lockdown can be run again (idempotent both ways)', (await db.exec(F('lockdown.sql')), await db.exec(F('lockdown-rollback.sql')), await db.exec(F('lockdown.sql')), (await asRole('anon', 'select * from groups')).length), 0);
   // ---- new login-protected replacements ----
   const call = (who, pw, sql) => asRole('anon', sql.replace('$W', who).replace('$P', pw));
