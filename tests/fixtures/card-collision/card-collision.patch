@@ -1,0 +1,45 @@
+diff --git a/index.html b/index.html
+index 35c913f..f43f464 100644
+--- a/index.html
++++ b/index.html
+@@ -6433,6 +6433,16 @@ async function submitIO() {
+           return resolveVariantDisplayName(li.service_id, li.tactic_variant, fallbackName);
+         }
+ 
++        // CARD-NAME COLLISION FIX (2026-10-16): when a workflow has SEVERAL single-card templates (each service with its own), the variant name above was applied to EVERY one of
++        // them, so they all got the same card name and every card after the first was silently skipped. With more than one template, a variant now names only the card of the template
++        // its own service carries (the others keep their template's name). With ONE template (the usual case) nothing changes: the variant still names the card, exactly as before.
++        function resolveTacticVariantNameForTemplate(originalWorkflow, templateRef, fallbackName, templateCount) {
++          if (templateCount <= 1) return resolveTacticVariantName(originalWorkflow, fallbackName);
++          const li = lineItems.find(li => li.workflow === originalWorkflow && li.tactic_variant && CATALOG_ROWS[li.service_id]?.trello_template_ref === templateRef);
++          if (!li) return fallbackName;
++          return resolveVariantDisplayName(li.service_id, li.tactic_variant, fallbackName);
++        }
++
+         // Lists every sold line item sharing a workflow (2026-07-13) — so a small add-on
+         // (e.g. a modifier like Offline Visits Tracking) never gets missed just because it
+         // only ever appeared on the IO card, not the specific tactic card someone's actually
+@@ -7037,6 +7047,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
+           : new Set();
+         // Track every card we create/copy during THIS submission so we never duplicate within a run
+         const addedCardNames = new Set();
++        const singleCardNameOwner = new Map();   // card name -> the single-card template that produced it, for THIS order only (see the collision note in the template loop)
+         const cardExists = name => existingCardNames.has(norm(name)) || addedCardNames.has(norm(name));
+ 
+         // Card descriptions (2026-10-06, per Bronson/Claire -- the team adds dashboard links and notes to a card's
+@@ -7573,7 +7584,14 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
+               }
+               // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
+               // the business name.
+-              const cn = resolveTacticVariantName(originalWorkflows[wfIdx], (templateCard.name || wf).trim()) + ridingAlongSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
++              const cn = resolveTacticVariantNameForTemplate(originalWorkflows[wfIdx], template.ref, (templateCard.name || wf).trim(), templates.length) + ridingAlongSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
++              // Two DIFFERENT single-card templates that still come out with the same card name used to lose the second card without a word. Say so (no card is created twice).
++              if (singleCardNameOwner.has(norm(cn)) && singleCardNameOwner.get(norm(cn)) !== template.ref) {
++                console.warn(`Two Trello templates in workflow "${originalWorkflows[wfIdx]}" produce the same card name "${cn}"; the second was not created.`);
++                noteIssue(`The Trello card for a second template in ${friendlyWorkflowName(originalWorkflows[wfIdx])} was not created because it would have the same name as another card on this order ("${cn}"). Add it by hand or rename one of the two templates in Trello.`);
++                continue;
++              }
++              singleCardNameOwner.set(norm(cn), template.ref);
+               const existing = findExistingCardByName(cn);
+               if (existing && !addedCardNames.has(norm(cn))) {
+                 addedCardNames.add(norm(cn));
