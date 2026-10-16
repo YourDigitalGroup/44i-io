@@ -31,4 +31,4 @@ from unnest(array[
 order by 1, 2;
 
 -- And the two policies (after Sections 2A / 2B these should return NO rows):
-select tablename, policyname from pg_policies where schemaname = 'public' and policyname in ('notification_settings_public_read', 'groups_public_read');
+select tablename, policyname from pg_policies where schemaname = 'public' and policyname in ('notification_settings_public_read', 'groups_public_read', 'Public can read group_service_overrides');

@@ -23,6 +23,9 @@ grant execute on function public.get_client_names(uuid[]) to public, anon, authe
 create policy groups_public_read on public.groups for select to anon, authenticated using (true);
 create policy notification_settings_public_read on public.notification_settings for select to anon, authenticated using (true);
 
+-- Undo SECTION 2C
+create policy "Public can read group_service_overrides" on public.group_service_overrides for select to public using (true);
+
 -- Undo SECTION 3
 grant execute on function public.save_group_draft(uuid, uuid, text, text, jsonb) to public, anon, authenticated;
 grant execute on function public.get_group_roster(uuid) to public, anon, authenticated;

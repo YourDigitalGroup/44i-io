@@ -32,3 +32,7 @@ drop policy if exists notification_settings_public_read on public.notification_s
 -- emails, from name/email, portal domain...). It is not in this repo. Dropping this policy would break it. Run 2B only after that job's owner has moved to a
 -- narrow key- or login-protected read (or has been told to expect the change).
 drop policy if exists groups_public_read on public.groups;
+
+-- ===== SECTION 2C: remove the public read of an unused table =====
+-- group_service_overrides is dead (Custom Pricing writes groups.io_pricing; documented 2026-07-10) and no page in any repo reads it.
+drop policy if exists "Public can read group_service_overrides" on public.group_service_overrides;

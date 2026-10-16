@@ -20,7 +20,7 @@ Everything below is built and tested in a throwaway database (`tests/db-lockdown
 2. Claude commits `tests/fixtures/lockdown-callers.patch` (+ moves `tests/lockdown-callers.test.js.pending` into place) to the branch; full suite; Claire merges. Check: Admin > Settings shows the always-BCC list; Admin > Reconcile links a client (or one Retry Trello on a client with no list); Strategist > New Campaign import for a multi-agent client lists agents/counties.
 3. Before touching anything: one test order through a keyed IO link and one Companion request through a keyed Companion link (baseline).
 4. Run `tests/fixtures/lockdown.sql` SECTION 1 only. Reload a keyed IO form and Companion (client picker, AE picker, drafts); submit a test order. 
-5. Run SECTION 2A (after checking the logs for `/rest/v1/notification_settings`). Reload the keyed forms again; submit a test order; open Admin > Settings. SECTION 2B only when the hourly job's owner is found and moved.
+5. Run SECTION 2A (after checking the logs for `/rest/v1/notification_settings`). Reload the keyed forms again; submit a test order; open Admin > Settings. SECTION 2B only when the hourly job's owner is found and moved. **Section 2C** (the unused `group_service_overrides` public read; no caller in any of the six repos; Claire asked to close it 2026-10-16) can run with 2A.
 6. Section 3 only when the Playbook is confirmed on keys / service key (`tests/fixtures/lockdown-section3-playbook.sql`); ask the Playbook team to save one test draft right after.
 
 ## Proof after each section
@@ -30,7 +30,7 @@ Run `tests/fixtures/lockdown-verify.sql` (read-only): after Section 1 every `sec
 `tests/fixtures/lockdown-rollback.sql` has three parts, one per section; run only the part for the section that went wrong. Symptoms: "Couldn't load just now" / empty client or AE pickers = a function still closed that a page calls; an Admin tab blank = Admin patch not merged before Section 2.
 
 ## Not covered by this lockdown (separate later phases in the notes)
-Anon `orders` insert and 2-hour read/update; `pending_requests` anon insert; the Trello/email relay requiring the key; `group_service_overrides` public read (no caller in the forms; tidy-up candidate); `get_group_logo` stays open on purpose (audit tool).
+Anon `orders` insert and 2-hour read/update; `pending_requests` anon insert; the Trello/email relay requiring the key; `get_group_logo` stays open on purpose (audit tool).
 
 ## Playbook orders check (Claire asked, 2026-10-15; answered by reading the Playbook code)
 - Since 2026-10-11 the Playbook does NOT create orders in the IO: signing writes a DRAFT (`save_group_draft`, service key) and the AE presses Resume in the keyed IO form and submits, so the form creates the client, order, cards and PDF (`_shared/handoff.ts` header). No Playbook code inserts into `orders`. (Its docs/RUNBOOK section for 2026-10-01 still describes the old direct order insert with the public key: stale docs.)
