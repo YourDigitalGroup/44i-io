@@ -9,7 +9,7 @@ win.eval([
   ...['loadAdminLegalContent', 'adminSaveLegalContent', 'loadAdminNotificationSettings', 'adminSaveNotificationSettings', 'adminUserRoleChanged', 'adminSaveUser'].map(n => fn(admin, n)),
   `var currentAdminUser = { name: 'a', pw: 'p', role: 'super' }, ALL_STAFF = [], ALL_AES = [], __calls = [], __toasts = [], __rows = null, __fail = false;
    function canSee() { return true; } function showToast(m, t) { __toasts.push((t || 'ok') + ': ' + m); } function loadAdminUsers() {} function adminCancelUserEdit() {}
-   async function sb(path, opts) { if (path.startsWith('rpc/')) { __calls.push([path, JSON.parse(opts.body).p_data]); return {}; } if (__fail) throw new Error('boom'); return __rows; }`,
+   async function sb(path, opts) { if (path === 'rpc/admin_get_notification_settings') { if (__fail) throw new Error('boom'); return __rows; } if (path.startsWith('rpc/')) { __calls.push([path, JSON.parse(opts.body).p_data]); return {}; } if (__fail) throw new Error('boom'); return __rows; }`,
 ].join('\n'));
 const doc = win.document, LF = win.eval('LEGAL_FIELDS');
 const fill = () => LF.forEach(f => { doc.getElementById('legal-' + f).value = 'clause ' + f; });
