@@ -6433,6 +6433,16 @@ async function submitIO() {
           return resolveVariantDisplayName(li.service_id, li.tactic_variant, fallbackName);
         }
 
+        // CARD-NAME COLLISION FIX (2026-10-16): when a workflow has SEVERAL single-card templates (each service with its own), the variant name above was applied to EVERY one of
+        // them, so they all got the same card name and every card after the first was silently skipped. With more than one template, a variant now names only the card of the template
+        // its own service carries (the others keep their template's name). With ONE template (the usual case) nothing changes: the variant still names the card, exactly as before.
+        function resolveTacticVariantNameForTemplate(originalWorkflow, templateRef, fallbackName, templateCount) {
+          if (templateCount <= 1) return resolveTacticVariantName(originalWorkflow, fallbackName);
+          const li = lineItems.find(li => li.workflow === originalWorkflow && li.tactic_variant && CATALOG_ROWS[li.service_id]?.trello_template_ref === templateRef);
+          if (!li) return fallbackName;
+          return resolveVariantDisplayName(li.service_id, li.tactic_variant, fallbackName);
+        }
+
         // Lists every sold line item sharing a workflow (2026-07-13) — so a small add-on
         // (e.g. a modifier like Offline Visits Tracking) never gets missed just because it
         // only ever appeared on the IO card, not the specific tactic card someone's actually
@@ -7037,6 +7047,7 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
           : new Set();
         // Track every card we create/copy during THIS submission so we never duplicate within a run
         const addedCardNames = new Set();
+        const singleCardNameOwner = new Map();   // card name -> the single-card template that produced it, for THIS order only (see the collision note in the template loop)
         const cardExists = name => existingCardNames.has(norm(name)) || addedCardNames.has(norm(name));
 
         // Card descriptions (2026-10-06, per Bronson/Claire -- the team adds dashboard links and notes to a card's
@@ -7573,7 +7584,14 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
               }
               // Tactic — Client (2026-07-14, per Claire) — every tactic card name ends with
               // the business name.
-              const cn = resolveTacticVariantName(originalWorkflows[wfIdx], (templateCard.name || wf).trim()) + ridingAlongSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+              const cn = resolveTacticVariantNameForTemplate(originalWorkflows[wfIdx], template.ref, (templateCard.name || wf).trim(), templates.length) + ridingAlongSuffix(originalWorkflows[wfIdx]) + datedCardSuffix(originalWorkflows[wfIdx]) + ' — ' + bizName;
+              // Two DIFFERENT single-card templates that still come out with the same card name used to lose the second card without a word. Say so (no card is created twice).
+              if (singleCardNameOwner.has(norm(cn)) && singleCardNameOwner.get(norm(cn)) !== template.ref) {
+                console.warn(`Two Trello templates in workflow "${originalWorkflows[wfIdx]}" produce the same card name "${cn}"; the second was not created.`);
+                noteIssue(`The Trello card for a second template in ${friendlyWorkflowName(originalWorkflows[wfIdx])} was not created because it would have the same name as another card on this order ("${cn}"). Add it by hand or rename one of the two templates in Trello.`);
+                continue;
+              }
+              singleCardNameOwner.set(norm(cn), template.ref);
               const existing = findExistingCardByName(cn);
               if (existing && !addedCardNames.has(norm(cn))) {
                 addedCardNames.add(norm(cn));
@@ -7799,6 +7817,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
     // the claude-proxy Edge Function, send_email just returns an error and this
     // silently no-ops (logged as a console warning, nothing shown to the AE — the IO
     // itself already saved successfully regardless of whether this email goes out).
+    // EMAIL SAFETY NET (2026-10-16): `emailSent` is true only when the mail service accepted the order email; it is recorded on the order below so Admin can show
+    // "sent" / "not sent" and offer Resend. `alertBcc` is the team-copy list the AM alert also uses.
+    let emailSent = false, alertBcc = [];
     try {
       const groupRecipients = (selectedGroup.io_recipient || '')
         .split(',').map(s => s.trim()).filter(Boolean);
@@ -7824,6 +7845,9 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
       } catch(e) {
         console.warn('Could not load notification_settings (table may not exist yet):', e.message);
       }
+      // "Don't copy the team" (2026-10-16): a test group can leave the always-BCC list off its emails (the order email and the AM alert; Admin's Resend follows the same setting).
+      if (selectedGroup.no_team_copy) alwaysBcc = [];
+      alertBcc = alwaysBcc;
       // Dedup: don't BCC someone who's already in the group's own To list, so they
       // don't get the same email twice (see io_project_tracking.md — flagged before
       // this was built).
@@ -7890,13 +7914,39 @@ ${amTrello ? '\nAM: ' + amTrello : ''}${aeTrello ? '\nAE: ' + aeTrello : ''}`;
         });
         const emailData = await emailRes.json().catch(() => null);
         if (!emailRes.ok) { console.warn('Could not send submission email:', emailRes.status, emailData); noteIssue('The notification email could not be sent, so the group and AM did not receive it.'); }
-        else console.log('Submission email sent');
+        else { console.log('Submission email sent'); emailSent = true; }
       } else {
         console.log('No email recipients configured for this group — skipping submission email.');
       }
     } catch(e) {
       console.warn('Could not send submission email:', e.message);
       noteIssue('The notification email could not be sent, so the group and AM did not receive it.');
+    }
+
+    // Record that the order email went out (nothing is written when it failed or was not attempted: empty means "not sent"). The order is already saved; a failure here
+    // changes nothing else (Admin would show "not sent" for an email that did go, which is the safe direction).
+    if (emailSent && orderId) {
+      try { await sb('orders?id=eq.' + orderId, { method: 'PATCH', body: JSON.stringify({ email_sent_at: new Date().toISOString() }), prefer: 'return=minimal' }); }
+      catch (e) { console.warn('Could not record that the order email was sent:', e.message); }
+    }
+    // AM alert: when the Trello setup did not finish, tell the group's AM by email so it is not left until someone happens to look (Admin's Orders list and Retry Trello are the
+    // dependable signal; this email is a convenience and cannot report anything if the mail service itself is down). A failure here changes nothing.
+    {
+      const trelloIssues = setupIssues.filter(i => /Trello/i.test(i));
+      const amTo = (selectedGroup.am_email || '').split(',').map(x => x.trim()).filter(Boolean);
+      if (trelloIssues.length && amTo.length) {
+        try {
+          const lower = new Set(amTo.map(x => x.toLowerCase()));
+          const alertHtml = `<div style="font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111827;max-width:600px"><p><strong>Order ${esc(ioNumber)} for ${esc(bizName)} (${esc(selectedGroup.name || '')}) was saved, but Trello is incomplete.</strong></p>`
+            + `<ul>${trelloIssues.map(i => '<li>' + esc(i) + '</li>').join('')}</ul>`
+            + `<p>Open the order in Admin (https://io.yourdigitalgroupresources.com/admin/ , Orders) and press <strong>Retry Trello</strong>. It only creates what is missing.</p></div>`;
+          const alertSend = fetch(PROXY, { method: 'POST', headers: {'Content-Type':'application/json', apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY},
+            body: JSON.stringify({ target: 'send_email', to: amTo.join(','), bcc: alertBcc.filter(x => !lower.has(x.toLowerCase())).join(','), subject: `Order ${ioNumber} saved, but Trello is incomplete (${bizName})`, html: alertHtml }) })
+            .then(r => { if (!r.ok) console.warn('Could not send the Trello-incomplete alert:', r.status); });
+          // Wait for it, but never longer than 8 seconds: a mail service that hangs must not hold the AE on the submit screen (the order is already saved).
+          await Promise.race([alertSend, new Promise(res => setTimeout(res, 8000))]);
+        } catch (e) { console.warn('Could not send the Trello-incomplete alert:', e.message); }
+      }
     }
 
         // 3. Show success

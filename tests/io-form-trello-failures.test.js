@@ -75,8 +75,9 @@ const SERVICES = [svc({ id: 'w-flat', label: 'Website Flat Thing', section: 'web
     check('email fails: the AE is told the notification email was not sent', [d.success, /notification email could not be sent/.test(d.notice)], [true, true]);
     // E. the PDF cannot be built -> the email is still sent, without it, and the AE is told
     let e = await run('pdf-fails');
-    check('PDF cannot be built: the email is STILL sent (without the PDF) and the AE is told both the email and the Trello attachment are affected', [e.emails.length, e.emails[0] && 'base64' in e.emails[0], /sent WITHOUT the PDF attached/.test(e.notice), /could not be attached to the IO card/.test(e.notice)], [1, false, true, true]);
-    check('PDF cannot be built: the email text says the PDF is on the Trello card instead', /could not be attached to this email/.test(e.emails[0] ? e.emails[0].html : ''), true);
+    const orderMail = e.emails.filter(x => /New submission/.test(x.subject || ''));   // (an AM alert for the IO card's missing PDF may also go out since 2026-10-16)
+    check('PDF cannot be built: the email is STILL sent (without the PDF) and the AE is told both the email and the Trello attachment are affected', [orderMail.length, orderMail[0] && 'base64' in orderMail[0], /sent WITHOUT the PDF attached/.test(e.notice), /could not be attached to the IO card/.test(e.notice)], [1, false, true, true]);
+    check('PDF cannot be built: the email text says the PDF is on the Trello card instead', /could not be attached to this email/.test(orderMail[0] ? orderMail[0].html : ''), true);
     check('no page errors in any run', [a.errs, b.errs, c.errs, d.errs, e.errs], [[], [], [], [], []]);
   } finally { await browser.close(); }
   done();
